@@ -3,7 +3,7 @@
 export const dynamic = 'force-dynamic';
 
 import nextDynamic from 'next/dynamic';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { isTokenExpired, clearVendorSession, isStaleTempVendorSession } from '@/lib/session-utils';
 
 const VendorApp = nextDynamic(
@@ -22,7 +22,6 @@ interface VendorSession {
 export default function VendorHomePage() {
   const [session, setSession] = useState<VendorSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const hasChecked = useRef(false); // ✅ FIX: Single check flag
 
   useEffect(() => {
     // ✅ CRITICAL: Don't render this page if we're on a video route
@@ -58,50 +57,68 @@ export default function VendorHomePage() {
       }
     }
 
-    // Run session check on every mount so Strict Mode remount still gets session (avoids stuck loading)
-    hasChecked.current = true;
+    const bootstrap =
+      typeof sessionStorage !== 'undefined' &&
+      sessionStorage.getItem('_warmpawz_vendor_just_logged_in') === 'true';
 
-    // Synchronous session check
-    const storedPhone = localStorage.getItem('vendorPhone');
-    const storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
-    
-    // No session - redirect to auth
-    if (!storedPhone || !storedToken || storedToken.length < 10) {
-      window.location.replace('/auth');
-      return;
-    }
-    
-    // Token expired - clear and redirect
-    if (isTokenExpired(storedToken)) {
-      clearVendorSession();
-      window.location.replace('/auth');
-      return;
-    }
-
-    // Stale temp_vendor_ session – clear and show auth so user gets actual prompt (only when no valid token)
-    if (isStaleTempVendorSession(storedToken)) {
-      clearVendorSession();
-      window.location.replace('/auth');
-      return;
-    }
-    
-    // Valid session - set up the app
-    const storedVendor = localStorage.getItem('vendorData');
-    const storedVendorId = localStorage.getItem('vendorId');
-    const vendorData = storedVendor ? JSON.parse(storedVendor) : null;
-    
-    // Clear any stale redirect flags
-    sessionStorage.removeItem('_vendor_redirected_to_auth');
-    
-    // Set session and show app
-    setSession({
-      phone: storedPhone,
-      sessionToken: storedToken,
-      verified: true,
-      vendor: vendorData,
-      vendorId: storedVendorId || vendorData?.id
+    const readSession = () => ({
+      phone: localStorage.getItem('vendorPhone'),
+      token: localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken'),
     });
-    setIsLoading(false);
+
+    const trySession = (attempt: number) => {
+      const { phone: storedPhone, token: storedToken } = readSession();
+
+      // After /session/from-admin, storage is synchronous; retry briefly for Strict Mode / static shell edge cases
+      if (
+        (!storedPhone || !storedToken || storedToken.length < 10) &&
+        bootstrap &&
+        attempt < 8
+      ) {
+        window.setTimeout(() => trySession(attempt + 1), 40);
+        return;
+      }
+
+      if (!storedPhone || !storedToken || storedToken.length < 10) {
+        window.location.replace('/auth');
+        return;
+      }
+
+      if (isTokenExpired(storedToken)) {
+        clearVendorSession();
+        window.location.replace('/auth');
+        return;
+      }
+
+      if (isStaleTempVendorSession(storedToken)) {
+        clearVendorSession();
+        window.location.replace('/auth');
+        return;
+      }
+
+      let vendorData: Record<string, unknown> | null = null;
+      try {
+        const storedVendor = localStorage.getItem('vendorData');
+        vendorData = storedVendor ? (JSON.parse(storedVendor) as Record<string, unknown>) : null;
+      } catch {
+        vendorData = null;
+      }
+
+      const storedVendorId = localStorage.getItem('vendorId');
+
+      sessionStorage.removeItem('_vendor_redirected_to_auth');
+
+      setSession({
+        phone: storedPhone,
+        sessionToken: storedToken,
+        verified: true,
+        vendor: vendorData,
+        vendorId: storedVendorId || (vendorData?.id as string | undefined),
+      });
+      setIsLoading(false);
+    };
+
+    trySession(0);
   }, []); // Empty dependency - run once
 
   // ✅ CRITICAL: Don't render if we're on a video route
@@ -112,7 +129,7 @@ export default function VendorHomePage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+      <div className="vendor-page-shell flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading...</p>

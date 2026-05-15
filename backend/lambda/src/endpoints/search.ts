@@ -14,6 +14,10 @@
  * 
  * Date: 2025-01-28 (Updated: 2026-01-02)
  * Migration: Supabase to AWS Lambda
+ *
+ * Service result ids: OpenSearch warmpawz-services documents MUST use vendor_services.id
+ * (same as SQL fallback) so customer /booking/:id and GET /services/:id resolve correctly.
+ * Canonical service detail for that id: GET /services/:serviceId (service_catalog row first, else vendor_services).
  * ============================================================================
  */
 
@@ -23,6 +27,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { expandSearchCategoryForOpenSearch, expandSearchCategoryForSql, getSearchCategoryIlikePatterns } from '../utils/search-category-aliases';
 
 // Import OpenSearch client with fallback handling
 let openSearchClient: any = null;
@@ -31,6 +36,16 @@ try {
   openSearchClient = getOpenSearchClient();
 } catch (error) {
   console.warn('⚠️  OpenSearch client not available, will use SQL fallback');
+}
+
+/** Whitespace-separated query → tokens (cap avoids huge SQL from pasted text). */
+function searchTokens(searchQuery: string, maxTokens = 6): string[] {
+  const raw = String(searchQuery || '')
+    .trim()
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0);
+  return raw.slice(0, maxTokens);
 }
 
 // ============================================================================
@@ -43,10 +58,6 @@ class UniversalSearchHandler extends BaseHandler {
     const category = context.event.queryStringParameters?.category;
     const location = context.event.queryStringParameters?.location;
     const limit = parseInt(context.event.queryStringParameters?.limit || '20', 10);
-
-    if (!searchQuery && !category) {
-      return this.error('Search query or category is required', 400);
-    }
 
     // Try OpenSearch first if available
     if (openSearchClient && process.env.ENABLE_OPENSEARCH === 'true') {
@@ -84,20 +95,21 @@ class UniversalSearchHandler extends BaseHandler {
       size: limit,
     };
 
-    // Add search query
+    // Text + category: require keyword match AND hub category (same as SQL AND semantics).
     if (searchQuery) {
       searchBody.query.bool.must.push({
         multi_match: {
           query: searchQuery,
           fields: ['business_name^3', 'service_name^2', 'description', 'specialization'],
-          fuzziness: 'AUTO',
+          fuzziness: 'AUTO' as const,
         },
       });
     }
 
-    // Add category filter
-    if (category) {
-      searchBody.query.bool.filter.push({ term: { category } });
+    // Add category filter (UI slug → multiple DB role/category strings)
+    const categoryTerms = expandSearchCategoryForOpenSearch(category);
+    if (categoryTerms?.length) {
+      searchBody.query.bool.filter.push({ terms: { category: categoryTerms } });
     }
 
     // Add location filter
@@ -134,7 +146,7 @@ class UniversalSearchHandler extends BaseHandler {
       } else {
         services.push({
           id: source.id,
-          serviceName: source.service_name,
+          serviceName: source.service_name || source.name,
           description: source.description,
           price: source.price,
           vendorId: source.vendor_id,
@@ -164,9 +176,14 @@ class UniversalSearchHandler extends BaseHandler {
     location: string | undefined,
     limit: number
   ): Promise<HandlerResponse> {
+    const isBrowseAll = !searchQuery.trim() && !category;
+
     // ✅ SQL: Search vendors and services
     // ✅ LIVE STATUS FILTER: Only show vendors that are eligible for listing
-    // Criteria: At least 1 enabled service, has schedule, has location (lat/lng)
+    // Criteria: active+approved, has at least 1 enabled+published service, has schedule.
+    // NOTE: latitude/longitude are NOT required at the base filter — many real prod
+    // vendors are onboarded before geo is captured. Geo is applied as an extra filter
+    // only when a `lat`/`lng` query param is provided (distance-bounded search).
     let vendorsQuery = `
       SELECT v.*, 
              (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings,
@@ -174,37 +191,79 @@ class UniversalSearchHandler extends BaseHandler {
       FROM vendors v
       WHERE v.is_active = true 
         AND v.status = 'approved'
-        AND v.latitude IS NOT NULL 
-        AND v.longitude IS NOT NULL
         AND EXISTS (
           SELECT 1 FROM vendor_services vs 
           WHERE vs.vendor_id = v.id 
             AND vs.is_enabled = true 
-            AND vs.publish_status = 'published'
+            AND vs.publish_status IN ('published', 'auto_published')
         )
-        AND EXISTS (
-          SELECT 1 FROM vendor_availability_v2 va 
-          WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
+        AND (
+          $1::boolean = true
+          OR EXISTS (
+            SELECT 1 FROM vendor_availability_v2 va
+            WHERE va.vendor_id = v.id
+               OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
+          )
         )
     `;
 
-    const params: any[] = [];
-    let paramIndex = 1;
+    const params: any[] = [isBrowseAll];
+    let paramIndex = 2;
 
-    if (searchQuery) {
+    const keywordTokens = searchQuery.trim() ? searchTokens(searchQuery) : [];
+
+    // Keyword: each token must match vendor fields OR any listable published service on that vendor.
+    for (const token of keywordTokens) {
       vendorsQuery += ` AND (
         v.business_name ILIKE $${paramIndex} OR
         v.owner_name ILIKE $${paramIndex} OR
-        v.specialization ILIKE $${paramIndex}
+        v.specialization ILIKE $${paramIndex} OR
+        EXISTS (
+          SELECT 1 FROM vendor_services vs_kw
+          WHERE vs_kw.vendor_id = v.id
+            AND vs_kw.is_enabled = true
+            AND vs_kw.publish_status IN ('published', 'auto_published')
+            AND (
+              vs_kw.service_name ILIKE $${paramIndex}
+              OR COALESCE(vs_kw.custom_description, '') ILIKE $${paramIndex}
+              OR COALESCE(vs_kw.sub_category, '') ILIKE $${paramIndex}
+              OR COALESCE(vs_kw.category, '') ILIKE $${paramIndex}
+            )
+        )
       )`;
-      params.push(`%${searchQuery}%`);
+      params.push(`%${token}%`);
       paramIndex++;
     }
 
-    if (category) {
-      vendorsQuery += ` AND v.category = $${paramIndex}`;
-      params.push(category);
-      paramIndex++;
+    const vendorCategoryValues = expandSearchCategoryForSql(category);
+    const vendorIlikePatterns = getSearchCategoryIlikePatterns(category);
+    if (vendorCategoryValues.length || vendorIlikePatterns.length) {
+      const exactArr = vendorCategoryValues.length ? vendorCategoryValues : ['__no_match__'];
+      const ilikeArr = vendorIlikePatterns.length ? vendorIlikePatterns : ['__no_match__'];
+      vendorsQuery += ` AND (
+        EXISTS (
+          SELECT 1 FROM vendor_services vscat
+          WHERE vscat.vendor_id = v.id
+            AND vscat.is_enabled = true
+            AND vscat.publish_status IN ('published', 'auto_published')
+            AND (
+              LOWER(TRIM(COALESCE(vscat.category, ''))) = ANY($${paramIndex}::text[])
+              OR vscat.category ILIKE ANY($${paramIndex + 1}::text[])
+              OR vscat.service_name ILIKE ANY($${paramIndex + 1}::text[])
+              OR COALESCE(vscat.sub_category, '') ILIKE ANY($${paramIndex + 1}::text[])
+            )
+        )
+        OR (
+          v.category IS NOT NULL
+          AND (
+            LOWER(TRIM(COALESCE(v.category, ''))) = ANY($${paramIndex}::text[])
+            OR v.category ILIKE ANY($${paramIndex + 1}::text[])
+          )
+        )
+      )`;
+      params.push(exactArr);
+      params.push(ilikeArr);
+      paramIndex += 2;
     }
 
     if (location) {
@@ -221,37 +280,53 @@ class UniversalSearchHandler extends BaseHandler {
 
     // ✅ SQL: Search services
     // ✅ LIVE STATUS FILTER: Only show services from live-eligible vendors
+    // Geo is intentionally not required here — see vendorsQuery comment above.
     let servicesQuery = `
       SELECT vs.*, v.business_name, v.owner_name, v.city, v.state
       FROM vendor_services vs
       JOIN vendors v ON vs.vendor_id = v.id
-      WHERE vs.publish_status = 'published'
+      WHERE vs.publish_status IN ('published', 'auto_published')
         AND vs.is_enabled = true
         AND v.is_active = true
         AND v.status = 'approved'
-        AND v.latitude IS NOT NULL 
-        AND v.longitude IS NOT NULL
-        AND EXISTS (
-          SELECT 1 FROM vendor_availability_v2 va 
-          WHERE va.vendor_id = v.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
+        AND (
+          $1::boolean = true
+          OR EXISTS (
+            SELECT 1 FROM vendor_availability_v2 va
+            WHERE va.vendor_id = v.id
+               OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone)
+          )
         )
     `;
 
-    const serviceParams: any[] = [];
-    let serviceParamIndex = 1;
+    const serviceParams: any[] = [isBrowseAll];
+    let serviceParamIndex = 2;
 
-    if (searchQuery) {
+    for (const token of keywordTokens) {
       servicesQuery += ` AND (
         vs.service_name ILIKE $${serviceParamIndex}
+        OR COALESCE(vs.custom_description, '') ILIKE $${serviceParamIndex}
+        OR COALESCE(vs.sub_category, '') ILIKE $${serviceParamIndex}
+        OR COALESCE(vs.category, '') ILIKE $${serviceParamIndex}
       )`;
-      serviceParams.push(`%${searchQuery}%`);
+      serviceParams.push(`%${token}%`);
       serviceParamIndex++;
     }
 
-    if (category) {
-      servicesQuery += ` AND vs.category = $${serviceParamIndex}`;
-      serviceParams.push(category);
-      serviceParamIndex++;
+    const serviceCategoryValues = expandSearchCategoryForSql(category);
+    const serviceIlikePatterns = getSearchCategoryIlikePatterns(category);
+    if (serviceCategoryValues.length || serviceIlikePatterns.length) {
+      const exactSvcArr = serviceCategoryValues.length ? serviceCategoryValues : ['__no_match__'];
+      const ilikeSvcArr = serviceIlikePatterns.length ? serviceIlikePatterns : ['__no_match__'];
+      servicesQuery += ` AND (
+        LOWER(TRIM(COALESCE(vs.category, ''))) = ANY($${serviceParamIndex}::text[])
+        OR vs.category ILIKE ANY($${serviceParamIndex + 1}::text[])
+        OR vs.service_name ILIKE ANY($${serviceParamIndex + 1}::text[])
+        OR COALESCE(vs.sub_category, '') ILIKE ANY($${serviceParamIndex + 1}::text[])
+      )`;
+      serviceParams.push(exactSvcArr);
+      serviceParams.push(ilikeSvcArr);
+      serviceParamIndex += 2;
     }
 
     servicesQuery += ` LIMIT $${serviceParamIndex}`;
@@ -274,12 +349,15 @@ class UniversalSearchHandler extends BaseHandler {
       services: services.map(s => ({
         id: s.id,
         serviceName: s.service_name,
-        description: s.service_description || s.description_text || s.service_name,
+        description:
+          s.custom_description || s.service_description || s.description_text || s.service_name,
         price: s.price,
         vendorId: s.vendor_id,
         vendorName: s.business_name,
         city: s.city,
         state: s.state,
+        category: s.category,
+        serviceType: s.category,
       })),
       total: vendors.length + services.length,
       searchMethod: 'sql-fallback',

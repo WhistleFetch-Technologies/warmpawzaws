@@ -1,18 +1,32 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { 
-  Settings, User, Store, CreditCard, Bell, Shield, 
-  MapPin, Phone, Mail, Building, Save, Eye, EyeOff, CheckCircle
+import { useState, useCallback, forwardRef, useImperativeHandle } from 'react';
+import {
+  User,
+  Store,
+  CreditCard,
+  Bell,
+  Shield,
+  MapPin,
+  Phone,
+  Mail,
+  Building,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+
+export type SellerSettingsHandle = {
+  save: () => Promise<void>;
+};
 
 interface SellerSettingsProps {
   sellerId: string;
   sellerData: any;
 }
 
-export function SellerSettings({ sellerId, sellerData }: SellerSettingsProps) {
+export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsProps>(
+  function SellerSettings({ sellerId, sellerData }, ref) {
   const [activeTab, setActiveTab] = useState('profile');
   const [formData, setFormData] = useState({
     business_name: sellerData?.business_name || sellerData?.businessName || '',
@@ -29,8 +43,6 @@ export function SellerSettings({ sellerId, sellerData }: SellerSettingsProps) {
     ifsc_code: sellerData?.ifsc_code || '',
     upi_id: sellerData?.upi_id || ''
   });
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [showAccountNumber, setShowAccountNumber] = useState(false);
 
   const tabs = [
@@ -40,38 +52,19 @@ export function SellerSettings({ sellerId, sellerData }: SellerSettingsProps) {
     { id: 'security', label: 'Security', icon: Shield }
   ];
 
-  const handleSave = async () => {
-    setSaving(true);
+  const handleSave = useCallback(async () => {
     try {
       await apiClient.put(`/vendor/${sellerId}/settings`, formData);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
     } catch (error) {
       console.error('Error saving settings:', error);
       alert('Failed to save settings');
-    } finally {
-      setSaving(false);
     }
-  };
+  }, [sellerId, formData]);
+
+  useImperativeHandle(ref, () => ({ save: handleSave }), [handleSave]);
 
   return (
-    <div className="p-8 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
-          <p className="text-slate-500 mt-1">Manage your account and store settings</p>
-        </div>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg shadow-orange-500/25 hover:shadow-xl disabled:opacity-50 transition-all"
-        >
-          {saved ? <CheckCircle className="w-5 h-5" /> : <Save className="w-5 h-5" />}
-          {saving ? 'Saving...' : saved ? 'Saved!' : 'Save Changes'}
-        </button>
-      </div>
-
+    <div className="space-y-6">
       {/* Tabs */}
       <div className="flex gap-2 border-b border-slate-200 pb-4 overflow-x-auto">
         {tabs.map(tab => (
@@ -286,7 +279,7 @@ export function SellerSettings({ sellerId, sellerData }: SellerSettingsProps) {
             { label: 'Order Status Updates', description: 'Updates when order status changes' },
             { label: 'Low Stock Alerts', description: 'Notify when products are running low' },
             { label: 'Payout Notifications', description: 'Updates about your payouts' },
-            { label: 'Promotional Messages', description: 'Tips and offers from WarmPawz' },
+            { label: 'Promotional Messages', description: 'Tips and offers from Warmpawz' },
             { label: 'Weekly Reports', description: 'Weekly sales and performance summary' }
           ].map((item, index) => (
             <div key={index} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
@@ -359,4 +352,5 @@ export function SellerSettings({ sellerId, sellerData }: SellerSettingsProps) {
       )}
     </div>
   );
-}
+  }
+);

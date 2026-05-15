@@ -16,9 +16,88 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, update, query } from '../database/rds-connection';
+import { select, insert, update, query, withTransaction } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
+import { fixRewardCatalogTextFields } from '../utils/fix-rupee-mojibake';
 import { isValidUUID } from '../types/entities';
+
+/** When `customer_loyalty_points` counters are NULL/stale, derive lifetime stats from the ledger. */
+async function loyaltyLedgerLifetimeTotals(
+  customerId: string
+): Promise<{ earned: number; redeemed: number }> {
+  try {
+    const q = await query(
+      `SELECT
+        COALESCE(SUM(CASE
+          WHEN LOWER(TRIM(COALESCE(transaction_type::text, ''))) IN (
+            'earned', 'bonus', 'adjustment', 'award', 'accrual'
+          )
+          THEN ABS(COALESCE(points, 0)::numeric)::bigint
+          ELSE 0::bigint
+        END), 0)::text AS earned_sum,
+        COALESCE(SUM(CASE
+          WHEN LOWER(TRIM(COALESCE(transaction_type::text, ''))) IN (
+            'redeemed', 'redeem', 'spent', 'redemption'
+          )
+          OR LOWER(TRIM(COALESCE(reference_type::text, ''))) IN (
+            'reward_redemption', 'loyalty_redeem', 'loyalty_redeem_wallet'
+          )
+          OR COALESCE(points, 0) < 0
+          THEN ABS(COALESCE(points, 0)::numeric)::bigint
+          ELSE 0::bigint
+        END), 0)::text AS redeemed_sum
+       FROM loyalty_transactions
+       WHERE customer_id = $1::uuid`,
+      [customerId]
+    );
+    return {
+      earned: parseInt(String(q.rows[0]?.earned_sum ?? '0'), 10) || 0,
+      redeemed: parseInt(String(q.rows[0]?.redeemed_sum ?? '0'), 10) || 0,
+    };
+  } catch {
+    return { earned: 0, redeemed: 0 };
+  }
+}
+
+/** Catalog redemptions (table may be absent on older DBs). */
+async function rewardCatalogRedemptionsPointsSum(customerId: string): Promise<number> {
+  try {
+    const r = await query(
+      `SELECT COALESCE(SUM(COALESCE(points_used, 0)), 0)::text AS s
+       FROM reward_redemptions
+       WHERE customer_id = $1::uuid`,
+      [customerId]
+    );
+    return parseInt(String(r.rows[0]?.s ?? '0'), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function computeDisplayedLifetimeStats(
+  customerId: string,
+  profileRow: Record<string, any> | undefined
+): Promise<{ earned: number; redeemed: number }> {
+  const p = profileRow || {};
+  const ledger = await loyaltyLedgerLifetimeTotals(customerId);
+  const catalogRedeemed = await rewardCatalogRedemptionsPointsSum(customerId);
+  const storedEarned = parseInt(
+    String(p.lifetime_points_earned ?? p.lifetimePointsEarned ?? '0'),
+    10
+  );
+  const storedRedeemed = parseInt(
+    String(p.lifetime_points_redeemed ?? p.lifetimePointsRedeemed ?? '0'),
+    10
+  );
+  return {
+    earned: Math.max(Number.isFinite(storedEarned) ? storedEarned : 0, ledger.earned),
+    redeemed: Math.max(
+      Number.isFinite(storedRedeemed) ? storedRedeemed : 0,
+      ledger.redeemed,
+      catalogRedeemed
+    ),
+  };
+}
 
 export function registerRewardsEndpoints(app: Hono) {
   /**
@@ -111,21 +190,21 @@ export function registerRewardsEndpoints(app: Hono) {
         const ruleResult = await query(
           `SELECT points FROM loyalty_rules WHERE action_name = 'refer_friend' AND is_active = true LIMIT 1`
         );
-        const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || '0', 10) : 500;
+        const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || '0', 10) : 0;
         
         const pendingResult = await query(
-          `SELECT COUNT(*) as count 
-           FROM referrals 
-           WHERE referrer_id = $1 
-           AND referred_id IS NOT NULL 
+          `SELECT COUNT(*)::int AS count
+           FROM referral_redemptions rr
+           INNER JOIN referrals r ON r.id = rr.referral_id
+           WHERE r.referrer_id = $1
+           AND NOT EXISTS (SELECT 1 FROM bookings WHERE customer_id = rr.referred_id)
            AND NOT EXISTS (
-             SELECT 1 FROM bookings WHERE customer_id = referrals.referred_id
-           )
-           AND NOT EXISTS (
-             SELECT 1 FROM loyalty_transactions 
-             WHERE customer_id = $1 
-             AND reference_type = 'referral' 
-             AND reference_id = referrals.id
+             SELECT 1 FROM loyalty_transactions lt
+             WHERE lt.customer_id = $1
+             AND (
+               (lt.reference_type = 'customer_referral' AND lt.reference_id = rr.id)
+               OR (lt.reference_type = 'referral' AND lt.reference_id = r.id)
+             )
            )`,
           [customerId]
         );
@@ -134,6 +213,8 @@ export function registerRewardsEndpoints(app: Hono) {
       } catch (refError) {
         console.log('Error calculating referral points:', refError);
       }
+
+      const lifetime = await computeDisplayedLifetimeStats(customerId, profile[0]);
 
       return c.json({
         success: true,
@@ -146,8 +227,8 @@ export function registerRewardsEndpoints(app: Hono) {
         nextTier: nextTierName,
         nextTierMinPoints: nextTier?.min_points ? parseInt(nextTier.min_points, 10) : null,
         pointsToNextTier,
-        lifetimePointsEarned: parseInt(profile[0]?.lifetime_points_earned || '0', 10),
-        lifetimePointsRedeemed: parseInt(profile[0]?.lifetime_points_redeemed || '0', 10),
+        lifetimePointsEarned: lifetime.earned,
+        lifetimePointsRedeemed: lifetime.redeemed,
         referralPointsEarned,
         pendingReferralPoints,
         totalPotentialPoints: currentPoints + pendingReferralPoints,
@@ -253,21 +334,21 @@ export function registerRewardsEndpoints(app: Hono) {
         const ruleResult = await query(
           `SELECT points FROM loyalty_rules WHERE action_name = 'refer_friend' AND is_active = true LIMIT 1`
         );
-        const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || '0', 10) : 500;
+        const pointsPerReferral = ruleResult.rows.length > 0 ? parseInt(ruleResult.rows[0]?.points || '0', 10) : 0;
         
         const pendingResult = await query(
-          `SELECT COUNT(*) as count 
-           FROM referrals 
-           WHERE referrer_id = $1 
-           AND referred_id IS NOT NULL 
+          `SELECT COUNT(*)::int AS count
+           FROM referral_redemptions rr
+           INNER JOIN referrals r ON r.id = rr.referral_id
+           WHERE r.referrer_id = $1
+           AND NOT EXISTS (SELECT 1 FROM bookings WHERE customer_id = rr.referred_id)
            AND NOT EXISTS (
-             SELECT 1 FROM bookings WHERE customer_id = referrals.referred_id
-           )
-           AND NOT EXISTS (
-             SELECT 1 FROM loyalty_transactions 
-             WHERE customer_id = $1 
-             AND reference_type = 'referral' 
-             AND reference_id = referrals.id
+             SELECT 1 FROM loyalty_transactions lt
+             WHERE lt.customer_id = $1
+             AND (
+               (lt.reference_type = 'customer_referral' AND lt.reference_id = rr.id)
+               OR (lt.reference_type = 'referral' AND lt.reference_id = r.id)
+             )
            )`,
           [customerId]
         );
@@ -277,12 +358,14 @@ export function registerRewardsEndpoints(app: Hono) {
         console.log('Error calculating referral points:', refError);
       }
 
+      const lifetimePhone = await computeDisplayedLifetimeStats(customerId, profile[0]);
+
       return c.json({
         success: true,
         points: currentPoints,
         totalPoints: currentPoints,
-        lifetimePointsEarned: parseInt(profile[0]?.lifetime_points_earned || '0', 10),
-        lifetimePointsRedeemed: parseInt(profile[0]?.lifetime_points_redeemed || '0', 10),
+        lifetimePointsEarned: lifetimePhone.earned,
+        lifetimePointsRedeemed: lifetimePhone.redeemed,
         referralPointsEarned,
         pendingReferralPoints,
         totalPotentialPoints: currentPoints + pendingReferralPoints,
@@ -314,13 +397,13 @@ export function registerRewardsEndpoints(app: Hono) {
         const history = await query(
           `SELECT 
             id,
-            type,
+            transaction_type AS type,
             points,
             description,
-            created_at as date,
-            reference_type as source
+            created_at AS date,
+            reference_type AS source
            FROM loyalty_transactions
-           WHERE customer_id = $1
+           WHERE customer_id = $1::uuid
            ORDER BY created_at DESC
            LIMIT $2 OFFSET $3`,
           [customerId, limit, offset]
@@ -353,12 +436,12 @@ export function registerRewardsEndpoints(app: Hono) {
   app.get("/customer/:customerId/rewards/available", async (c) => {
     try {
       const { customerId } = c.req.param();
+      if (!isValidUUID(String(customerId))) {
+        return c.json({ success: false, error: 'Invalid customer id' }, 400);
+      }
 
-      let rewardRows: any[] = [];
-      try {
-        // Get active rewards
-        const rewards = await query(
-          `SELECT 
+      const rewards = await query(
+        `SELECT 
             id,
             name,
             description,
@@ -368,34 +451,23 @@ export function registerRewardsEndpoints(app: Hono) {
             image_url
            FROM rewards_catalog
            WHERE is_active = true
-           ORDER BY points_cost ASC`
-        );
-        rewardRows = rewards.rows;
-      } catch (dbError) {
-        console.log('Rewards catalog table not available:', dbError);
-        // Return default rewards
-        rewardRows = [
-          { id: '1', name: '₹100 Off Grooming', description: 'Get ₹100 off on any grooming service', points_cost: 100, cash_value: 100, type: 'discount' },
-          { id: '2', name: '₹200 Off Vet Visit', description: 'Get ₹200 off on any vet consultation', points_cost: 200, cash_value: 200, type: 'discount' },
-          { id: '3', name: 'Free Pet Treat', description: 'Get a free premium pet treat', points_cost: 50, cash_value: 50, type: 'product' },
-        ];
-      }
+           ORDER BY display_order ASC, points_cost ASC`
+      );
+
+      const rows = (rewards.rows || []).map((r) => fixRewardCatalogTextFields(r));
 
       return c.json({
         success: true,
-        rewards: rewardRows,
-        catalog: rewardRows,
-        count: rewardRows.length,
+        rewards: rows,
+        catalog: rows,
+        count: rows.length,
       });
     } catch (error: any) {
       console.error('Error fetching rewards catalog:', error);
-      return c.json({
-        success: true,
-        rewards: [],
-        catalog: [],
-        count: 0,
-        message: 'Rewards catalog coming soon'
-      });
+      return c.json(
+        { success: false, error: error?.message || 'Failed to load rewards catalog' },
+        500
+      );
     }
   });
 
@@ -408,21 +480,21 @@ export function registerRewardsEndpoints(app: Hono) {
       const { customerId } = c.req.param();
       const { points, rewardId } = await c.req.json();
 
-      if (!points || !rewardId) {
-        return c.json({ error: 'points and rewardId are required' }, 400);
+      if (!isValidUUID(String(customerId))) {
+        return c.json({ error: 'Invalid customer id' }, 400);
+      }
+      if (rewardId == null || rewardId === '') {
+        return c.json({ error: 'rewardId is required' }, 400);
+      }
+      if (!isValidUUID(String(rewardId))) {
+        return c.json({ error: 'rewardId must be a valid catalog reward UUID' }, 400);
+      }
+      if (points == null || !Number.isFinite(Number(points)) || Number(points) < 1) {
+        return c.json({ error: 'points must be a positive number' }, 400);
       }
 
-      // Get customer points
-      const profile = await select('customer_loyalty_points', { customer_id: customerId });
-      const currentPoints = parseInt(profile[0]?.total_points || '0', 10);
-
-      if (currentPoints < points) {
-        return c.json({ error: 'Insufficient points' }, 400);
-      }
-
-      // Get reward details
       const rewards = await query(
-        `SELECT * FROM rewards_catalog WHERE id = $1 AND is_active = true`,
+        `SELECT * FROM rewards_catalog WHERE id = $1::uuid AND is_active = true`,
         [rewardId]
       );
 
@@ -430,48 +502,160 @@ export function registerRewardsEndpoints(app: Hono) {
         return c.json({ error: 'Reward not found or inactive' }, 404);
       }
 
-      const reward = rewards.rows[0];
-
-      if (reward.points_cost > currentPoints) {
-        return c.json({ error: 'Insufficient points for this reward' }, 400);
+      const reward = fixRewardCatalogTextFields(rewards.rows[0]);
+      const cost = parseInt(String(reward.points_cost ?? points), 10);
+      if (!Number.isFinite(cost) || cost < 1) {
+        return c.json({ error: 'Invalid reward points_cost' }, 400);
+      }
+      const ptsReq = Math.round(Number(points));
+      if (ptsReq !== cost) {
+        return c.json({ error: 'points does not match reward cost' }, 400);
       }
 
-      // Deduct points
-      await query(
-        `UPDATE customer_loyalty_points
-         SET total_points = total_points - $1,
-             lifetime_points_redeemed = lifetime_points_redeemed + $1
-         WHERE customer_id = $2`,
-        [reward.points_cost, customerId]
-      );
+      const cashValue = Math.round((parseFloat(String(reward.cash_value ?? 0)) || 0) * 100) / 100;
 
-      // Record transaction
-      await insert('loyalty_transactions', {
-        customer_id: customerId,
-        type: 'redeemed',
-        points: -reward.points_cost,
-        description: `Redeemed: ${reward.name}`,
-        reference_type: 'reward_redemption',
-        reference_id: rewardId,
-        created_at: new Date().toISOString(),
+      const { remainingPoints, walletCredited } = await withTransaction(async (client) => {
+        const cwCol = await client.query<{ column_name: string }>(
+          `SELECT column_name FROM information_schema.columns
+           WHERE table_schema = 'public' AND table_name = 'customer_wallets'`
+        );
+        const cwHas = new Set(cwCol.rows.map((r) => r.column_name));
+
+        const prof = await client.query(
+          `SELECT total_points FROM customer_loyalty_points WHERE customer_id = $1::uuid FOR UPDATE`,
+          [customerId]
+        );
+        if (prof.rows.length === 0) {
+          throw new Error('LOYALTY_PROFILE_NOT_FOUND');
+        }
+        const currentPoints = parseInt(String(prof.rows[0]?.total_points ?? '0'), 10);
+        if (currentPoints < cost) {
+          throw new Error('INSUFFICIENT_POINTS');
+        }
+
+        await client.query(
+          `UPDATE customer_loyalty_points
+           SET total_points = COALESCE(total_points, 0) - $1,
+               lifetime_points_redeemed = COALESCE(lifetime_points_redeemed, 0) + $1,
+               updated_at = NOW()
+           WHERE customer_id = $2::uuid`,
+          [cost, customerId]
+        );
+
+        const rewardRefUuid = isValidUUID(String(rewardId)) ? String(rewardId).trim() : null;
+        await client.query(
+          `INSERT INTO loyalty_transactions
+             (customer_id, transaction_type, points, reference_type, reference_id, description)
+           VALUES ($1::uuid, 'redeemed', $2, 'reward_redemption', $3::uuid, $4)`,
+          [customerId, -cost, rewardRefUuid, `Redeemed: ${reward.name}`]
+        );
+
+        try {
+          await client.query(
+            `INSERT INTO reward_redemptions (customer_id, reward_id, points_used, redeemed_at)
+             VALUES ($1::uuid, $2, $3, NOW())`,
+            [customerId, rewardId, cost]
+          );
+        } catch (re: any) {
+          console.warn('[rewards/redeem] reward_redemptions insert skipped:', re?.message);
+        }
+
+        let credited = 0;
+        if (cashValue > 0.009) {
+          const upsertCols = ['customer_id', 'balance'];
+          const upsertVals: unknown[] = [customerId, 0];
+          if (cwHas.has('currency')) {
+            upsertCols.push('currency');
+            upsertVals.push('INR');
+          }
+          const ph = upsertVals.map((_, i) => `$${i + 1}`).join(', ');
+          await client.query(
+            `INSERT INTO customer_wallets (${upsertCols.join(', ')})
+             VALUES (${ph})
+             ON CONFLICT (customer_id) DO NOTHING`,
+            upsertVals as any[]
+          );
+          await client.query(
+            `SELECT id FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
+            [customerId]
+          );
+          const setBal = cwHas.has('updated_at')
+            ? 'SET balance = balance + $1::numeric, updated_at = NOW()'
+            : 'SET balance = balance + $1::numeric';
+          const wup = await client.query(
+            `UPDATE customer_wallets ${setBal}
+             WHERE customer_id = $2::uuid RETURNING balance::text`,
+            [cashValue, customerId]
+          );
+          const newBal = parseFloat(String(wup.rows[0]?.balance ?? '0')) || 0;
+          const wdesc = `Reward wallet credit: ${reward.name} (${cost} pts → ₹${cashValue.toFixed(2)})`;
+          try {
+            await client.query(
+              `INSERT INTO wallet_transactions (
+                 customer_id, transaction_type, amount, balance_after, description, source
+               ) VALUES ($1::uuid, 'credit', $2::numeric, $3::numeric, $4, 'loyalty_reward')`,
+              [customerId, cashValue, newBal, wdesc]
+            );
+          } catch (we: any) {
+            if (String(we?.message || '').includes('source') || String(we?.message || '').includes('column')) {
+              await client.query(
+                `INSERT INTO wallet_transactions (
+                   customer_id, transaction_type, amount, balance_after, description
+                 ) VALUES ($1::uuid, 'credit', $2::numeric, $3::numeric, $4)`,
+                [customerId, cashValue, newBal, wdesc]
+              );
+            } else {
+              throw we;
+            }
+          }
+          await client.query('SAVEPOINT sp_redeem_cust_wallet_bal');
+          try {
+            await client.query(
+              `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1::numeric WHERE id = $2::uuid`,
+              [cashValue, customerId]
+            );
+            await client.query('RELEASE SAVEPOINT sp_redeem_cust_wallet_bal');
+          } catch {
+            await client.query('ROLLBACK TO SAVEPOINT sp_redeem_cust_wallet_bal');
+          }
+          credited = cashValue;
+        }
+
+        const after = await client.query(
+          `SELECT total_points FROM customer_loyalty_points WHERE customer_id = $1::uuid`,
+          [customerId]
+        );
+        return {
+          remainingPoints: parseInt(String(after.rows[0]?.total_points ?? '0'), 10),
+          walletCredited: credited,
+        };
       });
 
-      // Create redemption record
-      await insert('reward_redemptions', {
-        customer_id: customerId,
-        reward_id: rewardId,
-        points_used: reward.points_cost,
-        redeemed_at: new Date().toISOString(),
-      });
+      const profAfter = await select('customer_loyalty_points', { customer_id: customerId });
+      const lifetimeOut = await computeDisplayedLifetimeStats(customerId, profAfter[0]);
 
       return c.json({
         success: true,
-        message: 'Reward redeemed successfully',
+        message:
+          walletCredited > 0
+            ? `Reward redeemed. ₹${walletCredited.toFixed(2)} added to your wallet.`
+            : 'Reward redeemed successfully',
         reward,
-        remainingPoints: currentPoints - reward.points_cost,
+        remainingPoints,
+        points: remainingPoints,
+        totalPoints: remainingPoints,
+        lifetimePointsEarned: lifetimeOut.earned,
+        lifetimePointsRedeemed: lifetimeOut.redeemed,
+        walletCredited,
       });
     } catch (error: any) {
       console.error('Error redeeming reward:', error);
+      if (error?.message === 'INSUFFICIENT_POINTS') {
+        return c.json({ error: 'Insufficient points' }, 400);
+      }
+      if (error?.message === 'LOYALTY_PROFILE_NOT_FOUND') {
+        return c.json({ error: 'Loyalty profile not found' }, 404);
+      }
       return c.json({ error: error.message }, 500);
     }
   });
@@ -483,14 +667,14 @@ export function registerRewardsEndpoints(app: Hono) {
   app.get("/customer/:customerId/rewards/redeemed", async (c) => {
     try {
       const { customerId } = c.req.param();
+      if (!isValidUUID(String(customerId))) {
+        return c.json({ success: false, error: 'Invalid customer id' }, 400);
+      }
       const limit = parseInt(c.req.query('limit') || '50', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
 
-      // Attempt to load redemption history with reward details
-      let rows: any[] = [];
-      try {
-        const result = await query(
-          `SELECT 
+      const result = await query(
+        `SELECT 
              rr.id as redemption_id,
              rr.reward_id,
              rr.points_used,
@@ -506,34 +690,12 @@ export function registerRewardsEndpoints(app: Hono) {
              rc.validity_days
            FROM reward_redemptions rr
            LEFT JOIN rewards_catalog rc ON rc.id = rr.reward_id
-           WHERE rr.customer_id = $1
+           WHERE rr.customer_id = $1::uuid
            ORDER BY rr.redeemed_at DESC
            LIMIT $2 OFFSET $3`,
-          [customerId, limit, offset]
-        );
-        rows = result.rows || [];
-      } catch (err: any) {
-        // Fallback query if optional columns don't exist
-        const fallback = await query(
-          `SELECT 
-             rr.id as redemption_id,
-             rr.reward_id,
-             rr.points_used,
-             rr.redeemed_at,
-             rc.name,
-             rc.description,
-             rc.points_cost,
-             rc.type,
-             rc.image_url
-           FROM reward_redemptions rr
-           LEFT JOIN rewards_catalog rc ON rc.id = rr.reward_id
-           WHERE rr.customer_id = $1
-           ORDER BY rr.redeemed_at DESC
-           LIMIT $2 OFFSET $3`,
-          [customerId, limit, offset]
-        );
-        rows = fallback.rows || [];
-      }
+        [customerId, limit, offset]
+      );
+      const rows = (result.rows || []).map((r) => fixRewardCatalogTextFields(r));
 
       return c.json({
         success: true,
@@ -542,12 +704,10 @@ export function registerRewardsEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching redeemed rewards:', error);
-      return c.json({
-        success: true,
-        redemptions: [],
-        count: 0,
-        message: 'No redeemed rewards yet'
-      });
+      return c.json(
+        { success: false, error: error?.message || 'Failed to load redemptions' },
+        500
+      );
     }
   });
 
@@ -558,9 +718,12 @@ export function registerRewardsEndpoints(app: Hono) {
   app.get("/rewards/:rewardId", async (c) => {
     try {
       const { rewardId } = c.req.param();
+      if (!isValidUUID(String(rewardId))) {
+        return c.json({ error: 'Invalid reward id' }, 400);
+      }
 
       const rewards = await query(
-        `SELECT * FROM rewards_catalog WHERE id = $1`,
+        `SELECT * FROM rewards_catalog WHERE id = $1::uuid`,
         [rewardId]
       );
 
@@ -570,7 +733,7 @@ export function registerRewardsEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        reward: rewards.rows[0],
+        reward: fixRewardCatalogTextFields(rewards.rows[0]),
       });
     } catch (error: any) {
       console.error('Error fetching reward details:', error);

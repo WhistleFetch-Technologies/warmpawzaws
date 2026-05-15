@@ -2,9 +2,10 @@
 
 import { 
   Heart, Plus, ChevronRight, ShoppingCart, User,
-  Dog, Cat, ArrowLeft
+  Dog, Cat, ArrowLeft, MessageSquare
 } from 'lucide-react';
 import { WalletIcon } from '../WalletIcon';
+import { PresignableImage } from '@/components/shared/PresignableImage';
 
 interface Pet {
   id: string;
@@ -27,8 +28,10 @@ interface StandardizedHeaderProps {
   onBack?: () => void;
   
   // Display options
-  title?: string; // Dynamic page title (default: greeting)
+  title?: string; // Page title (omit or leave empty for neutral shell title unless homeGreeting)
   subtitle?: string; // Dynamic subtitle
+  /** When true and title is empty, show "Hi, {name}!" (home-style). Default false so inner shells show a neutral title. */
+  homeGreeting?: boolean;
   showBackButton?: boolean; // Show back button (default: false for home)
   showPets?: boolean; // Show pet selector (default: true on home)
   
@@ -52,6 +55,7 @@ export function StandardizedHeader({
   onBack,
   title,
   subtitle,
+  homeGreeting = false,
   showBackButton = false,
   showPets = false,
   pets = [],
@@ -60,11 +64,10 @@ export function StandardizedHeader({
   itemCount = 0,
   customerPhone
 }: StandardizedHeaderProps) {
-  // Default title is greeting, or use provided title
-  // If title is provided, use it; otherwise show greeting with emoji on home screen only
-  const displayTitle = title || '';
-  const displaySubtitle = subtitle || '';
-  
+  const trimmedTitle = (title ?? '').trim();
+  const displaySubtitle = (subtitle ?? '').trim();
+  const neutralShellTitle = 'Warmpawz';
+
   const handleAddPet = () => {
     if (onAddPet) {
       onAddPet();
@@ -75,25 +78,27 @@ export function StandardizedHeader({
   const topRowMb = hasPetsRow ? 'mb-2' : 'mb-0';
 
   return (
-    <div className="w-full max-w-[430px] mx-auto bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-6 py-3">
+    <div className="relative z-20 isolate mx-auto w-full max-w-customer bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] pb-2 sm:pb-3 pt-[max(3rem,calc(env(safe-area-inset-top,0px)+0.75rem))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1rem,env(safe-area-inset-left,0px))] sm:pr-[max(1rem,env(safe-area-inset-right,0px))] md:pl-[max(1.5rem,env(safe-area-inset-left,0px))] md:pr-[max(1.5rem,env(safe-area-inset-right,0px))]">
       {/* Top Row - Match footer height: compact py-3, same width */}
-      <div className={`flex items-center justify-between ${topRowMb}`}>
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+      <div className={`flex items-center justify-between min-h-0 ${topRowMb}`}>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
           {showBackButton && onBack && (
             <button
+              type="button"
               onClick={onBack}
-              className="w-9 h-9 flex-shrink-0 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center hover:bg-white/30 transition-colors"
+              className="relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30 pointer-events-auto"
               aria-label="Go back"
             >
-              <ArrowLeft className="w-4 h-4 text-white" />
+              <ArrowLeft className="h-5 w-5 text-white" />
             </button>
           )}
           <button
+            type="button"
             onClick={() => onProfileClick && onProfileClick()}
-            className="w-9 h-9 flex-shrink-0 bg-white rounded-full flex items-center justify-center overflow-hidden hover:ring-2 hover:ring-white/60 transition-all shadow-sm"
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-white shadow-sm transition-all hover:ring-2 hover:ring-white/60 md:h-9 md:w-9"
           >
             {userProfilePhoto ? (
-              <img src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
+              <PresignableImage src={userProfilePhoto} alt="Profile" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center text-white text-sm font-bold">
                 {userName.charAt(0).toUpperCase()}
@@ -101,20 +106,26 @@ export function StandardizedHeader({
             )}
           </button>
           <div className="flex flex-col min-w-0 flex-1">
-            <div className="flex items-center gap-1">
-              {displayTitle ? (
-                <h1 className="text-white text-base font-semibold tracking-tight truncate">{displayTitle}</h1>
-              ) : (
+            <div className="flex min-w-0 items-center gap-1">
+              {trimmedTitle ? (
+                <h1 className="text-white text-base font-semibold tracking-tight truncate">{trimmedTitle}</h1>
+              ) : homeGreeting ? (
                 <>
-                  <h1 className="text-white text-base font-semibold tracking-tight truncate">Hi, {userName}!</h1>
-                  <span className="text-sm" role="img" aria-label="wave">👋</span>
+                  <h1 className="min-w-0 flex-1 truncate text-white text-base font-semibold tracking-tight">
+                    Hi, {userName}!
+                  </h1>
+                  <span className="shrink-0 text-sm" role="img" aria-label="wave">👋</span>
                 </>
+              ) : (
+                <h1 className="text-white text-base font-semibold tracking-tight truncate">{neutralShellTitle}</h1>
               )}
             </div>
             {displaySubtitle ? (
               <p className="text-white/70 text-[11px] font-normal tracking-wide truncate">{displaySubtitle}</p>
-            ) : !displayTitle ? (
-              <p className="text-white/70 text-[11px] font-normal tracking-wide truncate">Explore WarmPawz Services</p>
+            ) : homeGreeting && !trimmedTitle ? (
+              <p className="truncate text-white/70 text-[11px] font-normal tracking-wide">
+                Explore Warmpawz Services
+              </p>
             ) : null}
           </div>
         </div>
@@ -127,6 +138,14 @@ export function StandardizedHeader({
               showBalance={true}
             />
           )}
+          <button
+            type="button"
+            onClick={() => onNavigate && onNavigate('booking-messages')}
+            className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
+            aria-label="Messages"
+          >
+            <MessageSquare className="w-4 h-4 text-white" />
+          </button>
           <button
             onClick={() => onNavigate && onNavigate('cart')}
             className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm relative transition-colors"
@@ -148,7 +167,7 @@ export function StandardizedHeader({
       {showPets && pets.length > 0 && (
         <div className="flex items-center gap-2 mt-2">
           <span className="text-white/90 text-[10px] font-semibold tracking-wider uppercase shrink-0">Your Pets</span>
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide flex-1">
+          <div className="flex min-w-0 gap-2 overflow-x-auto scrollbar-hide flex-1 py-0.5 -my-0.5 px-2">
             {pets.map((pet) => (
               <div key={pet.id} className="relative flex-shrink-0">
                 <button
@@ -158,14 +177,16 @@ export function StandardizedHeader({
                   className="flex flex-col items-center gap-0.5"
                 >
                   <div 
-                    className={`w-9 h-9 rounded-full overflow-hidden flex items-center justify-center transition-all duration-200 ${
+                    className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center transition-all duration-200 ${
                       selectedPet?.id === pet.id
-                        ? 'ring-2 ring-white bg-white shadow-md scale-105'
-                        : 'bg-white/25 backdrop-blur-sm hover:bg-white/35'
+                        ? 'bg-white shadow-md ring-2 ring-inset ring-[#FF8C42]'
+                        : 'overflow-hidden bg-white/25 backdrop-blur-sm hover:bg-white/35'
                     }`}
                   >
                     {pet.photo || pet.image ? (
-                      <img src={pet.photo || pet.image} alt={pet.name} className="w-full h-full object-cover" />
+                      <div className="h-full w-full overflow-hidden rounded-full">
+                        <PresignableImage src={pet.photo || pet.image} alt={pet.name} className="h-full w-full object-cover" />
+                      </div>
                     ) : (
                       pet.type === 'Dog' ? (
                         <Dog className={`w-4 h-4 ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-white'}`} />
@@ -184,9 +205,13 @@ export function StandardizedHeader({
                 {/* Edit/View Button - Only show for selected pet */}
                 {selectedPet?.id === pet.id && onPetClick && (
                   <button
-                    onClick={() => onPetClick(pet.id)}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPetClick(pet.id);
+                    }}
                     className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center shadow-md hover:bg-blue-600 transition-colors"
-                    title="View/Edit Pet Profile"
+                    title="View / edit pet"
                   >
                     <ChevronRight className="w-2 h-2 text-white" />
                   </button>

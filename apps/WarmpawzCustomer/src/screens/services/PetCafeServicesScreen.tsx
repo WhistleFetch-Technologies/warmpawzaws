@@ -4,21 +4,27 @@
  * Identical functionality to web app
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
+import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, PaymentApi } from '../../services/api';
 import RazorpayCheckout from 'react-native-razorpay';
+import {
+  applyWarmpawzCustomerToRazorpayOptions,
+  profileEmailAndName,
+} from '../../utils/razorpay-checkout-options';
+import { customerFacingRating } from '../../utils/rating-display';
 
 type ViewType = 
   | 'landing'
@@ -40,6 +46,7 @@ interface Cafe {
   name: string;
   address: string;
   rating: number;
+  reviewCount: number;
   image?: string;
 }
 
@@ -69,6 +76,17 @@ export function PetCafeServicesScreen({
   const [petCount, setPetCount] = useState(1);
   const [specialRequest, setSpecialRequest] = useState('');
 
+  const cafesAvgRating = useMemo(() => {
+    const scored = cafes.filter(
+      (c) =>
+        (c.reviewCount ?? 0) > 0 && c.rating != null && Number(c.rating) > 0
+    );
+    if (scored.length === 0) return null;
+    return (
+      scored.reduce((a, c) => a + Number(c.rating), 0) / scored.length
+    ).toFixed(1);
+  }, [cafes]);
+
   useEffect(() => {
     loadCafes();
   }, []);
@@ -84,11 +102,18 @@ export function PetCafeServicesScreen({
       services.forEach((service: any) => {
         const vendorId = service.vendorId;
         if (!cafeMap.has(vendorId)) {
+          const rc =
+            Number(service.vendorReviewCount ?? service.vendor_review_count ?? 0) || 0;
+          const vr =
+            service.vendorRating != null ? Number(service.vendorRating) : NaN;
+          const rating =
+            rc > 0 && Number.isFinite(vr) && vr > 0 ? vr : 0;
           cafeMap.set(vendorId, {
             id: vendorId,
             name: service.vendorName,
             address: service.vendorLocation?.address || 'Location unavailable',
-            rating: service.vendorRating || 4.5,
+            rating,
+            reviewCount: rc,
             image: service.vendorImage || 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=1000',
           });
         }
@@ -153,6 +178,7 @@ export function PetCafeServicesScreen({
       // Get customer ID
       const customer = await CustomerApi.getCustomerByPhone(phone);
       const customerId = customer?.id;
+      const { email: profileEmail, name: profileName } = profileEmailAndName(customer);
 
       if (!customerId) {
         Alert.alert('Error', 'Customer not found. Please try again.');
@@ -199,8 +225,7 @@ export function PetCafeServicesScreen({
             throw new Error('Failed to create payment order');
           }
 
-          // Open Razorpay checkout
-          const options = {
+          const baseOptions = {
             description: `Pet Cafe Table Reservation - ${selectedCafe.name}`,
             image: 'https://your-logo-url.com/logo.png',
             currency: 'INR',
@@ -208,13 +233,16 @@ export function PetCafeServicesScreen({
             amount: totalAmount * 100, // Convert to paise
             name: 'Warmpawz',
             order_id: orderRes.order_id,
-            prefill: {
-              contact: phone,
-            },
             theme: {
               color: '#FF8C42',
             },
           };
+
+          const options = applyWarmpawzCustomerToRazorpayOptions(baseOptions, {
+            phone,
+            email: profileEmail,
+            name: profileName,
+          });
 
           const razorpayResponse = await RazorpayCheckout.open(options);
 
@@ -267,7 +295,8 @@ export function PetCafeServicesScreen({
         <Text style={styles.subtitle}>Dine with your furry friends</Text>
       </View>
 
-      <ScrollView style={styles.landingContent}>
+      <BrandedStackBelowHeader>
+      <ScrollView style={styles.landingScroll} contentContainerStyle={styles.landingContent}>
         <View style={styles.heroCard}>
           <Text style={styles.heroIcon}>☕</Text>
           <Text style={styles.heroTitle}>Pet-Friendly Dining</Text>
@@ -288,11 +317,14 @@ export function PetCafeServicesScreen({
             <Text style={styles.statLabel}>Pet Cafes</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>⭐ 4.5</Text>
+            <Text style={styles.statNumber}>
+              {cafesAvgRating != null ? `⭐ ${cafesAvgRating}` : '—'}
+            </Text>
             <Text style={styles.statLabel}>Avg Rating</Text>
           </View>
         </View>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -305,6 +337,7 @@ export function PetCafeServicesScreen({
         <Text style={styles.headerTitle}>Top Rated Cafes</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
@@ -316,7 +349,9 @@ export function PetCafeServicesScreen({
               <Text style={styles.emptySubtext}>Check back soon!</Text>
             </View>
           ) : (
-            cafes.map((cafe) => (
+            cafes.map((cafe) => {
+              const face = customerFacingRating(cafe.rating, cafe.reviewCount);
+              return (
               <TouchableOpacity
                 key={cafe.id}
                 style={styles.cafeCard}
@@ -328,18 +363,22 @@ export function PetCafeServicesScreen({
                 <View style={styles.cafeInfo}>
                   <View style={styles.cafeHeader}>
                     <Text style={styles.cafeName}>{cafe.name}</Text>
-                    <Text style={styles.cafeRating}>
-                      ⭐ {cafe.rating.toFixed(1)}
-                    </Text>
+                    {face != null ? (
+                      <Text style={styles.cafeRating}>⭐ {face.toFixed(1)}</Text>
+                    ) : (
+                      <Text style={styles.cafeRatingMuted}>No reviews</Text>
+                    )}
                   </View>
                   <Text style={styles.cafeAddress}>{cafe.address}</Text>
                 </View>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
-            ))
+            );
+            })
           )}
         </ScrollView>
       )}
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -352,6 +391,7 @@ export function PetCafeServicesScreen({
         <Text style={styles.headerTitle}>{selectedCafe?.name}</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.cafeDetailContainer}>
         <View style={styles.cafeDetailHeader}>
           <View style={styles.cafeImagePlaceholderLarge}>
@@ -360,7 +400,10 @@ export function PetCafeServicesScreen({
           <View style={styles.cafeDetailInfo}>
             <Text style={styles.cafeDetailName}>{selectedCafe?.name}</Text>
             <Text style={styles.cafeDetailRating}>
-              ⭐ {selectedCafe?.rating.toFixed(1)} Rating
+              {selectedCafe &&
+              customerFacingRating(selectedCafe.rating, selectedCafe.reviewCount) != null
+                ? `⭐ ${customerFacingRating(selectedCafe.rating, selectedCafe.reviewCount)!.toFixed(1)} rating`
+                : 'No customer reviews yet'}
             </Text>
             <Text style={styles.cafeDetailAddress}>{selectedCafe?.address}</Text>
           </View>
@@ -408,6 +451,7 @@ export function PetCafeServicesScreen({
           <Text style={styles.primaryButtonText}>Reserve Table</Text>
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -420,6 +464,7 @@ export function PetCafeServicesScreen({
         <Text style={styles.headerTitle}>Reservation Details</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.reservationContainer}>
         <View style={styles.reservationCard}>
           <Text style={styles.reservationCardTitle}>Cafe</Text>
@@ -516,6 +561,7 @@ export function PetCafeServicesScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -550,20 +596,20 @@ export function PetCafeServicesScreen({
 
   if (loading && currentView === 'landing') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {currentView === 'landing' && renderLanding()}
       {currentView === 'cafe_list' && renderCafeList()}
       {currentView === 'cafe_detail' && renderCafeDetail()}
       {currentView === 'reservation' && renderReservation()}
       {currentView === 'confirmation' && renderConfirmation()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -575,8 +621,10 @@ const styles = StyleSheet.create({
   header: {
     padding: spacing.md,
     backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+    paddingBottom: spacing.md + 4,
+  },
+  landingScroll: {
+    flex: 1,
   },
   backButton: {
     fontSize: typography.body,
@@ -600,8 +648,9 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   landingContent: {
-    flex: 1,
     padding: spacing.md,
+    paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
   heroCard: {
     backgroundColor: colors.error + 20% opacity,
@@ -692,6 +741,10 @@ const styles = StyleSheet.create({
   cafeRating: {
     fontSize: typography.body,
     color: colors.primary,
+  },
+  cafeRatingMuted: {
+    fontSize: typography.body,
+    color: colors.textSecondary,
   },
   cafeAddress: {
     fontSize: typography.body,

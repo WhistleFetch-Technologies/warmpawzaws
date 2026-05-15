@@ -11,13 +11,14 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   FlatList,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { customerFacingRating } from '../../utils/rating-display';
 
 interface VendorProfileScreenProps {
   vendorId: string;
@@ -86,7 +87,7 @@ export function VendorProfileScreen({
 
   const handleBookService = (service: Service) => {
     if (onNavigate) {
-      onNavigate('BookingCreation', {
+      onNavigate('ServiceBookingFlow', {
         serviceId: service.id,
         vendorId: vendorId,
         serviceName: service.name,
@@ -120,29 +121,31 @@ export function VendorProfileScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   if (!vendor) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Vendor not found</Text>
           <TouchableOpacity style={styles.backButton} onPress={onBack}>
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
+  const profileRating = customerFacingRating(vendor.rating, vendor.reviewCount);
+
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -163,8 +166,17 @@ export function VendorProfileScreen({
             )}
           </View>
           <View style={styles.ratingContainer}>
-            <Text style={styles.rating}>⭐ {vendor.rating.toFixed(1)}</Text>
-            <Text style={styles.reviewCount}>({vendor.reviewCount} reviews)</Text>
+            {profileRating != null ? (
+              <>
+                <Text style={styles.rating}>⭐ {profileRating.toFixed(1)}</Text>
+                <Text style={styles.reviewCount}>
+                  ({vendor.reviewCount}{' '}
+                  {vendor.reviewCount === 1 ? 'review' : 'reviews'})
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.reviewCount}>No customer reviews</Text>
+            )}
           </View>
         </View>
 
@@ -253,7 +265,7 @@ export function VendorProfileScreen({
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

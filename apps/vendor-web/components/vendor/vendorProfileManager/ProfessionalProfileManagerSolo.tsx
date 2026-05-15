@@ -16,7 +16,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Camera, Save, User, Mail, Phone, MapPin, FileText, Clock, Award, Briefcase, CheckCircle, AlertCircle } from 'lucide-react';
+import { Camera, Save, User, Mail, Phone, MapPin, FileText, Clock, Award, Briefcase, CheckCircle, AlertCircle, Calendar, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,6 +29,8 @@ import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager';
 import { SpecializationSelector } from '../SpecializationSelector';
 import { ProfessionalProfile, ProfessionalProfileManagerProps } from './constants/interface';
 import { parseSpecializations } from './constants/helpers';
+import { hasVendorRole } from '@/lib/vendor-utils';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 // ✅ REMOVED: Hardcoded specializations - now using SpecializationSelector which fetches role-specific specializations from database
 // This ensures specializations are always up-to-date and role-specific based on admin configuration
@@ -60,6 +62,8 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     city: initialProfile?.city || '',
     state: initialProfile?.state || '',
     pincode: (initialProfile?.pincode && initialProfile?.pincode !== '000000') ? initialProfile.pincode : '',
+    latitude: initialProfile?.latitude ?? undefined,
+    longitude: initialProfile?.longitude ?? undefined,
     description: initialProfile?.description || '',
     photo_url: initialProfile?.profile_photo_url || initialProfile?.logo_url || initialProfile?.photo_url || '',
     qualifications: initialProfile?.qualifications || '',
@@ -69,9 +73,24 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     operating_hours: initialProfile?.operating_hours || initialProfile?.operatingHours || '',
     availability: initialProfile?.availability || initialProfile?.availabilitySchedule || undefined,
     role_name: vendorRoleName,
+    service_radius:
+      initialProfile?.service_radius != null && initialProfile?.service_radius !== ''
+        ? Number(initialProfile.service_radius)
+        : initialProfile?.serviceRadius != null
+          ? Number(initialProfile.serviceRadius)
+          : null,
+    available_for_instant_tele: Boolean(
+      initialProfile?.available_for_instant_tele ?? initialProfile?.availableForInstantTele
+    ),
   });
   const [hasChanges, setHasChanges] = useState(false);
-
+  const isPetInsuranceProfile = hasVendorRole(
+    {
+      roleId: roleId || initialProfile?.roleId || initialProfile?.role_id,
+      roleName: profile.role_name || vendorRoleName,
+    },
+    ['pet_insurance', 'insurance']
+  );
 
   useEffect(() => {
     loadProfile();
@@ -141,6 +160,8 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           city: response.vendor.city || '',
           state: response.vendor.state || '',
           pincode: (response.vendor.pincode && response.vendor.pincode !== '000000') ? response.vendor.pincode : '',
+          latitude: response.vendor.latitude ?? undefined,
+          longitude: response.vendor.longitude ?? undefined,
           description: response.vendor.description || '',
           photo_url: response.vendor.profile_photo_url || response.vendor.photo_url || response.vendor.logo_url || '',
           qualifications: response.vendor.qualifications || '',
@@ -149,6 +170,15 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           service_area: response.vendor.service_area || response.vendor.serviceArea || '',
           operating_hours: response.vendor.operating_hours || response.vendor.operatingHours || '',
           role_name: response.vendor.role_name || response.vendor.roleName || vendorRoleName,
+          service_radius:
+            response.vendor.service_radius != null && response.vendor.service_radius !== ''
+              ? Number(response.vendor.service_radius)
+              : response.vendor.serviceRadius != null
+                ? Number(response.vendor.serviceRadius)
+                : null,
+          available_for_instant_tele: Boolean(
+            response.vendor.availableForInstantTele ?? response.vendor.available_for_instant_tele
+          ),
         });
       }
     } catch (err: any) {
@@ -177,7 +207,9 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     if (!profile.email.trim()) errors.email = 'Email is required';
     if (!profile.photo_url) errors.photo_url = 'Profile photo is recommended for better visibility to customers';
     if (!profile.qualifications?.trim()) errors.qualifications = 'Qualifications help customers trust your expertise';
-    if (profile.specializations.length === 0) errors.specializations = 'Select at least one specialization';
+    if (!isPetInsuranceProfile && profile.specializations.length === 0) {
+      errors.specializations = 'Select at least one specialization';
+    }
     if (!profile.address.trim()) errors.address = 'Address is required';
     if (!profile.city.trim()) errors.city = 'City is required';
 
@@ -207,12 +239,14 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           city: profile.city,
           state: profile.state,
           pincode: profile.pincode,
+          latitude: profile.latitude,
+          longitude: profile.longitude,
           description: profile.description,
           qualifications: profile.qualifications,
-          specializations: JSON.stringify(profile.specializations), // Store as JSON array
+          specializations: JSON.stringify(isPetInsuranceProfile ? [] : profile.specializations),
           experience_years: profile.experience_years,
-          service_area: profile.service_area,
           operating_hours: profile.operating_hours,
+          available_for_instant_tele: profile.available_for_instant_tele ?? false,
         }
       ) as { success?: boolean; error?: string };
       if (response?.success) {
@@ -234,10 +268,9 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   const calculateCompletion = () => {
     let filled = 0;
     // ✅ Updated to match ALL fields that can be filled in the Professional Profile form
-    // Fields in the form: photo_url, owner_name, phone, email, qualifications, specializations, 
-    //                     experience_years, address, city, state, pincode, service_area, description
-    // Total: 13 fields - when all are filled, should be 100%
-    let total = 13;
+    // Fields in the form: photo_url, owner_name, phone, email, qualifications, specializations (optional for pet insurance),
+    //                     experience_years, address, city, state, pincode, description
+    let total = isPetInsuranceProfile ? 11 : 12;
 
     // ✅ FIX: Check each field with proper validation
     // 1. Profile Photo
@@ -255,8 +288,15 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     // 5. Qualifications
     if (profile.qualifications && profile.qualifications.trim()) filled++;
 
-    // 6. Specializations (must have at least 1)
-    if (profile.specializations && Array.isArray(profile.specializations) && profile.specializations.length > 0) filled++;
+    // 6. Specializations (must have at least 1, except pet insurance)
+    if (
+      !isPetInsuranceProfile &&
+      profile.specializations &&
+      Array.isArray(profile.specializations) &&
+      profile.specializations.length > 0
+    ) {
+      filled++;
+    }
 
     // 7. Experience Years (can be 0, so check if defined)
     if (profile.experience_years !== null && profile.experience_years !== undefined) filled++;
@@ -274,10 +314,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     const pincode = profile.pincode && profile.pincode.trim();
     if (pincode && pincode !== '000000' && pincode !== '0000000' && pincode !== '00000000' && /^\d{6}$/.test(pincode)) filled++;
 
-    // 12. Service Area (optional but counts if filled)
-    if (profile.service_area && profile.service_area.trim()) filled++;
-
-    // 13. Description (optional but counts if filled)
+    // 12. Description (optional but counts if filled)
     if (profile.description && profile.description.trim()) filled++;
 
     // ✅ FIX: Calculate percentage - ensure it reaches 100% when all fields are filled
@@ -298,11 +335,9 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
     console.log(`  city: ${!!profile.city && profile.city.trim() ? '✅' : '❌'} (value: '${profile.city || ''}')`);
     console.log(`  state: ${!!profile.state && profile.state.trim() ? '✅' : '❌'} (value: '${profile.state || ''}')`);
     console.log(`  pincode: ${pincode && pincode !== '000000' && pincode !== '0000000' && pincode !== '00000000' && /^\d{6}$/.test(pincode) ? '✅' : '❌'} (value: '${profile.pincode || ''}')`);
-    console.log(`  service_area: ${!!profile.service_area && profile.service_area.trim() ? '✅' : '❌'} (value: '${profile.service_area || ''}')`);
     console.log(`  description: ${!!profile.description && profile.description.trim() ? '✅' : '❌'} (value: '${(profile.description || '').substring(0, 30)}...')`);
     console.log(`[ProfileCompletion] ===========================================`);
 
-    // ✅ FIX: If all 13 fields are filled, ensure it returns exactly 100%
     if (filled === total) {
       return 100;
     }
@@ -313,7 +348,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="w-full max-w-[430px] mx-auto bg-white py-12 text-center">
+        <div className="vendor-app-column bg-white py-12 text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
         </div>
       </div>
@@ -323,39 +358,29 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
   const completionPercentage = calculateCompletion();
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
-        {/* Header - Mobile optimized */}
-        <div className="bg-gradient-to-r from-blue-500 to-indigo-500 text-white sticky top-0 z-10">
-          <div className="px-4 py-3">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onBack || (() => router.back())}
-                className="rounded-full text-white hover:bg-white/20 -ml-2"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <div className="flex-1">
-                <h1 className="text-lg font-bold">Professional Profile</h1>
-                <p className="text-xs text-white/80">
-                  {vendorRoleName} • Solo Provider
-                </p>
-              </div>
-              {hasChanges && (
-                <Button
-                  onClick={handleSave}
-                  disabled={saving}
-                  size="sm"
-                  className="bg-white text-blue-600 hover:bg-white/90 text-xs"
-                >
-                  {saving ? 'Saving...' : 'Save'}
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="Professional Profile"
+          subtitle={`${vendorRoleName} • Solo Provider`}
+          onBack={onBack || (() => router.back())}
+          actions={
+            hasChanges
+              ? [
+                  <Button
+                    key="save"
+                    type="button"
+                    onClick={handleSave}
+                    disabled={saving}
+                    size="sm"
+                    className="h-9 bg-orange-500 px-3 text-xs text-white hover:bg-orange-600"
+                  >
+                    {saving ? 'Saving...' : 'Save'}
+                  </Button>,
+                ]
+              : []
+          }
+        />
 
         {/* Main Content */}
         <div className="p-4">
@@ -524,35 +549,37 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
                 )}
               </div>
 
-              {/* Specializations - Using SpecializationSelector for role-specific specializations from database */}
-              <div>
-                <Label className="mb-3 block">
-                  Specializations * <span className="text-xs text-gray-500">(Select at least one)</span>
-                </Label>
-                {!roleId ? (
-                  <div className="p-4 border border-red-200 rounded-lg bg-red-50">
-                    <p className="text-red-600 text-sm">
-                      ⚠️ Vendor role not found. Cannot load specializations. Please contact support.
-                    </p>
-                  </div>
-                ) : (
-                  <SpecializationSelector
-                    roleId={roleId}
-                    selected={profile.specializations}
-                    onChange={(specIds) => {
-                      setProfile(prev => ({ ...prev, specializations: specIds }));
-                      setHasChanges(true);
-                      if (specIds.length > 0) {
-                        setFormErrors(prev => ({ ...prev, specializations: '' }));
-                      }
-                    }}
-                    isSoloProvider={true} // ✅ FIX: ProfessionalProfileManager is for solo providers
-                  />
-                )}
-                {formErrors.specializations && (
-                  <p className="text-red-500 text-xs mt-2">{formErrors.specializations}</p>
-                )}
-              </div>
+              {/* Specializations — not used for pet insurance */}
+              {!isPetInsuranceProfile && (
+                <div>
+                  <Label className="mb-3 block">
+                    Specializations * <span className="text-xs text-gray-500">(Select at least one)</span>
+                  </Label>
+                  {!roleId ? (
+                    <div className="p-4 border border-red-200 rounded-lg bg-red-50">
+                      <p className="text-red-600 text-sm">
+                        ⚠️ Vendor role not found. Cannot load specializations. Please contact support.
+                      </p>
+                    </div>
+                  ) : (
+                    <SpecializationSelector
+                      roleId={roleId}
+                      selected={profile.specializations}
+                      onChange={(specIds) => {
+                        setProfile(prev => ({ ...prev, specializations: specIds }));
+                        setHasChanges(true);
+                        if (specIds.length > 0) {
+                          setFormErrors(prev => ({ ...prev, specializations: '' }));
+                        }
+                      }}
+                      isSoloProvider={true}
+                    />
+                  )}
+                  {formErrors.specializations && (
+                    <p className="text-red-500 text-xs mt-2">{formErrors.specializations}</p>
+                  )}
+                </div>
+              )}
 
               {/* Professional Bio */}
               <div>
@@ -584,13 +611,19 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
                 <EnhancedAddressAutocomplete
                   value={profile.address || ''}
                   onChange={(address: string, components?: AddressComponents) => {
-                    // Update address + city, state, pincode from Places (pincode from postal_code)
+                    // Update address + city, state, pincode, and coordinates from Places
                     setProfile(prev => ({
                       ...prev,
                       address,
                       ...(components?.city !== undefined && { city: components.city ?? prev.city ?? '' }),
                       ...(components?.state !== undefined && { state: components.state ?? prev.state ?? '' }),
                       ...(components?.pincode !== undefined && { pincode: components.pincode ?? prev.pincode ?? '' }),
+                      // Extract latitude and longitude from coordinates
+                      ...(components?.coordinates?.lat != null && { latitude: components.coordinates.lat }),
+                      ...(components?.coordinates?.lng != null && { longitude: components.coordinates.lng }),
+                      // Support direct lat/lng for backward compatibility
+                      ...(components?.lat != null && !components?.coordinates?.lat && { latitude: components.lat }),
+                      ...(components?.lng != null && !components?.coordinates?.lng && { longitude: components.lng }),
                     }));
                     setHasChanges(true);
                   }}
@@ -631,19 +664,49 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
                   />
                 </div>
               </div>
-              <div>
-                <Label htmlFor="service_area">Service Area Coverage</Label>
-                <Input
-                  id="service_area"
-                  value={profile.service_area || ''}
-                  onChange={(e) => handleInputChange('service_area', e.target.value)}
-                  className="mt-1"
-                  placeholder="e.g., Within 10km radius, All of South Mumbai, etc."
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Specify the areas where you provide home visit services
-                </p>
-              </div>
+              {!isPetInsuranceProfile && (
+                <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100">
+                      <Calendar className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">Instant tele consultation</h3>
+                      <p className="text-sm text-gray-500">
+                        Same as business profile: turn this on to be eligible for customer “available now” tele lists
+                        (you still need tele enabled in services and a published tele offering).
+                      </p>
+                    </div>
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-gray-100 bg-white/80 p-3 transition-colors hover:border-blue-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfile((prev) => ({
+                          ...prev,
+                          available_for_instant_tele: !prev.available_for_instant_tele,
+                        }));
+                        setHasChanges(true);
+                      }}
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
+                        profile.available_for_instant_tele
+                          ? 'border-blue-500 bg-blue-500'
+                          : 'border-gray-300 bg-white'
+                      }`}
+                    >
+                      {profile.available_for_instant_tele ? <Check className="h-4 w-4 text-white" /> : null}
+                    </button>
+                    <div className="flex-1">
+                      <span className="font-medium text-gray-900">Available for instant tele</span>
+                      <p className="text-xs text-gray-500">
+                        {profile.available_for_instant_tele
+                          ? 'Customers can see you for instant tele when other requirements are met.'
+                          : 'Instant tele is off; scheduled tele may still be available depending on your services.'}
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              )}
             </div>
           </div>
 
@@ -651,19 +714,24 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
           <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
             <AdvancedAvailabilityManager
               vendorId={vendorId}
-              vendorData={{ ...initialProfile, vendorType: 'solo', id: vendorId, isSoloProvider: true }}
-              onBack={onBack ?? (() => { })}
+              vendorData={{
+                ...initialProfile,
+                ...profile,
+                vendorType: 'solo',
+                id: vendorId,
+                isSoloProvider: true,
+              }}
+              embeddedInProfile
             />
           </div>
 
           {/* Save Button (if changes) */}
           {hasChanges && (
-            <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 p-3">
+            <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 p-3 safe-area-bottom">
               <div className="flex gap-2">
                 <Button
                   variant="outline"
-                  size="sm"
-                  className="flex-1"
+                  className="flex-1 min-h-[48px]"
                   onClick={() => {
                     loadProfile();
                     setHasChanges(false);
@@ -675,8 +743,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
                 <Button
                   onClick={handleSave}
                   disabled={saving}
-                  size="sm"
-                  className="flex-1 bg-blue-500 hover:bg-blue-600 text-white"
+                  className="flex-1 min-h-[48px] bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white"
                 >
                   <Save className="w-4 h-4 mr-1" />
                   {saving ? 'Saving...' : 'Save'}

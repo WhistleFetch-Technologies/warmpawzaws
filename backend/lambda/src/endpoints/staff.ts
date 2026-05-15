@@ -18,11 +18,19 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { sendSMS } from '../utils/sms-service';
+import {
+  buildLoginOtpSmsBody,
+  JIO_DLT_ENTITY_ID,
+  JIO_LOGIN_OTP_SENDER_ID,
+  JIO_LOGIN_OTP_TEMPLATE_ID,
+} from '../constants/jio-login-otp-sms';
 import { calculateCommuteTime } from '../utils/commute-time-calculator';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
-import { resolveVendorById } from './vendor/endpoints/vendor-profile.vendor';
+import { resolveVendorById } from './vendor/endpoints/vendorProfile.vendor';
+import { ensureVendorEarningsForCompletedBooking } from '../utils/vendor-earnings-on-completion';
+import { completePackageSessionForBooking, type SqlClient } from '../utils/package-session-sync';
 
 /**
  * Calculate distance between two coordinates (Haversine formula)
@@ -1564,12 +1572,14 @@ export function registerStaffEndpoints(app: Hono) {
 
       // Send OTP via SNS (Jio DLT Login OTP template)
       if (!UAT_MODE) {
-        const message = `Warmpawz: Your OTP for logging in is ${otp}. Do not share this OTP with anyone.`;
+        const message = buildLoginOtpSmsBody(otp);
         sendSMS({
           to: staff.phone,
           message,
           type: 'otp',
-          templateId: '1207177028377787269',
+          templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
+          entityId: JIO_DLT_ENTITY_ID,
+          senderId: JIO_LOGIN_OTP_SENDER_ID,
         }).catch((e) => console.error('[STAFF] SNS send failed, OTP logged only:', e));
       }
 
@@ -2350,12 +2360,14 @@ export function registerStaffEndpoints(app: Hono) {
 
         // Send OTP via SNS (Jio DLT Login OTP template)
         if (!UAT_MODE) {
-          const message = `Warmpawz: Your OTP for logging in is ${otp}. Do not share this OTP with anyone.`;
+          const message = buildLoginOtpSmsBody(otp);
           sendSMS({
             to: providerData.phone,
             message,
             type: 'otp',
-            templateId: '1207177028377787269',
+            templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
+            entityId: JIO_DLT_ENTITY_ID,
+            senderId: JIO_LOGIN_OTP_SENDER_ID,
           }).catch((e) => console.error('[INDIVIDUAL_PROVIDER] Failed to send OTP:', e));
         }
 
@@ -2832,14 +2844,15 @@ export function registerStaffEndpoints(app: Hono) {
       });
 
       // Send OTP via SNS (same Jio DLT template as customer login)
-      const JIO_LOGIN_OTP_TEMPLATE_ID = '1207177028377787269';
       if (!UAT_MODE) {
-        const message = `Warmpawz: Your OTP for logging in is ${otp}. Do not share this OTP with anyone.`;
+        const message = buildLoginOtpSmsBody(otp);
         sendSMS({
           to: normalizedPhone,
           message,
           type: 'otp',
           templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
+          entityId: JIO_DLT_ENTITY_ID,
+          senderId: JIO_LOGIN_OTP_SENDER_ID,
         }).then((r) => {
           if (!r.success) console.error('[STAFF LOGIN] SMS send failed');
         }).catch((e) => console.error('[STAFF LOGIN] SMS send error:', e));
@@ -3525,6 +3538,16 @@ export function registerStaffEndpoints(app: Hono) {
         status: 'completed',
         completed_at: new Date(),
       });
+
+      // Same as POST /vendor/bookings/:id/complete: dashboard reads vendor_earnings
+      await ensureVendorEarningsForCompletedBooking(booking, bookingId, '[STAFF-COMPLETE]');
+
+      try {
+        const db: SqlClient = { query } as SqlClient;
+        await completePackageSessionForBooking(db, bookingId);
+      } catch (pssErr: unknown) {
+        console.warn('[STAFF-COMPLETE] package session sync:', (pssErr as Error)?.message);
+      }
 
       // Disable GPS tracking if it was enabled
       if (booking.service_style === 'at_home') {

@@ -101,7 +101,7 @@ function testApiIntegration() {
     },
     {
       name: 'Backend Support/CRM Endpoints',
-      file: 'backend/lambda/src/endpoints/support-crm.ts',
+      file: 'backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts',
       patterns: {
         'createTicket': /app\.post\(["'\`]\/support\/tickets["'\`]/,
         'getTickets': /app\.get\(["'\`]\/support\/tickets["'\`]/,
@@ -177,7 +177,7 @@ function testFlows() {
       name: 'Support/CRM Flow',
       files: [
         {
-          path: 'backend/lambda/src/endpoints/support-crm.ts',
+          path: 'backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts',
           checks: {
             'Ticket Creation': /createTicket|create.*ticket/i,
             'Agent Assignment': /assign.*agent|assigned_agent/i,
@@ -498,7 +498,7 @@ function testCoverage() {
   const coverage = {
     'Backend Endpoints': {
       'AI Chatbot': 'backend/lambda/src/endpoints/ai-chatbot.ts',
-      'Support/CRM': 'backend/lambda/src/endpoints/support-crm.ts',
+      'Support/CRM': 'backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts',
       'Error Recovery': 'backend/lambda/src/utils/error-recovery.ts',
       'Bedrock Client': 'backend/lambda/src/utils/bedrock-client.ts',
     },

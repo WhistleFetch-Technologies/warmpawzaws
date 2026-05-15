@@ -11,12 +11,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { formatDistanceDisplay } from '../../utils/distance-display';
 
 type ViewType = 
   | 'landing'
@@ -24,9 +25,7 @@ type ViewType =
   | 'training_home'
   | 'center_profile'
   | 'select_service'
-  | 'select_pet'
-  | 'select_time'
-  | 'select_address'
+  | 'booking_details'
   | 'payment'
   | 'confirmation';
 
@@ -67,6 +66,7 @@ export function TrainingServiceRouter({
   const [selectedVendor, setSelectedVendor] = useState<any | null>(null);
   const [services, setServices] = useState<any[]>([]);
   const [packages, setPackages] = useState<any[]>([]);
+  const [userLocation] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
 
   const [bookingFlow, setBookingFlow] = useState<BookingFlow>({
     serviceType: null,
@@ -115,7 +115,9 @@ export function TrainingServiceRouter({
       const response = await CustomerApi.searchServices({
         serviceType: 'training',
         serviceStyle: serviceType,
-        location: '', // TODO: Get from location service
+        location: `${userLocation.lat},${userLocation.lng}`,
+        latitude: userLocation.lat,
+        longitude: userLocation.lng,
       });
       setVendors(response.vendors || []);
     } catch (error) {
@@ -184,7 +186,7 @@ export function TrainingServiceRouter({
       ...prev,
       services: selectedServicesList,
     }));
-    setCurrentView('select_pet');
+    setCurrentView('booking_details');
   };
 
   const handleServiceSelect = (service: any, addOns: any[] = []) => {
@@ -193,26 +195,30 @@ export function TrainingServiceRouter({
       services: [service],
       addOns: addOns || [],
     }));
-    setCurrentView('select_pet');
+    setCurrentView('booking_details');
   };
 
-  const handlePetSelect = (pet: any) => {
-    setBookingFlow(prev => ({ ...prev, pet }));
-    setCurrentView('select_time');
-  };
-
-  const handleTimeSelect = (date: string, time: string) => {
+  const applySchedule = (date: string, time: string) => {
     setBookingFlow(prev => ({ ...prev, date, time }));
-    
-    if (bookingFlow.serviceType === 'home') {
-      setCurrentView('select_address');
-    } else {
-      setCurrentView('payment');
-    }
   };
 
-  const handleAddressSelect = (address: any) => {
+  const applyAddress = (address: any) => {
     setBookingFlow(prev => ({ ...prev, address }));
+  };
+
+  const goToPaymentFromDetails = () => {
+    if (!bookingFlow.pet) {
+      Alert.alert('Select pet', 'Please choose a pet for this booking.');
+      return;
+    }
+    if (!bookingFlow.date || !bookingFlow.time) {
+      Alert.alert('Schedule', 'Please set date and time.');
+      return;
+    }
+    if (bookingFlow.serviceType === 'home' && !bookingFlow.address) {
+      Alert.alert('Address', 'Please confirm your address for home training.');
+      return;
+    }
     setCurrentView('payment');
   };
 
@@ -300,9 +306,9 @@ export function TrainingServiceRouter({
                   ⭐ {vendor.rating.toFixed(1)}
                 </Text>
               )}
-              {vendor.distance && (
+              {formatDistanceDisplay(vendor) && (
                 <Text style={styles.vendorDistance}>
-                  📍 {vendor.distance} km away
+                  📍 {formatDistanceDisplay(vendor)}
                 </Text>
               )}
               {vendor.specializations && vendor.specializations.length > 0 && (
@@ -521,70 +527,67 @@ export function TrainingServiceRouter({
     </View>
   );
 
-  const renderPetSelection = () => (
-    <View style={styles.container}>
+  const renderBookingDetails = () => (
+    <View style={styles.flexFill}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('select_service')}>
+        <TouchableOpacity onPress={() => setCurrentView('center_profile')}>
           <Text style={styles.backButton}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Pet</Text>
+        <Text style={styles.headerTitle}>Complete booking</Text>
       </View>
 
-      <ScrollView style={styles.petList}>
-        {pets.map((pet) => (
-          <TouchableOpacity
-            key={pet.id}
-            style={styles.petCard}
-            onPress={() => handlePetSelect(pet)}
-          >
-            <Text style={styles.petName}>{pet.name}</Text>
-            <Text style={styles.petBreed}>{pet.breed}</Text>
-            <Text style={styles.petAge}>{pet.age} years old</Text>
-          </TouchableOpacity>
-        ))}
+      <ScrollView style={styles.petList} keyboardShouldPersistTaps="handled">
+        <Text style={styles.sectionHeader}>Your pet</Text>
+        {pets.length === 0 ? (
+          <Text style={styles.infoText}>No pets on file.</Text>
+        ) : (
+          pets.map((pet) => (
+            <TouchableOpacity
+              key={pet.id}
+              style={[
+                styles.petCard,
+                bookingFlow.pet?.id === pet.id && styles.petCardSelected,
+              ]}
+              onPress={() => setBookingFlow((prev) => ({ ...prev, pet }))}
+            >
+              <Text style={styles.petName}>{pet.name}</Text>
+              <Text style={styles.petBreed}>{pet.breed}</Text>
+              <Text style={styles.petAge}>{pet.age} years old</Text>
+            </TouchableOpacity>
+          ))
+        )}
+
+        <Text style={[styles.sectionHeader, styles.sectionSpacer]}>Date & time</Text>
+        <Text style={styles.infoText}>Demo slot — replace with calendar when ready.</Text>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => applySchedule('2025-01-30', '10:00 AM')}
+        >
+          <Text style={styles.secondaryButtonText}>Use next available slot (demo)</Text>
+        </TouchableOpacity>
+
+        {bookingFlow.serviceType === 'home' && (
+          <>
+            <Text style={[styles.sectionHeader, styles.sectionSpacer]}>Session address</Text>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() =>
+                applyAddress({
+                  id: 'home-default',
+                  label: 'Home',
+                  address: selectedVendor?.address || 'Address on file',
+                })
+              }
+            >
+              <Text style={styles.secondaryButtonText}>Use default address</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        <TouchableOpacity style={[styles.primaryButton, styles.sectionSpacer]} onPress={goToPaymentFromDetails}>
+          <Text style={styles.primaryButtonText}>Continue to payment</Text>
+        </TouchableOpacity>
       </ScrollView>
-    </View>
-  );
-
-  const renderTimeSelection = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('select_pet')}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Date & Time</Text>
-      </View>
-
-      <Text style={styles.infoText}>
-        Time slot selection will be implemented with calendar component
-      </Text>
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={() => handleTimeSelect('2025-01-30', '10:00 AM')}
-      >
-        <Text style={styles.primaryButtonText}>Continue</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderAddressSelection = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('select_time')}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Address</Text>
-      </View>
-
-      <Text style={styles.infoText}>
-        Address selection will be implemented with location picker
-      </Text>
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={() => handleAddressSelect({ address: 'Home Address' })}
-      >
-        <Text style={styles.primaryButtonText}>Use Default Address</Text>
-      </TouchableOpacity>
     </View>
   );
 
@@ -594,21 +597,28 @@ export function TrainingServiceRouter({
 
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
+        <View style={styles.summaryHeader}>
           <TouchableOpacity
-            onPress={() =>
-              setCurrentView(
-                bookingFlow.serviceType === 'home' ? 'select_address' : 'select_time'
-              )
-            }
+            onPress={() => setCurrentView('booking_details')}
+            style={styles.headerBackTap}
+            hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
           >
-            <Text style={styles.backButton}>← Back</Text>
+            <Text style={styles.summaryBackGlyph} pointerEvents="none">
+              ‹
+            </Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Payment</Text>
+          <Text style={styles.summaryHeaderTitle} numberOfLines={1}>
+            Booking Summary
+          </Text>
         </View>
 
         <View style={styles.bookingSummary}>
-          <Text style={styles.summaryTitle}>Booking Summary</Text>
+          <Text style={styles.summaryItem}>Trainer: {bookingFlow.vendorName || selectedVendor?.name}</Text>
+          {!!selectedVendor?.address && (
+            <Text style={styles.summaryItem}>Location: {selectedVendor.address}</Text>
+          )}
           <Text style={styles.summaryItem}>
             Program: {bookingFlow.services[0]?.name}
           </Text>
@@ -672,24 +682,26 @@ export function TrainingServiceRouter({
 
   if (loading && currentView === 'landing') {
     return (
-      <SafeAreaView style={styles.container}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      <ScreenShell style={styles.container}>
+        <View style={styles.screenContentPad}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {currentView === 'landing' && renderLanding()}
-      {(currentView === 'training_center' || currentView === 'training_home') && renderVendorList()}
-      {currentView === 'center_profile' && renderCenterProfile()}
-      {currentView === 'select_service' && renderServiceSelection()}
-      {currentView === 'select_pet' && renderPetSelection()}
-      {currentView === 'select_time' && renderTimeSelection()}
-      {currentView === 'select_address' && renderAddressSelection()}
-      {currentView === 'payment' && renderPayment()}
-      {currentView === 'confirmation' && renderConfirmation()}
-    </SafeAreaView>
+    <ScreenShell style={styles.container}>
+      <View style={styles.screenContentPad}>
+        {currentView === 'landing' && renderLanding()}
+        {(currentView === 'training_center' || currentView === 'training_home') && renderVendorList()}
+        {currentView === 'center_profile' && renderCenterProfile()}
+        {currentView === 'select_service' && renderServiceSelection()}
+        {currentView === 'booking_details' && renderBookingDetails()}
+        {currentView === 'payment' && renderPayment()}
+        {currentView === 'confirmation' && renderConfirmation()}
+      </View>
+    </ScreenShell>
   );
 }
 
@@ -697,12 +709,47 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.white,
-    padding: spacing.md,
+  },
+  screenContentPad: {
+    flex: 1,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: spacing.lg,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: spacing.md,
+    marginBottom: spacing.lg,
+    width: '100%',
+  },
+  headerBackTap: {
+    minWidth: 44,
+    minHeight: 44,
+    marginRight: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  summaryBackGlyph: {
+    fontSize: 28,
+    lineHeight: 32,
+    color: colors.text,
+    fontWeight: '600',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  summaryHeaderTitle: {
+    flex: 1,
+    flexShrink: 1,
+    fontSize: typography.fontSizes['2xl'],
+    fontWeight: '700',
+    color: colors.text,
   },
   backButton: {
     fontSize: typography.body,
@@ -710,6 +757,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.md,
   },
   headerTitle: {
+    flex: 1,
     fontSize: typography.h2,
     fontWeight: 'bold',
     color: colors.text,
@@ -961,6 +1009,18 @@ const styles = StyleSheet.create({
   disabledButton: {
     backgroundColor: colors.gray['300'],
   },
+  flexFill: {
+    flex: 1,
+  },
+  sectionHeader: {
+    fontSize: typography.h3,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  sectionSpacer: {
+    marginTop: spacing.lg,
+  },
   petList: {
     flex: 1,
   },
@@ -971,6 +1031,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.gray['200'],
+  },
+  petCardSelected: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+    backgroundColor: '#FFF7ED',
   },
   petName: {
     fontSize: typography.h3,
@@ -998,12 +1063,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.lg,
     marginBottom: spacing.lg,
-  },
-  summaryTitle: {
-    fontSize: typography.h3,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: spacing.md,
   },
   summaryItem: {
     fontSize: typography.body,

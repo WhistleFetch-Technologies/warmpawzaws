@@ -3,10 +3,19 @@
  * Uses API Gateway (Lambda backend)
  */
 
+import {
+  customerUuidSegmentInPath,
+  ensureCustomerIdStorageReconciledOnce,
+  isCustomerDatabaseUuid,
+  reconcileCustomerIdStorageOnLoad,
+} from './customer-id-storage';
+import { ApiError } from './error-handling';
+
 type RuntimeConfig = {
   apiBaseUrl?: string;
   uatMode?: boolean;
   environment?: string;
+  customerEcommerceEnabled?: boolean;
 };
 
 declare global {
@@ -18,6 +27,33 @@ declare global {
 function getRuntimeConfig(): RuntimeConfig {
   if (typeof window === 'undefined') return {};
   return window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
+}
+
+/** Current dev API Gateway (replaces retired gateway IDs in stale runtime-config.js / env). */
+const DEV_API_GATEWAY_URL = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+const LEGACY_DEV_API_GATEWAY_SUBDOMAIN = 'iixwc3fzfl';
+
+/** One in-flight list request per endpoint (React Strict Mode double-mounts effects in dev → duplicate fetches). */
+const customerArticlesListInflight = new Map<string, Promise<unknown>>();
+
+/** On localhost, use same-origin `/api/customer/articles` so Next can map upstream 502/503 → 200 + empty list. */
+function customerArticlesListFetchPath(endpoint: string): string {
+  if (typeof window === 'undefined') return endpoint;
+  const host = window.location.hostname;
+  const isLocal =
+    host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host.endsWith('.localhost');
+  if (!isLocal || !endpoint.startsWith('/customer/articles')) return endpoint;
+  const q = endpoint.includes('?') ? endpoint.slice(endpoint.indexOf('?')) : '';
+  return `/api/customer/articles${q}`;
+}
+
+function normalizeDevApiBaseUrl(url: string | undefined): string {
+  if (!url || typeof url !== 'string') return '';
+  const t = url.trim().replace(/\/+$/, '');
+  if (t.includes(LEGACY_DEV_API_GATEWAY_SUBDOMAIN)) {
+    return DEV_API_GATEWAY_URL;
+  }
+  return t;
 }
 
 /**
@@ -42,18 +78,19 @@ function isProductionEnvironment(): boolean {
     return process.env.NODE_ENV === 'production';
   }
   
-  // 4. Check hostname (production CloudFront domains)
+  // 4. Check hostname (production hosts — not dev.* or dev CloudFront)
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
-    // Production CloudFront domains
-    if (hostname.includes('cloudfront.net') || 
+    if (hostname === 'd2aoyjj8ine0wk.cloudfront.net' || hostname.startsWith('dev.')) {
+      return false;
+    }
+    if (hostname.includes('cloudfront.net') ||
         hostname.includes('warmpawz.com') ||
         hostname.includes('admin.warmpawz.com') ||
         hostname.includes('vendor.warmpawz.com') ||
         hostname.includes('customer.warmpawz.com')) {
       return true;
     }
-    // Development indicators
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
       return false;
     }
@@ -72,7 +109,7 @@ function getApiGatewayUrl(): string {
   const isProd = isProductionEnvironment();
   return isProd
     ? 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'
-    : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    : DEV_API_GATEWAY_URL;
 }
 
 /**
@@ -82,7 +119,7 @@ function getApiGatewayUrl(): string {
  * 1. window.__NEXT_PUBLIC_API_BASE_URL__ (injected by layout.tsx from env var)
  * 2. window.__NEXT_DATA__.env.NEXT_PUBLIC_API_BASE_URL (Next.js injected)
  * 3. process.env.NEXT_PUBLIC_API_BASE_URL (build-time)
- * 4. Default: http://localhost:3000
+ * 4. Default: environment-aware API Gateway (same as vendor-web) — avoids sending /public/* to the Next dev server (404)
  * 
  * Priority order for DEPLOYED (CloudFront):
  * 1. runtime-config.js (deploy-time, authoritative)
@@ -102,9 +139,8 @@ export function getApiBaseUrl(): string {
   
   let raw = '';
   
-  // LOCAL DEVELOPMENT: Prioritize environment variables over runtime config
-  // runtime-config.js detects localhost and intentionally doesn't set apiBaseUrl,
-  // allowing the environment variable (http://localhost:3000) to be used here.
+  // LOCAL DEVELOPMENT: Prioritize explicit API base env; otherwise call AWS API Gateway directly.
+  // Defaulting to localhost:3000 breaks routes like /public/policies/* (Next has no such page → 404).
   if (isLocalhost) {
     // 1. Check window.__NEXT_PUBLIC_API_BASE_URL__ (injected by layout.tsx from npm script)
     if (typeof window !== 'undefined' && (window as any).__NEXT_PUBLIC_API_BASE_URL__) {
@@ -118,9 +154,9 @@ export function getApiBaseUrl(): string {
     else if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
       raw = process.env.NEXT_PUBLIC_API_BASE_URL;
     }
-    // 4. Default to localhost:3000 for local development (no fallback to AWS)
+    // 4. Default: dev API Gateway (same as next.config urls.json). For serverless-offline use NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
     else {
-      raw = 'http://localhost:3000';
+      raw = getApiGatewayUrl();
     }
   } else {
     // When NOT on localhost (deployed environments like CloudFront):
@@ -151,18 +187,19 @@ export function getApiBaseUrl(): string {
     }
   }
   
-  const result = (raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, '');
+  const result = normalizeDevApiBaseUrl(
+    (raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, '')
+  );
   
   // Debug log in UAT mode
   if (typeof window !== 'undefined' && isUatMode()) {
     if (isLocalhost && !result) {
-      console.warn('⚠️ [UAT] API Base URL is invalid for localhost. Expected http://localhost:3000');
+      console.warn('⚠️ [UAT] API Base URL is empty for localhost; using API Gateway fallback');
     }
   }
   
-  // For localhost, return the result directly (no fallback to AWS)
   if (isLocalhost) {
-    return result || 'http://localhost:3000';
+    return result || getApiGatewayUrl();
   }
   
   // For non-localhost, use fallback to API Gateway
@@ -202,6 +239,75 @@ export function isUatMode(): boolean {
 
 const UAT_MODE = isUatMode();
 
+/**
+ * Authorization and UAT headers for browser XMLHttpRequest uploads (e.g. multipart to /storage/upload-media).
+ * Keeps behavior aligned with ApiClient.request() so Cognito JWT and UAT phone flows work for uploads.
+ */
+export function getCustomerAuthHeadersForUpload(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  const headers: Record<string, string> = {};
+
+  let token: string | null = null;
+  try {
+    const { getCognitoIdToken } = require('./cognito-auth');
+    token = getCognitoIdToken();
+  } catch {
+    /* cognito-auth optional in odd bundles */
+  }
+  if (!token) {
+    token = localStorage.getItem('authToken');
+  }
+
+  if (UAT_MODE && (!token || !String(token).startsWith('uat-token-'))) {
+    const customerPhone = localStorage.getItem('customerPhone');
+    if (customerPhone && customerPhone.length >= 10) {
+      token = token || `uat-token-customer-${customerPhone}-${Date.now()}`;
+    }
+  }
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  if (UAT_MODE) {
+    headers['X-UAT-Mode'] = 'true';
+    if (token && typeof token === 'string' && token.startsWith('uat-token-')) {
+      headers['X-UAT-Token'] = token;
+    }
+  }
+
+  return headers;
+}
+
+/**
+ * JSON body for fetch. Avoid `data ? JSON.stringify(data)` — that drops valid JSON when `data` is
+ * `0`, `false`, or `""` (truthiness bug). `undefined` / `null` mean no body.
+ */
+function requestJsonBody(data: unknown): string | undefined {
+  if (data === undefined || data === null) return undefined;
+  return JSON.stringify(data);
+}
+
+/** Prefer server JSON message over generic `HTTP 400` when error is a string or nested object. */
+export function extractHttpErrorMessage(errorData: any, status: number): string {
+  if (!errorData || typeof errorData !== 'object') {
+    return `HTTP ${status}`;
+  }
+  const e = errorData.error;
+  if (typeof e === 'string' && e.trim()) return e.trim();
+  if (e && typeof e === 'object') {
+    if (typeof e.message === 'string' && e.message.trim()) return e.message.trim();
+    if (typeof e.detail === 'string' && e.detail.trim()) return e.detail.trim();
+  }
+  if (typeof errorData.message === 'string' && errorData.message.trim()) {
+    return errorData.message.trim();
+  }
+  if (typeof errorData.detail === 'string' && errorData.detail.trim()) {
+    return errorData.detail.trim();
+  }
+  return `HTTP ${status}`;
+}
+
 export class ApiClient {
   private _baseUrl: string;
 
@@ -234,7 +340,13 @@ export class ApiClient {
 
   private getAuthToken(): string | null {
     if (typeof window !== 'undefined') {
-      // Try Cognito token first (preferred for AWS Serverless)
+      // Try Cognito token first (preferred for AWS Serverless).
+      // getCognitoIdToken() reads the stored bundle synchronously; if the access token is
+      // still valid it is returned immediately.  When it has expired, refreshCognitoTokensIfNeeded
+      // (called at the top of request()) will have already swapped in a fresh token before
+      // this getter is invoked, so the re-read below picks up the updated value.
+      // TODO: convert getAuthToken to async and replace getCognitoIdToken() with
+      //       refreshCognitoTokensIfNeeded() once callers are migrated to await the result.
       const { getCognitoIdToken } = require('./cognito-auth');
       const cognitoToken = getCognitoIdToken();
       if (cognitoToken) {
@@ -250,7 +362,8 @@ export class ApiClient {
     endpoint: string,
     options: RequestInit = {},
     retryConfig?: Partial<import('./error-handling').RetryConfig>,
-    customTimeoutMs?: number // ✅ FIX: Allow custom timeout for specific endpoints
+    customTimeoutMs?: number,
+    internal401RetryDone?: boolean
   ): Promise<T> {
     const baseUrl = this.getBaseUrl();
     if (!baseUrl) {
@@ -267,10 +380,56 @@ export class ApiClient {
       this.offlineQueue = new OfflineQueue();
     }
     
+    if (!internal401RetryDone) {
+      try {
+        const { refreshCognitoTokensIfNeeded } = await import('./cognito-auth');
+        await refreshCognitoTokensIfNeeded();
+      } catch {
+        // Never let a refresh failure block the outgoing request.
+      }
+    }
+
     // Fix: Normalize URL to avoid double slashes
     const base = baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
-    const path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
-    const url = `${base}${path}`;
+    let path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
+
+    if (typeof window !== 'undefined') {
+      ensureCustomerIdStorageReconciledOnce();
+      const uuidSegment = customerUuidSegmentInPath(path);
+      if (uuidSegment && !isCustomerDatabaseUuid(uuidSegment)) {
+        reconcileCustomerIdStorageOnLoad();
+        throw new ApiError(
+          'Invalid customer id in request. Please refresh the page or sign in again.',
+          'invalid_customer_id',
+          400,
+          false
+        );
+      }
+    }
+    
+    // ✅ Auto-add phone parameter to /customer/services/by-style if not present
+    if (typeof window !== 'undefined' && path.includes('/customer/services/by-style')) {
+      // Check if phone is already in query string
+      const hasPhone = path.includes('phone=') || path.includes('customerPhone=');
+      
+      if (!hasPhone) {
+        // Try to get phone from localStorage
+        const phone = localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone');
+        if (phone && phone.length >= 10) {
+          // Append phone parameter to the endpoint
+          const separator = path.includes('?') ? '&' : '?';
+          path = `${path}${separator}phone=${encodeURIComponent(phone)}`;
+        }
+      }
+    }
+
+    // Same-origin proxy for articles only (static export cannot ship App Router BFF routes).
+    // /chat/* always uses API base URL (ensure API Gateway CORS allows localhost in dev).
+    const url =
+      typeof window !== 'undefined' && path.startsWith('/api/customer/articles')
+        ? path
+        : `${base}${path}`;
+    
     let token = this.getAuthToken();
 
     // ✅ UAT fallback: if no auth token but we have customer phone (e.g. after refresh), build a UAT token so authorizer allows profile/address routes
@@ -290,6 +449,15 @@ export class ApiClient {
     // Setting Content-Type manually for FormData breaks the boundary parameter
     if (!(options.body instanceof FormData)) {
       headers['Content-Type'] = 'application/json';
+    }
+
+    // Chat list + booking threads: server reads X-Customer-Phone when present (redundant with query).
+    if (typeof window !== 'undefined' && path.startsWith('/chat/')) {
+      const ph = localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone');
+      if (ph) {
+        const d = ph.replace(/\D/g, '');
+        if (d.length >= 8) headers['X-Customer-Phone'] = d;
+      }
     }
 
     if (token) {
@@ -378,17 +546,88 @@ export class ApiClient {
           };
         }
         
-        // Handle 401 by clearing token and redirecting to auth
-        if (response.status === 401) {
-          if (typeof window !== 'undefined') {
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('customerPhone');
-            window.location.href = '/auth';
+        const isCustomerForgotPasswordFlow =
+          path.includes('/auth/customer/forgot-password/verify-otp') ||
+          path.includes('/auth/customer/forgot-password/reset');
+
+        const hadBearerAuth = !!(headers.Authorization && String(headers.Authorization).length > 'Bearer '.length);
+        /** Some GET catalogue routes may 401 anonymously — never treat as global sign-out */
+        const isOptionalUnauthRead =
+          (options.method ?? 'GET').toUpperCase() === 'GET' &&
+          (/^\/customer\/articles/.test(path) ||
+            /^\/customer\/banners/.test(path) ||
+            /^\/customer\/announcements/.test(path));
+
+        const uatSyntheticBearer =
+          UAT_MODE && !!token && typeof token === 'string' && token.startsWith('uat-token-');
+
+        const hasCognitoPersistedBundle =
+          typeof window !== 'undefined' && !!localStorage.getItem('customerCognitoTokens');
+
+        /** Legacy login may only set `authToken` (JWT) without the Cognito key */
+        const hasLegacyJwtAuthToken =
+          typeof window !== 'undefined' &&
+          !!(localStorage.getItem('authToken') || '').startsWith('eyJ');
+
+        const canSilentRefresh401 =
+          hadBearerAuth && hasCognitoPersistedBundle && !uatSyntheticBearer && !internal401RetryDone;
+
+        const treat401AsFullSignOut =
+          hadBearerAuth && !uatSyntheticBearer && !isOptionalUnauthRead && (
+            hasCognitoPersistedBundle || hasLegacyJwtAuthToken
+          );
+
+        let suppressForcedLogout401 = false;
+
+        if (
+          response.status === 401 &&
+          !path.startsWith('/public/') &&
+          !isCustomerForgotPasswordFlow &&
+          !isOptionalUnauthRead &&
+          typeof window !== 'undefined' &&
+          canSilentRefresh401
+        ) {
+          try {
+            const { refreshCognitoAfterUnauthorized401 } = await import('./cognito-auth');
+            const refreshed = await refreshCognitoAfterUnauthorized401();
+            if (refreshed.kind === 'renewed') {
+              return this.request<T>(
+                endpoint,
+                options,
+                retryConfig,
+                customTimeoutMs,
+                true
+              );
+            }
+            if (refreshed.kind === 'failed_network') {
+              suppressForcedLogout401 = true;
+              if (process.env.NODE_ENV !== 'production') {
+                console.warn('[customer-api] 401 + refresh unreachable — no forced logout');
+              }
+            }
+          } catch {
+            /* ignore */
           }
+        }
+
+        if (
+          response.status === 401 &&
+          !path.startsWith('/public/') &&
+          !isCustomerForgotPasswordFlow &&
+          !isOptionalUnauthRead &&
+          typeof window !== 'undefined' &&
+          treat401AsFullSignOut &&
+          !suppressForcedLogout401
+        ) {
+          const { clearCognitoTokens } = await import('./cognito-auth');
+          clearCognitoTokens();
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('customerPhone');
+          window.location.href = '/auth';
         }
         
         // Create ApiError with full error data preserved
-        const errorMessage = errorData.error?.message || errorData.error || errorData.message || `HTTP ${response.status}`;
+        const errorMessage = extractHttpErrorMessage(errorData, response.status);
         const apiError = new ApiError(
           errorMessage,
           errorData.error?.code || (response.status >= 500 ? 'server_error' : 'client_error'),
@@ -457,25 +696,86 @@ export class ApiClient {
     return this.request<T>(endpoint, { method: 'GET' }, retryConfig);
   }
 
+  /**
+   * GET that treats 404 as “no resource” (e.g. new customer with no unified profile yet).
+   * Does not throw on 404; rethrows all other errors.
+   */
+  async getOrUndefinedIfNotFound<T>(endpoint: string): Promise<T | undefined> {
+    const { ApiError } = await import('./error-handling');
+    try {
+      return await this.get<T>(endpoint);
+    } catch (e: unknown) {
+      if (e instanceof ApiError && e.statusCode === 404) {
+        return undefined;
+      }
+      throw e;
+    }
+  }
+
+  /**
+   * GET /customer/articles* list — returns `{ articles: [] }` on 502/503 so the UI can show an empty state
+   * instead of "HTTP 503" while the API is down or not yet deployed. Uses a single request (no 503 retry loop).
+   * Concurrent calls with the same endpoint share one fetch (dedupes React Strict Mode double effects in dev).
+   * Must not `await` before registering the in-flight entry — otherwise two callers can race and duplicate requests.
+   */
+  getCustomerArticlesList<T extends { articles?: unknown[] }>(endpoint: string): Promise<T> {
+    const key = endpoint;
+    const existing = customerArticlesListInflight.get(key);
+    if (existing) {
+      return existing as Promise<T>;
+    }
+
+    const fetchPath = customerArticlesListFetchPath(endpoint);
+
+    const noRetry: Partial<import('./error-handling').RetryConfig> = {
+      maxRetries: 0,
+      retryableStatusCodes: [],
+      retryableErrors: [],
+    };
+
+    const p = (async (): Promise<T> => {
+      try {
+        return await this.get<T>(fetchPath, noRetry);
+      } catch (e: unknown) {
+        if (e instanceof ApiError && e.statusCode != null && [502, 503].includes(e.statusCode)) {
+          return { articles: [] } as unknown as T;
+        }
+        throw e;
+      }
+    })().finally(() => {
+      customerArticlesListInflight.delete(key);
+    });
+
+    customerArticlesListInflight.set(key, p);
+    return p;
+  }
+
   async post<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>, customTimeoutMs?: number): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       // CRITICAL: Don't stringify FormData - pass it directly
-      body: data instanceof FormData ? data : (data ? JSON.stringify(data) : undefined),
+      body: data instanceof FormData ? data : requestJsonBody(data),
     }, retryConfig, customTimeoutMs);
   }
 
   async put<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'PUT',
-      body: data ? JSON.stringify(data) : undefined,
+      body: requestJsonBody(data),
+    }, retryConfig);
+  }
+
+  async patch<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
+    return this.request<T>(endpoint, {
+      method: 'PATCH',
+      body: requestJsonBody(data),
     }, retryConfig);
   }
 
   async delete<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
     return this.request<T>(endpoint, { 
       method: 'DELETE',
-      body: data ? JSON.stringify(data) : undefined
+      body: requestJsonBody(data),
     }, retryConfig);
   }
 
@@ -526,7 +826,8 @@ export const aiChatbotApi = {
     customerId?: string;
     customerPhone?: string;
     conversationId?: string;
-    context?: any;
+    /** e.g. { widgetMode: 'chat' } so the API aligns quick actions with the Chat tab */
+    context?: Record<string, unknown>;
     petId?: string;
   }) => apiClient.post('/ai-chatbot/chat', data),
   
@@ -557,7 +858,31 @@ export const aiChatbotApi = {
   
   getConversation: (conversationId: string) => 
     apiClient.get(`/ai-chatbot/conversation/${conversationId}`),
+
+  createBookingSession: (data: {
+    customerId?: string;
+    customerPhone?: string;
+    category?: string;
+    serviceStyle?: string;
+  }) => apiClient.post('/ai-chatbot/booking-session', data),
+
+  getBookingSession: (sessionId: string) => apiClient.get(`/ai-chatbot/booking-session/${sessionId}`),
+
+  patchBookingSession: (sessionId: string, body: Record<string, unknown>) =>
+    apiClient.patch(`/ai-chatbot/booking-session/${sessionId}`, body),
+
+  commitBookingSlot: (sessionId: string, body: { slotTime: string; expectedVersion?: number }) =>
+    apiClient.post(`/ai-chatbot/booking-session/${sessionId}/commit-slot`, body),
+
+  prepareBookingPayment: (sessionId: string, body?: { customerId?: string; customerPhone?: string }) =>
+    apiClient.post(`/ai-chatbot/booking-session/${sessionId}/prepare-payment`, body || {}),
+
+  interpretBookingSession: (sessionId: string, body: { message: string }) =>
+    apiClient.post(`/ai-chatbot/booking-session/${sessionId}/interpret`, body),
 };
+
+/** No HTTP retries for support ticket reads (manual refresh in UI; avoid retry spam). */
+const supportTicketReadRetry: Partial<import('./error-handling').RetryConfig> = { maxRetries: 0 };
 
 // ✅ NEW: Support & CRM API (Phase 3 - AI Chatbot Integration)
 export const supportCrmApi = {
@@ -580,11 +905,19 @@ export const supportCrmApi = {
     limit?: number;
     offset?: number;
   }) => {
-    const query = params ? new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString() : '';
-    return apiClient.get(`/support/tickets${query ? `?${query}` : ''}`);
+    if (!params) {
+      return apiClient.get('/support/tickets', supportTicketReadRetry);
+    }
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null) continue;
+      q.set(k, String(v));
+    }
+    const s = q.toString();
+    return apiClient.get(`/support/tickets${s ? `?${s}` : ''}`, supportTicketReadRetry);
   },
   
-  getTicket: (ticketId: string) => apiClient.get(`/support/tickets/${ticketId}`),
+  getTicket: (ticketId: string) => apiClient.get(`/support/tickets/${ticketId}`, supportTicketReadRetry),
   
   respondToTicket: (ticketId: string, data: {
     message: string;

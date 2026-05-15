@@ -11,10 +11,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { AppointmentApi, MedicalHistoryApi } from '../../services/api';
 
@@ -45,7 +45,7 @@ export function AppointmentDetailScreen({
   const loadAppointment = async () => {
     try {
       setLoading(true);
-      const response = await AppointmentApi.getAppointment(appointmentId);
+      const response = await AppointmentApi.getAppointment(appointmentId, customerId);
       setAppointment(response.appointment || response);
 
       // Load prescriptions
@@ -70,7 +70,7 @@ export function AppointmentDetailScreen({
           style: 'destructive',
           onPress: async () => {
             try {
-              await AppointmentApi.cancelAppointment(appointmentId);
+              await AppointmentApi.cancelAppointment(appointmentId, undefined, customerId);
               Alert.alert('Success', 'Appointment cancelled');
               if (onNavigate) {
                 onNavigate('AppointmentList');
@@ -96,29 +96,29 @@ export function AppointmentDetailScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   if (!appointment) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Appointment not found</Text>
           <TouchableOpacity style={styles.backButton} onPress={onBack}>
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -267,7 +267,7 @@ export function AppointmentDetailScreen({
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

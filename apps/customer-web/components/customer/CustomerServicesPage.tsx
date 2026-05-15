@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { LoadingState, ErrorState, EmptyState } from '@/components/ui/states';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,11 @@ import { Badge } from '@/components/ui/badge';
 import { Star, MapPin, Clock, ArrowLeft, Scissors, GraduationCap, Building2, Home } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
+import { formatDistanceDisplay } from '@/lib/distance-display';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { getAggregatedRatingFromServices } from '@/lib/aggregated-service-rating';
 
 interface Service {
   id: string;
@@ -22,7 +27,8 @@ interface Service {
   serviceStyle: 'at_home' | 'at_center' | 'tele';
   vendorId: string;
   vendorName: string;
-  vendorRating: number;
+  vendorRating?: number | null;
+  vendorReviewCount?: number | null;
   vendorLocation?: {
     lat: number;
     lng: number;
@@ -34,7 +40,9 @@ interface Service {
 
 interface CustomerServicesPageProps {
   onBack: () => void;
-  onNavigate: (screen: string, data?: any) => void;
+  onNavigate: (screen: string, data?: Record<string, unknown>) => void;
+  /** When omitted, phone is read from localStorage after mount. */
+  phone?: string;
   initialFilters?: {
     category?: string;
     roleId?: string;
@@ -48,11 +56,18 @@ interface DiscoveryMeta {
   categories: string[];
 }
 
-export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: CustomerServicesPageProps) {
+export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, initialFilters }: CustomerServicesPageProps) {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [discoveryMeta, setDiscoveryMeta] = useState<DiscoveryMeta | null>(null);
+  const [resolvedPhone, setResolvedPhone] = useState('');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setResolvedPhone(localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone') || '');
+  }, []);
+  const phone = (phoneProp && phoneProp.trim()) || resolvedPhone;
 
   // Filters (DB-driven when discovery/meta is available)
   const [category, setCategory] = useState(initialFilters?.category || '');
@@ -60,34 +75,144 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
     initialFilters?.serviceStyle || 'all'
   );
   const [roleId, setRoleId] = useState(initialFilters?.roleId || '');
-  
-  // ✅ FIX: Determine service name and icon based on category and serviceStyle
-  const getServiceConfig = () => {
-    const isGrooming = category === 'grooming' || roleId === 'pet_groomer';
-    const isTraining = category === 'training' || roleId === 'trainer';
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredServices, setFilteredServices] = useState<Service[]>([]);
+
+  const isGrooming = category === 'grooming' || roleId === 'pet_groomer';
+  const isTraining = category === 'training' || roleId === 'trainer';
+
+  const groomingTeleDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: 'tele',
+    category: 'grooming',
+    enabled: isGrooming && serviceStyle === 'tele',
+  });
+  const groomingCenterDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_center',
+    category: 'grooming',
+    enabled: isGrooming && (serviceStyle === 'at_center' || serviceStyle === 'all'),
+  });
+  const groomingHomeDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_home',
+    category: 'grooming',
+    enabled: isGrooming && serviceStyle === 'at_home',
+  });
+  const trainingTeleDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: 'tele',
+    category: 'training',
+    enabled: isTraining && serviceStyle === 'tele',
+  });
+  const trainingCenterDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_center',
+    category: 'training',
+    enabled: isTraining && (serviceStyle === 'at_center' || serviceStyle === 'all'),
+  });
+  const trainingHomeDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_home',
+    category: 'training',
+    enabled: isTraining && serviceStyle === 'at_home',
+  });
+
+  const discoveryQueryState = (q: { isLoading: boolean; isFetching: boolean; isError: boolean }) =>
+    q.isLoading || q.isFetching ? ('loading' as const) : q.isError ? ('error' as const) : ('success' as const);
+
+  const serviceConfig = useMemo(() => {
+    const ratingStatValue = getAggregatedRatingFromServices(services, {
+      category,
+      roleId,
+      serviceStyle,
+    });
     const isAtCenter = serviceStyle === 'at_center';
     const isAtHome = serviceStyle === 'at_home';
-    
+
     if (isGrooming) {
+      if (serviceStyle === 'tele') {
+        const st = discoveryQueryState(groomingTeleDiscovery);
+        const v = formatDiscoveryCountStat(groomingTeleDiscovery.data, st);
+        return {
+          name: 'Grooming Services',
+          subtitle: 'Find grooming for your pet',
+          icon: Scissors,
+          stats: [
+            { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
+            { value: '1K+', label: 'Bookings' },
+            { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+          ],
+        };
+      }
+      if (isAtHome) {
+        const st = discoveryQueryState(groomingHomeDiscovery);
+        const v = formatDiscoveryCountStat(groomingHomeDiscovery.data, st);
+        return {
+          name: 'At Home Grooming',
+          subtitle: 'Groomer comes to you',
+          icon: Scissors,
+          stats: [
+            { value: v, label: 'Pros', icon: <Building2 className="w-4 h-4" /> },
+            { value: '1K+', label: 'Bookings' },
+            { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+          ],
+        };
+      }
+      const st = discoveryQueryState(groomingCenterDiscovery);
+      const v = formatDiscoveryCountStat(groomingCenterDiscovery.data, st);
       return {
-        name: isAtCenter ? 'Grooming Center' : 'At Home Grooming',
-        subtitle: isAtCenter ? 'Visit our grooming centers' : 'Groomer comes to you',
+        name: isAtCenter ? 'Grooming Center' : 'Grooming',
+        subtitle: isAtCenter ? 'Visit our grooming centers' : 'Browse grooming centers',
         icon: Scissors,
         stats: [
-          { value: '50+', label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
+          { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
           { value: '1K+', label: 'Bookings' },
-          { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+          { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
         ]
       };
-    } else if (isTraining) {
+    }
+
+    if (isTraining) {
+      if (serviceStyle === 'tele') {
+        const st = discoveryQueryState(trainingTeleDiscovery);
+        const v = formatDiscoveryCountStat(trainingTeleDiscovery.data, st);
+        return {
+          name: 'Training Services',
+          subtitle: 'Training options for your pet',
+          icon: GraduationCap,
+          stats: [
+            { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
+            { value: '800+', label: 'Sessions' },
+            { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+          ],
+        };
+      }
+      if (isAtHome) {
+        const st = discoveryQueryState(trainingHomeDiscovery);
+        const v = formatDiscoveryCountStat(trainingHomeDiscovery.data, st);
+        return {
+          name: 'At Home Training',
+          subtitle: 'Trainer comes to you',
+          icon: GraduationCap,
+          stats: [
+            { value: v, label: 'Trainers', icon: <Building2 className="w-4 h-4" /> },
+            { value: '800+', label: 'Sessions' },
+            { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+          ],
+        };
+      }
+      const st = discoveryQueryState(trainingCenterDiscovery);
+      const v = formatDiscoveryCountStat(trainingCenterDiscovery.data, st);
       return {
-        name: isAtCenter ? 'Training Center' : 'At Home Training',
-        subtitle: isAtCenter ? 'Visit our training centers' : 'Trainer comes to you',
+        name: isAtCenter ? 'Training Center' : 'Training',
+        subtitle: isAtCenter ? 'Visit our training centers' : 'Browse training centers',
         icon: GraduationCap,
         stats: [
-          { value: '45+', label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
+          { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
           { value: '800+', label: 'Sessions' },
-          { value: '4.9', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+          { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
         ]
       };
     }
@@ -98,12 +223,41 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
       stats: [
         { value: '100+', label: 'Services' },
         { value: '5K+', label: 'Bookings' },
-        { value: '4.7', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+        { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
       ]
     };
-  };
-  
-  const serviceConfig = getServiceConfig();
+  }, [
+    services,
+    category,
+    roleId,
+    isGrooming,
+    isTraining,
+    serviceStyle,
+    groomingTeleDiscovery.data,
+    groomingTeleDiscovery.isLoading,
+    groomingTeleDiscovery.isFetching,
+    groomingTeleDiscovery.isError,
+    groomingCenterDiscovery.data,
+    groomingCenterDiscovery.isLoading,
+    groomingCenterDiscovery.isFetching,
+    groomingCenterDiscovery.isError,
+    groomingHomeDiscovery.data,
+    groomingHomeDiscovery.isLoading,
+    groomingHomeDiscovery.isFetching,
+    groomingHomeDiscovery.isError,
+    trainingTeleDiscovery.data,
+    trainingTeleDiscovery.isLoading,
+    trainingTeleDiscovery.isFetching,
+    trainingTeleDiscovery.isError,
+    trainingCenterDiscovery.data,
+    trainingCenterDiscovery.isLoading,
+    trainingCenterDiscovery.isFetching,
+    trainingCenterDiscovery.isError,
+    trainingHomeDiscovery.data,
+    trainingHomeDiscovery.isLoading,
+    trainingHomeDiscovery.isFetching,
+    trainingHomeDiscovery.isError,
+  ]);
   
   // Fetch DB-driven discovery meta (roles, service styles, categories)
   useEffect(() => {
@@ -129,9 +283,6 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
       setServiceStyle(initialFilters.serviceStyle);
     }
   }, [initialFilters?.serviceStyle]);
-  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filteredServices, setFilteredServices] = useState<Service[]>([]);
 
   const categoriesForFilter = discoveryMeta?.categories?.length
     ? discoveryMeta.categories
@@ -208,9 +359,10 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-gray-50"
       />
 
-      <div className="container mx-auto px-4 py-6">
+      <div className="container mx-auto -mt-4 px-4 pt-6 pb-6">
         {/* Filters */}
         <div className="mb-6 space-y-4">
           <div className="flex flex-wrap gap-3">
@@ -276,6 +428,11 @@ export function CustomerServicesPage({ onBack, onNavigate, initialFilters }: Cus
   );
 }
 
+function formatCardVendorRating(rating: number | null | undefined): string {
+  if (typeof rating !== 'number' || !Number.isFinite(rating) || rating <= 0) return '—';
+  return rating.toFixed(1);
+}
+
 function ServiceCard({ service, onSelect }: { service: Service; onSelect: () => void }) {
   return (
     <Card className="overflow-hidden hover:shadow-md transition-shadow">
@@ -287,11 +444,17 @@ function ServiceCard({ service, onSelect }: { service: Service; onSelect: () => 
           </div>
           <div className="flex items-center bg-yellow-50 px-2 py-1 rounded text-yellow-700 text-xs font-bold">
             <Star className="w-3 h-3 fill-yellow-500 mr-1" />
-            {service.vendorRating}
+            {formatCardVendorRating(service.vendorRating)}
           </div>
         </div>
 
-        <p className="text-sm text-gray-600 mb-4 line-clamp-2 min-h-[2.5rem]">{service.description}</p>
+        <div className="mb-4 min-h-[2.5rem]" onClick={(e) => e.stopPropagation()}>
+          <ServiceDescriptionInline
+            description={service.description}
+            title={service.serviceName}
+            className="m-0 text-sm leading-5 text-gray-600"
+          />
+        </div>
         
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -307,8 +470,8 @@ function ServiceCard({ service, onSelect }: { service: Service; onSelect: () => 
                  service.serviceStyle === 'at_center' ? 'Center Visit' : 
                  'Tele-consult'}
              </Badge>
-             {service.distance && (
-                <p className="text-xs text-gray-400 text-right">{Number(service.distance || 0).toFixed(1)} km</p>
+             {formatDistanceDisplay(service) && (
+                <p className="text-xs text-gray-400 text-right">{formatDistanceDisplay(service)}</p>
              )}
           </div>
         </div>

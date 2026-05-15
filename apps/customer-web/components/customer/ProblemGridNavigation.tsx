@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 
 // Import local problem data from ProblemGridSection (fallback when API has no data)
 import { 
@@ -21,8 +22,9 @@ import {
   WALKING_NEEDS, 
   BEHAVIORAL_ISSUES,
   BOARDING_NEEDS,
-  NUTRITIONIST_NEEDS 
+  NUTRITIONIST_NEEDS,
 } from './ProblemGridSection';
+import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 
 // Import service ordering configuration
 import { 
@@ -123,7 +125,11 @@ const mapProblemsWithCategory = (problems: any[], category: string, roleId: stri
       category,
       roleId,
       priority: p.priority ?? 50,
-      allowedServiceStyles: ['at_center', 'at_home', 'tele'],
+      allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(null, {
+        roleId,
+        specializationId: p.id,
+        categoryHint: category,
+      }),
     }));
 };
 
@@ -158,7 +164,11 @@ export function ProblemGridNavigation({
               category: slug.category,
               roleId: slug.roleId,
               priority: p.displayOrder ?? 50,
-              allowedServiceStyles: p.allowedServiceStyles || ['at_center', 'at_home', 'tele'],
+              allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(p.allowedServiceStyles, {
+                roleId: slug.roleId,
+                specializationId: p.id,
+                categoryHint: slug.category,
+              }),
             };
           });
         if (!cancelled) setApiProblems(mapped);
@@ -210,6 +220,7 @@ export function ProblemGridNavigation({
   }, [selectedCategory, allProblems]);
 
   const handleProblemClick = (problem: LocalProblem) => {
+    if (isEmergencyProblemTileLocked({ id: problem.id, name: problem.name })) return;
     onProblemSelect(problem.id, {
       problemId: problem.id,
       title: problem.name,
@@ -266,12 +277,15 @@ export function ProblemGridNavigation({
         >
           {filteredProblems.map((problem) => {
             const config = getCategoryConfig(problem.category);
+            const locked = isEmergencyProblemTileLocked({ id: problem.id, name: problem.name });
 
             return (
               <button
                 key={`${problem.category}-${problem.id}`}
+                type="button"
+                disabled={locked}
                 onClick={() => handleProblemClick(problem)}
-                className="flex-shrink-0 flex flex-col items-center gap-1 group"
+                className={`flex-shrink-0 flex flex-col items-center gap-1 group ${locked ? 'cursor-not-allowed opacity-80' : ''}`}
                 style={{ 
                   minWidth: '60px', 
                   maxWidth: '60px',
@@ -280,14 +294,19 @@ export function ProblemGridNavigation({
                 }}
               >
                 {/* Circular Icon */}
-                <div className={`w-12 h-12 rounded-full ${config.bgColor} border-2 ${config.borderColor} flex items-center justify-center group-hover:scale-110 transition-transform shadow-sm`}>
-                  <div className={config.textColor}>
+                <div className={`relative w-12 h-12 rounded-full ${config.bgColor} border-2 ${config.borderColor} flex items-center justify-center ${locked ? '' : 'group-hover:scale-110'} transition-transform shadow-sm`}>
+                  {locked && (
+                    <span className="absolute -top-0.5 -right-0.5 text-[7px] font-bold uppercase text-slate-600 bg-slate-100 border border-slate-200 px-1 rounded leading-none py-0.5">
+                      Soon
+                    </span>
+                  )}
+                  <div className={locked ? 'text-slate-400' : config.textColor}>
                     {problem.icon}
                   </div>
                 </div>
                 
                 {/* Label */}
-                <span className="text-[10px] text-gray-700 text-center leading-tight max-w-[50px] line-clamp-2 font-medium">
+                <span className={`text-[10px] text-center leading-tight max-w-[50px] line-clamp-2 font-medium ${locked ? 'text-slate-400' : 'text-gray-700'}`}>
                   {problem.name.split(' ').slice(0, 2).join(' ')}
                 </span>
               </button>
@@ -334,22 +353,30 @@ export function ProblemGridNavigation({
       <div className="grid grid-cols-2 gap-3">
         {filteredProblems.map((problem) => {
           const config = getCategoryConfig(problem.category);
+          const locked = isEmergencyProblemTileLocked({ id: problem.id, name: problem.name });
 
           return (
             <button
               key={`${problem.category}-${problem.id}`}
+              type="button"
+              disabled={locked}
               onClick={() => handleProblemClick(problem)}
-              className={`relative p-4 rounded-xl border-2 ${config.borderColor} ${config.bgColor} hover:shadow-lg transition-all duration-300 text-left group`}
+              className={`relative p-4 rounded-xl border-2 ${config.borderColor} ${config.bgColor} ${locked ? 'cursor-not-allowed opacity-85' : 'hover:shadow-lg'} transition-all duration-300 text-left group`}
             >
+              {locked && (
+                <span className="absolute top-2 right-2 text-[8px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-md z-10">
+                  Soon
+                </span>
+              )}
               {/* Icon */}
               <div className={`w-12 h-12 rounded-lg ${config.bgColor} flex items-center justify-center mb-3`}>
-                <div className={config.textColor}>
+                <div className={locked ? 'text-slate-400' : config.textColor}>
                   {problem.icon}
                 </div>
               </div>
 
               {/* Title */}
-              <h3 className={`text-sm font-medium ${config.textColor} mb-1`}>
+              <h3 className={`text-sm font-medium ${locked ? 'text-slate-500' : config.textColor} mb-1`}>
                 {problem.name}
               </h3>
 

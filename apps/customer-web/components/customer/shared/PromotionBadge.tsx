@@ -1,5 +1,6 @@
 'use client';
 
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 import { 
   Zap, Calendar, Gift, Package, Users, Tag, 
   Percent, Clock, Sparkles, Timer
@@ -160,7 +161,10 @@ export function SalePrice({
   size?: 'sm' | 'md' | 'lg';
   className?: string;
 }) {
-  const actualDiscount = discountPercent || Math.round(((originalPrice - salePrice) / originalPrice) * 100);
+  const showReduction = hasEffectivePriceReduction(originalPrice, salePrice);
+  const actualDiscount = showReduction
+    ? discountPercent || Math.round(((originalPrice - salePrice) / originalPrice) * 100)
+    : 0;
 
   const textSizes = {
     sm: { sale: 'text-sm', original: 'text-xs', badge: 'text-[10px]' },
@@ -171,10 +175,14 @@ export function SalePrice({
   return (
     <div className={`flex items-baseline gap-2 ${className}`}>
       <span className={`font-bold text-slate-900 ${textSizes[size].sale}`}>₹{salePrice.toLocaleString()}</span>
-      <span className={`text-slate-400 line-through ${textSizes[size].original}`}>₹{originalPrice.toLocaleString()}</span>
-      <span className={`bg-emerald-100 text-emerald-700 font-semibold px-1.5 py-0.5 rounded ${textSizes[size].badge}`}>
-        {actualDiscount}% off
-      </span>
+      {showReduction && (
+        <>
+          <span className={`text-slate-400 line-through ${textSizes[size].original}`}>₹{originalPrice.toLocaleString()}</span>
+          <span className={`bg-emerald-100 text-emerald-700 font-semibold px-1.5 py-0.5 rounded ${textSizes[size].badge}`}>
+            {actualDiscount}% off
+          </span>
+        </>
+      )}
     </div>
   );
 }

@@ -15,6 +15,10 @@
 
 import { Hono } from 'hono';
 import { query, select } from '../../../database/rds-connection';
+import {
+  resolveFeaturedVendorsRequestScreen,
+  canonicalScreenForSpotlightRow,
+} from '../../../utils/featured-vendor-service-context';
 
 export function registerCustomerContentEndpoints(app: Hono) {
   /**
@@ -27,11 +31,15 @@ export function registerCustomerContentEndpoints(app: Hono) {
       // position query param: home_top -> main (banners.type), all -> all types
       const positionParam = c.req.query('position') || 'home_top';
       const bannerType = positionParam === 'all' ? 'all' : (positionParam === 'home_top' ? 'main' : positionParam);
-      const limit = parseInt(c.req.query('limit') || '10', 10);
+      const rawLimit = parseInt(c.req.query('limit') || '10', 10);
+      const limit = Math.min(Math.max(rawLimit, 1), 25);
+      const customerState = (c.req.query('state') || '').trim();
+      const customerCity = (c.req.query('city') || '').trim();
 
       const now = new Date().toISOString();
 
-      // Fetch active banners (banners table has type: main, spotlight, category, service)
+      // home_top (mapped to `main` for this query): legacy `main` + `home_top` only — not `home_middle`.
+      // position=home_middle uses type = 'home_middle' via the third branch.
       const bannersResult = await query(
         `SELECT 
           id,
@@ -47,29 +55,75 @@ export function registerCustomerContentEndpoints(app: Hono) {
           end_date
         FROM banners
         WHERE is_active = true
-        AND (type = $1 OR $1 = 'all')
+        AND (
+          $1::text = 'all'
+          OR ($1::text = 'main' AND type IN ('main', 'home_top'))
+          OR (type = $1::text)
+        )
         AND (start_date IS NULL OR start_date <= $2)
         AND (end_date IS NULL OR end_date >= $2)
+        AND (
+          (target_state IS NULL AND target_city IS NULL)
+          OR (
+            $4::text <> ''
+            AND target_state IS NOT NULL
+            AND target_city IS NULL
+            AND LOWER(target_state) = LOWER($4::text)
+          )
+          OR (
+            $5::text <> ''
+            AND target_city IS NOT NULL
+            AND LOWER(target_city) = LOWER($5::text)
+            AND (
+              target_state IS NULL
+              OR ($4::text <> '' AND LOWER(target_state) = LOWER($4::text))
+            )
+          )
+        )
         ORDER BY display_order ASC, created_at DESC
         LIMIT $3`,
-        [bannerType, now, limit]
+        [bannerType, now, limit, customerState, customerCity]
       ).catch(() => ({ rows: [] }));
 
+      const parseMetadata = (raw: unknown): Record<string, unknown> => {
+        if (raw == null) return {};
+        if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+        if (typeof raw === 'string') {
+          try {
+            const o = JSON.parse(raw);
+            return typeof o === 'object' && o !== null && !Array.isArray(o) ? o : {};
+          } catch {
+            return {};
+          }
+        }
+        return {};
+      };
+
+      // Legacy home hero promos removed from product (see migration 1006); omit if still in DB.
+      const legacyHeroTitles = new Set(['Get 50% OFF', 'Premium Pet Food']);
+
       // Map banners to frontend format (type exposed as position for backward compat)
-      const banners = (bannersResult.rows || []).map((b: any) => ({
+      const banners = (bannersResult.rows || [])
+        .filter((b: any) => !legacyHeroTitles.has(String(b.title || '').trim()))
+        .map((b: any) => {
+        const meta = parseMetadata(b.metadata);
+        return {
         id: b.id,
         title: b.title,
         subtitle: b.subtitle,
         imageUrl: b.image_url,
         ctaText: b.cta_text || 'Learn More',
         ctaLink: b.cta_link,
-        position: b.type || 'main',
+        position:
+          b.type === 'main' || b.type === 'home_top'
+            ? 'home_top'
+            : b.type || 'home_top',
         displayOrder: b.display_order || 0,
-        // Extract gradient colors from metadata or use defaults
-        gradientFrom: b.metadata?.gradient_from || '#FF8C42',
-        gradientTo: b.metadata?.gradient_to || '#FF6B35',
-        icon: b.metadata?.icon,
-      }));
+        gradientFrom: (meta.gradient_from as string) || '#FF8C42',
+        gradientTo: (meta.gradient_to as string) || '#FF6B35',
+        icon: meta.icon,
+        };
+      });
 
       return c.json({
         success: true,
@@ -83,17 +137,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
         success: true,
         banners: [
           {
-            id: 'default-1',
-            title: 'Get 50% OFF',
-            subtitle: 'First Grooming Session',
-            gradientFrom: '#FF8C42',
-            gradientTo: '#FF6B35',
-            ctaText: 'Claim Now',
-            ctaLink: '/grooming',
-            icon: '✂️',
-          },
-          {
-            id: 'default-2',
+            id: 'default-vet-checkup',
             title: 'Free Health Checkup',
             subtitle: 'Book Vet Appointment Today',
             gradientFrom: '#4CAF50',
@@ -102,18 +146,8 @@ export function registerCustomerContentEndpoints(app: Hono) {
             ctaLink: '/vet',
             icon: '🩺',
           },
-          {
-            id: 'default-3',
-            title: 'Premium Pet Food',
-            subtitle: '20% OFF on First Order',
-            gradientFrom: '#FF6B9D',
-            gradientTo: '#C44569',
-            ctaText: 'Shop Now',
-            ctaLink: '/shop',
-            icon: '🦴',
-          },
         ],
-        total: 3,
+        total: 1,
         isDefault: true,
       });
     }
@@ -139,6 +173,8 @@ export function registerCustomerContentEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '5', 10);
       const featured = c.req.query('featured') === 'true';
 
+      // Include all categories: both admin categories (legal, help, marketing, other) 
+      // and customer-facing categories (tips, article, nutrition, health, grooming, insurance, behavior)
       let articlesQuery = `
         SELECT 
           id,
@@ -152,7 +188,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
           updated_at
         FROM content_pages
         WHERE is_published = true
-        AND category IN ('marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior')
+        AND category IN ('marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior', 'legal', 'help', 'other', 'general')
       `;
 
       const params: any[] = [];
@@ -164,38 +200,61 @@ export function registerCustomerContentEndpoints(app: Hono) {
         paramIndex++;
       }
 
+      // Use string checks — casting metadata->>'featured' to boolean breaks the whole query
+      // when values are empty or non-boolean strings (PostgreSQL invalid input for type boolean).
+      const featuredSql = `(metadata->>'featured') IN ('true', 't', '1', 'yes')`;
+
       if (featured) {
-        articlesQuery += ` AND (metadata->>'featured')::boolean = true`;
+        articlesQuery += ` AND ${featuredSql}`;
       }
 
       articlesQuery += ` ORDER BY 
-        CASE WHEN (metadata->>'featured')::boolean = true THEN 0 ELSE 1 END,
+        CASE WHEN ${featuredSql} THEN 0 ELSE 1 END,
         updated_at DESC
         LIMIT $${paramIndex}`;
       params.push(limit);
 
-      const articlesResult = await query(articlesQuery, params).catch((err: any) => {
+      let articlesResult: { rows?: any[] };
+      try {
+        articlesResult = await query(articlesQuery, params);
+      } catch (err: any) {
         const duration = Date.now() - startTime;
-        // ✅ Enhanced logging for 503 diagnosis
-        console.warn(`[articles] Query failed after ${duration}ms:`, err?.message || err);
-        if (err?.message?.includes('connection pool') || err?.message?.includes('too many clients')) {
-          console.error('[articles] ⚠️ Connection pool exhausted - returning default articles');
+        console.error('[articles] Query failed', {
+          durationMs: duration,
+          code: err?.code,
+          message: err?.message || String(err),
+        });
+        const poolExhausted =
+          typeof err?.message === 'string' &&
+          (err.message.includes('connection pool') || err.message.includes('too many clients'));
+        if (poolExhausted) {
+          console.error('[articles] Connection pool exhausted');
         }
-        return { rows: [] };
-      });
+        // Degrade gracefully: empty list + 200 so the app shows "No articles" instead of HTTP 503.
+        return c.json({
+          success: true,
+          articles: [],
+          total: 0,
+          degraded: true,
+        });
+      }
 
       // Map articles to frontend format
-      const articles = (articlesResult.rows || []).map((a: any) => ({
-        id: a.id,
-        title: a.title,
-        slug: a.slug,
-        category: a.category,
-        readTime: a.metadata?.read_time || '5 min',
-        featured: a.metadata?.featured || false,
-        excerpt: a.content?.substring(0, 150) + '...',
-        createdAt: a.created_at,
-        updatedAt: a.updated_at,
-      }));
+      const articles = (articlesResult.rows || []).map((a: any) => {
+        const text = a.content != null ? String(a.content) : '';
+        const excerpt = text.length > 150 ? `${text.slice(0, 150)}...` : text;
+        return {
+          id: a.id,
+          title: a.title,
+          slug: a.slug,
+          category: a.category,
+          readTime: a.metadata?.read_time || '5 min',
+          featured: a.metadata?.featured || false,
+          excerpt,
+          createdAt: a.created_at,
+          updatedAt: a.updated_at,
+        };
+      });
 
       return c.json({
         success: true,
@@ -204,35 +263,80 @@ export function registerCustomerContentEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching customer articles:', error);
-      // Return default articles on error
+      return c.json(
+        {
+          success: false,
+          articles: [],
+          total: 0,
+          error: 'Articles could not be loaded. Please try again shortly.',
+          code: 'ARTICLES_ERROR',
+        },
+        500
+      );
+    }
+  });
+
+  /**
+   * GET /customer/articles/:slug
+   * Single published article for the customer article viewer (ArticleDetailClient).
+   * Delegates to the same lookup as GET /customer/content/pages/:slug but returns { article }.
+   */
+  app.get('/customer/articles/:slug', async (c) => {
+    try {
+      let slug = c.req.param('slug') || '';
+      try {
+        slug = slug ? decodeURIComponent(slug) : '';
+      } catch {
+        // keep raw slug if decode fails
+      }
+      if (!slug) {
+        return c.json({ success: false, error: 'Slug is required' }, 400);
+      }
+
+      const encoded = encodeURIComponent(slug);
+      const forwardUrl = c.req.url.replace(
+        /\/customer\/articles\/[^/?]+/,
+        `/customer/content/pages/${encoded}`
+      );
+
+      const resp = await app.fetch(
+        new Request(forwardUrl, {
+          method: 'GET',
+          headers: c.req.raw.headers,
+        })
+      );
+
+      const data: { success?: boolean; page?: Record<string, unknown>; error?: string } = await resp
+        .json()
+        .catch(() => ({}));
+
+      if (!resp.ok || !data?.success || !data?.page) {
+        const status = resp.status === 404 ? 404 : resp.status >= 400 ? resp.status : 404;
+        return c.json(
+          { success: false, error: (data as { error?: string })?.error || 'Article not found' },
+          status
+        );
+      }
+
+      const p = data.page;
       return c.json({
         success: true,
-        articles: [
-          {
-            id: 'default-1',
-            title: '10 Tips for Puppy Training',
-            category: 'Training',
-            readTime: '5 min',
-            icon: '🐕',
-          },
-          {
-            id: 'default-2',
-            title: 'Best Foods for Senior Dogs',
-            category: 'Nutrition',
-            readTime: '7 min',
-            icon: '🥗',
-          },
-          {
-            id: 'default-3',
-            title: 'Understanding Pet Insurance',
-            category: 'Insurance',
-            readTime: '6 min',
-            icon: '🛡️',
-          },
-        ],
-        total: 3,
-        isDefault: true,
+        article: {
+          id: p.id,
+          title: p.title,
+          slug: p.slug,
+          content: p.content,
+          category: p.category,
+          readTime: p.readTime,
+          featured: p.featured,
+          createdAt: p.createdAt,
+          updatedAt: p.updatedAt,
+        },
       });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to fetch article';
+      console.error('[customer/articles/:slug]', message);
+      return c.json({ success: false, error: message }, 500);
     }
   });
 
@@ -289,6 +393,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
           ctaLink: a.cta_link,
           announcementType: a.announcement_type || 'feature',
           displayOrder: a.display_order || 0,
+          comingSoon: Boolean(a.coming_soon ?? a.comingSoon),
         }));
 
       return c.json({
@@ -314,22 +419,24 @@ export function registerCustomerContentEndpoints(app: Hono) {
           {
             id: 'default-sos',
             title: 'Emergency Ambulance',
-            subtitle: 'Instant location-based dispatch',
-            badgeText: 'SOS',
-            badgeColor: 'red',
+            subtitle: 'Coming soon — instant location-based dispatch when we launch',
+            badgeText: 'SOON',
+            badgeColor: 'amber',
             icon: '📞',
-            ctaText: 'SOS ALERT',
-            ctaLink: '/ambulance',
+            ctaText: 'COMING SOON',
             announcementType: 'emergency',
+            comingSoon: true,
           },
           {
             id: 'default-premium',
             title: 'WarmPawz Plus',
-            subtitle: 'Unlimited services at best prices',
-            badgeText: 'PREMIUM',
-            badgeColor: 'purple',
+            subtitle: 'Coming soon — unlimited services at best prices when we launch',
+            badgeText: 'SOON',
+            badgeColor: 'amber',
             icon: '⭐',
+            ctaText: 'COMING SOON',
             announcementType: 'premium',
+            comingSoon: true,
           },
         ],
         total: 3,
@@ -348,26 +455,43 @@ export function registerCustomerContentEndpoints(app: Hono) {
 
   /**
    * GET /customer/featured-vendors
-   * Get spotlight/featured vendors for customer home "Featured" block.
+   * Spotlight/featured vendor cards for service dashboards only (not global home).
+   * Query: `service` — required for a non-empty list (e.g. grooming, vet, boarding, training, sitting, veterinary).
+   *        Mirrors PromotionBanner `service` and promotion-navigation slugs. Omit or unknown → { vendors: [] }.
    * Reads from spotlight_offers (admin-configured); does not use payment policy.
    */
   app.get("/customer/featured-vendors", async (c) => {
     try {
       const limit = parseInt(c.req.query('limit') || '6', 10);
+      const serviceQ = c.req.query('service') ?? c.req.query('Service');
+      const requested = resolveFeaturedVendorsRequestScreen(
+        Array.isArray(serviceQ) ? serviceQ[0] : serviceQ
+      );
+      if (!requested) {
+        return c.json({ success: true, vendors: [], total: 0 });
+      }
+
       const now = new Date().toISOString();
 
       const result = await query(
-        `SELECT id, title, subtitle, image_url, cta_text, cta_link, role_id, service_category, metadata, display_order
+        `SELECT id, title, subtitle, image_url, cta_text, cta_link, role_id, service_category, metadata, display_order, created_at
          FROM spotlight_offers
          WHERE is_active = true
          AND (start_date IS NULL OR start_date <= $1)
          AND (end_date IS NULL OR end_date >= $1)
-         ORDER BY display_order ASC, created_at DESC
-         LIMIT $2`,
-        [now, limit]
+         ORDER BY display_order ASC, created_at DESC`,
+        [now]
       ).catch(() => ({ rows: [] }));
 
-      const vendors = (result.rows || []).map((r: any) => ({
+      const rows = (result.rows || []) as any[];
+      const matched: any[] = [];
+      for (const r of rows) {
+        if (matched.length >= limit) break;
+        const bucket = canonicalScreenForSpotlightRow(r.service_category, r.role_id);
+        if (bucket === requested) matched.push(r);
+      }
+
+      const vendors = matched.map((r) => ({
         id: r.id,
         vendorId: r.metadata?.vendorId || null,
         vendorName: r.metadata?.vendorName || r.title,
@@ -475,6 +599,253 @@ export function registerCustomerContentEndpoints(app: Hono) {
           rehomingListings: 20,
         },
       });
+    }
+  });
+
+  /**
+   * GET /customer/content/pages/:slug
+   * Get a single content page by slug for full page display
+   */
+  app.get("/customer/content/pages/:slug", async (c) => {
+    try {
+      const rawSlug = c.req.param('slug');
+      
+      // Hono's param() may already decode, but handle both cases
+      let slug: string;
+      try {
+        // Try decoding - if already decoded, this will work fine
+        slug = rawSlug ? decodeURIComponent(rawSlug) : '';
+      } catch (e) {
+        // If decode fails, use raw value (might already be decoded)
+        slug = rawSlug || '';
+      }
+
+      console.log('[ContentPageViewer API] Received slug:', { rawSlug, decodedSlug: slug });
+
+      if (!slug) {
+        return c.json({ success: false, error: 'Slug is required' }, 400);
+      }
+
+      // Try multiple slug variations to handle different storage formats
+      const slugVariations = [
+        slug,                                    // Exact match
+        slug.replace(/\s+/g, '-'),               // Spaces to hyphens
+        slug.replace(/\s+/g, '_'),               // Spaces to underscores
+        slug.toLowerCase(),                      // Lowercase
+        slug.toLowerCase().replace(/\s+/g, '-'), // Lowercase + hyphens
+        slug.toLowerCase().replace(/\s+/g, '_'), // Lowercase + underscores
+      ];
+
+      // Remove duplicates
+      const uniqueVariations = [...new Set(slugVariations)];
+
+      console.log('[ContentPageViewer API] Searching with variations:', uniqueVariations);
+
+      // Build query with all variations
+      const placeholders = uniqueVariations.map((_, i) => `$${i + 1}`).join(', ');
+      const queryParams = uniqueVariations;
+      
+      const pageResult = await query(
+        `SELECT 
+          id,
+          title,
+          slug,
+          content,
+          category,
+          is_published,
+          metadata,
+          created_at,
+          updated_at
+        FROM content_pages
+        WHERE slug IN (${placeholders}) AND is_published = true
+        LIMIT 1`,
+        queryParams
+      ).catch((err) => {
+        console.error('[ContentPageViewer API] Database query error:', err);
+        return { rows: [] };
+      });
+
+      console.log('[ContentPageViewer API] Query result:', {
+        found: pageResult.rows?.length > 0,
+        matchedSlug: pageResult.rows?.[0]?.slug,
+      });
+
+      if (!pageResult.rows || pageResult.rows.length === 0) {
+        // Try case-insensitive search as fallback
+        console.log('[ContentPageViewer API] Exact match failed, trying case-insensitive search');
+        
+        const caseInsensitiveResult = await query(
+          `SELECT 
+            id,
+            title,
+            slug,
+            content,
+            category,
+            is_published,
+            metadata,
+            created_at,
+            updated_at
+          FROM content_pages
+          WHERE LOWER(TRIM(slug)) = LOWER(TRIM($1)) AND is_published = true
+          LIMIT 1`,
+          [slug]
+        ).catch(() => ({ rows: [] }));
+
+        if (caseInsensitiveResult.rows && caseInsensitiveResult.rows.length > 0) {
+          console.log('[ContentPageViewer API] Found via case-insensitive search');
+          const page = caseInsensitiveResult.rows[0];
+          
+          return c.json({
+            success: true,
+            page: {
+              id: page.id,
+              title: page.title,
+              slug: page.slug,
+              content: page.content,
+              category: page.category,
+              readTime: page.metadata?.read_time || '5 min',
+              featured: page.metadata?.featured || false,
+              imageUrl: page.metadata?.image_url,
+              seoTitle: page.metadata?.seo_title || page.title,
+              seoDescription: page.metadata?.seo_description || page.content?.substring(0, 160),
+              createdAt: page.created_at,
+              updatedAt: page.updated_at,
+            },
+          });
+        }
+
+        // Log available slugs for debugging
+        const allPages = await query(
+          `SELECT slug, title, is_published, category FROM content_pages ORDER BY updated_at DESC LIMIT 20`
+        ).catch(() => ({ rows: [] }));
+        
+        const availablePages = allPages.rows.map((p: any) => ({
+          slug: p.slug,
+          slugLength: p.slug?.length || 0,
+          slugEncoded: encodeURIComponent(p.slug || ''),
+          title: p.title,
+          isPublished: p.is_published,
+          category: p.category,
+        }));
+        
+        console.log('[ContentPageViewer API] Available pages:', JSON.stringify(availablePages, null, 2));
+        console.log('[ContentPageViewer API] Searched variations:', JSON.stringify(uniqueVariations.map(s => ({
+          slug: s,
+          length: s.length,
+          encoded: encodeURIComponent(s),
+        })), null, 2));
+        
+        return c.json({ 
+          success: false, 
+          error: `Page not found. Searched for: ${uniqueVariations.join(', ')}`,
+          debug: {
+            searchedVariations: uniqueVariations,
+            availableSlugs: allPages.rows.map((p: any) => p.slug),
+            rawSlug: rawSlug,
+            decodedSlug: slug,
+          }
+        }, 404);
+      }
+
+      const page = pageResult.rows[0];
+      
+      return c.json({
+        success: true,
+        page: {
+          id: page.id,
+          title: page.title,
+          slug: page.slug,
+          content: page.content,
+          category: page.category,
+          readTime: page.metadata?.read_time || '5 min',
+          featured: page.metadata?.featured || false,
+          imageUrl: page.metadata?.image_url,
+          seoTitle: page.metadata?.seo_title || page.title,
+          seoDescription: page.metadata?.seo_description || page.content?.substring(0, 160),
+          createdAt: page.created_at,
+          updatedAt: page.updated_at,
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching content page:', error);
+      return c.json({ 
+        success: false, 
+        error: error.message || 'Failed to fetch page' 
+      }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/content/pages
+   * Get all published content pages with optional filtering
+   * Query params: category (optional), limit (optional), offset (optional)
+   */
+  app.get("/customer/content/pages", async (c) => {
+    try {
+      const category = c.req.query('category');
+      const limit = parseInt(c.req.query('limit') || '20', 10);
+      const offset = parseInt(c.req.query('offset') || '0', 10);
+
+      let pagesQuery = `
+        SELECT 
+          id,
+          title,
+          slug,
+          content,
+          category,
+          is_published,
+          metadata,
+          created_at,
+          updated_at
+        FROM content_pages
+        WHERE is_published = true
+      `;
+
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      if (category) {
+        pagesQuery += ` AND category = $${paramIndex}`;
+        params.push(category);
+        paramIndex++;
+      }
+
+      pagesQuery += ` ORDER BY 
+        CASE WHEN (metadata->>'featured') IN ('true', 't', '1', 'yes') THEN 0 ELSE 1 END,
+        updated_at DESC
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+
+      const pagesResult = await query(pagesQuery, params).catch(() => ({ rows: [] }));
+
+      const pages = (pagesResult.rows || []).map((p: any) => ({
+        id: p.id,
+        title: p.title,
+        slug: p.slug,
+        category: p.category,
+        excerpt: p.content?.substring(0, 150) + '...',
+        readTime: p.metadata?.read_time || '5 min',
+        featured: p.metadata?.featured || false,
+        imageUrl: p.metadata?.image_url,
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+      }));
+
+      return c.json({
+        success: true,
+        pages,
+        total: pages.length,
+        limit,
+        offset,
+      });
+    } catch (error: any) {
+      console.error('Error fetching content pages:', error);
+      return c.json({ 
+        success: false, 
+        error: error.message || 'Failed to fetch pages',
+        pages: [],
+        total: 0,
+      }, 500);
     }
   });
 }

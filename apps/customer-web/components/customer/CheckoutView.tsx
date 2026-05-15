@@ -5,17 +5,23 @@ import { ArrowLeft, MapPin, CreditCard, Edit2, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
 import { calculateTax } from '@/lib/tax-system';
 import { cartItemsToTaxableItems } from '@/lib/tax-system/taxCalculatorUtils';
+import { CustomerPlacementBanners } from '@/components/customer/shared/CustomerPlacementBanners';
 
 interface CheckoutViewProps {
   phone: string;
   onBack: () => void;
   onSuccess: (orderId: string) => void;
+  onNavigate?: (screen: string, data?: unknown) => void;
 }
 
-export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
+export function CheckoutView({ phone, onBack, onSuccess, onNavigate }: CheckoutViewProps) {
   const { cart, getTotal, clearCart } = useCart();
   const [selectedAddress, setSelectedAddress] = useState<any>(null);
   const [addresses, setAddresses] = useState<any[]>([]);
@@ -123,13 +129,17 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
         return;
       }
 
-      // Online payment (Razorpay) flow
-      const paymentOptions = {
+      // Online payment (Razorpay) flow — Standard Checkout; desktop UPI may still default to QR per Razorpay
+      const checkoutEmail = await fetchCheckoutEmailForPrefill(phone);
+      const paymentOptions = buildSanitizedStandardRazorpayCheckoutOptions({
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY || 'rzp_test_key',
-        amount: total * 100, // Convert to paise
+        amountPaise: Math.max(1, Math.round(total * 100)),
         currency: 'INR',
         name: 'Warmpawz',
         description: `Order for ${cart.length} item(s)`,
+        customerPhone: phone,
+        customerEmail: checkoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             // Verify payment and create order
@@ -161,9 +171,6 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
             setProcessing(false);
           }
         },
-        prefill: {
-          contact: phone.replace(/[^0-9]/g, ''),
-        },
         theme: {
           color: '#FF8C42',
         },
@@ -173,7 +180,7 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
             toast.info('Payment cancelled');
           },
         },
-      };
+      });
 
       // Load Razorpay script and open checkout
       if (typeof window !== 'undefined' && (window as any).Razorpay) {
@@ -230,7 +237,7 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-md mx-auto">
         {/* Header */}
-        <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-10 px-4 py-4 rounded-b-2xl shadow-md">
+        <div className="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white sticky top-0 z-10 py-4 rounded-b-2xl shadow-md cw-header-safe-top cw-header-safe-x">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
@@ -245,6 +252,7 @@ export function CheckoutView({ phone, onBack, onSuccess }: CheckoutViewProps) {
         </div>
 
         <div className="p-4 space-y-4">
+          <CustomerPlacementBanners placement="checkout" onNavigate={onNavigate} />
           {/* Delivery Address */}
           <div className="bg-white rounded-xl p-4 shadow-sm">
             <div className="flex items-start justify-between mb-3">

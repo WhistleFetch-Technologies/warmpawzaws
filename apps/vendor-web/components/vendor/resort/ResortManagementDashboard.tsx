@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, Hotel, Bed, Calendar, Users, CheckCircle2, Edit, Trash2, Eye, EyeOff, MapPin, Clock, Shield, Image, Upload, X, Check, FileText } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/components/ui/utils';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -81,6 +83,7 @@ export function ResortManagementDashboard({ vendorId, vendorData, onBack }: Reso
   // Photos state
   const [photos, setPhotos] = useState<string[]>([]);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const resortPhotoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadData();
@@ -803,74 +806,74 @@ export function ResortManagementDashboard({ vendorId, vendorData, onBack }: Reso
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold text-gray-900">Manage Photos</h2>
-              <Button className="bg-orange-500 hover:bg-orange-600">
-                <Upload className="w-4 h-4 mr-2" />
+              <label
+                htmlFor="photo-upload"
+                className={cn(
+                  buttonVariants(),
+                  'cursor-pointer bg-orange-500 text-white hover:bg-orange-600',
+                  uploadingPhoto && 'pointer-events-none opacity-60'
+                )}
+              >
+                <Upload className="mr-2 h-4 w-4" />
                 Upload Photos
-              </Button>
+              </label>
             </div>
             
             <Card className="p-6">
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
-                <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Upload Resort Photos</h3>
-                <p className="text-gray-500 mb-4">Drag and drop photos here, or click to select</p>
-                <p className="text-sm text-gray-400">Recommended: 1200x800px, max 5MB per image</p>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  id="photo-upload"
-                  onChange={async (e) => {
-                    const files = e.target.files;
-                    if (files && files.length > 0) {
-                      setUploadingPhoto(true);
-                      try {
-                        const uploadedUrls: string[] = [];
-                        for (let i = 0; i < files.length; i++) {
-                          const file = files[i];
-                          // Get presigned URL
-                          const presignedRes = await apiClient.post<any>('/upload/presigned-url', {
-                            fileName: `vendor-${vendorId}-${Date.now()}-${file.name}`,
-                            fileType: file.type,
-                            folder: 'vendor-photos'
+              <TouchFilePicker
+                inputId="photo-upload"
+                ref={resortPhotoInputRef}
+                accept="image/*"
+                multiple
+                disabled={uploadingPhoto}
+                onFileChange={async (e) => {
+                  const files = e.target.files;
+                  if (files && files.length > 0) {
+                    setUploadingPhoto(true);
+                    try {
+                      const uploadedUrls: string[] = [];
+                      for (let i = 0; i < files.length; i++) {
+                        const file = files[i];
+                        const presignedRes = await apiClient.post<any>('/upload/presigned-url', {
+                          fileName: `vendor-${vendorId}-${Date.now()}-${file.name}`,
+                          fileType: file.type,
+                          folder: 'vendor-photos'
+                        });
+                        
+                        if (presignedRes.uploadUrl) {
+                          await fetch(presignedRes.uploadUrl, {
+                            method: 'PUT',
+                            body: file,
+                            headers: { 'Content-Type': file.type }
                           });
-                          
-                          if (presignedRes.uploadUrl) {
-                            // Upload to S3
-                            await fetch(presignedRes.uploadUrl, {
-                              method: 'PUT',
-                              body: file,
-                              headers: { 'Content-Type': file.type }
-                            });
-                            uploadedUrls.push(presignedRes.fileUrl || presignedRes.downloadUrl);
-                          }
+                          uploadedUrls.push(presignedRes.fileUrl || presignedRes.downloadUrl);
                         }
-                        
-                        // Update photos state and save to backend
-                        const newPhotos = [...photos, ...uploadedUrls];
-                        setPhotos(newPhotos);
-                        
-                        // Save photos to vendor profile
-                        await apiClient.put<any>(`/vendor/${vendorId}/profile`, { photos: newPhotos });
-                        toast.success(`${files.length} photo(s) uploaded successfully!`);
-                      } catch (error) {
-                        console.error('Photo upload error:', error);
-                        toast.error('Failed to upload photos. Please try again.');
-                      } finally {
-                        setUploadingPhoto(false);
                       }
+                      
+                      const newPhotos = [...photos, ...uploadedUrls];
+                      setPhotos(newPhotos);
+                      
+                      await apiClient.put<any>(`/vendor/${vendorId}/profile`, { photos: newPhotos });
+                      toast.success(`${files.length} photo(s) uploaded successfully!`);
+                    } catch (error) {
+                      console.error('Photo upload error:', error);
+                      toast.error('Failed to upload photos. Please try again.');
+                    } finally {
+                      setUploadingPhoto(false);
                     }
-                  }}
-                />
-                <Button 
-                  variant="outline" 
-                  className="mt-4"
-                  onClick={() => document.getElementById('photo-upload')?.click()}
-                >
+                  }
+                }}
+                className="cursor-pointer rounded-xl border-2 border-dashed border-gray-300 p-12 text-center hover:border-orange-400"
+                innerClassName="min-h-[14rem] gap-2"
+              >
+                <Upload className="mx-auto mb-4 h-12 w-12 text-gray-400" />
+                <h3 className="mb-2 text-lg font-medium text-gray-900">Upload Resort Photos</h3>
+                <p className="mb-4 text-gray-500">Tap or drag to add photos</p>
+                <p className="text-sm text-gray-400">Recommended: 1200x800px, max 5MB per image</p>
+                <span className={cn(buttonVariants({ variant: 'outline' }), 'mt-4 inline-flex')}>
                   Select Photos
-                </Button>
-              </div>
+                </span>
+              </TouchFilePicker>
             </Card>
 
             {photos.length === 0 ? (

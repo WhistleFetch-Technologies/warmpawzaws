@@ -11,6 +11,15 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import {
+  fetchCustomerUuidByPhone,
+  formatWalletTopUpError,
+  normalizeRazorpayCreateOrderResponse,
+} from '@/lib/wallet-razorpay-helpers';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
 
 // Razorpay type declaration
@@ -56,6 +65,42 @@ interface EnhancedWalletPageProps {
   customerId?: string;
   onBack: () => void;
   onNavigate?: (screen: string, data?: any) => void;
+}
+
+/** Lambda GET /wallet/:id returns a flat body (no success/data wrapper). Some routes wrap — accept both. */
+function walletPayloadFromGetWalletResponse(res: any): WalletData | null {
+  if (!res || typeof res !== 'object') return null;
+  const d = res.success && res.data ? res.data : res;
+  if (!d || typeof d !== 'object') return null;
+  if (d.balance == null && d.customerId == null && d.customer_id == null) return null;
+  return {
+    balance: Number(d.balance ?? 0),
+    pending_credits: Number(d.pending_credits ?? d.pendingCredits ?? 0),
+    total_earned: Number(d.total_earned ?? d.totalEarned ?? 0),
+    total_spent: Number(d.total_spent ?? d.totalSpent ?? 0),
+    loyalty_points: Number(d.loyalty_points ?? d.loyaltyPoints ?? 0),
+    tier: (d.tier as WalletData['tier']) || 'bronze',
+  };
+}
+
+/** GET /wallet/:id/transactions returns flat { transactions } from Lambda. */
+function transactionsFromWalletTxResponse(res: any): Transaction[] {
+  if (!res || typeof res !== 'object') return [];
+  const raw =
+    (res.success && res.data && Array.isArray(res.data.transactions) && res.data.transactions) ||
+    (Array.isArray(res.transactions) && res.transactions) ||
+    (res.data && Array.isArray(res.data.transactions) && res.data.transactions) ||
+    [];
+  return raw.map((t: any) => ({
+    id: String(t.id ?? ''),
+    type: (t.type === 'credit' || t.type === 'debit' ? t.type : t.transaction_type) as Transaction['type'],
+    amount: Number(t.amount ?? 0),
+    description: String(t.description ?? ''),
+    reference_type: t.reference_type ?? t.referenceType,
+    reference_id: t.reference_id != null ? String(t.reference_id) : t.referenceId != null ? String(t.referenceId) : undefined,
+    status: (t.status === 'pending' || t.status === 'failed' ? t.status : 'completed') as Transaction['status'],
+    created_at: String(t.created_at ?? t.timestamp ?? new Date().toISOString()),
+  }));
 }
 
 export function EnhancedWalletPage({ 
@@ -108,18 +153,16 @@ export function EnhancedWalletPage({
         // Load wallet
         try {
           const walletRes = await apiClient.get<any>(`/wallet/${id}`);
-          if (walletRes.success && walletRes.data) {
-            setWallet({
-              balance: walletRes.data.balance || 0,
-              pending_credits: walletRes.data.pending_credits || 0,
-              total_earned: walletRes.data.total_earned || 0,
-              total_spent: walletRes.data.total_spent || 0,
-              loyalty_points: walletRes.data.loyalty_points || 0,
-              tier: walletRes.data.tier || 'bronze',
-            });
+          const normalized = walletPayloadFromGetWalletResponse(walletRes);
+          if (normalized) {
+            setWallet(normalized);
+          } else {
+            const fallback = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
+            if (fallback.wallet) {
+              setWallet(fallback.wallet);
+            }
           }
         } catch {
-          // Fallback
           const fallback = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
           if (fallback.wallet) {
             setWallet(fallback.wallet);
@@ -142,29 +185,28 @@ export function EnhancedWalletPage({
       params.append('limit', '50');
       
       const res = await apiClient.get<any>(`/wallet/${customerId}/transactions?${params.toString()}`);
-      if (res.success && res.data) {
-        setTransactions(res.data.transactions || []);
-        
-        // Calculate spending by category
-        const spending: Record<string, SpendingCategory> = {};
-        (res.data.transactions || []).forEach((t: Transaction) => {
-          if (t.type === 'debit' && t.reference_type) {
-            const key = t.reference_type;
-            if (!spending[key]) {
-              spending[key] = {
-                category: key,
-                amount: 0,
-                count: 0,
-                icon: getCategoryIcon(key),
-                color: getCategoryColor(key),
-              };
-            }
-            spending[key].amount += t.amount;
-            spending[key].count += 1;
+      const list = transactionsFromWalletTxResponse(res);
+      setTransactions(list);
+
+      const spending: Record<string, SpendingCategory> = {};
+      list.forEach((t: Transaction) => {
+        const ref = t.reference_type;
+        if (t.type === 'debit' && ref) {
+          const key = ref;
+          if (!spending[key]) {
+            spending[key] = {
+              category: key,
+              amount: 0,
+              count: 0,
+              icon: getCategoryIcon(key),
+              color: getCategoryColor(key),
+            };
           }
-        });
-        setSpendingByCategory(Object.values(spending).sort((a, b) => b.amount - a.amount));
-      }
+          spending[key].amount += t.amount;
+          spending[key].count += 1;
+        }
+      });
+      setSpendingByCategory(Object.values(spending).sort((a, b) => b.amount - a.amount));
     } catch (error) {
       console.error('Error loading transactions:', error);
     }
@@ -211,40 +253,78 @@ export function EnhancedWalletPage({
       return;
     }
 
-    if (!customerId) {
-      toast.error('Please refresh and try again');
-      return;
-    }
-
     setProcessingTopUp(true);
     try {
-      const orderRes = await apiClient.post<any>('/razorpay/create-order', {
-        amount,
-        currency: 'INR',
-        customerId,
-      });
-
-      if (!orderRes.orderId) {
-        throw new Error('Failed to create payment order');
+      let resolvedCustomerId = customerId;
+      if (!resolvedCustomerId) {
+        resolvedCustomerId = await fetchCustomerUuidByPhone((p) => apiClient.get(p), customerPhone);
+        if (resolvedCustomerId) setCustomerId(resolvedCustomerId);
+      }
+      if (!resolvedCustomerId) {
+        toast.error('Please refresh and try again');
+        setProcessingTopUp(false);
+        return;
       }
 
-      const options = {
-        key: orderRes.keyId,
-        amount: amount * 100,
+      const orderRaw = await apiClient.post<any>('/razorpay/create-order', {
+        type: 'wallet_topup',
+        paymentType: 'wallet_topup',
+        purpose: 'wallet',
+        amount,
         currency: 'INR',
+        customerId: resolvedCustomerId,
+        customerPhone,
+      });
+
+      const order = normalizeRazorpayCreateOrderResponse(orderRaw);
+      if (!order) {
+        console.error('[wallet top-up] Unexpected create-order response:', orderRaw);
+        const er =
+          orderRaw && typeof orderRaw === 'object'
+            ? (orderRaw as { error?: string; message?: string }).error ||
+              (orderRaw as { message?: string }).message
+            : undefined;
+        throw new Error(typeof er === 'string' && er.trim() ? er : 'Failed to create payment order');
+      }
+
+      const payAmountPaise = Math.round(order.amount * 100);
+      const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
+
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+        key: order.keyId,
+        amountPaise: payAmountPaise,
+        currency: order.currency || 'INR',
         name: 'Warmpawz',
         description: `Add ₹${amount} to Wallet`,
-        order_id: orderRes.orderId,
+        order_id: order.orderId,
+        customerPhone,
+        customerEmail: checkoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
-            await apiClient.post<any>('/razorpay/verify-payment', {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            });
+            const MAX_RETRIES = 3;
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                await apiClient.post<any>(
+                  '/razorpay/verify-payment',
+                  {
+                    razorpay_order_id: response.razorpay_order_id,
+                    razorpay_payment_id: response.razorpay_payment_id,
+                    razorpay_signature: response.razorpay_signature,
+                  },
+                  undefined,
+                  30000
+                );
+                break;
+              } catch (verifyErr: any) {
+                console.error(`[VERIFY] Attempt ${attempt}/${MAX_RETRIES} failed:`, verifyErr?.message);
+                if (attempt === MAX_RETRIES) throw verifyErr;
+                await new Promise((r) => setTimeout(r, attempt * 1000));
+              }
+            }
 
-            await apiClient.post<any>(`/wallet/${customerId}/credit`, {
-              amount,
+            await apiClient.post<any>(`/wallet/${resolvedCustomerId}/credit`, {
+              amount: Number(amount),
               referenceType: 'topup',
               referenceId: response.razorpay_payment_id,
               description: 'Wallet top-up via Razorpay',
@@ -252,29 +332,28 @@ export function EnhancedWalletPage({
 
             await loadData();
             await loadTransactions();
-            
+
             setShowTopUpModal(false);
             setTopUpAmount('');
             toast.success('Wallet topped up successfully!');
           } catch (error) {
             console.error('Error processing top-up:', error);
-            toast.error('Failed to process top-up');
+            toast.error(formatWalletTopUpError(error) || 'Failed to process top-up');
           } finally {
             setProcessingTopUp(false);
           }
         },
-        prefill: { contact: customerPhone },
         theme: { color: '#FF8C42' },
         modal: {
           ondismiss: () => setProcessingTopUp(false),
         },
-      };
+      });
 
       const razorpay = new window.Razorpay(options);
       razorpay.open();
     } catch (error) {
       console.error('Error initiating top-up:', error);
-      toast.error('Failed to initiate top-up');
+      toast.error(formatWalletTopUpError(error));
       setProcessingTopUp(false);
     }
   };
@@ -336,7 +415,7 @@ export function EnhancedWalletPage({
                 <Sparkles className="w-3 h-3 mr-1" />
                 {tierBadge.text} Member
               </Badge>
-              {wallet?.loyalty_points && wallet.loyalty_points > 0 && (
+              {(wallet?.loyalty_points ?? 0) > 0 && (
                 <div className="flex items-center gap-1 text-amber-200 text-sm">
                   <Coins className="w-4 h-4" />
                   {wallet.loyalty_points} pts
@@ -350,7 +429,7 @@ export function EnhancedWalletPage({
               <p className="text-5xl font-bold tracking-tight">
                 ₹{(wallet?.balance || 0).toLocaleString()}
               </p>
-              {wallet?.pending_credits && wallet.pending_credits > 0 && (
+              {(wallet?.pending_credits ?? 0) > 0 && (
                 <div className="flex items-center justify-center gap-1 mt-2 text-amber-200 text-sm">
                   <Clock className="w-4 h-4" />
                   ₹{wallet.pending_credits.toLocaleString()} pending

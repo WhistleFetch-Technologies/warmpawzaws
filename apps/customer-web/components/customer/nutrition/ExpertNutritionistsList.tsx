@@ -1,9 +1,12 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Star, MapPin, Clock } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { StarRating } from '@/components/customer/shared/StarRating';
 import { apiClient } from '@/lib/api-client';
+import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 
 interface ExpertNutritionistsListProps {
@@ -39,9 +42,7 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
   const fetchNutritionists = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=nutrition&roleId=pet_nutritionist`;
-      const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
-      const nutritionistList = data.vendors || data.services || [];
+      const nutritionistList = await fetchMergedNutritionProviders({ customerPhone: phone });
       setNutritionists(nutritionistList);
     } catch (error: any) {
       console.error('Error loading nutritionists:', error);
@@ -118,7 +119,6 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
               {nutritionists.map((nutritionist: any, index: number) => {
                 const vendorId = nutritionist.id || nutritionist.vendorId;
                 const vendorName = nutritionist.businessName || nutritionist.name || `Nutritionist ${index + 1}`;
-                const rating = nutritionist.rating || 4.9;
 
                 return (
                   <Card
@@ -138,12 +138,14 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
                           {vendorName}
                         </h3>
                         
-                        <div className="flex items-center gap-2 text-xs text-slate-500 mb-2">
-                          <span className="flex items-center gap-1 text-orange-500 font-bold">
-                            <Star className="w-3 h-3 fill-current" />
-                            {typeof rating === 'number' ? rating.toFixed(1) : parseFloat(rating)?.toFixed(1) || '4.9'}
-                          </span>
-                          <span>•</span>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mb-2">
+                          <StarRating
+                            rating={nutritionist.rating}
+                            reviewCount={nutritionist.reviewCount ?? nutritionist.review_count}
+                            starsClassName="w-3 h-3"
+                            textClassName="text-xs text-slate-500"
+                          />
+                          <span className="hidden sm:inline">•</span>
                           <span>Certified Expert</span>
                         </div>
 

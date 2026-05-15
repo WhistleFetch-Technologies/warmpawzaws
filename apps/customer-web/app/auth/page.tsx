@@ -1,12 +1,87 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { apiClient, isUatMode } from '@/lib/api-client';
+import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
+import { applyUnifiedProfileToCustomerLocalStorage } from '@/lib/customer-flow-guards';
 import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
+import {
+  PlatformLegalPolicyDialog,
+  type PlatformPolicyType,
+} from '@/components/legal/PlatformLegalPolicyDialog';
+import {
+  getStoredCustomerJwtForSession,
+  setNeedsPasswordSetupAfterOtp,
+  clearNeedsPasswordSetup,
+} from '@/lib/session-utils';
+import { Eye, EyeOff } from 'lucide-react';
 
-// UAT Mode Configuration - uses runtime config (deploy-time) for static exports
-const UAT_OTP = '123456'; // Static OTP for UAT testing
+const AIChatbotWidget = dynamic(
+  () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
+  { ssr: false }
+);
+
+function dialablePhoneForChat(countryCode: string, phoneDigits: string): string | undefined {
+  const d = phoneDigits.replace(/\D/g, '');
+  if (d.length !== 10) return undefined;
+  return `${countryCode.trim()}${d}`;
+}
+
+// UAT Mode: must match backend when UAT_MODE=true (`auth-enhanced.ts`)
+const UAT_VALID_OTPS = ['123456', '12345678'] as const;
+
+/** Top padding under notch / status bar (requires viewport-fit=cover in root layout). */
+const authOrangeHeaderStyle = { paddingTop: 'max(2rem, env(safe-area-inset-top))' } as const;
+
+/** Brand shell: subtle same-orange gradient, clips pseudo highlights. */
+const authShellClass =
+  'min-h-screen flex justify-center overflow-hidden bg-gradient-to-b from-[#FF9A56] via-[#FF8C42] to-[#E86820]';
+const authColumnClass =
+  'w-full max-w-md min-h-screen flex flex-col overflow-hidden bg-gradient-to-b from-[#FF9A56] via-[#FF8C42] to-[#E86820]';
+/** Very soft circular highlights; children need relative z-10 to sit above ::after. */
+const authHeaderClass =
+  'relative z-0 isolate overflow-hidden px-6 pb-20 flex flex-col items-center before:pointer-events-none before:absolute before:-top-32 before:left-1/2 before:-translate-x-1/2 before:h-[19rem] before:w-[19rem] before:rounded-full before:bg-white/20 before:blur-3xl before:opacity-90 after:pointer-events-none after:absolute after:top-1/2 after:-right-12 after:h-48 after:w-48 after:rounded-full after:bg-amber-100/35 after:blur-3xl after:opacity-80';
+const authHeroH1Class =
+  'text-2xl font-bold text-black italic text-center relative z-10 [text-shadow:0_1px_0_rgba(255,255,255,0.4),0_2px_14px_rgba(0,0,0,0.1)]';
+const authHeroH2Class =
+  'text-2xl font-bold text-black italic text-center relative z-10 [text-shadow:0_1px_0_rgba(255,255,255,0.4),0_2px_14px_rgba(0,0,0,0.1)]';
+const authHeroTitleClass =
+  'text-3xl font-extrabold text-black tracking-wide relative z-10 [text-shadow:0_1px_0_rgba(255,255,255,0.35),0_2px_16px_rgba(0,0,0,0.1)]';
+const authHeroTaglineClass =
+  'mt-3 text-center text-lg font-bold text-black tracking-wide relative z-10 [text-shadow:0_1px_0_rgba(255,255,255,0.3),0_1px_10px_rgba(0,0,0,0.08)]';
+const authLogoRingClass =
+  'relative z-10 w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl ring-1 ring-white/40 mb-6 p-2';
+const authCardClass =
+  'bg-white rounded-t-[2.5rem] min-h-full px-6 pt-10 ring-1 ring-black/5 shadow-[0_-10px_40px_-4px_rgba(0,0,0,0.1),0_8px_32px_rgba(0,0,0,0.06)] pb-[max(1.5rem,env(safe-area-inset-bottom))]';
+const authFieldClass =
+  'w-full py-4 px-4 text-lg border-2 border-gray-200/90 rounded-2xl outline-none bg-[#FFFBF7] transition-all duration-200 focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20 focus:bg-white';
+const authFieldInGroupClass =
+  'w-full py-4 pl-4 pr-14 text-lg border-2 border-gray-200/90 rounded-2xl outline-none bg-[#FFFBF7] transition-all duration-200 focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20 focus:bg-white';
+const authInputGroupClass =
+  'flex items-stretch border-2 border-gray-200/90 rounded-2xl overflow-hidden transition-all duration-200 focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 bg-[#FFFBF7] focus-within:bg-white';
+const authOtpInnerClass =
+  'min-w-0 flex-1 py-4 px-4 text-lg text-center tracking-widest outline-none bg-transparent transition-colors duration-200';
+const authPrimaryButtonClass =
+  'w-full py-3.5 text-white text-lg font-semibold rounded-full border border-white/25 bg-gradient-to-b from-[#FF9A4A] to-[#FF7A2E] shadow-lg shadow-[#C85A10]/30 transition-all duration-200 hover:shadow-xl hover:shadow-[#C85A10]/40 hover:brightness-105 active:scale-[0.98] active:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100';
+
+/** Inline actions: brand orange, no underline until hover/focus; matches primary CTA palette. */
+const authTextLinkCoreClass =
+  'text-[#FF8C42] no-underline underline-offset-2 decoration-2 transition-colors hover:text-[#E86820] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8C42]/40 focus-visible:ring-offset-2 focus-visible:text-[#E86820] focus-visible:underline';
+const authTextLinkClass = `${authTextLinkCoreClass} font-medium rounded-sm`;
+/** “New user?” CTA: soft pill behind the same link behavior; Forgot password stays plain text. */
+const authSignupPillLinkClass =
+  `${authTextLinkCoreClass} font-medium inline-flex justify-center rounded-full px-4 py-2 bg-[#FF8C42]/10 hover:bg-[#FF8C42]/15`;
+/** Terms / Privacy inside gray copy: readable, tappable, same focus ring. */
+const authTermsLinkClass =
+  `${authTextLinkCoreClass} font-semibold rounded-sm py-0.5`;
+
+function setCustomerOnboardingCompleteFromAuth(value: 'true' | 'false'): void {
+  if (typeof window === 'undefined') return;
+  if (value === 'false' && localStorage.getItem('onboarding_completed') === 'true') return;
+  localStorage.setItem('customerOnboardingComplete', value);
+}
 
 function AuthPageContent() {
   const router = useRouter();
@@ -15,12 +90,21 @@ function AuthPageContent() {
   const [redirectAfterLogin, setRedirectAfterLogin] = useState<string | null>(null);
 
   useEffect(() => {
-    // Get redirect from URL after mount (client-side only)
+    // Get redirect + referral (?ref=) from URL after mount (client-side only)
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const redirect = params.get('redirect');
       if (redirect) {
         setRedirectAfterLogin(redirect);
+      }
+      const refCode = params.get('ref') || params.get('referral') || params.get('referralCode');
+      if (refCode && refCode.trim()) {
+        const c = refCode.trim().toUpperCase();
+        setReferralCode(c);
+        setShowReferralModal(true);
+        setReferralApplied(true);
+        localStorage.setItem('pendingReferralCode', c);
+        setAuthMode('signup');
       }
     }
   }, []);
@@ -37,6 +121,56 @@ function AuthPageContent() {
   const [showReferralModal, setShowReferralModal] = useState(false);
   const [referralCode, setReferralCode] = useState('');
   const [referralApplied, setReferralApplied] = useState(false);
+  const [legalDialogOpen, setLegalDialogOpen] = useState(false);
+  const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
+  const [helpChatOpen, setHelpChatOpen] = useState(false);
+  /** Default: password login. OTP signup opens from "New user?" or referral links. */
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+
+  /** Forgot password: dedicated server routes (never generic send-otp for reset). */
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotStep, setForgotStep] = useState<1 | 2 | 3>(1);
+  const [forgotUsername, setForgotUsername] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotResetToken, setForgotResetToken] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotInfo, setForgotInfo] = useState<string | null>(null);
+  const [forgotSuccessBanner, setForgotSuccessBanner] = useState<string | null>(null);
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+
+  const openLegal = (t: PlatformPolicyType) => {
+    setLegalDialogType(t);
+    setLegalDialogOpen(true);
+  };
+
+  const guestHelpChat = helpChatOpen ? (
+    <AIChatbotWidget
+      presentation="modal"
+      customerPhone={dialablePhoneForChat(countryCode, phone)}
+      onClose={() => setHelpChatOpen(false)}
+      onNavigate={(dest) => {
+        if (typeof dest === 'string' && dest.startsWith('/')) {
+          setHelpChatOpen(false);
+          router.push(dest);
+        }
+      }}
+    />
+  ) : null;
+
+  const legalDialog = (
+    <PlatformLegalPolicyDialog
+      open={legalDialogOpen}
+      onOpenChange={(o) => {
+        setLegalDialogOpen(o);
+        if (!o) setLegalDialogType(null);
+      }}
+      policyType={legalDialogType}
+    />
+  );
 
   // UAT_MODE must be computed at runtime (after hydration) for static exports
   const [UAT_MODE, setUatMode] = useState(false);
@@ -51,21 +185,33 @@ function AuthPageContent() {
 
     // Check if already logged in (after session init)
     const storedPhone = localStorage.getItem('customerPhone');
-    const storedToken = localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken');
+    const cognitoAuth = require('@/lib/cognito-auth') as typeof import('@/lib/cognito-auth');
+    const { isTokenExpired } = require('@/lib/session-utils');
 
-    if (storedPhone && storedToken) {
-      // Verify token is not expired
-      const { isTokenExpired } = require('@/lib/session-utils');
-      if (!isTokenExpired(storedToken)) {
+    if (!storedPhone || !cognitoAuth.isAuthenticated()) {
+      return;
+    }
+
+    const storedJwt = getStoredCustomerJwtForSession();
+
+    if (storedJwt && !isTokenExpired(storedJwt)) {
+      const redirect = (typeof window !== 'undefined' && window.location?.search)
+        ? new URLSearchParams(window.location.search).get('redirect') : null;
+      router.push(redirect && redirect.startsWith('/') ? redirect : '/');
+      return;
+    }
+
+    cognitoAuth.refreshCognitoTokensIfNeeded().then(() => {
+      const jwtAfter = getStoredCustomerJwtForSession();
+      if (jwtAfter && !isTokenExpired(jwtAfter)) {
         const redirect = (typeof window !== 'undefined' && window.location?.search)
           ? new URLSearchParams(window.location.search).get('redirect') : null;
         router.push(redirect && redirect.startsWith('/') ? redirect : '/');
-      } else {
-        // Token expired, clear session
+      } else if (!cognitoAuth.isAuthenticated()) {
         const { clearCustomerSession } = require('@/lib/session-utils');
         clearCustomerSession();
       }
-    }
+    });
   }, [router]);
 
   useEffect(() => {
@@ -93,20 +239,29 @@ function AuthPageContent() {
     }
 
     if (UAT_MODE) {
-      console.log('🔧 [UAT Mode] OTP bypassed. Use:', UAT_OTP);
+      console.log('🔧 [UAT Mode] OTP bypassed. Use one of:', UAT_VALID_OTPS.join(', '));
       setOtpSent(true);
       setResendTimer(60);
       setUatHint(true);
       setError(null);
+      if (referralCode?.trim()) {
+        localStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
+      }
       return;
     }
 
     try {
       setLoading(true);
       setError(null);
-      await apiClient.post('/auth/otp/send', { phone: `${countryCode}${phone}` });
+      await apiClient.post('/auth/otp/send', {
+        phone: `${countryCode}${phone}`,
+        role: 'customer',
+      });
       setOtpSent(true);
       setResendTimer(60);
+      if (referralCode?.trim()) {
+        localStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to send OTP');
     } finally {
@@ -114,68 +269,251 @@ function AuthPageContent() {
     }
   };
 
-  // Verifying Otp & UAT mode otp
-  const verifyOtp = async () => {
-    if (!otp || otp.length !== 6) {
-      setError('Please enter the 6-digit OTP');
+  const passwordLogin = async () => {
+    const user = loginUsername.trim();
+    const pass = loginPassword.trim();
+    if (!user || !pass) {
+      setError('Enter phone number and password');
       return;
     }
-
-    if (UAT_MODE) {
-      if (otp !== UAT_OTP) {
-        setError(`Invalid OTP. For UAT testing, use: ${UAT_OTP}`);
+    setLoading(true);
+    setError(null);
+    try {
+      const body = await apiClient.post<any>('/auth/login', {
+        username: user,
+        password: pass,
+        role: 'customer',
+      });
+      const responseData = (body as any).data?.data || (body as any).data || body;
+      const isOk = (body as any).success ?? responseData?.success;
+      const inner = responseData?.data && responseData.data.token ? responseData.data : responseData;
+      if (!isOk || !inner?.token) {
+        setError('Login failed');
         return;
       }
-      setLoading(true);
-      setError(null);
 
-      const cleanPhone = phone.replace(/\D/g, '').slice(-10);
-      localStorage.setItem('customerPhone', cleanPhone);
-      localStorage.setItem('customer_phone', cleanPhone);
-      localStorage.setItem('phone', cleanPhone);
-      localStorage.setItem('customerCountryCode', countryCode);
-      localStorage.setItem('authToken', `uat-token-customer-${cleanPhone}-${Date.now()}`);
+      const tokenData = inner.token;
+      const accessToken = tokenData.access_token || tokenData.accessToken;
+      const refreshToken = tokenData.refresh_token || tokenData.refreshToken;
+      const idToken = tokenData.id_token || tokenData.idToken;
+      const expiresIn = tokenData.expires_in || tokenData.expiresIn || 86400;
+      const userData = inner.user;
+      const profile = inner.profile;
 
-      if (referralCode) {
-        localStorage.setItem('pendingReferralCode', referralCode);
+      const digits = String(userData?.phone || user)
+        .replace(/\D/g, '')
+        .slice(-10);
+      if (digits.length >= 10) {
+        localStorage.setItem('customerPhone', digits);
+        localStorage.setItem('customer_phone', digits);
+        localStorage.setItem('phone', digits);
+      }
+
+      if (idToken && accessToken) {
+        const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
+        storeCognitoTokens(
+          {
+          accessToken,
+          idToken,
+          refreshToken: refreshToken || '',
+          expiresIn,
+          },
+          { isNewLogin: true }
+        );
+        localStorage.setItem('authToken', idToken || accessToken);
+        if (userData?.id) {
+          storeUserInfo({
+            userId: userData.id,
+            phone: digits || user,
+            username: profile?.username || user,
+          });
+        }
+      } else if (accessToken) {
+        localStorage.setItem('authToken', accessToken);
+        if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
       }
 
       sessionStorage.setItem('_warmpawz_has_session', 'true');
       sessionStorage.setItem('_warmpawz_just_logged_in', 'true');
-      console.log('✅ [Auth] UAT Mode - sessionStorage flags set before navigation');
+      clearNeedsPasswordSetup();
 
       try {
-        const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
-        if (profileResponse?.profile) {
-          localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
-          localStorage.setItem('customerId', profileResponse.profile.id);
-          localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
-
-          const onboardingStatus = profileResponse.profile.onboarding_status || 'INIT';
-          const profileCompleted = profileResponse.profile.profile_completed;
-
-          // Check for pets
-          try {
-            const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
-            if (petsResponse?.pets?.length > 0) {
-              localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
-              localStorage.setItem('customerOnboardingComplete', 'true');
-            }
-          } catch { }
-
-          if (onboardingStatus === 'COMPLETED' || profileCompleted) {
-            localStorage.setItem('customerOnboardingComplete', 'true');
+        const phoneKey = localStorage.getItem('customerPhone') || digits;
+        if (phoneKey && phoneKey.length >= 10) {
+          const profileResponse = await apiClient.get<any>(
+            `/customer/profile/unified/${encodeURIComponent(phoneKey)}`
+          );
+          if (profileResponse?.profile) {
+            localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));
+            localStorage.setItem('customerProfile', JSON.stringify(profileResponse.profile));
+            persistCustomerDatabaseId(profileResponse.profile);
+            const tenDigits = (localStorage.getItem('customerPhone') || digits)
+              .replace(/\D/g, '')
+              .slice(-10);
+            applyUnifiedProfileToCustomerLocalStorage(profileResponse.profile, tenDigits);
           }
         }
       } catch {
-        // New customer - will go through onboarding
-        localStorage.setItem('customerOnboardingComplete', 'false');
+        /* optional */
       }
 
+      const redirectPath =
+        redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
+      router.push(redirectPath);
+    } catch (err: any) {
+      const code = err?.responseData?.error?.code || err?.code;
+      if (code === 'PASSWORD_NOT_SET') {
+        setError('Use Sign up with OTP once to verify your phone, then create a password.');
+      } else {
+        setError(err.message || 'Login failed');
+      }
+    } finally {
       setLoading(false);
-      router.push(redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/');
+    }
+  };
+
+  function pickForgotResponseData(res: unknown): Record<string, unknown> | null {
+    const r = res as Record<string, unknown> | null;
+    if (!r || typeof r !== 'object') return null;
+    const outer = r.data as Record<string, unknown> | undefined;
+    if (outer && typeof outer === 'object' && outer.data && typeof outer.data === 'object') {
+      return outer.data as Record<string, unknown>;
+    }
+    return null;
+  }
+
+  const openForgotPassword = () => {
+    setForgotOpen(true);
+    setForgotStep(1);
+    setForgotUsername(loginUsername.trim());
+    setForgotOtp('');
+    setForgotResetToken('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotInfo(null);
+    setError(null);
+  };
+
+  const closeForgotPassword = () => {
+    setForgotOpen(false);
+    setForgotStep(1);
+    setForgotOtp('');
+    setForgotResetToken('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotInfo(null);
+    setError(null);
+  };
+
+  const submitForgotPasswordRequest = async () => {
+    const u = forgotUsername.trim();
+    if (!u) {
+      setError('Enter the phone number you use to log in');
       return;
     }
+    setLoading(true);
+    setError(null);
+    setForgotInfo(null);
+    try {
+      const res = await apiClient.post<unknown>('/auth/customer/forgot-password/request', { username: u });
+      const inner = pickForgotResponseData(res);
+      const msg =
+        (typeof inner?.message === 'string' && inner.message) ||
+        'If an account exists, we sent instructions.';
+      setForgotInfo(msg);
+      setForgotStep(2);
+    } catch (err: unknown) {
+      const e = err as { statusCode?: number; code?: string; message?: string };
+      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
+        setError('Too many requests. Try again later.');
+      } else {
+        setError(e?.message || 'Something went wrong. Try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitForgotPasswordVerifyOtp = async () => {
+    const u = forgotUsername.trim();
+    if (!forgotOtp || forgotOtp.length !== 6) {
+      setError('Enter the 6-digit code from SMS');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiClient.post<unknown>('/auth/customer/forgot-password/verify-otp', {
+        username: u,
+        otp: forgotOtp,
+      });
+      const inner = pickForgotResponseData(res);
+      const token = typeof inner?.resetToken === 'string' ? inner.resetToken : '';
+      if (!token) {
+        setError('Invalid or expired code');
+        return;
+      }
+      setForgotResetToken(token);
+      setForgotStep(3);
+    } catch (err: unknown) {
+      const e = err as { statusCode?: number; code?: string; message?: string };
+      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
+        setError('Too many requests. Try again later.');
+      } else {
+        setError(e?.message || 'Invalid or expired code');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitForgotPasswordReset = async () => {
+    if (forgotNewPassword.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await apiClient.post<unknown>('/auth/customer/forgot-password/reset', {
+        resetToken: forgotResetToken,
+        newPassword: forgotNewPassword,
+        confirmPassword: forgotConfirmPassword,
+      });
+      setForgotSuccessBanner('Password updated. You can log in with your new password.');
+      closeForgotPassword();
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      setError(e?.message || 'Could not reset password. Request a new code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtp = async () => {
+    const otpTrim = otp?.trim() ?? '';
+    if (!otpTrim) {
+      setError('Please enter the OTP');
+      return;
+    }
+    if (UAT_MODE) {
+      if (!/^\d{6}$|^\d{8}$/.test(otpTrim)) {
+        setError('UAT: enter 6-digit OTP or 8-digit bypass (see hint below)');
+        return;
+      }
+    } else if (otpTrim.length !== 6 || !/^\d{6}$/.test(otpTrim)) {
+      setError('Please enter the 6-digit OTP');
+      return;
+    }
+
+    const pendingReferral = localStorage.getItem('pendingReferralCode')?.trim().toUpperCase() || '';
+    const trimmedReferral = referralCode?.trim()
+      ? referralCode.trim().toUpperCase()
+      : pendingReferral;
 
     try {
       setLoading(true);
@@ -184,8 +522,10 @@ function AuthPageContent() {
       const fullPhoneForApi = `${countryCode}${phone}`;
       const response = await apiClient.post<any>('/auth/otp/verify', {
         phone: fullPhoneForApi,
-        otp,
-        referralCode: referralCode || undefined
+        otp: otpTrim,
+        role: 'customer',
+        referralCode: trimmedReferral || undefined,
+        pendingReferralCode: trimmedReferral || undefined,
       });
 
       // Handle nested response structure: { success: true, data: { success: true, data: {...} } }
@@ -219,15 +559,24 @@ function AuthPageContent() {
         // Store Cognito tokens (AWS Serverless compatible)
         if (idToken && accessToken) {
           const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
-          storeCognitoTokens({
-            accessToken: accessToken,
-            idToken: idToken,
-            refreshToken: refreshToken || '',
-            expiresIn: expiresIn,
-          });
+          storeCognitoTokens(
+            {
+              accessToken: accessToken,
+              idToken: idToken,
+              refreshToken: refreshToken || '',
+              expiresIn: expiresIn,
+            },
+            { isNewLogin: true }
+          );
+          localStorage.setItem('authToken', idToken || accessToken);
           const userData = responseData?.user || response.user;
+          const prof = responseData?.profile;
           if (userData?.id) {
-            storeUserInfo({ userId: userData.id, phone, username: userData.phone || phone });
+            storeUserInfo({
+              userId: userData.id,
+              phone: shortPhone,
+              username: prof?.username || userData.phone || shortPhone,
+            });
           }
         } else if (accessToken) {
           // Fallback to legacy token storage
@@ -243,95 +592,126 @@ function AuthPageContent() {
         sessionStorage.setItem('_warmpawz_just_logged_in', 'true'); // ✅ FIX: Prevent session clearing right after login
         console.log('✅ [Auth] sessionStorage flags set after OTP verification');
 
-        // Get customer profile and pets to check onboarding status
+        if (trimmedReferral) {
+          localStorage.setItem('pendingReferralCode', trimmedReferral);
+        }
+
+        // Get customer profile; cache pets for app use without using pet count for routing
+        let unifiedProfileForAuth: Record<string, unknown> | undefined = undefined;
         try {
-          const profileResponse = await apiClient.get<any>(`/customer/profile/unified/${phone}`);
+          const profileResponse = await apiClient.get<any>(
+            `/customer/profile/unified/${encodeURIComponent(shortPhone)}`
+          );
           console.log('✅ [Auth] Profile response:', profileResponse);
 
-          // Store customer state from database (not localStorage)
           if (profileResponse?.profile) {
             const profile = profileResponse.profile;
+            unifiedProfileForAuth = profile as Record<string, unknown>;
             const onboardingStatus = profile.onboarding_status || profile.onboardingStatus || 'INIT';
-            const profileCompleted = profile.profile_completed || profile.onboardingComplete || false;
+            const profileCompletedFlag = profile.profile_completed || profile.onboardingComplete || false;
             const nameVal = profile.name || profile.full_name || '';
-            const hasName = !!nameVal && String(nameVal).trim() !== '' && nameVal !== `Customer ${phone.slice(-4)}`;
+            const digits = phone.replace(/\D/g, '').slice(-10);
+            const hasName =
+              !!nameVal &&
+              String(nameVal).trim() !== '' &&
+              nameVal !== `Customer ${digits.slice(-4)}`;
             const hasBookings = (profile.bookings?.length || 0) > 0;
+            const hasProfileId = !!profile.id;
 
             console.log('📊 [Auth] Profile check:', {
               onboardingStatus,
-              profileCompleted,
+              profileCompleted: profileCompletedFlag,
               hasName,
               hasBookings,
-              name: profile.name || profile.full_name
             });
 
-            // Store in localStorage for CustomerApp to use
             localStorage.setItem('customerData', JSON.stringify(profile));
-            localStorage.setItem('customerId', profile.id);
             localStorage.setItem('customerProfile', JSON.stringify(profile));
+            persistCustomerDatabaseId(profile);
 
-            // Also check if customer has pets
-            let hasPets = false;
             try {
               const petsResponse = await apiClient.get<any>(`/customer/pets/${phone}`);
               if (petsResponse?.pets && Array.isArray(petsResponse.pets) && petsResponse.pets.length > 0) {
-                hasPets = true;
                 localStorage.setItem('customerPets', JSON.stringify(petsResponse.pets));
-                console.log('✅ [Auth] Found pets:', petsResponse.pets.length);
               }
             } catch (petError) {
-              console.warn('⚠️ [Auth] No pets found or error fetching pets:', petError);
-              // No pets yet - this is OK
+              console.warn('⚠️ [Auth] Pets fetch:', petError);
             }
 
-            // ✅ FIX: Customer is onboarded if: backend says COMPLETED, or has profile+name, or has usage (bookings/pets)
-            const isOnboarded = onboardingStatus === 'COMPLETED' ||
-              profileCompleted ||
-              (hasName && hasPets) ||
-              (hasName && profile.id) ||
-              (profile.id && hasBookings);
+            const backendFullyOnboarded =
+              onboardingStatus === 'COMPLETED' || profileCompletedFlag === true;
+            const hasMeaningfulProfile =
+              (hasProfileId && hasName) || (hasProfileId && hasBookings);
 
-            console.log('🎯 [Auth] Onboarding decision:', { isOnboarded, onboardingStatus, profileCompleted, hasName, hasPets });
-
-            if (isOnboarded) {
-              localStorage.setItem('customerOnboardingComplete', 'true');
-              localStorage.setItem('customerJourneyStage', 'have-pet');
-              console.log('✅ [Auth] Customer is onboarded - going to home');
-            } else if (hasName && !hasPets) {
-              // Has profile but no pets - skip to pet step
-              localStorage.setItem('customerOnboardingComplete', 'false');
-              localStorage.setItem('customerJourneyStage', 'have-pet');
-              localStorage.setItem('customerProfile', JSON.stringify(profile));
-              console.log('⚠️ [Auth] Customer has profile but no pets - showing pet profile');
+            if (backendFullyOnboarded) {
+              localStorage.setItem('profile_completed', 'true');
+              localStorage.setItem('onboarding_completed', 'true');
+              setCustomerOnboardingCompleteFromAuth('true');
+              console.log('✅ [Auth] Backend reports full onboarding complete');
+            } else if (hasMeaningfulProfile) {
+              localStorage.setItem('profile_completed', 'true');
+              setCustomerOnboardingCompleteFromAuth('false');
+              console.log('✅ [Auth] Profile saved — show onboarding choice');
             } else {
-              localStorage.setItem('customerOnboardingComplete', 'false');
-              console.log('🆕 [Auth] New customer - will show onboarding');
+              setCustomerOnboardingCompleteFromAuth('false');
+              console.log('🆕 [Auth] New customer — start at profile');
             }
           } else {
             console.warn('⚠️ [Auth] No profile in response:', profileResponse);
-            // Customer doesn't exist yet - will be created by backend on first profile access
-            localStorage.setItem('customerOnboardingComplete', 'false');
+            setCustomerOnboardingCompleteFromAuth('false');
           }
         } catch (profileError: any) {
           console.error('❌ [Auth] Error fetching profile:', profileError);
           // ✅ FIX: If profile fetch fails but customer exists, check localStorage for cached data
           const cachedProfile = localStorage.getItem('customerProfile');
           const cachedOnboarding = localStorage.getItem('customerOnboardingComplete');
+          const stageSelectionDone = localStorage.getItem('onboarding_completed') === 'true';
 
-          if (cachedProfile && cachedOnboarding === 'true') {
+          if (cachedProfile && (cachedOnboarding === 'true' || stageSelectionDone)) {
             console.log('✅ [Auth] Using cached profile data');
             // Keep existing onboarding status
           } else {
             // Customer doesn't exist yet - will be created by backend on first profile access
-            localStorage.setItem('customerOnboardingComplete', 'false');
+            setCustomerOnboardingCompleteFromAuth('false');
             console.log('🆕 [Auth] No cached profile - new customer');
           }
         }
 
-        // ✅ FIX: Always navigate after successful verification (same as UAT mode)
-        const redirectPath = redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
-        console.log('🚀 [Auth] Navigating to:', redirectPath);
-        router.push(redirectPath);
+        const otpPayloadProfile =
+          (responseData?.profile as { has_password?: boolean } | undefined) ??
+          ((responseData as any)?.data?.profile as { has_password?: boolean } | undefined);
+        const hasPassword = Boolean(
+          (unifiedProfileForAuth as { has_password?: boolean } | undefined)?.has_password ??
+            otpPayloadProfile?.has_password
+        );
+        const redirectPath =
+          redirectAfterLogin && redirectAfterLogin.startsWith('/') ? redirectAfterLogin : '/';
+
+        if (!hasPassword) {
+          setNeedsPasswordSetupAfterOtp();
+          const profileCompleted =
+            localStorage.getItem('profile_completed') === 'true' ||
+            localStorage.getItem('onboarding_completed') === 'true';
+          const onboardingDone =
+            localStorage.getItem('customerOnboardingComplete') === 'true';
+          const goProfileFirst = !profileCompleted && !onboardingDone;
+          if (goProfileFirst) {
+            console.log('🚀 [Auth] Password required — profile first, then set-password');
+            router.push('/profile');
+          } else {
+            const afterPwd =
+              localStorage.getItem('onboarding_completed') === 'true' ||
+              localStorage.getItem('customerOnboardingComplete') === 'true'
+                ? '/'
+                : '/onboarding';
+            console.log('🚀 [Auth] Password required — set-password then', afterPwd);
+            router.push('/auth/set-password?next=' + encodeURIComponent(afterPwd));
+          }
+        } else {
+          clearNeedsPasswordSetup();
+          console.log('🚀 [Auth] Navigating to:', redirectPath);
+          router.push(redirectPath);
+        }
       } else {
         console.error('❌ [Auth] OTP verification failed - response:', response);
         setError('Invalid OTP. Please try again.');
@@ -346,49 +726,29 @@ function AuthPageContent() {
   // OTP VERIFICATION SCREEN
   if (otpSent) {
     return (
-      <div className="min-h-screen flex justify-center bg-[#FF8C42]">
+      <Fragment>
+      <div className={authShellClass}>
         {/* Centered Container */}
-        <div className="w-full max-w-md min-h-screen flex flex-col bg-[#FF8C42]">
-          {/* Status Bar Placeholder */}
-          <div className="px-6 pt-3 pb-2 flex justify-between items-center">
-            <span className="text-sm font-medium text-black">09:41</span>
-            <div className="flex gap-1.5 items-center">
-              <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-                <rect y="8" width="3" height="4" rx="0.5" fill="black" />
-                <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black" />
-                <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black" />
-                <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black" />
-              </svg>
-              <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-                <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-                <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5" />
-                <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black" />
-                <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black" />
-              </svg>
-            </div>
-          </div>
-
+        <div className={authColumnClass}>
           {/* Orange Header Section */}
-          <div className="px-6 pt-8 pb-20 flex flex-col items-center">
+          <div className={authHeaderClass} style={authOrangeHeaderStyle}>
             {/* Warmpawz Logo */}
-            <div className="w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-2">
+            <div className={authLogoRingClass}>
               <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
             </div>
 
             {/* Title */}
-            <h1 className="text-2xl font-bold text-black italic text-center">
+            <h1 className={authHeroH1Class}>
               Verify Your
             </h1>
-            <h2 className="text-2xl font-bold text-black italic text-center">
+            <h2 className={authHeroH2Class}>
               Number
             </h2>
           </div>
 
           {/* White Card Section */}
-          <div className="flex-1 -mt-8 relative">
-            <div className="bg-white rounded-t-[2.5rem] min-h-full px-6 pt-10 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+          <div className="flex-1 -mt-8 relative overflow-hidden">
+            <div className={authCardClass}>
               {/* Subtitle */}
               <div className="text-center mb-8">
                 <p className="text-gray-600 text-sm mb-1">Enter the OTP sent to</p>
@@ -407,7 +767,8 @@ function AuthPageContent() {
               {uatHint && (
                 <div className="mb-6 p-4 bg-gradient-to-r from-[#FF8C42]/10 to-[#FF6B9D]/10 rounded-xl text-center">
                   <p className="text-[#FF8C42] text-sm font-medium">
-                    🧪 UAT Mode: Use OTP <strong>{UAT_OTP}</strong>
+                    🧪 UAT Mode: OTP <strong>{UAT_VALID_OTPS.join(' or ')}</strong> · password login:{' '}
+                    <strong>12345678</strong>
                   </p>
                 </div>
               )}
@@ -417,7 +778,7 @@ function AuthPageContent() {
                 <label className="block text-gray-700 font-medium mb-2">Verification Code</label>
 
                 {/* 6-digit OTP Input */}
-                <div className="flex items-center border-2 border-gray-200 rounded-2xl overflow-hidden focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all bg-white">
+                <div className={authInputGroupClass}>
                   <input
                     type="text"
                     inputMode="numeric"
@@ -425,7 +786,7 @@ function AuthPageContent() {
                     value={otp}
                     onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
                     placeholder="Enter 6-digit code"
-                    className="flex-1 py-4 px-4 text-lg text-center tracking-widest outline-none"
+                    className={authOtpInnerClass}
                     autoFocus
                   />
                 </div>
@@ -434,7 +795,7 @@ function AuthPageContent() {
                 <button
                   onClick={verifyOtp}
                   disabled={loading || otp.length !== 6}
-                  className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all shadow-lg shadow-[#FF8C42]/30"
+                  className={authPrimaryButtonClass}
                 >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
@@ -459,7 +820,8 @@ function AuthPageContent() {
                     <button
                       onClick={sendOtp}
                       disabled={loading}
-                      className="text-[#FF8C42] font-medium text-sm underline hover:text-[#FF6B9D] disabled:opacity-50"
+                      type="button"
+                      className={`text-sm disabled:opacity-50 disabled:no-underline ${authTextLinkClass}`}
                     >
                       Resend Code
                     </button>
@@ -470,16 +832,42 @@ function AuthPageContent() {
                 <div className="text-center mt-4 space-y-3">
                   <p className="text-sm text-gray-600">
                     Trouble with verification?{' '}
-                    <a href="#" className="text-[#FF8C42] hover:underline font-medium">Get Help</a>
+                    <button
+                      type="button"
+                      onClick={() => setHelpChatOpen(true)}
+                      className={`text-sm ${authTextLinkClass}`}
+                    >
+                      Get Help
+                    </button>
                   </p>
                   <button
+                    type="button"
                     onClick={() => { setOtpSent(false); setOtp(''); setError(null); }}
-                    className="text-blue-600 text-sm hover:underline"
+                    className={`text-sm ${authTextLinkClass}`}
                   >
                     &lt; Change phone number
                   </button>
                 </div>
               </div>
+
+              <p className="text-center text-sm text-gray-500 mt-6 px-2">
+                By continuing, you agree to our{' '}
+                <button
+                  type="button"
+                  onClick={() => openLegal('customer_terms_of_service')}
+                  className={`${authTermsLinkClass} align-baseline`}
+                >
+                  Customer Terms of Service
+                </button>
+                {' '}and{' '}
+                <button
+                  type="button"
+                  onClick={() => openLegal('privacy_policy')}
+                  className={`${authTermsLinkClass} align-baseline`}
+                >
+                  Privacy Policy
+                </button>
+              </p>
 
               {/* Footer with Version Info */}
               <div className="mt-auto pt-10 text-center space-y-1">
@@ -490,63 +878,67 @@ function AuthPageContent() {
           </div>
         </div>
       </div>
+      {guestHelpChat}
+      {legalDialog}
+      </Fragment>
     );
   }
 
   // PHONE NUMBER ENTRY SCREEN
   return (
-    <div className="min-h-screen flex justify-center bg-[#FF8C42]">
+    <Fragment>
+    <div className={authShellClass}>
       {/* Centered Container */}
-      <div className="w-full max-w-md min-h-screen flex flex-col bg-[#FF8C42]">
-        {/* Status Bar Placeholder */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center">
-          <span className="text-sm font-medium text-black">09:41</span>
-          <div className="flex gap-1.5 items-center">
-            <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-              <rect y="8" width="3" height="4" rx="0.5" fill="black" />
-              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black" />
-              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black" />
-              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black" />
-            </svg>
-            <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5" />
-              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black" />
-              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black" />
-            </svg>
-          </div>
-        </div>
-
+      <div className={authColumnClass}>
         {/* Orange Header Section */}
-        <div className="px-6 pt-8 pb-20 flex flex-col items-center">
+        <div className={authHeaderClass} style={authOrangeHeaderStyle}>
           {/* Warmpawz Logo */}
-          <div className="w-28 h-28 bg-white rounded-full flex items-center justify-center shadow-xl mb-6 p-2">
+          <div className={authLogoRingClass}>
             <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />
           </div>
 
           {/* Welcome Text */}
-          <h1 className="text-2xl font-bold text-black italic text-center">Welcome to</h1>
-          <h2 className="text-3xl font-extrabold text-black tracking-wide">WARMPAWZ!</h2>
+          <h1 className={authHeroH1Class}>Welcome to</h1>
+          <h2 className={authHeroTitleClass}>WARMPAWZ!</h2>
+          <p className={authHeroTaglineClass}>
+            Pet Care . Reimagined .
+          </p>
         </div>
 
         {/* White Card Section */}
-        <div className="flex-1 -mt-8 relative">
-          <div className="bg-white rounded-t-[2.5rem] min-h-full px-6 pt-10 pb-6 shadow-[0_-4px_20px_rgba(0,0,0,0.1)]">
+        <div className="flex-1 -mt-8 relative overflow-hidden">
+          <div className={authCardClass}>
             {/* Subtitle */}
             <p className="text-center text-gray-600 mb-8 text-base leading-relaxed">
-              Join our community of pet lovers and access<br />the best care for your furry friends
+              {authMode === 'login' ? (
+                forgotOpen ? (
+                  <>
+                    {forgotStep === 3
+                      ? 'Choose a new password for your account.'
+                      : 'Reset your password using a code we send by SMS to your registered mobile number only.'}
+                  </>
+                ) : (
+                  <>
+                    Log in with your phone number (your 10-digit mobile number)<br />
+                    and the password you created after signup.
+                  </>
+                )
+              ) : (
+                <>
+                  Join our community of pet lovers and access<br />the best care for your furry friends
+                </>
+              )}
             </p>
 
             {/* UAT Mode Message */}
-            {UAT_MODE && (
+            {UAT_MODE && authMode === 'signup' && (
               <div className="mb-6 p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-400 rounded-xl text-center">
                 <p className="text-yellow-800 text-sm font-semibold mb-1">
                   🧪 UAT MODE ACTIVE
                 </p>
                 <p className="text-yellow-700 text-xs">
-                  OTP is <strong className="font-bold">{UAT_OTP}</strong> - No SMS will be sent
+                  OTP <strong className="font-bold">{UAT_VALID_OTPS.join(' or ')}</strong> — no SMS. Full JWTs
+                  from <code className="text-xs">/auth/otp/verify</code>.
                 </p>
               </div>
             )}
@@ -559,12 +951,211 @@ function AuthPageContent() {
               </div>
             )}
 
-            {/* Phone Input Section */}
+            {forgotSuccessBanner && authMode === 'login' && !forgotOpen && (
+              <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-800 text-sm">
+                {forgotSuccessBanner}
+              </div>
+            )}
+
+            {/* Login (phone + password) or Sign up (phone OTP) */}
             <div className="space-y-4">
+              {authMode === 'login' ? (
+                forgotOpen ? (
+                  <>
+                    {forgotStep === 1 && (
+                      <>
+                        <label className="block text-gray-700 font-medium mb-2">Phone Number</label>
+                        <input
+                          type="text"
+                          autoComplete="username"
+                          value={forgotUsername}
+                          onChange={(e) => setForgotUsername(e.target.value)}
+                          placeholder="Same phone number you use to log in"
+                          className={authFieldClass}
+                        />
+                        <button
+                          type="button"
+                          onClick={submitForgotPasswordRequest}
+                          disabled={loading || !forgotUsername.trim()}
+                          className={`${authPrimaryButtonClass} mt-2`}
+                        >
+                          {loading ? 'Sending…' : 'Send code'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={closeForgotPassword}
+                          className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-2"
+                        >
+                          Back to log in
+                        </button>
+                      </>
+                    )}
+                    {forgotStep === 2 && (
+                      <>
+                        {forgotInfo ? (
+                          <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 mb-2">
+                            {forgotInfo}
+                          </div>
+                        ) : null}
+                        <label className="block text-gray-700 font-medium mb-2">6-digit code from SMS</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={6}
+                          value={forgotOtp}
+                          onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="••••••"
+                          className={authFieldClass}
+                        />
+                        <button
+                          type="button"
+                          onClick={submitForgotPasswordVerifyOtp}
+                          disabled={loading || forgotOtp.length !== 6}
+                          className={`${authPrimaryButtonClass} mt-2`}
+                        >
+                          {loading ? 'Checking…' : 'Continue'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForgotStep(1);
+                            setForgotOtp('');
+                            setError(null);
+                          }}
+                          className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-2"
+                        >
+                          Back
+                        </button>
+                      </>
+                    )}
+                    {forgotStep === 3 && (
+                      <>
+                        <label className="block text-gray-700 font-medium mb-2">New password</label>
+                        <div className="relative">
+                          <input
+                            type={showForgotNewPassword ? 'text' : 'password'}
+                            autoComplete="new-password"
+                            value={forgotNewPassword}
+                            onChange={(e) => setForgotNewPassword(e.target.value)}
+                            placeholder="At least 8 characters"
+                            className={authFieldInGroupClass}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowForgotNewPassword((v) => !v)}
+                            aria-label={showForgotNewPassword ? 'Hide password' : 'Show password'}
+                            className="absolute right-1 top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100"
+                          >
+                            {showForgotNewPassword ? (
+                              <EyeOff className="h-5 w-5" aria-hidden />
+                            ) : (
+                              <Eye className="h-5 w-5" aria-hidden />
+                            )}
+                          </button>
+                        </div>
+                        <label className="block text-gray-700 font-medium mb-2">Confirm password</label>
+                        <input
+                          type={showForgotNewPassword ? 'text' : 'password'}
+                          autoComplete="new-password"
+                          value={forgotConfirmPassword}
+                          onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                          placeholder="Re-enter password"
+                          className={authFieldClass}
+                        />
+                        <button
+                          type="button"
+                          onClick={submitForgotPasswordReset}
+                          disabled={
+                            loading ||
+                            forgotNewPassword.length < 8 ||
+                            forgotNewPassword !== forgotConfirmPassword
+                          }
+                          className={`${authPrimaryButtonClass} mt-2`}
+                        >
+                          {loading ? 'Updating…' : 'Update password'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForgotStep(2);
+                            setError(null);
+                          }}
+                          className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-2"
+                        >
+                          Back
+                        </button>
+                      </>
+                    )}
+                  </>
+                ) : (
+                <>
+                  <label className="block text-gray-700 font-medium mb-2">Phone Number</label>
+                  <input
+                    type="text"
+                    autoComplete="username"
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    placeholder="e.g. 9876543210"
+                    className={authFieldClass}
+                  />
+                  <label className="block text-gray-700 font-medium mb-2">Password</label>
+                  <div className="relative">
+                    <input
+                      type={showLoginPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder="Your password"
+                      className={authFieldInGroupClass}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword((v) => !v)}
+                      aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 flex h-11 w-11 items-center justify-center rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-800 active:scale-95 transition-colors"
+                    >
+                      {showLoginPassword ? (
+                        <EyeOff className="h-5 w-5" aria-hidden />
+                      ) : (
+                        <Eye className="h-5 w-5" aria-hidden />
+                      )}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={openForgotPassword}
+                    className={`w-full text-right text-sm pt-1 ${authTextLinkClass}`}
+                  >
+                    Forgot password?
+                  </button>
+                  <button
+                    type="button"
+                    onClick={passwordLogin}
+                    disabled={loading || !loginUsername.trim() || !loginPassword.trim()}
+                    className={`${authPrimaryButtonClass} mt-2`}
+                  >
+                    {loading ? 'Signing in…' : 'Log in'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('signup');
+                      setShowLoginPassword(false);
+                      setError(null);
+                    }}
+                    className={`w-full text-center text-sm pt-2 ${authSignupPillLinkClass}`}
+                  >
+                    New user? Sign up with phone (OTP)
+                  </button>
+                </>
+                )
+              ) : (
+                <>
               <label className="block text-gray-700 font-medium mb-2">Phone Number</label>
 
               {/* Phone Input with Country Code Selector */}
-              <div className="flex items-stretch border-2 border-gray-200 rounded-2xl overflow-hidden focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all bg-white">
+              <div className={authInputGroupClass}>
                 <CountryCodeSelector
                   selectedCode={countryCode}
                   onSelect={setCountryCode}
@@ -577,7 +1168,7 @@ function AuthPageContent() {
                   value={phone}
                   onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
                   placeholder="74493 38923"
-                  className="flex-1 py-4 px-4 text-lg outline-none"
+                  className="min-w-0 flex-1 py-4 px-4 text-lg outline-none bg-transparent transition-colors duration-200"
                   autoFocus
                 />
               </div>
@@ -621,13 +1212,13 @@ function AuthPageContent() {
                         }}
                         placeholder="Enter referral code"
                         maxLength={20}
-                        className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-xl text-sm uppercase focus:border-[#FF8C42] focus:outline-none focus:ring-2 focus:ring-[#FF8C42]/20"
+                        className="flex-1 px-4 py-3 border-2 border-gray-200/90 rounded-xl text-sm uppercase bg-[#FFFBF7] transition-all duration-200 focus:border-[#FF8C42] focus:outline-none focus:ring-4 focus:ring-[#FF8C42]/20 focus:bg-white"
                       />
                       {referralCode && !referralApplied && (
                         <button
                           type="button"
                           onClick={() => setReferralApplied(true)}
-                          className="px-4 py-3 bg-[#FF8C42] text-white rounded-xl text-sm font-medium hover:bg-[#FF7A29] transition-colors"
+                          className="px-4 py-2.5 text-sm font-medium rounded-full border border-white/25 text-white bg-gradient-to-b from-[#FF9A4A] to-[#FF7A2E] shadow-md shadow-[#C85A10]/30 transition-all duration-200 hover:shadow-lg hover:brightness-105 active:brightness-95"
                         >
                           Apply
                         </button>
@@ -649,7 +1240,7 @@ function AuthPageContent() {
               <button
                 onClick={sendOtp}
                 disabled={loading || phone.length !== 10}
-                className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 transition-all shadow-lg shadow-[#FF8C42]/30 mt-6"
+                className={`${authPrimaryButtonClass} mt-6`}
               >
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -663,25 +1254,49 @@ function AuthPageContent() {
                   'Send Verification Code'
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setError(null);
+                }}
+                className="w-full text-center text-sm text-gray-600 hover:text-[#FF8C42] pt-2"
+              >
+                Already have a password? Log in
+              </button>
+                </>
+              )}
             </div>
 
             {/* Terms Footer */}
             <p className="text-center text-sm text-gray-500 mt-6">
               By continuing, you agree to our{' '}
-              <a href="#" className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors">Terms of Service</a>
+              <button
+                type="button"
+                onClick={() => openLegal('customer_terms_of_service')}
+                className={`${authTermsLinkClass} align-baseline`}
+              >
+                Customer Terms of Service
+              </button>
               {' '}and{' '}
-              <a href="#" className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors">Privacy Policy</a>
-            </p>
-
-            {/* Already have account */}
-            <p className="text-center text-sm text-gray-500 mt-4">
-              Already have an account?{' '}
-              <button className="text-[#FF8C42] hover:text-[#FF6B9D] hover:underline font-medium transition-colors">Sign In</button>
+              <button
+                type="button"
+                onClick={() => openLegal('privacy_policy')}
+                className={`${authTermsLinkClass} align-baseline`}
+              >
+                Privacy Policy
+              </button>
             </p>
 
             {/* Footer with Version Info */}
             <div className="mt-auto pt-8 text-center space-y-1">
-              <button className="text-gray-500 text-sm hover:text-[#FF8C42] transition-colors">Need Help?</button>
+              <button
+                type="button"
+                onClick={() => setHelpChatOpen(true)}
+                className={`text-sm ${authTextLinkClass}`}
+              >
+                Need Help?
+              </button>
               <p className="text-gray-400 text-xs">WARMPAWZ Customer v2.1.0</p>
               <p className="text-gray-400 text-xs">© 2025 WARMPAWZ Inc. All rights reserved</p>
             </div>
@@ -692,6 +1307,9 @@ function AuthPageContent() {
       {/* Referral Code Modal Overlay - Alternative full-screen modal */}
       {/* This can be enabled if you prefer a modal approach */}
     </div>
+    {guestHelpChat}
+    {legalDialog}
+    </Fragment>
   );
 }
 

@@ -1,12 +1,16 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Palmtree, Calendar, Clock, MapPin, User, CheckCircle2, Plus, Dog, Cat, Users, Hotel, Camera, Utensils } from 'lucide-react';
+import { LucideIcon, Palmtree, Calendar, Clock, MapPin, User, CheckCircle2, Plus, Dog, Cat, Users, Hotel, Camera, Utensils, Star } from 'lucide-react';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 interface HolidayBookingRouterProps {
   phone: string;
@@ -114,7 +118,7 @@ export function HolidayBookingRouter({
       setLoading(true);
       const servicesResponse = await apiClient.get(`/customer/vendor/${vendorId}/services?category=holiday`) as any;
       if (servicesResponse.success && servicesResponse.services) {
-        setHolidayPackages(servicesResponse.services);
+        setHolidayPackages(mergeCustomerVendorServicesPayload(servicesResponse));
       } else {
         // Default packages
         setHolidayPackages([
@@ -186,7 +190,7 @@ export function HolidayBookingRouter({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         dayNum: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),
@@ -245,6 +249,27 @@ export function HolidayBookingRouter({
     return basePrice * nights + (petCount * 500 * nights); // Additional pet charges
   };
 
+  const holidayPrePaymentStats = [
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '10k+', label: 'Stays' },
+    { value: 'Pet', label: 'OK' },
+  ];
+
+  const getHolidayPackageIconAndStyle = (pkg: typeof selectedPackage) => {
+    if (!pkg) {
+      return { icon: Palmtree, iconClass: 'bg-cyan-100 text-cyan-600' as const };
+    }
+    const Icon = (typeof pkg.icon === 'function' ? (pkg.icon as LucideIcon) : Palmtree);
+    const c = (pkg as { color?: string }).color;
+    const iconClass =
+      c === 'cyan' ? 'bg-cyan-100 text-cyan-600'
+        : c === 'green' ? 'bg-green-100 text-green-600'
+        : c === 'orange' ? 'bg-orange-100 text-orange-600'
+        : c === 'purple' ? 'bg-purple-100 text-purple-600'
+        : 'bg-cyan-100 text-cyan-600';
+    return { icon: Icon, iconClass };
+  };
+
   const renderStepIndicator = () => {
     const steps = ['Package', 'Dates', 'Pets', 'Guests', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = {
@@ -272,10 +297,63 @@ export function HolidayBookingRouter({
 
   return (
     <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      
+      {step === 'payment' && !showPaymentPage && (() => {
+        const { icon: HolidayPkgIcon, iconClass: holidayPkgIconClass } = getHolidayPackageIconAndStyle(selectedPackage);
+        return (
+        <PrePaymentBookingReview
+          title="Booking Summary"
+          subtitle="Review before payment"
+          headerIcon={Palmtree}
+          stats={holidayPrePaymentStats}
+          onBack={handleBack}
+          lead={{
+            icon: HolidayPkgIcon,
+            iconContainerClassName: holidayPkgIconClass,
+            title: String(selectedPackage?.name ?? ''),
+            subtitle: selectedPackage?.description || `${selectedPackage?.duration || 3} day package`,
+            trailing: <span>₹{calculateTotal().toLocaleString()}</span>,
+          }}
+          rows={[
+            {
+              id: 'in',
+              icon: Calendar,
+              label: 'Check-in',
+              primary: checkInDate ? new Date(checkInDate).toLocaleDateString() : '—',
+            },
+            {
+              id: 'out',
+              icon: Calendar,
+              label: 'Check-out',
+              primary: checkOutDate ? new Date(checkOutDate).toLocaleDateString() : '—',
+            },
+            {
+              id: 'pets',
+              icon: Dog,
+              label: 'Pets',
+              primary: selectedPets.map((p) => p.name).join(', ') || '—',
+            },
+            {
+              id: 'guests',
+              icon: Users,
+              label: 'Guests',
+              primary: String(guestCount),
+            },
+          ]}
+          total={{ label: 'Total', amountFormatted: `₹${calculateTotal().toLocaleString()}` }}
+          totalTextClassName="text-orange-600"
+          primaryButton={{
+            label: 'Continue to Payment',
+            onClick: handleProceedToPayment,
+            disabled: processing,
+            loading: processing,
+          }}
+        />
+        );
+      })()}
+
+      {(step !== 'payment' || showPaymentPage) && (
       <div className="px-4 py-6 max-w-md mx-auto">
-        {step !== 'confirmation' && renderStepIndicator()}
+        {step !== 'confirmation' && (step !== 'payment' || showPaymentPage) && renderStepIndicator()}
 
         {/* Package Selection */}
         {step === 'package' && (
@@ -504,47 +582,17 @@ export function HolidayBookingRouter({
               </div>
             </div>
 
-            <div className="bg-white rounded-xl p-4 border-2 border-gray-200">
-              <h3 className="font-semibold text-gray-900 mb-2">Booking Summary</h3>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Package:</span>
-                  <span className="font-medium">{selectedPackage?.name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Check-in:</span>
-                  <span className="font-medium">{checkInDate ? new Date(checkInDate).toLocaleDateString() : ''}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Check-out:</span>
-                  <span className="font-medium">{checkOutDate ? new Date(checkOutDate).toLocaleDateString() : ''}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Pets:</span>
-                  <span className="font-medium">{selectedPets.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Guests:</span>
-                  <span className="font-medium">{guestCount}</span>
-                </div>
-                <div className="pt-2 border-t flex justify-between font-bold">
-                  <span>Total:</span>
-                  <span className="text-orange-600">₹{calculateTotal().toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-
-            <Button 
-              onClick={handleProceedToPayment} 
+            <Button
+              onClick={() => setStep('payment')}
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
             >
-              Proceed to Payment
+              Review & continue to payment
             </Button>
           </div>
         )}
 
         {/* Payment */}
-        {step === 'guests' && showPaymentPage && (
+        {step === 'payment' && showPaymentPage && (
           <UniversalPaymentPage
             type="booking"
             serviceId={selectedPackage?.id || serviceId}
@@ -560,6 +608,7 @@ export function HolidayBookingRouter({
             petName={selectedPets.map(p => p.name).join(', ')}
             petBreed={selectedPets.map(p => p.breed).join(', ')}
             baseAmount={calculateTotal()}
+            priceIncludesTax={catalogPriceIncludesTax(selectedPackage)}
             duration={selectedPackage?.duration || 3}
             quantity={1}
             customerPhone={phone}
@@ -632,6 +681,7 @@ export function HolidayBookingRouter({
           }}
         />
       </div>
+      )}
     </>
   );
 }

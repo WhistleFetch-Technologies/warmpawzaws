@@ -68,6 +68,19 @@
   --radius-2xl: 24px;
   --radius-3xl: 32px;
   --radius-full: 9999px;
+
+  /**
+   * Stacking: fixed app chrome (header/footer) stays below overlays.
+   * Dialogs use z-[60]/z-[70] in components/ui/dialog.tsx; custom modals typically z-50+.
+   * Full-screen video (Chime) uses z-[9998] and remains on top.
+   */
+  --vendor-z-chrome: 40;
+}
+
+/** While overlays lock scroll, prevent the in-app scroll host (VendorChromeLayout main) from moving. */
+html[data-vendor-scroll-lock="true"] [data-vendor-chrome-main] {
+  overflow: hidden !important;
+  overscroll-behavior: none;
 }
 
 /* Base Styles */
@@ -80,6 +93,7 @@
 html {
   font-family: var(--font-sans);
   line-height: 1.5;
+  height: 100%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -88,7 +102,9 @@ html {
 body {
   margin: 0;
   padding: 0;
-  min-height: 100vh;
+  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
   background-color: var(--color-gray-50);
   color: var(--color-black);
 }
@@ -150,6 +166,44 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1.5rem;
+}
+
+/* --------------------------------------------------------------------------
+ * Vendor responsive layout (aligned with Login: mobile-first, ~430px feel,
+ * then sm/md/lg/xl — Tailwind sm=640px, lg=1024px)
+ * -------------------------------------------------------------------------- */
+@layer components {
+  .vendor-page-shell {
+    @apply h-[100dvh] max-h-[100dvh] min-h-0 w-full overflow-x-hidden;
+  }
+
+  /** Root scroll host when not using VendorChromeLayout (e.g. legacy pages). Prefer VendorChromeLayout for new UI. */
+  .vendor-root-scroll {
+    @apply h-[100dvh] max-h-[100dvh] min-h-0 w-full overflow-y-auto overflow-x-hidden;
+  }
+
+  /**
+   * Main app content column: same max width family as Login phone shell on small
+   * screens, expands on tablet/desktop so dashboards and services use full width.
+   */
+  .vendor-app-column {
+    @apply w-full max-w-[430px] sm:max-w-2xl md:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto;
+  }
+
+  /** Narrow column for orange OTP / phone Login flows only */
+  .vendor-auth-column {
+    @apply w-full max-w-[430px] mx-auto;
+  }
+
+  /** Bottom bars and fixed footers: match .vendor-app-column max-width */
+  .vendor-app-column-inner {
+    @apply w-full max-w-[430px] sm:max-w-2xl md:max-w-4xl lg:max-w-6xl xl:max-w-7xl mx-auto;
+  }
+
+  /** Modal / sheet panels that should grow on larger breakpoints */
+  .vendor-modal-sheet {
+    @apply w-full max-w-[430px] sm:max-w-lg md:max-w-xl lg:max-w-2xl;
+  }
 }
 
 .stat-card {
@@ -255,4 +309,131 @@ body {
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* ============================================================================
+ * SAFE AREA & MOBILE RESPONSIVENESS
+ * ============================================================================
+ * Handles iOS notch, gesture bar, and Android status bar
+ */
+
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/**
+ * Full-screen vendor views whose first row sits below the OS status bar (PWA / mobile WebView).
+ * On many Android browsers env(safe-area-inset-top) stays 0 even with viewport-fit=cover, so the
+ * rem minimum must clear the status bar (~48–54px) plus a little margin. Larger minimum avoids
+ * back / actions overlapping the clock and system icons.
+ */
+.vendor-screen-safe-top {
+  padding-top: max(3.75rem, calc(env(safe-area-inset-top, 0px) + 1rem));
+}
+
+@media (min-width: 768px) {
+  .vendor-screen-safe-top {
+    padding-top: max(0.75rem, calc(env(safe-area-inset-top, 0px) + 0.35rem));
+  }
+}
+
+/** Horizontal safe area for sticky vendor headers (notch / curved corners). */
+.vendor-header-safe-x {
+  padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+  padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+}
+
+@media (min-width: 768px) {
+  .vendor-header-safe-x {
+    padding-left: max(1rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  }
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.safe-area-left {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
+.safe-area-right {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+.safe-area-x {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+.safe-area-y {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.safe-area-all {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+}
+
+/**
+ * Fixed full-screen modal backdrop (flex host for centered / top-aligned panels).
+ * Use on `fixed inset-0 … flex … overflow-y-auto` wrappers so panels sit below the notch
+ * and above the home indicator. Requires viewport-fit=cover (see layout viewport).
+ */
+.vendor-modal-overlay-host {
+  padding-top: max(1rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+  padding-bottom: max(1.5rem, calc(env(safe-area-inset-bottom, 0px) + 1rem));
+  padding-left: max(1rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+}
+
+/* Sonner (sonner@2.x): avoid toasts under status bar / notch — requires viewport-fit=cover in layout */
+[data-sonner-toaster] {
+  --offset-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+  --offset-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+  --offset-right: calc(env(safe-area-inset-right, 0px) + 16px) !important;
+  --offset-left: calc(env(safe-area-inset-left, 0px) + 16px) !important;
+  --mobile-offset-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+  --mobile-offset-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+  --mobile-offset-right: max(0.5rem, env(safe-area-inset-right, 0px)) !important;
+  --mobile-offset-left: max(0.5rem, env(safe-area-inset-left, 0px)) !important;
+}
+
+/* Bottom fixed elements should account for gesture bar */
+.fixed-bottom-safe {
+  bottom: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Minimum touch target size for mobile accessibility */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Prevent iOS text size adjustment */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Prevent iOS tap highlight */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent iOS overscroll bounce on body */
+html, body {
+  overscroll-behavior: none;
+}
+
+/* Fix iOS input zoom (prevents zoom on focus for inputs < 16px) */
+@media screen and (max-width: 768px) {
+  input, select, textarea {
+    font-size: 16px !important;
+  }
 }

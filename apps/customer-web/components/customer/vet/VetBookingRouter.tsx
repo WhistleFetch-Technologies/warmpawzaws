@@ -1,16 +1,25 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Stethoscope, Star } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Stethoscope, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { AddAddressModal } from '../shared/AddAddressModal';
 import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
-import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { formatPriceWithSymbol, catalogPriceIncludesTax } from '@/lib/booking-display-utils';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 interface VetBookingRouterProps {
   phone: string;
@@ -66,15 +75,31 @@ export function VetBookingRouter({
   onNavigate, 
   onViewBooking 
 }: VetBookingRouterProps) {
+  const formatTime12Hour = (time24: string) => {
+    if (!time24) return '';
+    const [hRaw, mRaw = '00'] = String(time24).split(':');
+    const hour = Number(hRaw);
+    const minute = String(mRaw).slice(0, 2);
+    if (Number.isNaN(hour)) return time24;
+    if (hour === 0) return `12:${minute} AM`;
+    if (hour === 12) return `12:${minute} PM`;
+    if (hour < 12) return `${hour}:${minute} AM`;
+    return `${hour - 12}:${minute} PM`;
+  };
+
   // ✅ FIX: If serviceType/serviceStyle is provided, skip service selection and go to details
   // ✅ NEW: Also consider selectedServices (multi-service from VetServicesByStyle)
   const hasServiceContext = (serviceType || serviceStyle) && (serviceId || selectedService || (selectedServices && selectedServices.length > 0));
   const initialStep: BookingStep = hasServiceContext ? 'details' : 'service';
   const [step, setStep] = useState<BookingStep>(initialStep);
-  
+  // Map 'clinic' to 'at_center'; must be declared before effects that reference it (dependency arrays run during render).
+  const normalizedServiceType =
+    (serviceStyle || serviceType) === 'clinic' ? 'at_center' : (serviceStyle || serviceType || 'tele');
+
   // ✅ FIX: Prevent step from resetting to 'service' if we have service context
   // Use a ref to track if we've already initialized to avoid loops
   const initializedRef = useRef(false);
+  const packageRedirectRef = useRef(false);
   useEffect(() => {
     if (!initializedRef.current && hasServiceContext && step === 'service') {
       // If we have service context but step is 'service', move to details
@@ -82,6 +107,36 @@ export function VetBookingRouter({
       initializedRef.current = true;
     }
   }, [serviceId, serviceType, serviceStyle, step]);
+
+  useEffect(() => {
+    if (packageRedirectRef.current) return;
+    const vid = doctorId || vendorId;
+    if (!vid) return;
+    const fromList = (selectedServices || []).filter(Boolean) as any[];
+    const pkgRow =
+      fromList.find((r) => isVendorServicePackageRow(r)) ||
+      (selectedService && isVendorServicePackageRow(selectedService) ? selectedService : null);
+    if (!pkgRow) return;
+    packageRedirectRef.current = true;
+    const nav = buildWalkerServiceDataForVendorPackagePurchase({
+      vendorId: String(vid),
+      vendorName: vendorNameProp || doctor?.name,
+      serviceRow: pkgRow as Record<string, unknown>,
+      serviceTypeCategory: 'vet',
+      serviceStyle: String(serviceStyle || normalizedServiceType || 'at_home'),
+    });
+    if (nav) onNavigate('purchase-package', nav);
+  }, [
+    doctorId,
+    vendorId,
+    selectedServices,
+    selectedService,
+    vendorNameProp,
+    doctor,
+    serviceStyle,
+    normalizedServiceType,
+    onNavigate,
+  ]);
   
   // ✅ Sync allSelectedServices when selectedServices prop changes
   useEffect(() => {
@@ -99,8 +154,6 @@ export function VetBookingRouter({
   }, [selectedServices, serviceStyle, serviceType]);
   
   const [loading, setLoading] = useState(false);
-  // ✅ FIX: Map 'clinic' to 'at_center', use serviceStyle if provided, otherwise fall back to serviceType
-  const normalizedServiceType = (serviceStyle || serviceType) === 'clinic' ? 'at_center' : (serviceStyle || serviceType || 'tele');
   const [selectedServiceType, setSelectedServiceType] = useState(normalizedServiceType);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
@@ -145,6 +198,29 @@ export function VetBookingRouter({
   const [usePackageSession, setUsePackageSession] = useState(false);
   const [showPackageOffer, setShowPackageOffer] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
+
+  const vetStyleForDiscovery =
+    selectedServiceType === 'clinic' ? 'at_center' : selectedServiceType;
+  const vetProvidersDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: vetStyleForDiscovery,
+    category: 'vet',
+  });
+
+  const vetProviderStatValue = useMemo(() => {
+    const st =
+      vetProvidersDiscovery.isLoading || vetProvidersDiscovery.isFetching
+        ? 'loading'
+        : vetProvidersDiscovery.isError
+          ? 'error'
+          : 'success';
+    return formatDiscoveryCountStat(vetProvidersDiscovery.data, st);
+  }, [
+    vetProvidersDiscovery.data,
+    vetProvidersDiscovery.isLoading,
+    vetProvidersDiscovery.isFetching,
+    vetProvidersDiscovery.isError,
+  ]);
   
   // ✅ ANALYTICS: Track booking steps
   const analytics = useBookingAnalytics('vet', selectedServiceType as any);
@@ -209,6 +285,7 @@ export function VetBookingRouter({
         serviceStyle: style,
         icon: style === 'tele' ? Video : style === 'at_home' ? Home : Building2,
         color: style === 'tele' ? 'blue' : style === 'at_home' ? 'green' : 'purple',
+        isPackage: !!(s.isPackage ?? s.metadata?.isPackage),
       }));
     }
     return [];
@@ -251,7 +328,7 @@ export function VetBookingRouter({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         dayNum: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),
@@ -264,7 +341,7 @@ export function VetBookingRouter({
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
-  // Load slots when date is selected and vendor is known
+  // Load slots when date is selected and vendor is known (refetch when service mix / duration changes)
   useEffect(() => {
     const effectiveVendorId = vendorId || doctorId;
     if (selectedDate && effectiveVendorId) {
@@ -272,7 +349,18 @@ export function VetBookingRouter({
     } else {
       setTimeSlots([]);
     }
-  }, [selectedDate, vendorId, doctorId, selectedServiceType]);
+  }, [
+    selectedDate,
+    vendorId,
+    doctorId,
+    selectedServiceType,
+    allSelectedServices,
+    selectedVendorService?.duration,
+    selectedVendorService?.service_id,
+    selectedVendorService?.serviceId,
+    duration,
+    serviceId,
+  ]);
 
   const loadTimeSlots = async (date: string) => {
     const effectiveVendorId = vendorId || doctorId;
@@ -280,8 +368,30 @@ export function VetBookingRouter({
 
     try {
       setLoadingSlots(true);
+      const opt = getSelectedServiceOption();
+      const totalSlotDuration =
+        allSelectedServices.length > 0
+          ? Math.max(15, allSelectedServices.reduce((sum, s) => sum + (Number(s.duration) || 0), 0))
+          : Math.max(15, Number(opt?.duration ?? selectedVendorService?.duration ?? duration ?? 30));
+      const serviceIds =
+        allSelectedServices.length > 0
+          ? allSelectedServices.map((s: any) => s.serviceId || s.id).filter(Boolean).join(',')
+          : String(
+              opt?.serviceId ||
+                opt?.id ||
+                selectedVendorService?.service_id ||
+                selectedVendorService?.serviceId ||
+                serviceId ||
+                ''
+            ).trim();
+      const params = new URLSearchParams({
+        date,
+        serviceStyle: selectedServiceType,
+        totalDuration: String(totalSlotDuration),
+      });
+      if (serviceIds) params.set('serviceIds', serviceIds);
       const response = await apiClient.get(
-        `/customer/vendor/${effectiveVendorId}/available-slots?date=${date}&serviceStyle=${selectedServiceType}`
+        `/customer/vendor/${effectiveVendorId}/available-slots?${params.toString()}`
       ) as any;
 
       if (response.success && response.slots) {
@@ -389,10 +499,12 @@ export function VetBookingRouter({
       setLoading(true);
       const vid = vendorId || doctorId;
       // Prefer customer endpoint so only published services with vendor price show (CRUD reflects immediately)
+      // ✅ FIX: Include serviceStyle parameter to filter services correctly
+      const serviceStyleParam = serviceStyle ? `?serviceStyle=${encodeURIComponent(serviceStyle)}` : '';
       let servicesResponse: any = null;
       const endpoints = [
-        `/customer/vendor/${vid}/services`,
-        `/customer/clinic/${vid}/services`,
+        `/customer/vendor/${vid}/services${serviceStyleParam}`,
+        `/customer/clinic/${vid}/services${serviceStyleParam}`,
         `/vendor/${vid}/services`,
         `/vendor/services/${vid}`,
       ];
@@ -421,7 +533,7 @@ export function VetBookingRouter({
               ...(servicesResponse.services.tele?.services || []),
             ];
           } else if (Array.isArray(servicesResponse.services)) {
-            services = servicesResponse.services;
+            services = mergeCustomerVendorServicesPayload(servicesResponse);
           }
         } else if (servicesResponse.allServices) {
           services = servicesResponse.allServices;
@@ -636,6 +748,28 @@ export function VetBookingRouter({
   };
 
   const handleNext = () => {
+    if (step === 'service' && selectedServiceType && vendorServices.length > 0) {
+      const vs = vendorServices.find(
+        (s: any) =>
+          String(s.serviceId || s.service_id) === String(selectedServiceType) ||
+          String(s.id) === String(selectedServiceType)
+      );
+      const vid = doctorId || vendorId;
+      if (vs && isVendorServicePackageRow(vs) && vid) {
+        const nav = buildWalkerServiceDataForVendorPackagePurchase({
+          vendorId: String(vid),
+          vendorName: vendorNameProp || doctor?.name,
+          serviceRow: vs as Record<string, unknown>,
+          serviceTypeCategory: 'vet',
+          serviceStyle: String((vs as any).serviceStyle || (vs as any).service_style || selectedServiceType),
+        });
+        if (nav) {
+          onNavigate('purchase-package', nav);
+          return;
+        }
+      }
+    }
+
     const steps: BookingStep[] = selectedServiceType === 'at_home'
       ? ['service', 'details', 'address', 'summary', 'payment', 'confirmation']
       : ['service', 'details', 'summary', 'payment', 'confirmation'];
@@ -811,12 +945,21 @@ export function VetBookingRouter({
     if (selectedServiceType === 'tele') return 'Book a video consultation';
     return 'Book your veterinary service';
   };
-  
-  const dashboardStats = [
-    { value: '50+', label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
-    { value: '1K+', label: 'Bookings' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+
+  const vetProviderStatLabel =
+    selectedServiceType === 'at_center' ? 'Clinics' : 'Vets';
+  const dashboardStats = useMemo(
+    () => [
+      {
+        value: vetProviderStatValue,
+        label: vetProviderStatLabel,
+        icon: <Stethoscope className="w-4 h-4" />,
+      },
+      { value: '1K+', label: 'Bookings' },
+      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ],
+    [vetProviderStatValue, vetProviderStatLabel]
+  );
 
   // Phase 1: Step indicators include Summary
   const getStepIndicators = (): StepInfo[] | undefined => {
@@ -837,10 +980,132 @@ export function VetBookingRouter({
     }));
   };
 
+  const reviewVetPrePayment =
+    step === 'payment' && !showPaymentPage && selectedServiceType !== 'at_home';
+
+  const handleVetPrePaymentContinue = () => {
+    if (!selectedVendorService && selectedServiceOption) {
+      const actualVendorService = vendorServices.find((s) => {
+        const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
+        return (
+          (s.serviceId || s.service_id) === optionServiceId || (s.serviceId || s.service_id) === selectedServiceOption.id
+        );
+      });
+
+      const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
+      setSelectedVendorService({
+        id: actualVendorService?.id,
+        serviceId: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
+        service_id: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
+        name: selectedServiceOption.name,
+        price: selectedServiceOption.price,
+        duration: selectedServiceOption.duration,
+        serviceStyle: selectedServiceType,
+      });
+    }
+    setShowPaymentPage(true);
+  };
+
+  const vetPrePaymentTotalAmount =
+    allSelectedServices && allSelectedServices.length > 0
+      ? allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0)
+      : selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0;
+
+  const vetPrePaymentSummary = (
+    <>
+      {allSelectedServices && allSelectedServices.length > 0 ? (
+        <div className="space-y-3 pb-3 sm:pb-4 border-b">
+          {allSelectedServices.map((svc: any, idx: number) => (
+            <div key={svc.id || svc.serviceId || idx} className="flex items-center gap-2 sm:gap-3">
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600">
+                {selectedServiceType === 'tele' ? (
+                  <Video className="w-5 h-5 sm:w-6 sm:h-6" />
+                ) : selectedServiceType === 'at_home' ? (
+                  <Home className="w-5 h-5 sm:w-6 sm:h-6" />
+                ) : (
+                  <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-semibold text-sm sm:text-base">{svc.name || svc.serviceName || 'Service'}</h3>
+                {(svc.duration ?? 0) > 0 && <p className="text-xs sm:text-sm text-gray-500">{svc.duration} mins</p>}
+              </div>
+              <p className="font-bold text-sm sm:text-base flex-shrink-0">{formatPriceWithSymbol(svc.price ?? 0)}</p>
+            </div>
+          ))}
+          {allSelectedServices.length > 1 && (
+            <div className="flex justify-between items-center pt-2 font-bold text-sm sm:text-base">
+              <span>Subtotal</span>
+              <span className="text-orange-600">
+                {formatPriceWithSymbol(allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0))}
+              </span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600">
+            {selectedServiceType === 'tele' ? (
+              <Video className="w-5 h-5 sm:w-6 sm:h-6" />
+            ) : selectedServiceType === 'at_home' ? (
+              <Home className="w-5 h-5 sm:w-6 sm:h-6" />
+            ) : (
+              <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm sm:text-base">
+              {selectedServiceOption?.name || selectedVendorService?.name || serviceName || 'Vet Consultation'}
+            </h3>
+            {(selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration) > 0 && (
+              <p className="text-xs sm:text-sm text-gray-500">
+                {selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration} mins
+              </p>
+            )}
+          </div>
+          <p className="font-bold text-sm sm:text-base flex-shrink-0">
+            {formatPriceWithSymbol(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0)}
+          </p>
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
+        <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs sm:text-sm text-gray-500">Date & Time</p>
+          <p className="font-medium text-sm sm:text-base">
+            {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at{' '}
+            {formatTime12Hour(selectedTime)}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
+        <User className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs sm:text-sm text-gray-500">Pet</p>
+          <p className="font-medium text-sm sm:text-base">
+            {selectedPet?.name} ({selectedPet?.breed})
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Additional Notes (Optional)</label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Any symptoms or concerns..."
+          className="w-full p-2 sm:p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm sm:text-base"
+          rows={3}
+        />
+      </div>
+    </>
+  );
+
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
-      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader - Hide when on payment step */}
-      {step !== 'payment' && (
+    <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-gray-50">
+      {!((step === 'payment' && showPaymentPage) || reviewVetPrePayment) && (
         <ServiceDashboardHeader
           serviceName={getServiceTitle()}
           serviceSubtitle={getServiceSubtitle()}
@@ -854,46 +1119,33 @@ export function VetBookingRouter({
         />
       )}
 
-      <div className="flex-1 overflow-y-auto bg-gray-50">
-        <div className="max-w-md mx-auto px-4 sm:px-6 py-4 sm:py-6">
-          {/* Pet Selector - Show when not on payment step */}
-          {step !== 'payment' && pets.length > 0 && (
-            <div className="mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-sm font-semibold text-gray-700">Select Pet:</span>
-              </div>
-              <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-                {pets.map((pet) => (
-                  <button
-                    key={pet.id}
-                    onClick={() => {
-                      setSelectedPet(pet);
-                      try { sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id)); } catch { /* ignore */ }
-                    }}
-                    className={`flex-shrink-0 px-3 py-2 rounded-lg border-2 transition-all ${
-                      selectedPet?.id === pet.id
-                        ? 'border-[#FF8C42] bg-orange-50'
-                        : 'border-gray-200 bg-white hover:border-orange-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      {pet.photo ? (
-                        <img src={pet.photo} alt={pet.name} className="w-8 h-8 rounded-full object-cover" />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center">
-                          <span className="text-xs font-bold text-orange-600">{pet.name.charAt(0)}</span>
-                        </div>
-                      )}
-                      <span className={`text-sm font-medium ${selectedPet?.id === pet.id ? 'text-[#FF8C42]' : 'text-gray-700'}`}>
-                        {pet.name}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
+      <div
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-gray-50"
+        style={{
+          /* StandardizedFooter is position:fixed; reserve space so confirmation CTAs stay tappable (see globals.css). */
+          paddingBottom: 'max(1rem, var(--customer-tabbar-content-pad))',
+        }}
+      >
+        {reviewVetPrePayment && (
+          <PrePaymentBookingReview
+            title="Booking Summary"
+            subtitle="Review before payment"
+            headerIcon={Stethoscope}
+            stats={dashboardStats}
+            onBack={handleBack}
+            summaryBody={vetPrePaymentSummary}
+            total={{ label: 'Total', amountFormatted: formatPriceWithSymbol(vetPrePaymentTotalAmount) }}
+            totalTextClassName="text-orange-600"
+            primaryButton={{
+              label: 'Continue to Payment',
+              onClick: handleVetPrePaymentContinue,
+              disabled: processing,
+              loading: processing,
+            }}
+          />
+        )}
+        {!reviewVetPrePayment && (
+        <div className="mx-auto max-w-md px-4 py-4 sm:px-6 sm:py-6">
         {/* Service Selection - Skip if service context exists */}
         {step === 'service' && !hasServiceContext && (
           <div className="space-y-4">
@@ -940,7 +1192,29 @@ export function VetBookingRouter({
                         });
                         console.log('✅ Service selected (fallback):', serviceOption.serviceId);
                       }
-                      
+
+                      const rawForPackage =
+                        actualService ||
+                        (serviceOption.vendorServiceId
+                          ? vendorServices.find(
+                              (s: any) => String(s.id) === String(serviceOption.vendorServiceId)
+                            )
+                          : null);
+                      const vid = doctorId || vendorId;
+                      if (rawForPackage && isVendorServicePackageRow(rawForPackage) && vid) {
+                        const nav = buildWalkerServiceDataForVendorPackagePurchase({
+                          vendorId: String(vid),
+                          vendorName: vendorNameProp || doctor?.name,
+                          serviceRow: rawForPackage as Record<string, unknown>,
+                          serviceTypeCategory: 'vet',
+                          serviceStyle: String(serviceOption.serviceStyle || selectedServiceType),
+                        });
+                        if (nav) {
+                          onNavigate('purchase-package', nav);
+                          return;
+                        }
+                      }
+
                       // Auto-advance to details after selection
                       setTimeout(() => setStep('details'), 100);
                     }}
@@ -973,148 +1247,174 @@ export function VetBookingRouter({
                 );
               })}
             </div>
+            <div className="mx-auto mt-4 w-full max-w-xs sm:max-w-sm">
             <Button 
               onClick={handleNext} 
-              className="w-full bg-orange-500 hover:bg-orange-600 mt-4 text-sm sm:text-base py-2.5 sm:py-3"
+              className="w-full whitespace-normal text-center rounded-full bg-orange-500 hover:bg-orange-600 text-sm sm:text-base min-h-12 px-4 py-2.5 shadow-md sm:h-12 sm:py-0"
               disabled={!selectedServiceType}
             >
               Continue
             </Button>
+            </div>
           </div>
         )}
 
         {/* Combined Details Selection: Schedule, Pet, and Address */}
         {step === 'details' && (
-          <div className="space-y-6 pb-24">
-            {/* Date & Time Selection */}
-            <div>
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-3">Select Date & Time</h2>
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Date</h3>
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-1 px-1">
-                {dates.map((d) => (
-                  <button
-                    key={d.date}
-                    onClick={() => setSelectedDate(d.date)}
-                      className={`flex-shrink-0 w-14 sm:w-16 p-2 sm:p-3 rounded-xl text-center transition-all ${
-                      selectedDate === d.date 
-                        ? 'bg-orange-500 text-white' 
-                        : 'bg-white border border-gray-200 hover:border-orange-300'
-                    }`}
-                  >
-                    <p className="text-xs opacity-75">{d.day}</p>
-                      <p className="text-lg sm:text-xl font-bold">{d.dayNum}</p>
-                    <p className="text-xs opacity-75">{d.month}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {selectedDate && (
+          <div className="space-y-4 cw-scroll-pad-tabbar">
+            <div className="space-y-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+              {/* Date & Time Selection */}
               <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">Time</h3>
-                {loadingSlots ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="text-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto mb-2"></div>
-                      <p className="text-sm text-gray-500">Loading available slots...</p>
-                    </div>
-                  </div>
-                ) : timeSlots.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                      <p className="text-sm">No slots available for this date</p>
-                      <p className="text-xs mt-2">Please select another date</p>
-                  </div>
-                ) : (
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {timeSlots.map((slot) => (
+                <h2 className="mb-3 text-lg font-bold text-gray-900 sm:text-xl">Select Date & Time</h2>
+                <div className="mb-4">
+                  <h3 className="mb-2 text-sm font-medium text-gray-700">Date</h3>
+                  <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2 scrollbar-hide">
+                    {dates.map((d) => (
                       <button
-                        key={slot.time}
-                        onClick={() => slot.available && setSelectedTime(slot.time)}
-                        disabled={!slot.available}
-                          className={`p-2.5 sm:p-3 rounded-xl text-center transition-all text-sm ${
-                          selectedTime === slot.time 
-                            ? 'bg-orange-500 text-white' 
-                            : slot.available
-                              ? 'bg-white border border-gray-200 hover:border-orange-300'
-                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        }`}
+                        key={d.date}
+                        onClick={() => setSelectedDate(d.date)}
+                        className={`flex-shrink-0 rounded-xl p-2 text-center transition-all sm:w-16 sm:p-3 ${
+                          selectedDate === d.date
+                            ? 'bg-orange-500 text-white'
+                            : 'border border-gray-200 bg-gray-50 hover:border-orange-300'
+                        } w-14`}
                       >
-                        {slot.time}
+                        <p className="text-xs opacity-75">{d.day}</p>
+                        <p className="text-lg font-bold sm:text-xl">{d.dayNum}</p>
+                        <p className="text-xs opacity-75">{d.month}</p>
                       </button>
                     ))}
                   </div>
+                </div>
+
+                {selectedDate && (
+                  <div>
+                    <h3 className="mb-2 text-sm font-medium text-gray-700">Time</h3>
+                    {loadingSlots ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="text-center">
+                          <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-b-2 border-orange-500"></div>
+                          <p className="text-sm text-gray-500">Loading available slots...</p>
+                        </div>
+                      </div>
+                    ) : timeSlots.length === 0 ? (
+                      <div className="py-8 text-center text-gray-500">
+                        <p className="text-sm">No slots available for this date</p>
+                        <p className="mt-2 text-xs">Please select another date</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                        {timeSlots.map((slot) => (
+                          <button
+                            key={slot.time}
+                            onClick={() => slot.available && setSelectedTime(slot.time)}
+                            disabled={!slot.available}
+                            className={`rounded-xl p-2.5 text-center text-sm transition-all sm:p-3 ${
+                              selectedTime === slot.time
+                                ? 'bg-orange-500 text-white'
+                                : slot.available
+                                  ? 'border border-gray-200 bg-gray-50 hover:border-orange-300'
+                                  : 'cursor-not-allowed bg-gray-100 text-gray-400'
+                            }`}
+                          >
+                            {formatTime12Hour(slot.time)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-          </div>
 
-        {/* Pet Selection */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg sm:text-xl font-bold text-gray-900">Select Your Pet</h2>
-              <button
-                onClick={() => setShowAddPetModal(true)}
-                  className="flex items-center gap-1 px-2 sm:px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-xs sm:text-sm font-medium hover:bg-orange-200 transition"
-              >
-                  <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
-                  <span className="hidden sm:inline">Add Pet</span>
-                  <span className="sm:hidden">Add</span>
-              </button>
-            </div>
-            
-            <div className="space-y-3">
-              {pets.length > 0 ? (
-                pets.map((pet) => (
-                  <button
-                    key={pet.id}
-                    onClick={() => {
-                      setSelectedPet(pet);
-                      try { sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id)); } catch { /* ignore */ }
-                    }}
-                      className={`w-full p-3 sm:p-4 rounded-xl border-2 transition-all flex items-center gap-3 sm:gap-4 ${
-                      selectedPet?.id === pet.id 
-                        ? 'border-orange-500 bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-orange-200'
-                    }`}
-                  >
-                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-orange-100 flex items-center justify-center text-xl sm:text-2xl flex-shrink-0">
-                      {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog') ? '🐕' : 
-                       pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat') ? '🐈' : '🐾'}
-                    </div>
-                      <div className="flex-1 text-left min-w-0">
-                        <h3 className="font-semibold text-gray-900 text-sm sm:text-base">{pet.name}</h3>
-                        <p className="text-xs sm:text-sm text-gray-500 capitalize">{pet.breed}</p>
-                    </div>
-                    {selectedPet?.id === pet.id && (
-                        <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500 flex-shrink-0" />
-                    )}
-                  </button>
-                ))
-              ) : (
-                  <div className="text-center py-8 sm:py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                    <div className="text-4xl sm:text-5xl mb-3">🐾</div>
-                    <p className="text-gray-600 font-medium mb-2 text-sm sm:text-base">No pets added yet</p>
-                    <p className="text-xs sm:text-sm text-gray-500 mb-4">Add your pet to continue with the booking</p>
+              {/* Pet Selection */}
+              <div className="border-t border-gray-100 pt-6">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Select Your Pet</h2>
                   <button
                     onClick={() => setShowAddPetModal(true)}
-                      className="px-4 sm:px-6 py-2 sm:py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition text-sm sm:text-base"
+                    className="flex items-center gap-1 rounded-lg bg-orange-100 px-2 py-1.5 text-xs font-medium text-orange-600 transition hover:bg-orange-200 sm:px-3 sm:text-sm"
                   >
-                    + Add Your First Pet
+                    <Plus className="h-3 w-3 sm:h-4 sm:w-4" />
+                    <span className="hidden sm:inline">Add Pet</span>
+                    <span className="sm:hidden">Add</span>
                   </button>
                 </div>
-              )}
+
+                <div className="space-y-3">
+                  {pets.length > 0 ? (
+                    pets.map((pet) => (
+                      <button
+                        key={pet.id}
+                        onClick={() => {
+                          setSelectedPet(pet);
+                          try {
+                            sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id));
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                        className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 transition-all sm:gap-4 sm:p-4 ${
+                          selectedPet?.id === pet.id
+                            ? 'border-orange-500 bg-orange-50'
+                            : 'border-gray-200 bg-gray-50 hover:border-orange-200'
+                        }`}
+                      >
+                        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 text-xl sm:h-14 sm:w-14 sm:text-2xl">
+                          {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog')
+                            ? '🐕'
+                            : pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat')
+                              ? '🐈'
+                              : '🐾'}
+                        </div>
+                        <div className="min-w-0 flex-1 text-left">
+                          <h3 className="text-sm font-semibold text-gray-900 sm:text-base">{pet.name}</h3>
+                          <p className="text-xs capitalize text-gray-500 sm:text-sm">{pet.breed}</p>
+                        </div>
+                        {selectedPet?.id === pet.id && (
+                          <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-orange-500 sm:h-6 sm:w-6" />
+                        )}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="rounded-xl border-2 border-dashed border-gray-200 py-8 text-center sm:py-12">
+                      <div className="mb-3 text-4xl sm:text-5xl">🐾</div>
+                      <p className="mb-2 text-sm font-medium text-gray-600 sm:text-base">No pets added yet</p>
+                      <p className="mb-4 text-xs text-gray-500 sm:text-sm">Add your pet to continue with the booking</p>
+                      <button
+                        onClick={() => setShowAddPetModal(true)}
+                        className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-orange-600 sm:px-6 sm:py-3 sm:text-base"
+                      >
+                        + Add Your First Pet
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mx-auto w-full max-w-xs sm:max-w-sm">
+              <Button
+                onClick={() => {
+                  handleNext();
+                }}
+                className="min-h-12 w-full rounded-full bg-orange-500 px-4 py-2.5 text-center text-sm shadow-md hover:bg-orange-600 sm:h-12 sm:text-base sm:py-0"
+                disabled={!selectedDate || !selectedTime || !selectedPet}
+              >
+                {!selectedDate || !selectedTime
+                  ? 'Select Date & Time'
+                  : !selectedPet
+                    ? 'Select a Pet'
+                    : selectedServiceType === 'at_home'
+                      ? 'Continue to Address'
+                      : 'Continue'}
+              </Button>
             </div>
           </div>
-
-            {/* Address step only for at_home - handled in address step below */}
-
-              </div>
-            )}
+        )}
 
         {/* Address Step - only for at_home */}
         {step === 'address' && selectedServiceType === 'at_home' && (
-          <div className="space-y-4 pb-24">
+          <div className="space-y-4 cw-scroll-pad-tabbar">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">Select Your Address</h2>
               <button
@@ -1179,19 +1479,21 @@ export function VetBookingRouter({
                 </p>
               </div>
             )}
+            <div className="mx-auto w-full max-w-xs sm:max-w-sm">
             <Button
               onClick={handleNext}
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
+              className="w-full whitespace-normal text-center rounded-full bg-[#FF8C42] hover:bg-[#FF7A35] min-h-12 px-3 py-2.5 text-xs shadow-md sm:h-12 sm:px-4 sm:text-sm sm:py-0"
               disabled={!selectedAddress}
             >
               {selectedAddress ? 'Continue' : 'Select an Address to Continue'}
             </Button>
+            </div>
           </div>
         )}
 
         {/* Phase 1: Summary step with package advice */}
         {step === 'summary' && (
-          <div className="space-y-4 pb-24">
+          <div className="space-y-4 cw-scroll-pad-tabbar">
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
             <div className="bg-white rounded-xl p-4 space-y-3 shadow-sm border border-gray-200">
               {allSelectedServices && allSelectedServices.length > 0 ? (
@@ -1215,7 +1517,7 @@ export function VetBookingRouter({
                   <p className="font-bold text-orange-600">{formatPriceWithSymbol(selectedServiceOption?.price ?? 0)}</p>
                 </div>
               )}
-              <div className="flex items-center gap-2 text-sm"><Calendar className="w-4 h-4 text-gray-400" /><span>{selectedDate && new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} at {selectedTime}</span></div>
+              <div className="flex items-center gap-2 text-sm"><Calendar className="w-4 h-4 text-gray-400" /><span>{selectedDate && new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })} at {formatTime12Hour(selectedTime)}</span></div>
               <div className="flex items-center gap-2 text-sm"><User className="w-4 h-4 text-gray-400" /><span>{selectedPet?.name} ({selectedPet?.breed})</span></div>
               {selectedServiceType === 'at_home' && selectedAddress && <div className="flex items-center gap-2 text-sm"><MapPin className="w-4 h-4 text-gray-400" /><span>{selectedAddress.street || selectedAddress.address || 'Address'}</span></div>}
               <div className="pt-2 flex justify-between font-semibold"><span>Total</span><span className="text-orange-600">{formatPriceWithSymbol(selectedPackageForSwitch ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0) : (allSelectedServices?.length ? allSelectedServices.reduce((s: number, x: any) => s + (Number(x.price) || 0), 0) : (selectedServiceOption?.price ?? 0)))}</span></div>
@@ -1249,175 +1551,12 @@ export function VetBookingRouter({
                 })}
               </div>
             ) : null}
-            <Button onClick={handleNext} className="w-full bg-orange-500 hover:bg-orange-600 py-3">Continue to Payment</Button>
-          </div>
-        )}
-            
-        {/* Fixed Continue Button - Above Footer */}
-        {step === 'details' && (
-          <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-30">
-            <div className="max-w-[430px] mx-auto">
-            <Button 
-              onClick={() => {
-                handleNext();
-              }} 
-                className="w-full bg-orange-500 hover:bg-orange-600 text-base py-3"
-                disabled={!selectedDate || !selectedTime || !selectedPet}
-              >
-                {!selectedDate || !selectedTime 
-                  ? 'Select Date & Time' 
-                  : !selectedPet 
-                    ? 'Select a Pet' 
-                    : selectedServiceType === 'at_home' 
-                      ? 'Continue to Address' 
-                      : 'Continue'}
-            </Button>
+            <div className="mx-auto w-full max-w-xs sm:max-w-sm">
+            <Button onClick={handleNext} className="w-full whitespace-normal text-center rounded-full bg-orange-500 hover:bg-orange-600 min-h-12 px-4 py-2.5 text-sm shadow-md sm:h-12 sm:py-0">Continue to Payment</Button>
             </div>
           </div>
         )}
 
-        {/* Payment Summary - Using UniversalPaymentPage (only for at_center services, at_home goes directly to UniversalPaymentPage) */}
-        {step === 'payment' && !showPaymentPage && selectedServiceType !== 'at_home' && (
-          <div className="space-y-4 pb-24">
-            <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
-            
-            <div className="bg-white rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4 shadow-sm">
-              {/* Service(s) - multi-service or single with fallbacks */}
-              {allSelectedServices && allSelectedServices.length > 0 ? (
-                <div className="space-y-3 pb-3 sm:pb-4 border-b">
-                  {allSelectedServices.map((svc: any, idx: number) => (
-                    <div key={svc.id || svc.serviceId || idx} className="flex items-center gap-2 sm:gap-3">
-                      <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600`}>
-                        {selectedServiceType === 'tele' ? <Video className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                         selectedServiceType === 'at_home' ? <Home className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                         <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold text-sm sm:text-base">{svc.name || svc.serviceName || 'Service'}</h3>
-                        {(svc.duration ?? 0) > 0 && (
-                          <p className="text-xs sm:text-sm text-gray-500">{svc.duration} mins</p>
-                        )}
-                      </div>
-                      <p className="font-bold text-sm sm:text-base flex-shrink-0">{formatPriceWithSymbol(svc.price ?? 0)}</p>
-                    </div>
-                  ))}
-                  {allSelectedServices.length > 1 && (
-                    <div className="flex justify-between items-center pt-2 font-bold text-sm sm:text-base">
-                      <span>Subtotal</span>
-                      <span className="text-orange-600">{formatPriceWithSymbol(allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0))}</span>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600`}>
-                    {selectedServiceType === 'tele' ? <Video className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                     selectedServiceType === 'at_home' ? <Home className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                     <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm sm:text-base">
-                      {selectedServiceOption?.name || selectedVendorService?.name || serviceName || 'Vet Consultation'}
-                    </h3>
-                    {(selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration) > 0 && (
-                      <p className="text-xs sm:text-sm text-gray-500">
-                        {selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration} mins
-                      </p>
-                    )}
-                  </div>
-                  <p className="font-bold text-sm sm:text-base flex-shrink-0">
-                    {formatPriceWithSymbol(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0)}
-                  </p>
-                </div>
-              )}
-
-              {/* Date & Time */}
-              <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-                <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm text-gray-500">Date & Time</p>
-                  <p className="font-medium text-sm sm:text-base">
-                    {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {selectedTime}
-                  </p>
-                </div>
-              </div>
-
-              {/* Pet */}
-              <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-                <User className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm text-gray-500">Pet</p>
-                  <p className="font-medium text-sm sm:text-base">{selectedPet?.name} ({selectedPet?.breed})</p>
-                </div>
-              </div>
-
-              {/* Address is part of vendor profile - not shown here */}
-
-              {/* Notes */}
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
-                  Additional Notes (Optional)
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Any symptoms or concerns..."
-                  className="w-full p-2 sm:p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm sm:text-base"
-                  rows={3}
-                />
-              </div>
-            </div>
-
-            {/* Price Breakdown */}
-            <div className="bg-white rounded-xl p-3 sm:p-4 shadow-sm">
-              <div className="flex justify-between items-center text-base sm:text-lg">
-                <span className="font-bold">Total</span>
-                <span className="font-bold text-orange-600">
-                  {formatPriceWithSymbol(allSelectedServices && allSelectedServices.length > 0
-                    ? allSelectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0)
-                    : (selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0))}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Fixed Continue Button for Payment Summary - Above Footer (only for at_center, not at_home) */}
-        {step === 'payment' && !showPaymentPage && selectedServiceType !== 'at_home' && (
-          <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-30 shadow-lg">
-            <div className="max-w-[430px] mx-auto">
-              <Button 
-                onClick={() => {
-                  // Ensure we have selectedVendorService before showing payment
-                  if (!selectedVendorService && selectedServiceOption) {
-                    // ✅ CRITICAL: Find the actual vendor service from API to get real service_id (UUID)
-                    const actualVendorService = vendorServices.find(s => {
-                      const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
-                      return (s.serviceId || s.service_id) === optionServiceId || (s.serviceId || s.service_id) === selectedServiceOption.id;
-                    });
-                    
-                    const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
-                    setSelectedVendorService({
-                      id: actualVendorService?.id, // Numeric vendor_services.id (for reference)
-                      serviceId: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId, // ✅ UUID from services table
-                      service_id: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId, // ✅ Explicit UUID field
-                      name: selectedServiceOption.name,
-                      price: selectedServiceOption.price,
-                      duration: selectedServiceOption.duration,
-                      serviceStyle: selectedServiceType,
-                    });
-                  }
-                  setShowPaymentPage(true);
-                }} 
-                className="w-full bg-orange-500 hover:bg-orange-600 text-base py-3"
-                disabled={processing}
-              >
-                Continue to Payment
-              </Button>
-            </div>
-          </div>
-        )}
-        
         {/* Universal Payment Page */}
         {step === 'payment' && showPaymentPage && selectedVendorService && selectedPet && selectedDate && selectedTime && (() => {
           // ✅ CRITICAL: Ensure we only use UUID, not numeric ID
@@ -1454,6 +1593,8 @@ export function VetBookingRouter({
             return (
               <UniversalPaymentPage
                 type="booking"
+                layoutVariant="appShell"
+                category="veterinary"
                 vendorId={(vendorId || doctorId || clinicId || '') as string}
                 vendorName={displayVendorName}
                 serviceId={finalServiceId}
@@ -1475,12 +1616,26 @@ export function VetBookingRouter({
                   state: selectedAddress.state,
                 } : undefined}
                 baseAmount={totalBaseAmount}
+                priceIncludesTax={
+                  catalogPriceIncludesTax(selectedVendorService) ||
+                  catalogPriceIncludesTax(selectedServiceOption) ||
+                  (!!(allSelectedServices?.length) && catalogPriceIncludesTax(allSelectedServices![0]))
+                }
                 duration={totalDuration}
                 selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
                 customerPhone={phone}
                 customerId={customerId || undefined}
                 flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
-                onBack={() => setShowPaymentPage(false)}
+                onBack={() => {
+                  setShowPaymentPage(false);
+                  // at_home auto-opens payment when step stays 'payment' and showPaymentPage is false — leave summary or we snap straight back into payment
+                  if (step === 'payment') {
+                    setStep('summary');
+                  }
+                }}
+                onPaymentAbandoned={() => {
+                  if (selectedDate) void loadTimeSlots(selectedDate);
+                }}
                 onSuccess={(bookingId) => {
                   setBookingId(bookingId);
                   setShowPaymentPage(false);
@@ -1529,7 +1684,7 @@ export function VetBookingRouter({
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs sm:text-sm text-gray-500">Time</span>
-                  <span className="font-medium text-xs sm:text-sm">{selectedTime}</span>
+                  <span className="font-medium text-xs sm:text-sm">{formatTime12Hour(selectedTime)}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-xs sm:text-sm text-gray-500">Pet</span>
@@ -1608,17 +1763,17 @@ export function VetBookingRouter({
               </div>
             )}
 
-            <div className="space-y-2 sm:space-y-3">
+            <div className="mx-auto w-full max-w-xs sm:max-w-sm space-y-2 sm:space-y-3">
               <Button 
                 onClick={() => onViewBooking?.(bookingId || '')}
-                className="w-full bg-orange-500 hover:bg-orange-600 text-sm sm:text-base py-2.5 sm:py-3"
+                className="w-full whitespace-normal text-center rounded-full bg-orange-500 hover:bg-orange-600 text-sm min-h-12 px-4 py-2.5 shadow-md sm:h-12 sm:text-base sm:py-0"
               >
                 View Booking Details
               </Button>
               <Button 
                 onClick={onBack}
                 variant="outline"
-                className="w-full text-sm sm:text-base py-2.5 sm:py-3"
+                className="w-full whitespace-normal text-center rounded-full text-sm min-h-12 px-4 py-2.5 sm:h-12 sm:text-base sm:py-0"
               >
                 Back to Home
               </Button>
@@ -1700,6 +1855,7 @@ export function VetBookingRouter({
           }}
         />
         </div>
+        )}
       </div>
       
       {/* Standardized Footer */}
@@ -1711,7 +1867,7 @@ export function VetBookingRouter({
           else if (tab === 'cart') onNavigate('cart');
           else if (tab === 'profile') onNavigate('profile');
         }}
-        maxWidth="max-w-[430px]"
+        maxWidth="max-w-customer"
       />
     </div>
   );

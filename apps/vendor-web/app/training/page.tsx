@@ -129,7 +129,7 @@ export default function TrainingPage() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <GraduationCap className="h-8 w-8 text-indigo-500" />
@@ -137,10 +137,16 @@ export default function TrainingPage() {
           </h1>
           <p className="text-muted-foreground">Manage training programs and track progress</p>
         </div>
-        <Button onClick={() => setShowAddModal(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Create Program
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => router.push('/training/progress')}>
+            <TrendingUp className="h-4 w-4 mr-2" />
+            Enrollment progress
+          </Button>
+          <Button onClick={() => setShowAddModal(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Program
+          </Button>
+        </div>
       </div>
 
       {/* Stats */}

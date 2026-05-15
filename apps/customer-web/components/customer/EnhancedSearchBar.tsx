@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, X, Clock, TrendingUp, MapPin, Star, ChevronRight } from 'lucide-react';
+import { Search, X, Clock, TrendingUp, MapPin, Star, ChevronRight, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 
 interface SearchResult {
   id: string;
@@ -42,15 +43,28 @@ export function EnhancedSearchBar({
   const [results, setResults] = useState<SearchResult[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  
+  /** Latest coords for async search — avoids debounced `performSearch` using a stale `userLocation` closure. */
+  const userLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  /** Monotonic id: only the latest in-flight `/search` may update `results` / `loading`. */
+  const searchRequestSeqRef = useRef(0);
+  /** Always invoke latest `performSearch` from debounce (stable closure). */
+  const performSearchRef = useRef<(q: string) => void>(() => {});
+
+  useEffect(() => {
+    userLocationRef.current = userLocation;
+  }, [userLocation]);
 
   // Get user location (silent fallback when permission denied)
   useEffect(() => {
     const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
     getCurrentPositionSafe(
-      (coords: { lat: number; lng: number }) => setUserLocation(coords),
+      (coords: { lat: number; lng: number }) => {
+        userLocationRef.current = coords;
+        setUserLocation(coords);
+      },
       () => {} // Fallback handled by onSuccess with default coords
     );
   }, []);
@@ -85,7 +99,7 @@ export function EnhancedSearchBar({
           history
             .map((h: any) => String(h.query || h.text || h || ''))
             .filter(q => q) // Remove empty strings
-            .slice(0, 5)
+            .slice(0, 15)
         );
         return;
       } catch (error) {
@@ -103,10 +117,24 @@ export function EnhancedSearchBar({
           (Array.isArray(parsed) ? parsed : [])
             .map(item => String(item || ''))
             .filter(q => q)
-            .slice(0, 10)
+            .slice(0, 15)
         );
       } catch (err) {
         console.error('Error loading recent searches from localStorage:', err);
+      }
+    }
+  };
+
+  const clearAllHistory = async () => {
+    setRecentSearches([]);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('warmpawz_recent_searches');
+      if (customerId) {
+        try {
+          await apiClient.delete(`/customer/${customerId}/search-history`);
+        } catch {
+          // ignore
+        }
       }
     }
   };
@@ -150,7 +178,7 @@ export function EnhancedSearchBar({
 
     debounceRef.current = setTimeout(() => {
       if (value.trim().length >= 2) {
-        performSearch(value.trim());
+        performSearchRef.current(value.trim());
       } else {
         setResults([]);
       }
@@ -158,16 +186,18 @@ export function EnhancedSearchBar({
   };
 
   const performSearch = async (searchQuery: string) => {
+    const reqId = ++searchRequestSeqRef.current;
+    const locForRequest = userLocationRef.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({
         q: searchQuery,
-        limit: '10'
+        limit: '30'
       });
 
-      if (userLocation) {
-        params.append('lat', userLocation.lat.toString());
-        params.append('lng', userLocation.lng.toString());
+      if (locForRequest) {
+        params.append('lat', locForRequest.lat.toString());
+        params.append('lng', locForRequest.lng.toString());
       }
 
       if (customerId) {
@@ -184,6 +214,11 @@ export function EnhancedSearchBar({
         }>(`/search?${params.toString()}`),
         apiClient.get<{ success?: boolean; results?: any[] }>(`/public/search/symptoms?q=${encodeURIComponent(searchQuery)}`).catch(() => ({ success: false, results: [] })),
       ]);
+
+      if (reqId !== searchRequestSeqRef.current) {
+        return;
+      }
+
       const data = searchData;
       
       // Transform results from universal search format to SearchResult format
@@ -201,7 +236,11 @@ export function EnhancedSearchBar({
             name: row.name,
             matchedSymptom: row.matchedSymptom,
             roleId: row.roleId,
-            allowedServiceStyles: row.allowedServiceStyles || ['at_home', 'at_center', 'tele'],
+            allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(row.allowedServiceStyles, {
+              roleId: row.roleId,
+              specializationId: row.specializationId,
+              categoryHint: row.categoryId,
+            }),
             categoryId: row.categoryId,
           },
           relevanceScore: 100,
@@ -258,23 +297,31 @@ export function EnhancedSearchBar({
       });
       
       // Fallback to old format if available
+      const oldResults = data.data?.results || data.results || [];
       if (transformedResults.length === 0) {
-        const oldResults = data.data?.results || data.results || [];
         setResults(oldResults);
       } else {
         setResults(transformedResults);
       }
     } catch (error) {
       console.error('Error performing search:', error);
-      setResults([]);
+      if (reqId === searchRequestSeqRef.current) {
+        setResults([]);
+      }
     } finally {
-      setLoading(false);
+      if (reqId === searchRequestSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
 
+  performSearchRef.current = (q: string) => {
+    void performSearch(q);
+  };
+
   const saveSearch = async (searchQuery: string) => {
-    // Save to localStorage
-    const updated = [searchQuery, ...recentSearches.filter(s => s !== searchQuery)].slice(0, 10);
+    // Save to localStorage (same key as /search page; limit 15)
+    const updated = [searchQuery, ...recentSearches.filter(s => s !== searchQuery)].slice(0, 15);
     setRecentSearches(updated);
     localStorage.setItem('warmpawz_recent_searches', JSON.stringify(updated));
 
@@ -329,8 +376,8 @@ export function EnhancedSearchBar({
 
   return (
     <div ref={wrapperRef} className={`relative ${className}`}>
-      <form onSubmit={handleSubmit}>
-        <div className="relative">
+      <form onSubmit={handleSubmit} className="flex gap-2 items-center">
+        <div className="relative flex-1">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
             type="text"
@@ -358,6 +405,12 @@ export function EnhancedSearchBar({
             </button>
           )}
         </div>
+        <button
+          type="submit"
+          className="shrink-0 px-5 py-3 bg-orange-500 text-white font-medium rounded-full hover:bg-orange-600 transition-colors shadow-sm"
+        >
+          Search
+        </button>
       </form>
 
       {/* Dropdown - Only show when there's content to display */}
@@ -373,9 +426,19 @@ export function EnhancedSearchBar({
           {/* Recent Searches */}
           {!loading && showRecentSearches && (
             <div className="p-2 border-b border-gray-100">
-              <h3 className="text-xs uppercase tracking-wide text-gray-500 px-3 py-2">
-                Recent Searches
-              </h3>
+              <div className="flex items-center justify-between px-3 py-2">
+                <h3 className="text-xs uppercase tracking-wide text-gray-500">
+                  Recent Searches
+                </h3>
+                <button
+                  type="button"
+                  onClick={clearAllHistory}
+                  className="text-xs text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear all
+                </button>
+              </div>
               {recentSearches.map((term, idx) => (
                 <button
                   key={idx}
@@ -480,7 +543,9 @@ export function EnhancedSearchBar({
                       {typeof result.distance === 'number' && (
                         <span className="flex items-center gap-1">
                           <MapPin className="w-3 h-3" />
-                          {Number(result.distance || 0).toFixed(1)} km
+                          {result.distance < 1
+                            ? `${Math.round(result.distance * 1000)} m`
+                            : `${Math.round(result.distance)} km`}
                         </span>
                       )}
                       {typeof result.relevanceScore === 'number' && result.relevanceScore > 80 && (

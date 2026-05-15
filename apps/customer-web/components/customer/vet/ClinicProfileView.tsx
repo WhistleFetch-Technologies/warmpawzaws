@@ -4,6 +4,13 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as ImageIcon, ChevronRight, CheckCircle2, Building2, Stethoscope } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { formatAverageForDisplay } from '@/lib/rating-display';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 
@@ -27,7 +34,15 @@ interface ClinicInfo {
   rating: number;
   review_count: number;
   timing: string;
-  services: { id: string; name: string; price: number; duration?: number }[];
+  services: {
+    selectionKey: string;
+    id: string;
+    serviceId?: string;
+    vendorServiceId?: string | number;
+    name: string;
+    price: number;
+    duration?: number;
+  }[];
   doctors: { id: string; name: string; specialization: string; rating: number }[];
   photos: string[];
   amenities: string[];
@@ -36,7 +51,14 @@ interface ClinicInfo {
 export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: ClinicProfileViewProps) {
   const [loading, setLoading] = useState(true);
   const [clinic, setClinic] = useState<ClinicInfo | null>(null);
-  const [selectedService, setSelectedService] = useState<{ id: string; name: string; price: number; duration?: number } | null>(null);
+  const [selectedService, setSelectedService] = useState<{
+    selectionKey: string;
+    id: string;
+    name: string;
+    price: number;
+    duration?: number;
+    serviceId?: string;
+  } | null>(null);
   
   // User profile data for header
   const [userName, setUserName] = useState('User');
@@ -68,9 +90,10 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       setLoading(true);
       
       // ✅ CRITICAL: Load vendor profile from real API - NO MOCK DATA, NO FALLBACKS
+      // ✅ FIX: Include serviceStyle=at_center for clinic profile (clinics offer at_center services)
       const [vendorResponse, servicesResponse] = await Promise.all([
         apiClient.get(`/customer/vendor/${clinicId}`),
-        apiClient.get(`/customer/vendor/${clinicId}/services`).catch(() => apiClient.get(`/vendor/${clinicId}/services`))
+        apiClient.get(`/customer/vendor/${clinicId}/services?serviceStyle=at_center`).catch(() => apiClient.get(`/vendor/${clinicId}/services`))
       ]);
       
       const vendorData = (vendorResponse as any)?.vendor || vendorResponse as any;
@@ -79,7 +102,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       let services: any[] = [];
       const servicesData = servicesResponse as any;
       if (servicesData?.services && Array.isArray(servicesData.services)) {
-        services = servicesData.services;
+        services = mergeCustomerVendorServicesPayload(servicesData);
       } else if (servicesData?.services?.at_home || servicesData?.services?.at_center || servicesData?.services?.tele) {
         services = [
           ...(servicesData.services.at_home?.services || []),
@@ -94,15 +117,25 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         services = servicesData;
       }
       
-      // ✅ CRITICAL: Map services to use service_id (UUID) as id, not numeric vendor_services.id
-      const mappedServices = services.map((s: any) => ({
-        id: s.serviceId || s.service_id, // ✅ UUID from services table
-        serviceId: s.serviceId || s.service_id, // ✅ UUID
-        vendorServiceId: s.id, // Numeric vendor_services.id (for reference)
-        name: s.serviceName || s.name || s.service_name,
-        price: parseFloat(s.price || '0'),
-        duration: s.duration || s.duration_minutes || 30,
-      }));
+      const mappedServices = services.map((s: any, idx: number) => {
+        const catalogId = s.serviceId || s.service_id;
+        const vendorServiceId = s.id;
+        const selectionKey = String(
+          catalogId || (vendorServiceId != null ? `vs-${vendorServiceId}` : `row-${idx}`)
+        );
+        return {
+          selectionKey,
+          id: catalogId || selectionKey,
+          serviceId: catalogId,
+          vendorServiceId,
+          name: s.serviceName || s.name || s.service_name,
+          price: parseFloat(s.price || '0'),
+          duration: s.duration || s.duration_minutes || 30,
+          isPackage: !!(s.isPackage ?? s.metadata?.isPackage),
+          packageDetails: s.packageDetails,
+          metadata: s.metadata,
+        };
+      });
       
       console.log('✅ Loaded clinic data:', {
         vendorId: vendorData.id || clinicId,
@@ -145,22 +178,37 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       }
       return;
     }
-    
-    // ✅ CRITICAL: Use service_id (UUID) not numeric id
-    const serviceId = (selectedService as any).serviceId || selectedService.id;
-    
-    // Navigate with service data - use 'appointment' to match CustomerHomeWrapper expectation
-    onNavigate('appointment', { 
-      clinicId: clinic?.id, 
+
+    const svc = selectedService as any;
+    const vid = clinic?.id;
+    if (vid && isVendorServicePackageRow(svc)) {
+      const nav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: String(vid),
+        vendorName: clinic?.name,
+        serviceRow: svc as Record<string, unknown>,
+        serviceTypeCategory: 'vet',
+        serviceStyle: 'at_center',
+      });
+      if (nav) {
+        onNavigate('purchase-package', nav);
+        return;
+      }
+    }
+
+    const serviceId = svc.serviceId || selectedService.id || selectedService.selectionKey;
+
+    onNavigate('appointment', {
+      clinicId: clinic?.id,
       vendorId: clinic?.id,
+      vendorName: clinic?.name,
       service: selectedService,
-      serviceId: serviceId, // ✅ UUID from services table
+      serviceId,
       serviceName: selectedService.name,
       price: selectedService.price,
       duration: selectedService.duration || 20,
-      serviceStyle: 'at_center', // Clinic visits are at_center type
+      serviceStyle: 'at_center',
       serviceType: 'at_center',
-      clinic 
+      clinic,
     });
   };
 
@@ -188,9 +236,14 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
   }
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const rc = Number(clinic.review_count ?? 0) || 0;
+  const avg =
+    clinic.rating != null && rc > 0 && Number.isFinite(Number(clinic.rating))
+      ? Number(clinic.rating).toFixed(1)
+      : '—';
   const dashboardStats = [
-    { value: `${clinic.rating?.toFixed(1) || '4.5'}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    { value: `${clinic.review_count || 0}`, label: 'Reviews' },
+    { value: avg, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: `${rc}`, label: 'Reviews' },
     { value: clinic.services?.length ? `${clinic.services.length}` : '10+', label: 'Services', icon: <Stethoscope className="w-4 h-4" /> }
   ];
 
@@ -208,7 +261,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         headerColor="bg-[#FF8C42]"
       />
 
-      <div className="max-w-[430px] mx-auto px-4 pt-4 pb-32">
+      <div className="max-w-customer mx-auto px-4 pt-4 pb-40">
         {/* Clinic Card */}
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-4">
           <div className="flex items-start gap-4">
@@ -279,31 +332,40 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           </div>
         </div>
 
-        {/* Services Section */}
+        {/* Services Section — scrollable list, stable keys, two-column row */}
         <div className="bg-white rounded-xl p-4 mb-4">
           <h2 className="font-bold text-gray-900 mb-3">Services & Prices</h2>
-          <div className="space-y-2">
-            {clinic.services.map((service) => (
-              <button
-                key={service.id}
-                onClick={() => setSelectedService(service)}
-                className={`w-full flex items-center justify-between py-3 px-3 rounded-lg border-2 transition-all ${
-                  selectedService?.id === service.id
-                    ? 'border-orange-600 bg-orange-50'
-                    : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/50'
-                }`}
-              >
-                <span className={`font-medium ${selectedService?.id === service.id ? 'text-orange-900' : 'text-gray-700'}`}>
-                  {service.name}
-                </span>
-                <span className={`font-semibold ${selectedService?.id === service.id ? 'text-orange-600' : 'text-gray-900'}`}>
-                  ₹{service.price}
-                </span>
-                {selectedService?.id === service.id && (
-                  <CheckCircle2 className="w-5 h-5 text-orange-600 ml-2" />
-                )}
-              </button>
-            ))}
+          <div className="max-h-[min(55vh,24rem)] overflow-y-auto space-y-2 pr-1 -mr-1">
+            {clinic.services.map((service) => {
+              const isSel = selectedService?.selectionKey === service.selectionKey;
+              return (
+                <button
+                  key={service.selectionKey}
+                  type="button"
+                  onClick={() => setSelectedService(service)}
+                  className={`w-full text-left rounded-xl border-2 transition-all px-4 py-3 ${
+                    isSel
+                      ? 'border-orange-600 bg-orange-50'
+                      : 'border-gray-200 hover:border-orange-300 hover:bg-orange-50/50'
+                  }`}
+                >
+                  <div className="flex w-full min-w-0 items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <span className={`font-medium block break-words ${isSel ? 'text-orange-900' : 'text-gray-700'}`}>
+                        {service.name}
+                      </span>
+                    </div>
+                    <div className="ml-2 flex shrink-0 flex-col items-end gap-2">
+                      <span className={`block font-semibold tabular-nums whitespace-nowrap ${isSel ? 'text-orange-600' : 'text-gray-900'}`}>
+                        ₹{service.price}
+                      </span>
+                      {isSel && <CheckCircle2 className="w-5 h-5 text-orange-600" aria-hidden />}
+                    </div>
+                  </div>
+                  <p className="mt-1 text-right text-[11px] leading-4 font-normal text-gray-500 break-words">{INDICATIVE_PRICING_NOTE}</p>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -340,14 +402,16 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       </div>
 
       {/* Book Appointment Button - Fixed above footer */}
-      <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-40 max-w-[430px] mx-auto">
+      <div className="fixed left-0 right-0 cw-fixed-above-customer-tabbar bg-white border-t px-5 py-3 sm:px-6 z-40">
+        <div className="mx-auto w-full max-w-xs sm:max-w-sm">
         <Button 
           onClick={handleBookAppointment}
           disabled={!selectedService}
-          className="w-full bg-orange-500 hover:bg-orange-600 h-12 text-base font-semibold disabled:bg-gray-300 disabled:cursor-not-allowed"
+          className="w-full whitespace-normal text-center rounded-full bg-orange-500 hover:bg-orange-600 min-h-12 px-3 py-2.5 text-sm font-semibold shadow-md disabled:bg-gray-300 disabled:cursor-not-allowed sm:h-12 sm:px-4 sm:text-base sm:py-0"
         >
           {selectedService ? `Book ${selectedService.name}` : 'Select a Service'}
         </Button>
+        </div>
       </div>
 
       {/* Standardized Footer */}
@@ -359,7 +423,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           else if (tab === 'cart') onNavigate('cart');
           else if (tab === 'profile') onNavigate('profile');
         }}
-        maxWidth="max-w-[430px]"
+        maxWidth="max-w-customer"
       />
     </div>
   );

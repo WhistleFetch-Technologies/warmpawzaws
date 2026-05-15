@@ -2,17 +2,18 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Plus, X, Package } from 'lucide-react';
+import { Plus, X, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { VendorServiceConfigurationScreen } from './VendorServiceConfigurationScreen';
 import { VendorCustomServiceCreationEnhanced as VendorCustomServiceCreation } from './VendorCustomServiceCreationEnhanced'; // ✅ ENHANCED: Role-based custom services
 import { VendorServiceCatalogView } from './VendorServiceCatalogView';
-import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
+import { getVendorRoleId, hasVendorRole, filterTeleForBehavioristCenterSoloVendorWeb } from '@/lib/vendor-utils';
 import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
 import { useVendorCapabilities } from './hooks/useVendorCapabilities';
 import CapabilityHelper from '@/lib/capability-helper';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 interface VendorServiceManagementCompleteProps {
   vendorId: string;
@@ -69,10 +70,23 @@ export function VendorServiceManagementComplete({
   const isRetail = hasVendorRole(vendorData, ['pet_products_store', 'product_seller', 'retail', 'seller', 'ecommerce']);
   const isPharmacy = hasVendorRole(vendorData, ['pet_pharmacy', 'pharmacy']);
   const isHealthcare = hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet']);
+  const isPetInsurance = hasVendorRole(vendorData, ['pet_insurance', 'insurance']);
   const supportsHomeService = !isCafe && !isResort && !isBoarding && !isRetail && !isPharmacy; // Cafe, Resort, Boarding, Retail, Pharmacy don't do home services
+
+  /** Pet insurance vendors only sell tele consultation; hide center / home service type cards. */
+  const restrictPetInsuranceToTeleOnly = (styles: ServiceStyle[]): ServiceStyle[] => {
+    if (!isPetInsurance) return styles;
+    const teleOnly = styles.filter((s) => s === 'tele');
+    return teleOnly.length > 0 ? teleOnly : ['tele'];
+  };
+
+  /** Behaviorist center/solo: drop tele in vendor-web only (backend unchanged). */
+  const finalizeAllowedStyles = (styles: ServiceStyle[]): ServiceStyle[] =>
+    restrictPetInsuranceToTeleOnly(filterTeleForBehavioristCenterSoloVendorWeb(vendorData, styles));
   
   // ✅ NEW: Check if trainer/walker/sitter who can create session packages even as solo (NOT groomer/vet)
   const isTrainerWalkerSitter = hasVendorRole(vendorData, ['pet_trainer', 'trainer', 'trainer_solo', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center', 'pet_walker', 'walker', 'dog_walker', 'pet_sitter', 'sitter']);
+  const isWalkerVendor = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
   // Solo groomer and solo vet: custom services YES, custom packages NO
   const isSoloGroomer = isSoloProvider && hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']);
   const isSoloVet = isSoloProvider && hasVendorRole(vendorData, ['veterinarian', 'vet', 'vet_solo']);
@@ -150,12 +164,16 @@ export function VendorServiceManagementComplete({
             'nutritionist': ['at_center', 'tele', 'at_home'],
             'pet_nutritionist': ['at_center', 'tele', 'at_home'],
             'pet_behaviorist': ['at_home', 'at_center', 'tele'],
+            'behaviorist_solo': ['at_home'],
+            'behaviorist_center': ['at_home', 'at_center'],
             'diagnostics': ['at_home', 'at_center'],
             'diagnostic_center': ['at_home', 'at_center'],
             'diagnostics_center': ['at_home', 'at_center'],
             'pet_pharmacy': ['delivery', 'pickup'],
             'pharmacy': ['delivery', 'pickup'],
             'pet_products_store': ['delivery', 'pickup'],
+            'pet_insurance': ['tele'],
+            'insurance': ['tele'],
           };
           
           allowedStyles = ROLE_SERVICE_STYLES[roleName] || ['at_home'];
@@ -237,7 +255,7 @@ export function VendorServiceManagementComplete({
           const normalizedStyles = allowedStyles.map((s: string) => (s === 'online' ? 'tele' : s)).filter((s: string) => ['at_center', 'at_home', 'tele'].includes(s));
           if (normalizedStyles.length > 0) allowedStyles = normalizedStyles;
           console.log('✅ [ROLE-CONFIG] Setting allowed styles:', allowedStyles);
-          setAllowedServiceStyles(allowedStyles);
+          setAllowedServiceStyles(finalizeAllowedStyles(allowedStyles));
           setRoleConfig(roleConfig);
           
           // ✅ DYNAMIC SERVICE STYLES: Backend now handles filtering correctly
@@ -253,14 +271,14 @@ export function VendorServiceManagementComplete({
           if (vendorConfig === 'solo' && isSoloOnlyRole && !isCenterCapableSolo && allowedStyles.includes('at_center')) {
             console.log('⚠️ [ROLE-CONFIG] Solo-only role detected - filtering at_center');
             const filteredStyles = allowedStyles.filter(style => style !== 'at_center');
-            setAllowedServiceStyles(filteredStyles);
+            setAllowedServiceStyles(finalizeAllowedStyles(filteredStyles));
           } else if (vendorConfig === 'solo' && isCenterCapableSolo) {
             console.log('✅ [ROLE-CONFIG] Center-capable solo role - keeping all styles including at_center');
             // Keep all styles - center-capable solo vendors (trainers, groomers, vets) CAN have center services
           }
         } else {
           console.error('❌ [ROLE-CONFIG] Invalid response format - allowedServiceStyles is not an array:', data);
-          setAllowedServiceStyles(['at_home', 'at_center', 'tele']); // Default fallback
+          setAllowedServiceStyles(finalizeAllowedStyles(['at_home', 'at_center', 'tele'])); // Default fallback
           setRoleConfig({});
         }
       } else {
@@ -278,9 +296,16 @@ export function VendorServiceManagementComplete({
           vet_solo: ['at_home', 'tele'],
           diagnostics: ['at_home', 'at_center'], diagnostic_center: ['at_home', 'at_center'], diagnostics_center: ['at_home', 'at_center'],
           pet_walker: ['at_home'], walker: ['at_home'], pet_sitter: ['at_home'], sitter: ['at_home'],
+          pet_insurance: ['tele'], insurance: ['tele'],
+          behaviorist_solo: ['at_home'],
+          behaviorist_center: ['at_home', 'at_center'],
         };
         const derived = FALLBACK_ROLE_STYLES[fallbackRoleName] || ['at_home'];
-        setAllowedServiceStyles(derived.map(s => (s === 'online' ? 'tele' : s)).filter(s => ['at_center', 'at_home', 'tele'].includes(s)));
+        setAllowedServiceStyles(
+          finalizeAllowedStyles(
+            derived.map(s => (s === 'online' ? 'tele' : s)).filter(s => ['at_center', 'at_home', 'tele'].includes(s)) as ServiceStyle[]
+          )
+        );
         setRoleConfig({});
       }
     } catch (error: any) {
@@ -312,7 +337,7 @@ export function VendorServiceManagementComplete({
       
       // Only set empty styles if we're not retrying
       if (retryCount >= 3 || (!error?.isRateLimit && error?.statusCode !== 429)) {
-        setAllowedServiceStyles([]);
+        setAllowedServiceStyles(finalizeAllowedStyles([]));
       }
     } finally {
       loadingRef.current = false;
@@ -399,7 +424,7 @@ export function VendorServiceManagementComplete({
 
   if (loadingRoleConfig) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 vendor-app-column flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading configuration...</p>
@@ -410,29 +435,44 @@ export function VendorServiceManagementComplete({
 
   // ✅ NEW: Check if vendor can create custom services (capability-based + solo groomer/vet always)
   // Solo groomer and solo vet always get custom services (packages remain disabled for them)
-  const canCreateCustomServices = capabilities.custom_services || capabilities.customServices || isSoloGroomer || isSoloVet || false;
+  const canCreateCustomServices =
+    capabilities.custom_services ||
+    capabilities.customServices ||
+    isSoloGroomer ||
+    isSoloVet ||
+    isPetInsurance ||
+    false;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
-        {/* Header */}
-        <div className="p-4 bg-white border-b sticky top-0 z-10">
-          <div className="flex items-center gap-3 mb-3">
-            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
-              <ArrowLeft className="w-5 h-5 text-gray-700" />
-            </button>
-            <div className="flex-1">
-              <h1 className="font-semibold text-gray-900">Service Management</h1>
-              <p className="text-xs text-gray-500">{vendorData?.businessName || vendorData?.fullName}</p>
-            </div>
-          </div>
-        </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="Service Management"
+          subtitle={
+            vendorData?.businessName ||
+            vendorData?.business_name ||
+            vendorData?.fullName ||
+            vendorData?.full_name ||
+            undefined
+          }
+          onBack={onBack}
+        />
 
         {/* ❌ REMOVED: Staff management banner - staff has been decommissioned */}
 
         {/* ✅ FIX: Platform Catalog Section - Show at top for easy access */}
         {/* ✅ FIX: Show Browse Catalog for any vendor with catalog, booking, OR services capability (post-migration canonical roles) */}
-        {((capabilities || {}).catalog || (capabilities || {}).booking || (capabilities || {}).services || CapabilityHelper.hasCapability(capabilities, 'services')) && (
+        {(
+          (capabilities || {}).catalog ||
+          (capabilities || {}).booking ||
+          (capabilities || {}).booking_create ||
+          (capabilities || {}).booking_view ||
+          (capabilities || {}).services ||
+          (capabilities || {}).gps_tracking ||
+          CapabilityHelper.hasCapability(capabilities, 'services') ||
+          CapabilityHelper.hasGpsTracking(capabilities) ||
+          isWalkerVendor
+        ) && (
           <div className="p-4">
             <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl p-6 text-white">
               <div className="flex items-start justify-between mb-4">
@@ -568,7 +608,9 @@ export function VendorServiceManagementComplete({
               </Button>
               
               <p className="text-xs text-white/80 mt-3 text-center">
-                ⭐ Available for all service styles (home, tele, center)
+                {isPetInsurance
+                  ? '⭐ Tele consultation offerings and custom insurance-related services'
+                  : '⭐ Available for all service styles (home, tele, center)'}
               </p>
             </div>
           </div>
@@ -591,7 +633,11 @@ export function VendorServiceManagementComplete({
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold flex-shrink-0">3.</span>
-                <span>For center/clinic services, customize pricing or add custom services</span>
+                <span>
+                  {isPetInsurance
+                    ? 'For tele consultation, customize pricing or add custom services'
+                    : 'For center/clinic services, customize pricing or add custom services'}
+                </span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-bold flex-shrink-0">4.</span>

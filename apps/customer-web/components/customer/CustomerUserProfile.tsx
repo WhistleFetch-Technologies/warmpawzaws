@@ -17,8 +17,12 @@ interface UserProfile {
   pincode: string;
   city: string;
   state: string;
-  landmark: string;
+  houseNo: string;
+  floor: string;
   photo?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  coordinates?: { lat: number; lng: number };
 }
 
 interface CustomerUserProfileProps {
@@ -38,7 +42,8 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
     pincode: '',
     city: '',
     state: '',
-    landmark: '',
+    houseNo: '',
+    floor: '',
     photo: ''
   });
   
@@ -65,6 +70,9 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const houseNoInputRef = useRef<HTMLInputElement>(null);
+  const latestProfileRef = useRef(profile);
+  latestProfileRef.current = profile;
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -96,16 +104,17 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
         });
         
         if (result.success && result.publicUrl) {
-          setProfile({ ...profile, photo: result.publicUrl });
+          // Functional update so a slow upload cannot overwrite fields typed after pick (e.g. houseNo).
+          setProfile((prev) => ({ ...prev, photo: result.publicUrl }));
           console.log('✅ Customer photo uploaded to S3:', result.publicUrl);
         } else {
           alert(result.error || 'Failed to upload photo. Please try again.');
-          setPhotoPreview(profile.photo || '');
+          setPhotoPreview(latestProfileRef.current.photo || '');
         }
       } catch (error: any) {
         console.error('Error uploading photo to S3:', error);
         alert(error.message || 'Failed to upload photo. Please try again.');
-        setPhotoPreview(profile.photo || '');
+        setPhotoPreview(latestProfileRef.current.photo || '');
       } finally {
         setUploadingPhoto(false);
         setUploadProgress(0);
@@ -114,9 +123,23 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
   };
 
   const handleSubmit = async () => {
+    const houseFromDom = houseNoInputRef.current?.value?.trim() ?? '';
+    const houseFromState = String((profile as UserProfile & { house_no?: string }).houseNo ?? '').trim();
+    const houseFromSnake = String((profile as UserProfile & { house_no?: string }).house_no ?? '').trim();
+    const effectiveHouseNo = houseFromDom || houseFromState || houseFromSnake;
+
     // Validation
-    if (!profile.firstName || !profile.lastName || !profile.email || !profile.phone || !profile.address || !profile.pincode || !profile.city) {
-      alert('Please fill in all required fields (including city)');
+    if (
+      !profile.firstName ||
+      !profile.lastName ||
+      !profile.email ||
+      !profile.phone ||
+      !profile.address ||
+      !profile.pincode ||
+      !profile.city ||
+      !effectiveHouseNo
+    ) {
+      alert('Please fill in all required fields (including house / flat number)');
       return;
     }
 
@@ -134,15 +157,38 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
 
     setLoading(true);
     try {
+      const trimmedHouse = effectiveHouseNo;
+      const profileBody: UserProfile = {
+        ...profile,
+        firstName: profile.firstName.trim(),
+        lastName: profile.lastName.trim(),
+        email: profile.email.trim(),
+        address: profile.address.trim(),
+        houseNo: trimmedHouse,
+        floor: profile.floor.trim(),
+        pincode: profile.pincode.trim(),
+        city: profile.city.trim(),
+        state: profile.state.trim(),
+        ...(profile.latitude != null &&
+          profile.longitude != null &&
+          Number.isFinite(profile.latitude) &&
+          Number.isFinite(profile.longitude) && {
+            latitude: profile.latitude,
+            longitude: profile.longitude,
+            coordinates: { lat: profile.latitude, lng: profile.longitude },
+          }),
+      };
+      delete (profileBody as UserProfile & { house_no?: string }).house_no;
       // Save user profile to backend - AWS Serverless compatible
       await apiClient.post('/customer/profile', {
         phone: session.phone,
-        profile: profile,
+        profile: profileBody,
         journeyType: journeyStage, // Save journey type
       });
 
       console.log('User profile saved successfully');
-      onComplete(profile);
+      setProfile(profileBody);
+      onComplete(profileBody);
     } catch (error) {
       console.error('Error saving user profile:', error);
       alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -152,13 +198,14 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-white flex flex-col w-full max-w-customer mx-auto">
       {/* Top Bar with Back Button */}
-      <div className="px-4 pt-4 pb-2 flex items-center">
+      <div className="cw-header-safe-top cw-header-safe-x flex min-h-[56px] items-center gap-3 py-2 pb-3">
         {onBack && (
           <button
+            type="button"
             onClick={onBack}
-            className="flex items-center gap-1 text-gray-600 hover:text-gray-900 transition-colors bg-gray-100 hover:bg-gray-200 rounded-full px-3 py-2"
+            className="flex min-h-[44px] items-center gap-1 rounded-full bg-gray-100 px-3 py-2 text-gray-600 transition-colors touch-manipulation hover:bg-gray-200 hover:text-gray-900 active:bg-gray-200"
           >
             <ArrowLeft className="w-5 h-5" />
             <span className="text-sm font-medium">Back</span>
@@ -169,19 +216,8 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto pb-32">
         {/* Logo */}
-        <div className="flex justify-center pt-4 mb-6">
-          <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
-        </div>
-
-        {/* Orange Circle Icon */}
-        <div className="flex flex-col items-center mb-8 px-6">
-          <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-4">
-            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-              <circle cx="24" cy="18" r="8" fill="white"/>
-              <path d="M10 38C10 30 16 24 24 24C32 24 38 30 38 38V42H10V38Z" fill="white"/>
-            </svg>
-          </div>
-          <h1 className="text-black text-center">Create Your<br />Profile 👤</h1>
+        <div className="flex justify-center pt-4 mb-8">
+          <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
         </div>
 
         {/* Content */}
@@ -245,7 +281,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               <input
                 type="text"
                 value={profile.firstName}
-                onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                onChange={(e) => setProfile((prev) => ({ ...prev, firstName: e.target.value }))}
                 placeholder="John"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
               />
@@ -257,7 +293,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               <input
                 type="text"
                 value={profile.lastName}
-                onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+                onChange={(e) => setProfile((prev) => ({ ...prev, lastName: e.target.value }))}
                 placeholder="Doe"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
               />
@@ -272,7 +308,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
             <input
               type="email"
               value={profile.email}
-              onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+              onChange={(e) => setProfile((prev) => ({ ...prev, email: e.target.value }))}
               placeholder="john.doe@example.com"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
             />
@@ -320,8 +356,9 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
                   if (components?.state) {
                     updated.state = components.state;
                   }
-                  if (components?.landmark) {
-                    updated.landmark = components.landmark;
+                  if (components?.coordinates) {
+                    updated.latitude = components.coordinates.lat;
+                    updated.longitude = components.coordinates.lng;
                   }
                   return updated;
                 });
@@ -335,16 +372,34 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
             </p>
           </div>
 
-          {/* Landmark (Optional) */}
+          {/* House No / Flat No */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Landmark (Optional)
+              House No / Flat No <span className="text-red-500">*</span>
+            </label>
+            <input
+              ref={houseNoInputRef}
+              type="text"
+              name="customerHouseFlatNo"
+              value={profile.houseNo}
+              onChange={(e) => setProfile((prev) => ({ ...prev, houseNo: e.target.value }))}
+              autoComplete="off"
+              data-lpignore="true"
+              placeholder="e.g., A-101, Flat 12B"
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+            />
+          </div>
+
+          {/* Floor (Optional) */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Floor
             </label>
             <input
               type="text"
-              value={profile.landmark}
-              onChange={(e) => setProfile({ ...profile, landmark: e.target.value })}
-              placeholder="Near Metro Station, Opposite Park, etc."
+              value={profile.floor}
+              onChange={(e) => setProfile((prev) => ({ ...prev, floor: e.target.value }))}
+              placeholder="e.g., 1st Floor"
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
             />
           </div>
@@ -358,7 +413,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               <input
                 type="text"
                 value={profile.city}
-                onChange={(e) => setProfile({ ...profile, city: e.target.value })}
+                onChange={(e) => setProfile((prev) => ({ ...prev, city: e.target.value }))}
                 placeholder="Mumbai"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
               />
@@ -370,7 +425,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               <input
                 type="text"
                 value={profile.state}
-                onChange={(e) => setProfile({ ...profile, state: e.target.value })}
+                onChange={(e) => setProfile((prev) => ({ ...prev, state: e.target.value }))}
                 placeholder="Maharashtra"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
               />
@@ -387,7 +442,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
               value={profile.pincode}
               onChange={(e) => {
                 const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                setProfile({ ...profile, pincode: value });
+                setProfile((prev) => ({ ...prev, pincode: value }));
               }}
               placeholder="400001"
               maxLength={6}
@@ -406,7 +461,7 @@ export function CustomerUserProfile({ session, journeyStage, onComplete, onBack 
       </div>
 
       {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto w-full">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-customer mx-auto w-full">
         <Button
           onClick={handleSubmit}
           disabled={loading}

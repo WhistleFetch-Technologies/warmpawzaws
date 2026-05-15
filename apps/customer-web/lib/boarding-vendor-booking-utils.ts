@@ -1,0 +1,75 @@
+import {
+  type BoardingServiceSlug,
+  boardingSlugMatchesText,
+} from '@/lib/boarding-service-types';
+import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
+
+export function minPriceForVendor(v: BoardingListVendor): number | null {
+  if (!v.planRows.length) return null;
+  return Math.min(...v.planRows.map((p) => p.price));
+}
+
+export function priceForCard(v: BoardingListVendor, slug: BoardingServiceSlug): string {
+  for (const s of v.services) {
+    if (boardingSlugMatchesText(slug, s)) {
+      return v.price_label;
+    }
+  }
+  return v.price_label;
+}
+
+export function buildFacilityPayload(v: BoardingListVendor): {
+  id: string;
+  name: string;
+  description: string;
+  address: string;
+  city: string;
+  pincode: string;
+  phone: string;
+  rating: number;
+  review_count: number;
+  timing: string;
+  photos: string[];
+  amenities: string[];
+} {
+  const raw = (v.raw || {}) as Record<string, unknown>;
+  return {
+    id: v.id,
+    name: v.name,
+    description: (typeof raw.description === 'string' && raw.description) || '',
+    address: v.address,
+    city: String(raw.city || ''),
+    pincode: String(raw.pincode || ''),
+    phone: String(raw.phone || ''),
+    rating: v.rating,
+    review_count: v.review_count,
+    timing: v.timing,
+    photos: v.photo ? [v.photo] : [],
+    amenities: Array.isArray(raw.amenities) ? (raw.amenities as string[]) : [],
+  };
+}
+
+export function buildBoardingBookPlanPayload(
+  v: BoardingListVendor,
+  plan: BoardingPlanRow
+): {
+  vendorId: string;
+  serviceType: string;
+  serviceId: string;
+  serviceName: string;
+  price: number;
+  duration: number;
+  serviceStyle: string;
+  facility: ReturnType<typeof buildFacilityPayload>;
+} {
+  return {
+    vendorId: v.id,
+    serviceType: 'boarding',
+    serviceId: plan.rowId,
+    serviceName: plan.name,
+    price: plan.price,
+    duration: plan.duration || 1440,
+    serviceStyle: plan.serviceStyle || 'at_center',
+    facility: buildFacilityPayload(v),
+  };
+}

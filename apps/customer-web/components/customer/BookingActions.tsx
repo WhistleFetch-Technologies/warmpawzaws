@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/api-client';
+import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { toast } from 'sonner';
 
 interface BookingActionsProps {
@@ -36,7 +37,8 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
   const fetchRefundPreview = async () => {
     try {
       const result = await apiClient.post('/customer/bookings/refund-preview', { bookingId: booking.id }) as any;
-      setRefundPreview(result.refund || result);
+      const payload = result?.data ?? result;
+      setRefundPreview(payload?.refund ?? payload);
     } catch (error) {
       console.error('Error fetching refund preview:', error);
       setRefundPreview(null);
@@ -63,7 +65,7 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
         actorType: 'customer'
       }) as any;
 
-      toast.success(result.message || 'Booking rescheduled successfully');
+      toast.success(pickBookingApiMessage(result, 'Booking rescheduled successfully'));
       setShowRescheduleModal(false);
       onSuccess();
     } catch (error: any) {
@@ -87,7 +89,13 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
         actorType: 'customer'
       }) as any;
 
-      toast.success(result.message || 'Booking cancelled successfully');
+      toast.success(pickBookingApiMessage(result, 'Booking cancelled successfully'));
+      const refund = getBookingResponsePayload(result).refund as Record<string, unknown> | undefined;
+      if (refund && typeof refund.message === 'string' && refund.message.trim()) {
+        toast.info(refund.message.trim());
+      } else if (refund && typeof refund.amount === 'number' && refund.amount > 0) {
+        toast.info(`Refund of ₹${refund.amount} is being processed`);
+      }
       setShowCancelModal(false);
       onSuccess();
     } catch (error: any) {
@@ -280,6 +288,13 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
                 {refundPreview.deductionAmount > 0 && (
                   <p className="text-xs text-gray-600 mt-1">
                     Cancellation charges: ₹{refundPreview.deductionAmount}
+                  </p>
+                )}
+                {(refundPreview.platformFeeApplies === true ||
+                  (typeof refundPreview.platformFeeNonRefundable === 'number' &&
+                    refundPreview.platformFeeNonRefundable > 0)) && (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
+                    Platform fee is not refundable.
                   </p>
                 )}
               </div>

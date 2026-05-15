@@ -9,6 +9,7 @@ import { validateRequired } from '@/lib/utils';
 import { apiClient } from '@/lib/api-client';
 import { LoyaltySegmentsManagement } from '@/components/admin/loyalty/LoyaltySegmentsManagement';
 import { LoyaltyActionRulesManagement } from '@/components/admin/loyalty/LoyaltyActionRulesManagement';
+import { LoyaltyActionSourcesManagement } from '@/components/admin/loyalty/LoyaltyActionSourcesManagement';
 
 // ============================================================================
 // TYPES
@@ -308,6 +309,10 @@ export default function LoyaltyPage() {
                 <Filter className="w-4 h-4 mr-2" />
                 Segments
               </TabsTrigger>
+              <TabsTrigger value="triggers">
+                <Filter className="w-4 h-4 mr-2" />
+                Triggers
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="rules" className="space-y-6">
@@ -450,6 +455,10 @@ export default function LoyaltyPage() {
 
             <TabsContent value="segments" className="space-y-6">
               <LoyaltySegmentsManagement />
+            </TabsContent>
+
+            <TabsContent value="triggers" className="space-y-6">
+              <LoyaltyActionSourcesManagement />
             </TabsContent>
           </Tabs>
           </div>

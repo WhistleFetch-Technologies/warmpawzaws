@@ -5,6 +5,10 @@ import { ArrowLeft, Star, MapPin, Video, Home, Building2, ChevronRight, Search, 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { getWebCustomerVendorStyleListingNavTarget } from '@/lib/customer-vendor-profile-navigation';
+import { formatDistanceDisplay } from '@/lib/distance-display';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
+import { StarRating } from '../shared/StarRating';
 // Simple debounce implementation
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
   let timeoutId: NodeJS.Timeout | null = null;
@@ -103,18 +107,22 @@ export function VendorListingByStyle({
         const response = await apiClient.get(`/search?${searchParams}`) as any;
         
         if (response.success || response.vendors) {
-          const searchVendors = (response.vendors || []).map((v: any) => ({
+          const searchVendors = (response.vendors || []).map((v: any) => {
+            const rc = Number(v.reviewCount ?? v.review_count ?? 0) || 0;
+            const r = v.rating != null ? Number(v.rating) : NaN;
+            return {
             id: v.id,
             name: v.businessName || v.name,
             type: 'vendor' as const,
-            rating: v.rating || 4.5,
-            reviewCount: v.completedBookings || 0,
-            distance: v.distance_km || null,
+            rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : 0,
+            reviewCount: rc,
+            distance: v.distance_km ?? v.distance ?? null,
             city: v.city,
             isVerified: true,
             specialization: v.specialization,
             qualifications: v.qualifications,
-          }));
+          };
+          });
           setVendors(searchVendors);
         }
       } catch (error) {
@@ -156,17 +164,16 @@ export function VendorListingByStyle({
         params.set('minRating', minRating.toString());
       }
       
+      if (phone) {
+        params.set('customerPhone', phone);
+      }
+      
       const response = await apiClient.get(
         `/customer/services/by-style?${params.toString()}`
       ) as any;
 
       if (response.success) {
         let providerData = response.providers || response.vendors || [];
-        
-        // ✅ FIX: Filter out business vendors when serviceStyle is at_home
-        if (serviceStyle === 'at_home') {
-          providerData = providerData.filter((p: any) => p.vendorType !== 'business');
-        }
         
         const vendorMap = new Map<string, Vendor>();
         
@@ -180,12 +187,14 @@ export function VendorListingByStyle({
               ? Math.min(...item.services.map((s: any) => s.price || 0).filter((p: number) => p > 0))
               : item.price;
             
+            const rc = parseInt(item.reviewCount || item.reviewsCount || '0', 10) || 0;
+            const r = item.rating != null && item.rating !== '' ? parseFloat(String(item.rating)) : NaN;
             vendorMap.set(vendorId, {
               id: vendorId,
               name: item.name || item.vendorName || item.businessName || 'Provider',
               type: providerType,
-              rating: parseFloat(item.rating || '4.5'),
-              reviewCount: parseInt(item.reviewCount || item.reviewsCount || '0', 10),
+              rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : 0,
+              reviewCount: rc,
               distance: item.distance || null,
               city: item.city,
               address: item.address,
@@ -217,64 +226,8 @@ export function VendorListingByStyle({
         setVendors(vendorsList);
         console.log(`✅ [VendorListing] Loaded ${vendorsList.length} vendors for ${serviceStyle}`);
       } else {
-        // Try fallback with location params
-        try {
-          const fallbackParams = new URLSearchParams({
-            category: category,
-            roleId: category === 'vet' ? 'veterinarian' : 'pet_groomer',
-            serviceStyle: serviceStyle,
-          });
-          if (customerLocation) {
-            fallbackParams.set('latitude', customerLocation.lat.toString());
-            fallbackParams.set('longitude', customerLocation.lng.toString());
-          }
-          
-          const fallbackResponse = await apiClient.get(
-            `/customer/discover-services?${fallbackParams.toString()}`
-          ) as any;
-          
-          const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
-          const vendorMap = new Map<string, Vendor>();
-          
-          servicesData.forEach((service: any) => {
-            const vendorId = service.vendorId || service.id;
-            if (!vendorMap.has(vendorId)) {
-              vendorMap.set(vendorId, {
-                id: vendorId,
-                name: service.vendorName || service.businessName || service.name || 'Provider',
-                type: 'vendor',
-                rating: parseFloat(service.vendorRating || service.rating || '4.5'),
-                reviewCount: parseInt(service.vendorReviewCount || service.reviewsCount || '0', 10),
-                distance: service.distance || null,
-                city: service.city,
-                address: service.address,
-                photo: service.photo,
-                isVerified: service.isVerified,
-                price: service.price,
-              });
-            }
-          });
-          
-          let vendorsList = Array.from(vendorMap.values());
-          
-          // Apply client-side filters for fallback API
-          if (minRating > 0) {
-            vendorsList = vendorsList.filter(v => v.rating >= minRating);
-          }
-          
-          if (distanceRange !== 'all' && customerLocation) {
-            const maxDist = parseInt(distanceRange);
-            vendorsList = vendorsList.filter(v => 
-              v.distance === null || v.distance === undefined || v.distance <= maxDist
-            );
-          }
-          
-          setVendors(vendorsList);
-          console.log(`✅ [VendorListing] Loaded ${vendorsList.length} vendors from fallback`);
-        } catch (fallbackError) {
-          console.error('❌ [VendorListing] Fallback failed:', fallbackError);
+        console.warn(`⚠️ [VendorListing] Primary endpoint returned success=false or no vendors`);
           setVendors([]);
-        }
       }
     } catch (error) {
       console.error('❌ [VendorListing] Error:', error);
@@ -303,14 +256,21 @@ export function VendorListingByStyle({
   };
 
   const handleViewVendor = (vendor: Vendor) => {
-    onNavigate('vet-vendor-profile', {
-      vendorId: vendor.id,
-      vendorType: vendor.type,
+    const { screen, data } = getWebCustomerVendorStyleListingNavTarget({
+      vertical: 'vet',
       serviceStyle,
       category,
-      vendorName: vendor.name,
-      vendorData: vendor
+      serviceTypeName,
+      vendor: {
+        id: vendor.id,
+        name: vendor.name,
+        type: vendor.type,
+        vendorId: vendor.vendorId,
+        vendorName: vendor.vendorName,
+        vendorData: vendor,
+      },
     });
+    onNavigate(screen, data);
   };
 
   // Client-side sorting as fallback (backend handles primary sorting)
@@ -610,23 +570,23 @@ export function VendorListingByStyle({
                     )}
                     
                     <div className="flex items-center gap-2 text-sm flex-wrap">
-                      <div className="flex items-center gap-1">
-                        <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                        <span className="font-medium">{vendor.rating.toFixed(1)}</span>
-                        <span className="text-gray-400">({vendor.reviewCount})</span>
-                      </div>
+                      <StarRating
+                        rating={vendor.rating}
+                        reviewCount={vendor.reviewCount}
+                        textClassName="text-xs text-gray-500"
+                      />
                       
-                      {vendor.distance !== null && vendor.distance !== undefined && (
+                      {formatDistanceDisplay(vendor) && (
                         <>
                           <span className="text-gray-300">•</span>
                           <div className="flex items-center gap-1 text-[#FF8C42] font-medium text-xs">
                             <MapPin className="w-3 h-3" />
-                            {vendor.distance.toFixed(1)} km
+                            {formatDistanceDisplay(vendor)}
                           </div>
                         </>
                       )}
                       
-                      {vendor.city && !vendor.distance && (
+                      {vendor.city && (vendor.distance === null || vendor.distance === undefined) && (
                         <>
                           <span className="text-gray-300">•</span>
                           <span className="text-gray-500 text-xs">{vendor.city}</span>
@@ -642,7 +602,8 @@ export function VendorListingByStyle({
 
                     {vendor.price && (
                       <div className="text-sm font-bold text-[#FF8C42] mt-1">
-                        From ₹{vendor.price}
+                        <p>From ₹{vendor.price}</p>
+                        <p className="mt-0.5 text-xs font-normal text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                       </div>
                     )}
                   </div>

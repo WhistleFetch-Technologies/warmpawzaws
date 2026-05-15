@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Calendar, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 interface SmartTimeSlotSelectionProps {
   serviceType: string;
@@ -38,6 +39,18 @@ export function SmartTimeSlotSelection({
   onBack,
   onSelectSlot
 }: SmartTimeSlotSelectionProps) {
+  const formatTime12Hour = (time24: string) => {
+    if (!time24) return '';
+    const [hRaw, mRaw = '00'] = String(time24).split(':');
+    const hour = Number(hRaw);
+    const minute = String(mRaw).slice(0, 2);
+    if (Number.isNaN(hour)) return time24;
+    if (hour === 0) return `12:${minute} AM`;
+    if (hour === 12) return `12:${minute} PM`;
+    if (hour < 12) return `${hour}:${minute} AM`;
+    return `${hour - 12}:${minute} PM`;
+  };
+
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
@@ -96,7 +109,7 @@ export function SmartTimeSlotSelection({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
       });
     }
@@ -111,13 +124,14 @@ export function SmartTimeSlotSelection({
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
       <div className="bg-white sticky top-0 z-10 p-4 border-b flex items-center gap-3">
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft className="w-5 h-5" />
         </Button>
-        <div>
+        <div className="min-w-0">
           <h1 className="text-lg font-bold">Select Time Slot</h1>
+          <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
           <p className="text-sm text-gray-500">{vendorName}</p>
         </div>
       </div>
@@ -196,10 +210,11 @@ export function SmartTimeSlotSelection({
         {/* Time Slot Selection */}
         {selectedDate && (
           <div>
-            <h2 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <h2 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
               <Clock className="w-5 h-5" />
               Select Time
             </h2>
+            <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
             {loading ? (
               <div className="text-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42] mx-auto"></div>
@@ -223,7 +238,7 @@ export function SmartTimeSlotSelection({
                           : 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
                       }`}
                     >
-                      {time}
+                      {formatTime12Hour(time)}
                     </button>
                   );
                 })}

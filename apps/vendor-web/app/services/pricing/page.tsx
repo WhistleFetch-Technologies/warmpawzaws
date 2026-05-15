@@ -5,11 +5,12 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, IndianRupee, Edit2, Save, TrendingUp, Filter } from 'lucide-react';
+import { IndianRupee, Edit2, Save, TrendingUp, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 interface Service {
   id: string;
@@ -190,41 +191,31 @@ export default function PricingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => router.back()}
-                className="rounded-full"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-800">Service Pricing</h1>
-                <p className="text-sm text-gray-500 mt-1">Manage pricing for all your services</p>
-              </div>
-            </div>
-            {hasChanges && (
-              <Button
-                onClick={handleBulkSave}
-                disabled={saving}
-                className="bg-orange-500 hover:bg-orange-600 text-white"
-              >
-                <Save className="w-4 h-4 mr-2" />
-                {saving ? 'Saving...' : `Save All Changes (${pricing.filter((p) => p.isDirty).length})`}
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="Service Pricing"
+          subtitle="Manage pricing for all your services"
+          onBack={() => router.back()}
+          actions={
+            hasChanges
+              ? [
+                  <Button
+                    key="save-all"
+                    type="button"
+                    onClick={handleBulkSave}
+                    disabled={saving}
+                    className="whitespace-nowrap bg-orange-500 hover:bg-orange-600 text-white h-9 px-3 text-sm"
+                  >
+                    <Save className="w-4 h-4 mr-1.5 inline shrink-0" />
+                    {saving ? 'Saving...' : `Save (${pricing.filter((p) => p.isDirty).length})`}
+                  </Button>,
+                ]
+              : []
+          }
+        />
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
+        <div className="w-full px-4 py-6 sm:px-6">
         {/* Filters */}
         <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
           <div className="grid md:grid-cols-3 gap-4">
@@ -390,6 +381,7 @@ export default function PricingPage() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

@@ -77,25 +77,43 @@ export function VendorDashboardScreen({
       
       // Use dashboard stats if available, otherwise use profile data
       if (dashboardResponse.stats) {
+        const tr =
+          Number(
+            dashboardResponse.stats.totalReviews ??
+              profileResponse.totalReviews ??
+              0
+          ) || 0;
+        const rawR =
+          dashboardResponse.stats.rating != null
+            ? Number(dashboardResponse.stats.rating)
+            : profileResponse.rating != null
+              ? Number(profileResponse.rating)
+              : NaN;
+        const ratingVal =
+          tr > 0 && Number.isFinite(rawR) && rawR > 0 ? rawR : 0;
         setStats({
           appointments: dashboardResponse.stats.appointments || 0,
           consultations: dashboardResponse.stats.consultations || 0,
           earnings: dashboardResponse.stats.earnings || 0,
           pendingEarnings: dashboardResponse.stats.pendingEarnings || 0,
           completedServices: dashboardResponse.stats.completedServices || 0,
-          rating: dashboardResponse.stats.rating || profileResponse.rating || 4.5,
-          totalReviews: dashboardResponse.stats.totalReviews || profileResponse.totalReviews || 0,
+          rating: ratingVal,
+          totalReviews: tr,
         });
       } else {
-        // Fallback to profile data
+        const tr = Number(profileResponse.totalReviews ?? 0) || 0;
+        const rawR =
+          profileResponse.rating != null ? Number(profileResponse.rating) : NaN;
+        const ratingVal =
+          tr > 0 && Number.isFinite(rawR) && rawR > 0 ? rawR : 0;
         setStats({
           appointments: 0,
           consultations: 0,
           earnings: 0,
           pendingEarnings: 0,
           completedServices: 0,
-          rating: profileResponse.rating || 4.5,
-          totalReviews: profileResponse.totalReviews || 0,
+          rating: ratingVal,
+          totalReviews: tr,
         });
       }
       
@@ -112,7 +130,7 @@ export function VendorDashboardScreen({
         earnings: 0,
         pendingEarnings: 0,
         completedServices: 0,
-        rating: 4.5,
+        rating: 0,
         totalReviews: 0,
       });
     } finally {

@@ -124,7 +124,7 @@ export function RateServiceModal({
   return (
     <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center">
       <div 
-        className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto"
+        className="bg-white w-full max-w-customer rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto"
         style={{ animation: 'slideUp 0.3s ease-out' }}
       >
         {/* Header */}

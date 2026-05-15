@@ -11,10 +11,13 @@ interface Booking {
   service_name: string;
   booking_date: string;
   booking_time: string;
+  completed_at?: string;
+  video_call_ended_at?: string;
   status: string;
   payment_status: string;
   total_amount: number;
   service_type: string;
+  service_style?: string;
   notes?: string;
   otp_code?: string;
   otp_verified?: boolean;
@@ -24,6 +27,16 @@ interface Booking {
 
 interface VendorBookingsPageProps {
   vendorId: string;
+}
+
+function isVendorTeleBooking(b: Pick<Booking, 'service_type' | 'service_style' | 'service_name'>) {
+  const st = (b.service_style || b.service_type || '').toLowerCase();
+  const name = (b.service_name || '').toLowerCase();
+  return (
+    ['tele', 'video_consultation', 'video', 'online'].includes(st) ||
+    name.includes('tele') ||
+    name.includes('video consult')
+  );
 }
 
 export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
@@ -155,28 +168,29 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
   };
 
   return (
-    <div className="p-0">
-      <div className="flex items-center justify-between mb-0">
-        <h1 className="text-2xl font-bold text-gray-900">Bookings</h1>
+    <div className="p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-gray-900">Bookings</h1>
         <button
           onClick={loadBookings}
-          className="p-0 hover:bg-gray-100 rounded-lg"
+          className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 active:bg-gray-200 rounded-xl transition-colors"
+          aria-label="Refresh bookings"
         >
-          🔄
+          <svg className="w-5 h-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
         </button>
       </div>
 
       {/* Filters */}
-      <div className="flex gap-4 mb-0">
-        <div className="flex bg-white rounded-lg p-0 shadow-sm">
+      <div className="flex flex-col gap-3">
+        <div className="flex bg-gray-100 rounded-xl p-1">
           {['today', 'upcoming', 'all'].map((d) => (
             <button
               key={d}
               onClick={() => setDateFilter(d)}
-              className={`px-4 py-0 rounded-lg text-sm font-medium transition ${
+              className={`flex-1 px-3 py-2.5 min-h-[40px] rounded-lg text-sm font-medium transition ${
                 dateFilter === d
-                  ? 'bg-orange-500 text-white'
-                  : 'text-gray-600 hover:bg-gray-100'
+                  ? 'bg-orange-500 text-white shadow-sm'
+                  : 'text-gray-600 hover:bg-gray-200 active:bg-gray-300'
               }`}
             >
               {d === 'today' ? "Today's" : d === 'upcoming' ? 'Upcoming' : 'All Time'}
@@ -186,7 +200,7 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
         <select
           value={filter}
           onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilter(e.target.value)}
-          className="px-4 py-0 bg-white border rounded-lg text-sm"
+          className="w-full px-4 py-3 min-h-[44px] bg-white border border-gray-200 rounded-xl text-sm appearance-none"
         >
           <option value="all">All Status</option>
           <option value="pending">Pending</option>
@@ -202,10 +216,10 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
         </div>
       ) : bookings.length === 0 ? (
-        <div className="text-center py-0 bg-white rounded-2xl">
+        <div className="text-center py-12 bg-white rounded-2xl">
           <span className="text-6xl">📅</span>
           <h2 className="mt-4 text-xl font-semibold text-gray-900">No bookings found</h2>
-          <p className="text-gray-500 mt-0">
+          <p className="text-gray-500 mt-2">
             {dateFilter === 'today' ? 'No bookings scheduled for today' : 'No bookings match your filters'}
           </p>
         </div>
@@ -241,7 +255,14 @@ export function VendorBookingsPage({ vendorId }: VendorBookingsPageProps) {
                     <p className="text-sm text-gray-500">{booking.service_name}</p>
                     <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
                       <span>📅 {new Date(booking.booking_date).toLocaleDateString()}</span>
-                      <span>⏰ {booking.booking_time}</span>
+                      <span>
+                        ⏰{' '}
+                        {booking.status === 'completed' &&
+                        isVendorTeleBooking(booking) &&
+                        (booking.video_call_ended_at || booking.completed_at)
+                          ? `Completed ${new Date(booking.video_call_ended_at || booking.completed_at || '').toLocaleString()}`
+                          : booking.booking_time}
+                      </span>
                       <span className="font-semibold text-orange-500">₹{booking.total_amount}</span>
                     </div>
                     {booking.notes && (

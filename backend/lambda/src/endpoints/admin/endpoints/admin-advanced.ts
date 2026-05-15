@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes, pbkdf2Sync } from 'crypto';
 /**
  * ============================================================================
  * ADMIN ADVANCED ENDPOINTS - PHASES 24-29
@@ -16,14 +16,130 @@ import { randomUUID } from 'crypto';
  * ============================================================================
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
-import { query, select, update, insert, deleteRows } from '../../../database/rds-connection';
-import { getRazorpayClient } from '../../../utils/payments/razorpay-client';
+import { query, select, update, insert, deleteRows, upsert } from '../../../database/rds-connection';
+import { getRazorpayClient, resolveRazorpayPayoutSourceAccountNumber } from '../../../utils/payments/razorpay-client';
+import { fetchVendorBankRowsForPayout } from '../../../utils/vendor-bank-for-payout';
 import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../../../utils/error-serialization';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
+import { pickTaxCategoryDisplayRate } from '../../../utils/tax-category-display-rate';
 import { isValidUUID } from '../../../types/entities';
+import {
+  listFeeSettingsFromDb,
+  scalarFromJsonbSetting,
+  upsertFeeSetting,
+  getFeeGlobalsMap,
+} from '../../../utils/admin-fee-settings-db';
+import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
+import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
+import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
+import {
+  putSettlementCalculateDailyCron,
+  resolveSettlementCalculateCronRuleName,
+  scheduleTimeAndZoneToUtcCron,
+} from '../../../utils/settlement-schedule-eventbridge';
+import {
+  getTemporaryVendorSuppressionParams,
+  sqlExcludeSuppressedSettlementRows,
+} from '../../../utils/temporary-vendor-ui-suppression';
+
+/** Keep Fee / payout_rules consumers aligned when admin saves minimum from Schedule Settings. */
+async function mergeMinimumPayoutIntoPlatformPayoutRules(minimumPayout: number): Promise<void> {
+  const defaults = { minimumPayout: 1000, autoPayout: true, defaultCommission: 10 };
+  const existing = await query(
+    `SELECT id, setting_value FROM platform_settings WHERE setting_key = 'admin:settings:payout_rules' LIMIT 1`
+  ).then((r: any) => r.rows || []);
+  const prev = existing[0]?.setting_value;
+  const parsed =
+    typeof prev === 'string'
+      ? JSON.parse(prev)
+      : prev && typeof prev === 'object'
+        ? prev
+        : {};
+  const merged = { ...defaults, ...parsed, minimumPayout: Number(minimumPayout) };
+  if (existing.length > 0) {
+    await update('platform_settings', { id: existing[0].id }, {
+      setting_value: merged,
+      updated_at: new Date().toISOString(),
+    });
+  } else {
+    await insert('platform_settings', {
+      setting_key: 'admin:settings:payout_rules',
+      setting_value: merged,
+      setting_type: 'object',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+}
+
+/** Email from Bearer JWT for RBAC checks when Cognito `sub` ≠ `admins.id` (unsafe decode; token already verified by middleware). */
+function rbacCallerEmailHint(c: Context): string | undefined {
+  const raw = c.req.header('authorization') || c.req.header('Authorization');
+  if (!raw?.toLowerCase().startsWith('bearer ')) return undefined;
+  const token = raw.slice(7).trim();
+  if (!token || token.startsWith('uat-token-')) return undefined;
+  const p = decodeTokenUnsafe(token);
+  if (!p) return undefined;
+  if (typeof p.email === 'string' && p.email.includes('@')) return p.email.trim();
+  const un = (p as { 'cognito:username'?: string })['cognito:username'];
+  if (typeof un === 'string' && un.includes('@')) return un.trim();
+  return undefined;
+}
+
+/** JOIN/SELECT on `vendor_identity` failed (missing table/relation, or missing column — Postgres: `column vi.* does not exist`). */
+function isVendorIdentityJoinUnsupportedError(msg: string): boolean {
+  const m = String(msg ?? '');
+  return (
+    m.includes('does not exist') &&
+    (m.includes('vendor_identity') || m.includes('column vi.'))
+  );
+}
+
+function hashAdminPasswordPlain(password: string): string {
+  const salt = randomBytes(16).toString('hex');
+  const hash = pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+}
+
+/** Normalizes content_pages.metadata from API body or DB (JSONB / string). */
+function normalizeContentPagesMetadataInput(raw: unknown): Record<string, unknown> {
+  if (raw == null) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    if (o.read_time != null) out.read_time = String(o.read_time);
+    if (o.featured != null) out.featured = Boolean(o.featured);
+    if (o.image_url != null) out.image_url = String(o.image_url);
+    if (o.seo_title != null) out.seo_title = String(o.seo_title);
+    if (o.seo_description != null) out.seo_description = String(o.seo_description);
+    return out;
+  }
+  if (typeof raw === 'string') {
+    try {
+      return normalizeContentPagesMetadataInput(JSON.parse(raw) as unknown);
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+/**
+ * Matches customer `WHERE is_published = true`: only explicit published values count.
+ * Handles driver quirks: string 'true' / '1', numeric 1.
+ */
+function rowIsPublished(raw: unknown): boolean {
+  if (raw === true) return true;
+  if (raw === 1) return true;
+  if (typeof raw === 'string') {
+    const t = raw.trim().toLowerCase();
+    return t === 'true' || t === '1';
+  }
+  return false;
+}
 
 // Color constants for charts
 const COLORS = ['#FF8C42', '#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6'];
@@ -60,36 +176,6 @@ async function validateApplicableRolesAgainstActiveRoles(applicableRoles: string
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
-
-/**
- * Upsert a setting in admin_settings table
- */
-async function upsertAdminSetting(key: string, value: string, serviceType: string = 'all'): Promise<void> {
-  try {
-    // Try update first
-    const existing = await query(
-      `SELECT id FROM admin_settings WHERE setting_key = $1 AND (service_type = $2 OR (service_type IS NULL AND $2 = 'all')) LIMIT 1`,
-      [key, serviceType]
-    ).catch(() => ({ rows: [] }));
-
-    if (existing.rows.length > 0) {
-      await query(
-        `UPDATE admin_settings SET setting_value = $1, updated_at = NOW() WHERE setting_key = $2 AND (service_type = $3 OR (service_type IS NULL AND $3 = 'all'))`,
-        [value, key, serviceType]
-      );
-    } else {
-      await query(
-        `INSERT INTO admin_settings (setting_key, setting_value, service_type, created_at, updated_at)
-         VALUES ($1, $2, $3, NOW(), NOW())`,
-        [key, value, serviceType === 'all' ? null : serviceType]
-      ).catch(() => {
-        // Ignore duplicate key errors
-      });
-    }
-  } catch (error) {
-    console.warn(`Failed to upsert admin setting ${key}:`, error);
-  }
-}
 
 // ============================================================================
 // PHASE 24: CATALOG SELECTORS
@@ -303,17 +389,35 @@ class CreateReschedulingPolicyHandler extends BaseHandler {
 
 class GetRBACStatsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const roles = await select('roles', {});
-    const users = await select('users', {});
-    const permissions = await select('permissions', {});
-    const assignments = await select('user_roles', {});
+    const roles = (await select('roles', {}).catch(() => [])) as any[];
+    let adminCount = 0;
+    let permissionCount = 0;
+    let activeAssignmentCount = 0;
+    try {
+      const ac = await query('SELECT COUNT(*)::int AS c FROM admins');
+      adminCount = Number(ac.rows?.[0]?.c ?? 0);
+    } catch {
+      adminCount = 0;
+    }
+    try {
+      const pc = await query('SELECT COUNT(DISTINCT permission_name)::int AS c FROM role_permissions');
+      permissionCount = Number(pc.rows?.[0]?.c ?? 0);
+    } catch {
+      permissionCount = 0;
+    }
+    try {
+      const uc = await query('SELECT COUNT(*)::int AS c FROM user_roles WHERE is_active = true');
+      activeAssignmentCount = Number(uc.rows?.[0]?.c ?? 0);
+    } catch {
+      activeAssignmentCount = 0;
+    }
 
     return this.success({
       stats: {
         totalRoles: roles.length,
-        totalUsers: users.length,
-        totalPermissions: permissions.length,
-        activeAssignments: assignments.length,
+        totalUsers: adminCount,
+        totalPermissions: permissionCount,
+        activeAssignments: activeAssignmentCount,
       },
     });
   }
@@ -327,9 +431,71 @@ class GetRolesHandler extends BaseHandler {
 }
 
 class GetRBACUsersHandler extends BaseHandler {
-  async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const users = await select('users', {});
-    return this.success({ users });
+  async handle(_context: HandlerContext): Promise<HandlerResponse> {
+    const mapRows = (rows: any[]) =>
+      (rows || []).map((row: any) => ({
+        id: row.id,
+        name: row.name || row.email,
+        email: row.email,
+        role: row.rbac_role_display_name || row.rbac_role_code || row.role || 'admin',
+        status: row.is_active === false ? 'inactive' : 'active',
+        lastLogin: row.last_login_at,
+        rbacRoleId: row.rbac_role_id,
+        rbacRoleCode: row.rbac_role_code,
+        adminRole: row.role,
+      }));
+
+    try {
+      const result = await query(`
+        SELECT
+          a.id,
+          a.email,
+          a.name,
+          a.role,
+          a.is_active,
+          a.last_login_at,
+          r.id AS rbac_role_id,
+          r.display_name AS rbac_role_display_name,
+          r.name AS rbac_role_code
+        FROM admins a
+        LEFT JOIN user_roles ur ON a.id = ur.user_id AND ur.is_active = true
+        LEFT JOIN roles r ON ur.role_id = r.id
+        ORDER BY a.created_at DESC NULLS LAST
+      `);
+      return this.success({ success: true, users: mapRows(result.rows) });
+    } catch (error: any) {
+      const msg = String(error?.message || '');
+      // Some RDS setups have no `users` / `permissions` tables, or a broken `user_roles` view referencing `users`.
+      if (msg.includes('does not exist') && msg.includes('users')) {
+        try {
+          const fallback = await query(`
+            SELECT
+              a.id,
+              a.email,
+              a.name,
+              a.role,
+              a.is_active,
+              a.last_login_at,
+              NULL::uuid AS rbac_role_id,
+              NULL::text AS rbac_role_display_name,
+              NULL::text AS rbac_role_code
+            FROM admins a
+            ORDER BY a.created_at DESC NULLS LAST
+          `);
+          return this.success({
+            success: true,
+            users: mapRows(fallback.rows),
+            degraded: true,
+            message:
+              'RBAC role assignments could not be loaded (database references missing `users` table). Admin list shown without per-user roles.',
+          });
+        } catch (e2: any) {
+          console.error('[GetRBACUsersHandler] fallback failed:', e2);
+        }
+      }
+      console.error('[GetRBACUsersHandler]', error);
+      return this.error(error.message || 'Failed to list admin users', 500);
+    }
   }
 }
 
@@ -527,9 +693,26 @@ class GetSupportTicketsHandler extends BaseHandler {
 
 class CreateSupportTicketHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const body = this.parseBody(context.event);
+    const body = this.parseBody(context.event) || {};
+    const { attachments, metadata: bodyMetadata, ...rest } = body as Record<string, unknown>;
+    const metaBase =
+      bodyMetadata != null && typeof bodyMetadata === 'object' && !Array.isArray(bodyMetadata)
+        ? { ...(bodyMetadata as Record<string, unknown>) }
+        : {};
+    const { attachments: metaAttachments, ...metaRest } = metaBase as {
+      attachments?: unknown;
+      [k: string]: unknown;
+    };
+    const attachmentList = Array.isArray(attachments)
+      ? attachments
+      : Array.isArray(metaAttachments)
+        ? metaAttachments
+        : [];
+    const safeRest = { ...rest } as Record<string, unknown>;
+    delete safeRest.attachments;
     const ticket = await insert('support_tickets', {
-      ...body,
+      ...safeRest,
+      metadata: { ...metaRest, attachments: attachmentList },
       status: 'open',
       created_at: new Date().toISOString(),
     });
@@ -993,11 +1176,131 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   });
 
   app.get('/admin/rbac/users', async (c) => {
+    const callerId = c.get('userId') as string | undefined;
+    if (!(await canManageRbacAdmin(callerId, rbacCallerEmailHint(c)))) {
+      return c.json({ success: false, error: 'RBAC management permission required' }, 403);
+    }
     const handler = new GetRBACUsersHandler();
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await handler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.post('/admin/rbac/users/create', async (c) => {
+    try {
+      const callerId = c.get('userId') as string | undefined;
+      if (!(await canManageRbacAdmin(callerId, rbacCallerEmailHint(c)))) {
+        return c.json({ success: false, error: 'RBAC management permission required' }, 403);
+      }
+      const body = await c.req.json().catch(() => ({}));
+      const email = String(body.email || '').trim();
+      const password = String(body.password || '');
+      const name = String(body.name || email).trim();
+      let roleId = String(body.roleId || '').trim();
+      const roleName = String(body.role || '').trim();
+      if (!email || !password) {
+        return c.json({ success: false, error: 'email and password are required' }, 400);
+      }
+      if (!roleId && roleName) {
+        const r = await query('SELECT id FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1', [
+          roleName.replace(/\s+/g, '_'),
+        ]);
+        if (r.rows?.[0]?.id) roleId = r.rows[0].id;
+      }
+      if (!roleId || !isValidUUID(roleId)) {
+        return c.json({ success: false, error: 'Valid roleId is required' }, 400);
+      }
+      const roleCheck = await query('SELECT id FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1', [roleId]);
+      if (!roleCheck.rows?.length) {
+        return c.json({ success: false, error: 'Role not found' }, 404);
+      }
+      const existing = await query('SELECT id FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1', [email]);
+      if (existing.rows?.length) {
+        return c.json({ success: false, error: 'Admin with this email already exists' }, 409);
+      }
+      const password_hash = hashAdminPasswordPlain(password);
+      const ins = await query(
+        `INSERT INTO admins (email, password_hash, name, role, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, 'staff', true, NOW(), NOW())
+         RETURNING id, email, name, role`,
+        [email, password_hash, name]
+      );
+      const admin = ins.rows[0];
+      await query(
+        `INSERT INTO user_roles (user_id, role_id, assigned_by, is_active, created_at, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3, true, NOW(), NOW())`,
+        [admin.id, roleId, callerId]
+      );
+      return c.json({
+        success: true,
+        admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role },
+      });
+    } catch (error: unknown) {
+      console.error('[POST /admin/rbac/users/create]', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to create admin user', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.put('/admin/rbac/users/:userId/role', async (c) => {
+    try {
+      const callerId = c.get('userId') as string | undefined;
+      if (!(await canManageRbacAdmin(callerId, rbacCallerEmailHint(c)))) {
+        return c.json({ success: false, error: 'RBAC management permission required' }, 403);
+      }
+      const userId = c.req.param('userId');
+      if (!userId || !isValidUUID(userId)) {
+        return c.json({ success: false, error: 'Invalid userId' }, 400);
+      }
+      const body = await c.req.json().catch(() => ({}));
+      let roleId = String(body.roleId || '').trim();
+      const roleName = String(body.role || '').trim();
+      if (!roleId && roleName) {
+        const r = await query('SELECT id FROM roles WHERE LOWER(name) = LOWER($1) AND is_active = true LIMIT 1', [
+          roleName.replace(/\s+/g, '_'),
+        ]);
+        if (r.rows?.[0]?.id) roleId = r.rows[0].id;
+      }
+      if (!roleId || !isValidUUID(roleId)) {
+        return c.json({ success: false, error: 'Valid roleId or role name is required' }, 400);
+      }
+      const adminRow = await query('SELECT id FROM admins WHERE id = $1::uuid LIMIT 1', [userId]);
+      if (!adminRow.rows?.length) {
+        return c.json({ success: false, error: 'Admin user not found' }, 404);
+      }
+      const roleCheck = await query('SELECT id FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1', [roleId]);
+      if (!roleCheck.rows?.length) {
+        return c.json({ success: false, error: 'Role not found' }, 404);
+      }
+
+      const newPassword = String(body.password ?? '').trim();
+      if (newPassword.length > 0 && newPassword.length < 8) {
+        return c.json({ success: false, error: 'Password must be at least 8 characters' }, 400);
+      }
+
+      await query(`UPDATE user_roles SET is_active = false, updated_at = NOW() WHERE user_id = $1::uuid`, [userId]);
+      await query(
+        `INSERT INTO user_roles (user_id, role_id, assigned_by, is_active, created_at, updated_at)
+         VALUES ($1::uuid, $2::uuid, $3, true, NOW(), NOW())
+         ON CONFLICT (user_id, role_id) DO UPDATE SET is_active = true, assigned_by = EXCLUDED.assigned_by, updated_at = NOW()`,
+        [userId, roleId, callerId]
+      );
+
+      if (newPassword.length > 0) {
+        const password_hash = hashAdminPasswordPlain(newPassword);
+        await query(
+          `UPDATE admins SET password_hash = $2, updated_at = NOW() WHERE id = $1::uuid`,
+          [userId, password_hash]
+        );
+      }
+
+      return c.json({ success: true, message: 'Role updated', userId, roleId });
+    } catch (error: unknown) {
+      console.error('[PUT /admin/rbac/users/:userId/role]', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to assign role', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
   });
 
   app.get('/admin/rbac/permissions', async (c) => {
@@ -1886,7 +2189,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(is_active::boolean, true) as is_active,
               COALESCE(created_at::text, '') as created_at,
-              COALESCE(updated_at::text, '') as updated_at
+              COALESCE(updated_at::text, '') as updated_at,
+              COALESCE(customer_visibility_type::text, 'GLOBAL') as customer_visibility_type,
+              customer_visibility_state::text as customer_visibility_state,
+              customer_visibility_city::text as customer_visibility_city,
+              COALESCE(customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active
             FROM service_categories
             WHERE is_active = true OR is_active IS NULL
             ORDER BY display_order ASC NULLS LAST, name ASC
@@ -1925,6 +2232,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             icon: String(cat.icon || ''),
             icon_color: String(cat.icon_color || 'text-gray-500'),
             updated_at: String(cat.updated_at || ''),
+            customerVisibilityType: String(cat.customer_visibility_type || 'GLOBAL'),
+            customerVisibilityState: cat.customer_visibility_state != null ? String(cat.customer_visibility_state) : '',
+            customerVisibilityCity: cat.customer_visibility_city != null ? String(cat.customer_visibility_city) : '',
+            customerDashboardCardActive: cat.customer_dashboard_card_active !== false,
           };
         }
 
@@ -1974,7 +2285,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(is_active::boolean, true) as is_active,
               COALESCE(created_at::text, '') as created_at,
-              COALESCE(updated_at::text, '') as updated_at
+              COALESCE(updated_at::text, '') as updated_at,
+              COALESCE(customer_visibility_type::text, 'GLOBAL') as customer_visibility_type,
+              customer_visibility_state::text as customer_visibility_state,
+              customer_visibility_city::text as customer_visibility_city,
+              COALESCE(customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active
             FROM service_categories
             WHERE is_active = true OR is_active IS NULL
             ORDER BY display_order ASC NULLS LAST, name ASC
@@ -1992,6 +2307,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             is_active: cat.is_active !== false,
             created_at: String(cat.created_at || ''),
             updated_at: String(cat.updated_at || ''),
+            customerVisibilityType: String(cat.customer_visibility_type || 'GLOBAL'),
+            customerVisibilityState: cat.customer_visibility_state != null ? String(cat.customer_visibility_state) : '',
+            customerVisibilityCity: cat.customer_visibility_city != null ? String(cat.customer_visibility_city) : '',
+            customerDashboardCardActive: cat.customer_dashboard_card_active !== false,
           }));
 
           return c.json({
@@ -2062,6 +2381,23 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       // For service_categories, use category_id
       const finalCategoryId = categoryId || `cat-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`;
 
+      const visTypeRaw =
+        (body as any).customerVisibilityType ??
+        (body as any).customer_visibility_type ??
+        'GLOBAL';
+      const visType = String(visTypeRaw || 'GLOBAL')
+        .trim()
+        .toUpperCase();
+      const safeVis =
+        visType === 'STATE' || visType === 'CITY' || visType === 'GLOBAL' ? visType : 'GLOBAL';
+      const visState =
+        (body as any).customerVisibilityState ?? (body as any).customer_visibility_state ?? null;
+      const visCity =
+        (body as any).customerVisibilityCity ?? (body as any).customer_visibility_city ?? null;
+      const dashActive =
+        (body as any).customerDashboardCardActive !== false &&
+        (body as any).customer_dashboard_card_active !== false;
+
       const newCategory = await insert('service_categories', {
         category_id: finalCategoryId,
         name,
@@ -2072,6 +2408,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         vendor_roles: vendorRoles || [],
         display_order: nextOrder,
         is_active: status !== 'inactive',
+        customer_visibility_type: safeVis,
+        customer_visibility_state: visState ? String(visState).trim() : null,
+        customer_visibility_city: visCity ? String(visCity).trim() : null,
+        customer_dashboard_card_active: dashActive !== false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -2084,6 +2424,62 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: unknown) {
       console.error('Error creating category:', error);
       const errorResponse = createSafeErrorResponse(error, 'Failed to create category', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.get('/admin/catalog/categories/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const rows = await query(
+        `SELECT 
+          id::text as id,
+          COALESCE(category_id::text, '') as category_id,
+          name::text as name,
+          COALESCE(description::text, '') as description,
+          COALESCE(icon::text, '') as icon,
+          COALESCE(icon_color::text, 'text-gray-500') as icon_color,
+          COALESCE(display_order::integer, 0) as display_order,
+          COALESCE(is_active::boolean, true) as is_active,
+          COALESCE(created_at::text, '') as created_at,
+          COALESCE(updated_at::text, '') as updated_at,
+          COALESCE(customer_visibility_type::text, 'GLOBAL') as customer_visibility_type,
+          customer_visibility_state::text as customer_visibility_state,
+          customer_visibility_city::text as customer_visibility_city,
+          COALESCE(customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active
+        FROM service_categories
+        WHERE id::text = $1 OR category_id::text = $1
+        LIMIT 1`,
+        [id]
+      );
+      const cat = rows.rows?.[0];
+      if (!cat) {
+        return c.json({ success: false, error: 'Category not found' }, 404);
+      }
+      return c.json({
+        success: true,
+        category: {
+          id: String(cat.id || ''),
+          category_id: String(cat.category_id || ''),
+          name: String(cat.name || ''),
+          description: String(cat.description || ''),
+          icon: String(cat.icon || ''),
+          icon_color: String(cat.icon_color || 'text-gray-500'),
+          iconColor: String(cat.icon_color || 'text-gray-500'),
+          display_order: parseInt(cat.display_order, 10) || 0,
+          is_active: cat.is_active !== false,
+          status: cat.is_active === false ? 'inactive' : 'active',
+          created_at: String(cat.created_at || ''),
+          updated_at: String(cat.updated_at || ''),
+          customerVisibilityType: String(cat.customer_visibility_type || 'GLOBAL'),
+          customerVisibilityState: cat.customer_visibility_state != null ? String(cat.customer_visibility_state) : '',
+          customerVisibilityCity: cat.customer_visibility_city != null ? String(cat.customer_visibility_city) : '',
+          customerDashboardCardActive: cat.customer_dashboard_card_active !== false,
+        },
+      });
+    } catch (error: unknown) {
+      console.error('Error fetching category:', error);
+      const errorResponse = createSafeErrorResponse(error, 'Failed to fetch category', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
     }
   });
@@ -2104,6 +2500,25 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.vendorRoles !== undefined) updateData.vendor_roles = body.vendorRoles;
       if (body.status !== undefined) updateData.is_active = body.status !== 'inactive';
       if (body.display_order !== undefined) updateData.display_order = parseInt(body.display_order, 10);
+      if (body.customerVisibilityType !== undefined || body.customer_visibility_type !== undefined) {
+        const raw = String(body.customerVisibilityType ?? body.customer_visibility_type ?? 'GLOBAL')
+          .trim()
+          .toUpperCase();
+        updateData.customer_visibility_type =
+          raw === 'STATE' || raw === 'CITY' || raw === 'GLOBAL' ? raw : 'GLOBAL';
+      }
+      if (body.customerVisibilityState !== undefined || body.customer_visibility_state !== undefined) {
+        const v = body.customerVisibilityState ?? body.customer_visibility_state;
+        updateData.customer_visibility_state = v != null && String(v).trim() !== '' ? String(v).trim() : null;
+      }
+      if (body.customerVisibilityCity !== undefined || body.customer_visibility_city !== undefined) {
+        const v = body.customerVisibilityCity ?? body.customer_visibility_city;
+        updateData.customer_visibility_city = v != null && String(v).trim() !== '' ? String(v).trim() : null;
+      }
+      if (body.customerDashboardCardActive !== undefined || body.customer_dashboard_card_active !== undefined) {
+        const v = body.customerDashboardCardActive ?? body.customer_dashboard_card_active;
+        updateData.customer_dashboard_card_active = v !== false;
+      }
 
       const updated = await update('service_categories', { id }, updateData);
 
@@ -2277,7 +2692,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.description !== undefined) updateData.description = body.description;
       if (body.categoryId !== undefined) updateData.category_id = body.categoryId;
       if (body.price !== undefined) updateData.price = parseFloat(body.price);
-      if (body.stock !== undefined) updateData.stock_quantity = parseInt(body.stock, 10);
+      if (body.stock !== undefined) updateData.stock = parseInt(String(body.stock), 10);
+      else if (body.stock_quantity !== undefined) {
+        updateData.stock = parseInt(String(body.stock_quantity), 10);
+      }
       if (body.status !== undefined) {
         updateData.is_active = body.status !== 'inactive';
       }
@@ -2956,6 +3374,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           if (updates.category !== undefined) {
             updateData.category_id = updates.category;
           }
+          if (updates.stock !== undefined) {
+            updateData.stock = parseInt(String(updates.stock), 10);
+          } else if (updates.stock_quantity !== undefined) {
+            updateData.stock = parseInt(String(updates.stock_quantity), 10);
+          }
           break;
         default:
           return c.json({ success: false, error: `Invalid item type: ${itemType}` }, 400);
@@ -2965,7 +3388,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const ALLOWED_COLUMNS: Record<string, string[]> = {
         vendors: ['status', 'is_active', 'is_verified', 'commission_rate', 'rating', 'tier_level'],
         services: ['status', 'is_active', 'price', 'duration', 'category_id'],
-        products: ['is_active', 'price', 'category_id', 'status', 'stock_quantity'],
+        products: ['is_active', 'price', 'category_id', 'status', 'stock'],
       };
 
       // Validate all update field names against whitelist
@@ -3011,9 +3434,16 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   // Finance Endpoints
   app.get('/admin/finance/settlements', async (c) => {
     try {
+      const suppression = getTemporaryVendorSuppressionParams();
+      const suppressionSql = suppression
+        ? ` AND ${sqlExcludeSuppressedSettlementRows('s', 1, 2)}`
+        : '';
+      const suppressionParams = suppression ? [suppression.vendorIds, suppression.cutoffDateIst] : [];
+
       let result: { rows?: any[] };
       try {
-        result = await query(`
+        result = await query(
+          `
           SELECT s.*,
                  COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
                  COALESCE(v.phone, vi.phone) as vendor_phone,
@@ -3023,13 +3453,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           LEFT JOIN vendors v ON s.vendor_id = v.id
           LEFT JOIN vendor_identity vi ON vi.vendor_id = s.vendor_id
           LEFT JOIN roles r ON v.role_id = r.id
+          WHERE 1=1 ${suppressionSql}
           ORDER BY s.created_at DESC
           LIMIT 100
-        `);
+        `,
+          suppressionParams.length ? suppressionParams : undefined,
+        );
       } catch (viErr: any) {
         const msg = String(viErr?.message ?? viErr ?? '');
-        if (msg.includes('vendor_identity') && msg.includes('does not exist')) {
-          result = await query(`
+        if (isVendorIdentityJoinUnsupportedError(msg)) {
+          result = await query(
+            `
             SELECT s.*,
                    COALESCE(v.business_name, 'Vendor') as vendor_name,
                    COALESCE(v.phone, '') as vendor_phone,
@@ -3038,16 +3472,21 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             FROM settlements s
             LEFT JOIN vendors v ON s.vendor_id = v.id
             LEFT JOIN roles r ON v.role_id = r.id
+            WHERE 1=1 ${suppressionSql}
             ORDER BY s.created_at DESC
             LIMIT 100
-          `);
+          `,
+            suppressionParams.length ? suppressionParams : undefined,
+          );
         } else {
           throw viErr;
         }
       }
       const rows = result.rows || [];
       const settlements = rows.map((s: any) => {
-        const status = s.status || s.settlement_status || 'pending';
+        // Database uses settlement_status, normalize to lowercase status
+        const rawStatus = s.settlement_status || s.status || 'pending';
+        const status = String(rawStatus).toLowerCase();
         const amount = parseFloat(s.vendor_amount ?? s.net_amount ?? s.total_amount ?? '0');
         const commission = parseFloat(s.commission_amount ?? '0');
         const periodStart = s.settlement_period_start || s.period_start || s.created_at;
@@ -3066,6 +3505,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           commission,
           total_amount: parseFloat(s.total_amount ?? '0'),
           status,
+          settlement_status: status, // Include both for compatibility
           failure_reason: s.failure_reason || s.error_message || null,
           period: periodStr,
           period_start: periodStart,
@@ -3096,15 +3536,28 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1
       `).then((r: any) => r.rows?.[0]?.setting_value).catch(() => null);
       const saved = stored ? (typeof stored === 'string' ? JSON.parse(stored) : stored) : {};
+      const scheduleTime = saved.scheduleTime || '09:00';
+      const minPayoutAmount = saved.minPayoutAmount ?? 100;
+      const timezone = saved.timezone || 'Asia/Kolkata';
+      let eventBridgeCronUtc: string | null = null;
+      try {
+        eventBridgeCronUtc = scheduleTimeAndZoneToUtcCron(scheduleTime, timezone);
+      } catch {
+        eventBridgeCronUtc = null;
+      }
       const settings = {
-        enabled: saved.enabled !== false,
-        scheduleType: saved.scheduleType || 'weekly',
-        scheduleDay: saved.scheduleDay ?? 1,
-        scheduleTime: saved.scheduleTime || '09:00',
+        scheduleTime,
+        minPayoutAmount,
+        timezone,
         settlementPeriodDays,
+        eventBridgeCronUtc,
+        /** Resolved from ENVIRONMENT / NODE_ENV / SETTLEMENT_CALCULATE_CRON_RULE_NAME — same rule Save updates. */
+        eventBridgeRuleName: resolveSettlementCalculateCronRuleName(),
+        // Legacy fields (optional) for older clients
+        enabled: saved.enabled !== false,
+        scheduleType: saved.scheduleType || 'daily',
+        scheduleDay: saved.scheduleDay ?? 1,
         autoProcess: saved.autoProcess !== false,
-        minPayoutAmount: saved.minPayoutAmount ?? 100,
-        timezone: saved.timezone || 'Asia/Kolkata',
         lastProcessedAt: saved.lastProcessedAt ?? null,
         nextProcessAt: saved.nextProcessAt ?? null,
       };
@@ -3118,17 +3571,34 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/settlement-schedule', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { enabled, scheduleType, scheduleDay, scheduleTime, autoProcess, minPayoutAmount, timezone } = body;
-      // Do not persist settlementPeriodDays - it is read-only from default tier (single source of truth)
+      const storedRow = await query(
+        `SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1`
+      ).then((r: any) => r.rows?.[0]?.setting_value).catch(() => null);
+      const prevSaved = storedRow ? (typeof storedRow === 'string' ? JSON.parse(storedRow) : storedRow) : {};
+
+      const scheduleTime =
+        typeof body.scheduleTime === 'string' && body.scheduleTime.trim()
+          ? body.scheduleTime.trim()
+          : (prevSaved.scheduleTime || '09:00');
+      const minPayoutAmount =
+        body.minPayoutAmount != null && Number.isFinite(Number(body.minPayoutAmount))
+          ? Number(body.minPayoutAmount)
+          : (prevSaved.minPayoutAmount ?? 100);
+      const timezone =
+        typeof body.timezone === 'string' && body.timezone.trim()
+          ? body.timezone.trim()
+          : (prevSaved.timezone || 'Asia/Kolkata');
+
       const toStore = {
-        enabled: enabled !== false,
-        scheduleType: scheduleType || 'weekly',
-        scheduleDay: scheduleDay ?? 1,
-        scheduleTime: scheduleTime || '09:00',
-        autoProcess: autoProcess !== false,
-        minPayoutAmount: minPayoutAmount ?? 100,
-        timezone: timezone || 'Asia/Kolkata',
+        enabled: true,
+        scheduleType: 'daily',
+        scheduleDay: 1,
+        scheduleTime,
+        autoProcess: body.autoProcess !== undefined ? body.autoProcess !== false : prevSaved.autoProcess !== false,
+        minPayoutAmount,
+        timezone,
       };
+
       const existing = await query(`
         SELECT id, setting_value FROM platform_settings WHERE setting_key = 'admin:finance:settlement-schedule' LIMIT 1
       `).then((r: any) => r.rows);
@@ -3143,12 +3613,31 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           updated_at: new Date().toISOString(),
         });
       }
+
+      await mergeMinimumPayoutIntoPlatformPayoutRules(minPayoutAmount);
+
+      let scheduleExpression: string;
+      try {
+        scheduleExpression = scheduleTimeAndZoneToUtcCron(scheduleTime, timezone);
+      } catch (cronErr: unknown) {
+        const msg = cronErr instanceof Error ? cronErr.message : String(cronErr);
+        return c.json({ success: false, error: `Invalid schedule: ${msg}` }, 400);
+      }
+      const eventBridge = await putSettlementCalculateDailyCron(scheduleExpression);
+
       const defaultTier = await query(`
         SELECT payout_period_days FROM vendor_tiers WHERE is_active = true ORDER BY is_default DESC NULLS LAST, tier_level ASC LIMIT 1
       `).then((r: any) => r.rows?.[0]).catch(() => null);
       const settlementPeriodDays = defaultTier?.payout_period_days != null ? Number(defaultTier.payout_period_days) : 7;
-      const settings = { ...toStore, settlementPeriodDays, lastProcessedAt: null, nextProcessAt: null };
-      return c.json({ success: true, settings });
+      const settings = {
+        ...toStore,
+        settlementPeriodDays,
+        eventBridgeCronUtc: scheduleExpression,
+        eventBridgeRuleName: resolveSettlementCalculateCronRuleName(),
+        lastProcessedAt: prevSaved.lastProcessedAt ?? null,
+        nextProcessAt: null,
+      };
+      return c.json({ success: true, settings, eventBridge });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Failed to save settlement schedule', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -3446,7 +3935,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const result = await query('SELECT * FROM cancellation_policies ORDER BY created_at DESC');
       const policies = (result as any).rows ?? (Array.isArray(result) ? result : []);
-      return c.json({ success: true, policies });
+      return c.json({
+        success: true,
+        policies,
+        deprecated: true,
+        migrationNote:
+          'Prefer Finance → Cancellation & Refund Policy (vendor_refund_tiers). This legacy cancellation_policies table is retained for read/migration only.',
+      });
     } catch (error: unknown) {
       const msg = String(getErrorMessage(error));
       if (/relation\s+["']?cancellation_policies["']?\s+does not exist/i.test(msg)) {
@@ -3697,26 +4192,15 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   }
 
-  /** Returns true if another row has this code (optionally excluding one id). Uses detected column. */
-  async function hsnCodeExistsElsewhere(codeColumn: 'hsn_code' | 'code', code: string, excludeId: string | null): Promise<boolean> {
-    const normalized = String(code ?? '').trim();
-    if (!normalized) return false;
-    const q = await query(
-      `SELECT id FROM hsn_codes WHERE ${codeColumn} = $1 AND ($2::uuid IS NULL OR id != $2) LIMIT 1`,
-      [normalized, excludeId ?? null]
-    );
-    const rows = (q as any)?.rows ?? (Array.isArray(q) ? q : []);
-    return rows.length > 0;
-  }
-
   app.get('/admin/finance/gst/hsn-codes', async (c) => {
     try {
       let rows: any[];
       try {
         // Try with hsn_code only first (001/600 schema). No reference to hc.code so "column hc.code does not exist" is avoided.
         const result = await query(
-          `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at,
-                  tc.category_name as tax_category_name
+          `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, hc.category_id,
+                  tc.category_name AS tax_category_name,
+                  COALESCE(tc.tax_rate, hc.gst_rate, 18)::numeric AS effective_gst_rate
            FROM hsn_codes hc
            LEFT JOIN tax_categories tc ON hc.category_id = tc.id
            ORDER BY COALESCE(hc.hsn_code, '') ASC`
@@ -3727,19 +4211,22 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         if (msg.includes('hsn_code') && msg.includes('does not exist')) {
           // Table has "code" only (213 schema), no hsn_code column
           const result = await query(
-            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
-             FROM hsn_codes hc ORDER BY COALESCE(hc.code, '') ASC`
+            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, hc.category_id,
+                    tc.category_name as tax_category_name
+             FROM hsn_codes hc
+             LEFT JOIN tax_categories tc ON hc.category_id = tc.id
+             ORDER BY COALESCE(hc.code, '') ASC`
           );
           rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
         } else if (msg.includes('category_id') && msg.includes('does not exist')) {
           const result = await query(
-            `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
+            `SELECT hc.id, hc.hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::uuid as category_id, NULL::text as tax_category_name
              FROM hsn_codes hc ORDER BY COALESCE(hc.hsn_code, '') ASC`
           );
           rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
         } else if (msg.includes('code') && msg.includes('does not exist')) {
           const result = await query(
-            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::text as tax_category_name
+            `SELECT hc.id, hc.code as hsn_code, hc.description, hc.gst_rate, hc.is_active, hc.created_at, NULL::uuid as category_id, NULL::text as tax_category_name
              FROM hsn_codes hc ORDER BY COALESCE(hc.code, '') ASC`
           );
           rows = Array.isArray(result) ? result : (result as any)?.rows ?? [];
@@ -3757,30 +4244,41 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/gst/hsn-codes', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { code, description, gstRate, category, categoryId, cgst, sgst, igst, isActive } = body;
+      const { code, description, isActive } = body;
+      const categoryId = body.categoryId ?? body.category_id;
 
-      if (!code || !gstRate) {
-        return c.json({ success: false, error: 'HSN code and GST rate are required' }, 400);
+      if (code == null || String(code).trim() === '') {
+        return c.json({ success: false, error: 'HSN code is required' }, 400);
       }
+      if (categoryId == null || String(categoryId).trim() === '') {
+        return c.json(
+          { success: false, error: 'Tax category is required (GST rate is taken from the linked tax category)' },
+          400
+        );
+      }
+
+      const tcRows = await query(
+        `SELECT tax_rate FROM tax_categories WHERE id = $1::uuid AND COALESCE(is_active, true) = true LIMIT 1`,
+        [String(categoryId).trim()]
+      );
+      const tc = tcRows.rows?.[0];
+      if (!tc) {
+        return c.json({ success: false, error: 'Tax category not found' }, 404);
+      }
+      let derivedRate = parseFloat(String(tc.tax_rate ?? ''));
+      if (!Number.isFinite(derivedRate)) derivedRate = 18;
 
       const codeColumn = await getHsnCodeColumn();
       const codeVal = String(code).trim();
-      if (await hsnCodeExistsElsewhere(codeColumn, codeVal, null)) {
-        console.log('[HSN] Create rejected: duplicate code', { code: codeVal, column: codeColumn });
-        return c.json(
-          { success: false, error: 'An HSN code with this code already exists. Use a different code or edit the existing one.' },
-          409
-        );
-      }
 
       const insertPayload: Record<string, unknown> = {
         [codeColumn]: codeVal,
         description: description || '',
-        gst_rate: parseFloat(gstRate),
+        gst_rate: derivedRate,
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
+        category_id: String(categoryId).trim(),
       };
-      if (categoryId) insertPayload.category_id = categoryId;
 
       let newCode;
       try {
@@ -3845,23 +4343,36 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         const rows = (existing as any)?.rows ?? (Array.isArray(existing) ? existing : []);
         const currentRow = rows[0];
         const currentCode = currentRow ? String(currentRow.code_val ?? '').trim() : '';
-        if (newCode === currentCode) {
-          // No change to code – don't set it so we don't trigger unique check
-        } else {
-          if (await hsnCodeExistsElsewhere(codeColumn, newCode, id)) {
-            console.log('[HSN] Update rejected: duplicate code', { id, code: newCode, column: codeColumn });
-            return c.json(
-              { success: false, error: 'Another HSN code with this code already exists. Use a different code or edit the existing one.' },
-              409
-            );
-          }
+        if (newCode !== currentCode) {
           updateData[codeColumn] = newCode;
         }
       }
       if (body.description !== undefined) updateData.description = body.description;
-      if (body.gstRate !== undefined) updateData.gst_rate = parseFloat(body.gstRate);
       if (body.isActive !== undefined) updateData.is_active = body.isActive;
-      if (body.categoryId !== undefined) updateData.category_id = body.categoryId || null;
+      const categoryTouched = body.categoryId !== undefined || body.category_id !== undefined;
+      if (categoryTouched) {
+        const cid = body.categoryId ?? body.category_id;
+        updateData.category_id =
+          cid != null && String(cid).trim() !== '' ? String(cid).trim() : null;
+      }
+
+      if (categoryTouched) {
+        const effCat = updateData.category_id;
+        if (effCat) {
+          const tcRows = await query(
+            `SELECT tax_rate FROM tax_categories WHERE id = $1::uuid AND COALESCE(is_active, true) = true LIMIT 1`,
+            [String(effCat).trim()]
+          );
+          const tc = tcRows.rows?.[0];
+          if (tc) {
+            let dr = parseFloat(String(tc.tax_rate ?? ''));
+            if (!Number.isFinite(dr)) dr = 18;
+            updateData.gst_rate = dr;
+          }
+        } else {
+          updateData.gst_rate = 18;
+        }
+      }
 
       if (Object.keys(updateData).length === 0) {
         const existing = await query(`SELECT * FROM hsn_codes WHERE id = $1::uuid LIMIT 1`, [id]);
@@ -3932,10 +4443,145 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     }
   });
 
+  app.get('/admin/finance/gst/catalog-category-roles', async (c) => {
+    try {
+      const catalogCategoryId = c.req.query('catalogCategoryId')?.trim();
+      if (!catalogCategoryId) {
+        return c.json({ success: false, error: 'catalogCategoryId is required' }, 400);
+      }
+
+      const specResult = await query(
+        `SELECT DISTINCT r.id, r.name, r.display_name
+         FROM specialization_master sm
+         JOIN service_categories sc ON sm.category_id = sc.category_id
+         CROSS JOIN LATERAL unnest(COALESCE(sm.applicable_roles, ARRAY[]::text[])) AS ar(code)
+         JOIN roles r ON LOWER(TRIM(r.name)) = LOWER(TRIM(ar.code)) AND COALESCE(r.is_active, true) = true
+         WHERE sc.id = $1::uuid AND COALESCE(sm.is_active, true) = true`,
+        [catalogCategoryId]
+      );
+      const fromSpecs = ((specResult as { rows?: { id: string; name: string; display_name: string }[] })?.rows ??
+        []) as { id: string; name: string; display_name: string }[];
+
+      let fromCustomerService: { id: string; name: string; display_name: string }[] = [];
+      try {
+        const slugRes = await query(
+          `SELECT category_id FROM service_categories WHERE id = $1::uuid LIMIT 1`,
+          [catalogCategoryId]
+        );
+        const slugRow = (slugRes as { rows?: { category_id?: string }[] })?.rows?.[0];
+        const slug = slugRow?.category_id != null ? String(slugRow.category_id) : '';
+        const buckets = customerServicesForCatalogCategorySlug(slug);
+        if (buckets.length > 0) {
+          const csRes = await query(
+            `SELECT DISTINCT r.id, r.name, r.display_name
+             FROM roles r
+             WHERE COALESCE(r.is_active, true) = true
+               AND r.customer_service IS NOT NULL
+               AND r.customer_service = ANY($1::text[])`,
+            [buckets]
+          );
+          fromCustomerService = ((csRes as { rows?: typeof fromCustomerService })?.rows ??
+            []) as typeof fromCustomerService;
+        }
+      } catch (csErr: unknown) {
+        console.warn('[catalog-category-roles] customer_service branch skipped:', (csErr as Error)?.message);
+      }
+
+      const byId = new Map<string, { id: string; name: string; display_name: string }>();
+      for (const r of [...fromSpecs, ...fromCustomerService]) {
+        if (r?.id) byId.set(String(r.id), r);
+      }
+      const roles = [...byId.values()].sort((a, b) => {
+        const da = (a.display_name || a.name || '').toLowerCase();
+        const db = (b.display_name || b.name || '').toLowerCase();
+        return da.localeCompare(db, undefined, { sensitivity: 'base' });
+      });
+
+      return c.json({ success: true, roles });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
   app.get('/admin/finance/gst/tax-categories', async (c) => {
     try {
-      const categories = await query('SELECT * FROM tax_categories ORDER BY category_name ASC');
-      return c.json({ success: true, categories: categories.rows });
+      let rows: Record<string, unknown>[];
+      try {
+        const categories = await query(`
+          SELECT tc.*,
+                 sc.name AS catalog_category_name,
+                 sc.category_id AS catalog_master_slug,
+                 COALESCE(
+                   (SELECT json_agg(json_build_object('id', r.id, 'name', r.name, 'display_name', r.display_name) ORDER BY r.display_name)
+                    FROM tax_category_roles tcr
+                    JOIN roles r ON r.id = tcr.role_id
+                    WHERE tcr.tax_category_id = tc.id),
+                   '[]'::json
+                 ) AS roles_json
+          FROM tax_categories tc
+          LEFT JOIN service_categories sc ON sc.id = tc.catalog_category_id
+        `);
+        rows = (categories as { rows?: Record<string, unknown>[] })?.rows ?? [];
+      } catch {
+        const categories = await query('SELECT * FROM tax_categories');
+        rows = (categories as { rows?: Record<string, unknown>[] })?.rows ?? [];
+      }
+
+      const countByCatRef = new Map<string, number>();
+      try {
+        const cntRes = await query(`SELECT category_id::text AS cid, COUNT(*)::int AS c FROM service_catalog GROUP BY category_id`);
+        for (const r of cntRes.rows ?? []) {
+          if (r?.cid != null) countByCatRef.set(String(r.cid).trim(), Number(r.c) || 0);
+        }
+      } catch (countErr: unknown) {
+        console.warn('[tax-categories] service_catalog count skipped:', (countErr as Error)?.message);
+      }
+
+      const sorted = [...rows].sort((a: any, b: any) =>
+        String(a.category_name ?? a.name ?? '').localeCompare(String(b.category_name ?? b.name ?? ''), undefined, {
+          sensitivity: 'base',
+        })
+      );
+      const normalized = sorted.map((row: Record<string, any>) => {
+        const displayName = String(row.category_name ?? row.name ?? '').trim() || '—';
+        // Use tax_categories row only (no gst_rules substitution when rate is 0 — admin may intend 0%).
+        const tax_rate = pickTaxCategoryDisplayRate(row);
+        const slug = row.catalog_master_slug ? String(row.catalog_master_slug).trim() : '';
+        const cid = row.catalog_category_id ? String(row.catalog_category_id).trim() : '';
+        let linkedCatalogServices = 0;
+        if (slug) linkedCatalogServices += countByCatRef.get(slug) || 0;
+        if (cid && cid !== slug) linkedCatalogServices += countByCatRef.get(cid) || 0;
+        let rolesParsed: { id: string; name: string; display_name: string }[] = [];
+        try {
+          if (row.roles_json && typeof row.roles_json === 'string') {
+            rolesParsed = JSON.parse(row.roles_json);
+          } else if (Array.isArray(row.roles_json)) {
+            rolesParsed = row.roles_json;
+          }
+        } catch {
+          rolesParsed = [];
+        }
+        const role_ids = rolesParsed.map((r) => r.id).filter(Boolean);
+        return {
+          id: row.id,
+          category_name: displayName,
+          name: displayName,
+          description: row.description ?? '',
+          tax_rate,
+          applicable_services: row.applicable_services ?? row.applicableServices ?? [],
+          linked_catalog_service_count: linkedCatalogServices,
+          catalog_category_id: row.catalog_category_id ?? null,
+          catalog_category_name: row.catalog_category_name ?? null,
+          catalog_master_slug: row.catalog_master_slug ?? null,
+          roles: rolesParsed,
+          role_ids,
+          is_active: row.is_active !== false,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        };
+      });
+      return c.json({ success: true, categories: normalized });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -3945,25 +4591,109 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/finance/gst/tax-categories', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { name, description, defaultGSTRate, applicableServices, isActive } = body;
+      const catalogCategoryId = body.catalogCategoryId ?? body.catalog_category_id;
+      const roleIdsRaw = body.roleIds ?? body.role_ids;
+      const { description, defaultGSTRate, isActive, name } = body;
 
-      if (!name || (typeof name === 'string' && !name.trim())) {
-        return c.json({ success: false, error: 'Category name is required' }, 400);
+      if (!catalogCategoryId || String(catalogCategoryId).trim() === '') {
+        return c.json({ success: false, error: 'Catalog category is required' }, 400);
       }
-      const rate = defaultGSTRate !== undefined && defaultGSTRate !== null
-        ? parseFloat(String(defaultGSTRate))
-        : NaN;
-      if (Number.isNaN(rate) || rate < 0) {
-        return c.json({ success: false, error: 'Default GST rate must be a non-negative number (0 is allowed)' }, 400);
+      if (!Array.isArray(roleIdsRaw) || roleIdsRaw.length === 0) {
+        return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
+      }
+      const rate =
+        defaultGSTRate !== undefined && defaultGSTRate !== null
+          ? parseFloat(String(defaultGSTRate))
+          : NaN;
+      if (Number.isNaN(rate) || rate < 0 || rate > 100) {
+        return c.json(
+          { success: false, error: 'Default GST rate must be a number between 0 and 100' },
+          400
+        );
       }
 
-      const newCategory = await insert('tax_categories', {
-        category_name: String(name).trim(),
+      const scRes = await query(
+        `SELECT id, name, category_id FROM service_categories WHERE id = $1::uuid LIMIT 1`,
+        [String(catalogCategoryId).trim()]
+      );
+      const scRow = scRes.rows?.[0];
+      if (!scRow) {
+        return c.json({ success: false, error: 'Catalog category not found' }, 404);
+      }
+      const categoryName =
+        name && String(name).trim()
+          ? String(name).trim()
+          : `${String(scRow.name || scRow.category_id || 'Category')} (GST)`;
+
+      const insertPayload: Record<string, unknown> = {
+        category_name: categoryName,
         description: description != null ? String(description) : '',
         tax_rate: rate,
+        default_gst_rate: rate,
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
-      });
+        catalog_category_id: String(catalogCategoryId).trim(),
+      };
+
+      let newCategory: any[];
+      const tryInsertTaxCategory = async (): Promise<any[]> => insert('tax_categories', insertPayload);
+      try {
+        newCategory = await tryInsertTaxCategory();
+      } catch (insErr: any) {
+        const msg = String(insErr?.message || '');
+        if (
+          insertPayload.default_gst_rate !== undefined &&
+          (msg.includes('default_gst_rate') || msg.includes('column')) &&
+          msg.includes('does not exist')
+        ) {
+          delete insertPayload.default_gst_rate;
+          try {
+            newCategory = await tryInsertTaxCategory();
+          } catch (e2: any) {
+            const m2 = String(e2?.message || '');
+            if (m2.includes('catalog_category_id') && m2.includes('does not exist')) {
+              delete insertPayload.catalog_category_id;
+              newCategory = await tryInsertTaxCategory();
+            } else {
+              throw e2;
+            }
+          }
+        } else if (msg.includes('catalog_category_id') && msg.includes('does not exist')) {
+          delete insertPayload.catalog_category_id;
+          newCategory = await tryInsertTaxCategory();
+        } else {
+          throw insErr;
+        }
+      }
+
+      const tcId = newCategory[0]?.id;
+      const ccid = String(catalogCategoryId).trim();
+      if (tcId) {
+        for (const rid of roleIdsRaw) {
+          const roleId = String(rid).trim();
+          if (!roleId) continue;
+          try {
+            await query(
+              `INSERT INTO tax_category_roles (tax_category_id, role_id, catalog_category_id)
+               VALUES ($1::uuid, $2::uuid, $3::uuid)`,
+              [tcId, roleId, ccid]
+            );
+          } catch (roleErr: any) {
+            const m = String(roleErr?.message || '');
+            if (m.includes('tax_category_roles') && m.includes('does not exist')) break;
+            if (roleErr?.code === '23505') {
+              return c.json(
+                {
+                  success: false,
+                  error: 'Duplicate role for this catalogue category (role already mapped to another GST config).',
+                },
+                409
+              );
+            }
+            throw roleErr;
+          }
+        }
+      }
 
       return c.json({
         success: true,
@@ -3981,21 +4711,115 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const id = c.req.param('id');
       const body = await c.req.json().catch(() => ({}));
 
-      const updateData: any = {};
+      const updateData: Record<string, unknown> = {};
       if (body.name !== undefined) updateData.category_name = body.name;
       if (body.description !== undefined) updateData.description = body.description;
-      if (body.defaultGSTRate !== undefined) updateData.tax_rate = parseFloat(body.defaultGSTRate);
+      if (body.defaultGSTRate !== undefined && body.defaultGSTRate !== null) {
+        const parsed = parseFloat(String(body.defaultGSTRate));
+        if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) {
+          return c.json(
+            { success: false, error: 'Default GST rate must be a number between 0 and 100' },
+            400
+          );
+        }
+        updateData.tax_rate = parsed;
+        updateData.default_gst_rate = parsed;
+      }
       if (body.isActive !== undefined) updateData.is_active = body.isActive;
+      const catalogCategoryId = body.catalogCategoryId ?? body.catalog_category_id;
+      if (catalogCategoryId !== undefined) {
+        updateData.catalog_category_id =
+          catalogCategoryId != null && String(catalogCategoryId).trim() !== ''
+            ? String(catalogCategoryId).trim()
+            : null;
+      }
 
-      const updated = await update('tax_categories', { id }, updateData);
+      const applyTaxCategoryUpdate = async (): Promise<void> => {
+        if (Object.keys(updateData).length === 0) return;
+        try {
+          await update('tax_categories', { id }, updateData);
+        } catch (updErr: any) {
+          const msg = String(updErr?.message || '');
+          if (updateData.default_gst_rate !== undefined && msg.includes('default_gst_rate')) {
+            delete updateData.default_gst_rate;
+            await applyTaxCategoryUpdate();
+            return;
+          }
+          if (updateData.catalog_category_id !== undefined && msg.includes('catalog_category_id')) {
+            delete updateData.catalog_category_id;
+            await applyTaxCategoryUpdate();
+            return;
+          }
+          throw updErr;
+        }
+      };
+      await applyTaxCategoryUpdate();
+
+      const roleIdsRaw = body.roleIds ?? body.role_ids;
+      if (Array.isArray(roleIdsRaw)) {
+        if (roleIdsRaw.length === 0) {
+          return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
+        }
+        let ccid = String(catalogCategoryId || '').trim();
+        if (!ccid) {
+          const cur = await query(
+            `SELECT catalog_category_id::text AS cid FROM tax_categories WHERE id = $1::uuid LIMIT 1`,
+            [id]
+          );
+          ccid = String(cur.rows?.[0]?.cid || '').trim();
+        }
+        if (!ccid) {
+          return c.json(
+            { success: false, error: 'catalogCategoryId is required to update role mapping' },
+            400
+          );
+        }
+        try {
+          await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
+          for (const rid of roleIdsRaw) {
+            const roleId = String(rid).trim();
+            if (!roleId) continue;
+            await query(
+              `INSERT INTO tax_category_roles (tax_category_id, role_id, catalog_category_id)
+               VALUES ($1::uuid, $2::uuid, $3::uuid)`,
+              [id, roleId, ccid]
+            );
+          }
+        } catch (e: any) {
+          if (!String(e?.message || '').includes('tax_category_roles')) throw e;
+        }
+      }
+
+      const refreshed = await query(`SELECT * FROM tax_categories WHERE id = $1::uuid LIMIT 1`, [id]);
+      const row = refreshed.rows?.[0];
 
       return c.json({
         success: true,
         message: 'Tax category updated successfully',
-        category: updated[0],
+        category: row,
       });
     } catch (error: any) {
       console.error('Error updating tax category:', error);
+      if (error?.code === '23505') {
+        return c.json(
+          {
+            success: false,
+            error: 'Duplicate role for this catalogue category (role already mapped to another GST config).',
+          },
+          409
+        );
+      }
+      return c.json({ success: false, error: error.message }, 500);
+    }
+  });
+
+  app.delete('/admin/finance/gst/tax-categories/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      await update('tax_categories', { id }, { is_active: false });
+      return c.json({ success: true, message: 'Tax category deactivated successfully' });
+    } catch (error: any) {
+      console.error('Error deleting tax category:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });
@@ -4032,20 +4856,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   // GET /admin/finance/fee-configuration - Get all fee configuration settings
   app.get('/admin/finance/fee-configuration', async (c) => {
     try {
-      // Fetch all fee-related settings from admin_settings table
-      const settings = await query(`
-        SELECT setting_key, setting_value, service_type, description, updated_at
-        FROM admin_settings 
-        WHERE setting_key IN (
-          'platform_fee_percentage', 'platform_fee_flat', 'max_platform_fee',
-          'convenience_fee_booking', 'convenience_fee_order', 'convenience_fee_tele',
-          'delivery_fee_base', 'delivery_fee_per_km', 'free_delivery_threshold', 'max_delivery_distance',
-          'packaging_fee_enabled', 'packaging_fee_amount'
-        )
-        OR setting_key LIKE 'fee_override_%'
-      `).catch(() => ({ rows: [] }));
+      const settingsRows = await listFeeSettingsFromDb();
+      console.log('[fee-configuration GET] rows from DB (setting_category=fees):', settingsRows.length);
 
-      // Build config object from settings
+      // Build config object from settings (defaults only when a key is missing from DB)
       const config: Record<string, any> = {
         platformFeePercentage: 2,
         platformFeeFlat: 0,
@@ -4080,10 +4894,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const overrides: Record<string, any> = {};
 
-      for (const row of settings.rows) {
+      for (const row of settingsRows) {
         const key = row.setting_key;
-        const value = row.setting_value;
-        const serviceType = row.service_type;
+        const valueStr = scalarFromJsonbSetting(row.setting_value);
 
         if (key.startsWith('fee_override_')) {
           // Service type override
@@ -4096,23 +4909,26 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           }
 
           if (field === 'platform_fee') {
-            overrides[st].platformFeePercentage = parseFloat(value);
+            overrides[st].platformFeePercentage = parseFloat(valueStr);
           } else if (field === 'convenience_fee') {
-            overrides[st].convenienceFee = parseFloat(value);
+            overrides[st].convenienceFee = parseFloat(valueStr);
           } else if (field === 'enabled') {
-            overrides[st].enabled = value === 'true' || value === '1';
+            overrides[st].enabled = valueStr === 'true' || valueStr === '1';
           }
         } else if (keyMap[key]) {
           const configKey = keyMap[key];
           if (configKey === 'packagingFeeEnabled') {
-            config[configKey] = value === 'true' || value === '1';
+            config[configKey] = valueStr === 'true' || valueStr === '1';
           } else {
-            config[configKey] = parseFloat(value);
+            const n = parseFloat(valueStr);
+            config[configKey] = Number.isFinite(n) ? n : config[configKey];
           }
         }
       }
 
       config.serviceTypeOverrides = Object.values(overrides);
+
+      console.log('[fee-configuration GET] platformFeePercentage:', config.platformFeePercentage);
 
       return c.json({ success: true, config });
     } catch (error: unknown) {
@@ -4132,7 +4948,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Config is required' }, 400);
       }
 
-      // Map config properties to setting_key
+      // Map config properties to setting_key (stored under setting_category = 'fees', setting_value JSONB)
       const keyMap: Record<string, string> = {
         'platformFeePercentage': 'platform_fee_percentage',
         'platformFeeFlat': 'platform_fee_flat',
@@ -4148,38 +4964,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         'packagingFeeAmount': 'packaging_fee_amount',
       };
 
-      // Upsert each setting
       for (const [configKey, settingKey] of Object.entries(keyMap)) {
-        if (config[configKey] !== undefined) {
-          const value = String(config[configKey]);
-
-          // Try to update first, then insert if not exists
-          const existing = await query(
-            `SELECT id FROM admin_settings WHERE setting_key = $1 AND (service_type = 'all' OR service_type IS NULL) LIMIT 1`,
-            [settingKey]
-          ).catch(() => ({ rows: [] }));
-
-          if (existing.rows.length > 0) {
-            await query(
-              `UPDATE admin_settings SET setting_value = $1, updated_at = NOW() WHERE setting_key = $2 AND (service_type = 'all' OR service_type IS NULL)`,
-              [value, settingKey]
-            );
-          } else {
-            await query(
-              `INSERT INTO admin_settings (setting_key, setting_value, service_type, description, created_at, updated_at)
-               VALUES ($1, $2, 'all', $3, NOW(), NOW())
-               ON CONFLICT (setting_key, COALESCE(service_type, 'all')) DO UPDATE SET setting_value = $2, updated_at = NOW()`,
-              [settingKey, value, `Fee configuration: ${configKey}`]
-            ).catch(async () => {
-              // Fallback insert without ON CONFLICT (if constraint doesn't exist)
-              await query(
-                `INSERT INTO admin_settings (setting_key, setting_value, service_type, description)
-                 VALUES ($1, $2, 'all', $3)`,
-                [settingKey, value, `Fee configuration: ${configKey}`]
-              ).catch(() => { });
-            });
-          }
-        }
+        if (config[configKey] === undefined) continue;
+        const raw = config[configKey];
+        const valueToStore =
+          configKey === 'packagingFeeEnabled' ? !!raw : typeof raw === 'number' ? raw : parseFloat(String(raw));
+        await upsertFeeSetting(settingKey, valueToStore, `Fee configuration: ${configKey}`);
+        console.log('[fee-configuration PUT] upserted', settingKey, '=', valueToStore);
       }
 
       // Handle service type overrides
@@ -4189,17 +4980,26 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
           if (!serviceType) continue;
 
-          // Store enabled status
-          await upsertAdminSetting(`fee_override_${serviceType}_enabled`, String(enabled || false), serviceType);
+          await upsertFeeSetting(
+            `fee_override_${serviceType}_enabled`,
+            !!(enabled || false),
+            `Fee override enabled: ${serviceType}`
+          );
 
-          // Store platform fee override
           if (platformFeePercentage !== undefined) {
-            await upsertAdminSetting(`fee_override_${serviceType}_platform_fee`, String(platformFeePercentage), serviceType);
+            await upsertFeeSetting(
+              `fee_override_${serviceType}_platform_fee`,
+              Number(platformFeePercentage),
+              `Fee override platform %: ${serviceType}`
+            );
           }
 
-          // Store convenience fee override
           if (convenienceFee !== undefined) {
-            await upsertAdminSetting(`fee_override_${serviceType}_convenience_fee`, String(convenienceFee), serviceType);
+            await upsertFeeSetting(
+              `fee_override_${serviceType}_convenience_fee`,
+              Number(convenienceFee),
+              `Fee override convenience: ${serviceType}`
+            );
           }
         }
       }
@@ -4219,27 +5019,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const amount = parseFloat(c.req.query('amount') || '0');
       const type = c.req.query('type') || 'booking';
 
-      // Fetch fee configuration
-      const settings = await query(`
-        SELECT setting_key, setting_value, service_type
-        FROM admin_settings 
-        WHERE setting_key IN (
-          'platform_fee_percentage', 'platform_fee_flat', 'max_platform_fee',
-          'convenience_fee_booking', 'convenience_fee_order', 'convenience_fee_tele',
-          'delivery_fee_base', 'delivery_fee_per_km', 'free_delivery_threshold',
-          'packaging_fee_enabled', 'packaging_fee_amount'
-        )
-        AND (service_type = 'all' OR service_type IS NULL OR service_type = $1)
-        ORDER BY CASE WHEN service_type = $1 THEN 0 ELSE 1 END
-      `, [serviceStyle]).catch(() => ({ rows: [] }));
-
-      // Build settings map (service-specific overrides take precedence)
-      const settingsMap: Record<string, string> = {};
-      for (const row of settings.rows) {
-        if (!settingsMap[row.setting_key] || row.service_type === serviceStyle) {
-          settingsMap[row.setting_key] = row.setting_value;
-        }
-      }
+      const settingsMap = await getFeeGlobalsMap();
 
       // Calculate platform fee
       const platformFeePercentage = parseFloat(settingsMap['platform_fee_percentage'] || '2');
@@ -4422,7 +5202,6 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           p.name,
           p.sku,
           p.stock,
-          p.stock_quantity,
           p.price,
           p.status,
           p.category_id,
@@ -4438,7 +5217,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         id: String(p.id || ''),
         name: String(p.name || ''),
         sku: String(p.sku || `SKU-${p.id}`),
-        stock: parseInt(p.stock || p.stock_quantity || '0', 10),
+        stock: parseInt(p.stock || '0', 10),
         price: parseFloat(p.price || '0'),
         status: String(p.status || 'active'),
         categoryId: String(p.category_id || ''),
@@ -4473,7 +5252,6 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         };
         if (product.stock !== undefined) {
           updateData.stock = parseInt(product.stock, 10);
-          updateData.stock_quantity = parseInt(product.stock, 10);
         }
         if (product.status !== undefined) {
           updateData.status = product.status;
@@ -4926,38 +5704,112 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.get('/admin/payments/gateways', async (c) => {
     try {
-      const config = await query('SELECT * FROM payment_gateway_config ORDER BY created_at DESC').catch(async () => {
-        return await query('SELECT * FROM payment_gateway_settings ORDER BY created_at DESC').catch(() => ({ rows: [] }));
-      });
+      // Try payment_gateway_config first, then payment_gateway_settings, then platform_integrations
+      let config: { rows?: any[] } = { rows: [] };
+      let source: 'config' | 'settings' | 'integrations' = 'config';
+      
+      try {
+        config = await query('SELECT * FROM payment_gateway_config ORDER BY created_at DESC');
+        source = 'config';
+      } catch {
+        try {
+          config = await query('SELECT * FROM payment_gateway_settings ORDER BY created_at DESC');
+          source = 'settings';
+        } catch {
+          try {
+            config = await query(`
+              SELECT 
+                id,
+                integration_name,
+                integration_config,
+                is_active,
+                created_at,
+                updated_at
+              FROM platform_integrations 
+              WHERE integration_name IN ('razorpay', 'stripe', 'paytm')
+              ORDER BY integration_name ASC
+            `);
+            source = 'integrations';
+          } catch {
+            config = { rows: [] };
+          }
+        }
+      }
+      
       const rows = config.rows || [];
       const gateways: Array<Record<string, unknown>> = [];
+      
       for (const row of rows) {
-        const data = row.gateway_config
-          ? (typeof row.gateway_config === 'string' ? JSON.parse(row.gateway_config) : row.gateway_config)
-          : row;
-        const razorpay = data.razorpay ?? data;
-        if (razorpay && (razorpay.keyId || razorpay.key_id)) {
+        if (source === 'integrations') {
+          // Handle platform_integrations structure
+          const integrationName = row.integration_name || '';
+          const configData = row.integration_config 
+            ? (typeof row.integration_config === 'string' ? JSON.parse(row.integration_config) : row.integration_config)
+            : {};
+          
+          if (configData.keyId || configData.key_id) {
+            const gatewayName = integrationName.charAt(0).toUpperCase() + integrationName.slice(1);
+            gateways.push({
+              id: row.id,
+              name: gatewayName,
+              type: integrationName,
+              keyId: configData.keyId || configData.key_id || '',
+              enabled: row.is_active !== false && (configData.enabled !== false),
+              is_active: row.is_active,
+              config: configData,
+            });
+          }
+        } else {
+          // Handle payment_gateway_config and payment_gateway_settings structure
+          const data = row.gateway_config
+            ? (typeof row.gateway_config === 'string' ? JSON.parse(row.gateway_config) : row.gateway_config)
+            : row;
+          const razorpay = data.razorpay ?? data;
+          if (razorpay && (razorpay.keyId || razorpay.key_id)) {
+            gateways.push({
+              id: row.id ?? 'razorpay',
+              name: 'Razorpay',
+              type: 'razorpay',
+              keyId: razorpay.keyId ?? razorpay.key_id ?? '',
+              enabled: razorpay.enabled !== false,
+            });
+          }
+        }
+      }
+      
+      // Fallback: if no gateways found but rows exist, try to extract from first row
+      if (gateways.length === 0 && rows.length > 0) {
+        const first = rows[0];
+        if (source === 'integrations') {
+          const configData = first.integration_config 
+            ? (typeof first.integration_config === 'string' ? JSON.parse(first.integration_config) : first.integration_config)
+            : {};
+          if (configData.keyId || configData.key_id) {
+            const integrationName = first.integration_name || 'razorpay';
+            const gatewayName = integrationName.charAt(0).toUpperCase() + integrationName.slice(1);
+            gateways.push({
+              id: first.id,
+              name: gatewayName,
+              type: integrationName,
+              keyId: configData.keyId || configData.key_id || '',
+              enabled: first.is_active !== false,
+              is_active: first.is_active,
+              config: configData,
+            });
+          }
+        } else {
+          const data = first.gateway_config ? (typeof first.gateway_config === 'string' ? JSON.parse(first.gateway_config) : first.gateway_config) : first;
+          const r = data.razorpay ?? data;
           gateways.push({
-            id: row.id ?? 'razorpay',
+            id: first.id ?? 'razorpay',
             name: 'Razorpay',
             type: 'razorpay',
-            keyId: razorpay.keyId ?? razorpay.key_id ?? '',
-            enabled: razorpay.enabled !== false,
+            keyId: r?.keyId ?? r?.key_id ?? '',
+            enabled: r?.enabled !== false,
           });
         }
       }
-      if (gateways.length === 0 && rows.length > 0) {
-        const first = rows[0];
-        const data = first.gateway_config ? (typeof first.gateway_config === 'string' ? JSON.parse(first.gateway_config) : first.gateway_config) : first;
-        const r = data.razorpay ?? data;
-        gateways.push({
-          id: first.id ?? 'razorpay',
-          name: 'Razorpay',
-          type: 'razorpay',
-          keyId: r?.keyId ?? r?.key_id ?? '',
-          enabled: r?.enabled !== false,
-        });
-      }
+      
       return c.json({ success: true, gateways });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
@@ -5338,10 +6190,13 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/payments/tiers', async (c) => {
     try {
       const body = (await c.req.json()) as Record<string, unknown>;
-      const name = String(body.name ?? body.tier_name ?? '').trim();
-      const displayName = String(body.displayName ?? body.display_name ?? name).trim();
+      const rawInternal = String(body.name ?? body.tier_name ?? '').trim();
+      const rawDisplay = String(body.displayName ?? body.display_name ?? '').trim();
+      // UI allows display-only labels; tier_name must still be set for DB — default internal name from display name.
+      const name = rawInternal || rawDisplay;
+      const displayName = rawDisplay || rawInternal;
       if (!name) {
-        return c.json({ success: false, error: 'Tier name is required' }, 400);
+        return c.json({ success: false, error: 'Display name or internal tier name is required' }, 400);
       }
       const description = String(body.description ?? '').trim();
       const commissionRate = Number(body.commissionRate ?? body.commission_rate ?? 15);
@@ -5579,6 +6434,26 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       try {
         payouts = await query(`
           SELECT p.*,
+                 (
+                   SELECT COUNT(*)::int FROM settlements s
+                   WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                      OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                 ) AS settlement_match_count,
+                 (
+                   SELECT SUM(s.total_amount) FROM settlements s
+                   WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                      OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                 ) AS settlement_total_amount,
+                 (
+                   SELECT SUM(s.commission_amount) FROM settlements s
+                   WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                      OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                 ) AS settlement_commission_amount,
+                 (
+                   SELECT SUM(s.net_amount) FROM settlements s
+                   WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                      OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                 ) AS settlement_net_amount,
                  COALESCE(v.business_name, vi.business_name, vi.full_name, 'Vendor') as vendor_name,
                  COALESCE(v.phone, vi.phone) as vendor_phone,
                  r.name as vendor_role,
@@ -5593,9 +6468,29 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         `);
       } catch (viErr: any) {
         const msg = String(viErr?.message ?? viErr ?? '');
-        if (msg.includes('vendor_identity') && msg.includes('does not exist')) {
+        if (isVendorIdentityJoinUnsupportedError(msg)) {
           payouts = await query(`
             SELECT p.*,
+                   (
+                     SELECT COUNT(*)::int FROM settlements s
+                     WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                        OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                   ) AS settlement_match_count,
+                   (
+                     SELECT SUM(s.total_amount) FROM settlements s
+                     WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                        OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                   ) AS settlement_total_amount,
+                   (
+                     SELECT SUM(s.commission_amount) FROM settlements s
+                     WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                        OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                   ) AS settlement_commission_amount,
+                   (
+                     SELECT SUM(s.net_amount) FROM settlements s
+                     WHERE (p.settlement_id IS NOT NULL AND s.id = p.settlement_id)
+                        OR (s.payout_id IS NOT NULL AND s.payout_id = p.id)
+                   ) AS settlement_net_amount,
                    COALESCE(v.business_name, 'Vendor') as vendor_name,
                    COALESCE(v.phone, '') as vendor_phone,
                    r.name as vendor_role,
@@ -5611,25 +6506,60 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           throw viErr;
         }
       }
+      const parseMoney = (v: unknown): number | null => {
+        if (v == null || v === '') return null;
+        const n = parseFloat(String(v));
+        return Number.isFinite(n) ? n : null;
+      };
       const rows = (payouts.rows || []).map((row: Record<string, unknown>) => {
-        const raw = row.payout_status ?? row.status ?? 'pending';
+        const {
+          settlement_total_amount,
+          settlement_commission_amount,
+          settlement_net_amount,
+          settlement_match_count,
+          ...rest
+        } = row as Record<string, unknown> & {
+          settlement_total_amount?: unknown;
+          settlement_commission_amount?: unknown;
+          settlement_net_amount?: unknown;
+          settlement_match_count?: unknown;
+        };
+        const raw = rest.payout_status ?? rest.status ?? 'pending';
         const status = (typeof raw === 'string' && raw.trim()) ? raw.trim().toLowerCase() : 'pending';
-        const periodVal = row.period ?? (row.created_at
-          ? new Date(row.created_at as string).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
+        const periodVal = rest.period ?? (rest.created_at
+          ? new Date(rest.created_at as string).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
           : null);
-        const vendorName = row.vendor_name ?? row.business_name ?? 'Vendor';
-        const vendorPhone = row.vendor_phone ?? null;
+        const vendorName = rest.vendor_name ?? rest.business_name ?? 'Vendor';
+        const vendorPhone = rest.vendor_phone ?? null;
+        const payoutNet = parseMoney(rest.amount) ?? 0;
+        const matchCnt = parseInt(String(settlement_match_count ?? '0'), 10) || 0;
+        const stGross = parseMoney(settlement_total_amount);
+        const stComm = parseMoney(settlement_commission_amount);
+        const stNet = parseMoney(settlement_net_amount);
+        const hasSettlementBreakdown = matchCnt > 0;
+        const netFromSettlement = stNet != null ? stNet : payoutNet;
+        const commFromSettlement = stComm != null ? stComm : 0;
+        const grossFromSettlement =
+          stGross != null ? stGross : Math.round((netFromSettlement + commFromSettlement) * 100) / 100;
+        const grossAmount = hasSettlementBreakdown ? grossFromSettlement : payoutNet;
+        const commission = hasSettlementBreakdown ? commFromSettlement : (parseMoney(rest.commission) ?? 0);
+        const netAmount = hasSettlementBreakdown ? netFromSettlement : payoutNet;
         return {
-          ...row,
+          ...rest,
           vendor_name: vendorName,
           vendorName,
           vendor_phone: vendorPhone,
           vendorPhone,
-          vendor_role: row.vendor_role ?? null,
-          business_type: row.business_type ?? null,
+          vendor_role: rest.vendor_role ?? null,
+          business_type: rest.business_type ?? null,
           period: periodVal ?? '—',
           status,
           payout_status: status,
+          grossAmount,
+          gross_amount: grossAmount,
+          commission,
+          netAmount,
+          net_amount: netAmount,
           source: 'payout',
         };
       });
@@ -5670,7 +6600,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           pending = await query(runPendingWithVi('settlement_status'));
         } catch (e1: any) {
           const m1 = String(e1?.message ?? e1 ?? '');
-          if (m1.includes('vendor_identity') && m1.includes('does not exist')) {
+          if (isVendorIdentityJoinUnsupportedError(m1)) {
             try {
               pending = await query(runPendingNoVi('settlement_status'));
             } catch {
@@ -5681,7 +6611,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               pending = await query(runPendingWithVi('status'));
             } catch (e2: any) {
               const m2 = String(e2?.message ?? e2 ?? '');
-              if (m2.includes('vendor_identity') && m2.includes('does not exist')) {
+              if (isVendorIdentityJoinUnsupportedError(m2)) {
                 pending = await query(runPendingNoVi('status'));
               } else {
                 throw e2;
@@ -5692,7 +6622,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               pending = await query(runPendingWithVi('status'));
             } catch (e3: any) {
               const m3 = String(e3?.message ?? e3 ?? '');
-              if (m3.includes('vendor_identity') && m3.includes('does not exist')) {
+              if (isVendorIdentityJoinUnsupportedError(m3)) {
                 pending = await query(runPendingNoVi('status'));
               } else {
                 throw e3;
@@ -5702,8 +6632,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         }
         const periodFmt = (d: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : '—';
         for (const s of pending.rows || []) {
-          const amt = parseFloat((s as any).net_amount ?? (s as any).total_amount ?? '0');
-          if (amt <= 0) continue;
+          const gross = parseFloat(String((s as any).total_amount ?? '0'));
+          const commission = parseFloat(String((s as any).commission_amount ?? '0'));
+          const net = parseFloat(String((s as any).net_amount ?? '0'));
+          if (net <= 0 && gross <= 0) continue;
           const vendorName = (s as any).vendor_name ?? 'Vendor';
           const rawSt = (s as any).settlement_status ?? (s as any).status ?? 'pending';
           const st = (typeof rawSt === 'string' && rawSt.trim()) ? rawSt.trim().toLowerCase() : 'pending';
@@ -5717,10 +6649,12 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             vendorPhone: (s as any).vendor_phone ?? null,
             vendor_role: (s as any).vendor_role ?? null,
             business_type: (s as any).business_type ?? null,
-            amount: amt,
-            net_amount: amt,
-            netAmount: amt,
-            commission: parseFloat((s as any).commission_amount ?? '0'),
+            amount: net,
+            grossAmount: gross,
+            gross_amount: gross,
+            net_amount: net,
+            netAmount: net,
+            commission,
             period: periodFmt((s as any).created_at),
             status: st === 'processing' ? 'processing' : 'pending',
             payout_status: st === 'processing' ? 'processing' : 'pending',
@@ -6079,18 +7013,34 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (!payoutId || !isValidUUID(payoutId)) {
         return c.json({ success: false, error: 'Invalid payout ID' }, 400);
       }
-      const payouts = await query(
-        `SELECT * FROM payouts WHERE id = $1 LIMIT 1`,
+      const claimRes = await query(
+        `UPDATE payouts
+         SET payout_status = 'processing', updated_at = NOW()
+         WHERE id = $1::uuid
+           AND payout_status IN ('pending','scheduled','failed')
+         RETURNING *`,
         [payoutId]
       );
-      const payout = (payouts.rows || [])[0] as any;
+      const payout = (claimRes.rows || [])[0] as any;
       if (!payout) {
+        const cur = await query(
+          `SELECT payout_status, razorpay_payout_id FROM payouts WHERE id = $1::uuid LIMIT 1`,
+          [payoutId]
+        ).catch(() => ({ rows: [] }));
+        const st = String((cur.rows?.[0] as { payout_status?: string } | undefined)?.payout_status ?? '');
+        if (st === 'processing' || st === 'completed' || st === 'cancelled') {
+          return c.json(
+            {
+              success: false,
+              error:
+                st === 'completed'
+                  ? 'Payout is already completed.'
+                  : 'Payout is already processing or cannot be claimed again.',
+            },
+            409
+          );
+        }
         return c.json({ success: false, error: 'Payout not found' }, 404);
-      }
-      const status = payout.payout_status ?? payout.status ?? '';
-      const allowedForProcess = ['pending', 'scheduled', 'failed'];
-      if (!allowedForProcess.includes(status)) {
-        return c.json({ success: false, error: `Payout cannot be processed (status: ${status}). Use only for pending, scheduled, or failed (retry after fixing bank).` }, 400);
       }
       const vendorId = payout.vendor_id;
       const amount = parseFloat(payout.amount ?? '0');
@@ -6105,27 +7055,12 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         ifscCode = String(payout.ifsc_code);
         accountHolder = String(payout.account_holder_name);
       } else {
-        let bankDetails: any[] = [];
-        try {
-          const schemaCheck = await query(`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'vendor_bank_accounts') as ex`);
-          if (schemaCheck.rows[0]?.ex) {
-            const acc = await query(
-              `SELECT * FROM vendor_bank_accounts WHERE vendor_id = $1 AND is_verified = true ORDER BY is_primary DESC LIMIT 1`,
-              [vendorId]
-            );
-            bankDetails = (acc.rows || []).map((r: any) => ({
-              account_number: r.account_number,
-              ifsc_code: r.ifsc_code ?? r.ifsc,
-              account_holder_name: r.account_holder_name ?? r.account_holder,
-            }));
-          }
-        } catch {
-          // ignore
-        }
-        if (bankDetails.length === 0) {
-          const details = await select('vendor_bank_details', { vendor_id: vendorId }).catch(() => []);
-          bankDetails = Array.isArray(details) ? details : [];
-        }
+        const rows = await fetchVendorBankRowsForPayout(String(vendorId));
+        const bankDetails = (rows || []).map((r: any) => ({
+          account_number: r.account_number,
+          ifsc_code: r.ifsc_code ?? r.ifsc,
+          account_holder_name: r.account_holder_name ?? r.account_holder,
+        }));
         if (bankDetails.length === 0) {
           return c.json({ success: false, error: 'Vendor bank details not found. Ask vendor to add bank account.' }, 404);
         }
@@ -6137,11 +7072,12 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (!accountNumber || !ifscCode || !accountHolder) {
         return c.json({ success: false, error: 'Incomplete bank details (account number, IFSC, or holder name missing)' }, 400);
       }
-      const razorpayXAccountNumber = process.env.RAZORPAY_X_ACCOUNT_NUMBER?.trim();
-      if (!razorpayXAccountNumber) {
+      const payoutSourceAccount = (await resolveRazorpayPayoutSourceAccountNumber())?.trim();
+      if (!payoutSourceAccount) {
         return c.json({
           success: false,
-          error: 'RazorpayX payout source account not configured. Set RAZORPAY_X_ACCOUNT_NUMBER (your RazorpayX Current Account / Customer Identifier from x.razorpay.com → Banking).',
+          error:
+            'Razorpay payout source account not configured. Set RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER (Razorpay Dashboard → Banking customer identifier) or configure Razorpay in Admin → Payment gateways.',
         }, 503);
       }
       let vendorPhone = '0000000000';
@@ -6153,7 +7089,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       }
       let payoutResponse: { id: string };
       const compositeBody = {
-        account_number: String(razorpayXAccountNumber).trim(),
+        account_number: String(payoutSourceAccount).trim(),
         amount: Math.round(amount * 100),
         currency: 'INR',
         mode: 'IMPS',
@@ -6170,31 +7106,40 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             email: `vendor-${vendorId}@payout.warmpawz.com`,
             contact: vendorPhone,
             type: 'vendor',
-            reference_id: `vendor-${vendorId}`,
+            // Razorpay: reference_id max 40 chars (vendor- + UUID = 43 without truncation)
+            reference_id: `vendor-${vendorId}`.slice(0, 40),
           },
         },
         queue_if_low_balance: true,
         reference_id: `PAYOUT-${payoutId}`.slice(0, 40),
       };
+      const razorpayClient = getRazorpayClient();
       try {
         payoutResponse = await razorpayClient.payouts.create(compositeBody, payoutId);
       } catch (razorpayError: any) {
         const rawMsg = razorpayError?.message ?? razorpayError?.error?.description ?? 'Razorpay payout failed';
         const isNotFound = /not found|404|url was not found/i.test(String(rawMsg));
         const msg = isNotFound
-          ? 'RazorpayX Payouts API is not available for this account. Enable RazorpayX, allowlist IPs in RazorpayX Dashboard, and ensure payout mode is configured.'
+          ? 'Razorpay Payouts is not available for this merchant account. Enable Payouts in the Razorpay Dashboard, allowlist your server IPs if required, and ensure the payout source account is configured.'
           : rawMsg;
         console.error('[admin/payouts/process] Razorpay error:', rawMsg);
         try {
           await query(
             `UPDATE payouts SET payout_status = $1, failure_reason = $2 WHERE id = $3::uuid`,
-            ['failed', msg, payoutId]
+            ['failed', `${msg}${isNotFound ? ` | Razorpay: ${String(rawMsg).slice(0, 400)}` : ''}`, payoutId]
           );
         } catch {
           // ignore update failure
         }
         const status = isNotFound ? 503 : 500;
-        return c.json({ success: false, error: msg }, status);
+        return c.json(
+          {
+            success: false,
+            error: msg,
+            ...(String(rawMsg) !== String(msg) ? { razorpayMessage: String(rawMsg).slice(0, 500) } : {}),
+          },
+          status,
+        );
       }
       try {
         await query(
@@ -7358,7 +8303,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           id,
           integration_name,
           integration_config,
-          is_active,
+          is_active
         FROM platform_integrations 
         WHERE integration_name IN ('razorpay', 'stripe', 'paytm')
         ORDER BY integration_name ASC
@@ -7373,11 +8318,95 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
   app.post('/admin/settings/payment-gateway', async (c) => {
     try {
-      const body = await c.req.json().catch(() => ({}));
-      // Save payment gateway settings
+      const body = (await c.req.json().catch(() => ({}))) as Record<string, any>;
+
+      const looksLikeMaskedSecret = (s: string) => {
+        const t = s.trim();
+        return t.length === 0 || /^[*•\s]+$/.test(t);
+      };
+
+      async function mergeIntegrationConfig(integrationName: string): Promise<Record<string, any>> {
+        const existing = await select('platform_integrations', { integration_name: integrationName });
+        const prev =
+          existing.length > 0 && existing[0].integration_config && typeof existing[0].integration_config === 'object'
+            ? { ...(existing[0].integration_config as Record<string, any>) }
+            : {};
+        return prev;
+      }
+
+      async function saveGatewayRow(
+        integrationName: string,
+        isActive: boolean,
+        nextConfig: Record<string, any>,
+        secretKeys: string[]
+      ) {
+        const prev = await mergeIntegrationConfig(integrationName);
+        const merged = { ...prev, ...nextConfig };
+        for (const sk of secretKeys) {
+          const v = nextConfig[sk];
+          if (typeof v === 'string' && looksLikeMaskedSecret(v) && typeof prev[sk] === 'string' && prev[sk].length > 0) {
+            merged[sk] = prev[sk];
+          }
+        }
+        await query(
+          `INSERT INTO platform_integrations (integration_name, integration_config, is_active, updated_at)
+           VALUES ($1, $2::jsonb, $3, NOW())
+           ON CONFLICT (integration_name) DO UPDATE SET
+             integration_config = EXCLUDED.integration_config,
+             is_active = EXCLUDED.is_active,
+             updated_at = NOW()`,
+          [integrationName, JSON.stringify(merged), !!isActive]
+        );
+      }
+
+      const rz = body.razorpay || {};
+      const payoutSrc =
+        typeof rz.razorpay_x_account_number === 'string' ? rz.razorpay_x_account_number.trim() : '';
+      await saveGatewayRow(
+        'razorpay',
+        !!rz.enabled,
+        {
+          keyId: typeof rz.key_id === 'string' ? rz.key_id : '',
+          keySecret: typeof rz.key_secret === 'string' ? rz.key_secret : '',
+          webhookSecret: typeof rz.webhook_secret === 'string' ? rz.webhook_secret : '',
+          payoutSourceAccountNumber: payoutSrc,
+          razorpayXAccountNumber: payoutSrc,
+          auto_capture: rz.auto_capture !== false,
+          test_mode: !!rz.test_mode,
+        },
+        ['keySecret']
+      );
+
+      const st = body.stripe || {};
+      await saveGatewayRow(
+        'stripe',
+        !!st.enabled,
+        {
+          publishableKey: typeof st.publishable_key === 'string' ? st.publishable_key : '',
+          secretKey: typeof st.secret_key === 'string' ? st.secret_key : '',
+          webhookSecret: typeof st.webhook_secret === 'string' ? st.webhook_secret : '',
+          test_mode: !!st.test_mode,
+        },
+        ['secretKey']
+      );
+
+      const pt = body.paytm || {};
+      await saveGatewayRow(
+        'paytm',
+        !!pt.enabled,
+        {
+          merchantId: typeof pt.merchant_id === 'string' ? pt.merchant_id : '',
+          merchantKey: typeof pt.merchant_key === 'string' ? pt.merchant_key : '',
+          test_mode: !!pt.test_mode,
+        },
+        ['merchantKey']
+      );
+
       return c.json({ success: true, message: 'Payment gateway settings saved' });
     } catch (error: unknown) {
-      return c.json({ success: false, error: 'Failed to save payment gateway settings' }, 500);
+      const err = error as Error;
+      console.error('[payment-gateway] save error:', err);
+      return c.json({ success: false, error: err?.message || 'Failed to save payment gateway settings' }, 500);
     }
   });
 
@@ -7485,8 +8514,9 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         slug: String(p.slug || ''),
         content: String(p.content || ''),
         category: String(p.category || 'other'),
-        isPublished: p.is_published !== false && p.is_published !== 'false',
+        isPublished: rowIsPublished(p.is_published),
         updatedAt: String(p.updated_at || p.updatedAt || ''),
+        metadata: normalizeContentPagesMetadataInput(p.metadata),
       }));
 
       return c.json({ success: true, pages: safePages });
@@ -7499,18 +8529,21 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
   app.post('/admin/content/pages', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      const { title, slug, content, category, isPublished } = body;
+      const { title, slug, content, category, isPublished, metadata } = body;
 
       if (!title || !slug) {
         return c.json({ error: 'title and slug are required' }, 400);
       }
+
+      const metadataObj = normalizeContentPagesMetadataInput(metadata);
 
       const page = await insert('content_pages', {
         title,
         slug,
         content: content || '',
         category: category || 'other',
-        is_published: isPublished !== false,
+        is_published: isPublished === true,
+        metadata: metadataObj,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -7523,6 +8556,175 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error creating content page:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/content/pages/:slug/preview
+   * Get a content page by slug for admin preview (works for both published and unpublished)
+   * IMPORTANT: This route must be defined BEFORE /admin/content/pages/:pageId to ensure proper matching
+   */
+  app.get('/admin/content/pages/:slug/preview', async (c) => {
+    try {
+      const rawSlug = c.req.param('slug');
+      console.log('[Admin Content Preview] Received request:', { rawSlug, url: c.req.url, path: c.req.path });
+      
+      // Decode URL-encoded slug
+      let slug: string;
+      try {
+        slug = rawSlug ? decodeURIComponent(rawSlug) : '';
+      } catch (e) {
+        slug = rawSlug || '';
+      }
+
+      console.log('[Admin Content Preview] Decoded slug:', { rawSlug, decodedSlug: slug });
+
+      if (!slug) {
+        return c.json({ success: false, error: 'Slug is required' }, 400);
+      }
+
+      // Try exact match first (most common case)
+      console.log('[Admin Content Preview] Executing exact match query with slug:', slug);
+      let pageResult = await query(
+        `SELECT 
+          id,
+          title,
+          slug,
+          content,
+          category,
+          is_published,
+          metadata,
+          created_at,
+          updated_at
+        FROM content_pages
+        WHERE slug = $1
+        LIMIT 1`,
+        [slug]
+      ).catch((err) => {
+        console.error('[Admin Content Preview] Exact match query error:', err);
+        return { rows: [] };
+      });
+
+      console.log('[Admin Content Preview] Exact match result:', {
+        found: pageResult.rows?.length > 0,
+        rowCount: pageResult.rows?.length || 0,
+        matchedSlug: pageResult.rows?.[0]?.slug,
+      });
+
+      // If exact match fails, try multiple slug variations
+      if (!pageResult.rows || pageResult.rows.length === 0) {
+        console.log('[Admin Content Preview] Exact match failed, trying variations for slug:', slug);
+        
+        const slugVariations = [
+          slug,
+          slug.replace(/\s+/g, '-'),
+          slug.replace(/\s+/g, '_'),
+          slug.toLowerCase(),
+          slug.toLowerCase().replace(/\s+/g, '-'),
+          slug.toLowerCase().replace(/\s+/g, '_'),
+        ];
+
+        const uniqueVariations = [...new Set(slugVariations)];
+        console.log('[Admin Content Preview] Trying variations:', uniqueVariations);
+        
+        const placeholders = uniqueVariations.map((_, i) => `$${i + 1}`).join(', ');
+
+        pageResult = await query(
+          `SELECT 
+            id,
+            title,
+            slug,
+            content,
+            category,
+            is_published,
+            metadata,
+            created_at,
+            updated_at
+          FROM content_pages
+          WHERE slug IN (${placeholders})
+          LIMIT 1`,
+          uniqueVariations
+        ).catch((err) => {
+          console.error('[Admin Content Preview] Variations query error:', err);
+          return { rows: [] };
+        });
+      }
+
+      if (!pageResult.rows || pageResult.rows.length === 0) {
+        // Try case-insensitive search
+        const caseInsensitiveResult = await query(
+          `SELECT 
+            id,
+            title,
+            slug,
+            content,
+            category,
+            is_published,
+            metadata,
+            created_at,
+            updated_at
+          FROM content_pages
+          WHERE LOWER(TRIM(slug)) = LOWER(TRIM($1))
+          LIMIT 1`,
+          [slug]
+        ).catch(() => ({ rows: [] }));
+
+        if (caseInsensitiveResult.rows && caseInsensitiveResult.rows.length > 0) {
+          const page = caseInsensitiveResult.rows[0];
+          const meta = normalizeContentPagesMetadataInput(page.metadata);
+          return c.json({
+            success: true,
+            page: {
+              id: page.id,
+              title: page.title,
+              slug: page.slug,
+              content: page.content,
+              category: page.category,
+              readTime: (meta.read_time as string) || '5 min',
+              featured: Boolean(meta.featured),
+              imageUrl: (meta.image_url as string) || null,
+              seoTitle: (meta.seo_title as string) || page.title,
+              seoDescription: (meta.seo_description as string) || page.content?.substring(0, 160) || '',
+              createdAt: page.created_at,
+              updatedAt: page.updated_at,
+              isPublished: rowIsPublished(page.is_published),
+            },
+          });
+        }
+
+        return c.json({ 
+          success: false, 
+          error: 'Page not found' 
+        }, 404);
+      }
+
+      const page = pageResult.rows[0];
+      const meta = normalizeContentPagesMetadataInput(page.metadata);
+
+      return c.json({
+        success: true,
+        page: {
+          id: page.id,
+          title: page.title,
+          slug: page.slug,
+          content: page.content,
+          category: page.category,
+          readTime: (meta.read_time as string) || '5 min',
+          featured: Boolean(meta.featured),
+          imageUrl: (meta.image_url as string) || null,
+          seoTitle: (meta.seo_title as string) || page.title,
+          seoDescription: (meta.seo_description as string) || page.content?.substring(0, 160) || '',
+          createdAt: page.created_at,
+          updatedAt: page.updated_at,
+          isPublished: rowIsPublished(page.is_published),
+        },
+      });
+    } catch (error: any) {
+      console.error('Error fetching content page for preview:', error);
+      return c.json({ 
+        success: false, 
+        error: error.message || 'Failed to fetch page' 
+      }, 500);
     }
   });
 
@@ -7543,7 +8745,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.slug !== undefined) updateData.slug = body.slug;
       if (body.content !== undefined) updateData.content = body.content;
       if (body.category !== undefined) updateData.category = body.category;
-      if (body.isPublished !== undefined) updateData.is_published = body.isPublished !== false;
+      if (body.isPublished !== undefined) updateData.is_published = body.isPublished === true;
+      if (body.metadata !== undefined) {
+        updateData.metadata = normalizeContentPagesMetadataInput(body.metadata);
+      }
 
       const updated = await update('content_pages', { id: pageId }, updateData);
 
@@ -7557,6 +8762,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       return c.json({ error: error.message }, 500);
     }
   });
+
 
   app.delete('/admin/content/pages/:pageId', async (c) => {
     try {
@@ -7623,6 +8829,141 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const shiprocket = await query('SELECT * FROM shiprocket_integrations ORDER BY created_at DESC');
       return c.json({ success: true, integrations: shiprocket.rows });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.get('/admin/integrations/logistics', async (c) => {
+    try {
+      const partnersResult = await query(
+        `SELECT 
+          partner_id as id,
+          partner_name as name,
+          partner_type as type,
+          enabled,
+          base_url as baseUrl,
+          email as apiEndpoint,
+          api_key as apiKey,
+          config->>'categories' as categories,
+          config->>'pricing' as pricing,
+          config->>'regions' as regions,
+          config,
+          created_at,
+          updated_at
+        FROM logistics_partners
+        ORDER BY enabled DESC NULLS LAST, partner_name ASC`
+      );
+
+      const partners = (partnersResult.rows || []).map((p: any) => {
+        const config = p.config || {};
+        return {
+          id: p.id,
+          name: p.name,
+          type: p.type,
+          enabled: p.enabled !== false,
+          baseUrl: p.baseUrl || config.pidgeApiBase || config.baseUrl || null,
+          apiEndpoint: p.apiEndpoint || config.apiEndpoint || null,
+          apiKey: p.apiKey ? '••••••••' : null,
+          categories: config.categories || (typeof p.categories === 'string' ? JSON.parse(p.categories) : []),
+          pricing: config.pricing || (typeof p.pricing === 'string' ? JSON.parse(p.pricing) : {}),
+          regions: config.regions || (typeof p.regions === 'string' ? JSON.parse(p.regions) : []),
+        };
+      });
+
+      return c.json({
+        success: true,
+        partners: partners,
+      });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.post('/admin/integrations/logistics', async (c) => {
+    try {
+      const partnerData = await c.req.json();
+      const {
+        id: partner_id,
+        name: partner_name,
+        type: partner_type,
+        enabled,
+        baseUrl,
+        apiEndpoint,
+        apiKey,
+        categories,
+        pricing,
+        regions,
+      } = partnerData;
+
+      if (!partner_id || !partner_name || !partner_type) {
+        return c.json({ success: false, error: 'id, name, and type are required' }, 400);
+      }
+
+      const config: any = {};
+      if (categories) config.categories = categories;
+      if (pricing) config.pricing = pricing;
+      if (regions) config.regions = regions;
+      if (
+        'baseUrl' in partnerData &&
+        baseUrl != null &&
+        String(baseUrl).trim() &&
+        String(partner_type) === 'pidge'
+      ) {
+        config.pidgeApiBase = String(baseUrl).trim();
+      }
+
+      const partnerRecord: Record<string, unknown> = {
+        partner_id: String(partner_id),
+        partner_name: String(partner_name),
+        partner_type: String(partner_type),
+        enabled: enabled !== false,
+        email: apiEndpoint || null,
+        config,
+        updated_at: new Date().toISOString(),
+      };
+
+      if ('baseUrl' in partnerData) {
+        partnerRecord.base_url =
+          baseUrl != null && String(baseUrl).trim() ? String(baseUrl).trim() : null;
+      }
+      if (apiKey && String(apiKey) !== '••••••••') {
+        partnerRecord.api_key = String(apiKey);
+      }
+
+      await upsert('logistics_partners', partnerRecord, 'partner_id');
+
+      return c.json({
+        success: true,
+        message: 'Logistics partner saved',
+        partner: partnerRecord,
+      });
+    } catch (error: unknown) {
+      const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
+      return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
+    }
+  });
+
+  app.put('/admin/integrations/logistics', async (c) => {
+    try {
+      const logisticsData = await c.req.json();
+
+      await upsert('platform_settings',
+        {
+          setting_key: 'platform:settings:logistics',
+          setting_value: logisticsData,
+          setting_type: 'json',
+          description: 'Logistics partner configuration',
+        },
+        'setting_key'
+      );
+
+      return c.json({
+        success: true,
+        message: 'Logistics settings updated',
+      });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);
       return c.json({ success: false, error: errorResponse.error }, errorResponse.statusCode as ContentfulStatusCode);
@@ -8292,6 +9633,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         FROM bookings b
         INNER JOIN vendors v ON v.id = b.vendor_id
         WHERE b.created_at >= NOW() - INTERVAL '7 days'
+          AND b.status <> 'pending_payment'
+          AND (
+            COALESCE(b.total_amount, 0) <= 0
+            OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+          )
       `;
 
       if (filter !== 'all') {

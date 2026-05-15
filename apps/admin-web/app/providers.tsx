@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import { useState } from 'react';
 import React from 'react';
 import { NoSSR } from '@/components/NoSSR';
+import { ScrollToTop } from '@/components/ScrollToTop';
 
 // Create QueryClient factory that works in both SSR and client
 function makeQueryClient() {
@@ -43,6 +44,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <ScrollToTop />
       {children}
       {/* Use NoSSR to prevent hydration mismatch with Toaster */}
       {/* Toaster uses client-side features (DOM manipulation) that can cause hydration issues */}

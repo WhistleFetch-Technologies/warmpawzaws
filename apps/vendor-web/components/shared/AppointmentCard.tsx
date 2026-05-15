@@ -185,25 +185,15 @@ export function AppointmentCard({
                 </Button>
               )}
 
-              {appointment.status === 'pending' && onAccept && onReject && (
-                <>
-                  <Button
-                    size="sm"
-                    onClick={() => onAccept(appointment.bookingId)}
-                    className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
-                    Accept
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onReject(appointment.bookingId)}
-                    className="flex-1 border-red-500 text-red-600 hover:bg-red-50"
-                  >
-                    Reject
-                  </Button>
-                </>
+              {(appointment.status === 'pending' || appointment.status === 'confirmed') && onReject && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onReject(appointment.bookingId)}
+                  className="flex-1 border-red-500 text-red-600 hover:bg-red-50"
+                >
+                  Decline
+                </Button>
               )}
 
               {appointment.status === 'confirmed' && onStart && (

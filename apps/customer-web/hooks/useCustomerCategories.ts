@@ -1,6 +1,20 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { mapCatalogCategoryIdToCustomerHomeScreen } from '@warmpawz/service-launch-mappings';
+
+/** When `service_categories.name` is empty, show a readable label from `category_id` (e.g. training → Training). */
+function displayNameFromCategoryId(categoryId: string): string {
+  const raw = String(categoryId || '')
+    .trim()
+    .replace(/_/g, '-');
+  if (!raw) return 'Training';
+  return raw
+    .split('-')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
 import { apiClient } from '@/lib/api-client';
 import { getIcon } from '@/lib/icon-utils';
 
@@ -13,43 +27,6 @@ export interface ApiCategory {
   icon_color?: string;
   display_order?: number;
 }
-
-/** Map category_id from catalog to CustomerHomeWrapper screen type (so navigation works). */
-export const categoryIdToScreen: Record<string, string> = {
-  veterinary: 'vet',
-  grooming: 'grooming',
-  training: 'training',
-  boarding: 'boarding',
-  walking: 'walker',
-  // ✅ FIX: Merge all diagnostics variants to lab-diagnostics
-  diagnostic: 'lab-diagnostics',
-  diagnostics: 'lab-diagnostics',
-  'lab-diagnostics': 'lab-diagnostics',
-  lab: 'lab-diagnostics',
-  pharmacy: 'pharmacy',
-  // ✅ FIX: Merge emergency and ambulance to ambulance (Emergency Care)
-  emergency: 'ambulance',
-  ambulance: 'ambulance',
-  'emergency_care': 'ambulance',
-  // ✅ FIX: Merge all nutrition variants to nutritionist
-  wellness: 'nutritionist',
-  nutrition: 'nutritionist',
-  nutritionist: 'nutritionist',
-  // ✅ FIX: Specialty maps to insurance (Pet Insurance)
-  specialty: 'insurance',
-  speciality: 'insurance',
-  adoption: 'adoption',
-  shop: 'shop',
-  marketplace: 'shop',
-  resort: 'resort',
-  cafe: 'cafes',
-  photography: 'photography',
-  breeder: 'breeder',
-  relocation: 'relocation',
-  holiday: 'holiday',
-  sunset: 'sunset',
-  insurance: 'insurance',
-};
 
 /** Categories to hide from service tiles (e.g., Physiotherapy should be under vet, not separate tile) */
 export const HIDDEN_CATEGORIES: string[] = [
@@ -85,7 +62,7 @@ export function iconColorToBg(colorClass: string | undefined): string {
   return m[colorClass] || 'bg-gray-100 text-gray-600';
 }
 
-export function useCustomerCategories() {
+export function useCustomerCategories(phone?: string | null) {
   const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [quickServiceTiles, setQuickServiceTiles] = useState<QuickServiceTile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,7 +72,23 @@ export function useCustomerCategories() {
     try {
       setLoading(true);
       setError(null);
-      const res = await apiClient.get<{ success?: boolean; categories?: ApiCategory[] }>('/service-catalog/categories');
+      const params = new URLSearchParams();
+      if (phone) params.set('phone', phone);
+      if (typeof window !== 'undefined') {
+        try {
+          const la = localStorage.getItem('customer_latitude');
+          const ln = localStorage.getItem('customer_longitude');
+          if (la && ln) {
+            params.set('latitude', la);
+            params.set('longitude', ln);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      const qs = params.toString();
+      const url = qs ? `/service-catalog/categories?${qs}` : '/service-catalog/categories';
+      const res = await apiClient.get<{ success?: boolean; categories?: ApiCategory[] }>(url);
       const list = (res as any)?.categories ?? [];
       setCategories(Array.isArray(list) ? list : []);
 
@@ -111,14 +104,16 @@ export function useCustomerCategories() {
         'ambulance': 'Emergency Care',
         'nutritionist': 'Nutritionist',
         'insurance': 'Pet Insurance',
+        'pet-sitter': 'Pet Sitter',
       };
 
-      // ✅ FIX: Deduplicate by screen - keep first occurrence of each screen
+      // Deduplicate by screen (canonical mapping from @warmpawz/service-launch-mappings)
       const seenScreens = new Set<string>();
       const tiles: QuickServiceTile[] = [];
       
       for (const cat of filteredList) {
-        const screen = categoryIdToScreen[cat.category_id] ?? cat.category_id;
+        const screen =
+          mapCatalogCategoryIdToCustomerHomeScreen(cat.category_id) || String(cat.category_id || '').trim();
         
         // Skip if we've already seen this screen (deduplication)
         if (seenScreens.has(screen)) {
@@ -127,9 +122,11 @@ export function useCustomerCategories() {
         
         seenScreens.add(screen);
         const IconComponent = getIcon(cat.icon);
-        
-        // Apply label override if exists, otherwise use category name
-        const label = LABEL_OVERRIDES[screen] || cat.name || cat.category_id;
+        // Prefer admin-configured `name` (Training, Trainer, etc.); else screen override; else title-case category_id.
+        const label =
+          cat.name?.trim() ||
+          LABEL_OVERRIDES[screen] ||
+          displayNameFromCategoryId(cat.category_id);
         
         tiles.push({
           icon: IconComponent,
@@ -149,7 +146,7 @@ export function useCustomerCategories() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [phone]);
 
   useEffect(() => {
     fetchCategories();

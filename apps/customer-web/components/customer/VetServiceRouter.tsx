@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Video, Building2, Home as HomeIcon, Stethoscope, Star, MapPin, Clock, Sparkles, ChevronRight, FlaskConical, Pill, History, TrendingUp, AlertCircle, Activity, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useMemo, type MouseEvent } from 'react';
+import { Video, Building2, Home as HomeIcon, Stethoscope, Star, Sparkles, ChevronRight, FlaskConical, Pill, TrendingUp, AlertCircle, Activity, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -9,10 +9,27 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { ProblemGridSection, VET_PROBLEMS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
-import { useRouter } from 'next/navigation';
-import { PromotionBanner } from './shared/PromotionBanner';
+import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { StandardizedFooter } from './shared/StandardizedFooter';
+import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
+import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { HUB_DISCOVERY_VET } from '@/lib/service-hub-discovery-config';
+import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
+import {
+  type BoardingListVendor,
+  type BoardingPlanRow,
+  findBoardingListVendorByProfileKey,
+} from '@/lib/boarding-vendor-discovery-map';
+import { pickCustomerVendorAccountId, pickVetPractitionerProfileEntityId } from '@warmpawz/shared-types';
+import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 
 interface VetServiceRouterProps {
   phone: string;
@@ -25,20 +42,25 @@ interface VetServiceRouterProps {
  * ✅ FIX: Added pet context validation to prevent crashes (VET-CUST-001)
  * Vet services require a pet to be selected before booking
  */
+const HUB_SLUG: BoardingServiceSlug = 'all';
+
 export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetServiceRouterProps) {
-  const router = useRouter();
   const vetProblems = useProblemGridByRole('vet');
-  const [loading, setLoading] = useState(true);
+  const {
+    loading: vendorsLoading,
+    vendors,
+    relaxedFilter,
+    selectedVendorId,
+    setSelectedVendorId,
+    toggleVendor,
+    fetchingPlansFor,
+  } = useHubVendorDiscovery(phone, HUB_DISCOVERY_VET);
   const [spotlightDeals, setSpotlightDeals] = useState<any[]>([]);
-  const [featuredVets, setFeaturedVets] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
-  const [showBookingHistory, setShowBookingHistory] = useState(false);
   const [allowedServiceStyles, setAllowedServiceStyles] = useState<string[]>([]);
   const [pets, setPets] = useState<any[]>([]);
   const [hasPets, setHasPets] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   // ✅ FIX #13: Track all error states
-  const [vetDataError, setVetDataError] = useState<string | null>(null);
   
   // User profile data for header
   const [userName, setUserName] = useState('User');
@@ -48,30 +70,33 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
   useEffect(() => {
     loadPets();
-    loadVetData();
     loadDashboardConfig();
     loadUserProfile();
     loadPreviousVet();
-  }, []);
+  }, [phone]);
 
   const loadPreviousVet = async () => {
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=vet`).catch(() => null);
       if (response?.provider) {
+        const p = response.provider;
+        const prc = Number(p.totalReviews ?? p.reviewCount ?? 0) || 0;
+        const praw = p.rating != null ? Number(p.rating) : NaN;
+        const pr = prc > 0 && Number.isFinite(praw) && praw > 0 ? praw : 0;
         setPreviousVet({
-          id: response.provider.id,
-          name: response.provider.businessName || response.provider.name,
-          photo: response.provider.photo || null,
-          rating: response.provider.rating || 4.8,
-          lastVisit: response.provider.lastVisit,
-          sessionsCount: response.provider.sessionsCount || 1
+          id: p.id,
+          name: p.businessName || p.name,
+          photo: p.photo || null,
+          rating: pr,
+          lastVisit: p.lastVisit,
+          sessionsCount: p.sessionsCount || 1
         });
       } else {
         const packagesResponse = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=vet`).catch(() => null);
         if (packagesResponse?.packages?.length > 0) {
           const pkg = packagesResponse.packages[0];
           if (pkg.vendorId && pkg.vendorName) {
-            setPreviousVet({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
+            setPreviousVet({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 0, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
           }
         }
       }
@@ -104,6 +129,28 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     }
   };
 
+  const {
+    data: vetClinicCount = 0,
+    isLoading: vetClinicCountLoading,
+    isFetching: vetClinicCountFetching,
+    isError: vetClinicCountError,
+  } = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_center',
+    category: 'vet',
+  });
+
+  const vetClinicBadgeText = useMemo(() => {
+    const st =
+      vetClinicCountLoading || vetClinicCountFetching
+        ? 'loading'
+        : vetClinicCountError
+          ? 'error'
+          : 'success';
+    const n = formatDiscoveryCountStat(vetClinicCount, st);
+    return `${n} Clinics`;
+  }, [vetClinicCountLoading, vetClinicCountFetching, vetClinicCountError, vetClinicCount]);
+
   const loadDashboardConfig = async () => {
     try {
       // Get customer's role
@@ -135,160 +182,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     }
   };
 
-  const loadVetData = async () => {
-    try {
-      setLoading(true);
-      setVetDataError(null);
-
-      // Get customer location for distance/radius: profile lat/lng or geolocation
-      let latitude: string | undefined;
-      let longitude: string | undefined;
-      try {
-        const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
-        const profile = profileRes?.profile || profileRes;
-        if (profile?.latitude != null && profile?.longitude != null) {
-          latitude = String(profile.latitude);
-          longitude = String(profile.longitude);
-        }
-      } catch (_) { /* ignore */ }
-      if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
-          });
-          latitude = String(pos.coords.latitude);
-          longitude = String(pos.coords.longitude);
-        } catch (_) { /* ignore */ }
-      }
-      const locationParams = latitude && longitude ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}` : '';
-      
-      // ✅ FIX: Try multiple endpoints to find vendors
-      let servicesData: any[] = [];
-      
-      // Try 1: discover-services endpoint (with location for distance and radius filtering)
-      try {
-        const endpoint = `/customer/discover-services?category=vet${locationParams}`;
-        const data = await apiClient.get<any>(endpoint);
-        console.log('🔵 [VetServiceRouter] discover-services response:', data);
-        
-        // Handle different response formats
-        if (Array.isArray(data)) {
-          servicesData = data;
-        } else if (data?.vendors && Array.isArray(data.vendors)) {
-          servicesData = data.vendors;
-        } else if (data?.services && Array.isArray(data.services)) {
-          servicesData = data.services;
-        } else if (data?.results && Array.isArray(data.results)) {
-          servicesData = data.results;
-        } else if (data?.data && Array.isArray(data.data)) {
-          servicesData = data.data;
-        }
-      } catch (err) {
-        console.warn('⚠️ [VetServiceRouter] discover-services failed, trying alternatives:', err);
-      }
-      
-      // Try 2: If no data, try services/by-style endpoint
-      if (servicesData.length === 0) {
-        try {
-          const altEndpoint = `/customer/services/by-style?style=tele&category=vet${locationParams}`;
-          const altData = await apiClient.get<any>(altEndpoint);
-          console.log('🔵 [VetServiceRouter] services/by-style response:', altData);
-          
-          if (Array.isArray(altData)) {
-            servicesData = altData;
-          } else if (altData?.services && Array.isArray(altData.services)) {
-            servicesData = altData.services;
-          } else if (altData?.vendors && Array.isArray(altData.vendors)) {
-            servicesData = altData.vendors;
-          }
-        } catch (err) {
-          console.warn('⚠️ [VetServiceRouter] services/by-style also failed:', err);
-        }
-      }
-      
-      // Try 3: Fallback to /customer/vendors/search (GET /customer/vendors does not exist)
-      if (servicesData.length === 0) {
-        try {
-          const vendorsEndpoint = `/customer/vendors/search?roleId=veterinarian&limit=50${locationParams}`;
-          const vendorsData = await apiClient.get<any>(vendorsEndpoint);
-          console.log('🔵 [VetServiceRouter] vendors/search fallback response:', vendorsData);
-          
-          if (Array.isArray(vendorsData)) {
-            servicesData = vendorsData;
-          } else if (vendorsData?.vendors && Array.isArray(vendorsData.vendors)) {
-            servicesData = vendorsData.vendors;
-          } else if (vendorsData?.results && Array.isArray(vendorsData.results)) {
-            servicesData = vendorsData.results;
-          }
-        } catch (err) {
-          console.warn('⚠️ [VetServiceRouter] vendors/search fallback failed:', err);
-        }
-      }
-      
-      console.log('🔵 [VetServiceRouter] Final servicesData length:', servicesData.length);
-      
-      // Extract unique vet vendors
-      const vendorMap = new Map();
-      servicesData.forEach((service: any) => {
-        const vendorId = service.vendorId || service.vendor_id || service.id;
-        if (!vendorId) return; // Skip if no vendor ID
-        
-        const vendorType = (service.vendorType || service.vendor_type || '').toLowerCase();
-        const roleId = String(service.vendorRoleId || service.roleId || service.role_id || '').toLowerCase();
-        const vendorName = service.vendorName || service.vendor_name || service.businessName || service.business_name || service.name || '';
-        
-        // ✅ FIX: More lenient filtering - accept any vendor with vet-related roleId or category
-        const isVet = roleId.includes('vet') || 
-                      roleId.includes('veterinarian') ||
-                      roleId.includes('clinic') ||
-                      vendorType.includes('vet') || 
-                      vendorType.includes('clinic') || 
-                      vendorType.includes('healthcare') ||
-                      service.category === 'vet' ||
-                      service.category === 'veterinary' ||
-                      vendorName.toLowerCase().includes('vet') ||
-                      vendorName.toLowerCase().includes('clinic');
-        
-        if (isVet && !vendorMap.has(vendorId)) {
-          vendorMap.set(vendorId, {
-            id: vendorId,
-            name: vendorName,
-            rating: service.vendorRating || service.vendor_rating || service.rating || 4.5,
-            reviews: service.vendorReviewCount || service.vendor_review_count || service.reviewsCount || service.reviews_count || 0,
-            specialty: service.specialty || 'General Veterinarian',
-            experience: service.experience || 5,
-            fee: service.price || service.base_price || 499,
-            location: service.vendorLocation || service.vendor_location || service.location,
-            serviceStyle: service.serviceStyle || service.service_style
-          });
-        }
-      });
-      
-      const vets = Array.from(vendorMap.values());
-      console.log('🔵 [VetServiceRouter] Found vendors:', vets.length);
-      setFeaturedVets(vets.slice(0, 5));
-      
-      // Set stats based on real data only
-      setStats({
-        activeVets: vets.length,
-        consultations: vets.length > 0 ? `${Math.max(vets.length * 10, 100)}+` : '0',
-        rating: vets.length > 0 ? Number(vets.reduce((acc: number, v: any) => acc + Number(v.rating || 4.5), 0) / vets.length).toFixed(1) : '-'
-      });
-    } catch (error) {
-      console.error('❌ [VetServiceRouter] Error loading vet data:', error);
-      // ✅ FIX #13: Track error state
-      const errorMsg = error instanceof Error ? error.message : 'Failed to load veterinary services';
-      setVetDataError(errorMsg);
-      setStats({
-        activeVets: 0,
-        consultations: '0',
-        rating: '-'
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // Map service types to dashboard config styles
   const serviceTypeStyleMap: Record<string, string[]> = {
     'tele': ['tele', 'video_consultation', 'video'],
@@ -299,8 +192,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     'physiotherapy': ['at_center', 'at_home', 'physiotherapy', 'rehabilitation'],
   };
 
-  // Get filtered service types based on dashboard config
-  const getFilteredServiceTypes = () => {
+  const serviceTypes = useMemo(() => {
     const allServiceTypes = [
       {
         id: 'tele',
@@ -318,7 +210,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         icon: Building2,
         color: '#7FD47F',
         bgColor: 'bg-green-50',
-        badge: '200+ Clinics'
+        badge: vetClinicBadgeText,
       },
       {
         id: 'home',
@@ -345,7 +237,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         icon: Pill,
         color: '#FF6B9F',
         bgColor: 'bg-pink-50',
-        badge: 'Fast Delivery'
+        badge: 'Fast Delivery',
+        comingSoon: true,
       },
       {
         id: 'physiotherapy',
@@ -354,16 +247,15 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         icon: Activity,
         color: '#0D9488',
         bgColor: 'bg-teal-50',
-        badge: 'Follow-up care'
+        badge: 'Follow-up care',
+        comingSoon: true,
       }
     ];
 
-    // If no restrictions, return all
     if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
       return allServiceTypes;
     }
 
-    // Filter based on allowedServiceStyles
     return allServiceTypes.filter(service => {
       const styleMap = serviceTypeStyleMap[service.id] || [];
       return styleMap.some(style => 
@@ -373,16 +265,14 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         )
       );
     });
-  };
-
-  const serviceTypes = getFilteredServiceTypes();
+  }, [allowedServiceStyles, vetClinicBadgeText]);
 
   // ✅ FIX: Validate pet context before allowing navigation
   const handleNavigate = (screen: string, navData?: any) => {
     console.log('🔵 [VetServiceRouter] handleNavigate called:', screen, navData);
     
-    // Check if navigation requires a pet (booking-related screens)
-    const requiresPet = ['vet-booking', 'vet-doctor-details', 'vet-clinic-booking', 'vet-services-by-style'].includes(screen);
+    // Booking flows only — browsing vet list / profiles / services-by-style must work without a pet.
+    const requiresPet = ['vet-booking', 'vet-clinic-booking'].includes(screen);
     
     if (requiresPet && (!hasPets || pets.length === 0)) {
       console.warn('⚠️ [VetServiceRouter] Pet required but not found');
@@ -406,7 +296,151 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     }
   };
 
-  if (loading) {
+  const handleVetBookPlan = (v: BoardingListVendor, plan: BoardingPlanRow) => {
+    const raw = (v.raw || {}) as Record<string, unknown>;
+    const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
+
+    const serviceObj: Record<string, unknown> = {
+      /** Prefer vendor_services UUID over composite row keys so package purchase resolves strict intent in prod. */
+      id: plan.vendorServiceId ?? plan.rowId,
+      vendorServiceId: plan.vendorServiceId,
+      serviceId: plan.serviceId,
+      serviceName: plan.name,
+      name: plan.name,
+      price: plan.price,
+      duration: plan.duration,
+      serviceStyle: plan.serviceStyle,
+      description: plan.description,
+      isPackage: plan.isPackage,
+      packageDetails: plan.packageDetails,
+      metadata: plan.metadata,
+    };
+
+    /** Solo / staff practitioner — doctor profile + booking */
+    if (providerType === 'staff' || providerType === 'individual') {
+      const doctorId =
+        pickVetPractitionerProfileEntityId(raw) ||
+        String(raw.providerId || raw.provider_id || v.id);
+      const vendorForPkg = String(raw.vendorId || raw.vendor_id || doctorId || '').trim();
+      if (isVendorServicePackageRow(serviceObj) && vendorForPkg) {
+        const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+          vendorId: vendorForPkg,
+          vendorName: v.name,
+          serviceRow: serviceObj,
+          serviceTypeCategory: 'vet',
+          serviceStyle: String(plan.serviceStyle || 'at_center'),
+        });
+        if (pkgNav) {
+          handleNavigate('purchase-package', pkgNav);
+          return;
+        }
+      }
+      handleNavigate('vet-doctor-details', {
+        doctorId,
+        serviceId: plan.rowId,
+        serviceName: plan.name,
+        price: plan.price,
+      });
+      return;
+    }
+
+    /** Facility / clinic vendor */
+    const vendorId = String(
+      pickCustomerVendorAccountId(raw) || raw.vendorId || raw.vendor_id || v.id || ''
+    ).trim();
+
+    if (vendorId && isVendorServicePackageRow(serviceObj)) {
+      const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId,
+        vendorName: v.name,
+        serviceRow: serviceObj,
+        serviceTypeCategory: 'vet',
+        serviceStyle: String(plan.serviceStyle || 'at_center'),
+      });
+      if (pkgNav) {
+        handleNavigate('purchase-package', pkgNav);
+        return;
+      }
+    }
+
+    handleNavigate('vet-booking', {
+      vendorId,
+      vendorName: v.name,
+      serviceId: plan.rowId,
+      serviceName: plan.name,
+      price: plan.price,
+      duration: plan.duration,
+      serviceStyle: plan.serviceStyle || 'at_center',
+      serviceType: 'at_center',
+      service: serviceObj,
+    });
+  };
+
+  /**
+   * Chevron + "Details" should open the real provider profile: doctor screen for staff/individual,
+   * clinic/center screen for facility vendors. Uses `raw.vendorId` when the card key is not the clinic id.
+   */
+  const openVetProviderProfile = (e: MouseEvent, profileKey: string) => {
+    e.stopPropagation();
+    const v = findBoardingListVendorByProfileKey(vendors, profileKey);
+    if (!v) {
+      toast.error('Could not open this profile. Try View Services or refresh.');
+      return;
+    }
+    const raw = (v.raw || {}) as Record<string, unknown>;
+    const providerType = String(raw.providerType || raw.provider_type || '').toLowerCase();
+    const rawVendorId = String(raw.vendorId || raw.vendor_id || '').trim();
+    const rawProviderId = String(raw.providerId || raw.provider_id || '').trim();
+
+    if (providerType === 'staff' || providerType === 'individual') {
+      const doctorId =
+        pickVetPractitionerProfileEntityId(raw) || rawProviderId || v.id;
+      handleNavigate('vet-doctor-details', {
+        doctorId,
+        doctorProfileBackScreen: 'vet',
+      });
+      return;
+    }
+
+    const clinicVendorId =
+      pickCustomerVendorAccountId(raw) || rawVendorId || v.id;
+    handleNavigate('vet-services-by-style', {
+      vendorId: clinicVendorId,
+      serviceStyle: 'at_center',
+      serviceTypeName: 'Vet Clinic',
+      category: 'vet',
+      returnScreen: 'vet',
+    });
+  };
+
+  const openVetDetails = openVetProviderProfile;
+
+  const openVetCenterProfile = openVetProviderProfile;
+
+  const dashboardStats = useMemo(() => {
+    const n = vendors.length;
+    const rating = n > 0 ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1) : '—';
+    const clinicSt =
+      vetClinicCountLoading || vetClinicCountFetching
+        ? 'loading'
+        : vetClinicCountError
+          ? 'error'
+          : 'success';
+    const clinicsStat = formatDiscoveryCountStat(vetClinicCount, clinicSt);
+    return [
+      { value: clinicsStat, label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
+      { value: String(n), label: 'Featured' },
+      { value: rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ];
+  }, [
+    vendors,
+    vetClinicCount,
+    vetClinicCountLoading,
+    vetClinicCountFetching,
+    vetClinicCountError,
+  ]);
+
+  if (vendorsLoading) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
@@ -414,42 +448,24 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     );
   }
 
-  // ✅ FIX #13: Show error state if pets or vet data failed to load
-  if (error || vetDataError) {
+  if (error) {
     return (
       <>
-        {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
         <div className="px-6 pt-8">
           <Card className="p-8 text-center">
             <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
             <h3 className="text-lg font-semibold mb-2">Unable to Load</h3>
-            <p className="text-gray-600 mb-4">{error || vetDataError}</p>
+            <p className="text-gray-600 mb-4">{error}</p>
             <div className="flex gap-3 justify-center">
-              {error && (
-                <Button onClick={loadPets} variant="outline">Retry Pets</Button>
-              )}
-              {vetDataError && (
-                <Button onClick={loadVetData} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
-                  Retry Services
-                </Button>
-              )}
+              <Button onClick={loadPets} variant="outline">
+                Retry Pets
+              </Button>
             </div>
           </Card>
         </div>
       </>
     );
   }
-
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = stats ? [
-    { value: `${stats.activeVets || 0}+`, label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
-    { value: `${stats.consultations || 0}`, label: 'Consults' },
-    { value: `${stats.rating || '-'}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ] : [
-    { value: '0+', label: 'Vets', icon: <Stethoscope className="w-4 h-4" /> },
-    { value: '0', label: 'Consults' },
-    { value: '-', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50" style={{ position: 'relative', zIndex: 0 }}>
@@ -463,13 +479,14 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-gray-50"
       />
 
-      {/* Main Content */}
-      <div className="max-w-[430px] mx-auto px-4 pt-6 pb-24" style={{ position: 'relative', zIndex: 1 }}>
+      {/* Main Content — negative margin pulls body under the sheet curve */}
+      <div className="max-w-customer mx-auto -mt-4 px-4 pt-6 pb-24" style={{ position: 'relative', zIndex: 1 }}>
         {/* Phase 0.1: Promotion Banner Component */}
-        <div className="mb-6">
-          <PromotionBanner service="vet" maxPromotions={3} />
+        <div className="mb-6 space-y-4">
+          <FeaturedVendorSpotlights service="vet" onNavigate={onNavigate} />
         </div>
 
         {/* Phase 1: Book again with previous vet */}
@@ -540,7 +557,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 <Button 
                   size="sm" 
                   className="bg-blue-600 text-white hover:bg-blue-700 h-8"
-                  onClick={() => handleNavigate('vet-booking', { serviceType: 'tele' })}
+                  onClick={() => handleNavigate('vet-tele-consultation')}
                 >
                   Book Now
                 </Button>
@@ -576,19 +593,14 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
         {/* Service Types */}
         <div className="mb-6">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center mb-3">
             <h2 className="text-lg font-semibold">Choose Service</h2>
-            <button 
-              className="text-sm text-[#FF8C42] flex items-center gap-1 font-medium"
-              onClick={() => setShowBookingHistory(true)}
-            >
-              <History className="w-4 h-4" />
-              My Bookings
-            </button>
           </div>
           
           <div className="grid grid-cols-2 gap-3" style={{ position: 'relative', zIndex: 1 }}>
             {serviceTypes.map((service) => {
+              const isComingSoon = !!(service as { comingSoon?: boolean }).comingSoon;
+
               const handleServiceClick = () => {
                 console.log('🔵 [VetServiceRouter] Service clicked:', service.id);
                 
@@ -609,22 +621,8 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                     console.log('🔵 [VetServiceRouter] Navigating to vet-clinic-list');
                     handleNavigate('vet-clinic-list');
                   } else if (service.id === 'tele') {
-                    // ✅ FIX: Tele Consultation - direct navigation with error handling
                     console.log('🔵 [VetServiceRouter] Navigating to vet-tele-consultation');
-                    // Direct navigation to avoid any validation issues
-                    if (typeof onNavigate === 'function') {
-                      try {
-                        onNavigate('vet-tele-consultation');
-                        console.log('✅ [VetServiceRouter] Tele consultation navigation called');
-                      } catch (error) {
-                        console.error('❌ [VetServiceRouter] Direct navigation error:', error);
-                        // Fallback to handleNavigate
-                        handleNavigate('vet-tele-consultation');
-                      }
-                    } else {
-                      console.error('❌ [VetServiceRouter] onNavigate is not a function');
-                      handleNavigate('vet-tele-consultation');
-                    }
+                    handleNavigate('vet-tele-consultation');
                   } else if (service.id === 'home') {
                     // ✅ NEW: Home Visit with provider list → profile → booking
                     console.log('🔵 [VetServiceRouter] Navigating to vet-home-visit');
@@ -653,10 +651,63 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                 }
               };
 
+              const cardInner = (
+                <>
+                  {isComingSoon && (
+                    <span className="absolute top-2 right-2 z-[1] text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                      Coming soon
+                    </span>
+                  )}
+                  <div className="flex flex-col h-full">
+                    <div
+                      className={`w-12 h-12 ${service.bgColor} rounded-xl flex items-center justify-center mb-3`}
+                    >
+                      <service.icon className="w-6 h-6" style={{ color: service.color }} />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold mb-1">{service.name}</h3>
+                      {service.description?.trim() ? (
+                        <div onClick={(e) => !isComingSoon && e.stopPropagation()} className="mb-2">
+                          <ServiceDescriptionInline
+                            description={service.description}
+                            title={service.name}
+                            className="m-0 text-xs leading-snug text-gray-500"
+                            linkClassName={
+                              isComingSoon
+                                ? 'inline align-baseline text-[10px] font-semibold text-gray-400 cursor-default'
+                                : 'inline cursor-pointer align-baseline text-[10px] font-semibold text-[#FF8C42] hover:underline'
+                            }
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                    {service.badge && (
+                      <Badge variant="secondary" className="text-xs w-fit">
+                        {service.badge}
+                      </Badge>
+                    )}
+                  </div>
+                </>
+              );
+
+              if (isComingSoon) {
+                return (
+                  <div
+                    key={service.id}
+                    className="p-4 border border-gray-100 bg-white shadow-sm rounded-xl relative text-left w-full transition-all cursor-default opacity-80 saturate-75 pointer-events-none select-none"
+                    aria-label={`${service.name} — coming soon`}
+                    style={{ zIndex: 10, position: 'relative' }}
+                  >
+                    {cardInner}
+                  </div>
+                );
+              }
+
               return (
               <button
                 key={service.id}
                 type="button"
+                aria-label={service.name}
                 className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm rounded-xl relative active:scale-95 text-left w-full"
                 onClick={(e) => {
                   console.log('🔵 [VetServiceRouter] Card onClick triggered for:', service.id);
@@ -678,22 +729,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
                   position: 'relative'
                 }}
               >
-                <div className="flex flex-col h-full">
-                  <div 
-                    className={`w-12 h-12 ${service.bgColor} rounded-xl flex items-center justify-center mb-3`}
-                  >
-                    <service.icon className="w-6 h-6" style={{ color: service.color }} />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold mb-1">{service.name}</h3>
-                    <p className="text-xs text-gray-500 mb-2">{service.description}</p>
-                  </div>
-                  {service.badge && (
-                    <Badge variant="secondary" className="text-xs w-fit">
-                      {service.badge}
-                    </Badge>
-                  )}
-                </div>
+                {cardInner}
               </button>
               );
             })}
@@ -713,7 +749,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           }}
         />
 
-        {/* Featured Vets */}
+        {/* Featured Vets — same expandable pattern as vet-all-doctors */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">Featured Vets</h2>
@@ -725,43 +761,38 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-          
-          <div className="space-y-3">
-            {featuredVets.length > 0 ? (
-              featuredVets.slice(0, 3).map((vet, index) => (
-                <Card 
-                  key={index}
-                  className="p-4 cursor-pointer hover:shadow-md transition-all bg-white border border-gray-100 shadow-sm"
-                  onClick={() => handleNavigate('vet-doctor-details', { doctorId: vet.id })}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-xl flex items-center justify-center text-white text-xl font-bold">
-                      {vet.name?.charAt(0) || 'V'}
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold mb-1">{vet.name || 'Dr. Veterinarian'}</h3>
-                      <p className="text-xs text-gray-500 mb-2">{vet.specialty || 'General Veterinarian'}</p>
-                      <div className="flex items-center gap-3 text-xs">
-                        <div className="flex items-center gap-1 text-amber-500">
-                          <Star className="w-3 h-3 fill-current" />
-                          <span className="font-semibold">{vet.rating || 4.8}</span>
-                          <span className="text-gray-400">({vet.reviews || 0})</span>
-                        </div>
-                        <div className="flex items-center gap-1 text-gray-500">
-                          <Clock className="w-3 h-3" />
-                          <span>{vet.experience || 5}+ years</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold text-[#FF8C42]">₹{vet.fee || 499}</div>
-                      <div className="text-xs text-gray-400">per visit</div>
-                    </div>
-                  </div>
-                </Card>
-              ))
+          {relaxedFilter && (
+            <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
+              Showing all veterinary providers we could match — expand for services and prices.
+            </p>
+          )}
+          <div className="space-y-4">
+            {vendors.length > 0 ? (
+              vendors.map((v) => {
+                const expanded = selectedVendorId === v.id;
+                const minP = minPriceForVendor(v);
+                return (
+                  <BoardingVendorExpandableCard
+                    key={v.id}
+                    v={v}
+                    serviceSlug={HUB_SLUG}
+                    planBadgeLabel="Vet"
+                    showPriceDisclaimer={true}
+                    expanded={expanded}
+                    fetchingPlansFor={fetchingPlansFor}
+                    minPrice={minP}
+                    onToggleHeader={() => toggleVendor(v.id)}
+                    onViewServices={(e) => {
+                      e.stopPropagation();
+                      setSelectedVendorId(v.id);
+                    }}
+                    onDetails={openVetDetails}
+                    onBookPlan={handleVetBookPlan}
+                    onOpenCenterDetails={openVetCenterProfile}
+                  />
+                );
+              })
             ) : (
-              // No vets available message
               <Card className="p-6 text-center bg-gray-50 border border-gray-200">
                 <p className="text-gray-500 text-sm">No veterinarians available in your area yet.</p>
                 <p className="text-gray-400 text-xs mt-1">Check back soon!</p>
@@ -778,7 +809,18 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           </div>
           
           <div className="space-y-3">
-            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+            <Card
+              role="button"
+              tabIndex={0}
+              className="p-4 bg-white border border-gray-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
+              onClick={() => handleNavigate('vet-tele-consultation')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleNavigate('vet-tele-consultation');
+                }
+              }}
+            >
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
                   <Video className="w-5 h-5 text-orange-600" />
@@ -790,7 +832,18 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
               </div>
             </Card>
 
-            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+            <Card
+              role="button"
+              tabIndex={0}
+              className="p-4 bg-white border border-gray-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
+              onClick={() => handleNavigate('lab-diagnostics')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleNavigate('lab-diagnostics');
+                }
+              }}
+            >
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
                   <FlaskConical className="w-5 h-5 text-purple-600" />
@@ -802,7 +855,18 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
               </div>
             </Card>
 
-            <Card className="p-4 bg-white border border-gray-100 shadow-sm">
+            <Card
+              role="button"
+              tabIndex={0}
+              className="p-4 bg-white border border-gray-100 shadow-sm cursor-pointer hover:shadow-md transition-shadow focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
+              onClick={() => handleNavigate('my-bookings')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleNavigate('my-bookings');
+                }
+              }}
+            >
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
                   <HomeIcon className="w-5 h-5 text-orange-600" />
@@ -826,7 +890,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
           else if (tab === 'cart') onNavigate('cart');
           else if (tab === 'profile') onNavigate('profile');
         }}
-        maxWidth="max-w-[430px]"
+        maxWidth="max-w-customer"
       />
     </div>
   );

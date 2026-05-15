@@ -484,12 +484,24 @@ export function registerStorageEndpoints(app: Hono) {
       const arrayBuffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
 
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const contentTypeFromExt: Record<string, string> = {
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        gif: 'image/gif',
+        webp: 'image/webp',
+        heic: 'image/heic',
+        heif: 'image/heif',
+      };
+      const contentType = file.type?.trim() || contentTypeFromExt[ext] || 'application/octet-stream';
+
       // Upload to S3
       await s3Client.send(new PutObjectCommand({
         Bucket: BUCKET_NAME,
         Key: fileName,
         Body: uint8Array,
-        ContentType: file.type,
+        ContentType: contentType,
       }));
 
       console.log('✅ Media uploaded successfully:', fileName);
@@ -516,6 +528,113 @@ export function registerStorageEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('❌ Error uploading media:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /storage/presigned-upload-url
+   * Generate presigned URL for direct S3 upload (client-side upload)
+   * Used for pharmacy invoices and other file uploads
+   */
+  app.post("/storage/presigned-upload-url", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { fileName, fileType, folder } = body;
+
+      if (!fileName || !fileType) {
+        return c.json({ error: 'fileName and fileType are required' }, 400);
+      }
+
+      // Generate unique filename
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(2, 11);
+      const fileExt = fileName.split('.').pop() || 'bin';
+      const folderPath = folder ? `${folder}/` : '';
+      const fileKey = `${folderPath}${timestamp}_${random}.${fileExt}`;
+
+      // Generate presigned URL for PUT operation (upload)
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new PutObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+          ContentType: fileType,
+        }),
+        { expiresIn: 300 } // 5 minutes for upload
+      );
+
+      // Generate presigned URL for GET operation (download/view)
+      const viewUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+        }),
+        { expiresIn: 604800 } // 7 days for viewing
+      );
+
+      return c.json({
+        success: true,
+        uploadUrl: signedUrl,
+        fileUrl: viewUrl,
+        fileKey: fileKey,
+      });
+    } catch (error: any) {
+      console.error('❌ Error generating presigned upload URL:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/upload/presigned-url
+   * Alias for /storage/presigned-upload-url (for backward compatibility)
+   */
+  app.post("/admin/upload/presigned-url", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { fileName, fileType, folder } = body;
+
+      if (!fileName || !fileType) {
+        return c.json({ error: 'fileName and fileType are required' }, 400);
+      }
+
+      // Generate unique filename
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).substring(2, 11);
+      const fileExt = fileName.split('.').pop() || 'bin';
+      const folderPath = folder ? `${folder}/` : '';
+      const fileKey = `${folderPath}${timestamp}_${random}.${fileExt}`;
+
+      // Generate presigned URL for PUT operation (upload)
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new PutObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+          ContentType: fileType,
+        }),
+        { expiresIn: 300 } // 5 minutes for upload
+      );
+
+      // Generate presigned URL for GET operation (download/view)
+      const viewUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+        }),
+        { expiresIn: 604800 } // 7 days for viewing
+      );
+
+      return c.json({
+        success: true,
+        uploadUrl: signedUrl,
+        fileUrl: viewUrl,
+        fileKey: fileKey,
+      });
+    } catch (error: any) {
+      console.error('❌ Error generating presigned upload URL:', error);
       return c.json({ error: error.message }, 500);
     }
   });

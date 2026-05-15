@@ -1,13 +1,23 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Home as HomeIcon, Star, MapPin, Calendar, Sparkles, ChevronRight, Camera, Moon, Sun, RefreshCw, Building2 } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
+import { useRouter } from 'next/navigation';
+import { Star, ChevronRight, Moon, Sun, RefreshCw, Building2, Clock, CalendarRange, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { PromotionBanner } from './shared/PromotionBanner';
+import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
+import { useBoardingVendorDiscovery } from '@/hooks/useBoardingVendorDiscovery';
+import {
+  buildBoardingBookPlanPayload,
+  minPriceForVendor,
+} from '@/lib/boarding-vendor-booking-utils';
+import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
+import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
+import { HUB_SERVICE_ICON_WRAP } from '@/lib/hub-service-option-styles';
 
 interface BoardingServiceRouterProps {
   phone: string;
@@ -16,69 +26,173 @@ interface BoardingServiceRouterProps {
   onNavigate?: (screen: string, data?: any) => void;
 }
 
+const BOARDING_CARD_LINKS: {
+  slug: BoardingServiceSlug;
+  title: string;
+  subtitle: string;
+  Icon: typeof Moon;
+  iconWrap: string;
+  badge?: string;
+}[] = [
+  {
+    slug: 'overnight',
+    title: 'Overnight',
+    subtitle: 'Extended stays',
+    Icon: Moon,
+    iconWrap: HUB_SERVICE_ICON_WRAP.overnightMoon,
+    badge: 'Popular',
+  },
+  {
+    slug: 'full-day',
+    title: 'Full Day',
+    subtitle: 'All-day care',
+    Icon: Sun,
+    iconWrap: HUB_SERVICE_ICON_WRAP.sunDaytime,
+  },
+  {
+    slug: 'half-day',
+    title: 'Half Day',
+    subtitle: 'Flexible hours',
+    Icon: Clock,
+    iconWrap: HUB_SERVICE_ICON_WRAP.clockFlexible,
+  },
+  {
+    slug: 'weekend',
+    title: 'Weekend',
+    subtitle: 'Fri–Sun stays',
+    Icon: CalendarRange,
+    iconWrap: HUB_SERVICE_ICON_WRAP.calendarWeekend,
+  },
+  {
+    slug: 'weekly',
+    title: 'Weekly',
+    subtitle: '7-day packages',
+    Icon: Calendar,
+    iconWrap: HUB_SERVICE_ICON_WRAP.calendarWeekly,
+  },
+];
+
+/** Hub uses the same discovery + cards as View All (`service=all`). */
+const HUB_SERVICE_SLUG: BoardingServiceSlug = 'all';
+
+function navigateToBoardingVendorList(
+  onNavigate: BoardingServiceRouterProps['onNavigate'],
+  router: { push: (href: string) => void },
+  serviceSlug: string
+) {
+  if (onNavigate) {
+    onNavigate('pet-boarding-vendors', { serviceSlug });
+    return;
+  }
+  router.push(`/pet-boarding/vendors?service=${encodeURIComponent(serviceSlug)}`);
+}
+
 export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: BoardingServiceRouterProps) {
-  const [loading, setLoading] = useState(true);
-  const [boardingFacilities, setBoardingFacilities] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const router = useRouter();
+  const {
+    loading: vendorsLoading,
+    vendors,
+    relaxedFilter,
+    selectedVendorId,
+    setSelectedVendorId,
+    toggleVendor,
+    fetchingPlansFor,
+  } = useBoardingVendorDiscovery(phone, HUB_SERVICE_SLUG);
+
   const [previousFacility, setPreviousFacility] = useState<any>(null);
 
-  useEffect(() => {
-    loadBoardingFacilities();
-    loadPreviousFacility();
-  }, []);
-
-  const loadPreviousFacility = async () => {
+  const loadPreviousFacility = useCallback(async () => {
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=boarding`).catch(() => null);
       if (response?.provider) {
-        setPreviousFacility({ id: response.provider.id, name: response.provider.businessName || response.provider.name, photo: response.provider.photo, rating: response.provider.rating || 4.8, lastVisit: response.provider.lastVisit });
+        const p = response.provider;
+        const prc = Number(p.totalReviews ?? p.reviewCount ?? 0) || 0;
+        const praw = p.rating != null ? Number(p.rating) : NaN;
+        const pr = prc > 0 && Number.isFinite(praw) && praw > 0 ? praw : 0;
+        setPreviousFacility({
+          id: p.id,
+          name: p.businessName || p.name,
+          photo: p.photo,
+          rating: pr,
+          lastVisit: p.lastVisit,
+        });
       } else {
         const pkgRes = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=boarding`).catch(() => null);
         if (pkgRes?.packages?.length > 0) {
           const pkg = pkgRes.packages[0];
-          if (pkg.vendorId && pkg.vendorName) setPreviousFacility({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago' });
+          if (pkg.vendorId && pkg.vendorName)
+            setPreviousFacility({
+              id: pkg.vendorId,
+              name: pkg.vendorName,
+              photo: null,
+              rating: 0,
+              lastVisit: pkg.lastUsed || '3 weeks ago',
+            });
         }
       }
-    } catch { /* ignore */ }
-  };
-
-  const loadBoardingFacilities = async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams({
-        roleId: 'pet_boarding'
-      });
-
-      // Use the correct endpoint for discovering services
-      const endpoint = `/customer/discover-services?category=boarding&roleId=pet_boarding`;
-      const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
-      const facilityList = data.vendors || data.services || [];
-      setBoardingFacilities(facilityList);
-      
-      // Set stats based on data
-      setStats({
-        activeFacilities: facilityList.length || 35,
-        guests: '5K+',
-        rating: facilityList.length > 0 
-          ? Number(facilityList.reduce((acc: number, f: any) => acc + Number(f.rating || 4.6), 0) / facilityList.length).toFixed(1) 
-          : '4.6'
-      });
-    } catch (error) {
-      console.error('Error loading boarding facilities:', error);
-      setBoardingFacilities([]);
-      setStats({ activeFacilities: 35, guests: '5K+', rating: '4.6' });
-    } finally {
-      setLoading(false);
+    } catch {
+      /* ignore */
     }
-  };
+  }, [phone]);
+
+  useEffect(() => {
+    loadPreviousFacility();
+  }, [loadPreviousFacility]);
+
+  const handleBookPlan = useCallback(
+    (v: BoardingListVendor, plan: BoardingPlanRow) => {
+      if (!onNavigate) {
+        router.push(
+          `/pet-boarding/vendor/${encodeURIComponent(v.id)}?service=${encodeURIComponent(HUB_SERVICE_SLUG)}`
+        );
+        return;
+      }
+      onNavigate('boarding-booking', buildBoardingBookPlanPayload(v, plan) as Record<string, unknown>);
+    },
+    [onNavigate, router]
+  );
+
+  const openVendorProfile = useCallback(
+    (e: MouseEvent, vendorId: string) => {
+      e.stopPropagation();
+      if (onNavigate) {
+        onNavigate('pet-boarding-profile', {
+          vendorId,
+          serviceSlug: HUB_SERVICE_SLUG,
+        });
+        return;
+      }
+      router.push(
+        `/pet-boarding/vendor/${encodeURIComponent(vendorId)}?service=${encodeURIComponent(HUB_SERVICE_SLUG)}`
+      );
+    },
+    [onNavigate, router]
+  );
+
+  const boardingStats = useMemo(() => {
+    const rated = vendors.filter(
+      (v) => typeof v.rating === 'number' && Number.isFinite(v.rating) && v.rating > 0
+    );
+    const rating =
+      rated.length > 0
+        ? (rated.reduce((acc, v) => acc + v.rating, 0) / rated.length).toFixed(1)
+        : '—';
+    const n = vendors.length;
+    return [
+      { value: `${n > 0 ? n : 35}+`, label: 'Facilities' },
+      { value: '5K+', label: 'Happy Pets' },
+      { value: rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-current" /> },
+    ];
+  }, [vendors]);
 
   const handleCheckAvailability = async (facilityId: string) => {
     try {
-      const data = await apiClient.get<{ available?: boolean; message?: string }>(`/vendor/${facilityId}/boarding/availability`);
-      
+      const data = await apiClient.get<{ available?: boolean; message?: string }>(
+        `/vendor/${facilityId}/boarding/availability`
+      );
+
       if (data.available !== false) {
         if (onNavigate) {
-          // ✅ FIX: Use boarding-specific booking flow instead of generic create-booking
           onNavigate('boarding-booking', { vendorId: facilityId, serviceType: 'boarding' });
         } else {
           toast.success('Facility is available! Proceeding to booking...');
@@ -88,9 +202,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       }
     } catch (error: any) {
       console.error('Error checking availability:', error);
-      // Proceed anyway - optimistic flow
       if (onNavigate) {
-        // ✅ FIX: Use boarding-specific booking flow instead of generic create-booking
         onNavigate('boarding-booking', { vendorId: facilityId, serviceType: 'boarding' });
       } else {
         toast.info('Proceeding to booking...');
@@ -98,21 +210,13 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     }
   };
 
-  if (loading) {
+  if (vendorsLoading) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
       </div>
     );
   }
-
-  const boardingStats = stats
-    ? [
-        { value: `${stats.activeFacilities}+`, label: 'Facilities' },
-        { value: stats.guests, label: 'Happy Pets' },
-        { value: stats.rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-current" /> },
-      ]
-    : [];
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -125,128 +229,140 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+        sheetToneClass="bg-white"
       />
-      <div className="flex-1 overflow-y-auto bg-white">
-      <div className="px-4 pt-4 bg-white">
-        <div className="space-y-8">
-          
-          {/* Promotion Banner */}
-          <PromotionBanner service="boarding" maxPromotions={3} />
+      <div className="flex-1 -mt-4 overflow-y-auto rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]">
+        <div className="bg-white px-4 pt-6">
+          <div className="space-y-8">
+            <FeaturedVendorSpotlights service="boarding" onNavigate={onNavigate} />
 
-          {/* Phase 1: Book again with previous facility */}
-          {previousFacility && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <RefreshCw className="w-5 h-5 text-orange-500" />
-                <h2 className="text-lg font-bold text-slate-900">Book again</h2>
-              </div>
-              <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4">
-                <div className="flex items-center gap-4">
-                  {previousFacility.photo ? (
-                    <img src={previousFacility.photo} alt={previousFacility.name} className="w-16 h-16 rounded-xl object-cover border-2 border-orange-200" />
-                  ) : (
-                    <div className="w-16 h-16 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 font-bold text-xl border-2 border-orange-200">
-                      {previousFacility.name?.charAt(0) || 'B'}
-                    </div>
-                  )}
-                  <div className="flex-1">
-                    <h3 className="font-bold text-slate-900 text-lg">{previousFacility.name}</h3>
-                    <div className="flex items-center gap-2 text-sm text-slate-600 mt-1">
-                      <Star className="w-4 h-4 fill-orange-500" /> {previousFacility.rating}
-                      <span>•</span>
-                      <span>Last stay: {previousFacility.lastVisit || '3 weeks ago'}</span>
-                    </div>
-                  </div>
-                  <Button className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white" onClick={() => handleCheckAvailability(previousFacility.id)}>
-                    Book Now
-                  </Button>
+            {previousFacility && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <RefreshCw className="w-5 h-5 text-orange-500" />
+                  <h2 className="text-lg font-bold text-slate-900">Book again</h2>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* Boarding Options */}
-          <div>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Boarding Options</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => onNavigate?.('boarding_overnight')}
-                className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
-              >
-                <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Moon className="w-5 h-5 text-slate-600" />
-                </div>
-                <h3 className="font-semibold text-slate-900 text-sm mb-0.5">Overnight</h3>
-                <p className="text-xs text-slate-500">Extended stays</p>
-                <span className="absolute top-3 right-3 px-2 py-0.5 bg-orange-100 text-orange-600 text-[9px] font-bold rounded-full uppercase tracking-wide">
-                  Popular
-                </span>
-              </button>
-
-              <button
-                onClick={() => onNavigate?.('daycare')}
-                className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
-              >
-                 <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                  <Sun className="w-5 h-5 text-slate-600" />
-                </div>
-                <h3 className="font-semibold text-slate-900 text-sm mb-0.5">Daycare</h3>
-                <p className="text-xs text-slate-500">Daily care</p>
-              </button>
-            </div>
-          </div>
-
-          {/* Featured Facilities */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-900">Featured Stays</h2>
-              <button 
-                className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                onClick={() => onNavigate?.('boarding_facility')}
-              >
-                View All <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <div className="space-y-3">
-              {boardingFacilities.length === 0 ? (
-                <Card className="p-8 text-center">
-                  <div className="text-4xl mb-3">🏠</div>
-                  <p className="text-gray-600 mb-2">No boarding facilities available yet</p>
-                  <p className="text-gray-500 text-sm">Check back soon for boarding options!</p>
-                </Card>
-              ) : (
-                (boardingFacilities.slice(0, 5).map((facility: any, index) => (
-                  <div 
-                    key={facility.id || index}
-                    className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 cursor-pointer hover:border-orange-200 transition-colors"
-                    onClick={() => handleCheckAvailability(facility.id || facility.vendorId)}
-                  >
-                    <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
-                       {facility.businessName ? facility.businessName.charAt(0) : 'B'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-slate-900 truncate">{facility.businessName || facility.name || `Pet Resort ${index}`}</h3>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                        <span className="flex items-center gap-1 text-orange-500 font-bold">
-                          <Star className="w-3 h-3 fill-current" />
-                          {facility.rating || 4.6}
-                        </span>
+                <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4">
+                  <div className="flex items-center gap-4">
+                    {previousFacility.photo ? (
+                      <img
+                        src={previousFacility.photo}
+                        alt={previousFacility.name}
+                        className="w-16 h-16 rounded-xl object-cover border-2 border-orange-200"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 bg-orange-100 rounded-xl flex items-center justify-center text-orange-600 font-bold text-xl border-2 border-orange-200">
+                        {previousFacility.name?.charAt(0) || 'B'}
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <h3 className="font-bold text-slate-900 text-lg">{previousFacility.name}</h3>
+                      <div className="flex items-center gap-2 text-sm text-slate-600 mt-1">
+                        <Star className="w-4 h-4 fill-orange-500" /> {previousFacility.rating}
                         <span>•</span>
-                        <span>{facility.distance ? `${Number(facility.distance).toFixed(1)} km` : 'Nearby'}</span>
+                        <span>Last stay: {previousFacility.lastVisit || '3 weeks ago'}</span>
                       </div>
                     </div>
-                    <div className="text-right">
-                       <div className="font-bold text-slate-900">₹{facility.priceRange?.replace(/[^0-9]/g, '') || facility.basePrice || 800}</div>
-                       <div className="text-[10px] text-slate-400">/night</div>
-                    </div>
+                    <Button
+                      className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
+                      onClick={() => handleCheckAvailability(previousFacility.id)}
+                    >
+                      Book Now
+                    </Button>
                   </div>
-                )))
+                </div>
+              </div>
+            )}
+
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 mb-4">Boarding Options</h2>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {BOARDING_CARD_LINKS.map(({ slug, title, subtitle, Icon, iconWrap, badge }) => (
+                  <button
+                    key={slug}
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      navigateToBoardingVendorList(onNavigate, router, slug);
+                    }}
+                    className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
+                  >
+                    <div
+                      className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl transition-transform group-hover:scale-110 ${iconWrap}`}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <h3 className="font-semibold text-slate-900 text-sm mb-0.5">{title}</h3>
+                    <p className="text-xs text-slate-500">{subtitle}</p>
+                    {badge ? (
+                      <span className="absolute top-3 right-3 px-2 py-0.5 bg-orange-100 text-orange-600 text-[9px] font-bold rounded-full uppercase tracking-wide">
+                        {badge}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-slate-900">Featured Stays</h2>
+                <button
+                  type="button"
+                  className="text-sm text-orange-600 flex items-center gap-1 font-medium"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    navigateToBoardingVendorList(onNavigate, router, 'all');
+                  }}
+                >
+                  View All <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              {relaxedFilter && (
+                <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
+                  No centers matched a specific service name in listings yet. Showing all pet boarding centers — expand
+                  for services or open details.
+                </p>
               )}
+
+              <div className="space-y-4">
+                {vendors.length === 0 ? (
+                  <Card className="p-8 text-center">
+                    <div className="text-4xl mb-3">🏠</div>
+                    <p className="text-gray-600 mb-2">No boarding facilities available yet</p>
+                    <p className="text-gray-500 text-sm">Check back soon for boarding options!</p>
+                  </Card>
+                ) : (
+                  vendors.map((v) => {
+                    const expanded = selectedVendorId === v.id;
+                    const minP = minPriceForVendor(v);
+                    return (
+                      <BoardingVendorExpandableCard
+                        key={v.id}
+                        v={v}
+                        serviceSlug={HUB_SERVICE_SLUG}
+                        expanded={expanded}
+                        fetchingPlansFor={fetchingPlansFor}
+                        minPrice={minP}
+                        onToggleHeader={() => toggleVendor(v.id)}
+                        onViewServices={(e) => {
+                          e.stopPropagation();
+                          setSelectedVendorId(v.id);
+                        }}
+                        onDetails={openVendorProfile}
+                        onBookPlan={handleBookPlan}
+                        onOpenCenterDetails={openVendorProfile}
+                      />
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
       </div>
     </div>
   );

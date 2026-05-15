@@ -72,6 +72,8 @@ interface Ticket {
 	assignedTo?: string;
 	assignedAgent?: string;
 	category?: string;
+	metadata?: Record<string, unknown>;
+	aiConversation?: Array<Record<string, unknown>>;
 }
 
 interface TicketMessage {
@@ -130,6 +132,8 @@ export default function SupportCRM() {
 	const [showAssignModal, setShowAssignModal] = useState(false);
 	const [selectedAgentId, setSelectedAgentId] = useState<string>("");
 	const [showCompletePlanModal, setShowCompletePlanModal] = useState(false);
+	const [suggestedReplies, setSuggestedReplies] = useState<string[]>([]);
+	const [suggestLoading, setSuggestLoading] = useState(false);
 	const [stats, setStats] = useState<CRMStats>({
 		totalTickets: 0,
 		openTickets: 0,
@@ -198,7 +202,12 @@ export default function SupportCRM() {
 			]);
 			
 			if (ticketsRes.success) {
-				const ticketList = ticketsRes.tickets || [];
+				const rawList = ticketsRes.tickets || [];
+				const ticketList: Ticket[] = rawList.map((t: any) => ({
+					...t,
+					assignedTo: t.assignedTo || t.assigned_to || undefined,
+					assignedAgent: t.assignedAgent || t.assigned_agent_name || undefined,
+				}));
 				setTickets(ticketList);
 				
 				// Calculate stats - use API stats if available, otherwise calculate locally
@@ -255,20 +264,34 @@ export default function SupportCRM() {
 				}));
 
 				// Update selected ticket with full details including messages
+				const raw = res.ticket;
+				const assignedToRaw = raw.assigned_to ?? raw.assignedTo ?? raw.assigned_agent_id;
+				const assignedTo = assignedToRaw ? String(assignedToRaw) : undefined;
+				const assignedAgent =
+					raw.assigned_agent_name ||
+					raw.assignedAgent ||
+					undefined;
+				const meta =
+					raw.metadata != null && typeof raw.metadata === "object" && !Array.isArray(raw.metadata)
+						? (raw.metadata as Record<string, unknown>)
+						: undefined;
 				const fullTicket: Ticket = {
-					id: res.ticket.id,
-					customerId: res.ticket.customer_id || '',
-					subject: res.ticket.subject || '',
-					description: res.ticket.message || res.ticket.description || '',
-					status: res.ticket.status || 'open',
-					priority: res.ticket.priority || 'medium',
-					source: res.ticket.source || 'customer',
-					createdAt: res.ticket.created_at || '',
-					assignedTo: res.ticket.assigned_agent_id,
-					assignedAgent: res.ticket.assigned_agent_name,
-					category: res.ticket.category,
+					id: raw.id,
+					customerId: raw.customer_id || '',
+					subject: raw.subject || '',
+					description: raw.message || raw.description || '',
+					status: raw.status || 'open',
+					priority: raw.priority || 'medium',
+					source: raw.source || 'customer',
+					createdAt: raw.created_at || '',
+					assignedTo,
+					assignedAgent,
+					category: raw.category,
 					messages,
+					metadata: meta,
+					aiConversation: Array.isArray(res.aiConversation) ? res.aiConversation : undefined,
 				};
+				setSuggestedReplies([]);
 				setSelectedTicket(fullTicket);
 			}
 		} catch (error) {
@@ -280,7 +303,30 @@ export default function SupportCRM() {
 	// Handle ticket selection - load full details
 	const handleSelectTicket = (ticket: Ticket) => {
 		setSelectedTicket(ticket);
+		setSuggestedReplies([]);
 		loadTicketDetails(ticket.id);
+	};
+
+	const handleSuggestReplies = async () => {
+		if (!selectedTicket) return;
+		setSuggestLoading(true);
+		try {
+			const res = await apiClient.post<any>(
+				`/support/tickets/${selectedTicket.id}/suggest-reply`,
+				{}
+			);
+			const list = Array.isArray(res.suggestions) ? res.suggestions : [];
+			setSuggestedReplies(list.filter((s: unknown) => typeof s === "string") as string[]);
+			if (!list.length) {
+				toast.info("No suggestions returned. Check Bedrock is enabled in platform settings.");
+			}
+		} catch (e) {
+			console.error(e);
+			toast.error("Could not load AI suggestions");
+			setSuggestedReplies([]);
+		} finally {
+			setSuggestLoading(false);
+		}
 	};
 
 	const loadAgents = async () => {
@@ -536,6 +582,19 @@ export default function SupportCRM() {
 		(t) => filterStatus === "all" || t.status === filterStatus
 	);
 
+	const ticketHasAssignee = (t: Ticket | null | undefined) =>
+		Boolean(t && (t.assignedTo || t.assignedAgent));
+
+	const assigneeDisplayLabel = (t: Ticket): string => {
+		if (t.assignedAgent) return t.assignedAgent;
+		if (t.assignedTo && agents.length) {
+			const a = agents.find((x) => x.id === t.assignedTo);
+			if (a?.name) return a.name;
+		}
+		if (t.assignedTo) return "Assigned";
+		return "";
+	};
+
 	const getPriorityColor = (priority: string) => {
 		switch (priority) {
 			case "urgent":
@@ -770,10 +829,10 @@ export default function SupportCRM() {
 													</span>
 												)}
 											</div>
-											{ticket.assignedAgent ? (
+											{ticketHasAssignee(ticket) ? (
 												<Badge variant="outline" className="text-xs border-[#FF8C42]/30 text-[#FF8C42] bg-[#FFF3E8]">
 													<User className="w-3 h-3 mr-1" />
-													{ticket.assignedAgent}
+													{assigneeDisplayLabel(ticket)}
 												</Badge>
 											) : (
 												<Badge variant="outline" className="text-xs border-red-200 text-red-600 bg-red-50">
@@ -825,10 +884,12 @@ export default function SupportCRM() {
 													<Clock className="w-4 h-4 text-gray-400" />
 													<span>{new Date(selectedTicket.createdAt).toLocaleString()}</span>
 												</div>
-												{selectedTicket.assignedAgent && (
+												{ticketHasAssignee(selectedTicket) && (
 													<div className="flex items-center gap-1.5 bg-[#FFF3E8] px-2 py-1 rounded border border-[#FF8C42]/30">
 														<Headphones className="w-4 h-4 text-[#FF8C42]" />
-														<span className="text-[#FF8C42] font-medium">{selectedTicket.assignedAgent}</span>
+														<span className="text-[#FF8C42] font-medium">
+															{assigneeDisplayLabel(selectedTicket)}
+														</span>
 													</div>
 												)}
 											</div>
@@ -858,7 +919,7 @@ export default function SupportCRM() {
 												Reopen
 											</Button>
 										)}
-										{!selectedTicket.assignedAgent ? (
+										{!ticketHasAssignee(selectedTicket) ? (
 											<>
 												<Button
 													size="sm"
@@ -949,6 +1010,48 @@ export default function SupportCRM() {
 										</p>
 									</div>
 
+									{selectedTicket.metadata &&
+										Object.keys(selectedTicket.metadata).length > 0 && (
+											<div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+												<h4 className="text-sm font-bold text-gray-800 mb-2">Ticket metadata</h4>
+												<pre className="text-xs text-gray-600 whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto">
+													{JSON.stringify(selectedTicket.metadata, null, 2)}
+												</pre>
+											</div>
+										)}
+
+									{selectedTicket.aiConversation && selectedTicket.aiConversation.length > 0 && (
+										<div className="bg-white border border-indigo-100 rounded-xl p-4 shadow-sm">
+											<h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+												<Headphones className="w-4 h-4 text-indigo-500" />
+												AI assistant transcript (pre-handoff)
+											</h4>
+											<div className="space-y-3 max-h-64 overflow-y-auto">
+												{selectedTicket.aiConversation.map((row, idx) => (
+													<div
+														key={String(row.id ?? row.created_at ?? idx)}
+														className="text-sm border-l-2 border-indigo-200 pl-3"
+													>
+														<p className="text-xs font-semibold text-gray-500 mb-0.5">Customer</p>
+														<p className="text-gray-800 whitespace-pre-wrap mb-2">
+															{String(row.user_message ?? "")}
+														</p>
+														<p className="text-xs font-semibold text-gray-500 mb-0.5">Assistant</p>
+														<p className="text-gray-700 whitespace-pre-wrap">
+															{String(row.bot_response ?? "")}
+														</p>
+														{row.intent != null ? (
+															<p className="text-xs text-gray-400 mt-1">
+																intent: {String(row.intent)} · confidence:{" "}
+																{row.confidence != null ? String(row.confidence) : "—"}
+															</p>
+														) : null}
+													</div>
+												))}
+											</div>
+										</div>
+									)}
+
 									{/* Message Thread */}
 									{selectedTicket.messages?.map((msg) => (
 										<div
@@ -987,6 +1090,47 @@ export default function SupportCRM() {
 								{/* Reply Area */}
 								{selectedTicket.status !== "resolved" && selectedTicket.status !== "closed" && (
 									<div className="bg-white border-t border-gray-200 p-4 shadow-lg">
+										<div className="flex flex-wrap items-center gap-2 mb-3">
+											<Button
+												type="button"
+												size="sm"
+												variant="outline"
+												className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+												disabled={suggestLoading}
+												onClick={() => void handleSuggestReplies()}
+											>
+												{suggestLoading ? (
+													<>
+														<RefreshCw className="w-4 h-4 mr-1.5 animate-spin" />
+														Suggesting…
+													</>
+												) : (
+													<>
+														<Zap className="w-4 h-4 mr-1.5" />
+														Suggest replies (AI)
+													</>
+												)}
+											</Button>
+										</div>
+										{suggestedReplies.length > 0 && (
+											<div className="flex flex-col gap-2 mb-3">
+												<span className="text-xs font-semibold text-gray-500">
+													Tap to copy into reply box (edit before sending)
+												</span>
+												<div className="flex flex-col gap-2">
+													{suggestedReplies.map((s, i) => (
+														<button
+															key={i}
+															type="button"
+															className="text-left text-sm p-3 rounded-lg border border-gray-200 bg-gray-50 hover:bg-indigo-50 hover:border-indigo-200 text-gray-800"
+															onClick={() => setReplyText(s)}
+														>
+															{s}
+														</button>
+													))}
+												</div>
+											</div>
+										)}
 										<div className="flex gap-3">
 											<Input
 												value={replyText}

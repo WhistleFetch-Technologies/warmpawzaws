@@ -142,6 +142,18 @@ export const TRANSITIONS = {
 /**
  * Common component styles
  */
+/**
+ * CSS component classes from globals.css (@layer components).
+ * Use these strings when composing className to stay DRY with the design system.
+ */
+export const VENDOR_LAYOUT_CLASSES = {
+  pageShell: 'vendor-page-shell',
+  appColumn: 'vendor-app-column',
+  authColumn: 'vendor-auth-column',
+  appColumnInner: 'vendor-app-column-inner',
+  modalSheet: 'vendor-modal-sheet',
+} as const;
+
 export const COMPONENT_STYLES = {
   // Button styles
   button: {

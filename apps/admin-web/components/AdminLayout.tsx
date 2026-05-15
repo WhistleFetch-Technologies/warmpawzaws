@@ -1,25 +1,27 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { getStoredAdminPermissions, hasAdminPortalPermission } from '@/lib/admin-permissions';
+import { apiClient } from '@/lib/api-client';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
 }
 
-const menuItems = [
-  { id: 'dashboard', icon: '📊', label: 'Dashboard', href: '/' },
-  { id: 'analytics', icon: '📈', label: 'Analytics', href: '/analytics' },
-  { id: 'vendors', icon: '🏪', label: 'Vendors', href: '/vendors' },
-  { id: 'roles', icon: '👤', label: 'Roles & User Management', href: '/roles' },
-  { id: 'catalog', icon: '📚', label: 'Service Catalog', href: '/catalog' },
-  { id: 'settlements', icon: '💰', label: 'Settlements', href: '/settlements' },
-  { id: 'reports', icon: '📋', label: 'Reports', href: '/reports' },
-  { id: 'integrations', icon: '🔗', label: 'Integrations', href: '/integrations' },
-  { id: 'governance', icon: '🏛️', label: 'Governance', href: '/governance' },
-  { id: 'logistics', icon: '🚚', label: 'Logistics', href: '/logistics' },
-  { id: 'refunds', icon: '💸', label: 'Refunds', href: '/refunds' },
+const menuItems: { id: string; icon: string; label: string; href: string; permission: string }[] = [
+  { id: 'dashboard', icon: '📊', label: 'Dashboard', href: '/', permission: 'admin.dashboard' },
+  { id: 'analytics', icon: '📈', label: 'Analytics', href: '/analytics', permission: 'admin.analytics' },
+  { id: 'vendors', icon: '🏪', label: 'Vendors', href: '/vendors', permission: 'admin.vendors' },
+  { id: 'roles', icon: '👤', label: 'Roles & User Management', href: '/roles', permission: 'admin.roles' },
+  { id: 'catalog', icon: '📚', label: 'Service Catalog', href: '/catalog', permission: 'admin.catalog' },
+  { id: 'settlements', icon: '💰', label: 'Settlements', href: '/settlements', permission: 'admin.settlements' },
+  { id: 'reports', icon: '📋', label: 'Reports', href: '/reports', permission: 'admin.reports' },
+  { id: 'integrations', icon: '🔗', label: 'Integrations', href: '/integrations', permission: 'admin.integrations' },
+  { id: 'governance', icon: '🏛️', label: 'Governance', href: '/governance', permission: 'admin.governance' },
+  { id: 'logistics', icon: '🚚', label: 'Logistics', href: '/logistics', permission: 'admin.logistics' },
+  { id: 'refunds', icon: '💸', label: 'Refunds', href: '/refunds', permission: 'admin.refunds' },
 ];
 
 export function AdminLayout({ children }: AdminLayoutProps) {
@@ -27,10 +29,32 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   // During static generation, it will return the current route or '/'
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+  const [permTick, setPermTick] = useState(0);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'adminPermissions' || e.key === 'adminAuthToken') setPermTick((t) => t + 1);
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', onStorage);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('storage', onStorage);
+      }
+    };
+  }, []);
+
+  const visibleMenuItems = useMemo(() => {
+    if (!mounted) return menuItems;
+    const perms = getStoredAdminPermissions();
+    if (perms.includes('admin.full_access') || perms.includes('*')) return menuItems;
+    return menuItems.filter((item) => hasAdminPortalPermission(item.permission));
+  }, [mounted, permTick]);
 
   const isActive = (href: string) => {
     if (!mounted) return false; // During static generation, don't highlight
@@ -55,7 +79,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         </div>
         
         <nav className="p-4 space-y-1">
-          {menuItems.map((item) => (
+          {visibleMenuItems.map((item) => (
             <Link
               key={item.id}
               href={item.href}
@@ -82,8 +106,8 @@ export function AdminLayout({ children }: AdminLayoutProps) {
               <button 
                 onClick={() => {
                   if (typeof window !== 'undefined') {
-                    localStorage.removeItem('adminAuthToken');
-                    localStorage.removeItem('adminId');
+                    apiClient.clearAuth();
+                    sessionStorage.removeItem('_warmpawz_admin_has_session');
                     window.location.href = '/';
                   }
                 }}

@@ -59,20 +59,6 @@ export class EventBridgeStack extends Construct {
       ],
     });
 
-    // Rule for analytics events
-    new events.Rule(this, 'AnalyticsEventsRule', {
-      eventBus: this.eventBus,
-      ruleName: `warmpawz-${env}-analytics-events`,
-      description: 'Route analytics events to analytics queue',
-      eventPattern: {
-        source: ['warmpawz'],
-        detailType: events.Match.prefix('Analytics'),
-      },
-      targets: [
-        new targets.SqsQueue(props.sqsStack.analyticsQueue),
-      ],
-    });
-
     // Rule for settlement events
     new events.Rule(this, 'SettlementEventsRule', {
       eventBus: this.eventBus,

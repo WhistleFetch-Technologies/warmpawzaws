@@ -52,7 +52,8 @@ export interface Dashboardstats {
     earnings: number;
     pendingEarnings: number;
     completedServices: number;
-    rating: number;
+    /** Average from approved reviews only; null when there is no aggregate (e.g. zero reviews). */
+    rating: number | null;
     totalReviews: number;
     activeOrders?: number;
 }
@@ -81,6 +82,12 @@ export interface ScheduleItem {
     isFollowUp?: boolean;
     isRescheduled?: boolean; // Indicates if booking was rescheduled from original time/date
     rescheduledAt?: string | null; // Timestamp when booking was rescheduled
+    /** Package session tracking (from enriched vendor bookings API) */
+    packagePurchaseId?: string;
+    packageSessionNumber?: number;
+    packageTotalSessions?: number;
+    /** True when this booking row is a scheduled package session (not the purchase-level parent placeholder). */
+    isPackageSession?: boolean;
 }
 
 export interface WatchlistItem {

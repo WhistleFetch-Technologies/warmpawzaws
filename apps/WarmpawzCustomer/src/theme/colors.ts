@@ -8,6 +8,12 @@ export const colors = {
   primary: '#FF8C42',
   primaryLight: '#FFA366',
   primaryDark: '#FF6B35',
+  /** Solid CTA fill — darker than `primary` so white label text meets WCAG AA (~4.5:1). */
+  ctaBackground: '#B8440E',
+  ctaBackgroundPressed: '#94360B',
+  /** Disabled CTA — label uses dark text for readable contrast on pale tint. */
+  ctaDisabledBackground: '#E5D0C6',
+  ctaDisabledText: '#4A382F',
   
   // Secondary colors
   secondary: '#030213',
@@ -15,6 +21,7 @@ export const colors = {
   
   // Background colors
   background: '#ffffff',
+  white: '#ffffff',
   backgroundSecondary: '#f3f3f5',
   backgroundTertiary: '#ececf0',
   
@@ -63,6 +70,12 @@ export const borderRadius = {
   full: 9999,
 };
 
+/**
+ * Large top radii on the body sheet over the orange header — shared with `CustomerHomeScreen`
+ * and `OrangeBrandedScreenLayout` for visual parity (28–36 logical px; use 32).
+ */
+export const BRAND_ORANGE_HEADER_BODY_CURVE_RADIUS = 32;
+
 export const typography = {
   fontSizes: {
     xs: 12,
@@ -79,6 +92,6 @@ export const typography = {
     medium: '500',
     semibold: '600',
     bold: '700',
-  },
+  } as const,
 };
 

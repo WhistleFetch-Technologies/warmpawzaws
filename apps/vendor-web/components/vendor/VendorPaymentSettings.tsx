@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Building2, CreditCard, Wallet, CheckCircle, XCircle, AlertCircle, Loader2, Upload, FileText, Edit2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { useState, useEffect, useRef } from 'react';
+import { Building2, Wallet, CheckCircle, XCircle, AlertCircle, Loader2, Upload, FileText, Edit2 } from 'lucide-react';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/components/ui/utils';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { EnhancedBankAccountForm } from '@/components/shared/EnhancedBankAccountForm';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface VendorPaymentSettingsProps {
   vendorId: string;
@@ -32,7 +32,7 @@ interface BankAccountStatus {
 }
 
 export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }: VendorPaymentSettingsProps) {
-  const [paymentMethod, setPaymentMethod] = useState<'bank' | 'upi' | 'wallet'>('bank');
+  const [paymentMethod, setPaymentMethod] = useState<'bank' | 'wallet'>('bank');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -48,8 +48,8 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [uploadingDoc, setUploadingDoc] = useState(false);
-  const [upiId, setUpiId] = useState('');
-  const [upiVerified, setUpiVerified] = useState(false);
+  const cancelledChequeInputRef = useRef<HTMLInputElement>(null);
+  const bankStatementInputRef = useRef<HTMLInputElement>(null);
   const [walletBalance, setWalletBalance] = useState(0);
   const [walletTransactions, setWalletTransactions] = useState<any[]>([]);
   const [loadingWallet, setLoadingWallet] = useState(false);
@@ -57,14 +57,13 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
   useEffect(() => {
     loadBankAccount();
     loadWalletData();
-    loadUpiId();
   }, [vendorId]);
 
   const loadWalletData = async () => {
     try {
       setLoadingWallet(true);
-      // Load wallet balance using GET /wallet/:vendorId
-      const walletResponse = await apiClient.get(`/wallet/${vendorId}`) as any;
+      // Load vendor wallet balance
+      const walletResponse = await apiClient.get(`/vendor/wallet/${vendorId}`) as any;
       
       if (walletResponse && walletResponse.balance !== undefined) {
         setWalletBalance(parseFloat(walletResponse.balance) || 0);
@@ -72,9 +71,9 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
         setWalletBalance(parseFloat(walletResponse.data.balance) || 0);
       }
       
-      // Load wallet transactions
+      // Load vendor wallet transactions
       try {
-        const transactionsResponse = await apiClient.get(`/wallet/${vendorId}/transactions?limit=10`) as any;
+        const transactionsResponse = await apiClient.get(`/vendor/wallet/${vendorId}/transactions?limit=10`) as any;
         if (transactionsResponse?.transactions) {
           setWalletTransactions(transactionsResponse.transactions);
         } else if (Array.isArray(transactionsResponse)) {
@@ -129,25 +128,6 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
       setBankStatus({ exists: false, is_verified: false });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadUpiId = async () => {
-    try {
-      const response = await apiClient.get(`/vendor/${vendorId}/upi`) as any;
-      
-      if (response && response.success && response.upi) {
-        if (response.upi.upi_id) {
-          setUpiId(response.upi.upi_id);
-          setUpiVerified(response.upi.is_verified || false);
-        }
-      }
-    } catch (error: any) {
-      console.error('Error loading UPI ID:', error);
-      // If 404, UPI doesn't exist yet - that's fine
-      if (error.status !== 404) {
-        console.warn('Failed to load UPI ID:', error);
-      }
     }
   };
 
@@ -321,7 +301,7 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
         {/* Payment Method Selection */}
         <div>
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Payout Method</h3>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <button
               onClick={() => setPaymentMethod('bank')}
               className={`p-4 rounded-lg border-2 transition-all ${
@@ -337,20 +317,6 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
               {bankStatus.is_verified && (
                 <p className="text-xs text-green-600 mt-1">✓ Verified</p>
               )}
-            </button>
-            <button
-              onClick={() => setPaymentMethod('upi')}
-              className={`p-4 rounded-lg border-2 transition-all ${
-                paymentMethod === 'upi'
-                  ? 'border-[#FF8C42] bg-orange-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <CreditCard className={`w-6 h-6 mb-2 mx-auto ${paymentMethod === 'upi' ? 'text-[#FF8C42]' : 'text-gray-600'}`} />
-              <p className={`font-semibold text-sm ${paymentMethod === 'upi' ? 'text-[#FF8C42]' : 'text-gray-900'}`}>
-                UPI
-              </p>
-              {upiVerified && <p className="text-xs text-green-600 mt-1">✓ Verified</p>}
             </button>
             <button
               onClick={() => {
@@ -467,149 +433,89 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                     <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm font-medium text-gray-700 mb-1">Cancelled Cheque</p>
                     <p className="text-xs text-gray-500 mb-3">PDF, JPG, PNG (Max 5MB)</p>
-                    <label className="inline-block">
-                      <input
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => {
+                    <div className="inline-block min-h-[36px] min-w-[88px]">
+                      <TouchFilePicker
+                        ref={cancelledChequeInputRef}
+                        onFileChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
                             if (file.size > 5 * 1024 * 1024) {
                               toast.error('File size must be less than 5MB');
+                              e.target.value = '';
                               return;
                             }
                             handleUploadDocument(file, 'cancelled_cheque');
                           }
+                          e.target.value = '';
                         }}
-                        className="hidden"
+                        accept=".pdf,.jpg,.jpeg,.png"
                         disabled={uploadingDoc}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={uploadingDoc}
-                        className="cursor-pointer"
-                        onClick={() => {
-                          const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-                          input?.click();
-                        }}
+                        className="inline-block min-h-[36px] min-w-[88px]"
+                        innerClassName="items-center justify-center"
                       >
-                        {uploadingDoc ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <>
-                            <Upload className="w-4 h-4 mr-1" />
-                            Upload
-                          </>
-                        )}
-                      </Button>
-                    </label>
+                        <span
+                          className={cn(
+                            buttonVariants({ variant: 'outline', size: 'sm' }),
+                            uploadingDoc && 'opacity-50'
+                          )}
+                        >
+                          {uploadingDoc ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Upload className="mr-1 h-4 w-4" />
+                              Upload
+                            </>
+                          )}
+                        </span>
+                      </TouchFilePicker>
+                    </div>
                   </div>
                   <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
                     <FileText className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm font-medium text-gray-700 mb-1">Bank Statement</p>
                     <p className="text-xs text-gray-500 mb-3">PDF, JPG, PNG (Max 5MB)</p>
-                    <label className="inline-block">
-                      <input
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => {
+                    <div className="inline-block min-h-[36px] min-w-[88px]">
+                      <TouchFilePicker
+                        ref={bankStatementInputRef}
+                        onFileChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
                             if (file.size > 5 * 1024 * 1024) {
                               toast.error('File size must be less than 5MB');
+                              e.target.value = '';
                               return;
                             }
                             handleUploadDocument(file, 'bank_statement');
                           }
+                          e.target.value = '';
                         }}
-                        className="hidden"
+                        accept=".pdf,.jpg,.jpeg,.png"
                         disabled={uploadingDoc}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={uploadingDoc}
-                        className="cursor-pointer"
-                        onClick={() => {
-                          const inputs = document.querySelectorAll('input[type="file"]');
-                          const statementInput = Array.from(inputs).find((_, i) => i === 1) as HTMLInputElement;
-                          statementInput?.click();
-                        }}
+                        className="inline-block min-h-[36px] min-w-[88px]"
+                        innerClassName="items-center justify-center"
                       >
-                        {uploadingDoc ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <>
-                            <Upload className="w-4 h-4 mr-1" />
-                            Upload
-                          </>
-                        )}
-                      </Button>
-                    </label>
+                        <span
+                          className={cn(
+                            buttonVariants({ variant: 'outline', size: 'sm' }),
+                            uploadingDoc && 'opacity-50'
+                          )}
+                        >
+                          {uploadingDoc ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <>
+                              <Upload className="mr-1 h-4 w-4" />
+                              Upload
+                            </>
+                          )}
+                        </span>
+                      </TouchFilePicker>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
-          </div>
-        )}
-
-        {/* UPI Form */}
-        {paymentMethod === 'upi' && (
-          <div className="space-y-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <div className="flex items-start gap-3">
-                <CreditCard className="w-5 h-5 text-blue-600 mt-0.5" />
-                <div>
-                  <p className="font-semibold text-blue-900">UPI Payments</p>
-                  <p className="text-sm text-blue-700 mt-1">
-                    Receive payouts directly to your UPI ID. Instant transfers with no charges.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
-              <div>
-                <Label htmlFor="upi_id">UPI ID</Label>
-                <Input
-                  id="upi_id"
-                  placeholder="yourname@upi"
-                  value={upiId}
-                  onChange={(e) => setUpiId(e.target.value)}
-                  className="mt-1"
-                />
-                <p className="text-xs text-gray-500 mt-1">Example: 9876543210@paytm, yourname@okicici</p>
-              </div>
-
-              <div className="flex gap-3">
-                <Button
-                  onClick={async () => {
-                    if (!upiId || !upiId.includes('@')) {
-                      toast.error('Please enter a valid UPI ID');
-                      return;
-                    }
-                    try {
-                      setVerifying(true);
-                      await apiClient.post(`/vendor/${vendorId}/upi`, { upi_id: upiId });
-                      setUpiVerified(true);
-                      toast.success('UPI ID saved and verification pending');
-                    } catch (error) {
-                      toast.error('Failed to save UPI ID');
-                    } finally {
-                      setVerifying(false);
-                    }
-                  }}
-                  disabled={verifying || !upiId}
-                  className="bg-[#FF8C42] hover:bg-[#FF7029]"
-                >
-                  {verifying ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                  Verify & Save UPI
-                </Button>
-              </div>
-            </div>
           </div>
         )}
 
@@ -620,9 +526,9 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
               <div className="flex items-start gap-3">
                 <Wallet className="w-5 h-5 text-purple-600 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-purple-900">WarmPawz Wallet</p>
+                  <p className="font-semibold text-purple-900">Warmpawz Wallet</p>
                   <p className="text-sm text-purple-700 mt-1">
-                    Your earnings are credited to your WarmPawz wallet. Withdraw anytime to bank or UPI.
+                    Your earnings are credited to your Warmpawz wallet. Withdraw anytime to your bank account.
                   </p>
                 </div>
               </div>
@@ -640,28 +546,17 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setPaymentMethod('bank');
-                    toast.info('Select bank account to withdraw');
-                  }}
-                >
-                  <Building2 className="w-4 h-4 mr-2" />
-                  Withdraw to Bank
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setPaymentMethod('upi');
-                    toast.info('Set up UPI to withdraw');
-                  }}
-                >
-                  <CreditCard className="w-4 h-4 mr-2" />
-                  Withdraw to UPI
-                </Button>
-              </div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPaymentMethod('bank');
+                  toast.info('Use bank account to withdraw');
+                }}
+                className="flex h-auto min-h-11 w-full items-center justify-center gap-2 whitespace-normal py-3 px-3 text-center leading-snug"
+              >
+                <Building2 className="h-4 w-4 shrink-0" aria-hidden />
+                <span className="min-w-0 break-words">Withdraw to bank account</span>
+              </Button>
 
               <div className="mt-6 pt-6 border-t border-gray-200">
                 <div className="flex items-center justify-between mb-3">
@@ -686,17 +581,19 @@ export function VendorPaymentSettings({ vendorId, vendorData, onBack, onClose }:
                 ) : walletTransactions.length > 0 ? (
                   <div className="space-y-2 text-sm">
                     {walletTransactions.slice(0, 10).map((txn: any, index: number) => {
-                      const isCredit = txn.transaction_type === 'credit' || txn.amount > 0;
+                      const txType = txn.transaction_type || txn.type;
+                      const txDate = txn.created_at || txn.timestamp;
+                      const isCredit = txType === 'credit' || txn.amount > 0;
                       const amount = Math.abs(parseFloat(txn.amount || 0));
-                      const description = txn.description || txn.reference_type || 'Transaction';
+                      const description = txn.description || txn.reference_type || txn.referenceType || 'Transaction';
                       
                       return (
                         <div key={txn.id || index} className="flex justify-between py-2 border-b border-gray-100 last:border-b-0">
                           <div className="flex-1">
                             <span className="text-gray-600">{description}</span>
-                            {txn.created_at && (
+                            {txDate && (
                               <p className="text-xs text-gray-400 mt-0.5">
-                                {new Date(txn.created_at).toLocaleDateString()}
+                                {new Date(txDate).toLocaleDateString()}
                               </p>
                             )}
                           </div>

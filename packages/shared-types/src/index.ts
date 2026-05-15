@@ -5,3 +5,5 @@
  */
 
 export * from './entities';
+export * from './customer-vendor-profile';
+export * from './price-display';

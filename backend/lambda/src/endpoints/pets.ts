@@ -18,6 +18,7 @@ import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { presignS3GetUrlIfApplicable } from '../utils/s3-media-presign';
 
 export function registerPetEndpoints(app: Hono) {
   /**
@@ -70,6 +71,8 @@ export function registerPetEndpoints(app: Hono) {
       }
 
       const pet = pets[0];
+      const photo =
+        (await presignS3GetUrlIfApplicable(pet.profile_photo_url)) || pet.profile_photo_url;
 
       return c.json({
         success: true,
@@ -82,7 +85,8 @@ export function registerPetEndpoints(app: Hono) {
           age_months: pet.age_months,
           gender: pet.gender,
           weight_kg: pet.weight_kg,
-          profile_photo_url: pet.profile_photo_url,
+          photo,
+          profile_photo_url: photo,
           medical_history: pet.medical_history || {},
           createdAt: pet.created_at,
         },
@@ -117,6 +121,8 @@ export function registerPetEndpoints(app: Hono) {
       }
 
       const pet = pets[0];
+      const photo =
+        (await presignS3GetUrlIfApplicable(pet.profile_photo_url)) || pet.profile_photo_url;
 
       // Map to frontend-expected format
       return c.json({
@@ -133,8 +139,8 @@ export function registerPetEndpoints(app: Hono) {
           gender: pet.gender,
           weight: pet.weight_kg?.toString() || '',
           weight_kg: pet.weight_kg,
-          photo: pet.profile_photo_url,
-          profile_photo_url: pet.profile_photo_url,
+          photo,
+          profile_photo_url: photo,
           microchipId: pet.microchip_id,
           healthRecords: pet.medical_history || {},
           vaccinations: pet.vaccination_records || {},
@@ -162,6 +168,8 @@ export function registerPetEndpoints(app: Hono) {
       }
 
       const pet = pets[0];
+      const profilePhoto =
+        (await presignS3GetUrlIfApplicable(pet.profile_photo_url)) || pet.profile_photo_url;
 
       // Get medical records count
       const medicalRecords = await query(
@@ -185,6 +193,8 @@ export function registerPetEndpoints(app: Hono) {
         success: true,
         pet: {
           ...pet,
+          profile_photo_url: profilePhoto,
+          photo: profilePhoto,
           medicalRecordsCount: parseInt(medicalRecords.rows[0]?.count || '0', 10),
           prescriptionsCount: parseInt(prescriptions.rows[0]?.count || '0', 10),
           bookingsCount: parseInt(bookings.rows[0]?.count || '0', 10),
@@ -428,6 +438,12 @@ export function registerPetEndpoints(app: Hono) {
     try {
       const { petId } = c.req.param();
 
+      // Unlink booking history from this pet (preserves rows; avoids bookings_pet_id_fkey on DELETE)
+      await query(
+        'UPDATE bookings SET pet_id = NULL, updated_at = NOW() WHERE pet_id = $1',
+        [petId]
+      );
+
       await query('DELETE FROM pets WHERE id = $1', [petId]);
 
       return c.json({
@@ -575,6 +591,12 @@ export function registerPetEndpoints(app: Hono) {
         }, 400);
       }
 
+      // Preserve booking rows but remove FK: completed/cancelled history still references pet_id
+      await query(
+        'UPDATE bookings SET pet_id = NULL, updated_at = NOW() WHERE pet_id = $1 AND customer_id = $2',
+        [petId, customer.id]
+      );
+
       await query('DELETE FROM pets WHERE id = $1 AND customer_id = $2', [petId, customer.id]);
 
       return c.json({
@@ -610,25 +632,72 @@ export function registerPetEndpoints(app: Hono) {
         return c.json({ error: 'Pet not found' }, 404);
       }
 
-      // Get bookings for this pet
+      // Resolve bookings table capabilities once so this endpoint works across schema versions.
+      const bookingColumnsResult = await query(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND table_name = 'bookings'
+           AND column_name = ANY($1::text[])`,
+        [['pet_id', 'scheduled_date', 'scheduled_time', 'booking_date', 'booking_time', 'notes']]
+      );
+      const bookingColumns = new Set<string>(
+        (bookingColumnsResult.rows || []).map((r: any) => String(r.column_name))
+      );
+      const hasPetIdColumn = bookingColumns.has('pet_id');
+      const hasNotesColumn = bookingColumns.has('notes');
+      const hasScheduledDateColumn = bookingColumns.has('scheduled_date');
+      const hasScheduledTimeColumn = bookingColumns.has('scheduled_time');
+      const hasBookingDateColumn = bookingColumns.has('booking_date');
+      const hasBookingTimeColumn = bookingColumns.has('booking_time');
+
+      // Always scope by customer_id first for correctness + index-friendly filtering.
+      const whereClauses: string[] = ['b.customer_id = $1'];
+      const params: any[] = [customer.id];
+      let paramIndex = 2;
+      const legacyNotesNeedle = `petid:${String(petId).toLowerCase()}`;
+
+      if (hasPetIdColumn && hasNotesColumn) {
+        whereClauses.push(
+          `(b.pet_id::text = $${paramIndex} OR REPLACE(LOWER(COALESCE(b.notes, '')), ' ', '') LIKE '%' || $${paramIndex + 1} || '%')`
+        );
+        params.push(petId, legacyNotesNeedle);
+        paramIndex += 2;
+      } else if (hasPetIdColumn) {
+        whereClauses.push(`b.pet_id::text = $${paramIndex}`);
+        params.push(petId);
+        paramIndex += 1;
+      } else if (hasNotesColumn) {
+        whereClauses.push(`REPLACE(LOWER(COALESCE(b.notes, '')), ' ', '') LIKE '%' || $${paramIndex} || '%'`);
+        params.push(legacyNotesNeedle);
+        paramIndex += 1;
+      } else {
+        // No way to relate bookings to a pet in this schema.
+        return c.json({ success: true, bookings: [], stats: { total: 0, confirmed: 0, inProgress: 0, completed: 0, cancelled: 0 } });
+      }
+
+      const orderDateExpr = hasScheduledDateColumn
+        ? 'b.scheduled_date'
+        : hasBookingDateColumn
+        ? 'b.booking_date'
+        : 'b.created_at::date';
+      const orderTimeExpr = hasScheduledTimeColumn
+        ? 'b.scheduled_time'
+        : hasBookingTimeColumn
+        ? 'b.booking_time'
+        : 'b.created_at::time';
+
       const bookingsResult = await query(
-        `SELECT 
-          b.id,
-          b.service_name as "serviceName",
-          b.vendor_name as "vendorName",
-          b.vendor_type as "vendorType",
-          b.scheduled_date as "scheduledDate",
-          b.scheduled_time as "scheduledTime",
-          b.status,
-          b.price,
-          b.service_style as "serviceStyle",
-          b.created_at as "createdAt",
-          b.duration,
-          b.pet_id as "petId"
+        `SELECT
+          b.*,
+          v.business_name as "vendorBusinessName",
+          s.name as "joinedServiceName"
         FROM bookings b
-        WHERE b.pet_id = $1
-        ORDER BY b.scheduled_date DESC, b.scheduled_time DESC`,
-        [petId]
+        LEFT JOIN vendors v ON b.vendor_id = v.id
+        LEFT JOIN services s ON b.service_id = s.id
+        WHERE ${whereClauses.join(' AND ')}
+        ORDER BY ${orderDateExpr} DESC, ${orderTimeExpr} DESC`,
+        params
       );
 
       const bookings = bookingsResult.rows || [];
@@ -644,20 +713,25 @@ export function registerPetEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        bookings: bookings.map((booking: any) => ({
-          id: booking.id,
-          serviceName: booking.serviceName,
-          vendorName: booking.vendorName,
-          vendorType: booking.vendorType,
-          scheduledDate: booking.scheduledDate,
-          scheduledTime: booking.scheduledTime,
-          status: booking.status,
-          price: booking.price,
-          serviceStyle: booking.serviceStyle,
-          createdAt: booking.createdAt,
-          duration: booking.duration,
-          petId: booking.petId,
-        })),
+        bookings: bookings.map((booking: any) => {
+          const scheduledDate = booking.scheduled_date ?? booking.booking_date ?? null;
+          const scheduledTime = booking.scheduled_time ?? booking.booking_time ?? null;
+          const price = booking.total_amount ?? booking.base_price ?? booking.price ?? 0;
+          return {
+            id: booking.id,
+            serviceName: booking.service_name ?? booking.joinedServiceName ?? 'Service',
+            vendorName: booking.vendor_name ?? booking.vendorBusinessName ?? '',
+            vendorType: booking.vendor_type ?? null,
+            scheduledDate,
+            scheduledTime,
+            status: booking.status,
+            price,
+            serviceStyle: booking.service_style ?? booking.service_type ?? null,
+            createdAt: booking.created_at,
+            duration: booking.duration,
+            petId: booking.pet_id ?? petId,
+          };
+        }),
         stats,
       });
     } catch (error: any) {

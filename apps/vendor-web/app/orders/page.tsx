@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import { OrderDetailsModal } from '@/components/vendor/orders/OrderDetailsModal';
 import { OrderStatusUpdateModal } from '@/components/vendor/orders/OrderStatusUpdateModal';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 // ============================================================================
 // TYPES
@@ -237,29 +238,15 @@ export default function VendorOrdersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header - Match consistency pattern: max-w-7xl mx-auto px-6 py-4 */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              {/* ✅ FIX: Match consistency - text-2xl font-bold */}
-              <h1 className="text-2xl font-bold text-gray-800">Order Management</h1>
-              <p className="text-sm text-gray-500 mt-1">Manage your e-commerce orders</p>
-            </div>
-            <button
-              onClick={() => router.push('/')}
-              className="px-4 py-2 text-gray-600 hover:text-gray-800 transition"
-            >
-              ← Back
-            </button>
-          </div>
-        </div>
-      </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="Order Management"
+          subtitle="Manage your e-commerce orders"
+          onBack={() => router.push('/')}
+        />
 
-      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-6">
+        <div className="w-full px-4 py-6 sm:px-6">
 
         {/* Error */}
         {error && (
@@ -466,9 +453,8 @@ export default function VendorOrdersPage() {
           </div>
         )}
         </div>
-      </div>
 
-      {/* Modals - Outside main content wrapper */}
+      {/* Modals */}
       <OrderDetailsModal
         isOpen={showDetailsModal}
         onClose={() => {
@@ -495,6 +481,7 @@ export default function VendorOrdersPage() {
           loadOrders();
         }}
       />
+      </div>
     </div>
   );
 }

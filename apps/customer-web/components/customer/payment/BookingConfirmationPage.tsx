@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   CheckCircle2, Calendar, Clock, MapPin, User, Building2, Home, Video,
-  Copy, Share2, Download, FileText, QrCode, Shield, Gift, Package
+  Copy, Share2, Download, FileText, QrCode, Shield, Gift, Package, ArrowLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -23,6 +23,9 @@ interface BookingConfirmationPageProps {
   vendorName: string;
   bookingDate?: string;
   bookingTime?: string;
+  /** Multi-day boarding / sitting: end of stay */
+  checkOutDate?: string;
+  checkOutTime?: string;
   petName?: string;
   address?: {
     label?: string;
@@ -40,6 +43,8 @@ interface BookingConfirmationPageProps {
   // Navigation
   onViewDetails: () => void;
   onBackToHome: () => void;
+  /** Top bar back (e.g. return to previous step / provider profile) */
+  onBack?: () => void;
   onShare?: () => void;
   // Phase 3: Upsell - Add another service
   onNavigate?: (screen: string, data?: any) => void;
@@ -55,6 +60,8 @@ export function BookingConfirmationPage({
   vendorName,
   bookingDate,
   bookingTime,
+  checkOutDate,
+  checkOutTime,
   petName,
   address,
   serviceStyle,
@@ -63,6 +70,7 @@ export function BookingConfirmationPage({
   transactionId,
   onViewDetails,
   onBackToHome,
+  onBack,
   onShare,
   onNavigate,
 }: BookingConfirmationPageProps) {
@@ -188,10 +196,22 @@ export function BookingConfirmationPage({
   const isEligibleForOTP = type === 'booking' && serviceStyle && serviceStyle !== 'tele' && serviceStyle !== 'ecom';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-orange-50 pb-32">
-      {/* Header */}
-      <header className="bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg">
-        <div className="max-w-lg mx-auto px-4 py-6 text-center">
+    <div className="w-full max-w-customer mx-auto min-h-[100dvh] bg-gradient-to-br from-green-50 via-white to-orange-50 flex flex-col">
+      {onBack && (
+        <div className="shrink-0 flex items-center border-b border-gray-200/80 bg-white/90 backdrop-blur-sm px-2 py-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100"
+          >
+            <ArrowLeft className="w-5 h-5 text-[#FF8C42]" />
+            Back
+          </button>
+        </div>
+      )}
+      {/* Header — same max width as app column (not full-viewport bleed) */}
+      <header className="bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-lg shrink-0">
+        <div className="w-full px-4 py-6 text-center">
           <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle2 className="w-12 h-12 text-white" />
           </div>
@@ -204,7 +224,7 @@ export function BookingConfirmationPage({
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto px-4 py-6 space-y-4 -mt-8">
+      <main className="w-full flex-1 px-4 py-6 space-y-4 -mt-8 pb-6">
         {/* Queue Position Card (for tele consultations) */}
         {serviceStyle === 'tele' && queuePosition !== null && (
           <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200 shadow-lg">
@@ -358,7 +378,7 @@ export function BookingConfirmationPage({
             </div>
             
             {/* Schedule (for bookings) */}
-            {type === 'booking' && (bookingDate || bookingTime) && (
+            {type === 'booking' && (bookingDate || bookingTime || checkOutDate || checkOutTime) && (
               <div className="flex items-start gap-3">
                 <Calendar className="w-5 h-5 text-gray-400 mt-0.5" />
                 <div className="flex-1">
@@ -367,8 +387,22 @@ export function BookingConfirmationPage({
                     {bookingDate && new Date(bookingDate).toLocaleDateString('en-IN', { 
                       weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
                     })}
-                    {bookingTime && ` at ${bookingTime}`}
+                    {bookingTime && ` · ${bookingTime}`}
                   </p>
+                  {(checkOutDate || checkOutTime) && (
+                    <p className="mt-1 text-sm text-gray-700">
+                      <span className="text-gray-500">Check-out: </span>
+                      {checkOutDate
+                        ? new Date(checkOutDate).toLocaleDateString('en-IN', {
+                            weekday: 'long',
+                            day: 'numeric',
+                            month: 'long',
+                            year: 'numeric',
+                          })
+                        : null}
+                      {checkOutTime ? ` · ${checkOutTime}` : ''}
+                    </p>
+                  )}
                 </div>
               </div>
             )}

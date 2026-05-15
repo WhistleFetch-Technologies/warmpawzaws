@@ -29,6 +29,11 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
+import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
 import { PharmacyOrderStatus } from './PharmacyOrderStatus';
 import { PharmacyBroadcastMap } from './PharmacyBroadcastMap';
@@ -200,7 +205,10 @@ export function PharmacyOrderFlow({
         async (position) => {
           try {
             // Reverse geocode to get address
-            const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+            const apiKey =
+              (await getGoogleMapsBrowserApiKey()) ||
+              process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+              '';
             if (apiKey) {
               const response = await fetch(
                 `https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.coords.latitude},${position.coords.longitude}&key=${apiKey}`
@@ -435,13 +443,18 @@ export function PharmacyOrderFlow({
           await loadRazorpayScript();
         }
 
-        const options = {
-          key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-          amount: Math.round(feeBreakdown.total * 100), // Amount in paise
+        const checkoutEmail = await fetchCheckoutEmailForPrefill(phone);
+        const options = buildSanitizedStandardRazorpayCheckoutOptions({
+          key: (process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
+            process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+          amountPaise: Math.max(1, Math.round(feeBreakdown.total * 100)),
           currency: 'INR',
-          name: 'WarmPawz',
+          name: 'Warmpawz',
           description: `Medicine Order - ${orderId.slice(0, 8)}`,
           order_id: response.razorpayOrderId,
+          customerPhone: phone,
+          customerEmail: checkoutEmail,
+          includeInstrumentBlocks: true,
           handler: async function (razorpayResponse: any) {
             // Verify payment
             try {
@@ -463,13 +476,10 @@ export function PharmacyOrderFlow({
               toast.error('Payment verification failed');
             }
           },
-          prefill: {
-            contact: phone
-          },
           theme: {
             color: '#F97316'
           }
-        };
+        });
 
         const razorpay = new (window as any).Razorpay(options);
         razorpay.open();
@@ -970,16 +980,18 @@ export function PharmacyOrderFlow({
   return (
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
       {/* Header */}
-      <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white px-6 pt-8 pb-6 sticky top-0 z-10">
+      <div className="sticky top-0 z-10 bg-gradient-to-br from-orange-500 to-orange-600 pb-6 pl-[max(1.5rem,env(safe-area-inset-left,0px))] pr-[max(1.5rem,env(safe-area-inset-right,0px))] text-white cw-header-safe-top">
         {step !== 'tracking' && (
           <button
+            type="button"
             onClick={step === 'items' ? onBack : () => {
               if (step === 'address') setStep('items');
               else if (step === 'broadcasting') setStep('address');
               else if (step === 'invoice_approval') setStep('broadcasting');
               else if (step === 'payment') setStep('invoice_approval');
             }}
-            className="mb-4 flex items-center gap-2 text-white/90 hover:text-white"
+            className="mb-4 flex min-h-[44px] items-center gap-2 text-white/90 hover:text-white touch-manipulation"
+            aria-label="Go back"
           >
             <ArrowLeft className="w-5 h-5" />
             <span>Back</span>

@@ -35,8 +35,11 @@ android {
         versionCode 1
         versionName "1.0.0"
         
-        // Build config fields for environment configuration
-        buildConfigField "String", "API_BASE_URL", '"https://api.warmpawz.com"'
+        // Build config fields for environment configuration.
+        // Default points at the prod HTTP API; per-buildType / flavor entries
+        // override below. Vanity DNS like *.api.warmpawz.com is intentionally
+        // NOT used here because those records do not resolve.
+        buildConfigField "String", "API_BASE_URL", '"https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"'
     }
 
     signingConfigs {
@@ -84,7 +87,7 @@ android {
             minifyEnabled enableProguardInReleaseBuilds
             shrinkResources enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
-            buildConfigField "String", "API_BASE_URL", '"https://api.warmpawz.com"'
+            buildConfigField "String", "API_BASE_URL", '"https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"'
         }
     }
 
@@ -95,22 +98,27 @@ android {
             dimension "environment"
             applicationIdSuffix ".dev"
             versionNameSuffix "-dev"
-            buildConfigField "String", "API_BASE_URL", '"https://dev.api.warmpawz.com"'
+            buildConfigField "String", "API_BASE_URL", '"https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"'
         }
         staging {
             dimension "environment"
             applicationIdSuffix ".staging"
             versionNameSuffix "-staging"
-            buildConfigField "String", "API_BASE_URL", '"https://staging.api.warmpawz.com"'
+            // Staging shares the dev HTTP API today; override to the real staging URL when one exists.
+            buildConfigField "String", "API_BASE_URL", '"https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com"'
         }
         production {
             dimension "environment"
-            buildConfigField "String", "API_BASE_URL", '"https://api.warmpawz.com"'
+            buildConfigField "String", "API_BASE_URL", '"https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com"'
         }
     }
 }
 
+apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
+
 dependencies {
+    // Align with react-native-razorpay; keeps Standard Checkout on latest 1.6.x AAR from the wrapper.
+    implementation("com.razorpay:checkout:1.6.41")
     implementation("com.facebook.react:react-android")
     
     // Flipper is only for debug builds

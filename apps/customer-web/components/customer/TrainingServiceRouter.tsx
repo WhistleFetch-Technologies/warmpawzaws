@@ -1,15 +1,24 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { GraduationCap, Building2, Home as HomeIcon, Star, Sparkles, ChevronRight, Heart, Trophy, Package, TrendingUp, CheckCircle, Clock, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
+import { GraduationCap, Building2, Home as HomeIcon, Star, ChevronRight, Heart, Trophy, Package, TrendingUp, CheckCircle, Clock, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { TRAINING_GOALS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
-import { PromotionBanner } from './shared/PromotionBanner';
+import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
+import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
+import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { HUB_DISCOVERY_TRAINING } from '@/lib/service-hub-discovery-config';
+import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
+import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
+import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 
 interface TrainingServiceRouterProps {
   phone: string;
@@ -35,32 +44,65 @@ interface PetSkillProgress {
   status: 'not_started' | 'in_progress' | 'mastered';
 }
 
+const HUB_SLUG: BoardingServiceSlug = 'all';
+
 export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: TrainingServiceRouterProps) {
   const trainingGoals = useProblemGridByRole('trainer');
-  const [loading, setLoading] = useState(true);
-  const [featuredTrainers, setFeaturedTrainers] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const {
+    loading: vendorsLoading,
+    vendors,
+    relaxedFilter,
+    selectedVendorId,
+    setSelectedVendorId,
+    toggleVendor,
+    fetchingPlansFor,
+  } = useHubVendorDiscovery(phone, HUB_DISCOVERY_TRAINING);
+  const {
+    data: trainingCenterCount = 0,
+    isLoading: trainingCenterLoading,
+    isFetching: trainingCenterFetching,
+    isError: trainingCenterError,
+  } = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_center',
+    category: 'training',
+  });
+
+  const trainingCenterBadgeText = useMemo(() => {
+    const st =
+      trainingCenterLoading || trainingCenterFetching
+        ? 'loading'
+        : trainingCenterError
+          ? 'error'
+          : 'success';
+    const n = formatDiscoveryCountStat(trainingCenterCount, st);
+    return `${n} Centres`;
+  }, [trainingCenterLoading, trainingCenterFetching, trainingCenterError, trainingCenterCount]);
+
   const [activePackages, setActivePackages] = useState<ActiveTrainingPackage[]>([]);
   const [petSkills, setPetSkills] = useState<PetSkillProgress[]>([]);
   const [previousTrainer, setPreviousTrainer] = useState<any>(null);
 
   useEffect(() => {
-    loadTrainingData();
     loadActiveTrainingPackages();
     loadPetSkills();
     loadPreviousTrainer();
-  }, []);
+  }, [phone]);
 
   const loadPreviousTrainer = async () => {
     try {
       const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=training`).catch(() => null);
       if (response?.provider) {
-        setPreviousTrainer({ id: response.provider.id, name: response.provider.businessName || response.provider.name, photo: response.provider.photo, rating: response.provider.rating || 4.8, lastVisit: response.provider.lastVisit, sessionsCount: response.provider.sessionsCount || 1 });
+        const p = response.provider;
+        const prc = Number(p.totalReviews ?? p.reviewCount ?? 0) || 0;
+        const praw = p.rating != null ? Number(p.rating) : NaN;
+        const pr = prc > 0 && Number.isFinite(praw) && praw > 0 ? praw : 0;
+        setPreviousTrainer({ id: p.id, name: p.businessName || p.name, photo: p.photo, rating: pr, lastVisit: p.lastVisit, sessionsCount: p.sessionsCount || 1 });
       } else {
         const pkgRes = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=training`).catch(() => null);
         if (pkgRes?.packages?.length > 0) {
           const pkg = pkgRes.packages[0];
-          if (pkg.vendorId && pkg.vendorName) setPreviousTrainer({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 4.8, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
+          if (pkg.vendorId && pkg.vendorName) setPreviousTrainer({ id: pkg.vendorId, name: pkg.vendorName, photo: null, rating: 0, lastVisit: pkg.lastUsed || '3 weeks ago', sessionsCount: pkg.sessionsUsed || 1 });
         }
       }
     } catch { /* ignore */ }
@@ -96,134 +138,41 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     }
   };
 
-  const loadTrainingData = async () => {
-    try {
-      setLoading(true);
-
-      let latitude: string | undefined;
-      let longitude: string | undefined;
-      try {
-        const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
-        const profile = profileRes?.profile || profileRes;
-        if (profile?.latitude != null && profile?.longitude != null) {
-          latitude = String(profile.latitude);
-          longitude = String(profile.longitude);
-        }
-      } catch (_) { /* ignore */ }
-      if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
-          });
-          latitude = String(pos.coords.latitude);
-          longitude = String(pos.coords.longitude);
-        } catch (_) { /* ignore */ }
-      }
-      const locationParams = latitude && longitude ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}` : '';
-
-      // ✅ Align with Vet: discover by category (service discovery respects category/role from dashboard tiles)
-      let trainerServices: any[] = [];
-      
-      // Try 1: discover-services by category (same pattern as VetServiceRouter)
-      try {
-        const endpoint = `/customer/discover-services?category=training${locationParams}`;
-        const data = await apiClient.get<any>(endpoint);
-        console.log('🔵 [TrainingServiceRouter] discover-services response:', data);
-        
-        if (Array.isArray(data)) {
-          trainerServices = data;
-        } else if (data?.vendors && Array.isArray(data.vendors)) {
-          trainerServices = data.vendors;
-        } else if (data?.providers && Array.isArray(data.providers)) {
-          trainerServices = data.providers;
-        } else if (data?.services && Array.isArray(data.services)) {
-          trainerServices = data.services;
-        } else if (data?.results && Array.isArray(data.results)) {
-          trainerServices = data.results;
-        } else if (data?.data && Array.isArray(data.data)) {
-          trainerServices = data.data;
-        }
-      } catch (err) {
-        console.warn('⚠️ [TrainingServiceRouter] discover-services failed, trying alternatives:', err);
-      }
-      
-      // Try 2: services/by-style (at_home = at home training)
-      if (trainerServices.length === 0) {
-        try {
-          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_home&category=training${locationParams}`);
-          let altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
-          
-          // ✅ FIX: Filter out business vendors when style is at_home
-          if (Array.isArray(altData)) {
-            altData = altData.filter((p: any) => p.vendorType !== 'business');
-            trainerServices = altData;
-          } else if (altData?.services) {
-            trainerServices = altData.services;
-          }
-        } catch (err) {
-          console.warn('⚠️ [TrainingServiceRouter] services/by-style failed:', err);
-        }
-      }
-      
-      // Try 3: Fallback to /customer/vendors/search (GET /customer/vendors does not exist)
-      if (trainerServices.length === 0) {
-        try {
-          const vendorsData = await apiClient.get<any>(`/customer/vendors/search?roleId=pet_trainer&limit=50${locationParams}`);
-          if (Array.isArray(vendorsData)) trainerServices = vendorsData;
-          else if (vendorsData?.vendors) trainerServices = vendorsData.vendors;
-          else if (vendorsData?.results) trainerServices = vendorsData.results;
-        } catch (err) {
-          console.warn('⚠️ [TrainingServiceRouter] vendors/search fallback failed:', err);
-        }
-      }
-      
-      console.log('🔵 [TrainingServiceRouter] Final trainerServices length:', trainerServices.length);
-      
-      const vendorMap = new Map();
-      trainerServices.forEach((service: any) => {
-        const vendorId = service.vendorId || service.vendor_id || service.id || service.providerId;
-        if (!vendorId) return;
-        if (!vendorMap.has(vendorId)) {
-          vendorMap.set(vendorId, {
-            id: vendorId,
-            businessName: service.vendorName || service.vendor_name || service.businessName || service.business_name || service.name,
-            rating: service.vendorRating || service.vendor_rating || service.rating || 4.5,
-            completedBookings: service.vendorReviewCount || service.vendor_review_count || service.reviewsCount || service.reviews_count || 0,
-            distance: service.distance ?? Math.random() * 5 + 0.5,
-            basePrice: service.price || service.base_price || 1500
-          });
-        }
+  const handleBookPlan = useCallback(
+    (v: BoardingListVendor, plan: BoardingPlanRow) => {
+      onNavigate?.('create-booking', {
+        vendorId: v.id,
+        serviceType: 'training',
+        serviceId: plan.rowId,
+        serviceName: plan.name,
+        price: plan.price,
+        duration: plan.duration,
+        serviceStyle: plan.serviceStyle || 'at_center',
+        vendorName: v.name,
       });
-      
-      const allTrainers = Array.from(vendorMap.values());
-      setFeaturedTrainers(allTrainers.slice(0, 5));
-      
-      setStats({
-        activeTrainers: allTrainers.length,
-        sessions: allTrainers.length > 0 ? `${Math.max(allTrainers.length * 40, 100)}+` : '0',
-        rating: allTrainers.length > 0 
-          ? Number(allTrainers.reduce((acc: number, t: any) => acc + Number(t.rating || 4.5), 0) / allTrainers.length).toFixed(1) 
-          : '-'
-      });
-    } catch (error) {
-      console.error('Error loading training data:', error);
-      // Show zeros on error - no fake data
-      setStats({ activeTrainers: 0, sessions: '0', rating: '-' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const serviceTypes = [
-    {
-      id: 'training_center',
-      name: 'Training Centre',
-      description: 'Visit our facilities',
-      icon: Building2,
-      color: 'text-orange-600',
-      bg: 'bg-orange-50',
-      badge: '30+ Centres'
     },
+    [onNavigate]
+  );
+
+  const openTrainerDetails = useCallback(
+    (e: MouseEvent, vendorId: string) => {
+      e.stopPropagation();
+      onNavigate?.('training_center', { embedVendorId: vendorId });
+    },
+    [onNavigate]
+  );
+
+  const serviceTypes = useMemo(
+    () => [
+      {
+        id: 'training_center',
+        name: 'Training Centre',
+        description: 'Visit our facilities',
+        icon: Building2,
+        color: 'text-orange-600',
+        bg: 'bg-orange-50',
+        badge: trainingCenterBadgeText,
+      },
     {
       id: 'training_home',
       name: 'At Home Training',
@@ -233,26 +182,40 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       bg: 'bg-slate-50',
       badge: 'Personalized'
     }
-  ];
+  ],
+    [trainingCenterBadgeText]
+  );
 
-  if (loading) {
+  const dashboardStats = useMemo(() => {
+    const n = vendors.length;
+    const rating = n > 0 ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1) : '—';
+    const centreSt =
+      trainingCenterLoading || trainingCenterFetching
+        ? 'loading'
+        : trainingCenterError
+          ? 'error'
+          : 'success';
+    const centresStat = formatDiscoveryCountStat(trainingCenterCount, centreSt);
+    return [
+      { value: centresStat, label: 'Centres', icon: <Building2 className="w-4 h-4" /> },
+      { value: String(n), label: 'Featured' },
+      { value: rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ];
+  }, [
+    vendors,
+    trainingCenterCount,
+    trainingCenterLoading,
+    trainingCenterFetching,
+    trainingCenterError,
+  ]);
+
+  if (vendorsLoading) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
   }
-
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = stats ? [
-    { value: `${stats.activeTrainers || 0}+`, label: 'Trainers', icon: <GraduationCap className="w-4 h-4" /> },
-    { value: `${stats.sessions || 0}`, label: 'Sessions' },
-    { value: `${stats.rating || '-'}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ] : [
-    { value: '0+', label: 'Trainers', icon: <GraduationCap className="w-4 h-4" /> },
-    { value: '0', label: 'Sessions' },
-    { value: '-', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -266,10 +229,11 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-white"
       />
 
       {/* Main Content */}
-      <div className="max-w-md mx-auto px-4 pt-4 bg-white">
+      <div className="max-w-md mx-auto -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 sm:rounded-t-[2rem]">
         <div className="space-y-8">
 
           {/* Phase 1: Book again with previous trainer */}
@@ -303,41 +267,6 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 </div>
               </Card>
             </div>
-          )}
-          
-          {/* FREE TRIAL ENTRY POINT - As per Master Plan */}
-          {activePackages.length === 0 && (
-            <Card className="bg-gradient-to-br from-orange-50 via-amber-50 to-orange-100 border-2 border-orange-200 p-6 shadow-lg relative overflow-hidden">
-              <div className="absolute top-2 right-2">
-                <span className="bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
-                  <Sparkles className="w-3 h-3" />
-                  FREE
-                </span>
-              </div>
-              <div className="flex items-start gap-4">
-                <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center shadow-md border-2 border-orange-200 flex-shrink-0">
-                  <GraduationCap className="w-8 h-8 text-orange-600" />
-                </div>
-                <div className="flex-1">
-                  <h2 className="text-2xl font-bold text-slate-900 mb-2">🎁 FREE TRIAL SESSION</h2>
-                  <p className="text-slate-700 mb-1">
-                    Meet a trainer, assess your dog's needs, and get a training plan!
-                  </p>
-                  <p className="text-sm text-slate-600 mb-4">
-                    ✅ 30 min evaluation session<br />
-                    ✅ Personalized training plan<br />
-                    ✅ No commitment required
-                  </p>
-                  <Button 
-                    className="bg-orange-600 text-white hover:bg-orange-700 font-bold text-base px-6 py-3 rounded-xl shadow-md"
-                    onClick={() => onNavigate?.('training-trial-booking')}
-                  >
-                    <GraduationCap className="w-5 h-5 mr-2" />
-                    Book Free Trial - 30 min
-                  </Button>
-                </div>
-              </div>
-            </Card>
           )}
           
           {/* Active Training Package with Progress */}
@@ -463,8 +392,10 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </Card>
           )}
 
-          {/* Promotion Banner - Phase 0.1 Integration */}
-          <PromotionBanner service="training" maxPromotions={3} />
+          {/* Vendor spotlights + promotion banner - Phase 0.1 Integration */}
+          <div className="space-y-4">
+            <FeaturedVendorSpotlights service="training" onNavigate={onNavigate} />
+          </div>
 
           {/* Service Types */}
           <div>
@@ -490,7 +421,14 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     <service.icon className={`w-5 h-5 ${service.color}`} />
                   </div>
                   <h3 className="font-semibold text-slate-900 text-sm mb-0.5">{service.name}</h3>
-                  <p className="text-xs text-slate-500">{service.description}</p>
+                  <div onClick={(e) => e.stopPropagation()} className="relative z-20">
+                    <ServiceDescriptionInline
+                      description={service.description}
+                      title={service.name}
+                      className="m-0 text-xs leading-snug text-slate-500"
+                      linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-orange-600 hover:underline"
+                    />
+                  </div>
                   {service.badge && (
                     <span className="absolute top-3 right-3 px-2 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-bold rounded-full uppercase tracking-wide">
                       {service.badge}
@@ -516,6 +454,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             <div className="grid grid-cols-4 gap-3" style={{ position: 'relative', zIndex: 1 }}>
               {(trainingGoals.length > 0 ? trainingGoals : TRAINING_GOALS).map((goal) => {
                 const isViewAll = goal.id === 'view_all';
+                const hasAdminTint = Boolean((goal as { iconBg?: string }).iconBg) && !isViewAll;
                 return (
                   <button
                     key={goal.id}
@@ -545,6 +484,12 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     `}>
                       {typeof goal.icon === 'string' ? (
                         <span className="text-2xl">{goal.icon}</span>
+                      ) : hasAdminTint ? (
+                        <div
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 ${(goal as { iconBg?: string }).iconBg} group-hover:opacity-90`}
+                        >
+                          {goal.icon}
+                        </div>
                       ) : (
                         <div className="text-slate-600 group-hover:text-orange-600">
                           {goal.icon}
@@ -560,7 +505,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </div>
           </div>
 
-          {/* Featured Trainers */}
+          {/* Top Trainers — expandable cards aligned with training_center list */}
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-slate-900">Top Trainers</h2>
@@ -571,34 +516,43 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 View All <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            
-            <div className="space-y-3">
-              {(featuredTrainers.length > 0 ? featuredTrainers : [1, 2, 3]).map((trainer: any, index) => (
-                <div 
-                  key={index}
-                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 cursor-pointer hover:border-orange-200 transition-colors"
-                  onClick={() => onNavigate?.('training_center')}
-                >
-                  <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
-                     {trainer.businessName ? trainer.businessName.charAt(0) : 'T'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-slate-900 truncate">{trainer.businessName || `Professional Trainer ${index}`}</h3>
-                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                      <span className="flex items-center gap-1 text-orange-500 font-bold">
-                        <Star className="w-3 h-3 fill-current" />
-                        {trainer.rating || 4.8}
-                      </span>
-                      <span>•</span>
-                      <span>{trainer.distance ? `${Number(trainer.distance).toFixed(1)} km` : 'Nearby'}</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                     <div className="font-bold text-slate-900">₹{trainer.basePrice || 1500}</div>
-                     <div className="text-[10px] text-slate-400">starting</div>
-                  </div>
-                </div>
-              ))}
+            {relaxedFilter && (
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
+                Showing all training providers we could match — expand for services and prices.
+              </p>
+            )}
+            <div className="space-y-4">
+              {vendors.length === 0 ? (
+                <Card className="p-8 text-center">
+                  <div className="text-4xl mb-3">🎓</div>
+                  <p className="text-gray-600 mb-2">No trainers available in your area yet</p>
+                  <p className="text-gray-500 text-sm">Check back soon for training options!</p>
+                </Card>
+              ) : (
+                vendors.map((v) => {
+                  const expanded = selectedVendorId === v.id;
+                  const minP = minPriceForVendor(v);
+                  return (
+                    <BoardingVendorExpandableCard
+                      key={v.id}
+                      v={v}
+                      serviceSlug={HUB_SLUG}
+                      planBadgeLabel="Training"
+                      expanded={expanded}
+                      fetchingPlansFor={fetchingPlansFor}
+                      minPrice={minP}
+                      onToggleHeader={() => toggleVendor(v.id)}
+                      onViewServices={(e) => {
+                        e.stopPropagation();
+                        setSelectedVendorId(v.id);
+                      }}
+                      onDetails={openTrainerDetails}
+                      onBookPlan={handleBookPlan}
+                      onOpenCenterDetails={openTrainerDetails}
+                    />
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

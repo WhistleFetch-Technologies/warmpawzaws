@@ -1,21 +1,46 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 
 interface CustomerOnboardingProps {
-  onComplete: (stage: string) => void;
   onBack?: () => void;
+  /** Same-route finish: update parent state so home shows under `/` after `router.replace('/')`. */
+  onNoPetComplete: () => void;
 }
 
-export function CustomerOnboarding({ onComplete, onBack }: CustomerOnboardingProps) {
+function persistStageOnboardingDone() {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem('onboarding_completed', 'true');
+  localStorage.setItem('customerOnboardingComplete', 'true');
+}
+
+export function CustomerOnboarding({ onBack, onNoPetComplete }: CustomerOnboardingProps) {
+  const router = useRouter();
   const [selectedStage, setSelectedStage] = useState<string | null>('have-pet');
 
+  const goHavePet = useCallback(() => {
+    persistStageOnboardingDone();
+    router.push('/add-pet');
+  }, [router]);
+
+  const goNoPet = useCallback(() => {
+    persistStageOnboardingDone();
+    onNoPetComplete();
+    router.replace('/');
+  }, [router, onNoPetComplete]);
+
+  const handleContinue = useCallback(() => {
+    if (selectedStage === 'have-pet') goHavePet();
+    else if (selectedStage === 'no-pet') goNoPet();
+  }, [selectedStage, goHavePet, goNoPet]);
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#FF8C42] to-[#FF6B9D] flex flex-col w-full max-w-[430px] mx-auto">
-      {/* Top Bar with Back Button */}
-      <div className="px-4 pt-4 pb-2 flex items-center">
+    <div className="min-h-screen bg-gradient-to-b from-[#FF8C42] to-[#FF6B9D] flex flex-col w-full max-w-customer mx-auto">
+      {/* Top Bar with Back Button — safe area so system status bar does not cover controls */}
+      <div className="cw-header-safe-top cw-header-safe-x pb-2 flex items-center">
         {onBack && (
           <button
             onClick={onBack}
@@ -61,7 +86,11 @@ export function CustomerOnboarding({ onComplete, onBack }: CustomerOnboardingPro
         <div className="space-y-4 mb-6">
           {/* Already Have a Pet */}
           <button
-            onClick={() => setSelectedStage('have-pet')}
+            type="button"
+            onClick={() => {
+              setSelectedStage('have-pet');
+              goHavePet();
+            }}
             className={`w-full bg-white border-2 rounded-2xl p-4 transition-all text-left ${
               selectedStage === 'have-pet' ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-gray-300'
             }`}
@@ -95,6 +124,43 @@ export function CustomerOnboarding({ onComplete, onBack }: CustomerOnboardingPro
               </div>
             </div>
           </button>
+
+          {/* I Don't Have a Pet */}
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedStage('no-pet');
+              goNoPet();
+            }}
+            className={`w-full bg-white border-2 rounded-2xl p-4 transition-all text-left ${
+              selectedStage === 'no-pet' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-[#FF8C42] to-[#FF6B9D]">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z"
+                    stroke="white"
+                    strokeWidth="2"
+                  />
+                  <path d="M8.5 10H8.51M15.5 10H15.51M9 15C9.8 15.8 10.8 16.2 12 16.2C13.2 16.2 14.2 15.8 15 15" stroke="white" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-black">I Don&apos;t Have a Pet</h3>
+                  <ArrowRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                </div>
+                <p className="text-xs text-gray-600 mb-3 leading-relaxed">
+                  Explore services, learn about care, and find your future companion when you&apos;re ready 💖🐾
+                </p>
+                <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div className="absolute left-0 top-0 h-full w-[35%] bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] rounded-full"></div>
+                </div>
+              </div>
+            </div>
+          </button>
         </div>
 
         {/* Footer Message */}
@@ -107,7 +173,8 @@ export function CustomerOnboarding({ onComplete, onBack }: CustomerOnboardingPro
 
         {/* Continue Button */}
         <Button
-          onClick={() => selectedStage && onComplete(selectedStage)}
+          type="button"
+          onClick={handleContinue}
           disabled={!selectedStage}
           className="w-full h-14 bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] rounded-2xl text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed mb-6 shadow-lg shadow-[#FF8C42]/30 transition-all"
         >

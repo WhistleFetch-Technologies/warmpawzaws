@@ -11,11 +11,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   RefreshControl,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -281,33 +282,28 @@ export function NotificationsScreen({
 
   if (loading && !refreshing) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Notifications</Text>
-        <View style={styles.headerActions}>
-          {unreadCount > 0 && (
-            <TouchableOpacity
-              style={styles.markAllButton}
-              onPress={handleMarkAllAsRead}
-            >
-              <Text style={styles.markAllButtonText}>Mark all read</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
+    <OrangeBrandedScreenLayout
+      title="Notifications"
+      onBack={onBack}
+      bodyBackgroundColor={colors.white}
+      headerRight={
+        unreadCount > 0 ? (
+          <TouchableOpacity style={styles.markAllButton} onPress={handleMarkAllAsRead}>
+            <Text style={styles.markAllButtonText}>Mark all read</Text>
+          </TouchableOpacity>
+        ) : null
+      }
+    >
+      <View style={styles.stackFill}>
       {/* Tabs */}
       <View style={styles.tabs}>
         <TouchableOpacity
@@ -463,7 +459,8 @@ export function NotificationsScreen({
           </TouchableOpacity>
         </View>
       )}
-    </SafeAreaView>
+      </View>
+    </OrangeBrandedScreenLayout>
   );
 }
 
@@ -472,29 +469,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    fontSize: typography.fontSizes.md,
-    color: colors.white,
-  },
-  headerTitle: {
-    fontSize: typography.fontSizes['2xl'],
-    fontWeight: 'bold',
-    color: colors.white,
+  stackFill: {
     flex: 1,
-    textAlign: 'center',
-  },
-  headerActions: {
-    width: 100,
-    alignItems: 'flex-end',
   },
   markAllButton: {
     paddingHorizontal: spacing.sm,
@@ -557,6 +533,7 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    flexGrow: 1,
     padding: spacing.md,
   },
   group: {

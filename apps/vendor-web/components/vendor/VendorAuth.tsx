@@ -1,23 +1,43 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { apiClient } from '@/lib/api-client';
+import { useState, useEffect, useRef, Fragment } from 'react';
+import { apiClient, isUatMode } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ChevronLeft, CheckCircle2 } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { storeSession } from '@/lib/session-manager';
-import { CountryCodeSelector, COUNTRY_CODES } from '@/components/ui/CountryCodeSelector';
+import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
+import { ChatWidget } from '@/components/customer/ChatWidget';
+import {
+  PlatformLegalPolicyDialog,
+  type PlatformPolicyType,
+} from '@/components/legal/PlatformLegalPolicyDialog';
 
 const logoImage = '/logo.png';
 
-interface VendorAuthProps {
-  onAuthSuccess: (session: any) => void;
+const UAT_FORGOT_OTP_HINT = '123456';
+
+function pickForgotResponseData(res: unknown): Record<string, unknown> | null {
+  const r = res as Record<string, unknown> | null;
+  if (!r || typeof r !== 'object') return null;
+  const outer = r.data as Record<string, unknown> | undefined;
+  if (outer && typeof outer === 'object' && outer.data && typeof outer.data === 'object') {
+    return outer.data as Record<string, unknown>;
+  }
+  return null;
 }
 
-export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
-  const [isSignUp, setIsSignUp] = useState(true);
+interface VendorAuthProps {
+  onAuthSuccess: (session: any) => void;
+  /** When true, auth blocks fill the scroll area inside VendorPublicAppShell (no min-h-screen). */
+  usePublicAppShell?: boolean;
+}
+
+export function VendorAuth({ onAuthSuccess, usePublicAppShell = false }: VendorAuthProps) {
+  /** Default sign-in first (same as customer-web /auth login default). */
+  const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [currentStep, setCurrentStep] = useState(1);
@@ -33,6 +53,75 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
   const [showReferralInput, setShowReferralInput] = useState(false);
   const [referralApplied, setReferralApplied] = useState(false);
   const otpInputRef = useRef<HTMLInputElement>(null);
+  const [legalDialogOpen, setLegalDialogOpen] = useState(false);
+  const [legalDialogType, setLegalDialogType] = useState<PlatformPolicyType | null>(null);
+  const [showChatBot, setShowChatBot] = useState(false);
+  /** Phone + password sign-in (backend: username = dialable phone). */
+  const [loginPhoneDigits, setLoginPhoneDigits] = useState('');
+  const [loginCountryCode, setLoginCountryCode] = useState('+91');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+
+  /** Forgot password: dedicated vendor routes (same envelope parsing as customer-web). */
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotStep, setForgotStep] = useState<1 | 2 | 3>(1);
+  const [forgotUsername, setForgotUsername] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotResetToken, setForgotResetToken] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotInfo, setForgotInfo] = useState<string | null>(null);
+  const [forgotSuccessBanner, setForgotSuccessBanner] = useState<string | null>(null);
+  const [showForgotNewPassword, setShowForgotNewPassword] = useState(false);
+  const [uatRuntimeForgotHint, setUatRuntimeForgotHint] = useState(false);
+
+  useEffect(() => {
+    setUatRuntimeForgotHint(isUatMode());
+  }, []);
+
+  // Referral deep link: open registration with code applied (parity with customer-web /auth ?ref=).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const refCode = params.get('ref') || params.get('referral') || params.get('referralCode');
+    if (!refCode?.trim()) return;
+    const c = refCode.trim().toUpperCase();
+    setReferralCode(c);
+    setReferralApplied(true);
+    setShowReferralInput(true);
+    localStorage.setItem('pendingReferralCode', c);
+    setIsSignUp(true);
+  }, []);
+
+  const openLegal = (t: PlatformPolicyType) => {
+    setLegalDialogType(t);
+    setLegalDialogOpen(true);
+  };
+
+  const legalDialog = (
+    <PlatformLegalPolicyDialog
+      open={legalDialogOpen}
+      onOpenChange={(o) => {
+        setLegalDialogOpen(o);
+        if (!o) setLegalDialogType(null);
+      }}
+      policyType={legalDialogType}
+    />
+  );
+
+  const fillShell = usePublicAppShell
+    ? 'min-h-0 w-full flex-1 flex flex-col'
+    : 'min-h-screen';
+  const centerShell = usePublicAppShell
+    ? 'min-h-0 w-full flex-1 flex flex-col items-center justify-center p-4'
+    : 'min-h-screen flex items-center justify-center p-4';
+
+  const chatBotWidget = showChatBot ? (
+    <ChatWidget
+      userType="vendor"
+      defaultOpen
+      onClose={() => setShowChatBot(false)}
+    />
+  ) : null;
   
   // Update cooldown countdown timer
   useEffect(() => {
@@ -85,7 +174,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     'Medicine Delivery',
     'Pet Cafe',
     'Pet Insurance',
-    'Mating Services'
+    'Peer to Peer'
   ];
 
   // Format phone number with spaces
@@ -94,51 +183,239 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
     return `${num.slice(0, 5)} ${num.slice(5)}`;
   };
 
+  const openForgotPassword = () => {
+    setForgotOpen(true);
+    setForgotStep(1);
+    const d = loginPhoneDigits.replace(/\D/g, '').slice(-10);
+    setForgotUsername(d.length === 10 ? `${loginCountryCode.trim()}${d}` : '');
+    setForgotOtp('');
+    setForgotResetToken('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotInfo(null);
+    setError('');
+  };
+
+  const closeForgotPassword = () => {
+    setForgotOpen(false);
+    setForgotStep(1);
+    setForgotOtp('');
+    setForgotResetToken('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotInfo(null);
+    setError('');
+  };
+
+  const submitForgotPasswordRequest = async () => {
+    const u = forgotUsername.trim();
+    if (!u) {
+      setError('Enter the phone number or email you use to log in');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    setForgotInfo(null);
+    try {
+      const res = await apiClient.post<unknown>('/auth/vendor/forgot-password/request', { username: u });
+      const inner = pickForgotResponseData(res);
+      const msg =
+        (typeof inner?.message === 'string' && inner.message) ||
+        'If an account exists, we sent instructions.';
+      setForgotInfo(msg);
+      setForgotStep(2);
+    } catch (err: unknown) {
+      const e = err as { statusCode?: number; code?: string; message?: string };
+      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
+        setError('Too many requests. Try again later.');
+      } else {
+        setError(e?.message || 'Something went wrong. Try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitForgotPasswordVerifyOtp = async () => {
+    const u = forgotUsername.trim();
+    if (!forgotOtp || forgotOtp.length !== 6) {
+      setError('Enter the 6-digit code from SMS');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await apiClient.post<unknown>('/auth/vendor/forgot-password/verify-otp', {
+        username: u,
+        otp: forgotOtp,
+      });
+      const inner = pickForgotResponseData(res);
+      const token = typeof inner?.resetToken === 'string' ? inner.resetToken : '';
+      if (!token) {
+        setError('Invalid or expired code');
+        return;
+      }
+      setForgotResetToken(token);
+      setForgotStep(3);
+    } catch (err: unknown) {
+      const e = err as { statusCode?: number; code?: string; message?: string };
+      if (e?.statusCode === 429 || e?.code === 'RATE_LIMITED') {
+        setError('Too many requests. Try again later.');
+      } else {
+        setError(e?.message || 'Invalid or expired code');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitForgotPasswordReset = async () => {
+    if (forgotNewPassword.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+    if (forgotNewPassword !== forgotConfirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      await apiClient.post<unknown>('/auth/vendor/forgot-password/reset', {
+        resetToken: forgotResetToken,
+        newPassword: forgotNewPassword,
+        confirmPassword: forgotConfirmPassword,
+      });
+      setForgotSuccessBanner('Password updated. You can log in with your new password.');
+      closeForgotPassword();
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      setError(e?.message || 'Could not reset password. Request a new code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
     try {
-      // Use API Gateway for email/password login
-      const loginData = await apiClient.post<any>('/auth/login', {
-        email: formData.email,
-        password: formData.password,
-        portal: 'vendor'
-      });
-
-      if (loginData.error) {
-        throw new Error(loginData.error);
+      const digits = loginPhoneDigits.replace(/\D/g, '');
+      if (digits.length < 10) {
+        setError('Please enter a valid 10-digit mobile number');
+        setLoading(false);
+        return;
       }
 
-      const vendorData = await apiClient.get('/vendor/profile') as any;
-      
+      const usernamePhone = `${loginCountryCode}${digits.slice(-10)}`;
+
+      const loginRaw = await apiClient.post<any>('/auth/vendor/login', {
+        username: usernamePhone,
+        password: formData.password,
+        role: 'vendor',
+      });
+
+      let payload = loginRaw as Record<string, unknown>;
+      const inner = payload?.data as Record<string, unknown> | undefined;
+      if (inner?.data && typeof inner.data === 'object') {
+        payload = inner.data as Record<string, unknown>;
+      } else if (inner && 'token' in inner) {
+        payload = inner as Record<string, unknown>;
+      }
+
+      const tokens = (payload.token || {}) as Record<string, string>;
+      const accessToken =
+        tokens.access_token ||
+        (payload.access_token as string | undefined);
+      const idToken = tokens.id_token || (payload.id_token as string | undefined);
+      const refreshToken = tokens.refresh_token || (payload.refresh_token as string | undefined);
+      const expiresInRaw = tokens.expires_in ?? (payload as { expires_in?: number }).expires_in;
+      const expiresIn =
+        typeof expiresInRaw === 'number' && Number.isFinite(expiresInRaw) ? expiresInRaw : 86400;
+      const user = (payload.user || {}) as Record<string, unknown>;
+      const profile = (payload.profile || {}) as Record<string, unknown>;
+
+      if (!accessToken) {
+        throw new Error('Authentication failed: No access token received');
+      }
+
+      const dialablePhone =
+        typeof user.phone === 'string' && user.phone
+          ? user.phone
+          : usernamePhone;
+
+      if (idToken) {
+        try {
+          const { storeCognitoTokens, storeUserInfo } = require('@/lib/cognito-auth');
+          storeCognitoTokens({
+            accessToken,
+            idToken,
+            refreshToken: refreshToken || '',
+            expiresIn,
+          });
+          if (user.id) {
+            storeUserInfo({
+              userId: String(user.id),
+              phone: dialablePhone,
+              username: String(user.phone || dialablePhone),
+            });
+          }
+        } catch (e) {
+          console.warn('[VendorAuth] storeCognitoTokens skipped:', e);
+        }
+      }
+
+      storeSession({
+        phone: dialablePhone,
+        accessToken,
+        user,
+        profile,
+        vendorId: (profile.id as string) || (user.id as string),
+      });
+
+      localStorage.setItem(
+        'vendorApplicationStatus',
+        String(profile.onboarding_status || 'INIT')
+      );
+      localStorage.setItem('vendorCountryCode', loginCountryCode);
+
+      sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
+      sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true');
+      sessionStorage.setItem('_warmpawz_vendor_login_at', String(Date.now()));
+
+      const vendorData = (await apiClient.get('/vendor/profile')) as any;
+
       if (vendorData && vendorData.vendor) {
         if (vendorData.vendor.status === 'pending') {
           setPendingApproval(true);
           setLoading(false);
           return;
-        } else if (vendorData.vendor.status === 'rejected') {
+        }
+        if (vendorData.vendor.status === 'rejected') {
           setError('Your vendor account has been rejected. Please contact support.');
           setLoading(false);
           return;
         }
       }
 
-      // Store session
-      if (loginData.session) {
-        storeSession({
-          phone: loginData.user?.phone || formData.email,
-          accessToken: loginData.session.accessToken || loginData.session.token,
-          user: loginData.user,
-          profile: loginData.profile,
-          vendorId: loginData.profile?.id || loginData.profile?.vendorId
-        });
-      }
-
-      onAuthSuccess(loginData.session || loginData);
+      onAuthSuccess({
+        phone: dialablePhone,
+        accessToken,
+        user,
+        profile,
+        vendorId: (profile.id as string) || (user.id as string),
+        onboardingStatus: profile.onboarding_status || 'INIT',
+        state: payload.state || 'existing',
+      });
     } catch (err: any) {
-      setError(err.message || 'Failed to sign in');
+      const errCode = err?.originalError?.error?.code;
+      const hint =
+        errCode === 'PASSWORD_NOT_SET'
+          ? ' No password on file yet. Use “New vendor? Register here” and sign in with OTP once, complete onboarding, then set your password when prompted.'
+          : '';
+      setError((err.message || 'Failed to sign in') + hint);
       console.error('Sign in error:', err);
     } finally {
       setLoading(false);
@@ -411,6 +688,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       // These flags are cleared on hard refresh, allowing us to detect it
       sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
       sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true'); // ✅ FIX: Added for better detection
+      sessionStorage.setItem('_warmpawz_vendor_login_at', String(Date.now()));
       console.log('✅ [Vendor Session] sessionStorage flags set after login');
       
       // ✅ FIX: Use onboarding_status from verify-otp response directly (no separate API call needed)
@@ -498,14 +776,15 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
 
   if (pendingApproval) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center p-4">
+      <Fragment>
+      <div className={`${centerShell} bg-gradient-to-br from-orange-50 to-white`}>
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
           <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <span className="text-4xl">⏳</span>
           </div>
           <h2 className="text-2xl mb-4">Application Under Review</h2>
           <p className="text-gray-600 mb-6">
-            Thank you for registering with WarmPawz! Your vendor application is being reviewed by our admin team. 
+            Thank you for registering with Warmpawz! Your vendor application is being reviewed by our admin team. 
             We'll notify you once your account is approved.
           </p>
           <p className="text-sm text-gray-500 mb-6">
@@ -522,6 +801,9 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
           </Button>
         </div>
       </div>
+      {legalDialog}
+      {chatBotWidget}
+      </Fragment>
     );
   }
 
@@ -532,8 +814,10 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
       : `${countryCode} ${phoneNumber}`;
 
     return (
-      <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
-
+      <Fragment>
+      <div
+        className={`${fillShell} bg-[#FF8C42] flex flex-col ${usePublicAppShell ? 'mx-auto max-w-[430px]' : 'vendor-auth-column'}`}
+      >
 
         {/* Orange Header Section */}
         <div className="px-6 pt-8 pb-20 flex flex-col items-center">
@@ -615,7 +899,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
             <div className="space-y-2">
               <p className="text-sm text-gray-600">
                 Trouble with verification?{' '}
-                <a href="#" className="text-[#FF8C42] underline">Get Help</a>
+                <button type="button" onClick={() => setShowChatBot(true)} className="text-[#FF8C42] underline">Get Help</button>
               </p>
               <button
                 type="button"
@@ -637,34 +921,19 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
           </div>
         </div>
       </div>
+      {legalDialog}
+      {chatBotWidget}
+      </Fragment>
     );
   }
 
   // PHONE NUMBER ENTRY SCREEN
   if (isSignUp && currentStep === 1 && !showOtpScreen) {
     return (
-      <div className="min-h-screen bg-[#FF8C42] flex flex-col w-full max-w-[430px] mx-auto">
-        {/* Status Bar */}
-        <div className="px-6 pt-3 pb-2 flex justify-between items-center">
-          <span className="text-sm font-medium text-black">09:41</span>
-          <div className="flex gap-1.5 items-center">
-            <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-              <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
-              <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
-              <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
-              <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
-            </svg>
-            <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-              <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-            <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-              <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
-              <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
-              <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
-            </svg>
-          </div>
-        </div>
-
+      <Fragment>
+      <div
+        className={`${fillShell} bg-[#FF8C42] flex flex-col safe-area-top ${usePublicAppShell ? 'mx-auto max-w-[430px]' : 'vendor-auth-column'}`}
+      >
         {/* Orange Header Section */}
         <div className="px-6 pt-8 pb-20 flex flex-col items-center">
           {/* Logo */}
@@ -698,11 +967,12 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               <Label htmlFor="phone" className="text-gray-700 mb-2 block text-sm font-medium">
                 Phone Number
               </Label>
-              <div className="flex items-stretch border-2 border-gray-200 rounded-2xl overflow-hidden focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all bg-white">
+              <div className="flex items-stretch border-2 border-gray-200 rounded-2xl focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all bg-white">
                 <CountryCodeSelector
                   selectedCode={countryCode}
                   onSelect={setCountryCode}
                   disabled={false}
+                  className="rounded-l-2xl"
                 />
                 <input
                   id="phone"
@@ -712,12 +982,15 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                   maxLength={10}
                   value={phoneNumber}
                   onChange={(e) => setPhoneNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                  className="flex-1 py-4 px-4 text-lg outline-none"
+                  className="flex-1 py-4 px-4 text-lg outline-none rounded-r-2xl"
                   placeholder="74493 38923"
                   required
                   autoFocus
                 />
               </div>
+              <p className="mt-2 text-xs text-gray-500 leading-relaxed">
+                We currently onboard and support vendors in <span className="font-medium text-gray-600">India only</span> (+91).
+              </p>
             </div>
 
             {/* Referral Code (optional) */}
@@ -786,9 +1059,21 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
           <div className="mt-8 space-y-4 text-center">
             <p className="text-sm text-gray-600">
               By continuing, you agree to our{' '}
-              <a href="#" className="text-[#FF8C42] underline">Terms of Service</a>
+              <button
+                type="button"
+                onClick={() => openLegal('vendor_terms_of_service')}
+                className="text-[#FF8C42] underline"
+              >
+                Vendor Terms of Service
+              </button>
               {' '}and{' '}
-              <a href="#" className="text-[#FF8C42] underline">Privacy Policy</a>
+              <button
+                type="button"
+                onClick={() => openLegal('privacy_policy')}
+                className="text-[#FF8C42] underline"
+              >
+                Privacy Policy
+              </button>
             </p>
             
             <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
@@ -802,21 +1087,31 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               </button>
             </div>
 
-            <div className="pt-6 space-y-1 text-xs text-gray-400">
-              <p>Need Help?</p>
+            <div className="pt-6 space-y-1 text-xs text-gray-400 text-center">
+              <button
+                type="button"
+                onClick={() => setShowChatBot(true)}
+                className="text-[#FF8C42] underline block w-full text-center"
+              >
+                Need Help?
+              </button>
               <p>WARMPAWS Provider v2.1.0</p>
-              <p>© 2025 WARMPAWZ Inc. All rights reserved</p>
+              <p>&copy; 2025 WARMPAWZ Inc. All rights reserved</p>
             </div>
           </div>
         </div>
       </div>
+      {legalDialog}
+      {chatBotWidget}
+      </Fragment>
     );
   }
 
   if (!isSignUp) {
     // Sign In Screen
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white flex items-center justify-center p-4">
+      <Fragment>
+      <div className={`${centerShell} bg-gradient-to-br from-orange-50 to-white`}>
         <div className="w-full max-w-md">
           <div className="bg-white rounded-2xl shadow-xl p-8">
             {/* Logo */}
@@ -824,13 +1119,27 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               <div className="inline-flex items-center justify-center mb-4">
                 <img 
                   src={logoImage} 
-                  alt="WarmPawz Logo" 
+                  alt="Warmpawz Logo" 
                   className="w-24 h-24 object-contain"
                 />
               </div>
-              <h1 className="text-3xl text-[#FF8C42] mb-2">WarmPawz</h1>
+              <h1 className="text-3xl text-[#FF8C42] mb-2">Warmpawz</h1>
               <p className="text-gray-600">Vendor Portal</p>
             </div>
+
+            {forgotSuccessBanner && !forgotOpen && (
+              <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-xl text-green-800 text-sm">
+                {forgotSuccessBanner}
+              </div>
+            )}
+
+            {forgotOpen && (
+              <p className="text-center text-sm text-gray-600 mb-6 leading-relaxed">
+                {forgotStep === 3
+                  ? 'Choose a new password for your account.'
+                  : 'Reset your password using a code we send by SMS to your registered mobile number only.'}
+              </p>
+            )}
 
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
@@ -838,31 +1147,206 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               </div>
             )}
 
+            {forgotOpen ? (
+              <div className="space-y-4">
+                {forgotStep === 1 && (
+                  <>
+                    <label className="block text-gray-700 font-medium text-sm">Phone or email</label>
+                    <input
+                      type="text"
+                      autoComplete="username"
+                      value={forgotUsername}
+                      onChange={(e) => setForgotUsername(e.target.value)}
+                      placeholder="e.g. +91939893220 or you@example.com"
+                      className="w-full py-3 px-4 text-base border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                    />
+                    <p className="text-xs text-gray-500 -mt-2">
+                      Use your dialable mobile (country code + 10 digits, same as sign in) or the email on your vendor
+                      account.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={submitForgotPasswordRequest}
+                      disabled={loading || !forgotUsername.trim()}
+                      className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30"
+                    >
+                      {loading ? 'Sending…' : 'Send code'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeForgotPassword}
+                      className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-1"
+                    >
+                      Back to log in
+                    </button>
+                  </>
+                )}
+                {forgotStep === 2 && (
+                  <>
+                    {forgotInfo ? (
+                      <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700">
+                        {forgotInfo}
+                      </div>
+                    ) : null}
+                    {uatRuntimeForgotHint ? (
+                      <p className="text-xs text-gray-500">
+                        UAT / dev: when the API is in forgot-password test mode, use OTP{' '}
+                        <span className="font-mono font-medium">{UAT_FORGOT_OTP_HINT}</span>.
+                      </p>
+                    ) : null}
+                    <label className="block text-gray-700 font-medium text-sm">6-digit code from SMS</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={forgotOtp}
+                      onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="••••••"
+                      className="w-full py-3 px-4 text-lg tracking-widest border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={submitForgotPasswordVerifyOtp}
+                      disabled={loading || forgotOtp.length !== 6}
+                      className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30"
+                    >
+                      {loading ? 'Checking…' : 'Continue'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotStep(1);
+                        setForgotOtp('');
+                        setError('');
+                      }}
+                      className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-1"
+                    >
+                      Back
+                    </button>
+                  </>
+                )}
+                {forgotStep === 3 && (
+                  <>
+                    <label className="block text-gray-700 font-medium text-sm">New password</label>
+                    <div className="relative">
+                      <input
+                        type={showForgotNewPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        value={forgotNewPassword}
+                        onChange={(e) => setForgotNewPassword(e.target.value)}
+                        placeholder="At least 8 characters"
+                        className="w-full py-3 pl-4 pr-12 text-base border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowForgotNewPassword((v) => !v)}
+                        aria-label={showForgotNewPassword ? 'Hide password' : 'Show password'}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                      >
+                        {showForgotNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <label className="block text-gray-700 font-medium text-sm">Confirm password</label>
+                    <input
+                      type={showForgotNewPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      value={forgotConfirmPassword}
+                      onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                      placeholder="Re-enter password"
+                      className="w-full py-3 px-4 text-base border-2 border-gray-200 rounded-2xl outline-none focus:border-[#FF8C42] focus:ring-4 focus:ring-[#FF8C42]/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={submitForgotPasswordReset}
+                      disabled={
+                        loading ||
+                        forgotNewPassword.length < 8 ||
+                        forgotNewPassword !== forgotConfirmPassword
+                      }
+                      className="w-full py-4 bg-[#FF8C42] text-white text-lg font-semibold rounded-2xl hover:bg-[#FF7A29] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-[#FF8C42]/30"
+                    >
+                      {loading ? 'Updating…' : 'Update password'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotStep(2);
+                        setError('');
+                      }}
+                      className="w-full text-center text-sm text-gray-600 font-medium hover:underline pt-1"
+                    >
+                      Back
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
             <form onSubmit={handleSignIn} className="space-y-4">
               <div>
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="Enter your email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  required
-                  className="mt-1"
-                />
+                <Label htmlFor="login-phone">Phone number</Label>
+                <div className="mt-1 flex items-stretch border-2 border-gray-200 rounded-lg bg-white focus-within:border-[#FF8C42] focus-within:ring-4 focus-within:ring-[#FF8C42]/20 transition-all">
+                  <CountryCodeSelector
+                    selectedCode={loginCountryCode}
+                    onSelect={setLoginCountryCode}
+                    disabled={loading}
+                    triggerClassName="rounded-l-lg"
+                  />
+                  <input
+                    id="login-phone"
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="10-digit mobile"
+                    value={loginPhoneDigits}
+                    onChange={(e) =>
+                      setLoginPhoneDigits(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))
+                    }
+                    required
+                    maxLength={10}
+                    className="min-w-0 flex-1 py-4 px-4 text-lg outline-none bg-transparent rounded-r-lg transition-colors duration-200"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  Use the mobile number registered on your vendor account. After your first onboarding, you can use this
+                  number with your password here; until then, use OTP from the registration flow.
+                </p>
+                {uatRuntimeForgotHint && (
+                  <p className="mt-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                    UAT / dev: sign in with password <strong>12345678</strong> (same as customer app when the API runs
+                    in UAT or non-prod with <code className="text-[11px]">X-UAT-Mode</code>).
+                  </p>
+                )}
               </div>
 
               <div>
                 <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  required
-                  className="mt-1"
-                />
+                <div className="relative mt-1">
+                  <Input
+                    id="password"
+                    type={showLoginPassword ? 'text' : 'password'}
+                    placeholder="Enter your password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    required
+                    autoComplete="current-password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                    onClick={() => setShowLoginPassword((v) => !v)}
+                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={openForgotPassword}
+                  className="w-full text-right text-sm text-[#FF8C42] font-medium hover:underline pt-1"
+                >
+                  Forgot password?
+                </button>
               </div>
 
               <Button
@@ -873,29 +1357,57 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                 {loading ? 'Please wait...' : 'Sign In'}
               </Button>
             </form>
+            )}
 
-            <div className="mt-6 text-center">
+            {!forgotOpen && (
+              <div className="mt-6 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSignUp(true);
+                    setError('');
+                    setCurrentStep(1);
+                  }}
+                  className="text-[#FF8C42] hover:underline"
+                >
+                  New vendor? Register here
+                </button>
+              </div>
+            )}
+
+            <p className="text-center text-sm text-gray-500 mt-6">
+              By signing in, you agree to our{' '}
               <button
                 type="button"
-                onClick={() => {
-                  setIsSignUp(true);
-                  setError('');
-                  setCurrentStep(1);
-                }}
-                className="text-[#FF8C42] hover:underline"
+                onClick={() => openLegal('vendor_terms_of_service')}
+                className="text-[#FF8C42] hover:underline font-medium"
               >
-                New vendor? Register here
+                Vendor Terms of Service
               </button>
-            </div>
+              {' '}and{' '}
+              <button
+                type="button"
+                onClick={() => openLegal('privacy_policy')}
+                className="text-[#FF8C42] hover:underline font-medium"
+              >
+                Privacy Policy
+              </button>
+            </p>
           </div>
         </div>
       </div>
+      {legalDialog}
+      {chatBotWidget}
+      </Fragment>
     );
   }
 
   // Multi-step Registration Form (Steps 2+)
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-white py-8 px-4">
+    <Fragment>
+    <div
+      className={`${usePublicAppShell ? 'min-h-0 w-full flex-1 overflow-y-auto' : 'min-h-screen'} bg-gradient-to-br from-orange-50 to-white py-8 px-4`}
+    >
       <div className="max-w-2xl mx-auto">
         <div className="bg-white rounded-2xl shadow-xl p-8">
           {/* Header */}
@@ -995,7 +1507,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
               <div className="space-y-4">
                 <h3 className="text-lg mb-4">Select Services You Offer *</h3>
                 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {serviceOptions.map((service) => (
                     <div
                       key={service}
@@ -1041,7 +1553,7 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="city">City *</Label>
                     <Input
@@ -1154,7 +1666,29 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
                     }
                   />
                   <Label htmlFor="terms" className="text-sm leading-tight cursor-pointer">
-                    I agree to the terms and conditions and confirm that all information provided is accurate
+                    I agree to the{' '}
+                    <button
+                      type="button"
+                      className="text-[#FF8C42] underline font-medium"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        openLegal('vendor_terms_of_service');
+                      }}
+                    >
+                      Vendor Terms of Service
+                    </button>
+                    ,{' '}
+                    <button
+                      type="button"
+                      className="text-[#FF8C42] underline font-medium"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        openLegal('privacy_policy');
+                      }}
+                    >
+                      Privacy Policy
+                    </button>
+                    , and confirm that all information provided is accurate
                   </Label>
                 </div>
               </div>
@@ -1211,5 +1745,8 @@ export function VendorAuth({ onAuthSuccess }: VendorAuthProps) {
         </div>
       </div>
     </div>
+    {legalDialog}
+    {chatBotWidget}
+    </Fragment>
   );
 }

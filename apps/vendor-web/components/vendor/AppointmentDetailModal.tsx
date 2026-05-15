@@ -7,13 +7,21 @@ import { X, MapPin, Clock, User, Phone, Calendar, Star, CheckCircle2, XCircle, A
 import { Button } from '@/components/ui/button';
 // Uses apiClient (API Gateway)
 import { toast } from 'sonner';
+import { setHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
+import { bookingNeedsWalkLiveTracker } from '@/lib/vendor-walk-live-tracker';
 import { authenticatedFetch } from '@/lib/session-manager'; // ✅ SECURITY FIX
 import { MedicalHistoryModal } from './MedicalHistoryModal';
+import { PackagePurchaseSessionsVendorView } from '@/components/vendor/PackagePurchaseSessionsVendorView';
 import { AddVetSummaryModal } from './modals/AddVetSummaryModal';
 import { DiagnosticsReportUpload } from './diagnostics/DiagnosticsReportUpload';
 import { CommunicationHub } from '../communication/CommunicationHub';
 import dynamic from 'next/dynamic';
 import { transformPrescriptionData } from './PrescriptionDocument';
+import {
+  parseBoardingIntakeV1FromNotes,
+  playtimeLabel,
+  type BoardingIntakeV1Payload,
+} from '@/lib/boarding-intake-notes';
 
 // Dynamically import PrescriptionDocument for A4 view
 const PrescriptionDocument = dynamic(() => import('./PrescriptionDocument'), {
@@ -98,13 +106,23 @@ interface Booking {
   packageSessionNumber?: number;
   packageUnlimitedUsage?: boolean;
 
+  /** Structured boarding customer intake + disclaimer ack (from `notes` JSON). */
+  boardingIntakeV1?: BoardingIntakeV1Payload | null;
+
   // Allow any additional properties from API
   [key: string]: any;
 }
 
 interface Activity {
   id: string;
-  type: 'status_change' | 'prescription' | 'chat' | 'note' | 'follow_up';
+  type:
+    | 'status_change'
+    | 'prescription'
+    | 'medical_record'
+    | 'diagnostic_report'
+    | 'chat'
+    | 'note'
+    | 'follow_up';
   description: string;
   timestamp: string;
   actor: string;
@@ -138,6 +156,8 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const [showMedicalHistory, setShowMedicalHistory] = useState(false);
   const [showVetSummaryModal, setShowVetSummaryModal] = useState(false);
   const [showReportUploadModal, setShowReportUploadModal] = useState(false);
+  /** Full-screen overlay: package session list (avoids static-export /packages/:id navigation issues). */
+  const [packageSessionsOverlayId, setPackageSessionsOverlayId] = useState<string | null>(null);
   const [showTracking, setShowTracking] = useState(false);
   const [showA4Document, setShowA4Document] = useState(false);
   const [selectedPrescriptionForA4, setSelectedPrescriptionForA4] = useState<any>(null);
@@ -148,6 +168,9 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   const [otpAction, setOtpAction] = useState<'start' | 'complete' | null>(null);
   const [otpError, setOtpError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  
+  // Address details from start-travel response (ensures we always have the latest address)
+  const [destinationAddressDetails, setDestinationAddressDetails] = useState<any>(null);
 
   useEffect(() => {
     loadAppointmentDetails();
@@ -225,10 +248,67 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       }
       
       // Map backend response to frontend Booking interface
+      // ✅ FIX: Extract petId from multiple sources (booking object, pet object, or fetch by name)
+      const petIdFromBooking = rawBooking.petId || rawBooking.pet_id;
+      const petIdFromPetObject = data.pet?.id;
+      let finalPetId = petIdFromBooking || petIdFromPetObject;
+      
+      // ✅ FIX: If petId is still missing but we have customerId and petName, fetch it
+      if (!finalPetId && (rawBooking.customerId || rawBooking.customer_id) && rawBooking.petName) {
+        try {
+          const customerId = rawBooking.customerId || rawBooking.customer_id;
+          const petName = rawBooking.petName;
+          console.log('[AppointmentDetailModal] Fetching pet by customerId and petName:', { customerId, petName });
+          
+          const petsResponse = await apiClient.get(`/pets/customer/${customerId}`) as any;
+          if (petsResponse?.pets && Array.isArray(petsResponse.pets)) {
+            // First try exact name match
+            let matchingPet = petsResponse.pets.find((p: any) => 
+              p.name?.toLowerCase().trim() === petName.toLowerCase().trim()
+            );
+            
+            // ✅ FIX: If no exact match but only one pet exists, use that pet
+            // This handles cases where the booking has incorrect pet name but customer has only one pet
+            if (!matchingPet && petsResponse.pets.length === 1) {
+              matchingPet = petsResponse.pets[0];
+              console.log('[AppointmentDetailModal] ⚠️ Pet name mismatch, but using single pet as fallback:', {
+                bookingPetName: petName,
+                actualPetName: matchingPet.name,
+                petId: matchingPet.id
+              });
+            }
+            
+            if (matchingPet?.id) {
+              finalPetId = matchingPet.id;
+              console.log('[AppointmentDetailModal] ✅ Found petId:', { 
+                petId: finalPetId, 
+                bookingPetName: petName,
+                actualPetName: matchingPet.name
+              });
+            } else {
+              console.warn('[AppointmentDetailModal] ⚠️ Pet not found by name:', { petName, availablePets: petsResponse.pets.map((p: any) => p.name) });
+            }
+          }
+        } catch (error) {
+          console.warn('[AppointmentDetailModal] Could not fetch pet by name:', error);
+        }
+      }
+      
+      console.log('[AppointmentDetailModal] PetId extraction:', {
+        petIdFromBooking,
+        petIdFromPetObject,
+        finalPetId,
+        petObject: data.pet,
+        rawBooking: { petId: rawBooking.petId, pet_id: rawBooking.pet_id, petName: rawBooking.petName, customerId: rawBooking.customerId || rawBooking.customer_id }
+      });
+
+      const boardingIntakeV1 = parseBoardingIntakeV1FromNotes(rawBooking.notes);
+      const hasBoardingIntakeJson = !!boardingIntakeV1;
+
       const mappedBooking: Booking = {
         id: rawBooking.id || rawBooking.bookingId,
-        petId: rawBooking.petId,
-        customerId: rawBooking.customerId, // ✅ For prescription creation
+        petId: finalPetId, // ✅ FIX: Get petId from booking or pet object
+        customerId: rawBooking.customerId || rawBooking.customer_id, // ✅ FIX: Handle both camelCase and snake_case
         // ✅ FIX: Map bookingDate/bookingTime to date/time
         date: rawBooking.bookingDate || rawBooking.date || new Date().toISOString(),
         time: formatBookingTime(rawBooking.bookingTime || rawBooking.time) || '09:00 AM',
@@ -239,12 +319,22 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         customerName: rawBooking.customerName || 'Unknown Customer',
         customerPhone: rawBooking.customerPhone || '',
         // Pet info  
-        petName: rawBooking.petName || 'Unknown Pet',
-        petType: rawBooking.petType || rawBooking.petSpecies || '',
-        petBreed: rawBooking.petBreed || '',
-        petAge: rawBooking.petAge ? `${rawBooking.petAge} years` : '',
-        // Service info
-        serviceName: rawBooking.serviceName || 'Service',
+        petName: rawBooking.pet?.name || rawBooking.petName || 'Unknown Pet',
+        petType: rawBooking.pet?.species || rawBooking.petType || rawBooking.petSpecies || '',
+        petBreed: rawBooking.pet?.breed || rawBooking.petBreed || '',
+        petAge:
+          rawBooking.petAge != null && rawBooking.petAge !== ''
+            ? `${rawBooking.petAge} years`
+            : rawBooking.pet?.age != null
+              ? `${rawBooking.pet.age} years`
+              : '',
+        // Service info (details API may put label on nested service; list uses service?.name first)
+        serviceName:
+          rawBooking.serviceName ||
+          rawBooking.service?.name ||
+          rawBooking.service?.serviceName ||
+          rawBooking.service_name ||
+          'Service',
         serviceType: rawBooking.serviceStyle || rawBooking.serviceType || 'at_center',
         // ✅ FIX: Build location from detailed address → API location → customer/vendor address fallback
         location: rawBooking.customerAddressDetails?.formattedAddress || rawBooking.location || rawBooking.customerAddress || rawBooking.vendorAddress || 
@@ -264,7 +354,10 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
         prescriptionUrl: rawBooking.prescriptionUrl,
         // Metadata
         metadata: rawBooking.metadata,
-        specialInstructions: rawBooking.specialInstructions || rawBooking.notes,
+        specialInstructions: hasBoardingIntakeJson
+          ? rawBooking.specialInstructions
+          : rawBooking.specialInstructions || rawBooking.notes,
+        boardingIntakeV1: boardingIntakeV1 || undefined,
         meetingLink: rawBooking.meetingLink,
         // Vendor (from API – used for prescription creation)
         vendorId: rawBooking.vendorId || rawBooking.vendor_id,
@@ -553,19 +646,26 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   // This handles cases where service_type is "at_center" but the service itself is a tele consultation
   const serviceName = (booking?.serviceName || booking?.service?.name || '').toString().toLowerCase();
   const serviceStyleFromService = (booking?.service?.service_style || booking?.service?.serviceStyle || '').toString().toLowerCase();
-  
-  // Check if it's a tele service based on:
-  // 1. serviceType/serviceStyle (primary check)
-  // 2. Service name contains "tele" or "video" (for center-based tele consultations)
-  // 3. Service object's service_style field
-  const isTeleStyle = 
-    ['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(rawStyle) ||
-    (rawStyle && (rawStyle.includes('tele') || rawStyle.includes('video'))) ||
-    ['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(serviceStyleFromService) ||
-    (serviceStyleFromService && (serviceStyleFromService.includes('tele') || serviceStyleFromService.includes('video'))) ||
-    (serviceName && (serviceName.includes('tele') || serviceName.includes('video') || serviceName.includes('consultation')));
-  
-  const isHomeStyle = ['at_home', 'home', 'home_visit'].includes(rawStyle);
+
+  // Home visit first: API style OR unmistakable name (e.g. "Home Visit Consultation" must NOT unlock Video Call)
+  const isHomeStyle =
+    ['at_home', 'home', 'home_visit'].includes(rawStyle) ||
+    /\bhome\s*visit\b|\bat[\s-]?home\b/i.test(serviceName);
+
+  // Tele / video: explicit styles or name hints — never treat plain "consultation" as tele (matches in-person vet consults)
+  const isTeleStyle =
+    !isHomeStyle &&
+    (['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(rawStyle) ||
+      (rawStyle && (rawStyle.includes('tele') || rawStyle.includes('video'))) ||
+      ['tele', 'tele_consultation', 'video', 'online', 'instant_tele', 'video_consultation'].includes(serviceStyleFromService) ||
+      (serviceStyleFromService && (serviceStyleFromService.includes('tele') || serviceStyleFromService.includes('video'))) ||
+      (serviceName && (serviceName.includes('tele') || serviceName.includes('video'))));
+
+  /** Package canonical parent row (purchase placeholder): no Complete-with-OTP here — each `isPackageSession` child owns completion. */
+  const isPackageCanonicalParentRow = Boolean(
+    (booking?.packagePurchaseId || (booking as any)?.package_purchase_id) &&
+      !(booking?.isPackageSession || (booking as any)?.is_package_session)
+  );
 
   // Helper to format booking time
   const formatBookingTime = (time: string | null | undefined): string => {
@@ -705,6 +805,22 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
     }
   };
 
+  /** Dog walkers: one live journey screen (map + OTP) — avoid duplicate map modal here. */
+  const openWalkerLiveJourneyPage = () => {
+    if (!bookingId) return;
+    try {
+      const back =
+        typeof window !== 'undefined'
+          ? `${window.location.pathname}${window.location.search || ''}` || '/bookings'
+          : '/bookings';
+      setHomeServiceTrackingReturnHref(back);
+    } catch {
+      setHomeServiceTrackingReturnHref('/bookings');
+    }
+    onClose();
+    router.push(`/bookings/home-service?bookingId=${encodeURIComponent(bookingId)}`);
+  };
+
   const handleStartTravel = async () => {
     if (!booking) return;
     
@@ -762,12 +878,30 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             }
             
             // ✅ Update booking location with full address from start-travel response
-            if (trackingResponse?.destinationAddressDetails && booking) {
-              setBooking({
-                ...booking,
-                location: trackingResponse.destinationAddress || booking.location,
-                customerAddressDetails: trackingResponse.destinationAddressDetails,
+            if (trackingResponse?.destinationAddressDetails) {
+              console.log('[START-TRAVEL] Updating booking with address details:', {
+                destinationAddress: trackingResponse.destinationAddress,
+                destinationAddressDetails: trackingResponse.destinationAddressDetails,
               });
+              // Store in separate state for immediate availability
+              setDestinationAddressDetails(trackingResponse.destinationAddressDetails);
+              // Also update booking state
+              if (booking) {
+                setBooking({
+                  ...booking,
+                  location: trackingResponse.destinationAddress || booking.location,
+                  customerAddressDetails: trackingResponse.destinationAddressDetails,
+                });
+              }
+            } else if (trackingResponse?.destinationAddress) {
+              // Fallback: Update location even if details aren't available
+              console.log('[START-TRAVEL] Updating booking location only:', trackingResponse.destinationAddress);
+              if (booking) {
+                setBooking({
+                  ...booking,
+                  location: trackingResponse.destinationAddress,
+                });
+              }
             }
             
             // Start watching position (use ref in callback so session ID is available immediately)
@@ -1241,7 +1375,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-        <div className="bg-white rounded-2xl w-full max-w-[430px] h-[90vh] flex items-center justify-center">
+        <div className="bg-white rounded-2xl vendor-modal-sheet h-[90vh] flex items-center justify-center mx-auto">
           <div className="w-8 h-8 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin"></div>
         </div>
       </div>
@@ -1251,7 +1385,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   if (!booking) {
     return (
       <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-        <div className="bg-white rounded-2xl w-full max-w-[430px] p-6">
+        <div className="bg-white rounded-2xl vendor-modal-sheet p-6 mx-auto">
           <p className="text-center text-gray-600">Appointment not found</p>
           <button
             onClick={onClose}
@@ -1267,7 +1401,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-        <div className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] h-[90vh] flex flex-col">
+        <div className="bg-white vendor-modal-sheet rounded-t-[32px] sm:rounded-[32px] h-[90vh] flex flex-col mx-auto">
           {/* Header */}
           <div className="bg-gradient-to-r from-orange-500 to-amber-500 px-6 py-4 flex items-center justify-between rounded-t-[32px]">
             <div className="flex-1">
@@ -1327,7 +1461,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   </div>
                   
                   {/* ✅ ACTION BUTTONS based on status */}
-                  {booking.status === 'confirmed' && (
+                  {booking.status === 'confirmed' && !isPackageCanonicalParentRow && (
                     // ✅ FIXED: Tele consultations don't require OTP - complete via prescription or video call end
                     booking.serviceType === 'tele' || booking.serviceType === 'video_consultation' ? (
                       <button
@@ -1378,7 +1512,7 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                       Accept Booking
                     </button>
                   )}
-                  {booking.status === 'in_progress' && (
+                  {booking.status === 'in_progress' && !isPackageCanonicalParentRow && (
                     // ✅ FIXED: For tele/video consultations, complete directly (no OTP needed)
                     booking.serviceType === 'tele' || booking.serviceType === 'video_consultation' ? (
                       <button
@@ -1554,10 +1688,133 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                           Remaining: {booking.packageUnlimitedUsage ? 'Unlimited' : `${booking.packageRemainingSessions ?? 0} sessions`}
                         </p>
                       )}
+                      {booking.packagePurchaseId && (
+                        <button
+                          type="button"
+                          className="mt-2 text-left text-xs font-semibold text-amber-900 underline hover:text-amber-950"
+                          onClick={() =>
+                            setPackageSessionsOverlayId(String(booking.packagePurchaseId))
+                          }
+                        >
+                          View all package sessions
+                        </button>
+                      )}
                     </div>
                   )}
                   
-                  {/* Display Special Instructions if any */}
+                  {booking.boardingIntakeV1 && (
+                    <div className="rounded-xl border border-[#FF8C42]/30 bg-orange-50/60 p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-5 h-5 text-[#FF8C42]" />
+                        <h3 className="font-semibold text-gray-900">Boarding intake</h3>
+                      </div>
+                      <p className="text-xs text-gray-600">
+                        Submitted with this booking — same details the customer saw on the intake form.
+                      </p>
+                      {(() => {
+                        const p = booking.boardingIntakeV1!;
+                        const i = (p.intake || {}) as Record<string, unknown>;
+                        const line = (label: string, val: unknown) => {
+                          const s = val != null && String(val).trim() !== '' ? String(val) : '';
+                          if (!s) return null;
+                          return (
+                            <div key={label} className="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-2 text-sm">
+                              <p className="text-gray-500 sm:col-span-1">{label}</p>
+                              <p className="text-gray-900 sm:col-span-2 whitespace-pre-wrap break-words">{s}</p>
+                            </div>
+                          );
+                        };
+                        const stay = p.stay || {};
+                        return (
+                          <div className="space-y-3 text-sm border-t border-orange-200/60 pt-3">
+                            {(stay.checkInDate || stay.checkOutDate) && (
+                              <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-1">
+                                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Stay</p>
+                                {line('Check-in', [stay.checkInDate, stay.checkInTime].filter(Boolean).join(' · '))}
+                                {line('Check-out', [stay.checkOutDate, stay.checkOutTime].filter(Boolean).join(' · '))}
+                                {p.facilityName ? line('Facility', p.facilityName) : null}
+                              </div>
+                            )}
+                            <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-2">
+                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Owner & emergency</p>
+                              {line('Owner', i.ownerFullName)}
+                              {line('Phone', i.ownerPhone)}
+                              {line('Email', i.ownerEmail)}
+                              {line('Address', i.ownerAddress)}
+                              {line('Emergency contact', i.emergencyContactName)}
+                              {line('Emergency phone', i.emergencyContactPhone)}
+                            </div>
+                            <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-2">
+                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Pet (from form)</p>
+                              {line('Name', i.petName)}
+                              {line('Species', i.petSpecies)}
+                              {line('Breed', i.petBreed)}
+                              {line(
+                                'Age',
+                                [i.petAgeYears != null && String(i.petAgeYears) !== '' ? `${i.petAgeYears} yr` : '', i.petAgeMonths != null && String(i.petAgeMonths) !== '' ? `${i.petAgeMonths} mo` : '']
+                                  .filter(Boolean)
+                                  .join(', ')
+                              )}
+                              {line('Sex', i.petGender)}
+                              {line('Weight (kg)', i.petWeightKg)}
+                              {line('Microchip', i.petMicrochip)}
+                              {line('Color / markings', i.petColorMarkings)}
+                              {line('Spayed / neutered', i.spayedNeutered)}
+                              {line('Vaccinations', i.vaccinationsUpToDate)}
+                            </div>
+                            <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-2">
+                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Health & vet</p>
+                              {line('Medications', i.medications)}
+                              {line('Allergies', i.allergies)}
+                              {line('Medical conditions', i.medicalConditions)}
+                              {line('Vet name', i.vetName)}
+                              {line('Vet phone', i.vetPhone)}
+                            </div>
+                            <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-2">
+                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Feeding</p>
+                              {line('Food / brand', i.foodBrandType)}
+                              {line('How much & how often', i.feedingRoutine)}
+                              {line('Treats', i.treatsAllowed)}
+                            </div>
+                            {i.playtime ? (
+                              <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-1">
+                                <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Playtime</p>
+                                {line('Preference', playtimeLabel(i.playtime))}
+                              </div>
+                            ) : null}
+                            <div className="rounded-lg bg-white/80 border border-orange-100 p-3 space-y-2">
+                              <p className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Behavior & social</p>
+                              {line('Temperament', i.temperamentNotes)}
+                              {line('Anxiety / behavior', i.anxietyOrBehavior)}
+                              {line('With dogs', i.socialWithDogs)}
+                              {line('With cats', i.socialWithCats)}
+                              {line('With people', i.socialWithPeople)}
+                            </div>
+                            {i.specialInstructions ? line('Special instructions', i.specialInstructions) : null}
+                            {p.vendorDisclaimer?.acknowledged ? (
+                              <div className="rounded-lg bg-amber-100/50 border border-amber-200 p-3 space-y-2">
+                                <p className="text-xs font-semibold text-amber-900 uppercase tracking-wide">Disclaimer acknowledged</p>
+                                {p.vendorDisclaimer.acceptedAt ? (
+                                  <p className="text-xs text-amber-900/90">
+                                    {new Date(p.vendorDisclaimer.acceptedAt).toLocaleString('en-IN')}
+                                  </p>
+                                ) : null}
+                                {Array.isArray(p.vendorDisclaimer.bullets) && p.vendorDisclaimer.bullets.length > 0 ? (
+                                  <ul className="list-disc pl-4 space-y-1 text-sm text-amber-950">
+                                    {p.vendorDisclaimer.bullets.map((b, idx) => (
+                                      <li key={idx}>{b}</li>
+                                    ))}
+                                  </ul>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Display Special Instructions if any (plain text; not raw boarding JSON) */}
                   {booking.specialInstructions && (
                     <div>
                       <p className="text-sm text-gray-500">Customer Notes</p>
@@ -1899,11 +2156,32 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   Video Call
                 </button>
               )}
-              {/* Home style: Start Travel, Mark Arrived, etc. (all providers) - mounted near Chat */}
-              {isHomeStyle && booking.status !== 'completed' && booking.status !== 'cancelled' && (
+              {/*
+               * Home style: Start Travel, etc. — but NOT for package canonical
+               * parent rows. The parent is a purchase-level placeholder; each
+               * session child carries its own home-flow actions (live journey,
+               * start session OTP, complete OTP). Treating the parent as a
+               * journey would generate phantom GPS state for the whole package.
+               */}
+              {isHomeStyle &&
+                booking.status !== 'completed' &&
+                booking.status !== 'cancelled' &&
+                !isPackageCanonicalParentRow && (
                 <>
-                  {/* Phase 1: Start Travel (confirmed or pending = appointment received) */}
-                  {(booking.status === 'confirmed' || booking.status === 'pending') && (
+                  {/* Walker / walk-style home: single live journey page (map + start travel there). Others: in-modal GPS. */}
+                  {(booking.status === 'confirmed' || booking.status === 'pending' || booking.status === 'traveling' || booking.status === 'vendor_on_way') &&
+                    bookingNeedsWalkLiveTracker(booking, vendorData) && (
+                    <button
+                      type="button"
+                      onClick={openWalkerLiveJourneyPage}
+                      className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                    >
+                      <Navigation className="w-4 h-4" />
+                      Live journey map
+                    </button>
+                  )}
+                  {(booking.status === 'confirmed' || booking.status === 'pending' || booking.status === 'traveling' || booking.status === 'vendor_on_way') &&
+                    !bookingNeedsWalkLiveTracker(booking, vendorData) && (
                     <button
                       onClick={handleStartTravel}
                       disabled={processing}
@@ -1911,18 +2189,6 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                     >
                       <MapPin className="w-4 h-4" />
                       Start Travel
-                    </button>
-                  )}
-
-                  {/* Phase 2: Arrived (If traveling/vendor_on_way/in_progress) */}
-                  {(booking.status === 'traveling' || booking.status === 'vendor_on_way' || (booking.status === 'in_progress' && !(booking as any).arrived)) && (
-                    <button
-                      onClick={handleArrived}
-                      disabled={processing}
-                      className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-medium flex items-center justify-center gap-2"
-                    >
-                      <MapPin className="w-4 h-4" />
-                      Mark Arrived
                     </button>
                   )}
 
@@ -1973,7 +2239,84 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               <div className="space-y-2">
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setShowMedicalHistory(true)}
+                    onClick={async () => {
+                      console.log('[Medical History] Button clicked, booking data:', {
+                        petId: booking?.petId,
+                        pet_id: (booking as any)?.pet_id,
+                        customerId: booking?.customerId,
+                        customer_id: (booking as any)?.customer_id,
+                        petName: booking?.petName,
+                        bookingId: bookingId,
+                      });
+                      
+                      let petIdToUse = booking?.petId || (booking as any)?.pet_id;
+                      
+                      // ✅ FIX: If petId is missing, try to fetch it by customerId and petName
+                      if (!petIdToUse && booking?.customerId && booking?.petName) {
+                        try {
+                          console.log('[Medical History] Attempting to fetch pet by customerId and petName:', {
+                            customerId: booking.customerId,
+                            petName: booking.petName
+                          });
+                          
+                          const petsResponse = await apiClient.get(`/pets/customer/${booking.customerId}`) as any;
+                          console.log('[Medical History] Pets response:', petsResponse);
+                          
+                          if (petsResponse?.pets && Array.isArray(petsResponse.pets)) {
+                            // First try exact name match
+                            let matchingPet = petsResponse.pets.find((p: any) => 
+                              p.name?.toLowerCase().trim() === booking.petName?.toLowerCase().trim()
+                            );
+                            
+                            // ✅ FIX: If no exact match but only one pet exists, use that pet
+                            // This handles cases where the booking has incorrect pet name but customer has only one pet
+                            if (!matchingPet && petsResponse.pets.length === 1) {
+                              matchingPet = petsResponse.pets[0];
+                              console.log('[Medical History] ⚠️ Pet name mismatch, but using single pet as fallback:', {
+                                bookingPetName: booking.petName,
+                                actualPetName: matchingPet.name,
+                                petId: matchingPet.id
+                              });
+                            }
+                            
+                            if (matchingPet?.id) {
+                              petIdToUse = matchingPet.id;
+                              console.log('[Medical History] ✅ Found petId:', { 
+                                petId: petIdToUse, 
+                                bookingPetName: booking.petName,
+                                actualPetName: matchingPet.name
+                              });
+                              
+                              // Update booking state with the found petId
+                              setBooking((prev) => prev ? { ...prev, petId: petIdToUse } : null);
+                            } else {
+                              console.warn('[Medical History] ⚠️ Pet not found by name:', { 
+                                petName: booking.petName, 
+                                availablePets: petsResponse.pets.map((p: any) => ({ id: p.id, name: p.name }))
+                              });
+                              toast.error(`Pet "${booking.petName}" not found in customer's pets. Available pets: ${petsResponse.pets.map((p: any) => p.name).join(', ') || 'none'}`);
+                              return;
+                            }
+                          } else {
+                            console.warn('[Medical History] ⚠️ No pets array in response:', petsResponse);
+                            toast.error('Could not fetch customer pets. Please try again.');
+                            return;
+                          }
+                        } catch (error: any) {
+                          console.error('[Medical History] Error fetching pet by name:', error);
+                          toast.error(`Failed to fetch pet information: ${error.message || 'Unknown error'}`);
+                          return;
+                        }
+                      }
+                      
+                      if (!petIdToUse) {
+                        console.warn('[Medical History] No petId found and cannot fetch it');
+                        toast.error('Pet information not available. Cannot open medical history.');
+                        return;
+                      }
+                      
+                      setShowMedicalHistory(true);
+                    }}
                     className="flex-1 py-3 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl font-medium flex items-center justify-center gap-2"
                   >
                     <FileText className="w-4 h-4" />
@@ -2007,10 +2350,10 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
       </div>
 
       {/* Medical History Modal */}
-      {showMedicalHistory && booking.petId && (
+      {showMedicalHistory && (booking?.petId || (booking as any)?.pet_id) && (
         <MedicalHistoryModal
-          petId={booking.petId}
-          petName={(booking as any).petName || 'Pet'}
+          petId={booking?.petId || (booking as any)?.pet_id}
+          petName={(booking as any)?.petName || booking?.petName || 'Pet'}
           bookingId={bookingId}
           vendorId={vendorData?.id || ''}
           onClose={() => setShowMedicalHistory(false)}
@@ -2270,34 +2613,47 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               {booking && (
                 <div className="bg-blue-50 rounded-xl p-3">
                   <span className="text-xs font-medium text-blue-600">Destination</span>
-                  {(booking as any).customerAddressDetails ? (
+                  {(destinationAddressDetails || (booking as any).customerAddressDetails) ? (
                     <div className="mt-1 space-y-1">
-                      {(booking as any).customerAddressDetails.apartmentName && (
-                        <p className="text-sm font-semibold text-gray-900">{(booking as any).customerAddressDetails.apartmentName}</p>
-                      )}
-                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-700">
-                        {(booking as any).customerAddressDetails.flatNo && (
-                          <span>Flat {(booking as any).customerAddressDetails.flatNo}</span>
-                        )}
-                        {(booking as any).customerAddressDetails.houseNo && (
-                          <span>House {(booking as any).customerAddressDetails.houseNo}</span>
-                        )}
-                        {(booking as any).customerAddressDetails.floor && (
-                          <span>Floor {(booking as any).customerAddressDetails.floor}</span>
-                        )}
-                      </div>
-                      {(booking as any).customerAddressDetails.streetName && (
-                        <p className="text-xs text-gray-700">{(booking as any).customerAddressDetails.streetName}</p>
-                      )}
-                      <p className="text-xs text-gray-600">
-                        {[(booking as any).customerAddressDetails.addressLine1, (booking as any).customerAddressDetails.addressLine2].filter(Boolean).join(', ')}
-                      </p>
-                      {(booking as any).customerAddressDetails.landmark && (
-                        <p className="text-xs text-gray-500">Near {(booking as any).customerAddressDetails.landmark}</p>
-                      )}
-                      <p className="text-xs text-gray-500">
-                        {[(booking as any).customerAddressDetails.city, (booking as any).customerAddressDetails.state, (booking as any).customerAddressDetails.pincode].filter(Boolean).join(', ')}
-                      </p>
+                      {(() => {
+                        const addrDetails = destinationAddressDetails || (booking as any).customerAddressDetails;
+                        return (
+                          <>
+                            {addrDetails.apartmentName && (
+                              <p className="text-sm font-semibold text-gray-900">{addrDetails.apartmentName}</p>
+                            )}
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-700">
+                              {addrDetails.flatNo && (
+                                <span className="font-medium">Flat {addrDetails.flatNo}</span>
+                              )}
+                              {addrDetails.houseNo && (
+                                <span className="font-medium">House {addrDetails.houseNo}</span>
+                              )}
+                              {addrDetails.floor && (
+                                <span className="font-medium">Floor {addrDetails.floor}</span>
+                              )}
+                            </div>
+                            {addrDetails.streetName && (
+                              <p className="text-xs text-gray-700">{addrDetails.streetName}</p>
+                            )}
+                            <p className="text-xs text-gray-600">
+                              {[addrDetails.addressLine1, addrDetails.addressLine2].filter(Boolean).join(', ')}
+                            </p>
+                            {addrDetails.landmark && (
+                              <p className="text-xs text-gray-500">Near {addrDetails.landmark}</p>
+                            )}
+                            <p className="text-xs text-gray-500">
+                              {[addrDetails.city, addrDetails.state, addrDetails.pincode].filter(Boolean).join(', ')}
+                            </p>
+                            {/* Fallback: Show formatted address if individual fields are missing */}
+                            {addrDetails.formattedAddress && 
+                             !addrDetails.flatNo && 
+                             !addrDetails.addressLine1 && (
+                              <p className="text-xs text-gray-600 mt-1">{addrDetails.formattedAddress}</p>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   ) : (
                     <p className="text-sm font-medium text-gray-900 mt-1 break-words">{booking.location || booking.customerName}</p>
@@ -2446,6 +2802,26 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
             setSelectedPrescriptionForA4(null);
           }}
         />
+      )}
+
+      {packageSessionsOverlayId && (
+        <div className="fixed inset-0 z-[70] flex flex-col bg-white">
+          <div className="flex shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-amber-300 text-amber-900"
+              onClick={() => setPackageSessionsOverlayId(null)}
+            >
+              Close
+            </Button>
+            <span className="text-sm font-semibold text-gray-900">Package sessions</span>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <PackagePurchaseSessionsVendorView packagePurchaseId={packageSessionsOverlayId} />
+          </div>
+        </div>
       )}
     </>
   );

@@ -52,6 +52,14 @@ export async function resolveVendorId(paramVendorId: string): Promise<string> {
       }
     }
 
+    const { resolveNewVendorOnboardingTier } = await import('./onboarding-f100-tier');
+    const tr = await resolveNewVendorOnboardingTier({
+      email: payload.email || payload.businessEmail,
+      businessName: payload.businessName || payload.business_name,
+    });
+    const resolvedTierName = tr.tier;
+    const resolvedCommission = tr.commission_percentage;
+
     const newVendor = await insert('vendors', {
       id: identity.id,
       phone: identity.phone,
@@ -69,6 +77,9 @@ export async function resolveVendorId(paramVendorId: string): Promise<string> {
       service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding
       status: 'active',
       is_active: true,
+      is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors
+      tier: resolvedTierName,
+      commission_percentage: resolvedCommission,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });

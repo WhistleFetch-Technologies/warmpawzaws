@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { formatDistanceDisplay } from '@/lib/distance-display';
 
 interface UniversalVendorListViewProps {
   roleId: string;
@@ -45,6 +46,25 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
 
 
   useEffect(() => {
+    // Prefer persisted customer coordinates so distance renders for every center
+    // even when the browser blocks geolocation. Fall back to a live position
+    // request when no cached value is available.
+    try {
+      if (typeof window !== 'undefined') {
+        const cachedLat = window.localStorage.getItem('customer_latitude');
+        const cachedLng = window.localStorage.getItem('customer_longitude');
+        if (cachedLat && cachedLng) {
+          const lat = parseFloat(cachedLat);
+          const lng = parseFloat(cachedLng);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            setUserLocation({ lat, lon: lng });
+            return;
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
     const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
     getCurrentPositionSafe((coords: { lat: number; lng: number }) =>
       setUserLocation({ lat: coords.lat, lon: coords.lng })
@@ -87,6 +107,10 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
       });
 
       if (userLocation) {
+        // Send canonical names + legacy aliases so every backend revision
+        // can locate the customer reference point.
+        params.append('latitude', userLocation.lat.toString());
+        params.append('longitude', userLocation.lon.toString());
         params.append('lat', userLocation.lat.toString());
         params.append('lon', userLocation.lon.toString());
       }
@@ -114,6 +138,10 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
       });
 
       if (userLocation) {
+        // Send canonical names + legacy aliases so every backend revision
+        // can locate the customer reference point.
+        params.append('latitude', userLocation.lat.toString());
+        params.append('longitude', userLocation.lon.toString());
         params.append('lat', userLocation.lat.toString());
         params.append('lon', userLocation.lon.toString());
       }
@@ -235,8 +263,8 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
                             <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
                             {person.rating}
                           </div>
-                          {person.distance && (
-                            <span className="text-xs text-gray-500">• {person.distance} km</span>
+                          {formatDistanceDisplay(person) && (
+                            <span className="text-xs text-gray-500">• {formatDistanceDisplay(person)}</span>
                           )}
                           {(person as any).hasActivePackage && (
                             <Badge variant="outline" className="text-[10px] border-[#FF8C42]/50 text-[#FF8C42] bg-orange-50">
@@ -274,7 +302,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
                     <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-50">
                       <div className="flex items-center gap-2 text-xs text-gray-500">
                         <MapPin className="w-3 h-3" />
-                        {center.distance ? `${center.distance} km away` : center.city}
+                        {formatDistanceDisplay(center) || center.city}
                       </div>
                       <div className="flex items-center gap-1.5">
                         {(center as any).hasActivePackage && (

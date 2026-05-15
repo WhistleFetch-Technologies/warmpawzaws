@@ -4,99 +4,39 @@
  */
 
 /**
- * Check if this is a hard refresh
- * Strategy: If localStorage has tokens but sessionStorage doesn't have the flag,
- * AND navigation type is 'reload', then it's a hard refresh
- * 
- * FIXED: Made detection less aggressive - won't clear on new tab
+ * Whether the current page load is a "hard refresh" (F5 / Ctrl-R / browser
+ * reload button).
+ *
+ * IMPORTANT: This used to clear the vendor's session on every hard refresh
+ * when an auth token was already present — which kicked users out frequently,
+ * especially after every deploy. With the 90-day persistent-login requirement
+ * we no longer clear on reload. The token-refresh path (`cognito-auth.ts`)
+ * already handles short-lived access tokens by silently exchanging the
+ * refresh token whenever the access/id token is close to expiry, so a reload
+ * never needs to drop credentials.
+ *
+ * The function is retained (and still detects reloads) so callers can branch
+ * on the navigation type, but it always returns `false` to match the product
+ * requirement that "logout should only happen when the user explicitly taps
+ * Logout".
  */
 export function isHardRefresh(): boolean {
   if (typeof window === 'undefined') return false;
-  
-  const hasToken = !!(localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken'));
-  const hasSessionFlag = !!sessionStorage.getItem('_warmpawz_vendor_has_session');
-  const justLoggedIn = !!sessionStorage.getItem('_warmpawz_vendor_just_logged_in');
-  
-  // Add debug logging for troubleshooting
-  const debugInfo = {
-    hasToken,
-    hasSessionFlag,
-    justLoggedIn,
-    pathname: window.location.pathname,
-    navigationType: 'unknown'
-  };
-  
+
   try {
     const perfEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
-    if (perfEntries.length > 0) {
-      debugInfo.navigationType = perfEntries[0].type;
+    if (perfEntries.length > 0 && perfEntries[0].type === 'reload') {
+      const hasToken = !!(
+        localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken')
+      );
+      console.log(
+        `[Vendor Session] Reload detected (hasToken=${hasToken}) — keeping session; refresh-token flow will renew expired access tokens automatically.`,
+      );
     }
-  } catch (e) {
-    // Performance API not available
+  } catch {
+    /* Performance API unavailable — nothing to do. */
   }
-  
-  console.log('[Vendor Session Debug] isHardRefresh check:', debugInfo);
-  
-  // CRITICAL: Check if user just logged in - never clear session in this case
-  if (justLoggedIn) {
-    sessionStorage.removeItem('_warmpawz_vendor_just_logged_in');
-    console.log('[Vendor Session] Just logged in - preserving session');
-    return false;
-  }
-  
-  // If session flag exists, preserve the session
-  if (hasSessionFlag) {
-    console.log('[Vendor Session] Session flag exists - preserving session');
-    return false;
-  }
-  
-  // Check if we're on the auth page - if so, don't clear (user is logging in)
-  if (window.location.pathname.includes('/auth')) {
-    console.log('[Vendor Session] On auth page - preserving session');
-    return false;
-  }
-  
-  // Check navigation type - only clear on explicit reload (F5)
-  try {
-    const perfEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
-    if (perfEntries.length > 0) {
-      const navType = perfEntries[0].type;
-      
-      if (navType === 'reload') {
-        // This is an actual hard refresh (F5)
-        // Only clear if we had a session before
-        if (hasToken) {
-          console.log('[Vendor Session] Hard refresh detected with existing token - CLEARING SESSION');
-          return true;
-        }
-      }
-      
-      if (navType === 'navigate') {
-        // This is a new tab or direct navigation
-        // DON'T clear session - let app logic handle redirect
-        console.log('[Vendor Session] New tab/navigation detected - preserving session (will redirect if needed)');
-        return false;
-      }
-      
-      if (navType === 'back_forward') {
-        // Browser back/forward button
-        console.log('[Vendor Session] Back/forward navigation - preserving session');
-        return false;
-      }
-    }
-  } catch (e) {
-    console.warn('[Vendor Session] Performance API not available:', e);
-  }
-  
-  // Conservative fallback: If we have tokens but no session flag
-  // This is likely a new tab - DON'T clear session
-  // The app will handle login redirect if needed
-  if (hasToken && !hasSessionFlag) {
-    console.log('[Vendor Session] Has token but no session flag - treating as new tab, preserving session');
-    return false;
-  }
-  
-  console.log('[Vendor Session] No hard refresh detected - preserving session');
+
   return false;
 }
 
@@ -122,6 +62,7 @@ export function clearVendorSession(): void {
   
   // Clear Cognito tokens
   localStorage.removeItem('vendorTokenExpiry');
+  localStorage.removeItem('vendorRefreshTokenExpiry');
   localStorage.removeItem('cognitoAccessToken');
   localStorage.removeItem('cognitoIdToken');
   localStorage.removeItem('cognitoRefreshToken');
@@ -129,6 +70,7 @@ export function clearVendorSession(): void {
   // Clear session flags so next load shows login prompt instead of redirecting
   sessionStorage.removeItem('_warmpawz_vendor_has_session');
   sessionStorage.removeItem('_warmpawz_vendor_just_logged_in');
+  sessionStorage.removeItem('_warmpawz_vendor_login_at');
   sessionStorage.removeItem('_warmpawz_vendor_session_cleared');
   sessionStorage.removeItem('_vendor_redirected_to_auth');
   
@@ -242,33 +184,37 @@ export function isTokenExpired(token: string | null): boolean {
 }
 
 /**
- * Initialize session - clear on hard refresh
- * MUST be called synchronously before any component logic
+ * Initialize session.
+ *
+ * MUST be called synchronously before any component logic.
+ *
+ * Behaviour change (90-day persistent login):
+ *   - We NEVER clear the session here. Reloads, deploys and new tabs simply
+ *     restore whatever is in `localStorage` and kick off a silent refresh if
+ *     the access/id token has expired.
+ *   - The only path that clears the session is `clearVendorSession()` (used
+ *     by the explicit logout flow).
+ *   - If the refresh token itself has expired or the server rejects it, the
+ *     refresh helper in `cognito-auth.ts` is the one that decides whether to
+ *     drop credentials — not this function.
  */
 export function initializeSession(): void {
   if (typeof window === 'undefined') return;
-  
-  // Check for hard refresh FIRST (before reading localStorage)
-  const isHard = isHardRefresh();
-  
-  if (isHard) {
-    console.log('[Session] Hard refresh detected - clearing vendor session');
-    clearVendorSession();
-    sessionStorage.setItem('_warmpawz_vendor_session_cleared', 'true');
-    return;
-  }
-  
-  // Check if session was cleared on previous hard refresh
+
+  isHardRefresh();
+
   const wasCleared = sessionStorage.getItem('_warmpawz_vendor_session_cleared');
   if (wasCleared === 'true') {
     sessionStorage.removeItem('_warmpawz_vendor_session_cleared');
   }
-  
-  const token = localStorage.getItem('authToken') || 
-                localStorage.getItem('vendorSessionToken');
-  
+
+  const token = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
   if (token && isTokenExpired(token)) {
-    console.log('[Session] Token expired - clearing vendor session');
-    clearVendorSession();
+    console.log('[Vendor Session] Access token expired - attempting silent refresh (90-day refresh window)');
+    import('./cognito-auth').then(({ refreshVendorTokensIfNeeded }) => {
+      refreshVendorTokensIfNeeded().catch(() => {
+        /* swallow — keep session and let the next API call retry the refresh. */
+      });
+    });
   }
 }

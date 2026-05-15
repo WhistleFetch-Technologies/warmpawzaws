@@ -9,12 +9,13 @@
  * ============================================================================
  */
 
-import { 
-  CognitoIdentityProviderClient, 
+import {
+  CognitoIdentityProviderClient,
   AdminCreateUserCommand,
   AdminSetUserPasswordCommand,
   AdminInitiateAuthCommand,
   AdminGetUserCommand,
+  AdminUserGlobalSignOutCommand,
   AuthFlowType,
 } from '@aws-sdk/client-cognito-identity-provider';
 
@@ -167,6 +168,75 @@ export async function authenticateCognitoUser(
     refreshToken: authResponse.AuthenticationResult.RefreshToken || '',
     expiresIn: authResponse.AuthenticationResult.ExpiresIn || 3600,
   };
+}
+
+/**
+ * Exchange a Cognito refresh token for new access/id tokens (same user pool + app client as login).
+ * Refresh token rotation: Cognito may omit a new refresh token; caller should keep the previous one.
+ */
+export async function refreshCognitoUserSession(refreshToken: string): Promise<CognitoTokens> {
+  if (!USER_POOL_ID || !CLIENT_ID) {
+    throw new Error('Cognito is not configured');
+  }
+  const rt = (refreshToken || '').trim();
+  if (!rt) {
+    throw new Error('Refresh token required');
+  }
+
+  const authResponse = await cognitoClient.send(
+    new AdminInitiateAuthCommand({
+      UserPoolId: USER_POOL_ID,
+      ClientId: CLIENT_ID,
+      AuthFlow: AuthFlowType.REFRESH_TOKEN_AUTH,
+      AuthParameters: {
+        REFRESH_TOKEN: rt,
+      },
+    })
+  );
+
+  if (!authResponse.AuthenticationResult) {
+    throw new Error('Cognito refresh failed');
+  }
+
+  const ar = authResponse.AuthenticationResult;
+  return {
+    accessToken: ar.AccessToken || '',
+    idToken: ar.IdToken || '',
+    refreshToken: ar.RefreshToken || rt,
+    expiresIn: ar.ExpiresIn || 3600,
+  };
+}
+
+/**
+ * Revoke all refresh tokens for the internal Cognito user `phone_{dialable}`.
+ * Used after customer password reset/change so old sessions cannot refresh.
+ */
+export async function adminGlobalSignOutCognitoUserByDialablePhone(
+  dialablePhone: string
+): Promise<{ ok: boolean; error?: string }> {
+  const poolId =
+    process.env.COGNITO_USER_POOL_ID ||
+    process.env.COGNITO_VENDOR_POOL_ID ||
+    process.env.COGNITO_CUSTOMER_POOL_ID ||
+    '';
+  if (!poolId || !dialablePhone?.trim()) {
+    return { ok: true };
+  }
+  const username = `phone_${dialablePhone.trim()}`;
+  try {
+    await cognitoClient.send(
+      new AdminUserGlobalSignOutCommand({
+        UserPoolId: poolId,
+        Username: username,
+      })
+    );
+    return { ok: true };
+  } catch (error: any) {
+    if (error?.name === 'UserNotFoundException') {
+      return { ok: true };
+    }
+    return { ok: false, error: error?.message || String(error) };
+  }
 }
 
 /**

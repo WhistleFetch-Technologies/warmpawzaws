@@ -20,38 +20,8 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 import { geocodeAddress } from '../lib/utils/geocode';
 import { resolveVendorId } from '../utils/vendor-resolve';
-
-/**
- * Get commission rate for a vendor from their tier configuration
- * @param vendorId - The vendor ID
- * @returns Commission rate as a percentage (e.g., 20 for 20%)
- */
-async function getVendorCommissionRate(vendorId: string): Promise<number> {
-  try {
-    const tierResult = await query(
-      `SELECT vt.commission_rate
-       FROM vendors v
-       LEFT JOIN vendor_tiers vt ON vt.is_active = true 
-         AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
-       WHERE v.id = $1
-       LIMIT 1`,
-      [vendorId]
-    );
-
-    const commissionRate = tierResult.rows?.[0]?.commission_rate;
-    
-    // If commission_rate is null/undefined, fallback to 15%
-    if (commissionRate != null && !isNaN(Number(commissionRate))) {
-      return Number(commissionRate);
-    }
-    
-    console.warn(`⚠️ [COMMISSION] No tier found for vendor ${vendorId}, using default 15%`);
-    return 15; // Default fallback
-  } catch (error: any) {
-    console.error(`❌ [COMMISSION] Error getting commission rate for vendor ${vendorId}:`, error);
-    return 15; // Default fallback on error
-  }
-}
+import { bookingUsesDedicatedEndSessionOtp, ensureDedicatedEndSessionOtp } from '../lib/booking-dedicated-end-otp';
+import { getVendorCommissionRate, isCanonicalPackageParentBooking } from '../utils/vendor-commission-rate';
 
 /**
  * Helper function to get the correct OTP for a booking based on action and service type
@@ -74,52 +44,33 @@ async function getExpectedOTPForBooking(
     return { expectedOTP, isWalkerService: false };
   }
 
-  // For 'complete' or 'end' action, check if walker service
+  // For 'complete' or 'end' action: dedicated end OTP for at-home walks / sitters (see booking-dedicated-end-otp)
   try {
-    // Get vendor role to check if it's a walker
-    const vendorRoleResult = await query(
-      `SELECT r.name AS role_name
-       FROM vendors v
-       JOIN roles r ON r.id = v.role_id
-       WHERE v.id = $1 AND r.is_active = true
-       LIMIT 1`,
-      [booking.vendor_id]
-    ).catch(() => ({ rows: [] }));
-    
-    const rows = Array.isArray(vendorRoleResult) ? vendorRoleResult : (vendorRoleResult as any).rows || [];
-    const roleName = rows[0]?.role_name?.toLowerCase() || '';
-    
-    // Check if role is walker (pet_walker, walker, dog_walker)
-    const walkerRoles = ['pet_walker', 'walker', 'dog_walker'];
-    isWalkerService = walkerRoles.includes(roleName);
-    
+    isWalkerService = await bookingUsesDedicatedEndSessionOtp(bookingId);
+
     if (isWalkerService) {
-      // Walker service: Get end OTP from otp_tokens table
       const endOtpResult = await query(
         `SELECT otp_code FROM otp_tokens
          WHERE metadata->>'bookingId' = $1
            AND metadata->>'action' = 'end'
            AND is_used = false
-           AND expires_at > NOW()
+           AND (expires_at IS NULL OR expires_at > NOW())
          ORDER BY created_at DESC
          LIMIT 1`,
         [bookingId]
       ).catch(() => ({ rows: [] }));
-      
+
       const endOtpRows = Array.isArray(endOtpResult) ? endOtpResult : (endOtpResult as any).rows || [];
       if (endOtpRows.length > 0) {
         expectedOTP = String(endOtpRows[0].otp_code || '').trim();
       } else {
-        // Fallback to otp_code if end OTP not found
         expectedOTP = String(booking.otp_code || '').trim();
       }
     } else {
-      // Non-walker service: Use otp_code from bookings table (single OTP for completion)
       expectedOTP = String(booking.otp_code || '').trim();
     }
   } catch (error: any) {
-    console.error(`❌ [getExpectedOTPForBooking] Error checking walker service, falling back to otp_code:`, error);
-    // Fallback to otp_code if role check fails
+    console.error(`❌ [getExpectedOTPForBooking] Error checking dedicated end OTP, falling back to otp_code:`, error);
     expectedOTP = String(booking.otp_code || '').trim();
   }
 
@@ -234,46 +185,48 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         console.log(`✅ [COMPLETE-BOOKING] Tele consultation completed without OTP (prescription/call ended)`);
         
         // ✅ Create vendor_earnings for tele consultation (regardless of payment status — handles COD/pending)
-        try {
-          const commissionRate = await getVendorCommissionRate(booking.vendor_id);
-          const totalAmount = parseFloat(booking.total_amount || '0');
-          const commissionAmount = Math.round((totalAmount * commissionRate / 100) * 100) / 100;
-          const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
-          
-          const existingEarnings = await query(
-            `SELECT id FROM vendor_earnings WHERE booking_id = $1`,
-            [bookingId]
-          ).catch(() => ({ rows: [] }));
-          
-          const existingRows = (existingEarnings as any).rows || [];
-          
-          if (existingRows.length === 0 && vendorAmount > 0) {
-            await insert('vendor_earnings', {
-              vendor_id: booking.vendor_id,
-              booking_id: bookingId,
-              amount: vendorAmount,
-              commission_amount: commissionAmount,
-              total_amount: totalAmount,
-              commission_rate: commissionRate,
-              status: 'pending',
-              realized_at: new Date().toISOString(),
-            });
-            console.log(`✅ [EARNINGS] Created vendor_earnings for tele booking ${bookingId}: vendor gets ₹${vendorAmount}`);
-            
-            // Update vendor totals (non-critical)
-            await query(
-              `UPDATE vendors 
+        if (!isCanonicalPackageParentBooking(booking)) {
+          try {
+            const commissionRate = await getVendorCommissionRate(booking.vendor_id);
+            const totalAmount = parseFloat(booking.total_amount || '0');
+            const commissionAmount = Math.round((totalAmount * commissionRate / 100) * 100) / 100;
+            const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
+
+            const existingEarnings = await query(
+              `SELECT id FROM vendor_earnings WHERE booking_id = $1`,
+              [bookingId]
+            ).catch(() => ({ rows: [] }));
+
+            const existingRows = (existingEarnings as any).rows || [];
+
+            if (existingRows.length === 0 && vendorAmount > 0) {
+              await insert('vendor_earnings', {
+                vendor_id: booking.vendor_id,
+                booking_id: bookingId,
+                amount: vendorAmount,
+                commission_amount: commissionAmount,
+                total_amount: totalAmount,
+                commission_rate: commissionRate,
+                status: 'pending',
+                realized_at: new Date().toISOString(),
+              });
+              console.log(`✅ [EARNINGS] Created vendor_earnings for tele booking ${bookingId}: vendor gets ₹${vendorAmount}`);
+
+              // Update vendor totals (non-critical)
+              await query(
+                `UPDATE vendors 
                SET pending_payout = COALESCE(pending_payout, 0) + $1,
                    total_earnings = COALESCE(total_earnings, 0) + $1,
                    updated_at = NOW()
                WHERE id = $2`,
-              [vendorAmount, booking.vendor_id]
-            ).catch((err: any) => console.warn('[EARNINGS] vendor totals update:', err?.message));
+                [vendorAmount, booking.vendor_id]
+              ).catch((err: any) => console.warn('[EARNINGS] vendor totals update:', err?.message));
+            }
+          } catch (error: any) {
+            console.error('❌ [EARNINGS] Failed to create earnings for tele consultation:', error);
           }
-        } catch (error: any) {
-          console.error('❌ [EARNINGS] Failed to create earnings for tele consultation:', error);
         }
-        
+
         return c.json({ success: true, booking: updated[0], message: 'Tele consultation completed successfully!' });
       }
 
@@ -328,49 +281,74 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
 
       console.log(`✅ [COMPLETE-BOOKING] Booking completed successfully with OTP verification`);
 
-      // ✅ CRITICAL FIX: Create vendor_earnings record regardless of payment status (handles COD/pending)
+      // Close any active GPS tracking session for this booking. Without this the
+      // home-screen "Vendor on the way" card and the live-tracking ETA banner
+      // continue to render after the at-home service is finished, because
+      // CUSTOMER_ACTIVE_TRACKING_SESSIONS_SQL only filters on session-level
+      // statuses ('in_transit','arrived'). Booking-level filtering also exists
+      // (see gps-tracking.ts NOT IN ('completed', ...)), but updating the
+      // session here makes the cleanup correct at every layer.
       try {
-        const commissionRate = await getVendorCommissionRate(booking.vendor_id);
-        const totalAmount = parseFloat(booking.total_amount || '0');
-        const commissionAmount = Math.round((totalAmount * commissionRate / 100) * 100) / 100;
-        const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
-        
-        // Check if vendor_earnings record already exists for this booking
-        const existingEarnings = await query(
-          `SELECT id FROM vendor_earnings WHERE booking_id = $1`,
+        await query(
+          `UPDATE gps_tracking_sessions
+             SET status = 'completed',
+                 ended_at = NOW(),
+                 last_update_at = NOW()
+           WHERE booking_id = $1
+             AND status IN ('started', 'in_transit', 'arrived')`,
           [bookingId]
-        ).catch(() => ({ rows: [] }));
-        
-        const existingRows = (existingEarnings as any).rows || [];
-        
-        if (existingRows.length === 0 && vendorAmount > 0) {
-          // Create vendor_earnings record
-          await insert('vendor_earnings', {
-            vendor_id: booking.vendor_id,
-            booking_id: bookingId,
-            amount: vendorAmount,
-            commission_amount: commissionAmount,
-            total_amount: totalAmount,
-            commission_rate: commissionRate,
-            status: 'pending',
-            realized_at: new Date().toISOString(),
-          });
-          
-          console.log(`✅ [EARNINGS] Created vendor_earnings for booking ${bookingId}: vendor gets ₹${vendorAmount} (commission: ₹${commissionAmount})`);
-          
-          // Update vendor's total earnings and pending payout (non-critical)
-          await query(
-            `UPDATE vendors 
+        );
+      } catch (gpsErr: any) {
+        // Non-fatal: most bookings won't have a GPS session row at all.
+        console.warn(`[COMPLETE-BOOKING] GPS session close (non-fatal):`, gpsErr?.message);
+      }
+
+      // ✅ CRITICAL FIX: Create vendor_earnings record regardless of payment status (handles COD/pending)
+      // Skip canonical package parent rows — package money accrues per child session in package-session-sync.
+      if (!isCanonicalPackageParentBooking(booking)) {
+        try {
+          const commissionRate = await getVendorCommissionRate(booking.vendor_id);
+          const totalAmount = parseFloat(booking.total_amount || '0');
+          const commissionAmount = Math.round((totalAmount * commissionRate / 100) * 100) / 100;
+          const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
+
+          // Check if vendor_earnings record already exists for this booking
+          const existingEarnings = await query(
+            `SELECT id FROM vendor_earnings WHERE booking_id = $1`,
+            [bookingId]
+          ).catch(() => ({ rows: [] }));
+
+          const existingRows = (existingEarnings as any).rows || [];
+
+          if (existingRows.length === 0 && vendorAmount > 0) {
+            // Create vendor_earnings record
+            await insert('vendor_earnings', {
+              vendor_id: booking.vendor_id,
+              booking_id: bookingId,
+              amount: vendorAmount,
+              commission_amount: commissionAmount,
+              total_amount: totalAmount,
+              commission_rate: commissionRate,
+              status: 'pending',
+              realized_at: new Date().toISOString(),
+            });
+
+            console.log(`✅ [EARNINGS] Created vendor_earnings for booking ${bookingId}: vendor gets ₹${vendorAmount} (commission: ₹${commissionAmount})`);
+
+            // Update vendor's total earnings and pending payout (non-critical)
+            await query(
+              `UPDATE vendors 
              SET pending_payout = COALESCE(pending_payout, 0) + $1,
                  total_earnings = COALESCE(total_earnings, 0) + $1,
                  updated_at = NOW()
              WHERE id = $2`,
-            [vendorAmount, booking.vendor_id]
-          ).catch((err: any) => console.warn('[EARNINGS] vendor totals update:', err?.message));
+              [vendorAmount, booking.vendor_id]
+            ).catch((err: any) => console.warn('[EARNINGS] vendor totals update:', err?.message));
+          }
+        } catch (error: any) {
+          console.error('❌ [EARNINGS] Failed to create earnings after booking completion:', error);
+          // Don't fail booking completion if earnings creation fails
         }
-      } catch (error: any) {
-        console.error('❌ [EARNINGS] Failed to create earnings after booking completion:', error);
-        // Don't fail booking completion if earnings creation fails
       }
 
       return c.json({
@@ -471,6 +449,23 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           // UAT mode: use default vendor location
           vendorStartLocation = { latitude: 19.0596, longitude: 72.8295 };
           console.log('[START-TRAVEL] UAT Mode: Using mock vendor location');
+        }
+        if (
+          vendorStartLocation == null ||
+          vendorStartLocation.latitude == null ||
+          vendorStartLocation.longitude == null ||
+          Number.isNaN(Number(vendorStartLocation.latitude)) ||
+          Number.isNaN(Number(vendorStartLocation.longitude))
+        ) {
+          return c.json(
+            {
+              success: false,
+              error:
+                'startLocation with latitude and longitude is required (enable location, then try again).',
+              code: 'START_LOCATION_REQUIRED',
+            },
+            400
+          );
         }
 
         // Get destination: address_id → customer_addresses, then booking coords, then booking address fallback
@@ -1027,8 +1022,13 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         booking_id: bookingId,
       });
 
-      const activeSession = sessions.find(s => 
-        s.status === 'in_transit' || s.status === 'started' || s.status === 'active'
+      // Stack A (home-service GPS): keep accepting pings after manual arrival so walk-in-progress
+      // still writes to gps_tracking_sessions + gps_location_history for customer live map.
+      const activeSession = sessions.find(s =>
+        s.status === 'in_transit' ||
+        s.status === 'started' ||
+        s.status === 'active' ||
+        s.status === 'arrived'
       );
 
       if (!activeSession) {
@@ -1150,16 +1150,26 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ error: 'Invalid OTP. Please check with the customer.' }, 400);
       }
 
-      // Start session
+      // Start session — started_at anchors vendor walk timer after refresh (GET /details)
+      const nowIso = new Date().toISOString();
       const updated = await update('bookings',
         { id: bookingId },
         {
           status: 'in_progress',
           otp_verified: true,
+          started_at: (booking as any).started_at || nowIso,
         }
       );
 
       console.log(`✅ [START-SESSION] Session started successfully`);
+
+      try {
+        if (await bookingUsesDedicatedEndSessionOtp(bookingId)) {
+          await ensureDedicatedEndSessionOtp(bookingId);
+        }
+      } catch (otpErr: any) {
+        console.warn('[START-SESSION] End OTP issuance non-fatal:', otpErr?.message);
+      }
 
       // ✅ AUTO-INITIATE GPS TRACKING for at_home services
       if (booking.service_style === 'at_home' || booking.service_type === 'at_home') {
@@ -1449,6 +1459,22 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           status: 'completed',
           completed_at: new Date().toISOString()
         });
+
+        // Mirror the COMPLETE-BOOKING handler: close any active GPS tracking
+        // session so the customer-side "Vendor on the way" card disappears.
+        try {
+          await query(
+            `UPDATE gps_tracking_sessions
+               SET status = 'completed',
+                   ended_at = NOW(),
+                   last_update_at = NOW()
+             WHERE booking_id = $1
+               AND status IN ('started', 'in_transit', 'arrived')`,
+            [bookingId]
+          );
+        } catch (gpsErr: any) {
+          console.warn(`[OTP-VERIFY] GPS session close (non-fatal):`, gpsErr?.message);
+        }
       } else if (action === 'start') {
         newStatus = 'in_progress';
         await update('bookings', { id: bookingId }, {

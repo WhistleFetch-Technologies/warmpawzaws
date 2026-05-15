@@ -6,23 +6,20 @@
  */
 
 import { useState, useEffect } from 'react';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
-  ArrowLeft,
   FlaskConical,
-  Sparkles,
   Star,
   TrendingUp,
-  ChevronRight,
   MapPin,
   Home as HomeIcon,
   Building2,
   Clock,
   Search,
-  Filter,
   TestTube,
   FileText,
   Microscope,
@@ -34,7 +31,10 @@ import {
   Stethoscope
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
+import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { StarRating } from './shared/StarRating';
 import { toast } from 'sonner';
 
 interface DiagnosticsServicesLandingProps {
@@ -46,15 +46,107 @@ interface DiagnosticsServicesLandingProps {
 interface DiagnosticCenter {
   id: string;
   businessName: string;
-  rating: number;
+  rating?: number;
   reviewCount: number;
-  distance: number;
+  /** Omitted when the lab has no coordinates (still bookable; shown after in-range labs). */
+  distance?: number;
   address?: string;
   homeCollectionAvailable: boolean;
   testCount: number;
   packages: any[];
   tests: any[];
 }
+
+/**
+ * Sample labs only in non-production builds when explicitly enabled.
+ * Production never shows mock labs, even if NEXT_PUBLIC_SHOW_DIAGNOSTICS_MOCK_LABS is mis-set.
+ */
+const SHOW_DIAGNOSTICS_MOCK_LABS =
+  process.env.NODE_ENV !== 'production' &&
+  process.env.NEXT_PUBLIC_SHOW_DIAGNOSTICS_MOCK_LABS === 'true';
+
+const EMPTY_DIAGNOSTICS_STATS = { activeCenters: 0, tests: '0', rating: '—' as const };
+
+/** Header rating: average only labs with real reviews — no client-side fake defaults. */
+function computeDiagnosticsHeaderRating(
+  centers: ReadonlyArray<Pick<DiagnosticCenter, 'rating' | 'reviewCount'>>
+): string {
+  const rated = centers.filter(
+    (c) =>
+      c.reviewCount > 0 &&
+      typeof c.rating === 'number' &&
+      Number.isFinite(c.rating) &&
+      c.rating > 0 &&
+      c.rating <= 5
+  );
+  if (rated.length === 0) return '—';
+  const avg = rated.reduce((sum, c) => sum + c.rating, 0) / rated.length;
+  return (Math.round(avg * 10) / 10).toFixed(1);
+}
+
+function reviewCountFromVendorRow(v: Record<string, unknown>): number {
+  const raw = v.reviewCount ?? v.review_count;
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
+}
+
+function vendorRatingFromRow(v: Record<string, unknown>, reviewCount: number): number {
+  if (reviewCount <= 0) return 0;
+  const raw = v.rating;
+  const num =
+    typeof raw === 'number' ? raw : typeof raw === 'string' && raw !== '' ? parseFloat(raw) : NaN;
+  if (!Number.isFinite(num) || num <= 0 || num > 5) return 0;
+  return num;
+}
+const MOCK_DIAGNOSTIC_CENTERS: DiagnosticCenter[] = [
+  {
+    id: 'center-1',
+    businessName: 'PetPath Diagnostics',
+    rating: undefined,
+    reviewCount: 0,
+    distance: 2.3,
+    address: 'MG Road, Bangalore',
+    homeCollectionAvailable: true,
+    testCount: 45,
+    packages: [],
+    tests: [
+      { id: 't1', name: 'Complete Blood Count', price: 500, category: 'Blood' },
+      { id: 't2', name: 'Liver Function Test', price: 800, category: 'Blood' },
+      { id: 't3', name: 'Kidney Function Test', price: 750, category: 'Blood' },
+    ],
+  },
+  {
+    id: 'center-2',
+    businessName: 'VetLab Plus',
+    rating: undefined,
+    reviewCount: 0,
+    distance: 3.5,
+    address: 'Koramangala, Bangalore',
+    homeCollectionAvailable: true,
+    testCount: 38,
+    packages: [],
+    tests: [
+      { id: 't4', name: 'X-Ray', price: 1200, category: 'Imaging' },
+      { id: 't5', name: 'Ultrasound', price: 1500, category: 'Imaging' },
+    ],
+  },
+  {
+    id: 'center-3',
+    businessName: 'PawCare Labs',
+    rating: undefined,
+    reviewCount: 0,
+    distance: 1.8,
+    address: 'Indiranagar, Bangalore',
+    homeCollectionAvailable: false,
+    testCount: 52,
+    packages: [],
+    tests: [
+      { id: 't6', name: 'Thyroid Panel', price: 900, category: 'Hormone' },
+      { id: 't7', name: 'Allergy Test', price: 2500, category: 'Allergy' },
+    ],
+  },
+];
 
 interface TestPackage {
   id: string;
@@ -65,6 +157,33 @@ interface TestPackage {
   originalPrice?: number;
   homeCollection: boolean;
   turnaroundHours: number;
+}
+
+/** Normalize category strings for matching catalog tiles to API test.category / test_name. */
+function normCat(s: string): string {
+  return s.toLowerCase().replace(/&/g, 'and').replace(/\s+/g, '_').replace(/_+/g, '_').trim();
+}
+
+function countTestsForCategory(
+  allTests: { category?: string; name?: string }[],
+  catId: string,
+  catName: string
+): number {
+  const id = normCat(catId);
+  const name = normCat(catName);
+  const nameTokens = name.split('_').filter((t) => t.length > 1);
+  return allTests.filter((t) => {
+    const c = normCat(t.category || '');
+    const n = normCat(t.name || '');
+    const hay = `${c}_${n}`;
+    if (!c && !n) return false;
+    if (id && (c === id || c.includes(id) || id.includes(c))) return true;
+    if (name && (c.includes(name) || name.includes(c))) return true;
+    for (const tok of nameTokens) {
+      if (tok.length > 2 && (c.includes(tok) || n.includes(tok))) return true;
+    }
+    return id.length > 0 && hay.includes(id);
+  }).length;
 }
 
 export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: DiagnosticsServicesLandingProps) {
@@ -79,6 +198,10 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
   const [expandedCenter, setExpandedCenter] = useState<string | null>(null);
   const [stats, setStats] = useState<any>(null);
   const [testCategories, setTestCategories] = useState<{ id: string; name: string; icon: any; color: string; count: number }[]>([]);
+  /** Set when GET /customer/diagnostics/vendors-with-tests rejects (network/server). */
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  /** Lab used for Health Package “Book” — required when multiple labs match filters (never guess `filteredCenters[0]`). */
+  const [healthPackageLabId, setHealthPackageLabId] = useState('');
 
   useEffect(() => {
     loadDiagnosticsData();
@@ -87,6 +210,7 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
   const loadDiagnosticsData = async () => {
     try {
       setLoading(true);
+      setDiscoveryError(null);
       let latitude: string | undefined;
       let longitude: string | undefined;
       try {
@@ -121,14 +245,39 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
       ]);
 
       const vendorsData = vendorsRes.status === 'fulfilled' ? vendorsRes.value : null;
-      const vendorsList = vendorsData?.vendors ?? [];
-      if (Array.isArray(vendorsList) && vendorsList.length > 0) {
-        const centers: DiagnosticCenter[] = vendorsList.map((v: any) => ({
+      if (vendorsRes.status === 'rejected') {
+        setDiscoveryError(
+          formatCustomerApiFailure(vendorsRes.reason, 'Could not load labs')
+        );
+      }
+      if (
+        vendorsData &&
+        typeof vendorsData === 'object' &&
+        vendorsData.success === false
+      ) {
+        const msg =
+          (typeof vendorsData.error === 'string' && vendorsData.error) ||
+          (typeof vendorsData.message === 'string' && vendorsData.message) ||
+          'Could not load labs.';
+        setDiscoveryError(msg);
+      }
+
+      const vendorsList = Array.isArray(vendorsData?.vendors) ? vendorsData.vendors : [];
+
+      let centers: DiagnosticCenter[] = [];
+      if (vendorsList.length > 0) {
+        centers = vendorsList.map((v: any) => ({
           id: v.id,
           businessName: v.businessName || 'Diagnostic Center',
-          rating: v.rating ?? 4.5,
-          reviewCount: 0,
-          distance: v.distance ?? parseFloat((Math.random() * distanceFilter).toFixed(1)),
+          rating:
+            Number(v.reviewCount ?? v.review_count ?? 0) > 0 && v.rating != null
+              ? Number(v.rating)
+              : undefined,
+          reviewCount: Number(v.reviewCount ?? v.review_count ?? 0) || 0,
+          distance:
+            v.distance != null && !Number.isNaN(Number(v.distance))
+              ? Math.round(Number(v.distance) * 10) / 10
+              : undefined,
           address: v.address || [v.city, v.state].filter(Boolean).join(', '),
           homeCollectionAvailable: v.homeCollectionAvailable === true,
           testCount: (v.tests || []).length,
@@ -141,191 +290,95 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
             service_style: t.service_style,
           })),
         }));
-        setFeaturedCenters(centers);
-        setStats({
-          activeCenters: centers.length,
-          tests: centers.reduce((acc, c) => acc + c.testCount, 0).toString(),
-          rating: centers.length ? (centers.reduce((acc, c) => acc + c.rating, 0) / centers.length).toFixed(1) : '4.6',
-        });
-      } else {
-        const fallbackParams = new URLSearchParams({ roleId: 'diagnostics_center', maxDistance: distanceFilter.toString() });
-        const fallbackRes = await apiClient.get<any>(`/customer/services?${fallbackParams.toString()}`);
-        const servicesPayload = fallbackRes?.services ?? fallbackRes?.data?.services;
-        if (Array.isArray(servicesPayload) && servicesPayload.length > 0) {
-          const vendorMap = new Map<string, DiagnosticCenter>();
-          servicesPayload.forEach((service: any) => {
-            const vendorId = service.vendorId;
-            if (!vendorMap.has(vendorId)) {
-              vendorMap.set(vendorId, {
-                id: vendorId,
-                businessName: service.vendorName || 'Diagnostic Center',
-                rating: 4.5,
-                reviewCount: 0,
-                distance: parseFloat((Math.random() * distanceFilter).toFixed(1)),
-                address: '',
-                homeCollectionAvailable: service.serviceStyle === 'at_home',
-                testCount: 0,
-                packages: [],
-                tests: [],
-              });
-            }
-            const vendor = vendorMap.get(vendorId)!;
-            vendor.testCount++;
-            vendor.tests.push({
-              id: service.id,
-              name: service.serviceName,
-              price: service.price,
-              category: service.category,
-              service_style: service.serviceStyle,
-            });
-          });
-          setFeaturedCenters(Array.from(vendorMap.values()));
-          setStats({
-            activeCenters: vendorMap.size,
-            tests: servicesPayload.length.toString(),
-            rating: '4.6',
-          });
-        } else {
-          setFeaturedCenters([
-          {
-            id: 'center-1',
-            businessName: 'PetPath Diagnostics',
-            rating: 4.8,
-            reviewCount: 256,
-            distance: 2.3,
-            address: 'MG Road, Bangalore',
-            homeCollectionAvailable: true,
-            testCount: 45,
-            packages: [],
-            tests: [
-              { id: 't1', name: 'Complete Blood Count', price: 500, category: 'Blood' },
-              { id: 't2', name: 'Liver Function Test', price: 800, category: 'Blood' },
-              { id: 't3', name: 'Kidney Function Test', price: 750, category: 'Blood' },
-            ]
-          },
-          {
-            id: 'center-2',
-            businessName: 'VetLab Plus',
-            rating: 4.6,
-            reviewCount: 189,
-            distance: 3.5,
-            address: 'Koramangala, Bangalore',
-            homeCollectionAvailable: true,
-            testCount: 38,
-            packages: [],
-            tests: [
-              { id: 't4', name: 'X-Ray', price: 1200, category: 'Imaging' },
-              { id: 't5', name: 'Ultrasound', price: 1500, category: 'Imaging' },
-            ]
-          },
-          {
-            id: 'center-3',
-            businessName: 'PawCare Labs',
-            rating: 4.7,
-            reviewCount: 312,
-            distance: 1.8,
-            address: 'Indiranagar, Bangalore',
-            homeCollectionAvailable: false,
-            testCount: 52,
-            packages: [],
-            tests: [
-              { id: 't6', name: 'Thyroid Panel', price: 900, category: 'Hormone' },
-              { id: 't7', name: 'Allergy Test', price: 2500, category: 'Allergy' },
-            ]
-          }
-        ]);
-        
-        setStats({
-          activeCenters: 15,
-          tests: '500+',
-          rating: '4.6'
-        });
-        }
+      } else if (SHOW_DIAGNOSTICS_MOCK_LABS) {
+        centers = MOCK_DIAGNOSTIC_CENTERS;
       }
 
+      setFeaturedCenters(centers);
+      setStats(
+        centers.length > 0
+          ? {
+              activeCenters: centers.length,
+              tests: centers.reduce((acc, c) => acc + c.testCount, 0).toString(),
+              rating: (
+                centers.reduce((acc, c) => acc + (c.rating ?? 0), 0) / centers.length
+              ).toFixed(1),
+            }
+          : EMPTY_DIAGNOSTICS_STATS
+      );
+
+      // Category counts from the same labs/tests we render (bookable diagnostic_tests catalog only).
+      const allTestsFlat = centers.flatMap((c) => c.tests || []);
       if (categoriesRes.status === 'fulfilled' && categoriesRes.value?.categories?.length) {
         const cats = categoriesRes.value.categories as { id: string; name: string }[];
         const iconMap: Record<string, any> = {
           blood: TestTube, imaging: Activity, allergy: Heart, hormone: Microscope,
           urine: TestTube, stool: TestTube, biopsy: Microscope, other: FlaskConical,
         };
-        const allTests = vendorsList.flatMap((v: any) => v.tests || []);
-        const countFor = (catId: string, catName: string) =>
-          allTests.filter((t: any) => {
-            const c = (t.category || '').toLowerCase();
-            return c.includes(catId) || c.includes(catName.toLowerCase().replace(/\s+/g, '_'));
-          }).length;
-        setTestCategories(cats.map(c => ({
-          id: c.id,
-          name: c.name,
-          icon: iconMap[c.id] || FlaskConical,
-          color: c.id === 'blood' ? 'bg-red-100 text-red-600' : c.id === 'imaging' ? 'bg-blue-100 text-blue-600' : c.id === 'allergy' ? 'bg-pink-100 text-pink-600' : c.id === 'hormone' ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-600',
-          count: countFor(c.id, c.name) || 0,
-        })));
+        setTestCategories(
+          cats.map((c) => ({
+            id: c.id,
+            name: c.name,
+            icon: iconMap[c.id] || FlaskConical,
+            color:
+              c.id === 'blood'
+                ? 'bg-red-100 text-red-600'
+                : c.id === 'imaging'
+                  ? 'bg-blue-100 text-blue-600'
+                  : c.id === 'allergy'
+                    ? 'bg-pink-100 text-pink-600'
+                    : c.id === 'hormone'
+                      ? 'bg-purple-100 text-purple-600'
+                      : 'bg-gray-100 text-gray-600',
+            count: countTestsForCategory(allTestsFlat, c.id, c.name),
+          }))
+        );
       } else {
         setTestCategories([
-          { id: 'blood', name: 'Blood Tests', icon: TestTube, color: 'bg-red-100 text-red-600', count: 0 },
-          { id: 'imaging', name: 'Imaging', icon: Activity, color: 'bg-blue-100 text-blue-600', count: 0 },
-          { id: 'allergy', name: 'Allergy Tests', icon: Heart, color: 'bg-pink-100 text-pink-600', count: 0 },
-          { id: 'hormone', name: 'Hormone Tests', icon: Microscope, color: 'bg-purple-100 text-purple-600', count: 0 },
+          { id: 'blood', name: 'Blood Tests', icon: TestTube, color: 'bg-red-100 text-red-600', count: countTestsForCategory(allTestsFlat, 'blood', 'Blood Tests') },
+          { id: 'imaging', name: 'Imaging', icon: Activity, color: 'bg-blue-100 text-blue-600', count: countTestsForCategory(allTestsFlat, 'imaging', 'Imaging') },
+          { id: 'allergy', name: 'Allergy Tests', icon: Heart, color: 'bg-pink-100 text-pink-600', count: countTestsForCategory(allTestsFlat, 'allergy', 'Allergy Tests') },
+          { id: 'hormone', name: 'Hormone Tests', icon: Microscope, color: 'bg-purple-100 text-purple-600', count: countTestsForCategory(allTestsFlat, 'hormone', 'Hormone Tests') },
         ]);
       }
 
-      // Process packages
-      if (packagesRes.status === 'fulfilled' && packagesRes.value?.packages) {
+      // Popular packages: only from API (no client-side demo fallback)
+      if (
+        packagesRes.status === 'fulfilled' &&
+        packagesRes.value &&
+        typeof packagesRes.value === 'object' &&
+        packagesRes.value.success !== false &&
+        Array.isArray(packagesRes.value.packages) &&
+        packagesRes.value.packages.length > 0
+      ) {
         setPopularPackages(packagesRes.value.packages);
       } else {
-        // Fallback mock packages
-        setPopularPackages([
-          {
-            id: 'pkg-1',
-            name: 'Full Body Health Checkup',
-            description: 'Comprehensive pet health screening',
-            tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
-            price: 2499,
-            originalPrice: 3500,
-            homeCollection: true,
-            turnaroundHours: 24
-          },
-          {
-            id: 'pkg-2',
-            name: 'Senior Pet Package',
-            description: 'For pets above 7 years',
-            tests: ['CBC', 'LFT', 'KFT', 'X-Ray', 'ECG', 'Thyroid'],
-            price: 3999,
-            originalPrice: 5500,
-            homeCollection: true,
-            turnaroundHours: 48
-          },
-          {
-            id: 'pkg-3',
-            name: 'Basic Blood Panel',
-            description: 'Essential blood tests',
-            tests: ['CBC', 'Blood Glucose', 'Hemoglobin'],
-            price: 799,
-            originalPrice: 1200,
-            homeCollection: true,
-            turnaroundHours: 12
-          }
-        ]);
+        setPopularPackages([]);
       }
     } catch (error) {
       console.error('Error loading diagnostics data:', error);
-      setStats({
-        activeCenters: 15,
-        tests: '500+',
-        rating: '4.6'
-      });
+      setFeaturedCenters([]);
+      setStats(EMPTY_DIAGNOSTICS_STATS);
+      setDiscoveryError(formatCustomerApiFailure(error, 'Could not load diagnostic labs'));
+      setTestCategories([]);
     } finally {
       setLoading(false);
     }
   };
 
   const handleSelectCenter = (center: DiagnosticCenter) => {
+    if (isLegacyMockDiagnosticVendorId(center.id)) {
+      toast.error('This listing is not a real lab. Refresh the page or widen your search.');
+      return;
+    }
     onNavigate?.('lab-booking', { vendorId: center.id, centerName: center.businessName });
   };
 
   const handleBookTest = (test: any, centerId: string) => {
+    if (isLegacyMockDiagnosticVendorId(centerId)) {
+      toast.error('This listing is not a real lab. Refresh the page or widen your search.');
+      return;
+    }
     onNavigate?.('lab-booking', { vendorId: centerId, testId: test.id });
   };
 
@@ -334,20 +387,32 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
       const matchesSearch = center.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
                            center.tests.some((t: any) => t.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
                            (center.packages?.length && center.packages.some((p: any) => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase())));
+      const hasAtCenterTest = center.tests.some(
+        (t: any) => (t.service_style || 'at_center') === 'at_center'
+      );
       const matchesFilter = selectedFilter === 'all' ||
                            (selectedFilter === 'home' && center.homeCollectionAvailable) ||
-                           (selectedFilter === 'center' && !center.homeCollectionAvailable);
-      const matchesDistance = center.distance <= distanceFilter;
+                           (selectedFilter === 'center' && (hasAtCenterTest || !center.homeCollectionAvailable));
+      const matchesDistance =
+        center.distance == null || center.distance <= distanceFilter;
       return matchesSearch && matchesFilter && matchesDistance;
     })
     .sort((a, b) => {
-      if (sortBy === 'distance') return a.distance - b.distance;
+      if (sortBy === 'distance') {
+        return (a.distance ?? Infinity) - (b.distance ?? Infinity);
+      }
       if (sortBy === 'rating') return (b.rating || 0) - (a.rating || 0);
-      // relevance: rating * 0.6 - distance * 0.1 (higher score first)
-      const scoreA = (a.rating || 0) * 0.6 - (a.distance || 0) * 0.1 + (a.homeCollectionAvailable ? 0.2 : 0);
-      const scoreB = (b.rating || 0) * 0.6 - (b.distance || 0) * 0.1 + (b.homeCollectionAvailable ? 0.2 : 0);
+      // relevance: rating * 0.6 - distance * 0.1 (higher score first); unknown distance treated as far
+      const distA = typeof a.distance === 'number' ? a.distance : 100;
+      const distB = typeof b.distance === 'number' ? b.distance : 100;
+      const scoreA = (a.rating || 0) * 0.6 - distA * 0.1 + (a.homeCollectionAvailable ? 0.2 : 0);
+      const scoreB = (b.rating || 0) * 0.6 - distB * 0.1 + (b.homeCollectionAvailable ? 0.2 : 0);
       return scoreB - scoreA;
     });
+
+  const labsForPackageBooking = filteredCenters;
+  const autoSingleLabForPackages = labsForPackageBooking.length === 1 ? labsForPackageBooking[0].id : '';
+  const resolvedPackageLabId = healthPackageLabId || autoSingleLabForPackages;
 
   if (loading) {
     return (
@@ -359,21 +424,27 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
 
   // Prepare stats for ServiceDashboardHeader
   const dashboardStats = stats ? [
-    { value: `${stats.activeCenters}+`, label: 'Labs' },
+    {
+      value: stats.activeCenters === 0 ? '0' : `${stats.activeCenters}+`,
+      label: 'Labs',
+    },
     { value: stats.tests, label: 'Tests' },
-    { value: `*${stats.rating}`, label: 'Rating' }
+    { value: String(stats.rating), label: 'Rating' },
   ] : [
     { value: '15+', label: 'Labs' },
     { value: '500+', label: 'Tests' },
-    { value: '*4.6', label: 'Rating' }
+    { value: '—', label: 'Rating' }
   ];
 
-  const categoriesToShow = testCategories.length > 0 ? testCategories : [
-    { id: 'blood', name: 'Blood Tests', icon: TestTube, color: 'bg-red-100 text-red-600', count: 45 },
-    { id: 'imaging', name: 'Imaging', icon: Activity, color: 'bg-blue-100 text-blue-600', count: 12 },
-    { id: 'allergy', name: 'Allergy Tests', icon: Heart, color: 'bg-pink-100 text-pink-600', count: 8 },
-    { id: 'hormone', name: 'Hormone Tests', icon: Microscope, color: 'bg-purple-100 text-purple-600', count: 15 },
-  ];
+  const categoriesToShow =
+    testCategories.length > 0
+      ? testCategories
+      : [
+          { id: 'blood', name: 'Blood Tests', icon: TestTube, color: 'bg-red-100 text-red-600', count: 0 },
+          { id: 'imaging', name: 'Imaging', icon: Activity, color: 'bg-blue-100 text-blue-600', count: 0 },
+          { id: 'allergy', name: 'Allergy Tests', icon: Heart, color: 'bg-pink-100 text-pink-600', count: 0 },
+          { id: 'hormone', name: 'Hormone Tests', icon: Microscope, color: 'bg-purple-100 text-purple-600', count: 0 },
+        ];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -467,12 +538,65 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
           </div>
         </div>
 
+        {discoveryError ? (
+          <div className="mb-4 p-4 rounded-xl border border-red-200 bg-red-50 text-sm text-red-900" role="alert">
+            {discoveryError}
+          </div>
+        ) : null}
+        {!discoveryError && featuredCenters.length === 0 ? (
+          <div className="mb-4 p-4 rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-700">
+            <p className="font-medium text-gray-900 mb-1">No bookable labs in this area</p>
+            <p className="leading-relaxed">
+              We only list partners who have published lab tests in their catalog—the same tests used when you book.
+              None match your filters or distance yet. Try a larger radius, clear the category filter, or check back later.
+            </p>
+          </div>
+        ) : null}
+
         {/* Popular Packages */}
         <div className="mb-6">
           <div className="flex items-center gap-2 mb-3">
             <Package className="w-5 h-5 text-teal-600" />
             <h2 className="text-lg font-semibold">Health Packages</h2>
           </div>
+
+          {popularPackages.length === 0 && (
+            <p className="text-sm text-gray-500 mb-3">
+              {discoveryError
+                ? 'Curated packages appear after labs load successfully. Refresh the page or try again in a moment.'
+                : 'No featured health packages in this region yet.'}
+            </p>
+          )}
+
+          {labsForPackageBooking.length > 1 && (
+            <div className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-xl">
+              <label className="block text-xs font-medium text-amber-900 mb-1">Book packages at which lab?</label>
+              <select
+                value={healthPackageLabId}
+                onChange={(e) => setHealthPackageLabId(e.target.value)}
+                className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+              >
+                <option value="">Select a lab…</option>
+                {labsForPackageBooking.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.businessName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {labsForPackageBooking.length === 1 && (
+            <p className="text-xs text-gray-500 mb-3">
+              Packages book at <span className="font-medium text-gray-700">{labsForPackageBooking[0].businessName}</span>.
+            </p>
+          )}
+          {labsForPackageBooking.length === 0 && popularPackages.length > 0 && (
+            <p className="text-xs text-amber-800 mb-3 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+              {featuredCenters.length === 0
+                ? 'Health packages need a lab with published diagnostic tests. None are available for your search yet—try widening distance or check back later.'
+                : 'No labs match your filters. Adjust search or filters to book a package.'}
+            </p>
+          )}
           
           <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4">
             {popularPackages.map((pkg) => (
@@ -503,7 +627,8 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="text-xl font-bold text-teal-600">₹{pkg.price}</span>
-                      {pkg.originalPrice && (
+                      {pkg.originalPrice != null &&
+                        hasEffectivePriceReduction(pkg.originalPrice, pkg.price) && (
                         <span className="text-sm text-gray-400 line-through">₹{pkg.originalPrice}</span>
                       )}
                     </div>
@@ -522,16 +647,30 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
                   </div>
                   <Button
                     size="sm"
-                    className="bg-teal-600 text-white hover:bg-teal-700"
+                    className="bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-50"
+                    disabled={
+                      !resolvedPackageLabId ||
+                      isLegacyMockDiagnosticVendorId(resolvedPackageLabId) ||
+                      !labsForPackageBooking.some((c) => c.id === resolvedPackageLabId)
+                    }
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      const centerId = filteredCenters[0]?.id;
-                      if (centerId) {
-                        onNavigate?.('lab-booking', { vendorId: centerId, packageId: pkg.id, packageName: pkg.name });
-                      } else {
-                        toast.info('Select a lab from the list below, then book this package.');
+                      const vendorId = resolvedPackageLabId;
+                      if (
+                        !vendorId ||
+                        isLegacyMockDiagnosticVendorId(vendorId) ||
+                        !labsForPackageBooking.some((c) => c.id === vendorId)
+                      ) {
+                        toast.error('Choose a lab from the dropdown above (or adjust filters so at least one lab appears).');
+                        return;
                       }
+                      onNavigate?.('lab-booking', {
+                        vendorId,
+                        packageId: pkg.id,
+                        packageName: pkg.name,
+                        packageTestLabels: Array.isArray(pkg.tests) ? pkg.tests : [],
+                      });
                     }}
                   >
                     Book
@@ -615,14 +754,15 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
                         </div>
                         <p className="text-xs text-gray-500 truncate mt-1">{center.address}</p>
                         <div className="flex items-center gap-3 text-xs mt-1">
-                          <div className="flex items-center gap-1 text-amber-500">
-                            <Star className="w-3 h-3 fill-current" />
-                            <span className="font-semibold">{center.rating}</span>
-                            <span className="text-gray-400">({center.reviewCount})</span>
-                          </div>
+                          <StarRating
+                            rating={center.rating}
+                            reviewCount={center.reviewCount}
+                            starsClassName="w-3 h-3"
+                            textClassName="text-xs text-gray-500"
+                          />
                           <div className="flex items-center gap-1 text-gray-500">
                             <MapPin className="w-3 h-3" />
-                            <span>{center.distance} km</span>
+                            <span>{center.distance != null ? `${center.distance} km` : '—'}</span>
                           </div>
                           <div className="flex items-center gap-1 text-gray-500">
                             <TestTube className="w-3 h-3" />

@@ -12,7 +12,7 @@ interface VendorApplicationSubmittedProps {
 export function VendorApplicationSubmitted({ applicationId, onContinue, onBack }: VendorApplicationSubmittedProps) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white flex items-center justify-center p-4">
-      <div className="w-full max-w-[430px] space-y-6">
+      <div className="vendor-modal-sheet w-full space-y-6 mx-auto">
         {onBack && (
           <div className="flex justify-start pt-2">
             <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full -ml-2">

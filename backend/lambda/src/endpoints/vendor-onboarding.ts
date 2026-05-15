@@ -873,223 +873,6 @@ class SubmitApplicationHandler extends BaseHandler {
 }
 
 // ============================================================================
-// PHASE 6: ADMIN DECISION FLOW
-// ============================================================================
-
-class AdminReviewApplicationHandler extends BaseHandler {
-  async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const applicationId = context.event.pathParameters?.applicationId;
-    const body = this.parseBody(context.event);
-    const { action, admin_id, comments, rejection_reason } = body;
-
-    if (!applicationId || !action || !admin_id) {
-      return this.error('applicationId, action, and admin_id are required', 400);
-    }
-
-    if (!['APPROVE', 'REQUEST_CLARIFICATION', 'REJECT'].includes(action)) {
-      return this.error('Invalid action. Must be APPROVE, REQUEST_CLARIFICATION, or REJECT', 400);
-    }
-
-    try {
-      // Get application
-      const apps = await select('vendor_onboarding_applications', {
-        id: applicationId,
-      });
-
-      if (apps.length === 0) {
-        return this.error('Application not found', 404);
-      }
-
-      const application = apps[0];
-
-      if (application.status !== 'UNDER_REVIEW') {
-        return this.error('Application is not in UNDER_REVIEW status', 400);
-      }
-
-      // Get vendor identity
-      const identities = await select('vendor_identity', {
-        id: application.vendor_identity_id,
-      });
-
-      if (identities.length === 0) {
-        return this.error('Vendor identity not found', 404);
-      }
-
-      const identity = identities[0];
-
-      // Update application based on action
-      let newStatus: string;
-      let newOnboardingStatus: string;
-
-      if (action === 'APPROVE') {
-        newStatus = 'APPROVED';
-        newOnboardingStatus = 'APPROVED';
-
-        await update(
-          'vendor_onboarding_applications',
-          { id: applicationId },
-          {
-            status: newStatus,
-            reviewed_by: admin_id,
-            reviewed_at: new Date().toISOString(),
-            admin_comments: comments || null,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      } else if (action === 'REQUEST_CLARIFICATION') {
-        if (!comments) {
-          return this.error('Comments are required for clarification request', 400);
-        }
-
-        newStatus = 'CLARIFICATION_REQUIRED';
-        newOnboardingStatus = 'CLARIFICATION_REQUIRED';
-
-        // Unlock application for editing
-        await update(
-          'vendor_onboarding_applications',
-          { id: applicationId },
-          {
-            status: newStatus,
-            reviewed_by: admin_id,
-            reviewed_at: new Date().toISOString(),
-            admin_comments: comments,
-            is_locked: false,
-            locked_at: null,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      } else { // REJECT
-        if (!rejection_reason) {
-          return this.error('Rejection reason is required', 400);
-        }
-
-        newStatus = 'REJECTED';
-        newOnboardingStatus = 'REJECTED';
-
-        // ✅ FIX: Unlock application when rejected so vendor can resubmit
-        await update(
-          'vendor_onboarding_applications',
-          { id: applicationId },
-          {
-            status: newStatus,
-            reviewed_by: admin_id,
-            reviewed_at: new Date().toISOString(),
-            rejection_reason,
-            admin_comments: comments || null,
-            is_locked: false,
-            locked_at: null,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      }
-
-      // Transition onboarding status
-      await query(
-        `SELECT transition_onboarding_status($1, $2, $3, 'admin', $4, $5::jsonb)`,
-        [
-          identity.id,
-          newOnboardingStatus,
-          admin_id,
-          action.toLowerCase(),
-          JSON.stringify({ comments, rejection_reason }),
-        ]
-      );
-
-      // ✅ FIX GAP VO-1, VO-2, GN-1: Send push notification to vendor
-      try {
-        const { pushNotificationService } = await import('../aws/aws-sns-notification-service');
-
-        if (action === 'APPROVE') {
-          await pushNotificationService.sendEventNotification({
-            eventType: 'vendor_application_approved',
-            recipientId: identity.id,
-            recipientType: 'vendor',
-            relatedId: applicationId,
-            data: { applicationId },
-          });
-        } else if (action === 'REQUEST_CLARIFICATION') {
-          await pushNotificationService.sendEventNotification({
-            eventType: 'vendor_application_clarification',
-            recipientId: identity.id,
-            recipientType: 'vendor',
-            relatedId: applicationId,
-            data: {
-              applicationId,
-              comment: comments,
-            },
-          });
-        } else if (action === 'REJECT') {
-          await pushNotificationService.sendEventNotification({
-            eventType: 'vendor_application_rejected',
-            recipientId: identity.id,
-            recipientType: 'vendor',
-            relatedId: applicationId,
-            data: {
-              applicationId,
-              reason: rejection_reason,
-            },
-          });
-        }
-      } catch (notifError) {
-        console.warn('Failed to send notification:', notifError);
-        // Don't fail the whole operation for notification failure
-      }
-
-      // ✅ SMS is the standard notification for all vendor onboarding activities
-      const vendorPhone = identity.phone || identity.phone_number;
-      let notificationTitle = '';
-      let notificationMessage = '';
-      if (action === 'APPROVE') {
-        notificationTitle = 'Application Approved';
-        notificationMessage = 'Your WARMPAWS provider application has been approved. You can now access your dashboard.';
-      } else if (action === 'REQUEST_CLARIFICATION') {
-        notificationTitle = 'More Information Required';
-        notificationMessage = `We need additional information: ${(comments || '').slice(0, 120)}${(comments || '').length > 120 ? '...' : ''}. Please log in and update your application.`;
-      } else if (action === 'REJECT') {
-        notificationTitle = 'Application Rejected';
-        notificationMessage = `Your application was not approved. Reason: ${(rejection_reason || '').slice(0, 100)}${(rejection_reason || '').length > 100 ? '...' : ''}. Log in to see details or resubmit.`;
-      }
-
-      try {
-        await insert('notifications', {
-          recipient_id: identity.id,
-          recipient_type: 'vendor',
-          notification_type: action === 'APPROVE' ? 'vendor_approved' : action === 'REQUEST_CLARIFICATION' ? 'vendor_clarification_requested' : 'vendor_rejected',
-          title: notificationTitle,
-          message: notificationMessage,
-          channels: { email: false, sms: true, inApp: true, push: false },
-          is_read: false,
-        });
-      } catch (insertErr: any) {
-        console.warn('Failed to insert onboarding notification:', insertErr?.message);
-      }
-
-      if (vendorPhone && notificationMessage) {
-        try {
-          const { sendSMS } = await import('../lib/services/sms-service');
-          await sendSMS(vendorPhone, `${notificationTitle}. ${notificationMessage}`);
-        } catch (smsErr: any) {
-          console.warn('Failed to send onboarding SMS:', smsErr?.message);
-        }
-      }
-
-      return this.success({
-        message: `Application ${action.toLowerCase()}d successfully`,
-        status: newStatus,
-        // ✅ Include feedback in response for immediate UI update
-        feedback: action === 'APPROVE' ? null : {
-          clarificationNote: action === 'REQUEST_CLARIFICATION' ? comments : null,
-          rejectionReason: action === 'REJECT' ? rejection_reason : null,
-        },
-      });
-    } catch (error: any) {
-      console.error('Error reviewing application:', error);
-      return this.error(error.message || 'Failed to review application', 500);
-    }
-  }
-}
-
-// ============================================================================
 // PHASE 7: GET STARTED → ACTIVATION
 // ============================================================================
 
@@ -1150,7 +933,7 @@ class ActivateVendorHandler extends BaseHandler {
       }
 
       // Create vendor record from application
-      const vendorData = {
+      const vendorData: Record<string, unknown> = {
         phone: identity.phone,
         email: payload.email || identity.email || '',
         business_name: payload.businessName || '',
@@ -1167,7 +950,15 @@ class ActivateVendorHandler extends BaseHandler {
         profile_photo_url: profilePhotoUrl, // ✅ FIX: Save profile photo from onboarding (PROD FIX)
         service_radius: serviceRadius, // ✅ FIX: Save service_radius from onboarding (PROD FIX)
         ...payload, // Include all other fields
+        is_deleted: false, // after payload so new vendors are never deleted
       };
+      const { resolveNewVendorOnboardingTier } = await import('../utils/onboarding-f100-tier');
+      const tr = await resolveNewVendorOnboardingTier({
+        email: vendorData.email as string,
+        businessName: vendorData.business_name as string,
+      });
+      vendorData.tier = tr.tier;
+      vendorData.commission_percentage = tr.commission_percentage;
 
       const vendors = await insert('vendors', vendorData);
       const vendor = vendors[0];
@@ -1490,9 +1281,13 @@ export function registerVendorOnboardingEndpoints(app: Hono) {
       if (!application || application.rows.length === 0) {
         // Try to find by vendor_id in vendors table
         const vendorRecord = await query(
-          `SELECT v.*, vi.phone, va.id as application_id, va.status as app_status, va.submitted_at
+          `SELECT v.*, vi.phone as vi_phone, va.id as application_id, va.status as app_status, va.submitted_at
            FROM vendors v
-           LEFT JOIN vendor_identity vi ON v.phone = vi.phone
+           LEFT JOIN LATERAL (
+             SELECT id, phone FROM vendor_identity
+             WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+             ORDER BY created_at DESC LIMIT 1
+           ) vi ON true
            LEFT JOIN vendor_onboarding_applications va ON vi.id = va.vendor_identity_id
            WHERE v.id = $1
            ORDER BY va.created_at DESC
@@ -1539,11 +1334,6 @@ export function registerVendorOnboardingEndpoints(app: Hono) {
       console.error('❌ [VENDOR-APPLICATION-STATUS] Error:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
-  });
-
-  // Phase 6: Admin Review
-  app.post('/admin/vendor/onboarding/:applicationId/review', async (c) => {
-    return toHonoResponse(c, new AdminReviewApplicationHandler(), createHandlerContext(c));
   });
 
   // Phase 7: Activation

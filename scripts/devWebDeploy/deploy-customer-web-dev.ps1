@@ -13,7 +13,11 @@ param(
     [string]$AlternateDomain = "dev.customer.warmpawz.com",
     [string]$ApiGatewayEndpoint = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
     [switch]$DeployOnly,
-    [switch]$SkipInvalidation
+    [switch]$SkipInvalidation,
+    # Pass -CustomerEcommerceEnabled to turn shop/cart/wishlist/orders ON for this deploy (default off).
+    [switch]$CustomerEcommerceEnabled,
+    # Deprecated: use -CustomerEcommerceEnabled instead. Kept so old invocations still parse.
+    [switch]$CustomerEcommerceDisabled
 )
 
 $ErrorActionPreference = "Stop"
@@ -80,7 +84,7 @@ Write-Host ""
 
 # Navigate to customer-web directory
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$projectRoot = Split-Path -Parent $scriptRoot
+$projectRoot = Split-Path -Parent (Split-Path -Parent $scriptRoot)
 $customerWebDir = Join-Path $projectRoot "apps\customer-web"
 
 if (!(Test-Path $customerWebDir)) {
@@ -105,11 +109,13 @@ if ($DeployOnly -and (Test-Path "dist")) {
     
     Write-Host "  Running: npm run build" -ForegroundColor Gray
     $env:NODE_ENV = "production"
-    $buildOutput = npm run build 2>&1
-    
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  ❌ Build failed!" -ForegroundColor Red
-        Write-Host $buildOutput
+    # Run via cmd so Next.js warnings on stderr do not trigger Stop on NativeCommandError
+    $buildProc = Start-Process -FilePath "cmd.exe" `
+        -ArgumentList "/c", "npm run build" `
+        -WorkingDirectory $customerWebDir `
+        -Wait -PassThru -NoNewWindow
+    if ($buildProc.ExitCode -ne 0) {
+        Write-Host "  ❌ Build failed (exit code $($buildProc.ExitCode))!" -ForegroundColor Red
         exit 1
     }
     
@@ -127,18 +133,20 @@ Write-Host "Step 4: Injecting runtime configuration..." -ForegroundColor Yellow
 $distPath = Join-Path $customerWebDir "dist"
 $runtimeConfigPath = Join-Path $distPath "runtime-config.js"
 
-$runtimeConfigContent = @"
+$customerEcommerceJs = if ($CustomerEcommerceEnabled) { 'true' } else { 'false' }
+$runtimeConfigContent = (@'
 // Runtime Configuration for Warmpawz customer-web
 // Injected at deployment time with dev API Gateway endpoint
 (function() {
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-    apiBaseUrl: "$ApiGatewayEndpoint",
+    apiBaseUrl: "__API_GATEWAY_ENDPOINT__",
     uatMode: true,
-    environment: "development"
+    environment: 'development',
+    customerEcommerceEnabled: __CUSTOMER_ECOMMERCE_ENABLED__
   };
-  console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
+  console.log('Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
-"@
+'@).Replace('__API_GATEWAY_ENDPOINT__', $ApiGatewayEndpoint).Replace('__CUSTOMER_ECOMMERCE_ENABLED__', $customerEcommerceJs)
 
 Set-Content -Path $runtimeConfigPath -Value $runtimeConfigContent -Encoding UTF8
 Write-Host "  ✅ runtime-config.js created" -ForegroundColor Green
@@ -146,7 +154,7 @@ Write-Host "  ✅ runtime-config.js created" -ForegroundColor Green
 # Inject inline config into HTML files
 Write-Host "  Injecting inline config into HTML files..." -ForegroundColor Gray
 $htmlFiles = Get-ChildItem -Path $distPath -Filter "*.html" -Recurse
-$inlineConfig = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$ApiGatewayEndpoint', uatMode: true, environment: 'development' };"
+$inlineConfig = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$ApiGatewayEndpoint', uatMode: true, environment: 'development', customerEcommerceEnabled: $customerEcommerceJs };"
 $htmlCount = 0
 
 foreach ($htmlFile in $htmlFiles) {

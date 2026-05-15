@@ -11,13 +11,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
   Image,
   Modal,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -336,7 +336,7 @@ export function CustomerPetProfileScreen({
 
   const renderAddPetModal = () => (
     <Modal visible={showAddModal} animationType="slide" transparent={true}>
-      <SafeAreaView style={styles.modalContainer}>
+      <ScreenShell style={styles.modalContainer}>
         <View style={styles.modalContent}>
           <ScrollView showsVerticalScrollIndicator={false}>
             <View style={styles.modalHeader}>
@@ -485,23 +485,23 @@ export function CustomerPetProfileScreen({
             </TouchableOpacity>
           </ScrollView>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     </Modal>
   );
 
   if (loading && pets.length === 0) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading pets...</Text>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {renderPetList()}
 
@@ -527,7 +527,7 @@ export function CustomerPetProfileScreen({
       </ScrollView>
 
       {renderAddPetModal()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

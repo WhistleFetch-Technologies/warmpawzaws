@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.warmpawz.customer.config.CacheConfigTest
+-------------------------------------------------------------------------------
+Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.163 s -- in com.warmpawz.customer.config.CacheConfigTest

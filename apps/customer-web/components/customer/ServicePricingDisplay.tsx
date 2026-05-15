@@ -14,6 +14,7 @@
  * ============================================================================
  */
 
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 import { Badge } from '@/components/ui/badge';
 
 interface ServicePricingDisplayProps {
@@ -45,16 +46,16 @@ export function ServicePricingDisplay({
         ? basePrice - vendorDiscountAmount
         : basePrice);
 
-  const hasVendorDiscount = vendorDiscount !== undefined || vendorDiscountAmount !== undefined;
+  const showVendorDiscountChrome = hasEffectivePriceReduction(basePrice, finalVendorPrice);
   const finalPrice = showPlatformDiscount && platformDiscount
     ? finalVendorPrice * (1 - platformDiscount / 100)
     : finalVendorPrice;
 
   return (
-    <div className={`flex flex-col gap-1 ${className}`}>
-      {/* Price Display */}
-      <div className="flex items-center gap-2">
-        {hasVendorDiscount && (
+    <div className={`flex min-w-0 max-w-full flex-col gap-1 ${className}`}>
+      {/* Price Display — flex-wrap so strike + sale price never push past narrow columns */}
+      <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+        {showVendorDiscountChrome && (
           <>
             {/* Original Price - Strikethrough */}
             <span className="line-through text-gray-400 text-sm">
@@ -66,15 +67,15 @@ export function ServicePricingDisplay({
             </span>
           </>
         )}
-        {!hasVendorDiscount && (
+        {!showVendorDiscountChrome && (
           <span className="text-gray-900 font-semibold text-lg">
-            {currency}{basePrice.toFixed(0)}
+            {currency}{finalVendorPrice.toFixed(0)}
           </span>
         )}
       </div>
 
       {/* Vendor Discount Badge */}
-      {hasVendorDiscount && (
+      {showVendorDiscountChrome && (
         <Badge className="bg-orange-100 text-orange-700 rounded-full px-2 py-1 text-xs w-fit">
           {vendorDiscount 
             ? `Vendor Discount ${vendorDiscount}%`

@@ -10,7 +10,8 @@ interface Provider {
   id: string;
   name: string;
   photo?: string;
-  rating: number;
+  rating?: number | null;
+  reviewCount?: number;
   specialization?: string;
   coordinates: { lat: number; lng: number };
   distance: number;
@@ -50,6 +51,7 @@ export function RadarProviderMap({ userLocation, radius, serviceType, onSelectPr
                 name: p.name,
                 photo: p.photo,
                 rating: p.rating,
+                reviewCount: p.reviewCount ?? p.review_count,
                 specialization: p.serviceType,
                 coordinates: p.location || p.coordinates, // Backend might return either
                 distance: parseFloat(p.distance),
@@ -64,7 +66,8 @@ export function RadarProviderMap({ userLocation, radius, serviceType, onSelectPr
             const mockProviders = Array.from({ length: 5 }).map((_, i) => ({
                 id: `p-${i}`,
                 name: `Provider ${i + 1}`,
-                rating: 4.5 + (Math.random() * 0.5),
+                rating: null,
+                reviewCount: 0,
                 coordinates: {
                     lat: userLocation.lat + (Math.random() - 0.5) * 0.05,
                     lng: userLocation.lng + (Math.random() - 0.5) * 0.05
@@ -148,11 +151,24 @@ export function RadarProviderMap({ userLocation, radius, serviceType, onSelectPr
                                 className="absolute bottom-10 bg-white p-3 rounded-lg shadow-xl w-48 text-left pointer-events-auto z-30"
                             >
                                 <h4 className="font-bold text-gray-900 text-sm">{provider.name}</h4>
-                                <div className="flex items-center gap-1 text-xs text-gray-600 mt-1">
-                                    <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                                    <span>{Number(provider.rating || 0).toFixed(1)}</span>
-                                    <span>•</span>
-                                    <span>{Number(provider.distance || 0).toFixed(1)} km</span>
+                                <div className="flex items-center gap-1 text-xs text-gray-600 mt-1 flex-wrap">
+                                    {(provider.reviewCount ?? 0) > 0 &&
+                                    provider.rating != null &&
+                                    Number(provider.rating) > 0 ? (
+                                      <>
+                                        <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                                        <span>{Number(provider.rating).toFixed(1)}</span>
+                                        <span>•</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className="text-gray-500">No reviews</span>
+                                        <span>•</span>
+                                      </>
+                                    )}
+                                    <span>{Number(provider.distance) < 1
+                                      ? `${Math.round(Number(provider.distance) * 1000)} m`
+                                      : `${Math.round(Number(provider.distance))} km`}</span>
                                 </div>
                                 <div className="mt-2 flex justify-between items-center">
                                     <span className="font-bold text-orange-600">₹{provider.price}</span>

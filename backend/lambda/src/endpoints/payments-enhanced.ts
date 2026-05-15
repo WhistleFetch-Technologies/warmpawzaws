@@ -31,7 +31,8 @@ import { notifyBookingCreated } from '../utils/booking-notifications';
 import {
   CreatePaymentRequestSchema,
 } from '@warmpawz/api-contracts/payments';
-import { calculateFees } from './fee-config';
+import { calculateFinalFees, mapCatalogCategoryToBusinessType } from '../utils/feeCalculator';
+import { debitCustomerWalletForBookingInTransaction } from '../utils/wallet-operations';
 
 // ============================================================================
 // PAYMENT HANDLERS
@@ -78,6 +79,12 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       vendorId,
       idempotencyKey,
     } = validationResult.data;
+
+    const rawBody = body as Record<string, unknown>;
+    const categoryFromBody =
+      typeof rawBody.category === 'string' && rawBody.category.trim() !== ''
+        ? rawBody.category.trim()
+        : undefined;
     
     // Extract wallet fields from raw body (not in schema yet)
     const useWallet = (body as any).useWallet ?? false;
@@ -284,104 +291,95 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         gstAmount = 0;
       }
 
-      // Calculate platform and convenience fees
+      // Platform / convenience / delivery / packaging — same rules as GET /config/fees (admin_settings)
       let platformFee = 0;
       let convenienceFee = 0;
-      let feesBreakdown = null;
-      
+      let deliveryFee = 0;
+      let packagingFee = 0;
+      let feesBreakdown: Record<string, unknown> | null = null;
+
+      const fromBookingTotal = parseFloat(String(booking.total_amount ?? booking.amount ?? ''));
+      const feeBaseAmount =
+        Number.isFinite(fromBookingTotal) && fromBookingTotal > 0 ? fromBookingTotal : amount;
+
+      const businessServiceType =
+        (categoryFromBody && String(categoryFromBody).trim()) ||
+        mapCatalogCategoryToBusinessType(serviceCategory) ||
+        '';
+
       try {
-        // Fetch fee configuration from platform_settings
-        const feeSettings = await query(
-          `SELECT setting_value FROM platform_settings WHERE setting_key = 'platform:fees:config'`
-        );
-        
-        const feeConfig = feeSettings.rows.length > 0 
-          ? (feeSettings.rows[0].setting_value as any)
-          : undefined;
-        
-        // Calculate fees based on service style and type
-        const fees = calculateFees({
-          amount,
-          serviceStyle: serviceStyle || undefined,
+        const fees = await calculateFinalFees({
+          amount: feeBaseAmount,
           type: 'booking',
-          config: feeConfig,
+          serviceStyle: String(serviceStyle || booking.service_style || booking.service_type || ''),
+          businessServiceType,
         });
-        
+
         platformFee = fees.platformFee;
         convenienceFee = fees.convenienceFee;
-        feesBreakdown = fees.breakdown;
-        
-        console.log(`[PAYMENT] Calculated fees: platform=₹${platformFee}, convenience=₹${convenienceFee}`);
+        deliveryFee = fees.deliveryFee;
+        packagingFee = fees.packagingFee;
+        feesBreakdown = { ...fees, feeBaseAmount, businessServiceType };
+
+        console.log(
+          `[PAYMENT] Calculated fees: platform=₹${platformFee}, convenience=₹${convenienceFee}, delivery=₹${deliveryFee}, packaging=₹${packagingFee}`
+        );
       } catch (feeError) {
         console.warn('[PAYMENT] Error calculating fees, using defaults:', feeError);
-        // Default fees if calculation fails
-        platformFee = Math.round((amount * 2) / 100); // 2% with max cap
+        platformFee = Math.round((feeBaseAmount * 2) / 100);
         platformFee = Math.min(platformFee, 200);
-        convenienceFee = 10; // ₹10 flat
+        convenienceFee = 0;
       }
-      
-      // Total amount including fees (fees are added on top of service amount)
-      const totalAmount = amount + gstAmount + platformFee + convenienceFee;
 
-      // Handle wallet payment if requested
+      const feesTotal = platformFee + convenienceFee + deliveryFee + packagingFee;
+
+      // Total amount including fees (fees are added on top of tax-inclusive request amount)
+      const totalAmount = amount + gstAmount + feesTotal;
+
       let walletDebited = false;
-      let remainingAmount = totalAmount; // Use total amount including fees
-      let walletTransactionId = null;
+      let remainingAmount = totalAmount;
+      let walletDebitedAmount = 0;
 
-      if (useWallet && customerId) {
-        const walletAmountToUse = walletAmount > 0 ? walletAmount : amount;
-        
-        // Check wallet balance
-        const wallets = await select('customer_wallets', { customer_id: customerId });
-        if (wallets.length > 0) {
-          const walletBalance = parseFloat(wallets[0].balance || '0');
-          const actualWalletAmount = Math.min(walletAmountToUse, walletBalance, amount);
-          
-          if (actualWalletAmount > 0) {
-            // Debit wallet
-            const { query } = await import('../database/rds-connection');
-            const debitResult = await query(
-              `UPDATE customer_wallets
-               SET balance = balance - $1, updated_at = NOW()
-               WHERE customer_id = $2 AND balance >= $1
-               RETURNING id, balance`,
-              [actualWalletAmount, customerId]
-            );
-
-            if (debitResult.rows.length > 0) {
-              // Create wallet transaction
-              const walletTxn = await insert('wallet_transactions', {
-                wallet_id: wallets[0].id,
-                customer_id: customerId,
-                transaction_type: 'debit',
-                amount: actualWalletAmount,
-                source: 'payment',
-                description: `Payment for booking ${bookingId}`,
-                reference_id: bookingId,
-              });
-              
-              walletDebited = true;
-              walletTransactionId = walletTxn[0]?.id || null;
-              remainingAmount = amount - actualWalletAmount;
-              
-              console.log(`✅ [PAYMENT] Debited ₹${actualWalletAmount} from wallet, remaining: ₹${remainingAmount}`);
-            }
-          }
-        }
-      }
-
-      // Use transaction for atomicity
+      // Wallet debit + payment insert must be atomic (rollback wallet if payment insert fails)
       let payment: any;
       try {
         payment = await withTransaction(async (client) => {
+        let walletApplied = 0;
+        if (useWallet && effectiveCustomerId) {
+          const walletCap =
+            walletAmount > 0 ? Math.min(Number(walletAmount), totalAmount) : totalAmount;
+          const wbalRes = await client.query(
+            `SELECT COALESCE(balance, 0)::text AS b FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
+            [effectiveCustomerId]
+          );
+          const bal = parseFloat(String(wbalRes.rows[0]?.b ?? '0')) || 0;
+          const targetDebit = Math.min(walletCap, bal, totalAmount);
+          if (targetDebit > 0) {
+            const idem =
+              idempotencyKey != null && String(idempotencyKey).trim() !== ''
+                ? String(idempotencyKey).trim()
+                : `legacy-${bookingId}`;
+            const d = await debitCustomerWalletForBookingInTransaction(client, {
+              customerId: effectiveCustomerId,
+              bookingId,
+              amount: Math.round(targetDebit * 100) / 100,
+              idempotencyKey: idem,
+            });
+            walletApplied = d.debited;
+          }
+        }
+
+        const roundedRemain = Math.max(0, Math.round((totalAmount - walletApplied) * 100) / 100);
+        const fullyWallet = walletApplied > 0 && roundedRemain < 0.01;
+
         const paymentData: any = {
           booking_id: bookingId, // ✅ bookingId is REQUIRED - booking should already exist
           customer_id: effectiveCustomerId,
           vendor_id: vendorId || booking.vendor_id,
           amount: amount, // Base service amount
           currency: 'INR',
-          payment_method: walletDebited && remainingAmount === 0 ? 'wallet' : (paymentMethod || 'razorpay'),
-          payment_status: walletDebited && remainingAmount === 0 ? 'completed' : 'pending',
+          payment_method: fullyWallet ? 'wallet' : (paymentMethod || 'razorpay'),
+          payment_status: fullyWallet ? 'completed' : 'pending',
         };
 
         // Add tax fields if calculated
@@ -396,10 +394,10 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         }
         
         // Add platform and convenience fees
-        if (platformFee > 0 || convenienceFee > 0) {
-          paymentData.platform_fee = platformFee;
-          paymentData.convenience_fee = convenienceFee;
-          paymentData.total_amount = totalAmount; // Total including all fees and taxes
+        if (feesTotal > 0) {
+          if (platformFee > 0) paymentData.platform_fee = platformFee;
+          if (convenienceFee > 0) paymentData.convenience_fee = convenienceFee;
+          paymentData.total_amount = totalAmount;
         }
 
         // Only insert columns that exist on payments table (avoids 42703 when migrations not yet applied)
@@ -421,12 +419,18 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
           values
         );
 
-        return result.rows[0];
+        const row = result.rows[0];
+        return { row, walletApplied, remainingAfterWallet: roundedRemain };
       });
       } catch (txErr: any) {
         (txErr as Error & { step?: string }).step = 'payment_insert';
         throw txErr;
       }
+
+      walletDebitedAmount = (payment as any).walletApplied ?? 0;
+      remainingAmount = (payment as any).remainingAfterWallet ?? totalAmount;
+      walletDebited = walletDebitedAmount > 0;
+      payment = (payment as any).row;
 
       // Log audit entry
       await logAuditEntry({
@@ -447,40 +451,131 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
       // Log initial status
       await logPaymentStatusChange(payment.id, null, payment.payment_status);
 
-      // Award loyalty points for payment (if completed)
-      if (payment.payment_status === 'completed' && customerId) {
+      // Full wallet at create: payment is completed immediately (no Razorpay webhook). Confirm booking and notify like payment.captured.
+      if (payment.payment_status === 'completed' && payment.booking_id) {
         try {
-          const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
-          
-          // Determine action based on booking type
-          let actionName = 'book_service';
-          if (booking.service_id) {
-            const services = await select('services', { id: booking.service_id });
-            if (services.length > 0) {
-              const serviceName = services[0].name?.toLowerCase() || '';
-              if (serviceName.includes('grooming')) {
-                actionName = 'book_grooming';
-              } else if (serviceName.includes('vet') || serviceName.includes('consultation')) {
-                actionName = 'book_vet_consultation';
-              } else if (serviceName.includes('nutrition')) {
-                actionName = 'book_nutrition_consultation';
+          let bookingToNotify: string | null = null;
+          let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
+
+          await withTransaction(async (client) => {
+            const { rows: bookingRows } = await client.query(
+              `SELECT * FROM bookings WHERE id = $1 FOR UPDATE`,
+              [payment.booking_id]
+            );
+            if (bookingRows.length > 0) {
+              const booking = bookingRows[0];
+              const previousStatus = booking.status || null;
+              const shouldNotify = booking.payment_status !== 'paid' || previousStatus === 'pending_payment';
+              const nextStatus = previousStatus === 'pending_payment' ? 'confirmed' : previousStatus;
+
+              await client.query(
+                `UPDATE bookings SET 
+                   payment_status = 'paid', 
+                   status = $2,
+                   updated_at = NOW() 
+                 WHERE id = $1`,
+                [booking.id, nextStatus]
+              );
+
+              if (shouldNotify) {
+                bookingToNotify = booking.id;
               }
+              if (previousStatus !== nextStatus) {
+                bookingStatusChange = { bookingId: booking.id, from: previousStatus, to: nextStatus };
+              }
+            }
+          });
+
+          if (bookingStatusChange) {
+            try {
+              await logBookingStatusChange(
+                bookingStatusChange.bookingId,
+                bookingStatusChange.from,
+                bookingStatusChange.to,
+                'system',
+                'system',
+                'Payment completed (wallet)'
+              );
+            } catch (auditErr) {
+              console.error('[PAYMENT-CREATE] Failed to log booking status change after wallet payment:', auditErr);
             }
           }
 
-          await loyaltyPointsService.awardPoints({
-            customerId,
-            actionName,
-            amount: amount,
-            referenceType: 'payment',
-            referenceId: payment.id,
-            description: `Payment for booking ${bookingId}`,
-          });
-        } catch (loyaltyError) {
-          console.error('Error awarding loyalty points:', loyaltyError);
-          // Don't fail payment if loyalty points fail
+          if (bookingToNotify) {
+            try {
+              await notifyBookingCreated(bookingToNotify, requestId);
+            } catch (notifyErr) {
+              console.error('[PAYMENT-CREATE] Failed to notify booking after wallet payment:', notifyErr);
+            }
+          }
+        } catch (error) {
+          console.error('[PAYMENT-CREATE] Wallet full-payment booking update failed:', error);
         }
       }
+
+      // Wallet covered the booking row total but /payments total (tax + platform fees) left a Razorpay remainder —
+      // payment row stays "pending" while the customer already paid the slot via wallet. Confirm the booking.
+      const bookingServiceTotal =
+        Math.round(
+          (parseFloat(String(booking.total_amount ?? booking.amount ?? 0)) || 0) * 100
+        ) / 100;
+      const walletCoversBookingService =
+        bookingServiceTotal > 0 &&
+        walletDebitedAmount > 0 &&
+        walletDebitedAmount + 0.02 >= bookingServiceTotal;
+      if (
+        walletCoversBookingService &&
+        payment.booking_id &&
+        payment.payment_status !== 'completed' &&
+        String(booking.status || '').toLowerCase() === 'pending_payment'
+      ) {
+        try {
+          let bookingToNotify: string | null = null;
+          let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
+          await withTransaction(async (client) => {
+            const { rows: bookingRows } = await client.query(
+              `SELECT * FROM bookings WHERE id = $1 FOR UPDATE`,
+              [payment.booking_id]
+            );
+            if (bookingRows.length > 0) {
+              const bRow = bookingRows[0];
+              const previousStatus = bRow.status || null;
+              if (String(previousStatus || '').toLowerCase() !== 'pending_payment') return;
+              await client.query(
+                `UPDATE bookings SET payment_status = 'paid', status = 'confirmed', updated_at = NOW() WHERE id = $1`,
+                [bRow.id]
+              );
+              bookingToNotify = bRow.id;
+              bookingStatusChange = { bookingId: bRow.id, from: previousStatus, to: 'confirmed' };
+            }
+          });
+          if (bookingStatusChange) {
+            try {
+              await logBookingStatusChange(
+                bookingStatusChange.bookingId,
+                bookingStatusChange.from,
+                bookingStatusChange.to,
+                'system',
+                'system',
+                'Wallet covered booking total (fees may remain on payment row)'
+              );
+            } catch (auditErr) {
+              console.error('[PAYMENT-CREATE] Failed to log booking confirm after wallet/service parity:', auditErr);
+            }
+          }
+          if (bookingToNotify) {
+            try {
+              await notifyBookingCreated(bookingToNotify, requestId);
+            } catch (notifyErr) {
+              console.error('[PAYMENT-CREATE] Failed to notify after wallet/service parity:', notifyErr);
+            }
+          }
+        } catch (e) {
+          console.error('[PAYMENT-CREATE] Wallet vs booking-total confirm failed:', e);
+        }
+      }
+
+      // Payment/booking loyalty for customer: handled by action_sources → loyalty-events-consumer (not inline here).
 
       // Publish event
       try {
@@ -504,13 +599,15 @@ class CreatePaymentHandlerEnhanced extends BaseHandlerEnhanced {
         message: 'Payment created successfully',
         isNew: true,
         walletUsed: walletDebited,
-        walletAmount: walletDebited ? (walletAmount > 0 ? walletAmount : totalAmount - remainingAmount) : 0,
+        walletAmount: walletDebitedAmount,
         remainingAmount: remainingAmount > 0 ? remainingAmount : 0,
         // Fee breakdown for frontend display
         fees: {
           baseAmount: amount,
           platformFee,
           convenienceFee,
+          deliveryFee,
+          packagingFee,
           gstAmount,
           totalAmount,
           breakdown: feesBreakdown,

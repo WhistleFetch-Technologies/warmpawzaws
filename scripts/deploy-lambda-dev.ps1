@@ -6,7 +6,8 @@
 
 param(
     [string]$Region = "ap-south-1",
-    [string]$DevApiId = "z0b3obweb6"
+    [string]$DevApiId = "z0b3obweb6",
+    [string]$LambdaFunctionName = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,21 +22,34 @@ Write-Host "Step 1: Identifying Dev Lambda Function..." -ForegroundColor Yellow
 Write-Host "  API Gateway ID: $DevApiId" -ForegroundColor Gray
 
 $lambdaName = $null
+if ($LambdaFunctionName) {
+    $lambdaName = $LambdaFunctionName
+    Write-Host "  Using explicit function name: $lambdaName" -ForegroundColor Green
+}
 
-try {
-    Write-Host "  Querying API Gateway integrations..." -ForegroundColor Gray
-    $integrations = aws apigatewayv2 get-integrations --api-id $DevApiId --region $Region --output json 2>&1 | ConvertFrom-Json
-    
-    if ($integrations.Items -and $integrations.Items.Count -gt 0) {
-        $lambdaArn = $integrations.Items[0].IntegrationUri
-        if ($lambdaArn -match 'function:(.+)$') {
-            $lambdaName = $matches[1]
-            Write-Host "  ✅ Found Lambda Function: $lambdaName" -ForegroundColor Green
+if (-not $lambdaName) {
+    try {
+        Write-Host "  Querying API Gateway integrations..." -ForegroundColor Gray
+        $integrations = aws apigatewayv2 get-integrations --api-id $DevApiId --region $Region --output json 2>&1 | ConvertFrom-Json
+
+        if ($integrations.Items -and $integrations.Items.Count -gt 0) {
+            # Prefer an integration whose Lambda actually exists (stale integrations may point at deleted functions).
+            foreach ($item in $integrations.Items) {
+                $uri = $item.IntegrationUri
+                if ($uri -notmatch 'function:([^/]+)') { continue }
+                $candidate = $matches[1]
+                aws lambda get-function --function-name $candidate --region $Region --output json 2>$null | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    $lambdaName = $candidate
+                    Write-Host "  ✅ Found Lambda Function (from API integration): $lambdaName" -ForegroundColor Green
+                    break
+                }
+            }
         }
+    } catch {
+        Write-Host "  ⚠️ Could not auto-detect Lambda function from API Gateway" -ForegroundColor Yellow
+        Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
     }
-} catch {
-    Write-Host "  ⚠️ Could not auto-detect Lambda function from API Gateway" -ForegroundColor Yellow
-    Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor Red
 }
 
 # Fallback: Try common dev Lambda function names
@@ -89,12 +103,16 @@ Write-Host "  Directory: $lambdaDir" -ForegroundColor Gray
 Set-Location $lambdaDir
 
 # Step 3: Build Lambda
+# Run via cmd.exe so esbuild/npm stderr (warnings) is not treated as a terminating error
+# when $ErrorActionPreference = 'Stop' (otherwise you get RemoteException and the script aborts).
 Write-Host "  Running: npm run build:bundle" -ForegroundColor Gray
-$buildOutput = npm run build:bundle 2>&1
+$buildProc = Start-Process -FilePath "cmd.exe" `
+    -ArgumentList "/c", "npm run build:bundle" `
+    -WorkingDirectory $lambdaDir `
+    -Wait -PassThru -NoNewWindow
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  ❌ Build failed!" -ForegroundColor Red
-    Write-Host $buildOutput
+if ($buildProc.ExitCode -ne 0) {
+    Write-Host "  ❌ Build failed (exit code $($buildProc.ExitCode))!" -ForegroundColor Red
     exit 1
 }
 

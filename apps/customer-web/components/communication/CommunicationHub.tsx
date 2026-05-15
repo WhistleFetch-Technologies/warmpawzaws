@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, User, Phone, Calendar, MessageSquare, Headphones, CalendarPlus, Video } from 'lucide-react';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
+import { ApiError } from '@/lib/error-handling';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -54,6 +56,8 @@ interface CommunicationHubProps {
   onNavigate?: (screen: string, data?: any) => void; // ✅ NEW: For video call navigation
   meetingId?: string; // ✅ NEW: Meeting ID for video calls
   onStartVideoCall?: (bookingId: string, meetingId?: string) => Promise<string | void>; // Rule 2: Create + notify vendor (WhatsApp-like) then navigate; may return meetingId
+  /** Called after booking chat messages from the provider are marked read (header badge refresh). */
+  onBookingChatMarkedRead?: () => void;
 }
 
 // ============================================================================
@@ -109,6 +113,7 @@ export function CommunicationHub({
   onNavigate, // ✅ NEW
   meetingId, // ✅ NEW
   onStartVideoCall, // Rule 2: Customer starts video from chat → create + notify vendor then navigate
+  onBookingChatMarkedRead,
 }: CommunicationHubProps) {
   // State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -141,7 +146,7 @@ export function CommunicationHub({
   if (mode === 'video') {
     // Show loading state while navigating
     return (
-      <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
         <div className="bg-white rounded-2xl w-full max-w-2xl p-8 text-center">
           <Video className="w-16 h-16 text-blue-500 mx-auto mb-4 animate-pulse" />
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Starting Video Call...</h2>
@@ -168,31 +173,57 @@ export function CommunicationHub({
       if (!silent) setLoading(true);
       setError(null);
 
-      const response = await apiClient.get(`/chat/booking/${bookingId}/conversation`) as any;
-      
-      if (response.success || response.messages) {
+      const path = `/chat/booking/${bookingId}/conversation`;
+      const response = await apiClient.get(path) as any;
+
+      if (response.success || Array.isArray(response.messages)) {
         setMessages(response.messages || []);
-        
+
         // Update booking info from response
         if (response.booking) {
-          setBooking(response.booking);
-          if (response.booking.status) {
-            setStatus(response.booking.status);
+          const b = response.booking as Record<string, any>;
+          const v = b.vendor as Record<string, any> | undefined;
+          const displayVendor = [
+            v?.business_name,
+            v?.businessName,
+            v?.display_name,
+            v?.displayName,
+            b.vendorName,
+            b.vendor_name,
+            v?.name,
+          ]
+            .map((x) => (typeof x === 'string' ? x.trim() : ''))
+            .find((s) => s.length > 0);
+          setBooking({
+            ...b,
+            vendorName: displayVendor || b.vendorName || b.vendor_name || 'Vendor',
+          } as BookingInfo);
+          if (b.status) {
+            setStatus(b.status);
           }
           
           // Check if within 7 days of completion
-          if (response.booking.completed_at || response.booking.completedAt) {
-            const completedDate = new Date(response.booking.completed_at || response.booking.completedAt);
+          if (b.completed_at || b.completedAt) {
+            const completedDate = new Date(b.completed_at || b.completedAt);
             const now = new Date();
             const daysDiff = Math.floor((now.getTime() - completedDate.getTime()) / (1000 * 60 * 60 * 24));
             setIsWithin7Days(daysDiff <= 7);
           }
         }
+      } else if (!silent) {
+        setError('Could not load this chat. Please try again.');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (!silent) {
-        console.error('Error loading conversation:', err);
-        setError(err.message || 'Failed to load conversation');
+        const base = getApiBaseUrl();
+        if (process.env.NODE_ENV === 'development') {
+          const status =
+            err instanceof ApiError ? err.statusCode : (err as { statusCode?: number })?.statusCode;
+          console.error('Error loading conversation:', { path: `/chat/booking/${bookingId}/conversation`, base, status, err });
+        } else {
+          console.error('Error loading conversation:', err);
+        }
+        setError(formatCustomerApiFailure(err, 'Could not load messages'));
       }
     } finally {
       if (!silent) setLoading(false);
@@ -224,20 +255,36 @@ export function CommunicationHub({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Mark messages as read when they appear
+  // Mark all provider-side messages read when customer views chat (one bulk call + refresh).
+  const lastBulkReadMsRef = useRef(0);
   useEffect(() => {
-    const unreadFromVendor = messages.filter(
-      m => m.sender_type === 'vendor' && !m.is_read
-    );
-    
-    unreadFromVendor.forEach(async (msg) => {
-      try {
-        await apiClient.put(`/chat/messages/${msg.id}/read`, {});
-      } catch (e) {
-        // Silent fail for read receipts
-      }
+    if (!chatActive || !bookingId) return;
+    const hasUnreadFromOthers = messages.some((m) => {
+      const st = String(m.sender_type || '').toLowerCase();
+      const read = m.is_read ?? (m as { isRead?: boolean }).isRead;
+      return st !== 'customer' && !read;
     });
-  }, [messages]);
+    if (!hasUnreadFromOthers) return;
+
+    const now = Date.now();
+    if (now - lastBulkReadMsRef.current < 2000) return;
+
+    let cancelled = false;
+    (async () => {
+      lastBulkReadMsRef.current = Date.now();
+      try {
+        await apiClient.post(`/chat/conversations/${encodeURIComponent(bookingId)}/read`, {});
+        await loadConversation(true);
+      } catch {
+        /* allow retry after debounce window */
+      }
+      if (!cancelled) onBookingChatMarkedRead?.();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [messages, bookingId, chatActive, loadConversation, onBookingChatMarkedRead]);
 
   // ============================================================================
   // ACTIONS
@@ -417,8 +464,8 @@ export function CommunicationHub({
   // ============================================================================
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 sm:items-center sm:p-4">
+      <div className="flex h-[92dvh] max-h-[92dvh] w-full max-w-customer flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:h-[85vh] sm:max-h-[85vh] sm:max-w-2xl sm:rounded-2xl">
         
         {/* Header */}
         <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] px-6 py-4 flex items-center justify-between">
@@ -670,7 +717,7 @@ export function CommunicationHub({
         </div>
 
         {/* Input Area */}
-        <div className="p-4 bg-white border-t border-gray-200">
+        <div className="border-t border-gray-200 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
           {chatActive ? (
             <div className="flex items-end gap-3">
               {/* File Upload Button */}

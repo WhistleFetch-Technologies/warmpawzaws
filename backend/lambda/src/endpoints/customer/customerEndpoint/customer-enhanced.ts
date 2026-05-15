@@ -30,6 +30,8 @@ import {
 } from '@warmpawz/api-contracts/customers';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { presignS3GetUrlIfApplicable } from '../../../utils/s3-media-presign';
+import { findCustomerByPhone } from '../../../utils/customer-phone-lookup';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 
 // ============================================================================
@@ -114,12 +116,15 @@ class GetCustomerByPhoneHandlerEnhanced extends BaseHandlerEnhanced {
 class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const customerId = context.event.pathParameters?.customerId;
-    const body = this.parseBody(context.event);
+    const body = this.parseBody(context.event) as Record<string, unknown>;
     const requestId = context.requestId;
 
     if (!customerId) {
       return this.error('Customer ID is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
+
+    const hasHouseNoInPut = 'houseNo' in body || 'house_no' in body;
+    const hasFloorInPut = 'floor' in body;
 
     // Validate request with Zod schema
     const validationResult = UpdateCustomerProfileRequestSchema.safeParse(body);
@@ -134,25 +139,53 @@ class UpdateCustomerHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
+      const profileData = validationResult.data;
+      const addrStr =
+        profileData.address !== undefined && profileData.address !== null
+          ? String(profileData.address).trim()
+          : '';
+      if (addrStr.length > 0 && hasHouseNoInPut && !profileData.houseNo?.trim()) {
+        return this.error(
+          'House / flat number is required when address is provided',
+          400,
+          'VALIDATION_ERROR',
+          { field: 'houseNo' },
+          requestId
+        );
+      }
+
       const updateData: any = {
         updated_at: new Date(),
       };
 
-      if (validationResult.data.firstName) updateData.first_name = validationResult.data.firstName;
-      if (validationResult.data.lastName) updateData.last_name = validationResult.data.lastName;
-      if (validationResult.data.email) updateData.email = validationResult.data.email;
-      if (validationResult.data.address) updateData.address = validationResult.data.address;
-      if (validationResult.data.pincode) updateData.pincode = validationResult.data.pincode;
-      if (validationResult.data.photo) updateData.profile_photo_url = validationResult.data.photo;
+      if (profileData.firstName) updateData.first_name = profileData.firstName;
+      if (profileData.lastName) updateData.last_name = profileData.lastName;
+      if (profileData.email) updateData.email = profileData.email;
+      if (profileData.address) updateData.address = profileData.address;
+      if (profileData.pincode) updateData.pincode = profileData.pincode;
+      if (profileData.city) updateData.city = profileData.city;
+      if (profileData.state) updateData.state = profileData.state;
+      if (profileData.photo) updateData.profile_photo_url = profileData.photo;
+      if (hasHouseNoInPut) {
+        updateData.house_no = profileData.houseNo?.trim() || null;
+      }
+      if (hasFloorInPut) {
+        updateData.floor = profileData.floor?.trim() || null;
+      }
 
       await update('customers', { id: customerId }, updateData);
 
       // Get updated customer
       const customers = await select('customers', { id: customerId });
 
+      const row = customers[0];
       return this.success({
         message: 'Customer updated successfully',
-        customer: customers[0],
+        customer: {
+          ...row,
+          houseNo: row.house_no ?? null,
+          floor: row.floor ?? null,
+        },
       }, requestId);
     } catch (error: any) {
       console.error('Error updating customer:', error);
@@ -209,38 +242,46 @@ class AddPetHandlerEnhanced extends BaseHandlerEnhanced {
     this.validateRequired(body, ['name', 'species']);
 
     try {
+      const ageUnit = body.ageUnit || body.age_unit;
+      let age_years: number | null = null;
+      let age_months: number | null = null;
+      if (body.age != null && body.age !== '') {
+        const n = parseInt(String(body.age), 10);
+        if (!Number.isNaN(n)) {
+          if (ageUnit === 'months' || ageUnit === 'month') age_months = n;
+          else age_years = n;
+        }
+      }
+
+      const weight_kg =
+        body.weight_kg != null && body.weight_kg !== ''
+          ? parseFloat(String(body.weight_kg))
+          : body.weight != null && body.weight !== ''
+            ? parseFloat(String(body.weight))
+            : null;
+
+      const med = body.medicalHistory ?? body.medical_history;
+      const medical_history =
+        med != null && typeof med === 'object' && !Array.isArray(med)
+          ? med
+          : {};
+
       const petData = {
         customer_id: customerId,
         name: body.name,
         species: body.species,
         breed: body.breed || null,
-        age: body.age || null,
+        age_years,
+        age_months,
         gender: body.gender || null,
-        weight: body.weight || null,
+        weight_kg: weight_kg != null && !Number.isNaN(weight_kg) ? weight_kg : null,
         color: body.color || null,
-        medical_history: body.medicalHistory || [],
+        medical_history,
       };
 
       const pets = await insert('pets', petData);
 
-      // Check if this is the first pet (complete profile bonus)
-      const existingPets = await select('pets', { customer_id: customerId });
-      if (existingPets.length === 1) {
-        // First pet - award complete profile bonus (100 points)
-        try {
-          const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
-          await loyaltyPointsService.awardPoints({
-            customerId,
-            actionName: 'complete_pet_profile',
-            referenceType: 'pet_profile',
-            referenceId: pets[0].id,
-            description: 'Complete pet profile bonus',
-          });
-        } catch (loyaltyError) {
-          console.error('Error awarding complete profile bonus:', loyaltyError);
-          // Don't fail pet creation if loyalty points fail
-        }
-      }
+      // First-pet / profile loyalty: handled by action_sources → loyalty-events-consumer (not inline here).
 
       return this.success({ pet: pets[0] }, requestId);
     } catch (error: any) {
@@ -529,24 +570,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         return c.json({ error: 'phone is required' }, 400);
       }
 
-      // Clean phone - remove non-digits and country code
-      let cleanPhone = phone.replace(/\D/g, '');
-      // Remove leading country code (91 for India) if present
-      if (cleanPhone.length > 10 && cleanPhone.startsWith('91')) {
-        cleanPhone = cleanPhone.slice(2);
-      }
-
-      // Get customer by phone - try both original and cleaned
-      let customers = await select('customers', { phone: cleanPhone });
-      if (customers.length === 0) {
-        // Try with original phone (in case it's stored differently)
-        customers = await select('customers', { phone });
-      }
-      if (customers.length === 0) {
-        // Try with +91 prefix
-        customers = await select('customers', { phone: `+91${cleanPhone}` });
-      }
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ 
           success: false, 
           error: { code: 'NOT_FOUND', message: 'Customer not found' },
@@ -554,8 +579,6 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           count: 0
         }, 404);
       }
-
-      const customer = customers[0];
 
       // Get pets
       const pets = await select('pets',
@@ -593,6 +616,68 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       }
       
       return c.json({ success: true, pets: [], count: 0 });
+    }
+  });
+
+  // GET /customer/diagnostic-packages - MUST come before /customer/:customerId
+  // ============================================
+  // DIAGNOSTIC PACKAGES ENDPOINT
+  // ============================================
+  app.get('/customer/diagnostic-packages', async (c) => {
+    try {
+      // Get popular diagnostic packages
+      const { rows: packages } = await query(`
+        SELECT 
+          dt.id,
+          dt.test_name as name,
+          dt.description,
+          dt.price,
+          dt.category,
+          dt.sample_type,
+          dt.turnaround_time_hours,
+          dt.is_package_available,
+          dt.package_price,
+          dt.package_test_count,
+          dt.is_free_home_collection,
+          dt.home_collection_fee,
+          v.business_name as vendor_name,
+          v.id as vendor_id
+        FROM diagnostic_tests dt
+        LEFT JOIN vendors v ON v.id = dt.vendor_id
+        WHERE dt.is_available = true 
+          AND dt.is_package_available = true
+        ORDER BY dt.price ASC
+        LIMIT 20
+      `);
+
+      // Format as health packages
+      const formattedPackages = packages.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        tests: p.package_test_count ? [`Includes ${p.package_test_count} tests`] : [p.category || 'General'],
+        price: p.package_price || p.price,
+        originalPrice: p.price > (p.package_price || p.price) ? p.price : undefined,
+        homeCollection: p.is_free_home_collection || p.home_collection_fee === 0,
+        turnaroundHours: p.turnaround_time_hours || 24,
+        vendorName: p.vendor_name,
+        vendorId: p.vendor_id,
+      }));
+
+      return c.json({
+        success: true,
+        packages: formattedPackages,
+      });
+    } catch (error: any) {
+      console.error('Error getting diagnostic packages:', error);
+      return c.json(
+        {
+          success: false,
+          error: error?.message || 'Failed to load diagnostic packages',
+          packages: [],
+        },
+        500
+      );
     }
   });
 
@@ -648,31 +733,48 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
    */
   app.get('/customer/pets/:phone', async (c) => {
     try {
-      const phone = c.req.param('phone');
-      if (!phone) {
+      const param = c.req.param('phone');
+      if (!param) {
         return c.json({ error: 'phone is required' }, 400);
       }
 
-      // Clean phone - remove non-digits and country code
-      let cleanPhone = phone.replace(/\D/g, '');
-      // Remove leading country code (91 for India) if present
-      if (cleanPhone.length > 10 && cleanPhone.startsWith('91')) {
-        cleanPhone = cleanPhone.slice(2);
+      // This route is registered before pets.ts; path param is used for phone OR pet UUID.
+      if (isValidUUID(param)) {
+        const rows = await select('pets', { id: param });
+        if (rows.length === 0) {
+          return c.json({ success: false, error: 'Pet not found' }, 404);
+        }
+        const pet = rows[0];
+        const rawPhoto = pet.profile_photo_url;
+        const photoUrl = (await presignS3GetUrlIfApplicable(rawPhoto)) || rawPhoto;
+        return c.json({
+          success: true,
+          pet: {
+            id: pet.id,
+            name: pet.name,
+            type: pet.species || 'Dog',
+            species: pet.species,
+            breed: pet.breed,
+            age: pet.age_years?.toString() || '',
+            age_years: pet.age_years,
+            age_months: pet.age_months,
+            gender: pet.gender,
+            weight: pet.weight_kg?.toString() || '',
+            weight_kg: pet.weight_kg,
+            photo: photoUrl,
+            profile_photo_url: photoUrl,
+            microchipId: pet.microchip_id,
+            healthRecords: pet.medical_history || {},
+            vaccinations: pet.vaccination_records || {},
+            createdAt: pet.created_at,
+          },
+        });
       }
 
-      // Get customer by phone - try multiple formats
-      let customers = await select('customers', { phone: cleanPhone });
-      if (customers.length === 0) {
-        customers = await select('customers', { phone });
-      }
-      if (customers.length === 0) {
-        customers = await select('customers', { phone: `+91${cleanPhone}` });
-      }
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(param);
+      if (!customer) {
         return c.json({ pets: [], count: 0 });
       }
-
-      const customer = customers[0];
 
       // Get pets
       const pets = await select('pets',
@@ -680,24 +782,34 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         { orderBy: 'created_at', orderDirection: 'DESC' }
       );
 
+      const petsOut = await Promise.all(
+        pets.map(async (pet: any) => {
+          const rawPhoto = pet.profile_photo_url;
+          const photoUrl = (await presignS3GetUrlIfApplicable(rawPhoto)) || rawPhoto;
+          return {
+            id: pet.id,
+            name: pet.name,
+            type: pet.species || 'Dog',
+            species: pet.species,
+            breed: pet.breed,
+            age: pet.age_years?.toString() || '',
+            gender: pet.gender,
+            weight: pet.weight_kg?.toString() || '',
+            photo: photoUrl,
+            image: photoUrl,
+            profile_photo_url: photoUrl,
+            microchipId: pet.microchip_id,
+            healthRecords: pet.medical_history || {},
+            vaccinations: pet.vaccination_records || {},
+            createdAt: pet.created_at,
+          };
+        })
+      );
+
       return c.json({
         success: true,
-        pets: pets.map((pet: any) => ({
-          id: pet.id,
-          name: pet.name,
-          type: pet.species || 'Dog',
-          species: pet.species,
-          breed: pet.breed,
-          age: pet.age_years?.toString() || '',
-          gender: pet.gender,
-          weight: pet.weight_kg?.toString() || '',
-          photo: pet.profile_photo_url,
-          microchipId: pet.microchip_id,
-          healthRecords: pet.medical_history || {},
-          vaccinations: pet.vaccination_records || {},
-          createdAt: pet.created_at,
-        })),
-        count: pets.length,
+        pets: petsOut,
+        count: petsOut.length,
       });
     } catch (error: any) {
       console.error('[pets/:phone] Error fetching customer pets by phone:', error);
@@ -737,13 +849,11 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         return c.json({ error: 'pets array is required' }, 400);
       }
 
-      // Get customer by phone
-      const customers = await select('customers', { phone });
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ error: 'Customer not found. Please create profile first.' }, 404);
       }
 
-      const customer = customers[0];
       const savedPets = [];
 
       for (const pet of pets) {
@@ -1107,13 +1217,10 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         otherPetTypes,
       } = body;
 
-      // Get customer by phone
-      const customers = await select('customers', { phone });
-      if (customers.length === 0) {
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ error: 'Customer not found. Please create profile first.' }, 404);
       }
-
-      const customer = customers[0];
 
       // Check if preferences exist
       const existingPrefs = await query(
@@ -1696,114 +1803,6 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         hasActiveSubscription: false, 
         subscriptions: [],
         error: error.message 
-      });
-    }
-  });
-
-  // ============================================
-  // DIAGNOSTIC PACKAGES ENDPOINT
-  // ============================================
-  app.get('/customer/diagnostic-packages', async (c) => {
-    try {
-      // Get popular diagnostic packages
-      const { rows: packages } = await query(`
-        SELECT 
-          dt.id,
-          dt.test_name as name,
-          dt.description,
-          dt.price,
-          dt.category,
-          dt.sample_type,
-          dt.turnaround_time_hours,
-          dt.is_package_available,
-          dt.package_price,
-          dt.package_test_count,
-          dt.is_free_home_collection,
-          dt.home_collection_fee,
-          v.business_name as vendor_name,
-          v.id as vendor_id
-        FROM diagnostic_tests dt
-        LEFT JOIN vendors v ON v.id = dt.vendor_id
-        WHERE dt.is_available = true 
-          AND dt.is_package_available = true
-        ORDER BY dt.price ASC
-        LIMIT 20
-      `);
-
-      // Format as health packages
-      const formattedPackages = packages.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        tests: p.package_test_count ? [`Includes ${p.package_test_count} tests`] : [p.category || 'General'],
-        price: p.package_price || p.price,
-        originalPrice: p.price > (p.package_price || p.price) ? p.price : undefined,
-        homeCollection: p.is_free_home_collection || p.home_collection_fee === 0,
-        turnaroundHours: p.turnaround_time_hours || 24,
-        vendorName: p.vendor_name,
-        vendorId: p.vendor_id,
-      }));
-
-      // If no packages found, return mock data
-      if (formattedPackages.length === 0) {
-        return c.json({
-          success: true,
-          packages: [
-            {
-              id: 'pkg-mock-1',
-              name: 'Full Body Health Checkup',
-              description: 'Comprehensive pet health screening',
-              tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
-              price: 2499,
-              originalPrice: 3500,
-              homeCollection: true,
-              turnaroundHours: 24
-            },
-            {
-              id: 'pkg-mock-2',
-              name: 'Senior Pet Package',
-              description: 'For pets above 7 years',
-              tests: ['CBC', 'LFT', 'KFT', 'X-Ray', 'ECG', 'Thyroid'],
-              price: 3999,
-              originalPrice: 5500,
-              homeCollection: true,
-              turnaroundHours: 48
-            },
-            {
-              id: 'pkg-mock-3',
-              name: 'Basic Blood Panel',
-              description: 'Essential blood tests',
-              tests: ['CBC', 'Blood Glucose', 'Hemoglobin'],
-              price: 799,
-              originalPrice: 1200,
-              homeCollection: true,
-              turnaroundHours: 12
-            }
-          ]
-        });
-      }
-
-      return c.json({
-        success: true,
-        packages: formattedPackages,
-      });
-    } catch (error: any) {
-      console.error('Error getting diagnostic packages:', error);
-      // Return mock packages on error
-      return c.json({
-        success: true,
-        packages: [
-          {
-            id: 'pkg-mock-1',
-            name: 'Full Body Health Checkup',
-            description: 'Comprehensive pet health screening',
-            tests: ['CBC', 'LFT', 'KFT', 'Thyroid', 'Urine Analysis'],
-            price: 2499,
-            originalPrice: 3500,
-            homeCollection: true,
-            turnaroundHours: 24
-          }
-        ]
       });
     }
   });

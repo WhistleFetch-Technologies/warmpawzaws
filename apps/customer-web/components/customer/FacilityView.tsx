@@ -96,7 +96,7 @@ export function FacilityView({ vendorId, onBack, onClose, onBookNow }: FacilityV
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
+      <div className="w-full max-w-customer mx-auto bg-white min-h-screen">
         {/* Photo Gallery */}
         {facility.photos && facility.photos.length > 0 ? (
           <div className="relative">
@@ -301,7 +301,7 @@ export function FacilityView({ vendorId, onBack, onClose, onBookNow }: FacilityV
 
         {/* Fixed Bottom CTA */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4">
-          <div className="max-w-[430px] mx-auto">
+          <div className="max-w-customer mx-auto">
             <Button
               onClick={onBookNow}
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A2F] text-white h-12"

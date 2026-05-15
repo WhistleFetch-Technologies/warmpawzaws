@@ -21,7 +21,7 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
-import { uploadToS3, generateS3Key } from '../utils/aws-clients';
+import { uploadToS3, generateS3Key } from '../utils/aws/aws-clients';
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -831,24 +831,46 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
   app.put("/medical-records/:recordId", async (c) => {
     try {
       const { recordId } = c.req.param();
-      const body = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
+
+      const hasPatch =
+        body.title !== undefined ||
+        body.description !== undefined ||
+        body.contentData !== undefined ||
+        body.fileUrl !== undefined;
+      if (!hasPatch) {
+        return c.json(
+          { success: false, error: 'At least one of title, description, contentData, or fileUrl is required' },
+          400
+        );
+      }
 
       const updateData: any = {
         updated_at: new Date().toISOString(),
       };
 
-      if (body.title) updateData.title = body.title;
-      if (body.description) updateData.description = body.description;
-      if (body.contentData) updateData.content_data = JSON.stringify(body.contentData);
-      if (body.fileUrl) updateData.file_url = body.fileUrl;
+      if (body.title !== undefined) updateData.title = body.title;
+      if (body.description !== undefined) updateData.description = body.description;
+      if (body.contentData !== undefined) {
+        updateData.content_data =
+          typeof body.contentData === 'string'
+            ? body.contentData
+            : JSON.stringify(body.contentData);
+      }
+      if (body.fileUrl !== undefined) updateData.file_url = body.fileUrl;
 
-      await update('medical_records', { id: recordId }, updateData);
+      const rows = await update('medical_records', { id: recordId }, updateData);
+      if (!rows || rows.length === 0) {
+        return c.json({ success: false, error: 'Medical record not found' }, 404);
+      }
 
+      const row = rows[0] as { id?: string; customer_id?: string };
       return c.json({
         success: true,
         message: 'Medical record updated successfully',
+        recordId: row.id ?? recordId,
+        customerId: row.customer_id,
       });
-
     } catch (error: any) {
       console.error('Error updating medical record:', error);
       return c.json({ error: error.message }, 500);
@@ -940,37 +962,53 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       // Presigned URLs will be generated on-demand when viewing the file
       // This prevents ExpiredToken errors when temporary credentials expire before the presigned URL
 
+      // RDS NOT NULL on created_by; use booking-scoped UUIDs. Role "system" for customer uploads
+      // satisfies legacy CHECK (vendor|staff|admin|system) where "customer" is not allowed.
+      const createdBy =
+        uploadedBy === 'vendor'
+          ? booking.vendor_id
+          : booking.customer_id;
+      const createdByRole =
+        uploadedBy === 'vendor' ? 'vendor' : 'system';
+
+      if (!createdBy) {
+        return c.json(
+          { error: 'Cannot determine creator for this booking (missing customer or vendor id)' },
+          400
+        );
+      }
+
       // Create medical record entry
       // ✅ FIX: Handle constraint error gracefully - try 'prescription', fallback to 'treatment' if constraint doesn't allow it
       let record;
+      const recordBase = {
+        pet_id: booking.pet_id,
+        customer_id: booking.customer_id,
+        vendor_id: booking.vendor_id,
+        booking_id: bookingId,
+        file_url: fileKey,
+        record_date: recordDate,
+        created_at: new Date().toISOString(),
+        created_by: createdBy,
+        created_by_role: createdByRole,
+      };
+
       try {
         record = await insert('medical_records', {
-          pet_id: booking.pet_id,
-          customer_id: booking.customer_id,
-          vendor_id: booking.vendor_id,
-          booking_id: bookingId,
+          ...recordBase,
           record_type: 'prescription',
           title: `Handwritten Prescription - ${new Date(recordDate).toLocaleDateString()}`,
           description: context || `Handwritten prescription uploaded by ${uploadedBy}`,
-          file_url: fileKey, // Store S3 key, not presigned URL
-          record_date: recordDate, // Mandatory date field
-          created_at: new Date().toISOString(),
         });
       } catch (constraintError: any) {
         // ✅ FIX: If constraint doesn't allow 'prescription', use 'treatment' as fallback
         if (constraintError.message && constraintError.message.includes('record_type_check')) {
           console.warn('[Medical Records] Constraint doesn\'t allow "prescription", using "treatment" as fallback');
           record = await insert('medical_records', {
-            pet_id: booking.pet_id,
-            customer_id: booking.customer_id,
-            vendor_id: booking.vendor_id,
-            booking_id: bookingId,
+            ...recordBase,
             record_type: 'treatment', // Fallback value that works with older constraints
             title: `Handwritten Prescription - ${new Date(recordDate).toLocaleDateString()}`,
             description: context || `Handwritten prescription uploaded by ${uploadedBy} [Type: Prescription]`,
-            file_url: fileKey, // Store S3 key, not presigned URL
-            record_date: recordDate,
-            created_at: new Date().toISOString(),
           });
         } else {
           throw constraintError;
@@ -997,6 +1035,82 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error uploading handwritten prescription:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /customer/prescriptions/upload
+   * Upload prescription file for customer (e.g., for pharmacy orders)
+   * Does not require bookingId or vendorId - just uploads file and returns URL
+   */
+  app.post("/customer/prescriptions/upload", async (c) => {
+    try {
+      const formData = await c.req.formData();
+      const file = formData.get('file') as File;
+      const customerId = formData.get('customerId') as string;
+      const customerPhone = formData.get('customerPhone') as string;
+
+      if (!file) {
+        return c.json({ error: 'file is required' }, 400);
+      }
+
+      // Validate file size (max 10MB)
+      const maxSize = 10 * 1024 * 1024;
+      if (file.size > maxSize) {
+        return c.json({ error: 'File size must be less than 10MB' }, 400);
+      }
+
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+      if (!allowedTypes.includes(file.type)) {
+        return c.json({ error: 'Only images (JPG, PNG, GIF, WEBP) and PDF files are allowed' }, 400);
+      }
+
+      // Upload file to S3
+      const { S3Client, PutObjectCommand, GetObjectCommand } = await import('@aws-sdk/client-s3');
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      
+      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+      
+      const timestamp = Date.now();
+      const fileExt = file.name.split('.').pop() || 'pdf';
+      const identifier = customerId || customerPhone || 'customer';
+      const fileKey = `prescriptions/customer/${identifier}/${timestamp}_${file.name}`;
+
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      await s3Client.send(new PutObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: fileKey,
+        Body: uint8Array,
+        ContentType: file.type || (fileExt === 'pdf' ? 'application/pdf' : 'image/jpeg'),
+      }));
+
+      // Generate presigned URL for immediate use
+      const signedUrl = await getSignedUrl(
+        s3Client,
+        new GetObjectCommand({
+          Bucket: BUCKET_NAME,
+          Key: fileKey,
+        }),
+        { expiresIn: 604800 } // 7 days
+      );
+
+      return c.json({
+        success: true,
+        url: signedUrl,
+        fileKey: fileKey,
+        fileName: file.name,
+        fileSize: file.size,
+        fileType: file.type,
+        message: 'Prescription uploaded successfully',
+      });
+
+    } catch (error: any) {
+      console.error('Error uploading customer prescription:', error);
+      return c.json({ error: error.message || 'Failed to upload prescription' }, 500);
     }
   });
 
@@ -1163,8 +1277,7 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
       const booking = bookings[0];
       const petId = booking.pet_id;
 
-      // ✅ FIX: Only get prescriptions from prescriptions table (doctor-created)
-      // Filter out uploaded documents from medical_records table
+      // ✅ FIX: Get prescriptions from prescriptions table (doctor-created)
       let prescriptionsTableRecords: any[] = [];
       try {
         const prescriptionsResult = await query(
@@ -1182,21 +1295,75 @@ export function registerMedicalRecordsEndpoints(app: Hono) {
           [petId || bookingId]
         );
         prescriptionsTableRecords = (prescriptionsResult as any).rows || [];
-        console.log(`[Prescriptions] Found ${prescriptionsTableRecords.length} prescriptions from prescriptions table (filtered out medical_records)`);
+        console.log(`[Prescriptions] Found ${prescriptionsTableRecords.length} prescriptions from prescriptions table`);
       } catch (prescError) {
         console.warn('Error querying prescriptions table:', prescError);
         prescriptionsTableRecords = [];
       }
 
-      // ✅ FIX: Only use prescriptions from prescriptions table (no medical_records)
-      const allPrescriptions = prescriptionsTableRecords;
+      // ✅ FIX: Also get uploaded prescription documents from medical_records table
+      let uploadedPrescriptions: any[] = [];
+      try {
+        const medicalRecordsResult = await query(
+          `SELECT mr.*,
+                  v.business_name as vendor_name,
+                  p.name as pet_name,
+                  'medical_records' as source,
+                  'uploaded' as record_type,
+                  mr.record_date as prescription_date,
+                  mr.title as medication_name,
+                  mr.description as instructions
+           FROM medical_records mr
+           LEFT JOIN vendors v ON mr.vendor_id = v.id
+           LEFT JOIN pets p ON mr.pet_id = p.id
+           WHERE mr.booking_id = $1::uuid
+           AND mr.is_active = true
+           AND (mr.record_type = 'prescription' 
+                OR (mr.record_type = 'treatment' AND mr.title ILIKE '%prescription%'))`,
+          [bookingId]
+        );
+        uploadedPrescriptions = (medicalRecordsResult as any).rows || [];
+        console.log(`[Prescriptions] Found ${uploadedPrescriptions.length} uploaded prescription documents from medical_records table`);
+      } catch (medicalError) {
+        console.warn('Error querying medical_records table for prescriptions:', medicalError);
+        uploadedPrescriptions = [];
+      }
+
+      // ✅ FIX: Combine both doctor-created prescriptions and uploaded prescription documents
+      const allPrescriptions = [...prescriptionsTableRecords, ...uploadedPrescriptions];
       const uniqueById = new Map();
       for (const p of allPrescriptions) {
         if (!uniqueById.has(p.id)) {
           uniqueById.set(p.id, p);
         }
       }
-      const prescriptions = Array.from(uniqueById.values());
+      let prescriptions = Array.from(uniqueById.values());
+
+      // ✅ FIX: Generate presigned URLs for uploaded prescription documents (file_url contains S3 key)
+      const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
+      const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
+
+      prescriptions = await Promise.all(
+        prescriptions.map(async (p: any) => {
+          // If it's an uploaded prescription with file_url (S3 key), generate presigned URL
+          if (p.source === 'medical_records' && p.file_url && !p.file_url.startsWith('http')) {
+            try {
+              const signedUrl = await getSignedUrl(
+                s3Client,
+                new GetObjectCommand({ Bucket: BUCKET_NAME, Key: p.file_url }),
+                { expiresIn: 604800 } // 7 days
+              );
+              return { ...p, file_url: signedUrl, prescription_file_url: signedUrl };
+            } catch (urlError: any) {
+              console.warn(`[Prescriptions] Failed to generate presigned URL for ${p.file_url}:`, urlError?.message);
+              return p; // Return without URL if generation fails
+            }
+          }
+          return p;
+        })
+      );
 
       // 4. Sort by date (latest first)
       prescriptions.sort((a, b) => {

@@ -1,0 +1,233 @@
+/**
+ * Shared payload builders for vendor auth success (verify-otp shape).
+ * Used by VerifyOtpHandlerEnhanced and admin vendor-portal bootstrap.
+ */
+import { generateProductionJWTToken, generateUATJWTToken } from '../../../utils/jwt-generator';
+import { query } from '../../../database/rds-connection';
+import {
+  getOrCreateCognitoUser,
+  authenticateCognitoUser,
+  CognitoTokens,
+} from '../../../utils/cognito-client';
+import { shouldUseUatJwtIssuer } from './uat-auth-env';
+
+export type VendorVerifyOtpInnerMeta = {
+  timestamp: string;
+  requestId: string;
+  version: 'v1';
+};
+
+async function resolveCustomerAuthVersionForJwt(userId: string): Promise<number> {
+  try {
+    const res = await query(
+      `SELECT COALESCE(auth_version, 0)::int AS av FROM customers WHERE id = $1::uuid LIMIT 1`,
+      [userId]
+    );
+    return Number((res as any).rows?.[0]?.av ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+async function resolveVendorAuthVersionForJwt(userId: string): Promise<number> {
+  try {
+    const res = await query(
+      `SELECT COALESCE(auth_version, 0)::int AS av FROM vendors WHERE id = $1::uuid LIMIT 1`,
+      [userId]
+    );
+    return Number((res as any).rows?.[0]?.av ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
+/** Issue access/id/refresh tokens — same branches as auth-enhanced verify-otp. */
+export async function issueAuthTokensAfterOtp(params: {
+  userId: string;
+  phone: string;
+  role: 'customer' | 'vendor' | 'admin';
+  /** Optional override; otherwise loaded from `customers.auth_version` for customers. */
+  customerAuthVersion?: number;
+  /** Optional override; otherwise loaded from `vendors.auth_version` for vendors. */
+  vendorAuthVersion?: number;
+  /**
+   * Lowercased API Gateway–style headers (e.g. from BaseHandlerEnhanced.getHeaders).
+   * When `X-UAT-Mode: true` on a non–production-like stage, issues UAT JWTs even if `UAT_MODE` env is unset.
+   */
+  requestHeaders?: Record<string, string>;
+  /** Set true after UAT password bypass so tokens always match bypass rules. */
+  preferUatJwt?: boolean;
+}): Promise<CognitoTokens> {
+  const { userId, phone, role } = params;
+  const useUatJwtIssuer = shouldUseUatJwtIssuer(params.requestHeaders, params.preferUatJwt);
+
+  let customerJwtAuthVersion: number | undefined;
+  if (role === 'customer') {
+    customerJwtAuthVersion =
+      params.customerAuthVersion !== undefined && params.customerAuthVersion !== null
+        ? Number(params.customerAuthVersion)
+        : await resolveCustomerAuthVersionForJwt(userId);
+  }
+
+  let vendorJwtAuthVersion: number | undefined;
+  if (role === 'vendor') {
+    vendorJwtAuthVersion =
+      params.vendorAuthVersion !== undefined && params.vendorAuthVersion !== null
+        ? Number(params.vendorAuthVersion)
+        : await resolveVendorAuthVersionForJwt(userId);
+  }
+
+  let cognitoTokens: CognitoTokens;
+
+  if (useUatJwtIssuer) {
+    cognitoTokens = await generateUATJWTToken({
+      userId,
+      phone,
+      role,
+      expiresIn: 24 * 60 * 60,
+      authVersion:
+        role === 'customer'
+          ? customerJwtAuthVersion
+          : role === 'vendor'
+            ? vendorJwtAuthVersion
+            : undefined,
+    });
+    console.log('[vendor-otp-success-payload] UAT Mode: Generated JWT tokens with 24h expiry');
+  } else {
+    const cognitoUserPoolId =
+      process.env.COGNITO_USER_POOL_ID ||
+      process.env.COGNITO_VENDOR_POOL_ID ||
+      process.env.COGNITO_CUSTOMER_POOL_ID ||
+      '';
+
+    if (!cognitoUserPoolId) {
+      console.warn(
+        '[vendor-otp-success-payload] Production Mode: Cognito not configured, using production-issuer JWT fallback'
+      );
+      cognitoTokens = await generateProductionJWTToken({
+        userId,
+        phone,
+        role,
+        expiresIn: 24 * 60 * 60,
+        authVersion:
+          role === 'customer'
+            ? customerJwtAuthVersion
+            : role === 'vendor'
+              ? vendorJwtAuthVersion
+              : undefined,
+      });
+    } else {
+      try {
+        const COGNITO_TIMEOUT_MS = 8000;
+        const cognitoAuthPromise = (async () => {
+          await getOrCreateCognitoUser(phone, undefined, role);
+          return authenticateCognitoUser(phone);
+        })();
+        const cognitoTimeout = new Promise<CognitoTokens>((_, reject) =>
+          setTimeout(() => reject(new Error('Cognito authentication timeout after 8 seconds')), COGNITO_TIMEOUT_MS)
+        );
+        cognitoTokens = await Promise.race([cognitoAuthPromise, cognitoTimeout]);
+      } catch (cognitoError: any) {
+        console.error('[vendor-otp-success-payload] Cognito failed:', cognitoError?.message || cognitoError);
+        console.warn('[vendor-otp-success-payload] Falling back to production-issuer JWT tokens');
+        cognitoTokens = await generateProductionJWTToken({
+          userId,
+          phone,
+          role,
+          expiresIn: 24 * 60 * 60,
+          authVersion:
+            role === 'customer'
+              ? customerJwtAuthVersion
+              : role === 'vendor'
+                ? vendorJwtAuthVersion
+                : undefined,
+        });
+      }
+    }
+  }
+
+  return cognitoTokens;
+}
+
+export function computeVendorIsNewUser(userId: string, userData: any): boolean {
+  return (
+    (userId && userId.startsWith('temp_vendor_')) ||
+    !userData?.id ||
+    !userData?.created_at ||
+    (userData?.onboarding_status && ['INIT', 'ROLE_PENDING'].includes(userData.onboarding_status))
+  );
+}
+
+/**
+ * First argument to BaseHandlerEnhanced.success() for verify-otp vendor success
+ * (becomes response.data in the outer envelope).
+ */
+export function buildVerifyOtpVendorSuccessWrapper(params: {
+  cognitoTokens: CognitoTokens;
+  userId: string;
+  phone: string;
+  userData: any;
+  isNewUser: boolean;
+  requestId: string;
+}): {
+  success: true;
+  data: {
+    token: {
+      access_token: string;
+      refresh_token: string;
+      expires_in: number;
+      token_type: string;
+    };
+    user: {
+      id: string;
+      phone: string;
+      role: string;
+      is_active: boolean;
+      created_at: string;
+    };
+    state: 'new' | 'existing';
+    profile: {
+      id: string | null;
+      phone: string;
+      business_name: string | null;
+      status: string;
+      onboarding_status: string;
+    };
+  };
+  meta: VendorVerifyOtpInnerMeta;
+} {
+  const { cognitoTokens, userId, phone, userData, isNewUser, requestId } = params;
+  const role = 'vendor';
+
+  return {
+    success: true,
+    data: {
+      token: {
+        access_token: cognitoTokens.accessToken,
+        refresh_token: cognitoTokens.refreshToken,
+        expires_in: cognitoTokens.expiresIn,
+        token_type: 'Bearer',
+      },
+      user: {
+        id: userId,
+        phone,
+        role,
+        is_active: userData?.is_active !== false,
+        created_at: userData?.created_at || new Date().toISOString(),
+      },
+      state: isNewUser ? 'new' : 'existing',
+      profile: {
+        id: userId && userId.startsWith('temp_vendor_') ? null : userId,
+        phone,
+        business_name: userData?.business_name || null,
+        status: userData?.status || 'pending',
+        onboarding_status: userData?.onboarding_status || 'INIT',
+      },
+    },
+    meta: {
+      timestamp: new Date().toISOString(),
+      requestId,
+      version: 'v1',
+    },
+  };
+}

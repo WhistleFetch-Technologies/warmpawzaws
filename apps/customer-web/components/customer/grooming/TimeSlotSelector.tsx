@@ -50,7 +50,7 @@ export function TimeSlotSelector({
     if (selectedDate && vendorId) {
       loadSlotsForDate(selectedDate);
     }
-  }, [selectedDate, vendorId, serviceStyle]);
+  }, [selectedDate, vendorId, serviceStyle, serviceDuration]);
 
   const loadSlotsForDate = async (date: string) => {
     try {
@@ -68,10 +68,16 @@ export function TimeSlotSelector({
         slots?: Array<{ time: string; available?: boolean; booked?: boolean; slotDuration?: number; bufferMinutes?: number; serviceStyles?: string[] } | string>;
         availabilityMeta?: Record<string, unknown>;
         message?: string;
+        isOnline?: boolean;
+        vendorOnline?: boolean;
       }>(`/customer/vendor/${vendorId}/available-slots?${params}`);
 
+      const explicitOffline =
+        response?.isOnline === false ||
+        response?.vendorOnline === false;
+
       if (!response?.success || !response.slots?.length) {
-        if (response?.message) setVendorOffline(true);
+        setVendorOffline(explicitOffline);
         setSlots([]);
         return;
       }
@@ -138,7 +144,7 @@ export function TimeSlotSelector({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-white border-b px-0 py-4 flex items-center gap-3">
         <button
@@ -147,7 +153,10 @@ export function TimeSlotSelector({
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="text-lg font-bold">Select Time Slot</h1>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-lg font-bold">Select Time Slot</h1>
+          <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
+        </div>
       </div>
 
       {/* Content */}
@@ -206,7 +215,8 @@ export function TimeSlotSelector({
 
         {/* Time Slots */}
         <div className="bg-white rounded-2xl p-0 shadow-sm">
-          <h3 className="font-bold text-gray-900 mb-4">Available Time Slots</h3>
+          <h3 className="font-bold text-gray-900 mb-1">Available Time Slots</h3>
+          <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
           
           {vendorOffline ? (
             <div className="text-center py-8">

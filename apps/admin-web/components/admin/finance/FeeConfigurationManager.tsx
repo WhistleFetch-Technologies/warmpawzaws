@@ -104,6 +104,7 @@ export function FeeConfigurationManager() {
       if (data.success) {
         setSaveStatus('success');
         setHasChanges(false);
+        await loadConfiguration();
         setTimeout(() => setSaveStatus('idle'), 3000);
       } else {
         setSaveStatus('error');

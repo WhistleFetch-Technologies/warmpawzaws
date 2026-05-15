@@ -97,6 +97,10 @@ interface Category {
   iconColor?: string;
   specializationCount: number;
   symptomCount: number;
+  customerVisibilityType?: string;
+  customerVisibilityState?: string;
+  customerVisibilityCity?: string;
+  customerDashboardCardActive?: boolean;
 }
 
 // ============================================================================
@@ -129,9 +133,27 @@ function CategoryModal({
     description: category?.description || '',
     icon: category?.icon || 'Folder',
     iconColor: category?.iconColor || 'text-blue-500',
+    customerVisibilityType: (category?.customerVisibilityType as string) || 'GLOBAL',
+    customerVisibilityState: category?.customerVisibilityState || '',
+    customerVisibilityCity: category?.customerVisibilityCity || '',
+    customerDashboardCardActive: category?.customerDashboardCardActive !== false,
   });
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [iconSearch, setIconSearch] = useState('');
+
+  useEffect(() => {
+    setForm({
+      categoryId: category?.categoryId || '',
+      name: category?.name || '',
+      description: category?.description || '',
+      icon: category?.icon || 'Folder',
+      iconColor: category?.iconColor || 'text-blue-500',
+      customerVisibilityType: (category?.customerVisibilityType as string) || 'GLOBAL',
+      customerVisibilityState: category?.customerVisibilityState || '',
+      customerVisibilityCity: category?.customerVisibilityCity || '',
+      customerDashboardCardActive: category?.customerDashboardCardActive !== false,
+    });
+  }, [category]);
 
   const filteredIcons = ICON_OPTIONS.filter(i => i.toLowerCase().includes(iconSearch.toLowerCase()));
 
@@ -234,6 +256,14 @@ function CategoryModal({
                 ))}
               </select>
             </div>
+          </div>
+
+          <div className="border-t pt-4 space-y-2">
+            <p className="text-sm font-medium text-gray-800">Customer home tiles</p>
+            <p className="text-xs text-gray-700 rounded-lg border border-blue-100 bg-blue-50 p-3">
+              Whether a category appears on the customer home (and in which regions) is controlled in{' '}
+              <strong>Marketing &amp; Promotions → Dashboard UI</strong>: choose <strong>Geographic Scope</strong>, then set each service under <strong>Service Launch Status</strong> (Launched, Coming Soon, Beta, or Hidden). The tile label still comes from the category name above.
+            </p>
           </div>
           
           {/* Preview */}
@@ -733,6 +763,10 @@ export function CategoriesTab() {
           iconColor: cat.iconColor || cat.icon_color || '',
           specializationCount: parseInt(cat.specializationCount) || 0,
           symptomCount: parseInt(cat.symptomCount) || 0,
+          customerVisibilityType: cat.customerVisibilityType || 'GLOBAL',
+          customerVisibilityState: cat.customerVisibilityState || '',
+          customerVisibilityCity: cat.customerVisibilityCity || '',
+          customerDashboardCardActive: cat.customerDashboardCardActive !== false,
         }));
         console.log('[CategoriesTab] Mapped categories:', mapped.length);
         setCategories(mapped);
@@ -801,10 +835,24 @@ export function CategoriesTab() {
   const handleSaveCategory = async (formData: any) => {
     setSaving(true);
     try {
+      const payload = {
+        categoryId: formData.categoryId,
+        name: formData.name,
+        description: formData.description || '',
+        icon: formData.icon,
+        iconColor: formData.iconColor,
+        status: 'active',
+        hasProblemGrid: false,
+        vendorRoles: [],
+        customerVisibilityType: formData.customerVisibilityType || 'GLOBAL',
+        customerVisibilityState: formData.customerVisibilityState || '',
+        customerVisibilityCity: formData.customerVisibilityCity || '',
+        customerDashboardCardActive: formData.customerDashboardCardActive !== false,
+      };
       if (catModal.category) {
-        await apiClient.put(`/admin/catalog/categories/${catModal.category.id}`, formData);
+        await apiClient.put(`/admin/catalog/categories/${catModal.category.id}`, payload);
       } else {
-        await apiClient.post('/admin/catalog/categories', formData);
+        await apiClient.post('/admin/catalog/categories', payload);
       }
       setCatModal({ open: false });
       loadCategories();
@@ -1105,6 +1153,7 @@ export function CategoriesTab() {
       {/* Modals */}
       {catModal.open && (
         <CategoryModal
+          key={catModal.category?.id || 'new-category'}
           category={catModal.category}
           onSave={handleSaveCategory}
           onClose={() => setCatModal({ open: false })}

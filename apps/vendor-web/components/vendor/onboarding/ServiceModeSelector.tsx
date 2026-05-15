@@ -77,7 +77,7 @@ export function ServiceModeSelector({
   const availableOptions = supportedModes.map(mode => modeOptions[mode]);
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-0">
+    <div className="min-h-screen bg-gray-50 vendor-app-column p-0">
       <div className="mb-0">
         <button onClick={onBack} className="text-primary hover:underline text-sm mb-4">
           ← Back

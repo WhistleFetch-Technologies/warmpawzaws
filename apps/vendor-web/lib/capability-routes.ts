@@ -13,6 +13,8 @@ export interface CapabilityRoute {
   parentRoute?: string; // For nested routes
   requiresBusiness?: boolean; // Only for business vendors
   relatedCapabilities?: string[]; // Related capabilities that should be grouped
+  /** When set, show as non-navigable “coming soon” in vendor UI (links disabled). */
+  comingSoon?: boolean;
 }
 
 export const CAPABILITY_ROUTES: Record<string, CapabilityRoute> = {
@@ -477,6 +479,7 @@ export const CAPABILITY_ROUTES: Record<string, CapabilityRoute> = {
     category: 'specialized',
     route: '/nutrition/plans',
     parentRoute: '/nutrition',
+    comingSoon: true,
   },
   food_delivery: {
     name: 'food_delivery',

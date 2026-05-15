@@ -1,9 +1,12 @@
 'use client';
 
-import { MyBookings } from '@/components/customer/MyBookings';
-import { useEffect, useState } from 'react';
+import { MyBookings } from '@/components/customer/booking/MyBookings';
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
-export default function BookingsPage() {
+function BookingsPageInner() {
+  const searchParams = useSearchParams();
+  const reviewBookingId = searchParams.get('reviewBookingId');
   const [phone, setPhone] = useState<string | null>(null);
 
   useEffect(() => {
@@ -15,6 +18,26 @@ export default function BookingsPage() {
     return <div>Loading...</div>;
   }
 
-  return <MyBookings phone={phone} onBack={() => window.history.back()} />;
+  return (
+    <MyBookings
+      phone={phone}
+      onBack={() => window.history.back()}
+      reviewBookingIdFromUrl={reviewBookingId}
+    />
+  );
+}
+
+export default function BookingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-orange-50/40 p-6 text-gray-600">
+          Loading…
+        </div>
+      }
+    >
+      <BookingsPageInner />
+    </Suspense>
+  );
 }
 

@@ -5,6 +5,7 @@ import { X, Calendar, Clock, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 interface FollowUpBookingModalProps {
   originalBookingId: string;
@@ -128,7 +129,7 @@ export function FollowUpBookingModal({
   return (
     <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center">
       <div 
-        className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto"
+        className="bg-white w-full max-w-customer rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto"
         style={{ animation: 'slideUp 0.3s ease-out' }}
       >
         {/* Header */}
@@ -175,7 +176,7 @@ export function FollowUpBookingModal({
             </label>
             <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
               {getAvailableDates().map((date) => {
-                const dateStr = date.toISOString().split('T')[0];
+                const dateStr = formatLocalDateYYYYMMDD(date);
                 return (
                   <button
                     key={dateStr}
@@ -200,10 +201,13 @@ export function FollowUpBookingModal({
           {/* Time Selection */}
           {selectedDate && (
             <div className="space-y-3">
-              <label className="block font-semibold text-gray-800 flex items-center gap-2">
-                <Clock className="w-5 h-5 text-[#FF8C42]" />
-                Select Time Slot
-              </label>
+              <div>
+                <label className="block font-semibold text-gray-800 mb-1 flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-[#FF8C42]" />
+                  Select Time Slot
+                </label>
+                <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 {timeSlots.map((slot) => (
                   <button

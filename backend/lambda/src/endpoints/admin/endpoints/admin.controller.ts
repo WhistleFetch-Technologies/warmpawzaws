@@ -25,7 +25,19 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/b
 import { query, select, update, insert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
-
+import {
+	linkVendorReferralRecordsOnVendorApproval,
+	linkVendorOnboardingReferralsFromIdentityMetadata,
+} from '../../../lib/services/referral-service';
+import {
+	packageFieldsFromBookingRow,
+	SQL_PACKAGE_PURCHASE_JOIN,
+	SQL_PACKAGE_PURCHASE_SELECT,
+} from '../../../utils/customer-booking-package-fields';
+import {
+	getTemporaryVendorSuppressionParams,
+	sqlExcludeSuppressedBookingRows,
+} from '../../../utils/temporary-vendor-ui-suppression';
 // ============================================================================
 // ADMIN HANDLERS
 // ============================================================================
@@ -33,10 +45,41 @@ import { isValidUUID } from '../../../types/entities';
 class VendorStatsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      // ✅ SQL: Get all vendors
-      const vendors = await select('vendors', {});
+      // ✅ FIX: Get all vendors excluding soft-deleted ones
+      // Use SQL query directly to properly filter and handle is_active type conversion
+      const vendorsResult = await query(`
+        SELECT 
+          id,
+          business_name,
+          owner_name,
+          status,
+          is_active,
+          is_deleted,
+          category,
+          created_at
+        FROM vendors
+        WHERE (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
+        ORDER BY created_at DESC
+      `);
 
-      const activeVendors = vendors.filter(v => v.status === 'approved' && v.is_active);
+      const vendors = vendorsResult.rows || [];
+
+      // Align with ListVendorsHandler and active-vendor SQL: COALESCE(is_active, true) — NULL means operational.
+      const normalizeIsActive = (value: any): boolean => {
+        if (value === null || value === undefined) {
+          return true;
+        }
+        if (value === true || value === 1 || value === '1' || value === 't' || value === 'true') {
+          return true;
+        }
+        return false;
+      };
+
+      // ✅ FIX: Filter active vendors - 'approved' and 'active' are semantically equivalent
+      // An active vendor was approved, so we should count both statuses
+      const activeVendors = vendors.filter(v => 
+        (v.status === 'approved' || v.status === 'active') && normalizeIsActive(v.is_active)
+      );
 
       // ✅ FIX: Get pending applications from vendor_onboarding_applications table (not vendors table)
       let pendingApplicationsCount = 0;
@@ -61,7 +104,64 @@ class VendorStatsHandler extends BaseHandler {
         pendingApplicationsCount = fallbackPending.length;
       }
 
-      const deactivatedVendors = vendors.filter(v => !v.is_active);
+      // Same re-approval queue as GET /admin/vendors/pending-applications-fixed (not in vendor_onboarding_applications)
+      try {
+        const reapprovalResult = await query(`
+          SELECT COUNT(*)::text as total,
+            SUM(
+              CASE WHEN DATE(v.updated_at) = CURRENT_DATE THEN 1 ELSE 0 END
+            )::text as today_count
+          FROM vendors v
+          WHERE v.status = 'pending'
+            AND (
+              (v.metadata->>'wasApprovedBefore')::boolean = true
+              OR v.metadata->>'wasApprovedBefore' = 'true'
+            )
+            AND (v.is_deleted IS NULL OR v.is_deleted = false OR v.is_deleted = 'f')
+        `);
+        if (reapprovalResult.rows?.[0]) {
+          const r = reapprovalResult.rows[0];
+          pendingApplicationsCount += parseInt(r.total || '0', 10);
+          pendingTodayCount += parseInt(r.today_count || '0', 10);
+        }
+      } catch (e) {
+        console.warn('Could not add re-approval pending counts for vendor stats:', e);
+      }
+
+      let complianceIssuesCount = 0;
+      let complianceHighPriority = 0;
+      try {
+        const ci = await query(`
+          SELECT COUNT(*)::text AS cnt,
+            COUNT(*) FILTER (WHERE LOWER(COALESCE(severity::text, '')) IN ('high', 'critical'))::text AS high_cnt
+          FROM compliance_issues
+          WHERE resolved_at IS NULL
+        `);
+        if (ci.rows?.[0]) {
+          complianceIssuesCount = parseInt(ci.rows[0].cnt || '0', 10);
+          complianceHighPriority = parseInt(ci.rows[0].high_cnt || '0', 10);
+        }
+      } catch (e) {
+        console.warn('Could not fetch compliance issue counts:', e);
+      }
+
+      let supportTicketsTotal = 0;
+      let supportTicketsOpen = 0;
+      try {
+        const st = await query(`
+          SELECT COUNT(*)::text AS total_tickets,
+            COUNT(*) FILTER (WHERE status IN ('open', 'in_progress'))::text AS open_tickets
+          FROM support_tickets
+        `);
+        if (st.rows?.[0]) {
+          supportTicketsTotal = parseInt(st.rows[0].total_tickets || '0', 10);
+          supportTicketsOpen = parseInt(st.rows[0].open_tickets || '0', 10);
+        }
+      } catch (e) {
+        console.warn('Could not fetch support ticket counts:', e);
+      }
+
+      const deactivatedVendors = vendors.filter(v => !normalizeIsActive(v.is_active));
       const rejectedVendors = vendors.filter(v => v.status === 'rejected');
 
       // Distribution by category
@@ -73,6 +173,10 @@ class VendorStatsHandler extends BaseHandler {
         }
       });
 
+      const pendingFromVendorsOnly = vendors.filter(
+        v => v.status === 'pending' || v.status === 'pending_approval'
+      ).length;
+
       return this.success({
         activeVendors: {
           count: activeVendors.length,
@@ -83,6 +187,19 @@ class VendorStatsHandler extends BaseHandler {
         pendingApplications: {
           count: pendingApplicationsCount,
           todayCount: pendingTodayCount,
+        },
+        complianceIssues: {
+          count: complianceIssuesCount,
+          highPriority: complianceHighPriority,
+        },
+        supportTickets: {
+          total: supportTicketsTotal,
+          open: supportTicketsOpen,
+        },
+        distribution: {
+          active: activeVendors.length,
+          deactivated: deactivatedVendors.length,
+          pending: pendingFromVendorsOnly,
         },
         deactivatedVendors: {
           count: deactivatedVendors.length,
@@ -263,7 +380,9 @@ class ListVendorsHandler extends BaseHandler {
       console.log('[ListVendors] Filters:', { status, search, category, role, vendorType, city, tier, isActive });
 
       // Build dynamic WHERE clause
-      let whereConditions: string[] = ['1=1'];
+      let whereConditions: string[] = [
+        "(v.is_deleted IS NULL OR v.is_deleted = false OR v.is_deleted = 'f')"
+      ];
       const params: any[] = [];
       let paramIdx = 1;
 
@@ -371,7 +490,11 @@ class ListVendorsHandler extends BaseHandler {
           (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type, onboarding_status FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
         ORDER BY v.created_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
@@ -383,7 +506,11 @@ class ListVendorsHandler extends BaseHandler {
         SELECT COUNT(DISTINCT v.id) as total
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
       `, params);
 
@@ -574,6 +701,16 @@ export function registerAdminEndpoints(app: Hono) {
   const { setupWebhookRoutes } = require('../../webhooks');
   setupWebhookRoutes(app);
 
+  // Diagnostic endpoint: always returns success for testing the event pipeline
+  app.post('/diagnostic/success', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    return c.json({
+      success: true,
+      data: { ping: 'ok', echo: body },
+      meta: { timestamp: new Date().toISOString() }
+    }, 200);
+  });
+
   app.get('/admin/vendors/stats', async (c) => {
     // ✅ SECURITY FIX: Require admin authentication
     const authResult = await requireAdminAuth(c);
@@ -585,6 +722,40 @@ export function registerAdminEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await statsHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  // ============================================================================
+  // LOYALTY / ACTIONS - Utility endpoint to fetch distinct action names
+  // ============================================================================
+  app.get('/admin/loyalty/actions', async (c) => {
+    try {
+      const search = (c.req.query('search') || '').trim();
+      const limitParam = c.req.query('limit') || '100';
+      const limit = Math.min(parseInt(limitParam, 10) || 100, 500);
+
+      const params: any[] = [];
+      let idx = 1;
+
+      const sql = `
+        SELECT DISTINCT action_name
+        FROM loyalty_action_rules
+        ${search ? `WHERE action_name ILIKE $${idx++}` : ''}
+        ORDER BY action_name
+        LIMIT $${idx}
+      `;
+      if (search) params.push(`%${search}%`);
+      params.push(limit);
+
+      const res = await query(sql, params);
+      const actions = (res.rows || [])
+        .map((r: any) => r?.action_name)
+        .filter((v: any) => typeof v === 'string' && v.length > 0);
+
+      return c.json({ success: true, actions });
+    } catch (err: any) {
+      console.error('[Admin] Failed to fetch loyalty action names:', err);
+      return c.json({ success: false, error: 'Failed to fetch actions' }, 500);
+    }
   });
 
   app.post('/admin/vendors/:vendorId/approve', async (c) => {
@@ -652,11 +823,22 @@ export function registerAdminEndpoints(app: Hono) {
         `UPDATE vendor_onboarding_applications SET status = 'CLARIFICATION_REQUIRED', admin_comments = $2, is_locked = false, locked_at = NULL, updated_at = NOW() WHERE id = $1`,
         [applicationId, notes]
       );
+      // ✅ FIX: Use vendor_identity_id from application, not application_id column
       try {
-        await query(
-          `UPDATE vendor_identity SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() WHERE application_id = $1 OR id = $1`,
+        const appCheck = await query(
+          `SELECT vendor_identity_id FROM vendor_onboarding_applications WHERE id = $1 LIMIT 1`,
           [applicationId]
         );
+        
+        if (appCheck.rows.length > 0 && appCheck.rows[0].vendor_identity_id) {
+          await query(
+            `UPDATE vendor_identity 
+             SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() 
+             WHERE id = $1 
+               AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')`,
+            [appCheck.rows[0].vendor_identity_id]
+          );
+        }
       } catch (e) {
         console.warn('Optional vendor_identity update failed:', (e as Error).message);
       }
@@ -694,8 +876,190 @@ export function registerAdminEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
+  // Get pending applications (new applications + re-approval cases)
+  app.get('/admin/vendors/pending-applications-fixed', async (c) => {
+    // ✅ SECURITY FIX: Require admin authentication
+    const authResult = await requireAdminAuth(c);
+    if (!authResult.authorized) {
+      return c.json({ error: authResult.error }, 401);
+    }
+
+    try {
+      const applications: any[] = [];
+
+      // 1️⃣ Get new vendor applications from vendor_onboarding_applications
+      try {
+        const newApplicationsResult = await query(`
+          SELECT 
+            voa.id,
+            voa.vendor_identity_id,
+            voa.status,
+            voa.submitted_at,
+            voa.created_at,
+            voa.updated_at,
+            voa.custom_fields,
+            voa.admin_comments,
+            vi.phone,
+            vi.email,
+            vi.full_name,
+            vi.business_name,
+            vi.owner_name,
+            vi.address,
+            vi.city,
+            vi.state,
+            vi.pincode,
+            vi.vendor_type,
+            vi.experience_years,
+            r.name as role_name,
+            r.display_name as role_display_name
+          FROM vendor_onboarding_applications voa
+          LEFT JOIN vendor_identity vi ON vi.id = voa.vendor_identity_id
+          LEFT JOIN roles r ON r.id = vi.selected_role_id
+          WHERE voa.status IN ('SUBMITTED', 'PENDING', 'UNDER_REVIEW')
+            AND (vi.is_deleted IS NULL OR vi.is_deleted = false OR vi.is_deleted = 'f')
+          ORDER BY voa.submitted_at DESC NULLS LAST, voa.created_at DESC
+        `);
+
+        for (const app of newApplicationsResult.rows || []) {
+          applications.push({
+            id: app.id,
+            vendorId: app.vendor_identity_id,
+            applicationId: app.id,
+            fullName: app.full_name || app.owner_name || app.business_name,
+            businessName: app.business_name,
+            ownerName: app.owner_name,
+            phone: app.phone,
+            email: app.email,
+            address: app.address,
+            city: app.city,
+            state: app.state,
+            pincode: app.pincode,
+            roleName: app.role_name,
+            roleDisplayName: app.role_display_name,
+            vendorType: app.vendor_type || 'business',
+            experienceYears: app.experience_years,
+            experience: app.experience_years ? `${app.experience_years} years` : null,
+            status: app.status.toLowerCase().replace(/_/g, '_'),
+            submittedAt: app.submitted_at || app.created_at,
+            createdAt: app.created_at,
+            customFields: app.custom_fields || {},
+            adminComments: app.admin_comments,
+            isReapproval: false,
+          });
+        }
+      } catch (e) {
+        console.warn('[pending-applications-fixed] Could not fetch new applications from vendor_onboarding_applications:', e);
+      }
+
+      // 2️⃣ Get re-approval cases from vendors table
+      try {
+        const reapprovalResult = await query(`
+          SELECT 
+            v.id,
+            v.phone,
+            v.email,
+            v.business_name,
+            v.owner_name,
+            v.role_id,
+            v.status,
+            v.city,
+            v.state,
+            v.address,
+            v.pincode,
+            v.experience_years,
+            v.created_at,
+            v.updated_at,
+            v.metadata,
+            r.name as role_name,
+            r.display_name as role_display_name,
+            vi.vendor_type
+          FROM vendors v
+          LEFT JOIN roles r ON r.id = v.role_id
+          LEFT JOIN LATERAL (
+            SELECT vendor_type
+            FROM vendor_identity vi2
+            WHERE (
+              vi2.phone = v.phone 
+              OR REPLACE(REPLACE(REPLACE(vi2.phone, ' ', ''), '+', ''), '-', '') = REPLACE(REPLACE(REPLACE(v.phone, ' ', ''), '+', ''), '-', '')
+            )
+            AND (vi2.is_deleted IS NULL OR vi2.is_deleted = false OR vi2.is_deleted = 'f')
+            ORDER BY vi2.updated_at DESC NULLS LAST
+            LIMIT 1
+          ) vi ON true
+          WHERE v.status = 'pending'
+            AND (
+              (v.metadata->>'wasApprovedBefore')::boolean = true
+              OR v.metadata->>'wasApprovedBefore' = 'true'
+            )
+            AND (v.is_deleted IS NULL OR v.is_deleted = false OR v.is_deleted = 'f')
+          ORDER BY 
+            CASE 
+              WHEN v.metadata->>'reapprovalRequestedAt' IS NOT NULL 
+              THEN (v.metadata->>'reapprovalRequestedAt')::timestamp 
+              ELSE v.updated_at 
+            END DESC NULLS LAST
+        `);
+
+        for (const vendor of reapprovalResult.rows || []) {
+          const metadata = vendor.metadata || {};
+          applications.push({
+            id: vendor.id,
+            vendorId: vendor.id,
+            applicationId: null, // No application ID for re-approvals
+            fullName: vendor.business_name || vendor.owner_name,
+            businessName: vendor.business_name,
+            ownerName: vendor.owner_name,
+            phone: vendor.phone,
+            email: vendor.email,
+            address: vendor.address,
+            city: vendor.city,
+            state: vendor.state,
+            pincode: vendor.pincode,
+            roleName: vendor.role_name,
+            roleDisplayName: vendor.role_display_name,
+            vendorType: vendor.vendor_type || 'business',
+            experienceYears: vendor.experience_years,
+            experience: vendor.experience_years ? `${vendor.experience_years} years` : null,
+            status: 'pending_reverification',
+            submittedAt: metadata.reapprovalRequestedAt || vendor.updated_at,
+            createdAt: vendor.created_at,
+            customFields: {},
+            adminComments: null,
+            isReapproval: true,
+            reapprovalReason: metadata.reapprovalReason || 'Critical profile fields updated',
+            previousStatus: metadata.previousStatus || 'approved',
+          });
+        }
+      } catch (e) {
+        console.warn('[pending-applications-fixed] Could not fetch re-approval cases from vendors:', e);
+      }
+
+      // Sort by submittedAt (most recent first)
+      applications.sort((a, b) => {
+        const dateA = new Date(a.submittedAt || a.createdAt || 0).getTime();
+        const dateB = new Date(b.submittedAt || b.createdAt || 0).getTime();
+        return dateB - dateA;
+      });
+
+      return c.json({
+        success: true,
+        applications,
+        total: applications.length,
+      });
+    } catch (error: any) {
+      console.error('[pending-applications-fixed] Error:', error);
+      return c.json({ 
+        success: false, 
+        error: error.message || 'Failed to fetch pending applications',
+        applications: [],
+        total: 0
+      }, 500);
+    }
+  });
+
   // Frontend compatibility: /admin/vendor/application/:applicationId/approve
   app.post('/admin/vendor/application/:applicationId/approve', async (c) => {
+    console.log('admin/vendor/application/:applicationId/approve--------------------->');
     // SECURITY FIX: Require admin authentication
     const authResult = await requireAdminAuth(c);
     if (!authResult.authorized) {
@@ -705,16 +1069,51 @@ export function registerAdminEndpoints(app: Hono) {
     const applicationId = c.req.param('applicationId');
 
     try {
-      //  Look up vendor_identity by application_id first
-      const identityResults = await query(
+      //  Look up vendor_identity by application_id
+      // Handle case where vi.application_id might not be a valid UUID (could be status string)
+      // Strategy: Find application first, then get identity from vendor_identity_id
+      // Fallback: If application not found, try finding identity directly by ID
+      let identityResults;
+      
+      // First, try to find the application and get identity from it
+      const appResult = await query(
+        `SELECT voa.*, voa.vendor_identity_id 
+         FROM vendor_onboarding_applications voa 
+         WHERE voa.id = $1`,
+        [applicationId]
+      );
+      
+      if (appResult.rows.length > 0) {
+        const app = appResult.rows[0];
+        
+        //Validate vendor_identity_id is a valid UUID before using it
+        if (!app.vendor_identity_id || 
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(app.vendor_identity_id)) {
+          console.error(`⚠️ [APPROVE] Invalid vendor_identity_id in application: ${app.vendor_identity_id}`);
+          return c.json({ error: 'Invalid application data: vendor_identity_id is not a valid UUID' }, 400);
+        }
+        
+        // Get identity from the application's vendor_identity_id
+        identityResults = await query(
         `SELECT vi.*, voa.id as app_id, voa.application_payload, voa.status as app_status,
                 r.name as role_name, r.id as role_id
          FROM vendor_identity vi
-         LEFT JOIN vendor_onboarding_applications voa ON voa.id = vi.application_id
+           LEFT JOIN vendor_onboarding_applications voa ON voa.id = $1
          LEFT JOIN roles r ON vi.selected_role_id = r.id
-         WHERE vi.application_id = $1 OR vi.id = $1 OR voa.id = $1`,
+           WHERE vi.id = $2`,
+          [applicationId, app.vendor_identity_id]
+        );
+      } else {
+        // Application not found - try finding identity directly by ID (backward compatibility)
+        identityResults = await query(
+          `SELECT vi.*, NULL as app_id, NULL as application_payload, NULL as app_status,
+                  r.name as role_name, r.id as role_id
+           FROM vendor_identity vi
+           LEFT JOIN roles r ON vi.selected_role_id = r.id
+           WHERE vi.id = $1`,
         [applicationId]
       );
+      }
 
       let vendorId: string;
       let identity: any = null;
@@ -722,15 +1121,24 @@ export function registerAdminEndpoints(app: Hono) {
       if (identityResults.rows.length > 0) {
         identity = identityResults.rows[0];
 
-        // Check if vendor already exists
+        // Check if vendor already exists - filter out deleted vendors
+        // Only use identity.vendor_id if it's a valid UUID, otherwise use identity.id
+        const vendorIdToCheck = (identity.vendor_id && 
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity.vendor_id))
+          ? identity.vendor_id 
+          : identity.id;
+        
         const existingVendor = await query(
-          `SELECT id FROM vendors WHERE id = $1 OR phone = $2`,
-          [identity.vendor_id || identity.id, identity.phone]
+          `SELECT id, is_deleted FROM vendors 
+           WHERE (id = $1 OR phone = $2)
+           AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
+           LIMIT 1`,
+          [vendorIdToCheck, identity.phone]
         );
 
         if (existingVendor.rows.length > 0) {
           vendorId = existingVendor.rows[0].id;
-          // Vendor exists but vendor_identity.vendor_id might not be set - link them
+          // Vendor exists and is not deleted - link them
           if (!identity.vendor_id || identity.vendor_id !== vendorId) {
             try {
               await query(
@@ -738,7 +1146,8 @@ export function registerAdminEndpoints(app: Hono) {
                  SET vendor_id = $1, 
                      onboarding_status = 'APPROVED',
                      updated_at = NOW()
-                 WHERE id = $2`,
+                 WHERE id = $2 
+                 AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')`,
                 [vendorId, identity.id]
               );
             } catch (linkErr) {
@@ -746,60 +1155,166 @@ export function registerAdminEndpoints(app: Hono) {
             }
           }
         } else {
+          // Check if identity.vendor_id points to a deleted vendor
+          // If it does, we MUST create a new vendor with a new ID
+          // Only check identity.vendor_id if it's a valid UUID (not a string like "approved")
+          let proposedVendorId: string | null = null;
+          
+          if (identity.vendor_id && 
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identity.vendor_id)) {
+            const deletedVendorCheck = await query(
+              `SELECT id, is_deleted FROM vendors WHERE id = $1 LIMIT 1`,
+              [identity.vendor_id]
+            );
+            
+            if (deletedVendorCheck.rows.length > 0) {
+              const vendor = deletedVendorCheck.rows[0];
+              const isDeleted = vendor.is_deleted === true || 
+                vendor.is_deleted === 't' ||
+                (typeof vendor.is_deleted === 'string' && vendor.is_deleted.toLowerCase() === 'true');
+              
+              if (isDeleted) {
+                console.log(`⚠️ [APPROVE] Identity ${identity.id} vendor_id ${identity.vendor_id} points to deleted vendor - generating new ID`);
+                proposedVendorId = null; // Will generate new UUID
+              } else {
+                // Shouldn't happen if query above worked, but be safe
+                proposedVendorId = identity.vendor_id;
+              }
+            } else {
+              // Vendor doesn't exist - can use identity.vendor_id
+              proposedVendorId = identity.vendor_id;
+            }
+          }
+          
+          // Generate new UUID if needed
+          if (!proposedVendorId) {
+            const { randomUUID } = await import('crypto');
+            proposedVendorId = randomUUID();
+            console.log(`✅ [APPROVE] Generating new unique vendor ID: ${proposedVendorId}`);
+          }
+          
+          // Double-check the ID doesn't exist (even if deleted)
+          const finalIdCheck = await query(
+            `SELECT id FROM vendors WHERE id = $1 LIMIT 1`,
+            [proposedVendorId]
+          );
+          
+          let finalVendorId = proposedVendorId;
+          if (finalIdCheck.rows.length > 0) {
+            // ID exists - generate new one
+            const { randomUUID } = await import('crypto');
+            finalVendorId = randomUUID();
+            console.log(`⚠️ [APPROVE] Proposed vendor ID ${proposedVendorId} already exists - generating new: ${finalVendorId}`);
+          }
+          
           // Create vendor from application data
           const formData = identity.application_payload || {};
           //Ensure email is never null - use phone-based fallback if needed
           const vendorEmail = formData.email || identity.email || `vendor-${identity.phone}@warmpawz.app`;
 
-          // Fetch default tier from vendor_tiers table also have a fallback of a basic paln 
-          let defaultTierName = 'Bronze';
+          const { resolveNewVendorOnboardingTier } = await import('../../../utils/onboarding-f100-tier');
+          const tr = await resolveNewVendorOnboardingTier({
+            email: vendorEmail,
+            businessName: (formData.businessName || formData.contactPersonName) as string | undefined,
+          });
+          const defaultTierName = tr.tier;
+          const defaultCommission = tr.commission_percentage;
+
           try {
-            const tierResult = await query(
-              `SELECT tier_name, commission_rate 
-          FROM vendor_tiers 
-          WHERE is_active = true 
-            AND (is_default = true OR is_free_tier = true)
-          ORDER BY is_default DESC NULLS LAST, tier_level ASC
-          LIMIT 1`
-            );
-
-            if (tierResult.rows && tierResult.rows.length > 0) {
-              defaultTierName = tierResult.rows[0].tier_name;
+            // Debug: log live vendors columns to ensure schema alignment
+            try {
+              const cols = await query(
+                `SELECT column_name 
+                 FROM information_schema.columns 
+                 WHERE table_name='vendors' 
+                 ORDER BY ordinal_position`
+              );
+              console.log('[DEBUG][ADMIN APPROVE] vendors columns:', (cols.rows || []).map((r: any) => r.column_name));
+            } catch (colErr) {
+              console.warn('[DEBUG][ADMIN APPROVE] Could not fetch vendors columns:', (colErr as Error).message);
             }
-          } catch (tierError: any) {
-            // Continue with fallback tier
-          }
 
-          const insertResult = await query(
+            console.log('[DEBUG][ADMIN APPROVE] Inserting vendor with columns: id, phone, email, owner_name, business_name, role_id, status, city, state, address, pincode, tier, commission_percentage, is_active, metadata, created_at, approved_at');
+            const insertResult = await query(
             `INSERT INTO vendors (
-              phone, email, owner_name, business_name, role_id, status, vendor_type,
-              city, state, address, pincode, tier, is_active, created_at, approved_at
-            ) VALUES ($1, $2, $3, $4, $5, 'approved', $6, $7, $8, $9, $10, $11, true, NOW(), NOW())
+              id, phone, email, owner_name, business_name, role_id, status,
+              city, state, address, pincode, tier, commission_percentage,
+              is_active, metadata, created_at, approved_at
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6, 'approved',
+              $7, $8, $9, $10, $11, $12,
+              true, '{}'::jsonb, NOW(), NOW()
+            )
             RETURNING id`,
             [
+              finalVendorId,
               identity.phone,
               vendorEmail,
               formData.contactPersonName || formData.businessName || 'Vendor',
               formData.businessName || formData.contactPersonName || 'Business',
-              identity.role_id || identity.selected_role_id,
-              identity.vendor_type || 'solo',
+              (identity.role_id || identity.selected_role_id),
               formData.city || 'Unknown',
               formData.state || 'Unknown',
               formData.address || 'Unknown',
               formData.pincode || formData.pinCode || '',
-              defaultTierName
+              defaultTierName,
+              defaultCommission
             ]
+            );
+            vendorId = insertResult.rows[0].id;
+          } catch (insErr) {
+            console.error('[DEBUG][ADMIN APPROVE] INSERT failed:', (insErr as Error).message);
+            throw insErr;
+          }
+
+          //Immediately verify vendor was created correctly
+          const verifyVendor = await query(
+            `SELECT id, is_deleted FROM vendors WHERE id = $1 LIMIT 1`,
+            [vendorId]
           );
-          vendorId = insertResult.rows[0].id;
+          
+          if (verifyVendor.rows.length > 0) {
+            const vendor = verifyVendor.rows[0];
+            const isDeleted = vendor.is_deleted === true || 
+              vendor.is_deleted === 't' ||
+              (typeof vendor.is_deleted === 'string' && vendor.is_deleted.toLowerCase() === 'true');
+            
+            if (isDeleted) {
+              console.error(`❌ [APPROVE] CRITICAL: Vendor ${vendorId} was created but is marked as deleted! Fixing...`);
+              await query(
+                `UPDATE vendors 
+                 SET is_deleted = false, 
+                     metadata = '{}'::jsonb,
+                     updated_at = NOW()
+                 WHERE id = $1`,
+                [vendorId]
+              );
+              console.log(`✅ [APPROVE] Fixed vendor ${vendorId} - set is_deleted to false`);
+            }
+          }
 
           // Update vendor_identity to link vendor_id and set status
+          //Only update if identity is not deleted
+          const verifyIdentity = await query(
+            `SELECT id, is_deleted FROM vendor_identity WHERE id = $1 LIMIT 1`,
+            [identity.id]
+          );
+          
+          if (verifyIdentity.rows.length > 0) {
+            const identityCheck = verifyIdentity.rows[0];
+            const isIdentityDeleted = identityCheck.is_deleted === true || 
+              identityCheck.is_deleted === 't' ||
+              (typeof identityCheck.is_deleted === 'string' && identityCheck.is_deleted.toLowerCase() === 'true');
+            
+            if (!isIdentityDeleted) {
           try {
             await query(
               `UPDATE vendor_identity 
                SET onboarding_status = 'APPROVED', 
                    vendor_id = $1,
                    updated_at = NOW()
-               WHERE id = $2`,
+                   WHERE id = $2 
+                   AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')`,
               [vendorId, identity.id]
             );
           } catch (updateErr) {
@@ -812,6 +1327,10 @@ export function registerAdminEndpoints(app: Hono) {
               );
             } catch (fallbackErr) {
               console.error('Failed to update vendor_identity (fallback):', fallbackErr);
+                }
+              }
+            } else {
+              console.warn(`⚠️ [APPROVE] Cannot update deleted vendor_identity ${identity.id}`);
             }
           }
         }
@@ -824,7 +1343,7 @@ export function registerAdminEndpoints(app: Hono) {
         vendorId = vendors[0].id;
       }
 
-      // ✅ FIX: Ensure facility/profile is provisioned after approval
+      //Ensure facility/profile is provisioned after approval
       // Update vendor record with any missing facility fields from application data
       // Do this BEFORE status update so facility data is available immediately
       try {
@@ -887,266 +1406,57 @@ export function registerAdminEndpoints(app: Hono) {
         [applicationId]
       );
 
-      // ✅ FIX: Update vendor_identity status to APPROVED and ensure vendor_id is set
+      //Update vendor_identity status to APPROVED and ensure vendor_id is set
+      // Use identity.id directly (we already validated it's a valid UUID)
       let updatedIdentity = null;
+      if (identity && identity.id) {
       try {
         const updateResult = await query(
           `UPDATE vendor_identity 
            SET onboarding_status = 'APPROVED', 
                vendor_id = COALESCE(vendor_id, $1),
                updated_at = NOW() 
-           WHERE (application_id = $2 OR id = $2 OR phone = $3) AND (vendor_id IS NULL OR vendor_id = $1)
+             WHERE id = $2 
+               AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
+               AND (vendor_id IS NULL OR vendor_id = $1)
            RETURNING *`,
-          [vendorId, applicationId, identity?.phone || '']
+            [vendorId, identity.id]
         );
         if (updateResult.rows.length > 0) {
           updatedIdentity = updateResult.rows[0];
         }
       } catch (updateErr) {
         console.error('Failed to update vendor_identity with vendor_id:', updateErr);
-        // Fallback: update status only
+          // Fallback: update status only (using identity.id which we know is valid)
+          try {
         const fallbackResult = await query(
-          `UPDATE vendor_identity SET onboarding_status = 'APPROVED', updated_at = NOW() 
-           WHERE application_id = $1 OR id = $1 OR phone = $2
+              `UPDATE vendor_identity 
+               SET onboarding_status = 'APPROVED', updated_at = NOW() 
+               WHERE id = $1 
+                 AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')
            RETURNING *`,
-          [applicationId, identity?.phone || '']
+              [identity.id]
         );
         if (fallbackResult.rows.length > 0) {
           updatedIdentity = fallbackResult.rows[0];
-        }
-      }
-
-      // Process vendor referral - check both metadata AND existing referral records
-      let referralProcessed = false;
-
-      // Method 1: Check metadata (from signup)
-      if (updatedIdentity && updatedIdentity.metadata && updatedIdentity.metadata.referral_code_id) {
-        try {
-          const { processVendorReferralSignup } = await import('../../../lib/services/referral-service');
-          const referralResult = await processVendorReferralSignup({
-            vendorId: vendorId,
-            referralCode: updatedIdentity.metadata.referral_code || '',
-            phone: updatedIdentity.phone || identity?.phone || '',
-          });
-
-          if (referralResult.success) {
-            console.log(`[ADMIN-APPROVAL] ✅ Vendor referral processed: ${referralResult.referrerPoints} points awarded to referrer`);
-            referralProcessed = true;
-          } else {
-            console.warn(`[ADMIN-APPROVAL] Vendor referral processing failed: ${referralResult.error}`);
-          }
-        } catch (refError: any) {
-          console.error('[ADMIN-APPROVAL] Error processing vendor referral:', refError);
-        }
-      }
-
-      // Method 2: Check for existing referral records for this vendor (fallback)
-      // This handles cases where metadata is missing but referral record exists
-      if (!referralProcessed) {
-        try {
-          const vendorPhone = updatedIdentity?.phone || identity?.phone || '';
-          const normalizedPhone = vendorPhone.replace(/\D/g, '').slice(-10);
-
-          // Find referral records for this vendor that are approved but don't have points
-          const referralRecords = await query(
-            `SELECT vr.* FROM vendor_referrals vr
-             WHERE vr.referred_vendor_id = $1
-             AND vr.status = 'approved'
-             AND NOT EXISTS (
-               SELECT 1 FROM loyalty_transactions lt
-               WHERE lt.customer_id = vr.referrer_vendor_id
-               AND lt.reference_type = 'vendor_referral'
-               AND lt.reference_id = vr.id
-             )
-             ORDER BY vr.approved_at DESC
-             LIMIT 1`,
-            [vendorId]
-          );
-
-          if (referralRecords.rows.length > 0) {
-            const referralRecord = referralRecords.rows[0];
-            console.log(`[ADMIN-APPROVAL] Found approved referral record ${referralRecord.id} without points, processing now...`);
-
-            // Award points directly to referrer
-            const { loyaltyPointsService } = await import('../../../lib/services/loyalty-points-service');
-            const pointsResult = await loyaltyPointsService.awardPoints({
-              vendorId: referralRecord.referrer_vendor_id,
-              actionName: 'vendor_refer_friend',
-              referenceType: 'vendor_referral',
-              referenceId: referralRecord.id,
-              description: `Vendor referral: Admin approved vendor ${vendorId} with code ${referralRecord.referral_code}`,
-            });
-
-            console.log(`[ADMIN-APPROVAL] ✅ Awarded ${pointsResult.points} points (₹${pointsResult.walletCredited} to wallet) to referrer vendor ${referralRecord.referrer_vendor_id}`);
-            referralProcessed = true;
-          }
-        } catch (refError: any) {
-          console.error('[ADMIN-APPROVAL] Error processing referral from record:', refError);
-        }
-      }
-
-      // Method 3: Check for existing referral records by phone (additional fallback)
-      // This handles cases where referral was applied/approved but metadata wasn't saved or points weren't awarded
-      // IMPORTANT: Only match by phone if referred_vendor_id is NULL (pending referral that hasn't been linked to a vendor yet)
-      // ALSO: Check for referrals that have points but wrong vendor_id (data inconsistency fix)
-      if (!referralProcessed) {
-        try {
-          const vendorPhone = identity?.phone?.replace(/\D/g, '').slice(-10) || '';
-
-          // Find referral records for this vendor that:
-          // 1. Don't have points awarded yet, OR
-          // 2. Have points but wrong/null vendor_id (data inconsistency)
-          // Priority: Match by referred_vendor_id first, then by phone ONLY if referred_vendor_id is NULL
-          const existingReferrals = await query(
-            `SELECT vr.*,
-             EXISTS (
-               SELECT 1 FROM loyalty_transactions lt
-               WHERE lt.customer_id = vr.referrer_vendor_id
-               AND lt.reference_type = 'vendor_referral'
-               AND lt.reference_id = vr.id
-             ) as has_points
-             FROM vendor_referrals vr
-             WHERE (
-               vr.referred_vendor_id = $1 
-               OR (vr.referred_vendor_id IS NULL AND vr.referred_phone = $2 AND vr.status = 'pending')
-               OR (vr.referred_phone = $2 AND vr.referred_vendor_id IS NULL)
-             )
-             AND vr.status IN ('applied', 'approved', 'pending')
-             ORDER BY 
-               CASE WHEN vr.referred_vendor_id = $1 THEN 1 ELSE 2 END,
-               vr.created_at DESC
-             LIMIT 1`,
-            [vendorId, vendorPhone]
-          );
-
-          if (existingReferrals.rows.length > 0) {
-            const referral = existingReferrals.rows[0];
-            const hasPoints = referral.has_points === true;
-
-            console.log(`[ADMIN-APPROVAL] Found existing referral record ${referral.id} for vendor ${vendorId}, processing...`);
-            console.log(`[ADMIN-APPROVAL] Referral status: ${referral.status}, Referrer: ${referral.referrer_vendor_id}, Referred Vendor ID: ${referral.referred_vendor_id}, Has Points: ${hasPoints}`);
-
-            // Only award points if they don't exist yet
-            if (!hasPoints) {
-              const { loyaltyPointsService } = await import('../../../lib/services/loyalty-points-service');
-              const pointsResult = await loyaltyPointsService.awardPoints({
-                vendorId: referral.referrer_vendor_id,
-                actionName: 'vendor_refer_friend',
-                referenceType: 'vendor_referral',
-                referenceId: referral.id,
-                description: `Vendor referral: Admin approved vendor ${vendorId} (code: ${referral.referral_code})`,
-              });
-
-              console.log(`[ADMIN-APPROVAL] ✅ Awarded ${pointsResult.points} points (₹${pointsResult.walletCredited} to wallet) to referrer ${referral.referrer_vendor_id}`);
-            } else {
-              console.log(`[ADMIN-APPROVAL] Points already exist for referral ${referral.id}, skipping award but will update referral record`);
             }
-
-            // CRITICAL: Always update referral record with the correct vendor ID and status
-            // This fixes data inconsistencies where points exist but vendor_id is wrong/null
-            // IMPORTANT: Update even if referral already has a different vendor_id (data fix)
-            const updateResult = await query(
-              `UPDATE vendor_referrals
-               SET referred_vendor_id = $1,
-                   status = 'approved',
-                   approved_at = COALESCE(approved_at, NOW()),
-                   applied_at = COALESCE(applied_at, NOW()),
-                   updated_at = NOW()
-               WHERE id = $2`,
-              [vendorId, referral.id]
-            );
-
-            console.log(`[ADMIN-APPROVAL] ✅ Updated referral ${referral.id} with vendor ID ${vendorId} and status 'approved'`);
-            console.log(`[ADMIN-APPROVAL] Update result: ${JSON.stringify(updateResult)}`);
-
-            referralProcessed = true;
+          } catch (fallbackErr) {
+            console.error('Failed to update vendor_identity (fallback):', fallbackErr);
           }
-        } catch (refError2: any) {
-          console.error('[ADMIN-APPROVAL] Error processing existing referral:', refError2);
-          console.error('[ADMIN-APPROVAL] Error stack:', refError2.stack);
         }
       }
 
-      // Method 4: Check for existing referral records for this vendor (fallback)
-      // This handles cases where referral was created but metadata wasn't stored
-      // CRITICAL: Also handles referrals with points but wrong/null vendor_id
-      if (!referralProcessed) {
-        try {
-          const vendorPhone = identity?.phone?.replace(/\D/g, '').slice(-10) || '';
+      await linkVendorReferralRecordsOnVendorApproval({
+        vendorId,
+        identity: updatedIdentity || identity,
+      });
 
-          // Find referrals by vendor_id OR by phone (if vendor_id is null)
-          // Include referrals that have points but wrong vendor_id (data fix)
-          const existingReferrals = await query(
-            `SELECT vr.*,
-             EXISTS (
-               SELECT 1 FROM loyalty_transactions lt
-               WHERE lt.customer_id = vr.referrer_vendor_id
-               AND lt.reference_type = 'vendor_referral'
-               AND lt.reference_id = vr.id
-             ) as has_points
-             FROM vendor_referrals vr
-             WHERE (
-               vr.referred_vendor_id = $1
-               OR (vr.referred_vendor_id IS NULL AND vr.referred_phone = $2)
-             )
-             AND vr.status IN ('applied', 'pending', 'approved')
-             ORDER BY 
-               CASE WHEN vr.referred_vendor_id = $1 THEN 1 ELSE 2 END,
-               vr.created_at DESC 
-             LIMIT 1`,
-            [vendorId, vendorPhone]
-          );
-
-          if (existingReferrals.rows.length > 0) {
-            const referral = existingReferrals.rows[0];
-            const hasPoints = referral.has_points === true;
-
-            console.log(`[ADMIN-APPROVAL] Found existing referral record: ${referral.id}, processing...`);
-            console.log(`[ADMIN-APPROVAL] Has points: ${hasPoints}, Current vendor_id: ${referral.referred_vendor_id}`);
-
-            // Award points if they don't exist
-            if (!hasPoints) {
-              // Points not awarded yet - award them now
-              // Ensure vendor_refer_friend rule exists
-              const { loyaltyRulesInitService } = await import('../../../lib/services/loyalty-rules-init-service');
-              await loyaltyRulesInitService.initializeVendorReferralRules();
-
-              const { loyaltyPointsService } = await import('../../../lib/services/loyalty-points-service');
-              const pointsResult = await loyaltyPointsService.awardPoints({
-                vendorId: referral.referrer_vendor_id,
-                actionName: 'vendor_refer_friend',
-                referenceType: 'vendor_referral',
-                referenceId: referral.id,
-                description: `Vendor referral: Admin approved vendor ${vendorId} with code ${referral.referral_code}`,
-              });
-
-              console.log(`[ADMIN-APPROVAL] ✅ Awarded ${pointsResult.points} points (₹${pointsResult.walletCredited} to wallet) to referrer vendor ${referral.referrer_vendor_id}`);
-            } else {
-              console.log(`[ADMIN-APPROVAL] Points already exist for referral ${referral.id}`);
-            }
-
-            // CRITICAL: Always update referral with correct vendor_id and status
-            // This fixes cases where points exist but vendor_id is wrong/null
-            await query(
-              `UPDATE vendor_referrals
-               SET referred_vendor_id = $1,
-                   status = 'approved',
-                   approved_at = COALESCE(approved_at, NOW()),
-                   applied_at = COALESCE(applied_at, NOW()),
-                   updated_at = NOW()
-               WHERE id = $2`,
-              [vendorId, referral.id]
-            );
-
-            console.log(`[ADMIN-APPROVAL] ✅ Updated referral ${referral.id} with vendor ID ${vendorId} and status 'approved'`);
-            referralProcessed = true;
-          }
-        } catch (refError: any) {
-          console.error('[ADMIN-APPROVAL] Error processing existing referral:', refError);
-          console.error('[ADMIN-APPROVAL] Error stack:', refError.stack);
-          // Don't fail approval if referral processing fails
-        }
-      }
+      await linkVendorOnboardingReferralsFromIdentityMetadata({
+        vendorId,
+        phone: (updatedIdentity || identity)?.phone,
+        metadata: (updatedIdentity || identity)?.metadata,
+        vendorIdentityId: (updatedIdentity || identity)?.id,
+      });
 
       // Create notification
       await insert('notifications', {
@@ -1184,11 +1494,21 @@ export function registerAdminEndpoints(app: Hono) {
     const reason = body.reason || 'Application rejected by admin';
 
     try {
-      // Update vendor_identity status
-      await query(
-        `UPDATE vendor_identity SET onboarding_status = 'REJECTED' WHERE application_id = $1 OR id = $1`,
+      // ✅ FIX: Update vendor_identity status - use vendor_identity_id from application, not application_id column
+      const appCheck = await query(
+        `SELECT vendor_identity_id FROM vendor_onboarding_applications WHERE id = $1 LIMIT 1`,
         [applicationId]
       );
+      
+      if (appCheck.rows.length > 0 && appCheck.rows[0].vendor_identity_id) {
+        await query(
+          `UPDATE vendor_identity 
+           SET onboarding_status = 'REJECTED' 
+           WHERE id = $1 
+             AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')`,
+          [appCheck.rows[0].vendor_identity_id]
+        );
+      }
 
       // Update application status
       await query(
@@ -1238,12 +1558,22 @@ export function registerAdminEndpoints(app: Hono) {
          WHERE id = $1`,
         [applicationId, notes]
       );
+      // ✅ FIX: Use vendor_identity_id from application, not application_id column
       try {
-        await query(
-          `UPDATE vendor_identity SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() 
-           WHERE application_id = $1 OR id = $1`,
+        const appCheck = await query(
+          `SELECT vendor_identity_id FROM vendor_onboarding_applications WHERE id = $1 LIMIT 1`,
           [applicationId]
         );
+        
+        if (appCheck.rows.length > 0 && appCheck.rows[0].vendor_identity_id) {
+          await query(
+            `UPDATE vendor_identity 
+             SET onboarding_status = 'CLARIFICATION_REQUIRED', updated_at = NOW() 
+             WHERE id = $1 
+               AND (is_deleted IS NULL OR is_deleted = false OR is_deleted = 'f')`,
+            [appCheck.rows[0].vendor_identity_id]
+          );
+        }
       } catch (e) {
         console.warn('Optional vendor_identity update failed:', (e as Error).message);
       }
@@ -1263,33 +1593,8 @@ export function registerAdminEndpoints(app: Hono) {
   // ============================================================================
 
   /**
-   * GET /admin/customers
-   * List all customers (for admin dashboard)
+   * GET /admin/customers — implemented in admin-customer-endpoints.ts (auth required).
    */
-  app.get('/admin/customers', async (c) => {
-    try {
-      // For now, allow without auth for testing (add auth later)
-      const customers = await select('customers', {});
-
-      return c.json({
-        success: true,
-        count: customers.length,
-        customers: customers.map(customer => ({
-          id: customer.id,
-          name: customer.full_name || customer.name,
-          full_name: customer.full_name,
-          email: customer.email,
-          phone: customer.phone,
-          created_at: customer.created_at,
-          is_active: customer.is_active,
-          status: customer.status || 'active',
-        })),
-      });
-    } catch (error: any) {
-      console.error('Error fetching customers:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
 
   /**
    * GET /admin/bookings
@@ -1298,9 +1603,20 @@ export function registerAdminEndpoints(app: Hono) {
   app.get('/admin/bookings', async (c) => {
     try {
       // For now, allow without auth for testing
-      const bookings = await query(`
+      const sup = getTemporaryVendorSuppressionParams();
+      let paramIdx = 1;
+      let suppressionClause = '';
+      const filterParams: unknown[] = [];
+      if (sup) {
+        suppressionClause = ` AND ${sqlExcludeSuppressedBookingRows('b', paramIdx, paramIdx + 1)}`;
+        filterParams.push(sup.vendorIds, sup.cutoffDateIst);
+        paramIdx += 2;
+      }
+      const bookings = await query(
+        `
         SELECT 
           b.*,
+          ${SQL_PACKAGE_PURCHASE_SELECT.trim()},
           c.full_name as customer_name,
           c.email as customer_email,
           c.phone as customer_phone,
@@ -1309,15 +1625,24 @@ export function registerAdminEndpoints(app: Hono) {
         FROM bookings b
         LEFT JOIN customers c ON b.customer_id = c.id
         LEFT JOIN vendors v ON b.vendor_id = v.id
+        ${SQL_PACKAGE_PURCHASE_JOIN}
         LEFT JOIN services s ON b.service_id = s.id
+        WHERE b.status <> 'pending_payment'
+          AND (
+            COALESCE(b.total_amount, 0) <= 0
+            OR LOWER(COALESCE(b.payment_status, '')) IN ('paid', 'completed', 'partially_refunded', 'refunded', 'partial')
+          )
+          ${suppressionClause}
         ORDER BY b.created_at DESC
         LIMIT 100
-      `);
+      `,
+        filterParams.length ? filterParams : undefined,
+      );
 
       return c.json({
         success: true,
         count: bookings.rows.length,
-        bookings: bookings.rows,
+        bookings: bookings.rows.map((row: any) => ({ ...row, ...packageFieldsFromBookingRow(row) })),
       });
     } catch (error: any) {
       console.error('Error fetching bookings:', error);

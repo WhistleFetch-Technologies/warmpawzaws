@@ -11,11 +11,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
 } from 'react-native';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, ReschedulingApi } from '../../services/api';
 
@@ -141,29 +141,17 @@ export function RescheduleBookingScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onBack}>
-            <Text style={styles.backButton}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Reschedule Booking</Text>
-        </View>
+      <OrangeBrandedScreenLayout title="Reschedule Booking" onBack={onBack} bodyBackgroundColor={colors.white}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </OrangeBrandedScreenLayout>
     );
   }
 
   if (policy && !policy.canReschedule) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onBack}>
-            <Text style={styles.backButton}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Reschedule Booking</Text>
-        </View>
+      <OrangeBrandedScreenLayout title="Reschedule Booking" onBack={onBack} bodyBackgroundColor={colors.white}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorIcon}>⚠️</Text>
           <Text style={styles.errorTitle}>Cannot Reschedule</Text>
@@ -171,19 +159,12 @@ export function RescheduleBookingScreen({
             {policy.reason || 'Rescheduling is not available for this booking'}
           </Text>
         </View>
-      </SafeAreaView>
+      </OrangeBrandedScreenLayout>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Reschedule Booking</Text>
-      </View>
-
+    <OrangeBrandedScreenLayout title="Reschedule Booking" onBack={onBack} bodyBackgroundColor={colors.white}>
       <ScrollView style={styles.content}>
         {/* Current Booking Info */}
         {currentDate && (
@@ -296,7 +277,7 @@ export function RescheduleBookingScreen({
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </OrangeBrandedScreenLayout>
   );
 }
 
@@ -304,25 +285,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.white,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    fontSize: typography.body,
-    color: colors.white,
-    marginRight: spacing.md,
-  },
-  headerTitle: {
-    fontSize: typography.h1,
-    fontWeight: 'bold',
-    color: colors.white,
-    flex: 1,
   },
   loadingContainer: {
     flex: 1,

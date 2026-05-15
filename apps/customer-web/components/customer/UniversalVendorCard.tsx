@@ -1,9 +1,10 @@
 'use client';
 
-import { MapPin, Star, Clock, Phone, ChevronRight, Tag, Percent, Gift, Calendar, Award, Navigation, Heart, CheckCircle } from 'lucide-react';
+import { MapPin, Clock, Phone, ChevronRight, Tag, Percent, Gift, Calendar, Award, Navigation, Heart, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { trackClick } from '@/lib/analytics';
+import { StarRating } from '@/components/customer/shared/StarRating';
 
 // ✅ FIX: Add promotion type for vendor discounts display
 interface VendorPromotion {
@@ -80,8 +81,7 @@ export function UniversalVendorCard({
   onToggleFavorite,
   showEnrichedData = true
 }: UniversalVendorCardProps) {
-  const rating = vendor.vendorRating || 4.5;
-  const reviewCount = vendor.vendorReviewCount || 0;
+  const reviewCount = vendor.vendorReviewCount ?? 0;
   const location = vendor.vendorLocation || 'Location not specified';
   const profileImage = vendor.vendorProfileImage || vendor.photoUrl;
 
@@ -149,14 +149,14 @@ export function UniversalVendorCard({
     return null;
   };
 
-  // ✅ ENRICHED: Format distance display
+  // Format distance display (integer km, whole metres under 1 km)
   const getDistanceDisplay = () => {
     if (vendor.distanceText) return vendor.distanceText;
     if (vendor.distance !== undefined && vendor.distance !== null) {
       if (vendor.distance < 1) {
-        return `${Math.round(vendor.distance * 1000)}m away`;
+        return `${Math.round(vendor.distance * 1000)} m away`;
       }
-      return `${vendor.distance.toFixed(1)} km away`;
+      return `${Math.round(vendor.distance)} km away`;
     }
     return null;
   };
@@ -260,16 +260,12 @@ export function UniversalVendorCard({
           
           {/* Rating, Reviews & Service Style */}
           <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <div className="flex items-center gap-1">
-              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-              <span className="text-sm font-medium">{Number(rating || 0).toFixed(1)}</span>
-            </div>
-            {reviewCount > 0 && (
-              <>
-                <span className="text-gray-400">•</span>
-                <span className="text-sm text-gray-600">{reviewCount} reviews</span>
-              </>
-            )}
+            <StarRating
+              rating={vendor.vendorRating}
+              reviewCount={reviewCount}
+              starsClassName="h-3.5 w-3.5"
+              textClassName="text-sm text-gray-600"
+            />
             {showEnrichedData && vendor.completedBookings && vendor.completedBookings > 0 && (
               <>
                 <span className="text-gray-400">•</span>
@@ -313,7 +309,7 @@ export function UniversalVendorCard({
               <MapPin className="w-4 h-4 flex-shrink-0" />
               <span className="truncate max-w-[120px]">{location}</span>
             </div>
-            {showEnrichedData && distanceDisplay && (
+            {distanceDisplay && (
               <div className="flex items-center gap-1 text-sm text-green-600 font-medium">
                 <Navigation className="w-3.5 h-3.5" />
                 <span>{distanceDisplay}</span>

@@ -3,10 +3,23 @@
  * Uses API Gateway (Lambda backend)
  */
 
+import {
+  getOpenVendorPortalBaseUrl,
+  normalizeConfiguredVendorWebUrl,
+  resolveVendorPortalOriginForLoopbackAdmin,
+  getOpenCustomerPortalBaseUrl,
+  LOCAL_CUSTOMER_ORIGIN,
+} from './open-vendor-portal-base';
+import { isJwtExpiringWithin, clearAdminSession } from './session-utils';
+
 type RuntimeConfig = {
   apiBaseUrl?: string;
   uatMode?: boolean;
   environment?: string;
+  /** Optional override for “Open vendor portal” target (deploy may inject via runtime-config). */
+  vendorWebUrl?: string;
+  /** Optional override for “Open customer portal” target. */
+  customerWebUrl?: string;
 };
 
 declare global {
@@ -20,22 +33,46 @@ function getRuntimeConfig(): RuntimeConfig {
   return window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
 }
 
+const DEV_API_GATEWAY_URL = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+const LEGACY_DEV_API_GATEWAY_SUBDOMAIN = 'iixwc3fzfl';
+
+function normalizeDevApiBaseUrl(url: string | undefined): string {
+  if (!url || typeof url !== 'string') return '';
+  const t = url.trim().replace(/\/+$/, '');
+  if (t.includes(LEGACY_DEV_API_GATEWAY_SUBDOMAIN)) {
+    return DEV_API_GATEWAY_URL;
+  }
+  return t;
+}
+
 /**
  * Determine if we're in production environment
  * Checks: runtime config → NEXT_PUBLIC_ENVIRONMENT → NODE_ENV → hostname
  */
 function isProductionEnvironment(): boolean {
-  // ✅ FIX: Check hostname FIRST as it's the most reliable signal
-  // This prevents any race condition where runtime config hasn't loaded yet
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
-    // Development indicators - check FIRST
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
       return false;
     }
-    // Production CloudFront domains
-    if (hostname.includes('cloudfront.net') || 
-        hostname.includes('warmpawz.com')) {
+    // Dev hostnames and dev admin CloudFront (not prod distributions)
+    if (hostname.startsWith('dev.') && hostname.includes('warmpawz.com')) {
+      return false;
+    }
+    if (hostname === 'dfof7mguaa0a5.cloudfront.net') {
+      return false;
+    }
+    // Production: exact prod domains or prod CloudFront URLs (not dev.*)
+    const isProdHostname =
+      hostname === 'admin.warmpawz.com' ||
+      hostname === 'vendor.warmpawz.com' ||
+      hostname === 'customer.warmpawz.com' ||
+      hostname === 'warmpawz.com' ||
+      hostname === 'www.warmpawz.com';
+    if (isProdHostname) {
+      return true;
+    }
+    if (hostname.includes('cloudfront.net')) {
       return true;
     }
   }
@@ -70,37 +107,91 @@ function getApiGatewayUrl(): string {
   const isProd = isProductionEnvironment();
   return isProd
     ? 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'
-    : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    : DEV_API_GATEWAY_URL;
 }
 
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   const cfg = getRuntimeConfig();
-  
-  // Priority: runtime-config.js (deploy-time) → build-time env → environment-based fallback
+
+  let raw = '';
   if (cfg.apiBaseUrl) {
-    return cfg.apiBaseUrl;
+    raw = cfg.apiBaseUrl;
+  } else if (typeof window !== 'undefined' && (window as any).__NEXT_PUBLIC_API_BASE_URL__) {
+    raw = (window as any).__NEXT_PUBLIC_API_BASE_URL__;
+  } else if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
+    raw = process.env.NEXT_PUBLIC_API_BASE_URL;
+  } else {
+    return getApiGatewayUrl();
   }
-  
-  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL;
+
+  const normalized = normalizeDevApiBaseUrl((raw && typeof raw === 'string' ? raw.trim() : '').replace(/\/+$/, ''));
+  return normalized || getApiGatewayUrl();
+}
+
+/**
+ * Base URL for vendor-web when admin uses “Open vendor portal”.
+ * Uses runtime `vendorWebUrl` when set; if admin runs on 127.0.0.1 but the API is remote (e.g. dev
+ * API Gateway), returns deployed dev vendor HTTPS — not http://127.0.0.1:3002.
+ */
+export function getVendorWebBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const cfg = getRuntimeConfig();
+    const vw = (cfg.vendorWebUrl && typeof cfg.vendorWebUrl === 'string' ? cfg.vendorWebUrl.trim() : '').replace(
+      /\/+$/,
+      ''
+    );
+    if (vw && !/localhost|127\.0\.0\.1/i.test(vw)) {
+      return normalizeConfiguredVendorWebUrl(vw);
+    }
+
+    const loopbackVendor = resolveVendorPortalOriginForLoopbackAdmin(getApiBaseUrl());
+    if (loopbackVendor !== null) {
+      return loopbackVendor;
+    }
   }
-  
-  // ✅ FIX: Use environment-aware API Gateway selection (no hardcoded fallback)
-  return getApiGatewayUrl();
+  return getOpenVendorPortalBaseUrl();
+}
+
+/**
+ * Base URL for customer-web when admin uses “Open customer portal”.
+ */
+export function getCustomerWebBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const cfg = getRuntimeConfig();
+    const cw = (cfg.customerWebUrl && typeof cfg.customerWebUrl === 'string' ? cfg.customerWebUrl.trim() : '').replace(
+      /\/+$/,
+      ''
+    );
+    if (cw && !/localhost|127\.0\.0\.1/i.test(cw)) {
+      return cw;
+    }
+    const apiBase = getApiBaseUrl();
+    if (resolveVendorPortalOriginForLoopbackAdmin(apiBase) !== null) {
+      return LOCAL_CUSTOMER_ORIGIN;
+    }
+  }
+  return getOpenCustomerPortalBaseUrl();
 }
 
 // UAT Mode: Check runtime config FIRST (deploy-time), then build-time env (local dev)
 // ✅ FIX: NEVER allow UAT mode on production hostnames
 export function isUatMode(): boolean {
   if (typeof window !== 'undefined') {
-    // ✅ FIX: Check production hostname - NEVER return true for production
     const hostname = window.location.hostname || '';
-    const isProductionHostname = hostname.includes('cloudfront.net') || 
-                                 hostname.includes('warmpawz.com');
     const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1';
-    
-    if (isProductionHostname && !isLocalhost) {
-      return false; // NEVER UAT mode on production hostnames
+    const isDevSubdomain = hostname.startsWith('dev.') && hostname.includes('warmpawz.com');
+    const isProductionHostname =
+      hostname === 'admin.warmpawz.com' ||
+      hostname === 'vendor.warmpawz.com' ||
+      hostname === 'customer.warmpawz.com' ||
+      hostname === 'warmpawz.com' ||
+      hostname === 'www.warmpawz.com' ||
+      hostname === 'dbr09zyoq9akb.cloudfront.net' ||
+      hostname === 'd1y5ywletev82x.cloudfront.net' ||
+      hostname === 'dg69gqp2frh39.cloudfront.net';
+
+    if (isProductionHostname && !isDevSubdomain && !isLocalhost) {
+      return false;
     }
     
     // Check prod mode flag
@@ -132,8 +223,14 @@ export class RateLimitError extends Error {
   }
 }
 
+function normalizeApiBaseForRequest(url: string): string {
+  return (url && typeof url === 'string' ? url.trim() : '').replace(/\/+$/, '');
+}
+
 export class ApiClient {
   private baseUrl: string;
+  /** Deduplicate concurrent POST /admin/auth/refresh calls from 401 recovery and proactive refresh. */
+  private adminAuthRefreshInFlight: Promise<boolean> | null = null;
 
   constructor(baseUrl?: string) {
     // Use provided URL or get from config (with fallback)
@@ -179,6 +276,108 @@ export class ApiClient {
     return null;
   }
 
+  /** Stored refresh from admin login (or Cognito bundle when used). */
+  private getStoredAdminRefreshToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    const fromLs = localStorage.getItem('adminRefreshToken');
+    if (fromLs) return fromLs;
+    try {
+      const { getCognitoTokens } = require('./cognito-auth');
+      return getCognitoTokens()?.refreshToken ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private isEligibleForAdminBearerRefresh(endpoint: string): boolean {
+    if (!endpoint.startsWith('/admin')) return false;
+    if (endpoint === '/admin/auth/login' || endpoint.startsWith('/admin/auth/login?')) return false;
+    if (endpoint === '/admin/auth/refresh' || endpoint.startsWith('/admin/auth/refresh?')) return false;
+    if (endpoint === '/admin/auth/signup' || endpoint.startsWith('/admin/auth/signup?')) return false;
+    return true;
+  }
+
+  private persistAdminSessionFromRefreshBody(data: any): boolean {
+    if (typeof window === 'undefined' || !data?.success || !data?.token?.access_token) {
+      return false;
+    }
+    const t = data.token;
+    localStorage.setItem('adminAuthToken', t.access_token);
+    if (t.refresh_token) {
+      localStorage.setItem('adminRefreshToken', t.refresh_token);
+    }
+    if (t.id_token) {
+      localStorage.setItem('adminIdToken', t.id_token);
+    }
+    if (data.admin?.email) {
+      localStorage.setItem('adminEmail', data.admin.email);
+    }
+    if (data.admin?.id) {
+      localStorage.setItem('adminId', data.admin.id);
+    }
+    if (data.admin?.name) {
+      localStorage.setItem('adminName', data.admin.name);
+    }
+    if (Array.isArray(data.permissions) && data.permissions.length > 0) {
+      localStorage.setItem('adminPermissions', JSON.stringify(data.permissions));
+    }
+    return true;
+  }
+
+  private async performAdminTokenRefresh(baseUrlNorm: string): Promise<boolean> {
+    const rt = this.getStoredAdminRefreshToken();
+    if (!rt) return false;
+    const url = `${baseUrlNorm}/admin/auth/refresh`;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (UAT_MODE && typeof window !== 'undefined') {
+      headers['X-UAT-Mode'] = 'true';
+    }
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ refreshToken: rt }),
+      });
+    } catch {
+      return false;
+    }
+    if (!res.ok) return false;
+    let data: any;
+    try {
+      data = await res.json();
+    } catch {
+      return false;
+    }
+    return this.persistAdminSessionFromRefreshBody(data);
+  }
+
+  private trySilentAdminRefreshWithBase(baseUrlNorm: string): Promise<boolean> {
+    if (!this.adminAuthRefreshInFlight) {
+      this.adminAuthRefreshInFlight = this.performAdminTokenRefresh(baseUrlNorm).finally(() => {
+        this.adminAuthRefreshInFlight = null;
+      });
+    }
+    return this.adminAuthRefreshInFlight;
+  }
+
+  private handleAdminRefreshHardFailure(): void {
+    if (typeof window === 'undefined') return;
+    sessionStorage.setItem(
+      '_warmpawz_admin_session_msg',
+      'Session expired. Please sign in again.'
+    );
+    try {
+      const { clearCognitoTokens } = require('./cognito-auth');
+      clearCognitoTokens();
+    } catch {
+      /* ignore */
+    }
+    clearAdminSession();
+    sessionStorage.removeItem('_warmpawz_admin_has_session');
+    window.location.href = '/';
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
@@ -190,10 +389,9 @@ export class ApiClient {
     
     // If still empty, wait a bit and retry (runtime-config.js might be loading)
     if (!currentBaseUrl && typeof window !== 'undefined') {
-      // Check window config directly
       const windowConfig = window.__WARMPAWZ_RUNTIME_CONFIG__;
       if (windowConfig?.apiBaseUrl) {
-        currentBaseUrl = windowConfig.apiBaseUrl;
+        currentBaseUrl = normalizeDevApiBaseUrl(windowConfig.apiBaseUrl) || '';
       }
     }
     
@@ -241,9 +439,21 @@ export class ApiClient {
     }
     
     // Fix: Normalize URL to avoid double slashes
-    const base = currentBaseUrl.replace(/\/+$/, ''); // Remove trailing slashes
-    const path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
+    const base = normalizeApiBaseForRequest(currentBaseUrl);
+    const path = endpoint.replace(/^\/+/, '/'); // Ensure single leading slash
     const url = `${base}${path}`;
+
+    if (
+      typeof window !== 'undefined' &&
+      retryCount === 0 &&
+      this.isEligibleForAdminBearerRefresh(endpoint)
+    ) {
+      const bearer = this.getAuthToken();
+      if (bearer && this.getStoredAdminRefreshToken() && isJwtExpiringWithin(bearer, 300)) {
+        await this.trySilentAdminRefreshWithBase(base);
+      }
+    }
+
     const token = this.getAuthToken();
     
     const headers: Record<string, string> = {
@@ -360,26 +570,35 @@ export class ApiClient {
         );
       }
       
-      // Handle 401: In UAT mode or for admin routes, don't redirect - let components handle gracefully
+      // Handle 401: silent admin refresh once, then session-expired redirect for protected /admin/* calls
       if (response.status === 401) {
         if (typeof window !== 'undefined') {
-          // Check if we're in UAT mode - if so, don't redirect, just throw error
+          const isAdminProtected =
+            this.isEligibleForAdminBearerRefresh(endpoint) && retryCount === 0;
+
+          if (isAdminProtected) {
+            const hadRefresh = !!this.getStoredAdminRefreshToken();
+            const refreshed = hadRefresh ? await this.trySilentAdminRefreshWithBase(base) : false;
+            if (refreshed) {
+              return this.request<T>(endpoint, options, retryCount + 1);
+            }
+            if (hadRefresh) {
+              this.handleAdminRefreshHardFailure();
+              throw new Error('Session expired. Please sign in again.');
+            }
+          }
+
           const isUat = getRuntimeConfig().uatMode || UAT_MODE;
           const isAdminRoute = endpoint.startsWith('/admin');
-          
-          // Don't redirect if in UAT mode OR if it's an admin route (admin app should handle auth differently)
+
           if (!isUat && !isAdminRoute) {
-            // Only redirect in production mode for non-admin routes
             localStorage.removeItem('adminAuthToken');
             localStorage.removeItem('adminId');
             window.location.href = '/';
-          } else {
-            // In UAT mode or admin routes, just throw error with helpful message
-            if (UAT_MODE) {
-              console.warn('⚠️ [API Client] 401 Unauthorized - Check authentication token');
-              console.warn('   Endpoint:', endpoint);
-              console.warn('   Token present:', !!token);
-            }
+          } else if (UAT_MODE && isAdminRoute && !isAdminProtected) {
+            console.warn('⚠️ [API Client] 401 Unauthorized - Check authentication token');
+            console.warn('   Endpoint:', endpoint);
+            console.warn('   Token present:', !!token);
           }
         }
       }
@@ -431,6 +650,32 @@ export class ApiClient {
     });
   }
 
+  /**
+   * Proactive admin alerts snapshot (polling). Omit `since` on first call to receive serverTime only.
+   */
+  async postAdminAiCopilotChat(body: {
+    message: string;
+    pathname?: string;
+    conversationId?: string;
+  }): Promise<{
+    success: boolean;
+    conversationId?: string;
+    response?: string;
+    intent?: string;
+    confidence?: number;
+    suggestedActions?: string[];
+    requiresAgent?: boolean;
+    usedBedrock?: boolean;
+    requestId?: string;
+    error?: string;
+    code?: string;
+  }> {
+    return this.request('/admin/ai-copilot/chat', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
   /** Get current API base URL (for FormData/fetch when apiClient methods don't apply) */
   getBaseUrl(): string {
     return this.baseUrl || getApiBaseUrl();
@@ -446,8 +691,13 @@ export class ApiClient {
   // Clear auth token
   clearAuth(): void {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('adminAuthToken');
-      localStorage.removeItem('adminId');
+      try {
+        const { clearCognitoTokens } = require('./cognito-auth');
+        clearCognitoTokens();
+      } catch {
+        /* ignore */
+      }
+      clearAdminSession();
     }
   }
 }

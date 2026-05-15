@@ -17,7 +17,8 @@ export const DEFAULT_RETRY_CONFIG: RetryConfig = {
   baseDelayMs: 500,  // Reduced from 1000ms to 500ms for faster initial retry
   maxDelayMs: 15000,  // Increased from 10000ms to 15000ms to allow longer waits for cold starts
   backoffMultiplier: 2,
-  retryableStatusCodes: [408, 429, 500, 502, 503, 504],
+  // Omit 500: app/logic errors retrying 5× adds ~30s+ per call and spams the API (see resilientFetch).
+  retryableStatusCodes: [408, 429, 502, 503, 504],
   retryableErrors: ['ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'Failed to fetch'],
 };
 
@@ -146,16 +147,18 @@ export async function resilientFetch(
 
       clearTimeout(timeoutId);
 
-      // Check if response is retryable
+      // Non-retryable HTTP errors (4xx, etc.): return the Response so api-client can read the body
+      // and show the real message (e.g. Razorpay validation). Throwing here caused only "HTTP 400".
       if (!response.ok) {
         const isRetryable = retryConfig.retryableStatusCodes.includes(response.status);
-        const error = new ApiError(
-          `HTTP ${response.status}`,
-          response.status >= 500 ? 'server_error' : 'client_error',
-          response.status,
-          isRetryable
-        );
-        throw error;
+        if (isRetryable) {
+          throw new ApiError(
+            `HTTP ${response.status}`,
+            response.status >= 500 ? 'server_error' : 'client_error',
+            response.status,
+            true
+          );
+        }
       }
 
       return response;

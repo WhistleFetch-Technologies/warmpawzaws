@@ -11,12 +11,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
   Modal,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { WalletApi } from '../../services/api';
 
@@ -169,24 +170,17 @@ export function WalletScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Wallet</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
+    <>
+    <OrangeBrandedScreenLayout title="My Wallet" onBack={onBack} bodyBackgroundColor={colors.white}>
       <ScrollView style={styles.content}>
         {/* Wallet Balance Card */}
         <View style={styles.balanceCard}>
@@ -212,11 +206,14 @@ export function WalletScreen({
             </View>
           )}
           <TouchableOpacity
-            style={styles.addMoneyButton}
+            style={[styles.addMoneyButton, styles.addMoneyButtonDisabled]}
             onPress={() => setShowTopUpModal(true)}
+            disabled
           >
-            <Text style={styles.addMoneyIcon}>➕</Text>
-            <Text style={styles.addMoneyText}>Add Money</Text>
+            <Text style={[styles.addMoneyIcon, styles.addMoneyIconDisabled]}>➕</Text>
+            <Text style={[styles.addMoneyText, styles.addMoneyTextDisabled]}>
+              Add Money
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -296,6 +293,7 @@ export function WalletScreen({
           )}
         </View>
       </ScrollView>
+    </OrangeBrandedScreenLayout>
 
       {/* Top-Up Modal */}
       <Modal
@@ -526,7 +524,7 @@ export function WalletScreen({
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </>
   );
 }
 
@@ -534,29 +532,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.white,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    fontSize: typography.fontSizes.md,
-    color: colors.white,
-  },
-  headerTitle: {
-    fontSize: typography.fontSizes['2xl'],
-    fontWeight: 'bold',
-    color: colors.white,
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerSpacer: {
-    width: 60,
   },
   loadingContainer: {
     flex: 1,
@@ -622,14 +597,23 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     marginTop: spacing.sm,
   },
+  addMoneyButtonDisabled: {
+    opacity: 0.55,
+  },
   addMoneyIcon: {
     fontSize: 20,
     marginRight: spacing.xs,
+  },
+  addMoneyIconDisabled: {
+    opacity: 0.7,
   },
   addMoneyText: {
     fontSize: typography.fontSizes.md,
     fontWeight: 'bold',
     color: colors.primary,
+  },
+  addMoneyTextDisabled: {
+    color: colors.textSecondary,
   },
   quickActions: {
     flexDirection: 'row',

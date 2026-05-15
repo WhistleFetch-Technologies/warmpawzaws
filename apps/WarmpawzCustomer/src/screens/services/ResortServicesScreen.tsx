@@ -11,14 +11,20 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
+import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, PaymentApi } from '../../services/api';
 import RazorpayCheckout from 'react-native-razorpay';
+import {
+  applyWarmpawzCustomerToRazorpayOptions,
+  profileEmailAndName,
+} from '../../utils/razorpay-checkout-options';
+import { customerFacingRating } from '../../utils/rating-display';
 
 type ViewType = 
   | 'landing'
@@ -42,6 +48,7 @@ interface Resort {
   name: string;
   address: string;
   rating: number;
+  reviewCount: number;
   image?: string;
 }
 
@@ -116,11 +123,18 @@ export function ResortServicesScreen({
       services.forEach((service: any) => {
         const vendorId = service.vendorId;
         if (!resortMap.has(vendorId)) {
+          const rc =
+            Number(service.vendorReviewCount ?? service.vendor_review_count ?? 0) || 0;
+          const r =
+            service.vendorRating != null ? Number(service.vendorRating) : NaN;
+          const rating =
+            rc > 0 && Number.isFinite(r) && r > 0 ? r : 0;
           resortMap.set(vendorId, {
             id: vendorId,
             name: service.vendorName,
             address: service.vendorLocation?.address || 'Location unavailable',
-            rating: service.vendorRating || 4.7,
+            rating,
+            reviewCount: rc,
             image: service.vendorImage,
           });
         }
@@ -218,6 +232,7 @@ export function ResortServicesScreen({
       // Get customer ID
       const customer = await CustomerApi.getCustomerByPhone(phone);
       const customerId = customer?.id;
+      const { email: profileEmail, name: profileName } = profileEmailAndName(customer);
 
       if (!customerId) {
         Alert.alert('Error', 'Customer not found. Please try again.');
@@ -270,8 +285,7 @@ export function ResortServicesScreen({
             throw new Error('Failed to create payment order');
           }
 
-          // Open Razorpay checkout
-          const options = {
+          const baseOptions = {
             description: `Pet Resort Booking - ${nights} night${nights > 1 ? 's' : ''} stay`,
             image: 'https://your-logo-url.com/logo.png',
             currency: 'INR',
@@ -279,13 +293,16 @@ export function ResortServicesScreen({
             amount: totalPrice * 100, // Convert to paise
             name: 'Warmpawz',
             order_id: orderRes.order_id,
-            prefill: {
-              contact: phone,
-            },
             theme: {
               color: '#FF8C42',
             },
           };
+
+          const options = applyWarmpawzCustomerToRazorpayOptions(baseOptions, {
+            phone,
+            email: profileEmail,
+            name: profileName,
+          });
 
           const razorpayResponse = await RazorpayCheckout.open(options);
 
@@ -338,7 +355,8 @@ export function ResortServicesScreen({
         <Text style={styles.subtitle}>Luxury vacation for your pets</Text>
       </View>
 
-      <ScrollView style={styles.landingContent}>
+      <BrandedStackBelowHeader>
+      <ScrollView style={styles.landingScroll} contentContainerStyle={styles.landingContent}>
         <View style={styles.heroCard}>
           <Text style={styles.heroIcon}>🏝️</Text>
           <Text style={styles.heroTitle}>5-Star Pet Experience</Text>
@@ -417,6 +435,7 @@ export function ResortServicesScreen({
           </View>
         </View>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -429,6 +448,7 @@ export function ResortServicesScreen({
         <Text style={styles.headerTitle}>Luxury Pet Resorts</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
@@ -444,7 +464,9 @@ export function ResortServicesScreen({
               </Text>
             </View>
           ) : (
-            resorts.map((resort) => (
+            resorts.map((resort) => {
+              const face = customerFacingRating(resort.rating, resort.reviewCount);
+              return (
               <TouchableOpacity
                 key={resort.id}
                 style={styles.resortCard}
@@ -456,16 +478,18 @@ export function ResortServicesScreen({
                 <View style={styles.resortInfo}>
                   <Text style={styles.resortName}>{resort.name}</Text>
                   <Text style={styles.resortRating}>
-                    ⭐ {resort.rating.toFixed(1)}
+                    {face != null ? `⭐ ${face.toFixed(1)}` : 'No reviews'}
                   </Text>
                   <Text style={styles.resortAddress}>{resort.address}</Text>
                 </View>
                 <Text style={styles.chevron}>›</Text>
               </TouchableOpacity>
-            ))
+            );
+            })
           )}
         </ScrollView>
       )}
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -478,6 +502,7 @@ export function ResortServicesScreen({
         <Text style={styles.headerTitle}>{selectedResort?.name}</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.roomSelectionContainer}>
         <Text style={styles.sectionTitle}>Select Room Type</Text>
         {rooms.length === 0 ? (
@@ -518,6 +543,7 @@ export function ResortServicesScreen({
           ))
         )}
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -530,6 +556,7 @@ export function ResortServicesScreen({
         <Text style={styles.headerTitle}>Select Dates</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.datesContainer}>
         <View style={styles.selectedRoomCard}>
           <Text style={styles.selectedRoomName}>{selectedRoom?.name}</Text>
@@ -622,6 +649,7 @@ export function ResortServicesScreen({
           <Text style={styles.primaryButtonText}>Continue to Pre-Check</Text>
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -634,6 +662,7 @@ export function ResortServicesScreen({
         <Text style={styles.headerTitle}>Pet Pre-Check</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.preCheckContainer}>
         <View style={styles.preCheckCard}>
           <Text style={styles.preCheckTitle}>Mandatory Information</Text>
@@ -816,6 +845,7 @@ export function ResortServicesScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -860,21 +890,21 @@ export function ResortServicesScreen({
 
   if (loading && currentView === 'landing') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {currentView === 'landing' && renderLanding()}
       {currentView === 'resort_list' && renderResortList()}
       {currentView === 'room_selection' && renderRoomSelection()}
       {currentView === 'dates' && renderDates()}
       {currentView === 'pre_check' && renderPreCheck()}
       {currentView === 'confirmation' && renderConfirmation()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -886,8 +916,10 @@ const styles = StyleSheet.create({
   header: {
     padding: spacing.md,
     backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+    paddingBottom: spacing.md + 4,
+  },
+  landingScroll: {
+    flex: 1,
   },
   backButton: {
     fontSize: typography.body,
@@ -911,8 +943,9 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   landingContent: {
-    flex: 1,
     padding: spacing.md,
+    paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
   heroCard: {
     backgroundColor: '#F0FDFA',

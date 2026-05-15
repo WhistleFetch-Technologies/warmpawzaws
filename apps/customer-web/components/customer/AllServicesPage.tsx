@@ -17,6 +17,7 @@ import { ArrowLeft, Search, Stethoscope, Scissors, ShoppingBag, GraduationCap,
   Dog, Home as HomeIcon, Heart, Coffee, Users, Shield, Phone, Wheat, MapPin, 
   Sparkles, Palmtree, ChevronRight, PawPrint, Camera, Truck, Sun, X } from 'lucide-react';
 import { useState, useMemo } from 'react';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 
 interface AllServicesPageProps {
   onBack: () => void;
@@ -117,7 +118,7 @@ const SERVICE_CATEGORIES = [
   { 
     id: 'shop', 
     icon: ShoppingBag, 
-    label: 'Pet Shop', 
+    label: 'Pet Products', 
     description: 'Food, accessories & medicines',
     color: 'from-pink-50 to-rose-100/50',
     iconBg: 'bg-white',
@@ -169,12 +170,13 @@ const SERVICE_CATEGORIES = [
   { 
     id: 'mating', 
     icon: Heart, 
-    label: 'Mating & Dating', 
+    label: 'Peer to Peer', 
     description: 'Find the perfect match',
     color: 'from-pink-50 to-fuchsia-100/50',
     iconBg: 'bg-white',
     iconColor: 'text-pink-500',
-    screen: 'mating-dating-hub'
+    screen: 'mating-dating-hub',
+    comingSoon: true,
   },
   { 
     id: 'cafes', 
@@ -184,7 +186,8 @@ const SERVICE_CATEGORIES = [
     color: 'from-amber-50 to-yellow-100/50',
     iconBg: 'bg-white',
     iconColor: 'text-amber-600',
-    screen: 'cafes'
+    screen: 'cafes',
+    comingSoon: true,
   },
   
   // SPECIALIZED SERVICES
@@ -206,7 +209,8 @@ const SERVICE_CATEGORIES = [
     color: 'from-cyan-50 to-sky-100/50',
     iconBg: 'bg-white',
     iconColor: 'text-cyan-600',
-    screen: 'insurance'
+    screen: 'insurance',
+    comingSoon: true,
   },
   { 
     id: 'breeder', 
@@ -380,55 +384,84 @@ export function AllServicesPage({ onBack, onServiceSelect }: AllServicesPageProp
             <div className="grid grid-cols-2 gap-3">
               {filteredServices.map((service, index) => {
                 const IconComponent = service.icon;
-                
+                const isComingSoon = Boolean((service as { comingSoon?: boolean }).comingSoon);
+
+                const tileInner = (
+                  <div className={`
+                      relative overflow-hidden rounded-2xl p-4 h-full min-h-[130px]
+                      bg-gradient-to-br ${service.color}
+                      border border-white/50 shadow-sm
+                      transition-all duration-300 ease-out
+                      ${isComingSoon ? 'opacity-80 cursor-not-allowed' : 'group-hover:shadow-md group-hover:-translate-y-0.5 group-hover:scale-[1.01] active:scale-[0.98]'}
+                    `}>
+                      <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-white/20 blur-lg" />
+
+                      <div className="relative z-10 flex flex-col h-full">
+                        {isComingSoon && (
+                          <span className="absolute top-2 right-2 text-[9px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full z-20">
+                            Soon
+                          </span>
+                        )}
+                        <div className={`
+                          w-11 h-11 rounded-xl flex items-center justify-center mb-3
+                          ${service.iconBg} shadow-sm
+                          ${isComingSoon ? '' : 'transition-transform duration-300 group-hover:scale-105'}
+                        `}>
+                          <IconComponent className={`w-5 h-5 ${service.iconColor}`} />
+                        </div>
+
+                        <div className="flex-1">
+                          <h3 className="font-semibold text-[13px] mb-1 text-slate-800 leading-tight">
+                            {service.label}
+                          </h3>
+                          {isComingSoon ? (
+                            <p className="text-[11px] leading-snug text-slate-500 m-0">Coming soon</p>
+                          ) : (
+                            <div onClick={(e) => e.stopPropagation()} className="text-[11px] leading-snug">
+                              <ServiceDescriptionInline
+                                description={service.description}
+                                title={service.label}
+                                className="m-0 text-[11px] leading-snug text-slate-500"
+                                linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-orange-600 hover:underline"
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        {!isComingSoon && (
+                          <div className="absolute bottom-3 right-3 opacity-0 translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200">
+                            <ChevronRight className="w-4 h-4 text-slate-400" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                );
+
+                if (isComingSoon) {
+                  return (
+                    <div
+                      key={service.id}
+                      className="text-left animate-in fade-in slide-in-from-bottom-2 pointer-events-none select-none"
+                      style={{ animationDelay: `${index * 25}ms`, animationFillMode: 'both' }}
+                      aria-label={`${service.label} — coming soon`}
+                    >
+                      {tileInner}
+                    </div>
+                  );
+                }
+
                 return (
                   <button
                     key={service.id}
+                    type="button"
                     onClick={() => {
                       if (navigator.vibrate) navigator.vibrate(10);
-                      // Navigate to the correct screen for each service
                       onServiceSelect(service.screen);
                     }}
                     className="group text-left animate-in fade-in slide-in-from-bottom-2"
                     style={{ animationDelay: `${index * 25}ms`, animationFillMode: 'both' }}
                   >
-                    <div className={`
-                      relative overflow-hidden rounded-2xl p-4 h-full min-h-[130px]
-                      bg-gradient-to-br ${service.color}
-                      border border-white/50 shadow-sm
-                      transition-all duration-300 ease-out
-                      hover:shadow-md hover:-translate-y-0.5 hover:scale-[1.01]
-                      active:scale-[0.98]
-                    `}>
-                      {/* Background decoration */}
-                      <div className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full bg-white/20 blur-lg" />
-                      
-                      <div className="relative z-10 flex flex-col h-full">
-                        {/* Icon */}
-                        <div className={`
-                          w-11 h-11 rounded-xl flex items-center justify-center mb-3
-                          ${service.iconBg} shadow-sm
-                          transition-transform duration-300 group-hover:scale-105
-                        `}>
-                          <IconComponent className={`w-5 h-5 ${service.iconColor}`} />
-                        </div>
-                        
-                        {/* Text */}
-                        <div className="flex-1">
-                          <h3 className="font-semibold text-[13px] mb-1 text-slate-800 leading-tight">
-                            {service.label}
-                          </h3>
-                          <p className="text-[11px] leading-snug text-slate-500 line-clamp-2">
-                            {service.description}
-                          </p>
-                        </div>
-
-                        {/* Arrow Indicator */}
-                        <div className="absolute bottom-3 right-3 opacity-0 translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-200">
-                          <ChevronRight className="w-4 h-4 text-slate-400" />
-                        </div>
-                      </div>
-                    </div>
+                    {tileInner}
                   </button>
                 );
               })}

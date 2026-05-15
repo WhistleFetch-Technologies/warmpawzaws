@@ -4,54 +4,60 @@ export const dynamic = 'force-dynamic';
 
 import { useEffect, useState, useRef } from 'react';
 import { VendorAuth } from '@/components/vendor/VendorAuth';
+import { VendorPublicAppShell } from '@/components/vendor/layout/VendorPublicChrome';
 import { isTokenExpired, clearVendorSession, isStaleTempVendorSession } from '@/lib/session-utils';
+import {
+  applyVendorPortalSessionFromVerifyPayload,
+  guessCountryCodeFromPhone,
+  isVendorPortalActiveStatus,
+} from '@/lib/vendor-session-from-api';
 
 export default function AuthPage() {
   const [isCheckingSession, setIsCheckingSession] = useState(true);
-  const hasChecked = useRef(false);
   const hasRedirected = useRef(false);
 
   useEffect(() => {
-    // Strict single-run check to prevent flickering
-    if (hasChecked.current) {
-      return;
-    }
-    hasChecked.current = true;
-
     // Clear redirect flag when we're on auth page
     sessionStorage.removeItem('_vendor_redirected_to_auth');
 
-    // Synchronous session check - no async, no delays
+    const finish = () => setIsCheckingSession(false);
+
     const storedPhone = localStorage.getItem('vendorPhone');
     const storedToken = localStorage.getItem('authToken') || localStorage.getItem('vendorSessionToken');
-    
-    // If no credentials, show login immediately
+
     if (!storedPhone || !storedToken || storedToken.length < 10) {
-      setIsCheckingSession(false);
+      finish();
       return;
     }
 
-    // Check if token is valid
     if (isTokenExpired(storedToken)) {
       clearVendorSession();
-      setIsCheckingSession(false);
+      finish();
       return;
     }
 
-    // Stale temp_vendor_ session (e.g. leftover from previous visit) – clear and show login only when no valid token
     if (isStaleTempVendorSession(storedToken)) {
       clearVendorSession();
-      setIsCheckingSession(false);
+      finish();
       return;
     }
 
-    // Valid session exists - redirect based on status
-    const storedVendor = localStorage.getItem('vendorData');
-    const vendorData = storedVendor ? JSON.parse(storedVendor) : null;
-    const onboardingStatus = vendorData?.onboarding_status || localStorage.getItem('vendorApplicationStatus');
-    
-    // Route based on status
-    const isActiveVendor = ['ACTIVATED', 'APPROVED'].includes(onboardingStatus || '');
+    let vendorData: Record<string, unknown> | null = null;
+    try {
+      const storedVendor = localStorage.getItem('vendorData');
+      vendorData = storedVendor ? (JSON.parse(storedVendor) as Record<string, unknown>) : null;
+    } catch {
+      vendorData = null;
+    }
+
+    const onboardingStatus =
+      (vendorData?.onboarding_status as string | undefined) ||
+      (vendorData?.onboardingStatus as string | undefined) ||
+      localStorage.getItem('vendorApplicationStatus');
+
+    const isActiveVendor = isVendorPortalActiveStatus(onboardingStatus);
+    // Do not use a "hasChecked" early-return: React Strict Mode runs effects twice; skipping the second
+    // run left isCheckingSession true forever ("Checking session..." with no redirect).
     window.location.replace(isActiveVendor ? '/' : '/onboarding');
   }, []);
 
@@ -65,40 +71,23 @@ export default function AuthPage() {
     }
     hasRedirected.current = true;
     
-    // Store session data (authToken + vendorAuthToken so api-client finds token on first request after redirect)
     if (session.phone && session.accessToken) {
-      localStorage.setItem('vendorPhone', session.phone);
-      localStorage.setItem('authToken', session.accessToken);
-      localStorage.setItem('vendorAuthToken', session.accessToken);
-      
-      if (session.vendorId) {
-        localStorage.setItem('vendorId', session.vendorId);
-      }
-      if (session.user) {
-        localStorage.setItem('vendorUser', JSON.stringify(session.user));
-      }
-      if (session.profile) {
-        localStorage.setItem('vendorData', JSON.stringify(session.profile));
-        const bizName = (session.profile as any).business_name || (session.profile as any).businessName || '';
-        if (bizName) {
-          localStorage.setItem('vendorName', bizName);
-          localStorage.setItem('businessName', bizName);
-        }
-      }
-      if (session.onboardingStatus) {
-        localStorage.setItem('vendorApplicationStatus', session.onboardingStatus);
-      }
-    }
-    
-    // Set session flags immediately before redirect so destination page sees them (avoids redirect back to login)
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.setItem('_warmpawz_vendor_just_logged_in', 'true');
-      sessionStorage.setItem('_warmpawz_vendor_has_session', 'true');
+      const onboardingStatus =
+        session.onboardingStatus || session.profile?.onboarding_status || 'INIT';
+      applyVendorPortalSessionFromVerifyPayload({
+        phone: session.phone,
+        accessToken: session.accessToken,
+        user: session.user || {},
+        profile: session.profile || {},
+        vendorId: session.vendorId || '',
+        onboardingStatus,
+        countryCode: guessCountryCodeFromPhone(session.phone),
+      });
     }
     
     // Determine routing
     const onboardingStatus = session.onboardingStatus || session.profile?.onboarding_status;
-    const isActiveVendor = ['ACTIVATED', 'APPROVED'].includes(onboardingStatus || '');
+    const isActiveVendor = isVendorPortalActiveStatus(onboardingStatus);
     
     // Use window.location.replace for clean navigation
     window.location.replace(isActiveVendor ? '/' : '/onboarding');
@@ -107,19 +96,20 @@ export default function AuthPage() {
   // Show loading while checking session
   if (isCheckingSession) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Checking session...</p>
+      <VendorPublicAppShell>
+        <div className="flex flex-1 flex-col items-center justify-center px-4 py-12">
+          <div className="text-center">
+            <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-orange-500" />
+            <p className="mt-4 text-gray-600">Checking session...</p>
+          </div>
         </div>
-      </div>
+      </VendorPublicAppShell>
     );
   }
 
-  // Render the authentication UI (OTP flow)
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex items-center justify-center p-4">
-      <VendorAuth onAuthSuccess={handleAuthSuccess} />
-    </div>
+    <VendorPublicAppShell>
+      <VendorAuth usePublicAppShell onAuthSuccess={handleAuthSuccess} />
+    </VendorPublicAppShell>
   );
 }

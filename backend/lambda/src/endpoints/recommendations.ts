@@ -64,7 +64,7 @@ export function registerRecommendationEndpoints(app: Hono) {
         FROM co_purchased cp
         JOIN products p ON cp.product_id = p.id
         LEFT JOIN vendors v ON p.vendor_id = v.id
-        WHERE p.is_active = true AND p.stock_quantity > 0
+        WHERE p.is_active = true AND p.stock > 0
         ORDER BY cp.purchase_count DESC
       `;
 
@@ -96,7 +96,7 @@ export function registerRecommendationEndpoints(app: Hono) {
             FROM products p
             LEFT JOIN vendors v ON p.vendor_id = v.id
             WHERE p.is_active = true 
-              AND p.stock_quantity > 0
+              AND p.stock > 0
               AND p.category = $1
               AND p.id NOT IN (${existingIds.map((_, i) => `$${i + 2}`).join(',')})
             ORDER BY p.sales_count DESC, p.rating DESC
@@ -165,7 +165,7 @@ export function registerRecommendationEndpoints(app: Hono) {
           pp.pair_count
         FROM paired_products pp
         JOIN products p ON pp.product_id = p.id
-        WHERE p.is_active = true AND p.stock_quantity > 0
+        WHERE p.is_active = true AND p.stock > 0
       `;
 
       const results = await query(boughtTogetherQuery, [productId, limit]);
@@ -310,7 +310,7 @@ export function registerRecommendationEndpoints(app: Hono) {
       if (period === 'day') periodInterval = "INTERVAL '1 day'";
       if (period === 'month') periodInterval = "INTERVAL '30 days'";
 
-      let whereClause = `WHERE p.is_active = true AND p.stock_quantity > 0`;
+      let whereClause = `WHERE p.is_active = true AND p.stock > 0`;
       const params: any[] = [];
       let paramIdx = 1;
 
@@ -462,7 +462,7 @@ export function registerRecommendationEndpoints(app: Hono) {
           FROM products p
           LEFT JOIN vendors v ON p.vendor_id = v.id
           WHERE p.is_active = true 
-            AND p.stock_quantity > 0
+            AND p.stock > 0
             ${excludeClause}
           ORDER BY category_match DESC, p.rating DESC, p.sales_count DESC
           LIMIT $1
@@ -486,7 +486,7 @@ export function registerRecommendationEndpoints(app: Hono) {
           FROM products p
           LEFT JOIN vendors v ON p.vendor_id = v.id
           WHERE p.is_active = true 
-            AND p.stock_quantity > 0
+            AND p.stock > 0
             ${excludeClause}
           ORDER BY p.rating DESC, p.sales_count DESC
           LIMIT $1
@@ -530,7 +530,7 @@ export function registerRecommendationEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '12');
       const days = parseInt(c.req.query('days') || '30');
 
-      let whereClause = `WHERE p.is_active = true AND p.stock_quantity > 0 AND p.created_at > NOW() - INTERVAL '${days} days'`;
+      let whereClause = `WHERE p.is_active = true AND p.stock > 0 AND p.created_at > NOW() - INTERVAL '${days} days'`;
       const params: any[] = [];
       let paramIdx = 1;
 

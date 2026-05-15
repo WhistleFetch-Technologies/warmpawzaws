@@ -11,18 +11,19 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Image,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { customerFacingRating } from '../../utils/rating-display';
 
 interface ServiceDetailScreenProps {
   serviceId: string;
   vendorId?: string;
   phone: string;
-  onBook: (serviceId: string, vendorId: string) => void;
+  onBook: (serviceId: string, vendorId: string, serviceName?: string) => void;
   onBack?: () => void;
 }
 
@@ -47,8 +48,9 @@ export function ServiceDetailScreen({
       const serviceData = await CustomerApi.getServiceDetails(serviceId);
       setService(serviceData);
       
-      if (vendorId || serviceData.vendorId) {
-        const vendorData = await CustomerApi.getVendorDetails(vendorId || serviceData.vendorId);
+      const resolvedVendorId = vendorId || serviceData.vendorId || serviceData.vendor_id;
+      if (resolvedVendorId) {
+        const vendorData = await CustomerApi.getVendorDetails(resolvedVendorId);
         setVendor(vendorData.vendor);
       }
     } catch (error) {
@@ -60,17 +62,17 @@ export function ServiceDetailScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   if (!service) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Service not found</Text>
           {onBack && (
@@ -79,12 +81,12 @@ export function ServiceDetailScreen({
             </TouchableOpacity>
           )}
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {onBack && (
           <TouchableOpacity style={styles.headerBack} onPress={onBack}>
@@ -103,14 +105,20 @@ export function ServiceDetailScreen({
             <Text style={styles.description}>{service.description}</Text>
           )}
 
-          {vendor && (
+          {vendor &&
+            (() => {
+              const vFace = customerFacingRating(
+                vendor.rating,
+                vendor.reviewCount ?? vendor.review_count
+              );
+              return (
             <View style={styles.vendorSection}>
               <Text style={styles.sectionTitle}>Service Provider</Text>
               <View style={styles.vendorCard}>
                 <Text style={styles.vendorName}>{vendor.name || vendor.businessName}</Text>
-                {vendor.rating && (
+                {vFace != null && (
                   <View style={styles.ratingContainer}>
-                    <Text style={styles.ratingText}>⭐ {vendor.rating.toFixed(1)}</Text>
+                    <Text style={styles.ratingText}>⭐ {vFace.toFixed(1)}</Text>
                   </View>
                 )}
                 {vendor.address && (
@@ -118,7 +126,8 @@ export function ServiceDetailScreen({
                 )}
               </View>
             </View>
-          )}
+              );
+            })()}
 
           <View style={styles.detailsSection}>
             <Text style={styles.sectionTitle}>Service Details</Text>
@@ -163,13 +172,19 @@ export function ServiceDetailScreen({
         <View style={styles.footer}>
           <TouchableOpacity
             style={styles.bookButton}
-            onPress={() => onBook(serviceId, vendorId || service.vendorId)}
+            onPress={() =>
+              onBook(
+                serviceId,
+                vendorId || service.vendorId || service.vendor_id,
+                service.name || service.serviceName
+              )
+            }
           >
             <Text style={styles.bookButtonText}>Book Now</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

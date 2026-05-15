@@ -48,7 +48,7 @@ const SERVICE_CONFIG = {
     textColor: 'text-red-700',
     borderColor: 'border-red-500',
     title: 'Emergency Ambulance',
-    description: 'Quick response for medical emergencies'
+    description: 'Coming soon — quick response for medical emergencies'
   },
   pharmacy: {
     icon: Pill,
@@ -180,12 +180,17 @@ export function IntegratedServicesComplete({
           {(Object.keys(SERVICE_CONFIG) as Array<keyof typeof SERVICE_CONFIG>).map((serviceKey) => {
             const config = SERVICE_CONFIG[serviceKey];
             const IconComponent = config.icon;
+            const ambulanceComingSoon = serviceKey === 'ambulance';
 
             return (
               <Card
                 key={serviceKey}
-                className={`cursor-pointer hover:shadow-lg transition-all border-2 ${config.borderColor}`}
-                onClick={() => handleServiceSelect(serviceKey)}
+                className={`border-2 transition-all ${config.borderColor} ${
+                  ambulanceComingSoon
+                    ? 'opacity-80 cursor-not-allowed border-amber-200 bg-amber-50/30'
+                    : 'cursor-pointer hover:shadow-lg'
+                }`}
+                onClick={ambulanceComingSoon ? undefined : () => handleServiceSelect(serviceKey)}
               >
                 <CardContent className="p-6">
                   <div className="flex items-center gap-4">
@@ -196,7 +201,14 @@ export function IntegratedServicesComplete({
 
                     {/* Details */}
                     <div className="flex-1">
-                      <h3 className={`${config.textColor} mb-1`}>{config.title}</h3>
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <h3 className={`${config.textColor}`}>{config.title}</h3>
+                        {ambulanceComingSoon && (
+                          <span className="text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full">
+                            Coming soon
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-600">{config.description}</p>
                       
                       {/* Stats */}
@@ -213,7 +225,9 @@ export function IntegratedServicesComplete({
                     </div>
 
                     {/* Arrow */}
-                    <ChevronRight className={`w-6 h-6 ${config.textColor}`} />
+                    <ChevronRight
+                      className={`w-6 h-6 ${ambulanceComingSoon ? 'text-gray-300' : config.textColor}`}
+                    />
                   </div>
                 </CardContent>
               </Card>
@@ -363,10 +377,12 @@ export function IntegratedServicesComplete({
                         </span>
                       )}
                       
-                      {provider.distance !== undefined && (
+                      {provider.distance != null && (
                         <span className="flex items-center gap-1 text-gray-500">
                           <MapPin className="w-4 h-4" />
-                          {Number(provider.distance || 0).toFixed(1)} km
+                          {Number(provider.distance) < 1
+                            ? `${Math.round(Number(provider.distance) * 1000)} m`
+                            : `${Math.round(Number(provider.distance))} km`}
                         </span>
                       )}
 

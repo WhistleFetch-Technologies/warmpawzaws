@@ -4,8 +4,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
-import { X, Camera, Upload, MapPin, Plus } from 'lucide-react';
+import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
+import { requestLocationPermission } from '@/lib/runtime-permissions';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import { X, Camera, Upload, MapPin, Plus, ArrowLeft } from 'lucide-react';
 import { EnhancedAddPetModal } from './EnhancedAddPetModal';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 // Removed SpecializedServiceRouter - now integrated into unified flow
 
 interface Service {
@@ -272,14 +281,24 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
   };
 
   const loadServiceDetails = async () => {
+    if (!serviceId?.trim() || serviceId === 'placeholder') {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const response = await apiClient.get<any>(`/services/${serviceId}`);
+      const response = await apiClient.get<any>(`/services/${encodeURIComponent(serviceId)}`);
       
       // ✅ FIX: Handle both response formats (service object or flat structure)
       const serviceData = response.service || response;
       
       if (serviceData && (serviceData.id || serviceData.serviceId)) {
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[BookingFlow loadServiceDetails]', {
+            urlServiceId: serviceId,
+            resolvedId: String(serviceData.id ?? serviceData.serviceId ?? ''),
+          });
+        }
         setService(serviceData);
         
         // Determine specialized service type (if any)
@@ -474,7 +493,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
       const date = new Date();
       date.setDate(date.getDate() + i);
       days.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : date.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' }),
       });
     }
@@ -547,6 +566,13 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
       // Get selected address details for the booking
       const selectedAddressData = selectedAddress ? addresses.find(a => a.id === selectedAddress) : undefined;
 
+      /** Full list price on the booking row — never the net-after-wallet amount (server debits wallet against gross). */
+      const listPriceRupee = Math.round((Number(service?.price) || 0) * 100) / 100;
+      const walletAmountToApply =
+        useWallet && wallet && !subscriptionCoverage?.covered
+          ? Math.round(Math.min(Number(wallet.balance) || 0, listPriceRupee) * 100) / 100
+          : 0;
+
       // ✅ FIX GAP 3.1: Build booking data with camelCase to match backend Zod schema
       // Backend expects: customerId, vendorId, serviceId, bookingDate, bookingTime, serviceType, etc.
       const bookingData: any = {
@@ -554,13 +580,13 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         customerId: customerId,
         vendorId: service.vendor_id,
         serviceId: serviceId,
-        bookingDate: selectedDate || new Date().toISOString().split('T')[0],
+        bookingDate: selectedDate || formatLocalDateYYYYMMDD(new Date()),
         bookingTime: selectedTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
         serviceType: service.service_style || 'at_center',
         
         // Optional fields - camelCase
         petId: selectedPet || undefined,
-        amount: calculateTotal(),
+        amount: subscriptionCoverage?.covered ? 0 : listPriceRupee,
         notes: notes || '',
         
         // Address fields for home services
@@ -573,8 +599,9 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
           longitude: selectedAddressData.longitude,
         }),
         
-        // Wallet usage
-        useWallet: useWallet,
+        // Wallet usage (walletAmount required so server can debit even when list price equals wallet balance)
+        useWallet: useWallet && !subscriptionCoverage?.covered,
+        ...(walletAmountToApply > 0 ? { walletAmount: walletAmountToApply } : {}),
         
         // Legacy snake_case for backward compatibility with older endpoints
         customer_phone: customerPhone,
@@ -628,7 +655,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
             serviceId: serviceId,
             vendorId: service.vendor_id,
             staffId: selectedStaff || undefined,
-            bookingDate: selectedDate || new Date().toISOString().split('T')[0],
+            bookingDate: selectedDate || formatLocalDateYYYYMMDD(new Date()),
             bookingTime: selectedTime || new Date().toTimeString().split(' ')[0].substring(0, 5),
             serviceStyle: service.service_style,
             petId: selectedPet || undefined,
@@ -665,8 +692,8 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         orderRes = await apiClient.post<any>('/razorpay/create-order', {
           bookingId: newBookingId,
           amount: amountToPay,
-          useWallet: useWallet,
-          walletAmount: useWallet && wallet ? Math.min(wallet.balance, service.price) : 0,
+          useWallet: useWallet && !subscriptionCoverage?.covered,
+          walletAmount: walletAmountToApply,
         }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
       } catch (orderError: any) {
         console.error('❌ [PAYMENT] Razorpay create-order API call failed:', {
@@ -793,14 +820,17 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         }
       }
 
-      // Open Razorpay checkout - use the extracted razorpayOrderId variable
-      const options = {
-        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: amountToPay * 100,
+      const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+        key: (keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+        amountPaise: Math.max(1, Math.round(Number(amountToPay) * 100)),
         currency: 'INR',
         name: 'Warmpawz',
         description: `Booking: ${service.name}`,
         order_id: razorpayOrderId,
+        customerPhone,
+        customerEmail: checkoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             console.log('✅ [RAZORPAY] Payment response received:', {
@@ -809,14 +839,24 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
               has_signature: !!response.razorpay_signature,
             });
 
-            // ✅ FIX: Use /razorpay/verify-payment endpoint with snake_case fields (same as UniversalPaymentPage)
+            // ✅ FIX: Use /razorpay/verify-payment endpoint with retry
             console.log('🔄 [RAZORPAY] Verifying payment...');
-            await apiClient.post('/razorpay/verify-payment', {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            });
-            console.log('✅ [RAZORPAY] Payment verified successfully');
+            const MAX_RETRIES = 3;
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                await apiClient.post('/razorpay/verify-payment', {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                }, undefined, 30000);
+                console.log(`✅ [RAZORPAY] Payment verified on attempt ${attempt}`);
+                break;
+              } catch (verifyErr: any) {
+                console.error(`❌ [VERIFY] Attempt ${attempt}/${MAX_RETRIES} failed:`, verifyErr?.message);
+                if (attempt === MAX_RETRIES) throw verifyErr;
+                await new Promise((r) => setTimeout(r, attempt * 1000));
+              }
+            }
             setStep('confirmed');
           } catch (err: any) {
             console.error('❌ [PAYMENT] Verification failed:', err);
@@ -824,18 +864,16 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
             alert(`${errorMessage}. Please contact support with order ID: ${response.razorpay_order_id}`);
           }
         },
-        prefill: {
-          contact: customerPhone,
-        },
         theme: {
           color: '#F97316', // Orange primary color
         },
         modal: {
           ondismiss: () => {
+            console.log('ℹ️ [RAZORPAY] Checkout dismissed by user');
             setProcessing(false);
           },
         },
-      };
+      });
       
       // ✅ FIX: Double-check Razorpay is available before opening
       if (!window.Razorpay) {
@@ -851,6 +889,20 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
       
       try {
         const razorpay = new window.Razorpay(options);
+        // ✅ Listen for payment failures (these don't trigger the handler callback)
+        razorpay.on('payment.failed', (resp: any) => {
+          console.error('❌ [RAZORPAY] Payment failed event:', {
+            code: resp?.error?.code,
+            description: resp?.error?.description,
+            source: resp?.error?.source,
+            step: resp?.error?.step,
+            reason: resp?.error?.reason,
+            orderId: resp?.error?.metadata?.order_id,
+            paymentId: resp?.error?.metadata?.payment_id,
+          });
+          alert(`Payment failed: ${resp?.error?.description || 'Unknown error'}. Please try again.`);
+          setProcessing(false);
+        });
         razorpay.open();
         console.log('✅ [PAYMENT] Razorpay checkout opened successfully');
       } catch (openError: any) {
@@ -870,7 +922,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex items-center justify-center bg-stone-100">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
       </div>
     );
@@ -878,11 +930,14 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
 
   if (!service) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex items-center justify-center bg-stone-100 px-4">
         <div className="text-center">
           <span className="text-6xl">😿</span>
           <h2 className="mt-4 text-xl font-semibold">Service not found</h2>
-          <a href="/" className="mt-4 inline-block px-0 py-0 bg-orange-500 text-white rounded-full">
+          <a
+            href="/"
+            className="mt-6 inline-flex items-center justify-center min-h-[48px] px-8 py-3 bg-orange-500 text-white rounded-full font-medium"
+          >
             Go Home
           </a>
         </div>
@@ -890,81 +945,120 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
     );
   }
 
+  const stepOrder: string[] = (() => {
+    const steps: string[] = ['details', 'datetime'];
+    if (needsPet) steps.push('pet');
+    if (needsAddress) steps.push('address');
+    steps.push('payment');
+    return steps;
+  })();
+
+  const stepLabelByKey: Record<string, string> = {
+    details: 'Details',
+    datetime: 'Schedule',
+    pet: 'Pet',
+    address: 'Address',
+    payment: 'Payment',
+  };
+
+  const activeStepIndex =
+    step === 'confirmed' ? stepOrder.length : Math.max(0, stepOrder.indexOf(step));
+  const progressFraction =
+    step === 'confirmed' ? 1 : (activeStepIndex + 1) / stepOrder.length;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* ✅ STANDARD HEADER - Exact match with CustomerHomeComplete */}
-      <header className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-sm sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-4 pt-4 pb-4 flex items-center gap-4">
-          <button onClick={() => step === 'details' ? (onBack ? onBack() : router.back()) : setStep('details')} className="text-2xl text-white">←</button>
-          <div className="flex-1">
-            <h1 className="text-lg font-bold text-white">{service.name}</h1>
-            <p className="text-sm text-white/80">{service.vendor_name}</p>
+    <div className="min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex flex-col bg-stone-100">
+      {/* Mobile app shell: safe areas + capped column like rest of customer app */}
+      <header className="sticky top-0 z-40 shrink-0 bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-sm">
+        <div className="cw-header-safe-top cw-header-safe-x flex min-h-[56px] items-center gap-3 py-2 pb-3">
+          <button
+            type="button"
+            onClick={() =>
+              step === 'details' ? (onBack ? onBack() : goBackOrHome(router)) : setStep('details')
+            }
+            className="relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-transform active:scale-95 pointer-events-auto touch-manipulation"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="h-5 w-5 text-white" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base sm:text-lg font-bold text-white leading-tight truncate">{service.name}</h1>
+            <p className="text-xs sm:text-sm text-white/85 truncate mt-0.5">{service.vendor_name}</p>
           </div>
-          <span className="text-lg font-bold text-white">₹{service.price}</span>
+          <span className="text-sm sm:text-base font-bold text-white tabular-nums flex-shrink-0 pl-1">
+            ₹{service.price}
+          </span>
         </div>
       </header>
 
-      {/* Progress */}
-      <div className="max-w-4xl mx-auto px-4 py-4">
-        <div className="flex items-center gap-3">
-          {(() => {
-            // Build steps dynamically based on service requirements
-            const steps: string[] = ['details', 'datetime'];
-            if (needsPet) steps.push('pet');
-            if (needsAddress) steps.push('address');
-            steps.push('payment');
-            return steps;
-          })().map((s, i, arr) => (
-            <React.Fragment key={s}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                step === s ? 'bg-orange-500 text-white' :
-                arr.indexOf(step) > i ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500'
-              }`}>
-                {arr.indexOf(step) > i ? '✓' : i + 1}
-              </div>
-              {i < arr.length - 1 && (
-                <div className={`flex-1 h-1 ${arr.indexOf(step) > i ? 'bg-green-500' : 'bg-gray-200'}`}></div>
-              )}
-            </React.Fragment>
-          ))}
+      {/* Compact progress: bar + step count (fits narrow phones; labels align with real steps) */}
+      {step !== 'confirmed' && (
+        <div className="shrink-0 bg-white border-b border-stone-200/80 px-4 py-3 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <p className="text-sm font-semibold text-gray-900 truncate">
+              {stepLabelByKey[step] ?? 'Booking'}
+            </p>
+            <p className="text-xs text-gray-500 tabular-nums flex-shrink-0">
+              {activeStepIndex + 1} / {stepOrder.length}
+            </p>
+          </div>
+          <div className="h-2 rounded-full bg-stone-200 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] transition-[width] duration-300 ease-out"
+              style={{ width: `${progressFraction * 100}%` }}
+            />
+          </div>
+          <div className="flex gap-1 mt-2.5" role="list" aria-label="Booking steps">
+            {stepOrder.map((key, i) => (
+              <div
+                key={key}
+                role="listitem"
+                className={`h-1 flex-1 min-w-0 rounded-full transition-colors ${
+                  i <= activeStepIndex ? 'bg-orange-500' : 'bg-stone-200'
+                }`}
+                title={stepLabelByKey[key]}
+              />
+            ))}
+          </div>
         </div>
-        {/* Step Labels */}
-        <div className="flex justify-between mt-2 text-xs text-gray-500">
-          <span>Details</span>
-          <span>Schedule</span>
-          {needsPet && <span>Pet</span>}
-          {needsAddress && <span>Address</span>}
-          <span>Payment</span>
-        </div>
-      </div>
+      )}
 
       {/* Content */}
-      <main className="max-w-4xl mx-auto px-4 pb-32 overflow-x-hidden">
+      <main className="flex-1 w-full px-3 sm:px-4 pb-[max(8rem,calc(5rem+env(safe-area-inset-bottom,0px)))] overflow-x-hidden">
         {step === 'details' && (
-          <div className="bg-white rounded-2xl p-6 shadow-sm overflow-hidden">
-            <h2 className="text-xl font-bold mb-4">Service Details</h2>
+          <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-stone-100 overflow-hidden mt-3">
+            <h2 className="text-lg font-bold text-gray-900 mb-3">Service Details</h2>
             <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-orange-100 rounded-xl flex items-center justify-center text-3xl">
+              <div className="flex gap-3 items-start">
+                <div className="w-14 h-14 sm:w-16 sm:h-16 flex-shrink-0 bg-orange-100 rounded-2xl flex items-center justify-center text-2xl sm:text-3xl">
                   {service.service_style === 'at_vendor' ? '🏥' : service.service_style === 'at_home' ? '🏠' : '💻'}
                 </div>
-                <div>
-                  <h3 className="font-semibold text-gray-900">{service.name}</h3>
-                  <p className="text-sm text-gray-500">{service.vendor_name}</p>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-gray-900 leading-snug">{service.name}</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">{service.vendor_name}</p>
                   {service.vendor_address && (
-                    <p className="text-xs text-gray-400">{service.vendor_address}</p>
+                    <p className="text-xs text-gray-500 mt-1.5 leading-relaxed break-words">
+                      {service.vendor_address}
+                    </p>
                   )}
                 </div>
               </div>
-              <p className="text-gray-600">{service.description}</p>
-              <div className="flex items-center gap-4 text-sm text-gray-500">
-                <span>⏱️ {service.duration} mins</span>
-                <span>💰 ₹{service.price}</span>
+              {service.description?.trim() ? (
+                <ServiceDescriptionInline
+                  description={service.description}
+                  title={service.name}
+                  className="m-0 text-sm leading-relaxed text-gray-600"
+                />
+              ) : null}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-600">
+                <span className="inline-flex items-center gap-1.5">⏱️ {service.duration} mins</span>
+                <span className="inline-flex items-center gap-1.5 font-semibold text-gray-900">💰 ₹{service.price}</span>
               </div>
             </div>
             <button
+              type="button"
               onClick={() => setStep('datetime')}
-              className="w-full mt-0 py-0 bg-orange-500 text-white rounded-xl font-medium"
+              className="w-full mt-5 min-h-[48px] py-3.5 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white rounded-2xl font-semibold text-base shadow-md active:opacity-90 transition-opacity"
             >
               Continue
             </button>
@@ -972,8 +1066,8 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         )}
 
         {step === 'datetime' && (
-          <div className="bg-white rounded-2xl p-6 shadow-sm overflow-hidden">
-            <h2 className="text-xl font-bold mb-4">Select Date & Time</h2>
+          <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-stone-100 overflow-hidden mt-3">
+            <h2 className="text-lg font-bold mb-4 text-gray-900">Select Date & Time</h2>
             
             {/* Date Selection */}
             <div className="mb-6">
@@ -1001,20 +1095,22 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
             {/* Time Selection */}
             {selectedDate && (
               <div className="mt-6">
-                <h3 className="font-medium text-gray-700 mb-3">Select Time</h3>
-                <div className="grid grid-cols-4 gap-3 overflow-hidden">
+                <h3 className="font-medium text-gray-700 mb-1">Select Time</h3>
+                <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 sm:gap-3 overflow-hidden">
                   {timeSlots.length > 0 ? (
                     timeSlots.map((slot) => (
                       <button
                         key={slot.time}
+                        type="button"
                         onClick={() => slot.available && setSelectedTime(slot.time)}
                         disabled={!slot.available}
-                        className={`px-0 py-0 rounded-lg text-sm ${
+                        className={`min-h-[44px] px-2 py-2 rounded-xl text-sm font-medium ${
                           selectedTime === slot.time
-                            ? 'bg-orange-500 text-white'
+                            ? 'bg-orange-500 text-white shadow-sm'
                             : slot.available
-                            ? 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                            : 'bg-gray-50 text-gray-300 cursor-not-allowed'
+                            ? 'bg-stone-100 text-gray-800 active:scale-[0.98]'
+                            : 'bg-stone-50 text-gray-300 cursor-not-allowed'
                         }`}
                       >
                         {slot.time}
@@ -1087,6 +1183,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
             )}
 
             <button
+              type="button"
               onClick={() => {
                 // Navigate to next required step
                 if (needsPet) {
@@ -1098,7 +1195,7 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
                 }
               }}
               disabled={!selectedDate || !selectedTime}
-              className="w-full mt-6 py-4 bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50"
+              className="w-full mt-6 min-h-[48px] py-3.5 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white rounded-2xl font-semibold disabled:opacity-50 active:opacity-90 transition-opacity"
             >
               Continue
             </button>
@@ -1106,9 +1203,9 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         )}
 
         {step === 'pet' && needsPet && (
-          <div className="bg-white rounded-2xl p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">Select Your Pet</h2>
+          <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-stone-100 mt-3">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
               <button
                 onClick={() => setShowAddPetModal(true)}
                 className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-200 transition"
@@ -1171,9 +1268,10 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
             </div>
             
             <button
+              type="button"
               onClick={() => setStep(needsAddress ? 'address' : 'payment')}
               disabled={!selectedPet}
-              className="w-full mt-6 py-4 bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full mt-6 min-h-[48px] py-3.5 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white rounded-2xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed active:opacity-90 transition-opacity"
             >
               {selectedPet ? 'Continue' : 'Select a Pet to Continue'}
             </button>
@@ -1181,9 +1279,9 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         )}
 
         {step === 'address' && needsAddress && (
-          <div className="bg-white rounded-2xl p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold">Select Delivery Address</h2>
+          <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-stone-100 mt-3">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <h2 className="text-lg font-bold text-gray-900">Select Delivery Address</h2>
               <button
                 onClick={() => setShowAddAddressModal(true)}
                 className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-200 transition"
@@ -1260,9 +1358,10 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
             )}
             
             <button
+              type="button"
               onClick={() => setStep('payment')}
               disabled={!selectedAddress}
-              className="w-full mt-6 py-4 bg-orange-500 text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full mt-6 min-h-[48px] py-3.5 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white rounded-2xl font-semibold disabled:opacity-50 disabled:cursor-not-allowed active:opacity-90 transition-opacity"
             >
               {selectedAddress ? 'Continue to Payment' : 'Select an Address to Continue'}
             </button>
@@ -1270,9 +1369,9 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         )}
 
         {step === 'payment' && (
-          <div className="space-y-4">
-            <div className="bg-white rounded-2xl p-6 shadow-sm overflow-hidden">
-              <h2 className="text-xl font-bold mb-4">Review Booking</h2>
+          <div className="space-y-3 mt-3">
+            <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-stone-100 overflow-hidden">
+              <h2 className="text-lg font-bold mb-4 text-gray-900">Review Booking</h2>
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Service</span>
@@ -1302,8 +1401,8 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
               />
             </div>
 
-            <div className="bg-white rounded-2xl p-6 shadow-sm overflow-hidden">
-              <h2 className="text-xl font-bold mb-4">Payment</h2>
+            <div className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-stone-100 overflow-hidden">
+              <h2 className="text-lg font-bold mb-4 text-gray-900">Payment</h2>
               <div className="space-y-3">
                 {/* ✅ SUBSCRIPTION COVERAGE BADGE */}
                 {subscriptionCoverage?.covered && (
@@ -1379,50 +1478,58 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
         )}
 
         {step === 'confirmed' && (
-          <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
-            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center text-4xl mx-auto">
+          <div className="bg-white rounded-2xl p-5 sm:p-6 shadow-sm border border-stone-100 text-center mt-3">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-green-100 rounded-full flex items-center justify-center text-3xl sm:text-4xl mx-auto">
               ✅
             </div>
-            <h2 className="text-2xl font-bold mt-0 text-gray-900">Booking Confirmed!</h2>
-            <p className="text-gray-500 mt-0">Your booking has been successfully placed</p>
-            
-            <div className="mt-0 p-4 bg-gray-50 rounded-xl text-left">
-              <div className="flex justify-between mb-0">
-                <span className="text-gray-500">Service</span>
-                <span className="font-medium">{service.name}</span>
+            <h2 className="text-xl sm:text-2xl font-bold mt-4 text-gray-900">Booking Confirmed!</h2>
+            <p className="text-sm text-gray-500 mt-2">Your booking has been successfully placed</p>
+
+            <div className="mt-5 p-4 bg-stone-50 rounded-xl text-left space-y-2 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-gray-500 shrink-0">Service</span>
+                <span className="font-medium text-right min-w-0 break-words">{service.name}</span>
               </div>
-              <div className="flex justify-between mb-0">
+              <div className="flex justify-between gap-3">
                 <span className="text-gray-500">Date</span>
                 <span className="font-medium">{new Date(selectedDate).toLocaleDateString()}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-3">
                 <span className="text-gray-500">Time</span>
                 <span className="font-medium">{selectedTime}</span>
               </div>
             </div>
 
-            <div className="flex gap-3 mt-0">
+            <div className="flex flex-col sm:flex-row gap-3 mt-6">
               {onComplete ? (
                 <>
-                  <button 
-                    onClick={() => onComplete(bookingId || '')} 
-                    className="flex-1 py-3 border rounded-xl font-medium"
+                  <button
+                    type="button"
+                    onClick={() => onComplete(bookingId || '')}
+                    className="flex-1 min-h-[48px] py-3 border border-stone-200 rounded-xl font-semibold text-gray-800 active:bg-stone-50"
                   >
                     View Bookings
                   </button>
-                  <button 
-                    onClick={() => onComplete(bookingId || '')} 
-                    className="flex-1 py-3 bg-orange-500 text-white rounded-xl font-medium"
+                  <button
+                    type="button"
+                    onClick={() => onComplete(bookingId || '')}
+                    className="flex-1 min-h-[48px] py-3 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white rounded-xl font-semibold shadow-md"
                   >
                     Done
                   </button>
                 </>
               ) : (
                 <>
-                  <a href="/bookings" className="flex-1 py-0 border rounded-xl font-medium">
+                  <a
+                    href="/bookings"
+                    className="flex-1 min-h-[48px] inline-flex items-center justify-center py-3 border border-stone-200 rounded-xl font-semibold text-gray-800"
+                  >
                     View Bookings
                   </a>
-                  <a href="/" className="flex-1 py-0 bg-orange-500 text-white rounded-xl font-medium">
+                  <a
+                    href="/"
+                    className="flex-1 min-h-[48px] inline-flex items-center justify-center py-3 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white rounded-xl font-semibold shadow-md"
+                  >
                     Go Home
                   </a>
                 </>
@@ -1434,12 +1541,13 @@ export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: Bo
 
       {/* Fixed Bottom Button */}
       {step === 'payment' && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4">
-          <div className="max-w-4xl mx-auto">
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-stone-200 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] pb-[max(1rem,env(safe-area-inset-bottom,0px))] pt-3 px-4">
+          <div className="w-full max-w-customer mx-auto">
             <button
+              type="button"
               onClick={handleCreateBooking}
               disabled={processing}
-              className="w-full py-4 bg-orange-500 text-white rounded-xl font-bold text-lg disabled:opacity-50"
+              className="w-full min-h-[52px] py-3.5 bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] text-white rounded-2xl font-bold text-base disabled:opacity-50 active:opacity-90 transition-opacity"
             >
               {processing ? 'Processing...' : subscriptionCoverage?.covered ? 'Confirm Booking (₹0)' : `Pay ₹${calculateTotal()}`}
             </button>
@@ -1718,9 +1826,15 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
     apartmentName: '',
   });
 
-  const detectCurrentLocation = () => {
+  const detectCurrentLocation = async () => {
     if (!navigator.geolocation) {
       alert('Geolocation is not supported by your browser');
+      return;
+    }
+
+    const permission = await requestLocationPermission();
+    if (permission === 'denied') {
+      alert('Location permission denied. Please allow location access and try again.');
       return;
     }
 
@@ -1733,8 +1847,12 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
         
         // Try reverse geocoding
         try {
+          const apiKey =
+            (await getGoogleMapsBrowserApiKey()) ||
+            process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+            '';
           const response = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}`
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
           );
           const data = await response.json();
 

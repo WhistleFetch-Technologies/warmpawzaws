@@ -11,12 +11,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 
 interface PackageBookingScreenProps {
   serviceType: string;
@@ -38,6 +39,25 @@ interface Package {
   originalPrice?: number;
   duration: number; // minutes per session
   features: string[];
+}
+
+function normalizePackageRow(raw: any): Package | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const sessionCount = Number(raw.session_count ?? raw.totalSessions ?? raw.total_sessions ?? raw.sessions);
+  const price = Number(raw.price ?? raw.packagePrice ?? 0);
+  const duration = Number(raw.duration_minutes ?? raw.duration ?? 60);
+  const totalSessions = Number.isFinite(sessionCount) && sessionCount > 0 ? Math.floor(sessionCount) : 1;
+  return {
+    id: String(raw.id ?? '').trim(),
+    name: String(raw.name ?? raw.package_name ?? 'Package'),
+    description: String(raw.description ?? ''),
+    sessions: totalSessions,
+    frequency: 'weekly',
+    price: Number.isFinite(price) ? price : 0,
+    originalPrice: undefined,
+    duration: Number.isFinite(duration) && duration > 0 ? Math.floor(duration) : 60,
+    features: Array.isArray(raw.features) ? raw.features.map((f: any) => String(f)) : [],
+  };
 }
 
 interface Pet {
@@ -71,9 +91,58 @@ export function PackageBookingScreen({
     try {
       // ✅ FIX: Use actual API call instead of mock data
       if (vendorId) {
-        const response = await CustomerApi.getVendorPackages(vendorId, serviceType);
-        const packagesData = (response as any).packages || (response as any).data?.packages || [];
-        setPackages(Array.isArray(packagesData) ? packagesData : []);
+        const [pkgRes, vendorServicesRes] = await Promise.all([
+          CustomerApi.getVendorPackages(vendorId, serviceType).catch(() => null),
+          CustomerApi.getVendorServices(vendorId).catch(() => null),
+        ]);
+        const packageMap = new Map<string, Package>();
+        const packageRows = Array.isArray((pkgRes as any)?.packages)
+          ? (pkgRes as any).packages
+          : Array.isArray((pkgRes as any)?.data?.packages)
+            ? (pkgRes as any).data.packages
+            : [];
+        for (const row of packageRows) {
+          const normalized = normalizePackageRow(row);
+          if (normalized?.id) packageMap.set(normalized.id, normalized);
+        }
+
+        const serviceRows = Array.isArray(vendorServicesRes) ? vendorServicesRes : [];
+        for (const row of serviceRows) {
+          const metadata =
+            row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+              ? row.metadata
+              : {};
+          const packageDetails =
+            (row?.packageDetails && typeof row.packageDetails === 'object' && !Array.isArray(row.packageDetails)
+              ? row.packageDetails
+              : null) ||
+            (metadata?.packageDetails && typeof metadata.packageDetails === 'object'
+              ? metadata.packageDetails
+              : null);
+          const isPackage = Boolean(row?.isPackage ?? metadata?.isPackage ?? packageDetails);
+          if (!isPackage) continue;
+          const id = String(row?.id ?? '').trim();
+          if (!id) continue;
+          if (packageMap.has(id)) continue;
+          const sessions = Number(packageDetails?.totalSessions ?? packageDetails?.total_sessions ?? 1);
+          const totalSessions = Number.isFinite(sessions) && sessions > 0 ? Math.floor(sessions) : 1;
+          const price = Number(
+            packageDetails?.packagePrice ?? packageDetails?.price ?? row?.price ?? row?.customPrice ?? 0
+          );
+          const duration = Number(row?.duration ?? row?.duration_minutes ?? 60);
+          packageMap.set(id, {
+            id,
+            name: String(row?.name ?? row?.serviceName ?? 'Package'),
+            description: String(row?.description ?? ''),
+            sessions: totalSessions,
+            frequency: 'weekly',
+            price: Number.isFinite(price) ? price : 0,
+            originalPrice: undefined,
+            duration: Number.isFinite(duration) && duration > 0 ? Math.floor(duration) : 60,
+            features: [],
+          });
+        }
+        setPackages(Array.from(packageMap.values()));
       }
     } catch (error) {
       console.error('Error loading packages:', error);
@@ -165,14 +234,16 @@ export function PackageBookingScreen({
     return labels[freq] || freq;
   };
 
-  const discount = selectedPackage && selectedPackage.originalPrice
-    ? Math.round(((selectedPackage.originalPrice - selectedPackage.price) / selectedPackage.originalPrice) * 100)
-    : 0;
-
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Package Booking</Text>
@@ -183,7 +254,15 @@ export function PackageBookingScreen({
         {/* Package Selection */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Select Package</Text>
-          {packages.map((pkg) => (
+          {packages.map((pkg) => {
+            const listPrice = pkg.originalPrice;
+            const pkgShowReduction =
+              listPrice != null && hasEffectivePriceReduction(listPrice, pkg.price);
+            const pkgDiscountPct =
+              pkgShowReduction && listPrice
+                ? Math.round(((listPrice - pkg.price) / listPrice) * 100)
+                : 0;
+            return (
             <TouchableOpacity
               key={pkg.id}
               style={[
@@ -224,17 +303,18 @@ export function PackageBookingScreen({
               </View>
               <View style={styles.packagePrice}>
                 <Text style={styles.price}>₹{pkg.price.toLocaleString()}</Text>
-                {pkg.originalPrice && (
+                {pkgShowReduction && listPrice != null && (
                   <>
-                    <Text style={styles.originalPrice}>₹{pkg.originalPrice.toLocaleString()}</Text>
+                    <Text style={styles.originalPrice}>₹{listPrice.toLocaleString()}</Text>
                     <View style={styles.discountBadge}>
-                      <Text style={styles.discountText}>{discount}% OFF</Text>
+                      <Text style={styles.discountText}>{pkgDiscountPct}% OFF</Text>
                     </View>
                   </>
                 )}
               </View>
             </TouchableOpacity>
-          ))}
+            );
+          })}
         </View>
 
         {/* Pet Selection */}
@@ -290,7 +370,7 @@ export function PackageBookingScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -310,7 +390,11 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   backButton: {
-    padding: spacing.xs,
+    minWidth: 44,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   backButtonText: {
     fontSize: 16,

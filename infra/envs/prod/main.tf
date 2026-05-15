@@ -227,13 +227,14 @@ module "lambda" {
   common_env_vars = {
     UAT_MODE                    = "false"
     ENVIRONMENT                 = local.environment
+    ALLOWED_ORIGINS             = join(",", local.cors_allowed_origins)
+    SETTLEMENT_CALCULATE_CRON_RULE_NAME = "warmpawz-${local.environment}-settlement-calculate-daily"
     DB_HOST                     = module.rds.proxy_endpoint  # Use RDS Proxy endpoint
     DB_READER_HOST               = module.rds.proxy_endpoint  # Use proxy for reads too
     DB_NAME                     = module.rds.database_name
     DB_SECRET_ARN               = module.rds.secret_arn
-    DYNAMODB_SESSIONS_TABLE     = module.dynamodb.sessions_table_name
-    DYNAMODB_CACHE_TABLE        = module.dynamodb.cache_table_name
-    DYNAMODB_ANALYTICS_TABLE    = module.dynamodb.analytics_events_table_name
+    DYNAMODB_SESSIONS_TABLE = module.dynamodb.sessions_table_name
+    DYNAMODB_CACHE_TABLE    = module.dynamodb.cache_table_name
     S3_UPLOADS_BUCKET           = module.s3.user_uploads_bucket_name
     SQS_BOOKING_QUEUE_URL       = module.sqs.booking_processing_queue_url
     SQS_PAYMENT_QUEUE_URL       = module.sqs.payment_processing_queue_url
@@ -249,7 +250,7 @@ module "lambda" {
 
   secrets_arns         = concat([module.rds.secret_arn], module.secrets.all_secret_arns)
   s3_arns              = ["${module.s3.user_uploads_bucket_arn}/*"]
-  dynamodb_arns        = [module.dynamodb.sessions_table_arn, module.dynamodb.cache_table_arn, module.dynamodb.analytics_events_table_arn]
+  dynamodb_arns        = [module.dynamodb.sessions_table_arn, module.dynamodb.cache_table_arn]
   sns_arns             = [module.sns.user_notifications_topic_arn, module.sns.booking_updates_topic_arn, module.sns.payment_events_topic_arn]
   sqs_arns             = [module.sqs.booking_processing_queue_arn, module.sqs.payment_processing_queue_arn, module.sqs.notification_delivery_queue_arn]
   opensearch_arns      = [module.opensearch.domain_arn]

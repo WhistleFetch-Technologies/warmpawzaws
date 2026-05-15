@@ -19,6 +19,7 @@ provider:
   # Local environment variables (override with .env file)
   environment:
     NODE_ENV: local
+    WPZ_API_STAGE: local
     AWS_REGION: ap-south-1
     
     # AWS Chime Configuration
@@ -50,6 +51,9 @@ provider:
     
     # Feature Flags
     UAT_MODE: ${env:UAT_MODE, 'true'}
+
+    # Optional: settlement cron PutRule (defaults in code to warmpawz-dev-… when unset)
+    SETTLEMENT_CALCULATE_CRON_RULE_NAME: ${env:SETTLEMENT_CALCULATE_CRON_RULE_NAME, ''}
     
     # S3 Configuration
     S3_UPLOADS_BUCKET: ${env:S3_UPLOADS_BUCKET, 'warmpawz-dev-uploads'}

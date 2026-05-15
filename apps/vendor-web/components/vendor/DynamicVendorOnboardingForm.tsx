@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Upload, MapPin, AlertCircle, CheckCircle2, ArrowLeft, X, User, Check } from 'lucide-react';
 // Uses apiClient (API Gateway)
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 // KYC verification components
 import { AadhaarOTPVerification, PANVerification, GSTVerification, DeclarationField } from './kyc';
 
@@ -380,10 +381,13 @@ export function DynamicVendorOnboardingForm({
       let endpoint = '';
       
       try {
-        // Try new fixed endpoint
+        // Try new fixed endpoint (always pass roleId when we have it so schema matches admin catalogue for that role)
         const params = new URLSearchParams();
         if (phone) {
           params.append('phone', phone);
+        }
+        if (roleId) {
+          params.append('roleId', roleId);
         }
         endpoint = `/vendor/onboarding/form-schema-fixed?${params.toString()}`;
         console.log('[DYNAMIC FORM] 🔗 Trying FIXED endpoint:', endpoint);
@@ -407,9 +411,11 @@ export function DynamicVendorOnboardingForm({
 
       console.log('[DYNAMIC FORM] ✅ Raw response:', response);
       
-      // ✅ FIX: Unwrap double-wrapped response from BaseHandlerEnhanced
-      // Backend returns: { success: true, data: { success: true, fields: [...], sections: [...] } }
-      const data = response.data || response;
+      // Unwrap BaseHandler / apiClient nesting (sometimes { data: { sections } } or { data: { data: ... } })
+      let data: any = response?.data ?? response;
+      if (data?.data && (data.data.sections || data.data.fields || data.data.schema)) {
+        data = data.data;
+      }
       
       console.log('[DYNAMIC FORM] ✅ Unwrapped data:', data);
       console.log('[DYNAMIC FORM] 📋 Version:', data.version, 'Status:', data.status);
@@ -418,6 +424,16 @@ export function DynamicVendorOnboardingForm({
       // ✅ FIX: Handle new response structure (fields, sections, schema)
       if (data && (data.schema || data.fields || data.sections)) {
         // ✅ FIX: Transform fields to use 'name' instead of 'fieldName' (backend uses fieldName)
+        const normalizeFieldType = (raw: unknown): string => {
+          const t = String(raw || 'text').trim().toLowerCase().replace(/_/g, '-');
+          if (t === 'phone') return 'tel';
+          if (t === 'aadhaarotp' || t === 'aadhar-otp') return 'aadhaar-otp';
+          if (t === 'panverify') return 'pan-verify';
+          if (t === 'gstverify') return 'gst-verify';
+          if (t === 'multi-select') return 'multiselect';
+          return t || 'text';
+        };
+
         const transformField = (f: any) => {
           // Normalize options - convert string arrays to {value, label} objects for multiselect/select fields
           let normalizedOptions = f.options;
@@ -439,15 +455,22 @@ export function DynamicVendorOnboardingForm({
             // Use id as the field name for generic fieldName values to ensure uniqueness
             fieldName = f.id || `field_${Date.now()}_${Math.random().toString(36).substring(7)}`;
           }
+
+          const required =
+            Boolean(f.isMandatory) ||
+            Boolean(f.required) ||
+            Boolean(f.validation?.required);
           
           return {
             ...f,
+            type: normalizeFieldType(f.type),
             name: fieldName,
             isActive: f.isActive !== false && f.is_active !== false,
             options: normalizedOptions, // Add normalized options
+            // Spread first so isMandatory/required win over validation.required: false from DB
             validation: {
-              required: f.isMandatory || f.validation?.required,
-              ...f.validation
+              ...f.validation,
+              required,
             }
           };
         };
@@ -1345,22 +1368,21 @@ export function DynamicVendorOnboardingForm({
                 </div>
               </div>
             ) : (
-              <label className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-gray-300 rounded-2xl cursor-pointer hover:border-[#FF8C42] hover:bg-orange-50/50 transition-all group">
+              <TouchFilePicker
+                onFileChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileUpload(field.name, file);
+                }}
+                accept={field.acceptedFileTypes?.join(',') || 'image/*'}
+                className="h-48 border-2 border-dashed border-gray-300 rounded-2xl transition-all group cursor-pointer overflow-hidden hover:border-[#FF8C42] hover:bg-orange-50/50"
+                innerClassName="flex h-full w-full flex-col items-center justify-center p-2"
+              >
                 <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                    <Upload className="w-6 h-6 text-[#FF8C42]" />
+                  <Upload className="w-6 h-6 text-[#FF8C42]" />
                 </div>
                 <span className="text-sm font-semibold text-gray-700 group-hover:text-[#FF8C42] transition-colors">Tap to upload document</span>
                 <span className="text-xs text-gray-400 mt-1">{field.documentLabel || field.label}</span>
-                <input
-                  type="file"
-                  accept={field.acceptedFileTypes?.join(',') || 'image/*'}
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleFileUpload(field.name, file);
-                  }}
-                />
-              </label>
+              </TouchFilePicker>
             )}
           </div>
         );
@@ -1566,7 +1588,7 @@ export function DynamicVendorOnboardingForm({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600 font-medium">Loading...</p>
@@ -1577,8 +1599,8 @@ export function DynamicVendorOnboardingForm({
 
   if (!form) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] flex items-center justify-center max-w-[430px] mx-auto p-6">
-        <div className="bg-white rounded-3xl p-8 w-full text-center shadow-sm">
+      <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex items-center justify-center p-4 sm:p-6">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 w-full text-center shadow-sm">
           <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-gray-800 mb-2">Form Not Available</h3>
           <p className="text-gray-600 mb-6 text-sm">Unable to load the onboarding form for this role.</p>
@@ -1601,8 +1623,8 @@ console.log("------------------------------------->",formData);
   // ✅ Check if form has empty sections (no published form)
   if (form.sections.length === 0) {
     return (
-      <div className="min-h-screen bg-[#FFF5F1] flex items-center justify-center max-w-[430px] mx-auto p-6">
-        <div className="bg-white rounded-3xl p-8 w-full text-center shadow-sm">
+      <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex items-center justify-center p-4 sm:p-6">
+        <div className="bg-white rounded-3xl p-6 sm:p-8 w-full text-center shadow-sm">
           <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
           <h3 className="text-xl font-bold text-gray-800 mb-2">Form Not Published</h3>
           <p className="text-gray-600 mb-6 text-sm">
@@ -1619,7 +1641,7 @@ console.log("------------------------------------->",formData);
   }
 
   return (
-    <div className="min-h-screen bg-[#FFF5F1] w-full max-w-[430px] mx-auto flex flex-col">
+    <div className="min-h-screen bg-[#FFF5F1] vendor-app-column flex flex-col">
       {/* Header Section */}
       <div className="pt-8 pb-8 px-6 text-center relative">
         {onBack && (
@@ -1687,12 +1709,12 @@ console.log("------------------------------------->",formData);
               }
               return (a.displayOrder || a.order || 0) - (b.displayOrder || b.order || 0);
             })
-            .map((field) => (
-              <div key={field.id}>
+            .map((field, fieldIdx) => (
+              <div key={`${field.sectionOrder ?? 0}-${String(field.id ?? '')}-${field.name}-${fieldIdx}`}>
                 {field.type !== 'checkbox' && (
                   <Label className="text-sm font-semibold text-gray-900 mb-2 block">
                     {field.label}
-                    {field.validation?.required && (
+                    {(field.validation?.required || (field as any).isMandatory) && (
                       <span className="text-red-500 ml-1">*</span>
                     )}
                   </Label>
@@ -1716,11 +1738,11 @@ console.log("------------------------------------->",formData);
           {form.documentSections?.flatMap(section => section.fields)
             .filter(f => f.isActive !== false)
             .sort((a, b) => a.order - b.order)
-            .map((field) => (
-              <div key={field.id}>
+            .map((field, fieldIdx) => (
+              <div key={`doc-${String(field.id ?? '')}-${field.name}-${fieldIdx}`}>
                 <Label className="text-sm font-semibold text-gray-900 mb-2 block">
                   {field.label}
-                  {field.validation?.required && (
+                  {(field.validation?.required || (field as any).isMandatory) && (
                     <span className="text-red-500 ml-1">*</span>
                   )}
                 </Label>
@@ -1779,8 +1801,8 @@ console.log("------------------------------------->",formData);
       </div>
 
       {/* Fixed Bottom Buttons */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md px-6 py-4 max-w-[430px] mx-auto border-t border-gray-100 z-50">
-        <div className="flex flex-col gap-3">
+      <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-gray-100 z-50 safe-area-bottom">
+        <div className="vendor-app-column-inner px-4 sm:px-6 py-4 flex flex-col gap-3">
           <Button
             onClick={handleSubmit}
             disabled={submitting}

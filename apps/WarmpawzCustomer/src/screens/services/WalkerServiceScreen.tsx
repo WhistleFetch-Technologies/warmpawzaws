@@ -9,16 +9,31 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { pickWalkerVendorId } from '@warmpawz/shared-types';
+import { openVendorProfile } from '../../navigation/openVendorProfile';
+import { formatDistanceDisplay } from '../../utils/distance-display';
+import { customerFacingRating } from '../../utils/rating-display';
 
 type StepType = 'select' | 'walkers' | 'confirm';
+
+function walkerProfilePhotoUrl(walker: Record<string, unknown>): string | undefined {
+  for (const key of ['photoUrl', 'photo', 'profilePhotoUrl', 'profile_photo_url'] as const) {
+    const v = walker[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return undefined;
+}
 
 interface WalkerServiceScreenProps {
   phone: string;
@@ -131,6 +146,8 @@ export function WalkerServiceScreen({
       const response = await CustomerApi.searchServices({
         serviceType: 'walker',
         location: userLocation ? `${userLocation.lat},${userLocation.lng}` : '',
+        latitude: userLocation?.lat,
+        longitude: userLocation?.lng,
       });
       setWalkers(response.vendors || []);
     } catch (error) {
@@ -142,10 +159,15 @@ export function WalkerServiceScreen({
   };
 
   const handleWalkerSelect = (walker: any) => {
+    const vid = pickWalkerVendorId(walker as Record<string, unknown>);
+    if (!vid) {
+      Alert.alert('Error', 'Unable to book with this walker — missing vendor id.');
+      return;
+    }
     setSelectedWalker(walker);
     setBookingDetails(prev => ({
       ...prev,
-      walkerId: walker.id,
+      walkerId: vid,
       walkerName: walker.name,
     }));
     setStep('confirm');
@@ -182,15 +204,21 @@ export function WalkerServiceScreen({
   };
 
   const renderSelectStep = () => (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Dog Walking Service</Text>
-        <Text style={styles.headerSubtitle}>Book a trusted walker for your pet</Text>
-      </View>
-
+    <OrangeBrandedScreenLayout
+      title="Dog Walking"
+      bodyBackgroundColor={colors.white}
+      padBodyBottomInset={false}
+      customOrangeHeader={
+        <View style={styles.orangeHeaderInner}>
+          <TouchableOpacity onPress={onBack}>
+            <Text style={styles.backButton}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Dog Walking Service</Text>
+          <Text style={styles.headerSubtitle}>Book a trusted walker for your pet</Text>
+        </View>
+      }
+    >
+    <ScrollView style={styles.bodyScroll} contentContainerStyle={{ paddingBottom: spacing.xl }}>
       {/* Step 1: Select Pet */}
       <View style={styles.section}>
         <View style={styles.stepHeader}>
@@ -360,51 +388,87 @@ export function WalkerServiceScreen({
         <Text style={styles.primaryButtonText}>Find Walkers</Text>
       </TouchableOpacity>
     </ScrollView>
+    </OrangeBrandedScreenLayout>
   );
 
   const renderWalkersStep = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setStep('select')}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Walker</Text>
-      </View>
-
+    <OrangeBrandedScreenLayout
+      title="Dog Walking"
+      bodyBackgroundColor={colors.white}
+      padBodyBottomInset={false}
+      customOrangeHeader={
+        <View style={styles.orangeHeaderInner}>
+          <TouchableOpacity onPress={() => setStep('select')}>
+            <Text style={styles.backButton}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Select Walker</Text>
+        </View>
+      }
+    >
+    <View style={styles.walkersBody}>
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
         <ScrollView style={styles.walkerList}>
-          {walkers.map((walker) => (
-            <TouchableOpacity
-              key={walker.id}
+          {walkers.map((walker, index) => {
+            const photoUri = walkerProfilePhotoUrl(walker as Record<string, unknown>);
+            const rowKey = String(
+              pickWalkerVendorId(walker as Record<string, unknown>) || walker.id || walker.vendorId || ''
+            );
+            const profileVid = pickWalkerVendorId(walker as Record<string, unknown>);
+            const wFace = customerFacingRating(
+              walker.rating,
+              walker.reviewCount ?? walker.review_count
+            );
+            return (
+            <View
+              key={rowKey ? rowKey : `walker-row-${index}`}
               style={styles.walkerCard}
-              onPress={() => handleWalkerSelect(walker)}
             >
-              <View style={styles.walkerInfo}>
-                <Text style={styles.walkerName}>{walker.name}</Text>
-                {walker.rating && (
-                  <Text style={styles.walkerRating}>
-                    ⭐ {walker.rating.toFixed(1)}
-                  </Text>
-                )}
-                {walker.experience && (
-                  <Text style={styles.walkerExperience}>
-                    {walker.experience} years experience
-                  </Text>
-                )}
-                {walker.distance && (
-                  <Text style={styles.walkerDistance}>
-                    📍 {walker.distance} km away
-                  </Text>
-                )}
-              </View>
-              <Text style={styles.chevron}>›</Text>
-            </TouchableOpacity>
-          ))}
+              <Pressable
+                style={styles.walkerCardMain}
+                onPress={() => handleWalkerSelect(walker)}
+                accessibilityRole="button"
+                accessibilityLabel={`Select ${walker.name || 'walker'} for booking`}
+              >
+                <WalkerListThumb uri={photoUri} />
+                <View style={styles.walkerInfo}>
+                  <Text style={styles.walkerName}>{walker.name}</Text>
+                  {wFace != null && (
+                    <Text style={styles.walkerRating}>⭐ {wFace.toFixed(1)}</Text>
+                  )}
+                  {walker.experience && (
+                    <Text style={styles.walkerExperience}>
+                      {walker.experience} years experience
+                    </Text>
+                  )}
+                  {formatDistanceDisplay(walker) && (
+                    <Text style={styles.walkerDistance}>
+                      📍 {formatDistanceDisplay(walker)}
+                    </Text>
+                  )}
+                </View>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`View ${walker.name || 'walker'} profile`}
+                hitSlop={10}
+                onPress={() => {
+                  if (!openVendorProfile(onNavigate, walker as Record<string, unknown>)) {
+                    Alert.alert('Profile unavailable', 'We could not resolve a vendor id for this walker.');
+                  }
+                }}
+                style={styles.walkerChevronHit}
+              >
+                <Text style={styles.chevron}>›</Text>
+              </Pressable>
+            </View>
+            );
+          })}
         </ScrollView>
       )}
     </View>
+    </OrangeBrandedScreenLayout>
   );
 
   const renderConfirmStep = () => {
@@ -413,14 +477,19 @@ export function WalkerServiceScreen({
       : `${bookingDetails.duration} min`;
 
     return (
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => setStep('walkers')}>
-            <Text style={styles.backButton}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Confirm Booking</Text>
-        </View>
-
+      <OrangeBrandedScreenLayout
+        title="Dog Walking"
+        bodyBackgroundColor={colors.white}
+        padBodyBottomInset={false}
+        customOrangeHeader={
+          <View style={styles.orangeHeaderInner}>
+            <TouchableOpacity onPress={() => setStep('walkers')}>
+              <Text style={styles.backButton}>← Back</Text>
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Confirm Booking</Text>
+          </View>
+        }
+      >
         <ScrollView style={styles.confirmContainer}>
           <View style={styles.bookingSummary}>
             <Text style={styles.summaryTitle}>Booking Details</Text>
@@ -469,24 +538,24 @@ export function WalkerServiceScreen({
             )}
           </TouchableOpacity>
         </ScrollView>
-      </View>
+      </OrangeBrandedScreenLayout>
     );
   };
 
   if (loading && step === 'select') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <>
       {step === 'select' && renderSelectStep()}
       {step === 'walkers' && renderWalkersStep()}
       {step === 'confirm' && renderConfirmStep()}
-    </SafeAreaView>
+    </>
   );
 }
 
@@ -495,11 +564,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
   },
-  header: {
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+  orangeHeaderInner: {
+    width: '100%',
+    paddingBottom: spacing.sm,
+  },
+  bodyScroll: {
+    flex: 1,
+  },
+  walkersBody: {
+    flex: 1,
+    minHeight: 0,
   },
   backButton: {
     fontSize: typography.body,
@@ -639,13 +713,37 @@ const styles = StyleSheet.create({
   walkerCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: '#F9FAFB',
     borderRadius: borderRadius.md,
     padding: spacing.md,
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.gray['200'],
+    gap: spacing.sm,
+  },
+  walkerCardMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  walkerChevronHit: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    justifyContent: 'center',
+  },
+  walkerThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.gray['100'],
+  },
+  walkerThumbPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  walkerThumbEmoji: {
+    fontSize: 28,
   },
   walkerInfo: {
     flex: 1,
@@ -720,4 +818,26 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
+
+function WalkerListThumb({ uri }: { uri?: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [uri]);
+  if (uri && !failed) {
+    return (
+      <Image
+        source={{ uri }}
+        style={styles.walkerThumb}
+        onError={() => setFailed(true)}
+        accessibilityIgnoresInvertColors
+      />
+    );
+  }
+  return (
+    <View style={[styles.walkerThumb, styles.walkerThumbPlaceholder]}>
+      <Text style={styles.walkerThumbEmoji}>🐕</Text>
+    </View>
+  );
+}
 

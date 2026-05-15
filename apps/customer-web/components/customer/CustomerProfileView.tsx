@@ -6,8 +6,17 @@ import { ChevronLeft, Camera, Edit2, Save, X, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
-import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { validateEmail } from '@/lib/validation';
+import {
+  inferCityStateFromCommaAddress,
+  mergeStreetAddressLineOnly,
+  PROFILE_ADDRESS_FORMAT_PLACEHOLDER,
+} from '@/lib/profile-address-format';
+import { PresignableImage } from '@/components/shared/PresignableImage';
+import {
+  normalizeCustomerProfileFields,
+  patchCustomerProfileKeysInLocalStorage,
+} from '@/lib/normalize-customer-profile-api';
 
 interface UserProfile {
   firstName: string;
@@ -16,6 +25,8 @@ interface UserProfile {
   phone: string;
   address: string;
   pincode: string;
+  houseNo: string;
+  floor: string;
   city?: string;
   state?: string;
   photo?: string;
@@ -45,9 +56,36 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const result = await apiClient.get<{ profile: UserProfile }>(`/customer/profile?phone=${encodeURIComponent(phone)}`);
-      setProfile(result.profile);
-      setPhotoPreview(result.profile.photo || '');
+      const result = await apiClient.get<{ profile: Record<string, unknown> }>(
+        `/customer/profile?phone=${encodeURIComponent(phone)}`
+      );
+      const raw = result.profile;
+      if (!raw) return;
+      const base = normalizeCustomerProfileFields(raw as any, phone);
+      const addressLine = mergeStreetAddressLineOnly({
+        address: base.address,
+        city: base.city,
+        state: base.state,
+      });
+      const houseNo = String((raw as any).houseNo ?? (raw as any).house_no ?? '').trim();
+      const floor = String((raw as any).floor ?? '').trim();
+      const { city: inferredCity, state: inferredState } = inferCityStateFromCommaAddress(addressLine);
+      const normalized: UserProfile = {
+        firstName: base.firstName,
+        lastName: base.lastName,
+        email: base.email,
+        phone: base.phone,
+        address: addressLine,
+        pincode: base.pincode,
+        houseNo,
+        floor,
+        city: inferredCity ?? base.city,
+        state: inferredState ?? base.state,
+        photo: base.photo,
+        created_at: (raw as any).created_at ?? (raw as any).createdAt,
+      };
+      setProfile(normalized);
+      setPhotoPreview(base.photo || '');
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
@@ -111,6 +149,11 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
       return;
     }
 
+    if (!profile.houseNo?.trim()) {
+      alert('Please enter House No / Flat No');
+      return;
+    }
+
     if (!validateEmail(profile.email)) {
       alert('Please enter a valid email address');
       return;
@@ -124,8 +167,15 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
     setSaving(true);
     try {
       // Use uploaded photo URL if available, otherwise keep existing
+      const addr = profile.address.trim();
+      const { city: inferredCity, state: inferredState } = inferCityStateFromCommaAddress(addr);
       const profileToSave = {
         ...profile,
+        address: addr,
+        city: inferredCity ?? profile.city,
+        state: inferredState ?? profile.state,
+        houseNo: profile.houseNo.trim(),
+        floor: (profile.floor || '').trim(),
         photo: uploadedPhotoUrl || profile.photo,
       };
 
@@ -133,6 +183,14 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
         phone: phone,
         profile: profileToSave,
       });
+
+      patchCustomerProfileKeysInLocalStorage({
+        pincode: profileToSave.pincode,
+        address: profileToSave.address,
+        city: profileToSave.city,
+        state: profileToSave.state,
+      });
+      setProfile(profileToSave);
 
       setEditMode(false);
       setUploadedPhotoUrl(''); // Reset after save
@@ -147,7 +205,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-customer mx-auto">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-gray-600">Loading profile...</p>
@@ -158,7 +216,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
 
   if (!profile) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-customer mx-auto">
         <div className="text-center px-6">
           <p className="text-gray-600 mb-4">Profile not found</p>
           <Button onClick={onBack} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
@@ -170,30 +228,9 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
-      {/* Status Bar */}
-      <div className="px-6 pt-3 pb-2 flex justify-between items-center">
-        <span className="text-black text-sm">09:41</span>
-        <div className="flex gap-1.5 items-center">
-          <svg width="17" height="12" viewBox="0 0 17 12" fill="none">
-            <rect y="8" width="3" height="4" rx="0.5" fill="black"/>
-            <rect x="4.5" y="5" width="3" height="7" rx="0.5" fill="black"/>
-            <rect x="9" y="2" width="3" height="10" rx="0.5" fill="black"/>
-            <rect x="13.5" y="0" width="3" height="12" rx="0.5" fill="black"/>
-          </svg>
-          <svg width="16" height="12" viewBox="0 0 16 12" fill="none">
-            <path d="M0.5 7.5C2.5 5.5 5.5 4 8 4C10.5 4 13.5 5.5 15.5 7.5M3.5 10C5 8.5 6.5 8 8 8C9.5 8 11 8.5 12.5 10" stroke="black" strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-          <svg width="25" height="12" viewBox="0 0 25 12" fill="none">
-            <rect x="0.75" y="1.5" width="20" height="9" rx="2" stroke="black" strokeWidth="1.5"/>
-            <rect x="2.5" y="3" width="16.5" height="6" rx="1" fill="black"/>
-            <rect x="22" y="4" width="2.5" height="4" rx="1" fill="black"/>
-          </svg>
-        </div>
-      </div>
-
-      {/* Header */}
-      <div className="px-6 py-4 flex items-center justify-between border-b border-gray-200">
+    <div className="min-h-screen bg-white flex flex-col w-full max-w-customer mx-auto">
+      {/* Header — real device status bar is system-drawn; use safe-area padding only */}
+      <div className="cw-header-safe-top cw-header-safe-x pb-4 flex items-center justify-between border-b border-gray-200">
         <button onClick={onBack} className="p-2 -ml-2 hover:bg-gray-100 rounded-full">
           <ChevronLeft className="w-6 h-6 text-gray-700" />
         </button>
@@ -221,7 +258,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
             >
               {photoPreview ? (
                 <>
-                  <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
+                  <PresignableImage src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
                   {uploadingPhoto && (
                     <div className="absolute inset-0 bg-black bg-opacity-50 flex flex-col items-center justify-center">
                       <Loader2 className="w-8 h-8 text-white animate-spin mb-2" />
@@ -343,31 +380,71 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
               </p>
             </div>
 
-            {/* Address - Same EnhancedAddressAutocomplete as Add Address for consistency */}
+            {/* Address — single comma-separated field (area, locality, city, state, country) */}
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-2">
                 Address
               </label>
               {editMode ? (
-                <EnhancedAddressAutocomplete
-                  value={profile.address}
-                  onChange={(address: string, components?: AddressComponents) => {
-                    setProfile(prev => {
-                      if (!prev) return null;
-                      const updated: UserProfile = { ...prev, address };
-                      if (components?.pincode) updated.pincode = components.pincode;
-                      if (components?.city) updated.city = components.city;
-                      if (components?.state) updated.state = components.state;
-                      return updated;
-                    });
-                  }}
-                  placeholder="Search address, landmark, city..."
-                  className="w-full"
-                  required
+                <>
+                  <textarea
+                    value={profile.address}
+                    onChange={(e) => {
+                      const address = e.target.value;
+                      const { city: c, state: s } = inferCityStateFromCommaAddress(address);
+                      setProfile((prev) =>
+                        prev ? { ...prev, address, city: c ?? prev.city, state: s ?? prev.state } : null
+                      );
+                    }}
+                    placeholder={PROFILE_ADDRESS_FORMAT_PLACEHOLDER}
+                    rows={4}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-y min-h-[100px]"
+                  />
+                  <p className="text-xs text-gray-500 mt-1.5">
+                    Separate parts with commas: area, locality, city, state, country.
+                  </p>
+                </>
+              ) : (
+                <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl whitespace-pre-wrap">
+                  {profile.address}
+                </p>
+              )}
+            </div>
+
+            {/* House No / Flat No — same as account creation */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                House No / Flat No <span className="text-red-500">*</span>
+              </label>
+              {editMode ? (
+                <input
+                  type="text"
+                  value={profile.houseNo}
+                  onChange={(e) => setProfile({ ...profile, houseNo: e.target.value })}
+                  placeholder="e.g., A-101, Flat 12B"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                 />
               ) : (
                 <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
-                  {profile.address}
+                  {profile.houseNo?.trim() || '—'}
+                </p>
+              )}
+            </div>
+
+            {/* Floor (optional) */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Floor</label>
+              {editMode ? (
+                <input
+                  type="text"
+                  value={profile.floor}
+                  onChange={(e) => setProfile({ ...profile, floor: e.target.value })}
+                  placeholder="e.g., 1st Floor"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                />
+              ) : (
+                <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
+                  {profile.floor?.trim() || '—'}
                 </p>
               )}
             </div>
@@ -417,7 +494,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
 
       {/* Fixed Bottom Button */}
       {editMode && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto w-full">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-customer mx-auto w-full">
           <Button
             onClick={handleSave}
             disabled={saving}
@@ -435,7 +512,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
 
       {/* Home Indicator (when not in edit mode) */}
       {!editMode && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white px-6 py-4 max-w-[430px] mx-auto w-full">
+        <div className="fixed bottom-0 left-0 right-0 bg-white px-6 py-4 max-w-customer mx-auto w-full">
           <div className="flex justify-center">
             <div className="w-32 h-1 bg-black rounded-full"></div>
           </div>

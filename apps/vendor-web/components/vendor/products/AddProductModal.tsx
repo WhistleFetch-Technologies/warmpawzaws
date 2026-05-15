@@ -3,6 +3,20 @@
 import { X, ShoppingBag, Plus, Trash2, Upload, Image as ImageIcon, MapPin } from 'lucide-react';
 import { useState } from 'react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+
+function stripAwsPresignFromProductImageUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    if (u.searchParams.has('X-Amz-Algorithm') || u.searchParams.has('X-Amz-Credential')) {
+      u.search = '';
+      return u.toString();
+    }
+  } catch {
+    /* ignore */
+  }
+  return url;
+}
 
 interface AddProductModalProps {
   isOpen: boolean;
@@ -81,13 +95,27 @@ export function AddProductModal({
           if (imageUrl) {
             uploadedUrls.push(imageUrl);
           } else {
-            // Fallback: Create object URL for preview (temporary)
-            uploadedUrls.push(URL.createObjectURL(file));
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result));
+              reader.onerror = () => reject(new Error('Failed to read image file'));
+              reader.readAsDataURL(file);
+            });
+            uploadedUrls.push(dataUrl);
           }
         } catch (error) {
-          // Fallback: Create object URL for preview (temporary)
-          console.warn('Image upload failed, using preview:', error);
-          uploadedUrls.push(URL.createObjectURL(file));
+          console.warn('Image upload failed; using data URL for server-side S3 on save:', error);
+          try {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result));
+              reader.onerror = () => reject(new Error('Failed to read image file'));
+              reader.readAsDataURL(file);
+            });
+            uploadedUrls.push(dataUrl);
+          } catch {
+            console.error('Could not read image for upload', error);
+          }
         }
       }
 
@@ -144,7 +172,8 @@ export function AddProductModal({
         gst_rate: formData.gst_rate ? parseFloat(formData.gst_rate) : null,
         sku: formData.sku || null,
         is_active: formData.is_active,
-        images: images.length > 0 ? images : [],
+        images:
+          images.length > 0 ? images.map(stripAwsPresignFromProductImageUrl) : [],
         variants: variants.length > 0 ? variants.map(v => ({
           size: v.size || null,
           color: v.color || null,
@@ -347,18 +376,17 @@ export function AddProductModal({
                     </button>
                   </div>
                 ))}
-                <label className="w-24 h-24 border-2 border-dashed border-gray-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-orange-500 transition-colors">
-                  <Upload className="w-6 h-6 text-gray-400 mb-1" />
+                <TouchFilePicker
+                  onFileChange={handleImageUpload}
+                  accept="image/*"
+                  multiple
+                  disabled={uploadingImages}
+                  className="relative h-24 w-24 flex-shrink-0 overflow-hidden rounded-lg border-2 border-dashed border-gray-300 transition-colors hover:border-orange-500"
+                  innerClassName="flex w-full flex-col items-center justify-center p-1"
+                >
+                  <Upload className="mb-1 w-6 h-6 text-gray-400" />
                   <span className="text-xs text-gray-500">Upload</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleImageUpload}
-                    disabled={uploadingImages}
-                    className="hidden"
-                  />
-                </label>
+                </TouchFilePicker>
               </div>
               {uploadingImages && (
                 <p className="text-sm text-gray-500">Uploading images...</p>

@@ -5,6 +5,9 @@ import { Star, MapPin, Building2, Home, ChevronRight, Search, Loader2, Shield, S
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { getWebCustomerVendorStyleListingNavTarget } from '@/lib/customer-vendor-profile-navigation';
+import { formatDistanceDisplay } from '@/lib/distance-display';
+import { StarRating } from '../shared/StarRating';
 // Simple debounce implementation
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
   let timeoutId: NodeJS.Timeout | null = null;
@@ -105,17 +108,21 @@ export function VendorListingByStyle({
         const response = await apiClient.get(`/search?${searchParams}`) as any;
         
         if (response.success || response.vendors) {
-          const searchVendors = (response.vendors || []).map((v: any) => ({
+          const searchVendors = (response.vendors || []).map((v: any) => {
+            const rc = Number(v.reviewCount ?? v.review_count ?? 0) || 0;
+            const r = v.rating != null ? Number(v.rating) : NaN;
+            return {
             id: v.id,
             name: v.businessName || v.name,
             type: 'vendor' as const,
-            rating: v.rating || 4.5,
-            reviewCount: v.completedBookings || 0,
-            distance: v.distance_km || null,
+            rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : 0,
+            reviewCount: rc,
+            distance: v.distance_km ?? v.distance ?? null,
             city: v.city,
             isVerified: true,
             specialization: v.specialization,
-          }));
+          };
+          });
           setVendors(searchVendors);
         }
       } catch (error) {
@@ -147,17 +154,13 @@ export function VendorListingByStyle({
         }
       }
       
+      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
       const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}`
+        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${phoneParam}`
       ) as any;
 
       if (response.success) {
         let providerData = response.providers || response.vendors || [];
-        
-        // ✅ FIX: Filter out business vendors when serviceStyle is at_home
-        if (serviceStyle === 'at_home') {
-          providerData = providerData.filter((p: any) => p.vendorType !== 'business');
-        }
         
         const vendorMap = new Map<string, Vendor>();
         
@@ -166,12 +169,14 @@ export function VendorListingByStyle({
           const providerType = item.providerType || 'vendor';
           
           if (!vendorMap.has(vendorId)) {
+            const rc = parseInt(item.reviewCount || item.reviewsCount || '0', 10) || 0;
+            const r = item.rating != null && item.rating !== '' ? parseFloat(String(item.rating)) : NaN;
             vendorMap.set(vendorId, {
               id: vendorId,
               name: item.name || item.vendorName || item.businessName || 'Service Provider',
               type: providerType,
-              rating: parseFloat(item.rating || '4.5'),
-              reviewCount: parseInt(item.reviewCount || item.reviewsCount || '0', 10),
+              rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : 0,
+              reviewCount: rc,
               distance: item.distance || null,
               city: item.city,
               address: item.address,
@@ -214,50 +219,8 @@ export function VendorListingByStyle({
         setVendors(vendorsList);
         console.log(`✅ [VendorListingByStyle] Loaded ${vendorsList.length} vendors for ${serviceStyle}`);
       } else {
-        // Try fallback
-        try {
-          const roleMapping: Record<string, string> = {
-            'grooming': 'pet_groomer',
-            'vet': 'veterinarian',
-            'training': 'pet_trainer',
-            'walker': 'pet_walker',
-            'boarding': 'pet_boarder',
-            'nutritionist': 'pet_nutritionist',
-          };
-          
-          const fallbackResponse = await apiClient.get(
-            `/customer/discover-services?category=${category}&roleId=${roleMapping[category] || category}&serviceStyle=${serviceStyle}${locationParams}`
-          ) as any;
-          
-          const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
-          const vendorMap = new Map<string, Vendor>();
-          
-          servicesData.forEach((service: any) => {
-            const vendorId = service.vendorId || service.id;
-            if (!vendorMap.has(vendorId)) {
-              vendorMap.set(vendorId, {
-                id: vendorId,
-                name: service.vendorName || service.businessName || service.name || 'Service Provider',
-                type: 'vendor',
-                rating: parseFloat(service.vendorRating || service.rating || '4.5'),
-                reviewCount: parseInt(service.vendorReviewCount || service.reviewsCount || '0', 10),
-                distance: service.distance || null,
-                city: service.city,
-                address: service.address,
-                photo: service.photo,
-                isVerified: service.isVerified,
-                price: service.price,
-              });
-            }
-          });
-          
-          const vendorsList = Array.from(vendorMap.values());
-          setVendors(vendorsList);
-          console.log(`✅ [VendorListingByStyle] Loaded ${vendorsList.length} vendors from fallback`);
-        } catch (fallbackError) {
-          console.error('❌ [VendorListingByStyle] Fallback failed:', fallbackError);
+        console.warn(`⚠️ [VendorListingByStyle] Primary endpoint returned success=false or no vendors`);
           setVendors([]);
-        }
       }
     } catch (error) {
       console.error('❌ [VendorListingByStyle] Error:', error);
@@ -286,14 +249,21 @@ export function VendorListingByStyle({
   };
 
   const handleViewVendor = (vendor: Vendor) => {
-    onNavigate('grooming-vendor-profile', {
-      vendorId: vendor.id,
-      vendorType: vendor.type,
+    const { screen, data } = getWebCustomerVendorStyleListingNavTarget({
+      vertical: 'grooming',
       serviceStyle,
       category,
-      vendorName: vendor.name,
-      vendorData: vendor
+      serviceTypeName,
+      vendor: {
+        id: vendor.id,
+        name: vendor.name,
+        type: vendor.type,
+        vendorId: vendor.vendorId,
+        vendorName: vendor.vendorName,
+        vendorData: vendor,
+      },
     });
+    onNavigate(screen, data);
   };
 
   const sortedVendors = [...vendors].sort((a, b) => {
@@ -554,23 +524,23 @@ export function VendorListingByStyle({
                     )}
                     
                     <div className="flex items-center gap-2 text-sm flex-wrap">
-                      <div className="flex items-center gap-1">
-                        <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                        <span className="font-medium">{vendor.rating.toFixed(1)}</span>
-                        <span className="text-gray-400">({vendor.reviewCount})</span>
-                      </div>
+                      <StarRating
+                        rating={vendor.rating}
+                        reviewCount={vendor.reviewCount}
+                        textClassName="text-xs text-gray-500"
+                      />
                       
-                      {vendor.distance !== null && vendor.distance !== undefined && (
+                      {formatDistanceDisplay(vendor) && (
                         <>
                           <span className="text-gray-300">•</span>
                           <div className="flex items-center gap-1 text-[#FF8C42] font-medium text-xs">
                             <MapPin className="w-3 h-3" />
-                            {vendor.distance.toFixed(1)} km
+                            {formatDistanceDisplay(vendor)}
                           </div>
                         </>
                       )}
                       
-                      {vendor.city && !vendor.distance && (
+                      {vendor.city && (vendor.distance === null || vendor.distance === undefined) && (
                         <>
                           <span className="text-gray-300">•</span>
                           <span className="text-gray-500 text-xs">{vendor.city}</span>

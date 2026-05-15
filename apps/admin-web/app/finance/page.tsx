@@ -6,19 +6,17 @@ import {
 	IndianRupee,
 	TrendingUp,
 	Receipt,
-	FileText,
 	Wallet,
 	BarChart3,
 	Layers,
 	Settings,
 	CreditCard,
-	RotateCcw,
 	Clock,
 	ReceiptText,
 	FileCheck,
-	Building,
 	RefreshCw,
 	Package,
+	TableProperties,
 	X,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
@@ -28,13 +26,12 @@ import {
 	SettlementDashboard,
 	AdminPaymentSettings,
 	PaymentRulesSection,
-	RefundPoliciesSection,
 	SettlementScheduleSettings,
 	GSTConfigurationManagement,
-	CancellationPolicyManagement,
+	RefundPoliciesSection,
 	DynamicSettlementRulesManager,
-	FlexibleTaxRulesManager,
 	EcommercePoliciesSection,
+	VendorDailyAccrualReport,
 } from "@/components/admin/finance";
 import { FeeConfigurationManager } from "@/components/admin/finance/FeeConfigurationManager";
 
@@ -57,35 +54,45 @@ type TabType =
 	| "dashboard"
 	| "fee-config"
 	| "payment-policies"
-	| "refund-policies"
 	| "cancellation-policy"
 	| "ecommerce-policies"
 	| "gst-config"
-	| "flexible-tax"
 	| "settlements"
 	| "payouts"
 	| "tiers"
 	| "schedule-settings"
 	| "payment-settings"
 	| "settlement-rules"
-	| "reports";
+	| "vendor-daily-accrual";
 
 function FinanceManagementContent() {
 	const searchParams = useSearchParams();
 	const tabFromUrl = searchParams.get("tab") as TabType | null;
-	const validTabs: TabType[] = ["dashboard", "fee-config", "payment-policies", "refund-policies", "cancellation-policy", "ecommerce-policies", "gst-config", "flexible-tax", "settlements", "payouts", "tiers", "schedule-settings", "payment-settings", "settlement-rules", "reports"];
+	const validTabs: TabType[] = [
+		"dashboard",
+		"fee-config",
+		"payment-policies",
+		"cancellation-policy",
+		"ecommerce-policies",
+		"gst-config",
+		"settlements",
+		"payouts",
+		"tiers",
+		"schedule-settings",
+		"payment-settings",
+		"settlement-rules",
+		"vendor-daily-accrual",
+	];
 	const initialTab = tabFromUrl && validTabs.includes(tabFromUrl) ? tabFromUrl : "dashboard";
 	const [activeTab, setActiveTab] = useState<TabType>(initialTab);
 	const [showAdvancedSettings, setShowAdvancedSettings] = useState(false);
 
-	// Sync tab when URL param changes (e.g., from /payment-refund redirect)
+	// Sync tab when URL param changes
 	useEffect(() => {
 		if (tabFromUrl && validTabs.includes(tabFromUrl)) {
 			setActiveTab(tabFromUrl);
 		}
 	}, [tabFromUrl]);
-	const [success, setSuccess] = useState<string | null>(null);
-	const [error, setError] = useState<string | null>(null);
 	const [loadingStats, setLoadingStats] = useState(false);
 	const [financeStats, setFinanceStats] = useState<FinanceStats>({
 		pendingPayouts: 0,
@@ -148,22 +155,24 @@ function FinanceManagementContent() {
 		{ id: "dashboard", label: "Dashboard", icon: BarChart3 },
 		{ id: "fee-config", label: "Fee Configuration", icon: IndianRupee },
 		{ id: "payment-policies", label: "Payment Policies", icon: CreditCard },
-		{ id: "refund-policies", label: "Refund Policies", icon: RotateCcw },
 		{
 			id: "cancellation-policy",
-			label: "Cancellation Policy",
+			label: "Cancellation & Refund Policy",
 			icon: FileCheck,
 		},
 		{ id: "ecommerce-policies", label: "Ecommerce Policies", icon: Package },
 		{ id: "gst-config", label: "GST Configuration", icon: ReceiptText },
-		{ id: "flexible-tax", label: "Flexible Tax System", icon: ReceiptText },
 		{ id: "settlements", label: "Settlements", icon: Receipt },
 		{ id: "payouts", label: "Payout Management", icon: Wallet },
 		{ id: "tiers", label: "Tier System", icon: Layers },
 		{ id: "schedule-settings", label: "Schedule Settings", icon: Clock },
 		{ id: "settlement-rules", label: "Settlement Rules", icon: TrendingUp },
+		{
+			id: "vendor-daily-accrual",
+			label: "Daily accrual (IST)",
+			icon: TableProperties,
+		},
 		{ id: "payment-settings", label: "Payment Gateway", icon: Settings },
-		{ id: "reports", label: "Reports", icon: FileText },
 	];
 
 	return (
@@ -342,15 +351,14 @@ function FinanceManagementContent() {
 						</div>
 					)}
 
-					{activeTab === "refund-policies" && (
-						<div className="bg-white rounded-lg border border-gray-200 p-6">
-							<RefundPoliciesSection />
-						</div>
-					)}
-
 					{activeTab === "cancellation-policy" && (
-						<div className="bg-white rounded-lg border border-gray-200 p-6">
-							<CancellationPolicyManagement />
+						<div className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
+							<p className="text-sm text-gray-600 border-l-4 border-[#FF8C42] pl-3">
+								<strong>Single source for services:</strong> refund policy, cancellation rules, rescheduling, and no-show are all defined as tiers in{' '}
+								<code className="text-xs bg-gray-100 px-1 rounded">vendor_refund_tiers</code> (with <code className="text-xs bg-gray-100 px-1 rounded">policy_extensions</code> where needed).
+								E-commerce catalog orders use only <strong>Ecommerce Policies</strong> — not this tab.
+							</p>
+							<RefundPoliciesSection />
 						</div>
 					)}
 
@@ -366,18 +374,19 @@ function FinanceManagementContent() {
 						</div>
 					)}
 
-					{activeTab === "flexible-tax" && (
-						<div className="bg-white rounded-lg border border-gray-200 p-6">
-							<FlexibleTaxRulesManager />
-						</div>
-					)}
-
 					{activeTab === "settlements" && <SettlementDashboard />}
 					{activeTab === "payouts" && <PayoutManagement />}
 					{activeTab === "tiers" && <TierManagement />}
 					{activeTab === "settlement-rules" && (
 						<div className="bg-white rounded-lg border border-gray-200 p-6">
 							<DynamicSettlementRulesManager />
+						</div>
+					)}
+
+					{activeTab === "vendor-daily-accrual" && (
+						<div className="rounded-lg border border-gray-200 bg-white p-6">
+							<h2 className="mb-4 text-lg font-semibold text-gray-900">Vendor daily accrual (IST)</h2>
+							<VendorDailyAccrualReport />
 						</div>
 					)}
 
@@ -390,7 +399,7 @@ function FinanceManagementContent() {
 											Settlement Schedule
 										</h3>
 										<p className="text-sm text-gray-500">
-											Configure automatic payout processing schedule
+											Daily EventBridge run time, timezone, minimum payout for calculation, and manual Process Now
 										</p>
 									</div>
 									<Button
@@ -406,119 +415,6 @@ function FinanceManagementContent() {
 					)}
 
 					{activeTab === "payment-settings" && <AdminPaymentSettings />}
-
-					{activeTab === "reports" && (
-						<div className="space-y-6">
-							<div className="bg-white rounded-lg border border-gray-200 p-6">
-								<h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-									<FileText className="w-5 h-5 text-gray-500" />
-									Generate Reports
-								</h3>
-								<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-									<button 
-										onClick={async () => {
-											try {
-												const response = await apiClient.get<any>('/admin/reports/revenue?period=monthly');
-												const data = response.data || [];
-												const csvContent = [
-													['Month', 'Revenue', 'Bookings', 'Commission'],
-													...data.map((r: any) => [r.month, r.revenue, r.bookings, r.commission])
-												].map(row => row.join(',')).join('\n');
-												const blob = new Blob([csvContent], { type: 'text/csv' });
-												const url = URL.createObjectURL(blob);
-												const a = document.createElement('a');
-												a.href = url;
-												a.download = `revenue_report_${new Date().toISOString().split('T')[0]}.csv`;
-												a.click();
-												setSuccess('Revenue report downloaded!');
-											} catch (err) {
-												setError('Failed to generate report');
-											}
-										}}
-										className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 text-left"
-									>
-										<IndianRupee className="w-8 h-8 text-green-500 mb-2" />
-										<p className="font-semibold text-gray-900">Revenue Report</p>
-										<p className="text-sm text-gray-500">Monthly revenue breakdown</p>
-									</button>
-									<button 
-										onClick={async () => {
-											try {
-												const response = await apiClient.get<any>('/admin/reports/vendors');
-												const data = response.data || [];
-												const csvContent = [
-													['Vendor', 'Revenue', 'Bookings', 'Rating', 'Status'],
-													...data.map((v: any) => [v.name, v.revenue, v.bookings, v.rating, v.status])
-												].map(row => row.join(',')).join('\n');
-												const blob = new Blob([csvContent], { type: 'text/csv' });
-												const url = URL.createObjectURL(blob);
-												const a = document.createElement('a');
-												a.href = url;
-												a.download = `vendor_report_${new Date().toISOString().split('T')[0]}.csv`;
-												a.click();
-												setSuccess('Vendor report downloaded!');
-											} catch (err) {
-												setError('Failed to generate report');
-											}
-										}}
-										className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 text-left"
-									>
-										<Building className="w-8 h-8 text-blue-500 mb-2" />
-										<p className="font-semibold text-gray-900">Vendor Report</p>
-										<p className="text-sm text-gray-500">Performance by vendor</p>
-									</button>
-									<button 
-										onClick={async () => {
-											try {
-												const response = await apiClient.get<any>('/admin/reports/settlements');
-												const data = response.data || [];
-												const csvContent = [
-													['Date', 'Vendor', 'Amount', 'Status', 'Reference'],
-													...data.map((s: any) => [s.date, s.vendor, s.amount, s.status, s.reference])
-												].map(row => row.join(',')).join('\n');
-												const blob = new Blob([csvContent], { type: 'text/csv' });
-												const url = URL.createObjectURL(blob);
-												const a = document.createElement('a');
-												a.href = url;
-												a.download = `settlement_report_${new Date().toISOString().split('T')[0]}.csv`;
-												a.click();
-												setSuccess('Settlement report downloaded!');
-											} catch (err) {
-												setError('Failed to generate report');
-											}
-										}}
-										className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 text-left"
-									>
-										<CreditCard className="w-8 h-8 text-purple-500 mb-2" />
-										<p className="font-semibold text-gray-900">Settlement Report</p>
-										<p className="text-sm text-gray-500">Payout history</p>
-									</button>
-								</div>
-							</div>
-
-							<div className="bg-white rounded-lg border border-gray-200 p-6">
-								<h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Stats</h3>
-								<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-									<div className="p-4 bg-green-50 rounded-lg">
-										<p className="text-sm text-green-600">Total Revenue (MTD)</p>
-										<p className="text-2xl font-bold text-green-700">₹12,45,000</p>
-									</div>
-									<div className="p-4 bg-blue-50 rounded-lg">
-										<p className="text-sm text-blue-600">Active Vendors</p>
-										<p className="text-2xl font-bold text-blue-700">247</p>
-									</div>
-									<div className="p-4 bg-purple-50 rounded-lg">
-										<p className="text-sm text-purple-600">Pending Payouts</p>
-										<p className="text-2xl font-bold text-purple-700">₹3,82,000</p>
-									</div>
-									<div className="p-4 bg-orange-50 rounded-lg">
-										<p className="text-sm text-orange-600">Platform Commission</p>
-										<p className="text-2xl font-bold text-orange-700">₹1,87,000</p>
-									</div>
-								</div>
-							</div>
-						</div>
-					)}
 
 					{/* Advanced Settings Modal */}
 					{showAdvancedSettings && (
@@ -552,8 +448,8 @@ function FinanceManagementContent() {
 											<div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
 												<p className="text-sm font-medium text-yellow-900 mb-2">Important Notes</p>
 												<ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
-													<li>Schedule changes take effect on the next scheduled run</li>
-													<li>Manual "Process Now" runs calculation immediately but does not auto-process payouts</li>
+													<li>Saving Schedule Settings updates the daily EventBridge rule (when the rule exists and Lambda has permission)</li>
+													<li>Manual &quot;Process Now&quot; runs calculation immediately; bank transfer is still from Payout Management</li>
 													<li>Payout processing must be done manually from Payout Management</li>
 													<li>Timezone settings affect when scheduled runs execute</li>
 												</ul>

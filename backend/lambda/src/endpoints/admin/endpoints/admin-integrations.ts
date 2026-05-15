@@ -24,6 +24,10 @@ import { getSecret, getSecretJson, putSecret } from '../../../utils/aws/secrets-
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { validateBankAccountStrict } from '../../razorpay/endpoints/razorpay.razorpay';
+import {
+  fetchPidgeVendorToken,
+  getPidgeCredentials,
+} from '../../../lib/services/pidge-logistics';
 
 export function registerAdminIntegrationEndpoints(app: Hono) {
   /**
@@ -430,27 +434,73 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
 
   /**
    * GET /admin/integrations/logistics
-   * Get logistics settings
+   * Get logistics partners
    */
   app.get("/admin/integrations/logistics", async (c) => {
     try {
-      const settings = await select('platform_settings', { setting_key: 'platform:settings:logistics' });
-      const logisticsConfig = settings.length > 0 ? (settings[0].setting_value as any) : null;
+      const partnersResult = await query(
+        `        SELECT 
+          partner_id as id,
+          partner_name as name,
+          partner_type as type,
+          enabled,
+          base_url as baseUrl,
+          email as apiEndpoint,
+          api_key as apiKey,
+          config->>'categories' as categories,
+          config->>'pricing' as pricing,
+          config->>'regions' as regions,
+          config,
+          created_at,
+          updated_at
+        FROM logistics_partners
+        ORDER BY enabled DESC NULLS LAST, partner_name ASC`
+      );
 
-      const defaultSettings = {
-        shiprocket: { enabled: false, test_mode: true },
-        delhivery: { enabled: false, test_mode: true },
-        bluedart: { enabled: false, test_mode: true },
-        default_provider: 'shiprocket',
-        warehouse_address: {},
-      };
+      const partners = (partnersResult.rows || []).map((p: any) => {
+        const config = p.config || {};
+        let categories = [];
+        let pricing = {};
+        let regions = [];
+
+        try {
+          categories = config.categories || (typeof p.categories === 'string' ? JSON.parse(p.categories) : []);
+        } catch (e) {
+          categories = [];
+        }
+
+        try {
+          pricing = config.pricing || (typeof p.pricing === 'string' ? JSON.parse(p.pricing) : {});
+        } catch (e) {
+          pricing = {};
+        }
+
+        try {
+          regions = config.regions || (typeof p.regions === 'string' ? JSON.parse(p.regions) : []);
+        } catch (e) {
+          regions = [];
+        }
+
+        return {
+          id: p.id,
+          name: p.name,
+          type: p.type,
+          enabled: p.enabled !== false,
+          baseUrl: p.baseUrl || config.pidgeApiBase || config.baseUrl || null,
+          apiEndpoint: p.apiEndpoint || config.apiEndpoint || null,
+          apiKey: p.apiKey ? '••••••••' : null,
+          categories: categories,
+          pricing: pricing,
+          regions: regions,
+        };
+      });
 
       return c.json({
         success: true,
-        settings: logisticsConfig || defaultSettings,
+        partners: partners,
       });
     } catch (error: any) {
-      console.error('Error fetching logistics settings:', error);
+      console.error('Error fetching logistics partners:', error);
       return c.json({ error: error.message }, 500);
     }
   });
@@ -615,6 +665,29 @@ export function registerAdminIntegrationEndpoints(app: Hono) {
               connected: false,
               error: error.message,
             }, 500);
+          }
+
+        case 'pidge':
+          try {
+            const { username, password, baseUrl } = await getPidgeCredentials();
+            await fetchPidgeVendorToken(username, password, baseUrl);
+            return c.json({
+              success: true,
+              connected: true,
+              details: {
+                vendorLoginOk: true,
+                baseUrl,
+              },
+            });
+          } catch (error: any) {
+            return c.json(
+              {
+                success: false,
+                connected: false,
+                error: error.message || 'Pidge vendor login failed',
+              },
+              500
+            );
           }
 
         default:

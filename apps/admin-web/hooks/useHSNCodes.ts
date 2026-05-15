@@ -21,6 +21,18 @@ export interface HSNCodeFilters {
   search?: string;
 }
 
+function mapHsnRow(row: Record<string, unknown> | null | undefined): HSNCode | null {
+  if (!row || row.id == null) return null;
+  return {
+    id: String(row.id),
+    hsn_code: String(row.hsn_code ?? row.code ?? ''),
+    description: row.description != null ? String(row.description) : undefined,
+    gst_rate: Number(row.gst_rate ?? 0),
+    is_active: row.is_active !== false,
+    created_at: row.created_at != null ? String(row.created_at) : '',
+  };
+}
+
 export function useHSNCodes(filters?: HSNCodeFilters) {
   const [hsnCodes, setHsnCodes] = useState<HSNCode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,20 +47,39 @@ export function useHSNCodes(filters?: HSNCodeFilters) {
     try {
       setLoading(true);
       setError(null);
-      
-      const params = new URLSearchParams();
-      if (filters?.isActive !== undefined) {
-        params.append('isActive', filters.isActive.toString());
-      }
-      if (filters?.search) {
-        params.append('search', filters.search);
+
+      // Same source as Finance → GST Configuration. Legacy `/admin/hsn-codes` uses SQL on `hsn_code` only and can 500 when DB has `code`; finance route is schema-tolerant.
+      const response = await apiClient.get<Record<string, unknown>>('/admin/finance/gst/hsn-codes');
+      const raw = (response.hsnCodes ??
+        response.codes ??
+        (response.data as Record<string, unknown> | undefined)?.hsnCodes) as HSNCode[] | undefined;
+      let list = Array.isArray(raw) ? raw : [];
+
+      if (filters?.isActive === true) {
+        list = list.filter((h: HSNCode & { is_active?: boolean }) => (h as any).is_active !== false);
+      } else if (filters?.isActive === false) {
+        list = list.filter((h: HSNCode & { is_active?: boolean }) => (h as any).is_active === false);
       }
 
-      const response = await apiClient.get<{ hsnCodes: HSNCode[] }>(
-        `/admin/hsn-codes${params.toString() ? `?${params.toString()}` : ''}`
-      );
-      
-      setHsnCodes(response.hsnCodes || []);
+      if (filters?.search?.trim()) {
+        const q = filters.search.trim().toLowerCase();
+        list = list.filter((h: any) => {
+          const code = String(h.hsn_code ?? h.code ?? '').toLowerCase();
+          const desc = String(h.description ?? '').toLowerCase();
+          return code.includes(q) || desc.includes(q);
+        });
+      }
+
+      const normalized: HSNCode[] = list.map((h: any) => ({
+        id: String(h.id),
+        hsn_code: String(h.hsn_code ?? h.code ?? ''),
+        description: h.description != null ? String(h.description) : undefined,
+        gst_rate: Number(h.gst_rate ?? 0),
+        is_active: h.is_active !== false,
+        created_at: h.created_at != null ? String(h.created_at) : '',
+      }));
+
+      setHsnCodes(normalized);
       setAuthError(false); // Reset auth error on success
     } catch (err: any) {
       // Stop retrying on authentication errors
@@ -69,32 +100,85 @@ export function useHSNCodes(filters?: HSNCodeFilters) {
     fetchHSNCodes();
   }, [fetchHSNCodes]);
 
-  const createHSNCode = useCallback(async (data: Partial<HSNCode>) => {
-    try {
-      const response = await apiClient.post<{ hsnCode: HSNCode }>('/admin/hsn-codes', data);
-      await fetchHSNCodes();
-      return response.hsnCode;
-    } catch (err: any) {
-      throw new Error(err.message || 'Failed to create HSN code');
-    }
-  }, [fetchHSNCodes]);
+  const createHSNCode = useCallback(
+    async (data: Partial<HSNCode> & { category_id?: string; categoryId?: string }) => {
+      try {
+        const codeVal = data.hsn_code ?? (data as { code?: string }).code;
+        if (codeVal == null || !String(codeVal).trim()) {
+          throw new Error('HSN code is required');
+        }
+        if (data.gst_rate === undefined || data.gst_rate === null) {
+          throw new Error('GST rate is required');
+        }
+        const categoryId = data.categoryId ?? data.category_id;
+        const response = await apiClient.post<{
+          success?: boolean;
+          code?: Record<string, unknown>;
+          error?: string;
+        }>('/admin/finance/gst/hsn-codes', {
+          code: String(codeVal).trim(),
+          description: data.description ?? '',
+          gstRate: data.gst_rate,
+          categoryId: categoryId != null && String(categoryId).trim() !== '' ? String(categoryId).trim() : undefined,
+          isActive: data.is_active !== false,
+        });
+        if (response.success === false && response.error) {
+          throw new Error(response.error);
+        }
+        await fetchHSNCodes();
+        return mapHsnRow(response.code) ?? undefined;
+      } catch (err: any) {
+        const msg =
+          err?.responseData?.error ?? err?.response?.error ?? err?.message ?? 'Failed to create HSN code';
+        throw new Error(typeof msg === 'string' ? msg : 'Failed to create HSN code');
+      }
+    },
+    [fetchHSNCodes]
+  );
 
   const updateHSNCode = useCallback(async (id: string, data: Partial<HSNCode>) => {
     try {
-      const response = await apiClient.put<{ hsnCode: HSNCode }>(`/admin/hsn-codes/${id}`, data);
+      const body: Record<string, unknown> = {};
+      if (data.hsn_code !== undefined) body.code = data.hsn_code;
+      if (data.description !== undefined) body.description = data.description;
+      if (data.gst_rate !== undefined) body.gstRate = data.gst_rate;
+      if (data.is_active !== undefined) body.isActive = data.is_active;
+      const ext = data as Partial<HSNCode> & { category_id?: string; categoryId?: string };
+      if (ext.categoryId !== undefined || ext.category_id !== undefined) {
+        const cid = ext.categoryId ?? ext.category_id;
+        body.categoryId = cid != null && String(cid).trim() !== '' ? String(cid).trim() : null;
+      }
+
+      const response = await apiClient.put<{
+        success?: boolean;
+        code?: Record<string, unknown>;
+        error?: string;
+      }>(`/admin/finance/gst/hsn-codes/${id}`, body);
+      if (response.success === false && response.error) {
+        throw new Error(response.error);
+      }
       await fetchHSNCodes();
-      return response.hsnCode;
+      return mapHsnRow(response.code) ?? undefined;
     } catch (err: any) {
-      throw new Error(err.message || 'Failed to update HSN code');
+      const msg =
+        err?.responseData?.error ?? err?.response?.error ?? err?.message ?? 'Failed to update HSN code';
+      throw new Error(typeof msg === 'string' ? msg : 'Failed to update HSN code');
     }
   }, [fetchHSNCodes]);
 
   const deleteHSNCode = useCallback(async (id: string) => {
     try {
-      await apiClient.delete(`/admin/hsn-codes/${id}`);
+      const response = await apiClient.delete<{ success?: boolean; error?: string }>(
+        `/admin/finance/gst/hsn-codes/${id}`
+      );
+      if (response.success === false && response.error) {
+        throw new Error(response.error);
+      }
       await fetchHSNCodes();
     } catch (err: any) {
-      throw new Error(err.message || 'Failed to delete HSN code');
+      const msg =
+        err?.responseData?.error ?? err?.response?.error ?? err?.message ?? 'Failed to delete HSN code';
+      throw new Error(typeof msg === 'string' ? msg : 'Failed to delete HSN code');
     }
   }, [fetchHSNCodes]);
 

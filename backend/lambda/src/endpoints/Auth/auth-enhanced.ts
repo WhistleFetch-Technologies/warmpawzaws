@@ -18,43 +18,110 @@ import { Hono } from 'hono';
 import { sendSMS } from '../../utils/sms-service';
 import { query, select, insert, update } from '../../database/rds-connection';
 import { BaseHandlerEnhanced, HandlerContext, HandlerResponse } from '../../handler/base-handler-enhanced';
-import {
-  getOrCreateCognitoUser,
-  authenticateCognitoUser,
-  verifyCognitoToken,
-  CognitoTokens
-} from '../../utils/cognito-client';
+import { CognitoTokens } from '../../utils/cognito-client';
 
 import {
   SendOtpRequestSchema,
   VerifyOtpRequestSchema,
+  CustomerPasswordLoginRequestSchema,
+  VendorPasswordLoginRequestSchema,
 } from '@warmpawz/api-contracts/auth';
+import { verifyCustomerPassword } from '../../lib/services/auth/customer-password-crypto';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../utils/entity-extractor';
 import { isValidUUID } from '../../types/entities';
 import { createOrUpdateCustomerIdentity, getCustomerStateForAuth } from '../../utils/customer-state';
-import { generateUATJWTToken } from '../../utils/jwt-generator';
+import { issueAuthTokensAfterOtp } from '../../lib/services/auth/vendor-otp-success-payload';
+import { executeAuthRefresh } from '../../lib/services/auth/auth-token-refresh';
+import { isUatRelaxedAuthContext } from '../../lib/services/auth/uat-auth-env';
+import { consumeVendorPortalCodeAndBuildPayload } from '../../lib/services/admin/vendor-portal-session-service';
+import { consumeCustomerPortalCodeAndBuildPayload } from '../../lib/services/admin/customer-portal-session-service';
 import { loyaltyRulesInitService } from 'src/lib/services/loyalty-rules-init-service';
-import { processReferralSignup } from 'src/lib/services/referral-service';
-import { loyaltyPointsService } from 'src/lib/services/loyalty-points-service';
+import { processReferralSignup, processVendorReferralForCustomerSignup } from 'src/lib/services/referral-service';
+import {
+  buildLoginOtpSmsBody,
+  JIO_DLT_ENTITY_ID,
+  JIO_LOGIN_OTP_SENDER_ID,
+  JIO_LOGIN_OTP_TEMPLATE_ID,
+} from '../../constants/jio-login-otp-sms';
+import {
+  handleCustomerAccountStatus,
+  handleCustomerSetPassword,
+  hasMeaningfulStoredPassword,
+} from '../customer/customerEndpoint/customer-password';
+import { handleVendorPasswordStatus, handleVendorSetPassword } from '../vendor/vendor-auth-password';
+import {
+  normalizePhoneForOtp,
+  selectCustomersByLast10Digits,
+  dialablePhoneForCustomerAuth,
+  findCustomerForPasswordLogin,
+} from '../../lib/services/auth/customer-username-lookup';
+import {
+  findVendorForPasswordLogin,
+  mergeVendorIdentityOnboarding,
+} from '../../lib/services/auth/vendor-username-lookup';
+import {
+  handleCustomerForgotPasswordRequest,
+  handleCustomerForgotPasswordVerifyOtp,
+  handleCustomerForgotPasswordReset,
+} from '../../lib/services/auth/customer-forgot-password';
+import {
+  handleVendorForgotPasswordRequest,
+  handleVendorForgotPasswordVerifyOtp,
+  handleVendorForgotPasswordReset,
+} from '../../lib/services/auth/vendor-forgot-password';
+
+/**
+ * When `isUatRelaxedAuthContext(headers)` is true, this value skips password-hash checks for
+ * customer/vendor **password** login (account must still exist). OTP verify also accepts it in addition to `123456`.
+ * Override with env `UAT_DEV_PASSWORD_BYPASS`.
+ */
+const UAT_DEV_PASSWORD_BYPASS =
+  typeof process.env.UAT_DEV_PASSWORD_BYPASS === 'string' && process.env.UAT_DEV_PASSWORD_BYPASS.length > 0
+    ? process.env.UAT_DEV_PASSWORD_BYPASS.trim()
+    : '12345678';
 
 // ============================================================================
 // OTP HELPERS
 // ============================================================================
 
-const JIO_LOGIN_OTP_TEMPLATE_ID = '1207177028377787269';
-
-/**
- * Normalize phone to canonical form for OTP storage/lookup.
- * Ensures "9326977987", "+919326977987", "919326977987" all match.
- * Indian 10-digit numbers: use last 10 digits. Others: digits only.
- */
-function normalizePhoneForOtp(phone: string): string {
+/** Persist Indian mobiles as 10 digits in `customers.phone` (same as profile POST). */
+function storagePhoneForNewCustomer(phone: string): string {
   const digits = phone.replace(/\D/g, '');
   if (digits.length >= 10) {
     const last10 = digits.slice(-10);
-    if (/^[6-9]\d{9}$/.test(last10)) return last10; // Indian mobile
+    if (/^[6-9]\d{9}$/.test(last10)) return last10;
   }
-  return digits || phone;
+  return phone;
+}
+
+async function applyCustomerReferralOnAuth(
+  userId: string,
+  phone: string,
+  referralCodeRaw: string | undefined
+): Promise<void> {
+  if (!referralCodeRaw || !userId || userId.startsWith('temp_')) return;
+
+  const normalizedCode = String(referralCodeRaw).trim().toUpperCase();
+  const referralResult = await processReferralSignup({
+    customerId: userId,
+    referralCode: normalizedCode,
+    phone,
+  });
+
+  if (referralResult.success) return;
+  if (referralResult.error !== 'Invalid referral code') {
+    console.warn(`[AUTH] Referral not applied: ${referralResult.error}`);
+    return;
+  }
+
+  const vendorRes = await processVendorReferralForCustomerSignup({
+    customerId: userId,
+    phone,
+    referralCode: normalizedCode,
+  });
+  if (!vendorRes.success) {
+    console.warn(`[AUTH] Vendor referral fallback failed: ${vendorRes.error}`);
+  }
 }
 
 async function createOtp(phone: string, code: string, purpose: string = 'login'): Promise<void> {
@@ -109,10 +176,13 @@ async function sendSmsViaSns(phone: string, message: string): Promise<boolean> {
     message,
     type: 'otp',
     templateId: JIO_LOGIN_OTP_TEMPLATE_ID,
-    senderId: 'WARMPZ',
+    entityId: JIO_DLT_ENTITY_ID,
+    senderId: JIO_LOGIN_OTP_SENDER_ID,
   });
   if (!result.success) {
     console.error('[SMS] SNS send failed');
+  } else if (result.messageId) {
+    console.log(`[AUTH] SNS MessageId=${result.messageId} (OTP SMS)`);
   }
   return result.success === true;
 }
@@ -167,6 +237,15 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
         await Promise.race([createOtpPromise, otpTimeoutPromise]);
         const otpStoreDuration = Date.now() - otpStoreStartTime;
         console.log(`[AUTH] OTP stored in ${otpStoreDuration}ms`);
+        // DEBUG: plaintext OTP in CloudWatch — remove or set LOG_OTP_PLAINTEXT=false after SMS/Jio delivery is fixed
+        if (process.env.LOG_OTP_PLAINTEXT !== 'false') {
+          console.log('[AUTH][send-otp][OTP-PLAINTEXT-DEBUG]', {
+            requestId: context.requestId,
+            normalizedPhone,
+            otp: otpCode,
+            smsWillRun: !isUATMode,
+          });
+        }
       } catch (dbError: any) {
         const otpStoreDuration = Date.now() - otpStoreStartTime;
         console.error(`[AUTH] Database error creating OTP after ${otpStoreDuration}ms:`, dbError?.message || dbError);
@@ -179,21 +258,40 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
 
       // Only skip SMS when UAT_MODE is explicitly 'true'. Use Jio-approved Login OTP template.
       if (!isUATMode) {
-        const message = `Warmpawz: Your OTP for logging in is ${otpCode}. Do not share this OTP with anyone.`;
+        const message = buildLoginOtpSmsBody(otpCode);
         console.log(`[AUTH] Sending OTP SMS to ${normalizedPhone} (templateId=${JIO_LOGIN_OTP_TEMPLATE_ID})`);
+        const SMS_RACE_MS = Math.min(
+          30000,
+          Math.max(5000, parseInt(process.env.SMS_SEND_TIMEOUT_MS || '15000', 10) || 15000)
+        );
         const smsResult = await Promise.race([
           sendSmsViaSns(normalizedPhone, message),
-          new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('SMS send timeout 2.5s')), 2500)),
+          new Promise<boolean>((_, reject) =>
+            setTimeout(() => reject(new Error(`SMS send timeout ${SMS_RACE_MS}ms`)), SMS_RACE_MS)
+          ),
         ]).catch((err: any) => {
           console.warn('[AUTH] SMS send failed:', err?.message || err);
           if (err?.Code) console.warn('[AUTH] SNS Code:', err.Code);
           return false;
         });
         if (smsResult) {
-          console.log('[AUTH] SMS accepted by SNS (delivery depends on SNS sandbox/production)');
+          console.log('[AUTH] SMS accepted by SNS (delivery depends on carrier / DLT)');
+          console.log('[AUTH][send-otp][SMS-DEBUG]', {
+            requestId: context.requestId,
+            normalizedPhone,
+            snsPublishSucceeded: true,
+            smsBodyPreview: `${message.slice(0, 45)}...`,
+          });
+        } else {
+          console.warn('[AUTH] SMS was not accepted by SNS; user may not receive OTP');
+          console.warn('[AUTH][send-otp][SMS-DEBUG]', {
+            requestId: context.requestId,
+            normalizedPhone,
+            snsPublishSucceeded: false,
+          });
         }
       } else {
-        console.log(`[AUTH] UAT_MODE=true: SMS skipped for ${phone} (fixed OTP 123456)`);
+        console.log(`[AUTH] UAT_MODE=true: SMS skipped for ${phone} (dev OTPs: 123456 or ${UAT_DEV_PASSWORD_BYPASS})`);
       }
 
       const handlerDuration = Date.now() - handlerStartTime;
@@ -231,6 +329,26 @@ class SendOtpHandlerEnhanced extends BaseHandlerEnhanced {
 }
 
 class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
+
+  /**
+   * Helper function to check if a record is soft-deleted
+   * Handles boolean true, string "true", PostgreSQL 't'/'f', and case variations
+   */
+  private isRecordDeleted(record: any): boolean {
+    if (!record || record.is_deleted === undefined || record.is_deleted === null) {
+      return false;
+    }
+    // Handle boolean true
+    if (record.is_deleted === true) return true;
+    // Handle PostgreSQL boolean 't' (true) or 'f' (false)
+    if (record.is_deleted === 't') return true;
+    if (record.is_deleted === 'f') return false;
+    // Handle string "true" (case-insensitive)
+    if (typeof record.is_deleted === 'string' && record.is_deleted.toLowerCase() === 'true') return true;
+    // Handle numeric 1 (some databases return 1 for true)
+    if (record.is_deleted === 1) return true;
+    return false;
+  }
 
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     console.log(`[AUTH] 📝 VerifyOtpHandlerEnhanced handle called`);
@@ -309,19 +427,14 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
     // ============================================================================
     // OTP VERIFICATION LOGIC
     // ============================================================================
-    // Check if UAT mode is enabled - ONLY check UAT_MODE env variable
-    // This ensures PROD (UAT_MODE=false) never accepts fixed OTP 123456
+    // Check if UAT mode is enabled - ONLY check UAT_MODE env variable.
+    // Production never accepts fixed bypass OTPs; only UAT may use 123456 / UAT_DEV_PASSWORD_BYPASS.
     const isUATMode = process.env.UAT_MODE === 'true';
-    
-    // Production bypass configuration (for testing/admin access in production)
-    // These phones can verify with OTP 000000 in production mode
-    const PRODUCTION_BYPASS_PHONES = ['9999999999', '9326977987'];
-    const PRODUCTION_BYPASS_OTP = '000000';
-    
+
     try {
       let isValid = false;
 
-      // Normalize phone number for bypass check (extract last 10 digits)
+      // Last-10-digit form for DB lookups (vendor/customer/referral) — same as before bypass removal
       const phoneDigits = phone.replace(/\D/g, '');
       const normalizedPhone = phoneDigits.length > 10
         ? phoneDigits.slice(-10)
@@ -330,44 +443,11 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           : phoneDigits;
 
       // ============================================================================
-      // PRODUCTION BYPASS: Allow specific phone/OTP combinations in production only
-      // ============================================================================
-      // This bypass works ONLY in production mode (when UAT_MODE !== 'true')
-      // It allows whitelisted phones with OTP 000000 for testing/admin purposes
-      if (!isUATMode && PRODUCTION_BYPASS_PHONES.includes(normalizedPhone) && otp === PRODUCTION_BYPASS_OTP) {
-        isValid = true;
-        console.log(`[AUTH] Production Bypass: OTP accepted for phone ${phone} (normalized: ${normalizedPhone})`);
-        
-        // Try to mark any existing OTP tokens as used (non-blocking, with timeout)
-        Promise.race([
-          (async () => {
-            try {
-              const records = await select('otp_tokens', {
-                phone: normalizedPhone,
-                is_used: false,
-              });
-              if (records.length > 0) {
-                await query(
-                  'UPDATE otp_tokens SET is_used = true, used_at = NOW() WHERE id = $1',
-                  [records[0].id]
-                );
-                console.log(`[AUTH] Production Bypass: Marked existing OTP as used`);
-              }
-            } catch (e) {
-              console.warn('[AUTH] Production Bypass: Could not mark existing OTP as used:', e);
-            }
-          })(),
-          new Promise((resolve) => setTimeout(resolve, 2000)) // 2 second timeout
-        ]).catch((e) => {
-          console.warn('[AUTH] Production Bypass: OTP cleanup timeout or error:', e);
-        });
-      }
-      // ============================================================================
       // UAT MODE: Allow fixed OTP 123456 for any phone number in UAT mode
       // ============================================================================
-      else if (isUATMode && otp === '123456') {
+      if (isUATMode && (otp === '123456' || otp === UAT_DEV_PASSWORD_BYPASS)) {
         isValid = true;
-        console.log(`[AUTH] UAT Mode: Fixed OTP 123456 accepted for ${phone}`);
+        console.log(`[AUTH] UAT Mode: Fixed OTP accepted for ${phone} (123456 or UAT bypass)`);
         Promise.race([
           (async () => {
             try {
@@ -433,23 +513,32 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         return this.error('Invalid or expired OTP', 401, 'UNAUTHORIZED', undefined, context.requestId);
       }
 
-      // Note: normalizedPhone is already computed above for OTP verification
-      // Reuse it for database lookups (already in scope)
+      // normalizedPhone (last-10 style) is computed above for vendor/customer/referral lookups
 
 
       let role = body.role || 'customer';
 
-      let userId: string;
-      let userData: any;
+      let userId: string = '';
+      let userData: any = null;
 
       // ============================================================================
       // REGULAR CUSTOMER/VENDOR LOGIN
       // ============================================================================
       if (role === 'customer') {
-        // ✅ FIX: Add timeout protection to customer queries
         let customers: any[] = [];
+        const last10ForCustomer =
+          phoneDigits.length >= 10
+            ? phoneDigits.slice(-10)
+            : phone.replace(/\D/g, '').slice(-10);
+
         try {
-          const customerQueryPromise = select('customers', { phone });
+          const customerQueryPromise = (async () => {
+            if (last10ForCustomer.length >= 10) {
+              const byDigits = await selectCustomersByLast10Digits(last10ForCustomer);
+              if (byDigits.length > 0) return byDigits;
+            }
+            return select('customers', { phone });
+          })();
           const customerQueryTimeout = new Promise<any[]>((_, reject) =>
             setTimeout(() => reject(new Error('Customer query timeout')), 5000)
           );
@@ -459,11 +548,44 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           customers = [];
         }
 
+        if (last10ForCustomer.length >= 10) {
+          try {
+            const canon = await selectCustomersByLast10Digits(last10ForCustomer);
+            if (canon.length > 0) customers = canon;
+          } catch (canonErr: any) {
+            console.warn('[AUTH] Canonical customer collapse failed:', canonErr?.message);
+          }
+        }
+
+        if (customers.length === 0 && last10ForCustomer.length >= 10) {
+          try {
+            const again = await selectCustomersByLast10Digits(last10ForCustomer);
+            if (again.length > 0) customers = again;
+          } catch (raceErr: any) {
+            console.warn('[AUTH] Customer recheck before signup failed:', raceErr?.message);
+          }
+        }
+
         let isNewCustomer = false;
 
         if (customers.length > 0) {
           userId = customers[0].id;
           userData = customers[0];
+
+          try {
+            const storedCanon = storagePhoneForNewCustomer(phone);
+            const metaPatch: Record<string, unknown> = {
+              is_phone_verified: true,
+              updated_at: new Date().toISOString(),
+            };
+            if (!userData.username) {
+              (metaPatch as any).username = storedCanon;
+            }
+            await update('customers', { id: userId }, metaPatch as any);
+            userData = { ...userData, ...metaPatch };
+          } catch (metaErr: any) {
+            console.warn('[AUTH] Customer OTP metadata update skipped:', metaErr?.message);
+          }
 
           // Update last_login_at timestamp to persist login state (with timeout)
           try {
@@ -509,6 +631,12 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
               // Continue - linking is not critical
             }
           }
+
+          try {
+            await applyCustomerReferralOnAuth(userId, normalizedPhone || phone, referralCode);
+          } catch (refError: any) {
+            console.error('[AUTH] Referral error (existing customer):', refError?.message || refError);
+          }
         } else {
           // Create customer with proper state
           isNewCustomer = true;
@@ -528,9 +656,10 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           // Create customer identity first (with timeout)
           //const { createOrUpdateCustomerIdentity } = await import('../utils/customer-state');
 
+          const storedPhone = storagePhoneForNewCustomer(phone);
           let identityId: string | undefined;
           try {
-            const identityPromise = createOrUpdateCustomerIdentity(phone, undefined);
+            const identityPromise = createOrUpdateCustomerIdentity(storedPhone, undefined);
             const identityTimeout = new Promise<string>((_, reject) =>
               setTimeout(() => reject(new Error('Identity creation timeout')), 5000)
             );
@@ -544,14 +673,16 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           let newCustomers: any[] = [];
           try {
             const insertPromise = insert('customers', {
-              phone,
-              full_name: `Customer ${phone.slice(-4)}`, // Temporary name until profile is completed
+              phone: storedPhone,
+              username: storedPhone,
+              full_name: `Customer ${storedPhone.slice(-4)}`, // Temporary name until profile is completed
               is_active: true,
               status: 'new',
               onboarding_status: 'PHONE_VERIFIED',
               profile_completed: false,
               customer_identity_id: identityId,
               last_login_at: new Date().toISOString(),
+              is_phone_verified: true,
             });
             const insertTimeout = new Promise<any[]>((_, reject) =>
               setTimeout(() => reject(new Error('Customer insert timeout')), 5000)
@@ -562,10 +693,10 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
           } catch (insertError: any) {
             console.error('[AUTH] Failed to create customer record:', insertError.message);
             // This is critical - we need a user ID, so generate a temp one
-            userId = `temp_customer_${phone}_${Date.now()}`;
+            userId = `temp_customer_${storedPhone}_${Date.now()}`;
             userData = {
               id: userId,
-              phone,
+              phone: storedPhone,
               is_active: true,
               status: 'new',
               onboarding_status: 'PHONE_VERIFIED',
@@ -588,63 +719,13 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             }
           }
 
-          // Process referral code if provided (before signup bonus)
-          console.log(`[AUTH] 🔍 Referral processing check: referralCode=${referralCode}, userId=${userId}, isTemp=${userId?.startsWith('temp_')}`);
-
-          if (referralCode && userId && !userId.startsWith('temp_')) {
-            try {
-              // Normalize referral code (trim and uppercase)
-              //const { processReferralSignup } = await import('../lib/services/referral-service');
-
-              const normalizedCode = String(referralCode).trim().toUpperCase();
-              console.log(`[AUTH] 🎁 Processing referral code: ${normalizedCode} for customer: ${userId}`);
-              console.log(`[AUTH] 🎁 Calling processReferralSignup with: customerId=${userId}, referralCode=${normalizedCode}`);
-
-              const startTime = Date.now();
-              const referralResult = await processReferralSignup({
-                customerId: userId,
-                referralCode: normalizedCode,
-              });
-              const duration = Date.now() - startTime;
-
-              console.log(`[AUTH] 🎁 processReferralSignup completed in ${duration}ms`);
-              console.log(`[AUTH] 🎁 Result: ${JSON.stringify(referralResult)}`);
-
-              if (referralResult.success) {
-                console.log(`[AUTH] ✅ Referral code processed: ${normalizedCode} - Referred: ${referralResult.referredPoints}pts, Referrer: ${referralResult.referrerPoints}pts`);
-              } else {
-                console.warn(`[AUTH] ⚠️ Referral code processing failed: ${referralResult.error}`);
-                console.warn(`[AUTH] ⚠️ Full error details: ${JSON.stringify(referralResult)}`);
-              }
-            } catch (refError: any) {
-              console.error('[AUTH] ❌ Error processing referral code during signup:', refError);
-              console.error('[AUTH] ❌ Error message:', refError.message);
-              console.error('[AUTH] ❌ Error stack:', refError.stack);
-              // Don't fail signup if referral processing fails
-            }
-          } else {
-            if (referralCode) {
-              console.warn(`[AUTH] ⚠️ Referral code provided but not processed: userId=${userId}, startsWithTemp=${userId?.startsWith('temp_')}`);
-            } else {
-              console.log(`[AUTH] ℹ️ No referral code provided in request`);
-            }
-          }
-
-          // Award signup bonus (100 points) - auto-converts to wallet
-          //const { loyaltyPointsService } = await import('../lib/services/loyalty-points-service');
-
           try {
-            await loyaltyPointsService.awardPoints({
-              customerId: userId,
-              actionName: 'signup',
-              referenceType: 'signup',
-              referenceId: userId,
-              description: 'Welcome bonus for signing up',
-            });
-          } catch (loyaltyError) {
-            console.error('Error awarding signup bonus:', loyaltyError);
-            // Don't fail signup if loyalty points fail
+            await applyCustomerReferralOnAuth(userId, normalizedPhone || phone, referralCode);
+          } catch (refError: any) {
+            console.error('[AUTH] ❌ Error processing referral code during signup:', refError?.message || refError);
           }
+
+          // Signup loyalty: handled by action_sources → ActionOccurred → loyalty-events-consumer (not inline here).
         }
       } else if (role === 'vendor') {
 
@@ -673,6 +754,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             const retryVendors = await select('vendors', { phone: normalizedPhone });
             if (retryVendors.length > 0) {
               vendors = retryVendors;
+              console.log(`[AUTH] Found ${retryVendors.length} vendor(s) with normalizedPhone, is_deleted: ${retryVendors.map((v: any) => v.is_deleted).join(', ')}`);
             }
           }
           if (vendorIdentity.length === 0 && normalizedPhone !== phone) {
@@ -680,6 +762,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             const retryIdentity = await select('vendor_identity', { phone: normalizedPhone });
             if (retryIdentity.length > 0) {
               vendorIdentity = retryIdentity;
+              console.log(`[AUTH] Found ${retryIdentity.length} vendor_identity record(s) with normalizedPhone, is_deleted: ${retryIdentity.map((vi: any) => vi.is_deleted).join(', ')}`);
             }
           }
         } catch (vendorQueryError: any) {
@@ -691,17 +774,31 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
 
         // ────────────────────────────────────────────────────────────────────────────
         // FILTER OUT SOFT-DELETED RECORDS
-        // If is_deleted = true, treat as if record doesn't exist (allow phone reuse)
+        // If is_deleted = true, treat as if record doesn't exist (allow new registration)
+        // Deleted users should be able to create new accounts with the same phone number
         // ────────────────────────────────────────────────────────────────────────────
-        vendors = vendors.filter((v: any) => v.is_deleted !== true);
-        vendorIdentity = vendorIdentity.filter((vi: any) => vi.is_deleted !== true);
+        const deletedVendor = vendors.find((v: any) => this.isRecordDeleted(v));
+        if (deletedVendor) {
+          console.log(`[AUTH] Vendor ${deletedVendor.id} is soft-deleted (is_deleted = true) - treating as new user, allowing role selection`);
+        }
+
+        const deletedIdentity = vendorIdentity.find((vi: any) => this.isRecordDeleted(vi));
+        if (deletedIdentity) {
+          console.log(`[AUTH] Vendor identity ${deletedIdentity.id} is soft-deleted (is_deleted = true) - treating as new user, allowing role selection`);
+        }
+
+        // ────────────────────────────────────────────────────────────────────────────
+        // FILTER OUT SOFT-DELETED RECORDS (defense in depth)
+        // ────────────────────────────────────────────────────────────────────────────
+        vendors = vendors.filter((v: any) => !this.isRecordDeleted(v));
+        vendorIdentity = vendorIdentity.filter((vi: any) => !this.isRecordDeleted(vi));
 
         if (vendors.length > 0) {
           const vendor = vendors[0];
-          
-          // ✅ SECURITY: Block login if vendor is deactivated (only for non-deleted records)
-          // Check: is_deleted = false AND status = 'suspended' AND is_active = false
-          if (vendor.is_deleted !== true && vendor.is_active === false && vendor.status === 'suspended') {
+
+          // ✅ SECURITY: Block login if vendor is deactivated
+          // Check: status = 'suspended' OR 'inactive' AND is_active = false
+          if (vendor.is_active === false && (vendor.status === 'suspended' || vendor.status === 'inactive')) {
             console.warn(`[AUTH] ⚠️ Vendor ${vendor.id} is deactivated (is_active: ${vendor.is_active}, status: ${vendor.status}) - blocking login`);
             return this.error('Your vendor account has been deactivated. Please contact support for assistance.', 403, 'VENDOR_DEACTIVATED', undefined, context.requestId);
           }
@@ -748,19 +845,19 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             }
             if (vendorsByVendorId.length > 0) {
               const vendorById = vendorsByVendorId[0];
-              
+
               // ────────────────────────────────────────────────────────────────────────────
               // CHECK IF VENDOR IS SOFT-DELETED
               // If is_deleted = true, treat as if vendor doesn't exist (allow new registration)
               // ────────────────────────────────────────────────────────────────────────────
-              if (vendorById.is_deleted === true) {
-                console.log(`[AUTH] Vendor ${vendorById.id} is soft-deleted (is_deleted = true) - allowing new registration for phone ${phone}`);
-                // Clear array to fall through to use identity ID
+              if (this.isRecordDeleted(vendorById)) {
+                console.log(`[AUTH] Vendor ${vendorById.id} is soft-deleted (is_deleted = true) - treating as new user, allowing role selection`);
+                // Clear array to fall through to new user flow
                 vendorsByVendorId = [];
               } else {
                 // ✅ SECURITY: Block login if vendor is deactivated (only for non-deleted records)
-                // Check: is_deleted = false AND status = 'suspended' AND is_active = false
-                if (vendorById.is_active === false && vendorById.status === 'suspended') {
+                // Check: status = 'suspended' OR 'inactive' AND is_active = false
+                if (vendorById.is_active === false && (vendorById.status === 'suspended' || vendorById.status === 'inactive')) {
                   console.warn(`[AUTH] ⚠️ Vendor ${vendorById.id} is deactivated (is_active: ${vendorById.is_active}, status: ${vendorById.status}) - blocking login`);
                   return this.error('Your vendor account has been deactivated. Please contact support for assistance.', 403, 'VENDOR_DEACTIVATED', undefined, context.requestId);
                 }
@@ -773,20 +870,13 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
                 console.log(`[AUTH] Vendor found via vendor_identity.vendor_id: ${userId}, status: ${identity.onboarding_status}`);
               }
             }
-            
-            // If vendor was deleted or not found, use identity ID
+
+            // If vendor was deleted or not found, treat as new user (allow role selection)
             if (vendorsByVendorId.length === 0) {
-              // vendor_id points to deleted/non-existent vendor - use identity ID
-              userId = identity.id;
-              userData = {
-                id: identity.id,
-                phone: phone,
-                is_active: false,
-                onboarding_status: identity.onboarding_status,
-                vendor_identity_id: identity.id,
-                created_at: identity.created_at,
-              };
-              console.log(`[AUTH] vendor_identity.vendor_id points to deleted/missing vendor, using identity ID: ${userId}`);
+              // vendor_id points to deleted/non-existent vendor - treat as new user
+              console.log(`[AUTH] vendor_identity.vendor_id points to deleted/missing vendor - treating as new user, allowing role selection`);
+              // Clear vendorIdentity to fall through to new user flow
+              vendorIdentity = [];
             }
           } else {
             // Vendor not approved yet - use identity ID (this is correct for mid-onboarding)
@@ -861,9 +951,38 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
                 console.log(`[AUTH] ✅ Vendor referral record found/created: ${referralRecord.id}`);
                 console.log(`[AUTH] Referrer vendor ID: ${referralRecord.referrer_vendor_id}`);
 
-                // Store in vendor_identity metadata if identity exists
-                if (vendorIdentity.length > 0) {
-                  const identity = vendorIdentity[0];
+                // Ensure vendor_identity exists so referral metadata is always persisted for later activation flow.
+                let identity = vendorIdentity.length > 0 ? vendorIdentity[0] : null;
+                if (!identity) {
+                  try {
+                    const createdIdentity = await insert('vendor_identity', {
+                      phone: normalizedPhone,
+                      onboarding_status: 'INIT',
+                      metadata: {},
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString(),
+                    });
+                    if (createdIdentity.length > 0) {
+                      identity = createdIdentity[0];
+                      vendorIdentity = createdIdentity;
+                      console.log(`[AUTH] ✅ Created vendor_identity for referral tracking: ${identity.id}`);
+                    }
+                  } catch (createIdentityError: any) {
+                    console.warn(`[AUTH] Could not create vendor_identity for referral metadata: ${createIdentityError.message}`);
+                    // Race-safe fallback: identity might have been created by another request.
+                    try {
+                      const reloadedIdentity = await select('vendor_identity', { phone: normalizedPhone });
+                      if (reloadedIdentity.length > 0) {
+                        identity = reloadedIdentity[0];
+                        vendorIdentity = reloadedIdentity;
+                      }
+                    } catch (reloadError: any) {
+                      console.warn(`[AUTH] Could not reload vendor_identity after create failure: ${reloadError.message}`);
+                    }
+                  }
+                }
+
+                if (identity) {
                   const metadata = identity.metadata || {};
                   metadata.referral_code_id = referralRecord.id;
                   metadata.referrer_vendor_id = referralRecord.referrer_vendor_id;
@@ -878,6 +997,8 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
                   } catch (metaError: any) {
                     console.error(`[AUTH] Error storing referral metadata: ${metaError.message}`);
                   }
+                } else {
+                  console.warn('[AUTH] ⚠️ Referral record exists but vendor_identity is unavailable; metadata not persisted');
                 }
               } else {
                 console.log(`[AUTH] ⚠️ No vendor referral record found for code: ${normalizedCode}`);
@@ -948,85 +1069,56 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         return this.error('Invalid role', 400, 'VALIDATION_ERROR', undefined, context.requestId);
       }
 
-      // Get or create Cognito user
+      // ✅ FIX: Ensure userId and userData are always defined (safety check)
+      // This must happen before we use userId to generate tokens
+      if (!userId || userId === '') {
+        console.error('[AUTH] ❌ userId is not set - this should not happen');
+        // Generate a fallback userId based on role and phone
+        userId = role === 'vendor'
+          ? `temp_vendor_${phone}_${Date.now()}`
+          : role === 'customer'
+            ? `temp_customer_${phone}_${Date.now()}`
+            : `temp_${role}_${phone}_${Date.now()}`;
+        console.warn(`[AUTH] ⚠️ Generated fallback userId: ${userId}`);
+      }
+
+      if (!userData) {
+        console.error('[AUTH] ❌ userData is not set - this should not happen');
+        // Generate a fallback userData based on role
+        userData = {
+          id: userId,
+          phone,
+          is_active: true,
+          status: role === 'vendor' ? 'pending' : 'new',
+          onboarding_status: role === 'vendor' ? 'INIT' : 'PHONE_VERIFIED',
+          created_at: new Date().toISOString(),
+        };
+        if (role === 'vendor') {
+          userData.business_name = null;
+        } else if (role === 'customer') {
+          userData.full_name = null;
+          userData.email = null;
+        }
+        console.warn(`[AUTH] ⚠️ Generated fallback userData for role: ${role}`);
+      }
 
       let cognitoTokens: CognitoTokens;
-      // UAT MODE: Generate proper JWT tokens (not just strings)
-      // Token expiry set to 24h so post-OTP redirect and first API calls succeed (was 60s → caused 401 and redirect back to login)
-      //const { generateUATJWTToken } = await import('../utils/jwt-generator');
-      if (isUATMode) {
-
-        cognitoTokens = await generateUATJWTToken({
+      try {
+        cognitoTokens = await issueAuthTokensAfterOtp({
           userId,
           phone,
           role: role as 'customer' | 'vendor' | 'admin',
-          expiresIn: 24 * 60 * 60,
+          requestHeaders: this.getHeaders(context.event),
         });
-        console.log('[AUTH] UAT Mode: Generated JWT tokens with 24h expiry');
-      } else {
-        // PRODUCTION MODE: Use full Cognito authentication
-        // ✅ FIX: Check if Cognito is configured, fallback to JWT if not
-        const cognitoUserPoolId = process.env.COGNITO_USER_POOL_ID ||
-          process.env.COGNITO_VENDOR_POOL_ID ||
-          process.env.COGNITO_CUSTOMER_POOL_ID ||
-          '';
-
-        if (!cognitoUserPoolId) {
-          // Cognito not configured - use JWT tokens as fallback (same as UAT mode)
-          console.warn(`[AUTH] Production Mode: Cognito not configured (no COGNITO_USER_POOL_ID), using JWT tokens as fallback`);
-          cognitoTokens = await generateUATJWTToken({
-            userId,
-            phone,
-            role: role as 'customer' | 'vendor' | 'admin',
-            expiresIn: 24 * 60 * 60, // 24 hours
-          });
-          console.log('[AUTH] Production Mode: Generated JWT tokens (Cognito fallback)');
-        } else {
-          // Cognito is configured - use it
-          try {
-
-            // ✅ FIX: Add timeout protection for Cognito operations (8 seconds max)
-            // This prevents Lambda timeout if Cognito is slow or unresponsive
-            const COGNITO_TIMEOUT_MS = 8000; // 8 seconds
-
-            const cognitoAuthPromise = (async () => {
-              const cognitoUser = await getOrCreateCognitoUser(phone, undefined, role);
-              const tokens = await authenticateCognitoUser(phone);
-              return tokens;
-            })();
-
-            const cognitoTimeout = new Promise<CognitoTokens>((_, reject) =>
-              setTimeout(() => reject(new Error('Cognito authentication timeout after 8 seconds')), COGNITO_TIMEOUT_MS)
-            );
-
-            cognitoTokens = await Promise.race([cognitoAuthPromise, cognitoTimeout]);
-          } catch (cognitoError: any) {
-            console.error('[AUTH] Production Mode: Cognito authentication failed:', cognitoError);
-
-            // ✅ FIX: If Cognito fails, fallback to JWT tokens instead of returning 503
-            // This ensures the endpoint works even if Cognito has issues
-            console.warn(`[AUTH] Production Mode: Cognito failed, falling back to JWT tokens`);
-            try {
-              cognitoTokens = await generateUATJWTToken({
-                userId,
-                phone,
-                role: role as 'customer' | 'vendor' | 'admin',
-                expiresIn: 24 * 60 * 60, // 24 hours
-              });
-              console.log('[AUTH] Production Mode: Generated JWT tokens (Cognito fallback after error)');
-            } catch (jwtError: any) {
-              console.error('[AUTH] Production Mode: JWT fallback also failed:', jwtError);
-              // Only return 503 if both Cognito and JWT fail
-              return this.error(
-                'Authentication service temporarily unavailable. Please try again.',
-                503,
-                'SERVICE_UNAVAILABLE',
-                { details: 'Authentication service error' },
-                context.requestId
-              );
-            }
-          }
-        }
+      } catch (jwtError: any) {
+        console.error('[AUTH] Token issuance failed:', jwtError);
+        return this.error(
+          'Authentication service temporarily unavailable. Please try again.',
+          503,
+          'SERVICE_UNAVAILABLE',
+          { details: jwtError?.message || 'Authentication service error' },
+          context.requestId
+        );
       }
 
       // Determine if user is new or existing using state management
@@ -1036,8 +1128,8 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         const customerState = await getCustomerStateForAuth(userId);
         isNewUser = customerState === 'new';
       } else if (role === 'vendor') {
-        isNewUser = userId.startsWith('temp_vendor_') || !userData.id || !userData.created_at ||
-          (userData.onboarding_status && ['INIT', 'ROLE_PENDING'].includes(userData.onboarding_status));
+        isNewUser = (userId && userId.startsWith('temp_vendor_')) || !userData?.id || !userData?.created_at ||
+          (userData?.onboarding_status && ['INIT', 'ROLE_PENDING'].includes(userData.onboarding_status));
       }
 
       // Return standardized response with state information
@@ -1046,6 +1138,7 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         data: {
           token: {
             access_token: cognitoTokens.accessToken,
+            id_token: cognitoTokens.idToken,
             refresh_token: cognitoTokens.refreshToken,
             expires_in: cognitoTokens.expiresIn,
             token_type: 'Bearer',
@@ -1054,21 +1147,23 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
             id: userId,
             phone,
             role,
-            is_active: userData.is_active !== false,
-            created_at: userData.created_at || new Date().toISOString(),
+            is_active: userData?.is_active !== false,
+            created_at: userData?.created_at || new Date().toISOString(),
           },
           state: isNewUser ? 'new' : 'existing',
           profile: role === 'customer' ? {
             id: userId,
             phone,
-            full_name: userData.full_name || null,
-            email: userData.email || null,
+            full_name: userData?.full_name || null,
+            email: userData?.email || null,
+            has_password: hasMeaningfulStoredPassword(userData?.password_hash),
+            username: userData?.username || storagePhoneForNewCustomer(phone),
           } : role === 'vendor' ? {
-            id: userId.startsWith('temp_vendor_') ? null : userId,
+            id: (userId && userId.startsWith('temp_vendor_')) ? null : userId,
             phone,
-            business_name: userData.business_name || null,
-            status: userData.status || 'pending',
-            onboarding_status: userData.onboarding_status || 'INIT',
+            business_name: userData?.business_name || null,
+            status: userData?.status || 'pending',
+            onboarding_status: userData?.onboarding_status || 'INIT',
           } : undefined,
         },
         meta: {
@@ -1092,6 +1187,290 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
   }
 }
 
+class CustomerPasswordLoginHandler extends BaseHandlerEnhanced {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const body = this.parseBody(context.event) || {};
+    const parsed = CustomerPasswordLoginRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return this.error(
+        'Validation failed',
+        400,
+        'VALIDATION_ERROR',
+        { errors: parsed.error.errors },
+        context.requestId
+      );
+    }
+
+    const { username, password } = parsed.data;
+    const role = parsed.data.role ?? 'customer';
+    if (role !== 'customer') {
+      return this.error('Only customer login is supported', 400, 'VALIDATION_ERROR', undefined, context.requestId);
+    }
+
+    const hdrs = this.getHeaders(context.event);
+    const passTrim = String(password ?? '').trim();
+    const bypassSecret = String(UAT_DEV_PASSWORD_BYPASS).trim();
+    const uatPasswordBypass = isUatRelaxedAuthContext(hdrs) && passTrim === bypassSecret;
+
+    try {
+      const customer = await findCustomerForPasswordLogin(username);
+      if (!customer) {
+        return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+      }
+      if (!uatPasswordBypass && !hasMeaningfulStoredPassword(customer.password_hash)) {
+        return this.error(
+          'Password not set. Use Sign up with OTP to verify your phone, then create a password.',
+          403,
+          'PASSWORD_NOT_SET',
+          undefined,
+          context.requestId
+        );
+      }
+
+      if (!uatPasswordBypass) {
+        const valid = await verifyCustomerPassword(password, customer.password_hash);
+        if (!valid) {
+          return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+        }
+      } else {
+        console.log(`[AUTH] UAT Mode: password bypass (${UAT_DEV_PASSWORD_BYPASS}) for customer ${username}`);
+      }
+
+      const userId = customer.id as string;
+      const phoneForTokens = dialablePhoneForCustomerAuth(customer.phone);
+      const phoneOut = phoneForTokens || String(customer.phone || username).trim();
+
+      let cognitoTokens: CognitoTokens;
+      try {
+        cognitoTokens = await issueAuthTokensAfterOtp({
+          userId,
+          phone: phoneOut,
+          role: 'customer',
+          requestHeaders: hdrs,
+          preferUatJwt: uatPasswordBypass,
+        });
+      } catch (jwtError: any) {
+        console.error('[AUTH] Customer login token issuance failed:', jwtError);
+        return this.error(
+          'Authentication service temporarily unavailable. Please try again.',
+          503,
+          'SERVICE_UNAVAILABLE',
+          { details: jwtError?.message || 'Authentication service error' },
+          context.requestId
+        );
+      }
+
+      try {
+        await update('customers', { id: userId }, {
+          last_login_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      } catch (loginUpdateErr: any) {
+        console.warn('[AUTH] login last_login_at update skipped:', loginUpdateErr?.message);
+      }
+
+      const customerState = await getCustomerStateForAuth(userId);
+      const isNewUser = customerState === 'new';
+
+      return this.success(
+        {
+          success: true,
+          data: {
+            token: {
+              access_token: cognitoTokens.accessToken,
+              id_token: cognitoTokens.idToken,
+              refresh_token: cognitoTokens.refreshToken,
+              expires_in: cognitoTokens.expiresIn,
+              token_type: 'Bearer',
+            },
+            user: {
+              id: userId,
+              phone: phoneOut,
+              role: 'customer',
+              is_active: customer?.is_active !== false,
+              created_at: customer?.created_at || new Date().toISOString(),
+            },
+            state: isNewUser ? 'new' : 'existing',
+            profile: {
+              id: userId,
+              phone: phoneOut,
+              full_name: customer?.full_name || null,
+              email: customer?.email || null,
+              has_password: true,
+              username: customer?.username || null,
+            },
+          },
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: context.requestId,
+            version: 'v1',
+          },
+        },
+        context.requestId
+      );
+    } catch (error: any) {
+      console.error('[AUTH] Customer password login error:', error);
+      return this.error(
+        error?.message || 'Login failed',
+        500,
+        'INTERNAL_ERROR',
+        undefined,
+        context.requestId
+      );
+    }
+  }
+}
+
+class VendorPasswordLoginHandler extends BaseHandlerEnhanced {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const body = this.parseBody(context.event) || {};
+    const parsed = VendorPasswordLoginRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return this.error(
+        'Validation failed',
+        400,
+        'VALIDATION_ERROR',
+        { errors: parsed.error.errors },
+        context.requestId
+      );
+    }
+
+    const { username, password } = parsed.data;
+    const role = parsed.data.role ?? 'vendor';
+    if (role !== 'vendor') {
+      return this.error('Only vendor login is supported', 400, 'VALIDATION_ERROR', undefined, context.requestId);
+    }
+
+    const hdrsVendor = this.getHeaders(context.event);
+    const passTrimVendor = String(password ?? '').trim();
+    const bypassSecretVendor = String(UAT_DEV_PASSWORD_BYPASS).trim();
+    const uatVendorPasswordBypass =
+      isUatRelaxedAuthContext(hdrsVendor) && passTrimVendor === bypassSecretVendor;
+
+    try {
+      const vendor = await findVendorForPasswordLogin(username);
+      if (!vendor) {
+        return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+      }
+
+      const userData = await mergeVendorIdentityOnboarding(vendor);
+
+      if (userData.is_active === false && (userData.status === 'suspended' || userData.status === 'inactive')) {
+        return this.error(
+          'Your vendor account has been deactivated. Please contact support for assistance.',
+          403,
+          'VENDOR_DEACTIVATED',
+          undefined,
+          context.requestId
+        );
+      }
+
+      if (!uatVendorPasswordBypass && !hasMeaningfulStoredPassword(userData.password_hash)) {
+        return this.error(
+          'Password not set. Use Sign up with OTP to verify your phone, then create a password.',
+          403,
+          'PASSWORD_NOT_SET',
+          undefined,
+          context.requestId
+        );
+      }
+
+      if (!uatVendorPasswordBypass) {
+        const valid = await verifyCustomerPassword(password, userData.password_hash);
+        if (!valid) {
+          return this.error('Invalid username or password', 401, 'UNAUTHORIZED', undefined, context.requestId);
+        }
+      } else {
+        console.log(`[AUTH] UAT Mode: password bypass (${UAT_DEV_PASSWORD_BYPASS}) for vendor ${username}`);
+      }
+
+      const userId = userData.id as string;
+      const phoneForTokens =
+        dialablePhoneForCustomerAuth(userData.phone) || String(userData.phone || username).trim();
+
+      let cognitoTokens: CognitoTokens;
+      try {
+        cognitoTokens = await issueAuthTokensAfterOtp({
+          userId,
+          phone: phoneForTokens,
+          role: 'vendor',
+          requestHeaders: hdrsVendor,
+          preferUatJwt: uatVendorPasswordBypass,
+        });
+      } catch (jwtError: any) {
+        console.error('[AUTH] Vendor login token issuance failed:', jwtError);
+        return this.error(
+          'Authentication service temporarily unavailable. Please try again.',
+          503,
+          'SERVICE_UNAVAILABLE',
+          { details: jwtError?.message || 'Authentication service error' },
+          context.requestId
+        );
+      }
+
+      try {
+        await update('vendors', { id: userId }, {
+          last_login_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      } catch (loginUpdateErr: any) {
+        console.warn('[AUTH] Vendor login last_login_at update skipped:', loginUpdateErr?.message);
+      }
+
+      const isNewUser =
+        (userId && userId.startsWith('temp_vendor_')) ||
+        !userData?.id ||
+        !userData?.created_at ||
+        (userData?.onboarding_status && ['INIT', 'ROLE_PENDING'].includes(userData.onboarding_status));
+
+      return this.success(
+        {
+          success: true,
+          data: {
+            token: {
+              access_token: cognitoTokens.accessToken,
+              id_token: cognitoTokens.idToken,
+              refresh_token: cognitoTokens.refreshToken,
+              expires_in: cognitoTokens.expiresIn,
+              token_type: 'Bearer',
+            },
+            user: {
+              id: userId,
+              phone: phoneForTokens,
+              role: 'vendor',
+              is_active: userData?.is_active !== false,
+              created_at: userData?.created_at || new Date().toISOString(),
+            },
+            state: isNewUser ? 'new' : 'existing',
+            profile: {
+              id: userId && userId.startsWith('temp_vendor_') ? null : userId,
+              phone: phoneForTokens,
+              business_name: userData?.business_name || null,
+              status: userData?.status || 'pending',
+              onboarding_status: userData?.onboarding_status || 'INIT',
+            },
+          },
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId: context.requestId,
+            version: 'v1',
+          },
+        },
+        context.requestId
+      );
+    } catch (error: any) {
+      console.error('[AUTH] Vendor password login error:', error);
+      return this.error(
+        error?.message || 'Login failed',
+        500,
+        'INTERNAL_ERROR',
+        undefined,
+        context.requestId
+      );
+    }
+  }
+}
+
 // ============================================================================
 // HONO ROUTER SETUP
 // ============================================================================
@@ -1099,6 +1478,195 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
 export function registerAuthEndpointsEnhanced(app: Hono) {
   const sendOtpHandler = new SendOtpHandlerEnhanced();
   const verifyOtpHandler = new VerifyOtpHandlerEnhanced();
+  const customerPasswordLoginHandler = new CustomerPasswordLoginHandler();
+  const vendorPasswordLoginHandler = new VendorPasswordLoginHandler();
+
+  // Customer first-time password + status: register early with other /auth routes.
+  // (Also registered under /customer/profile/* in registerCustomerProfileEndpoints.)
+  app.get('/auth/customer/password-status', handleCustomerAccountStatus);
+  app.post('/auth/customer/set-password', handleCustomerSetPassword);
+
+  app.get('/auth/vendor/password-status', handleVendorPasswordStatus);
+  app.post('/auth/vendor/set-password', handleVendorSetPassword);
+
+  app.post('/auth/customer/forgot-password/request', async (c) => {
+    const requestId =
+      c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
+    const body = await c.req.json().catch(() => ({}));
+    const headers: Record<string, string | undefined> = {
+      'x-forwarded-for': c.req.header('x-forwarded-for') || undefined,
+      'X-Forwarded-For': c.req.header('X-Forwarded-For') || undefined,
+      'cf-connecting-ip': c.req.header('cf-connecting-ip') || undefined,
+      'CF-Connecting-IP': c.req.header('CF-Connecting-IP') || undefined,
+      'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-Uat-Mode') || undefined,
+    };
+    const out = await handleCustomerForgotPasswordRequest({ body, requestId, headers });
+    return c.json(out.body as any, out.status);
+  });
+
+  app.post('/auth/customer/forgot-password/verify-otp', async (c) => {
+    const requestId =
+      c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
+    const body = await c.req.json().catch(() => ({}));
+    const headers: Record<string, string | undefined> = {
+      'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-Uat-Mode') || undefined,
+    };
+    const out = await handleCustomerForgotPasswordVerifyOtp({ body, requestId, headers });
+    return c.json(out.body as any, out.status);
+  });
+
+  app.post('/auth/customer/forgot-password/reset', async (c) => {
+    const requestId =
+      c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
+    const body = await c.req.json().catch(() => ({}));
+    const out = await handleCustomerForgotPasswordReset({ body, requestId });
+    return c.json(out.body as any, out.status);
+  });
+
+  app.post('/auth/vendor/forgot-password/request', async (c) => {
+    const requestId =
+      c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
+    const body = await c.req.json().catch(() => ({}));
+    const headers: Record<string, string | undefined> = {
+      'x-forwarded-for': c.req.header('x-forwarded-for') || undefined,
+      'X-Forwarded-For': c.req.header('X-Forwarded-For') || undefined,
+      'cf-connecting-ip': c.req.header('cf-connecting-ip') || undefined,
+      'CF-Connecting-IP': c.req.header('CF-Connecting-IP') || undefined,
+      'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-Uat-Mode') || undefined,
+    };
+    const out = await handleVendorForgotPasswordRequest({ body, requestId, headers });
+    return c.json(out.body as any, out.status);
+  });
+
+  app.post('/auth/vendor/forgot-password/verify-otp', async (c) => {
+    const requestId =
+      c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
+    const body = await c.req.json().catch(() => ({}));
+    const headers: Record<string, string | undefined> = {
+      'x-uat-mode': c.req.header('x-uat-mode') || c.req.header('X-Uat-Mode') || undefined,
+    };
+    const out = await handleVendorForgotPasswordVerifyOtp({ body, requestId, headers });
+    return c.json(out.body as any, out.status);
+  });
+
+  app.post('/auth/vendor/forgot-password/reset', async (c) => {
+    const requestId =
+      c.req.header('x-request-id') || c.req.header('X-Request-Id') || `req-${Date.now()}`;
+    const body = await c.req.json().catch(() => ({}));
+    const out = await handleVendorForgotPasswordReset({ body, requestId });
+    return c.json(out.body as any, out.status);
+  });
+
+  app.post('/auth/login', async (c) => {
+    const startTime = Date.now();
+    const TIMEOUT_MS = 25000;
+    try {
+      const parseBodyWithTimeout = async (): Promise<any> => {
+        return Promise.race([
+          c.req.json(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Request body parsing timeout')), 5000)
+          ),
+        ]);
+      };
+
+      let event;
+      try {
+        event = await createApiGatewayEvent(c, parseBodyWithTimeout);
+      } catch (parseError: any) {
+        console.error('[AUTH] Error parsing login body:', parseError);
+        return c.json(
+          { message: 'Invalid request format', error: parseError.message || 'Request parsing failed' },
+          400
+        );
+      }
+
+      const context = createLambdaContext();
+      const result: any = await Promise.race([
+        customerPasswordLoginHandler.execute(event, context),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Handler execution timeout')), TIMEOUT_MS)
+        ),
+      ]);
+
+      if (!result || !result.body) {
+        throw new Error('Handler returned invalid response');
+      }
+
+      const body = JSON.parse(result.body);
+      console.log(`[AUTH] login completed in ${Date.now() - startTime}ms`);
+      return c.json(body, result.statusCode);
+    } catch (error: any) {
+      const statusCode = error?.message?.includes('timeout') ? 503 : 500;
+      return c.json(
+        {
+          message: statusCode === 503 ? 'Service Unavailable' : 'Internal Server Error',
+          error: error?.message || 'Internal Server Error',
+        },
+        statusCode
+      );
+    }
+  });
+
+  app.post('/auth/vendor/login', async (c) => {
+    const startTime = Date.now();
+    const TIMEOUT_MS = 25000;
+    try {
+      const parseBodyWithTimeout = async (): Promise<any> => {
+        return Promise.race([
+          c.req.json(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Request body parsing timeout')), 5000)
+          ),
+        ]);
+      };
+
+      let event;
+      try {
+        event = await createApiGatewayEvent(c, parseBodyWithTimeout);
+      } catch (parseError: any) {
+        console.error('[AUTH] Error parsing vendor login body:', parseError);
+        return c.json(
+          { message: 'Invalid request format', error: parseError.message || 'Request parsing failed' },
+          400
+        );
+      }
+
+      const context = createLambdaContext();
+      const result: any = await Promise.race([
+        vendorPasswordLoginHandler.execute(event, context),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Handler execution timeout')), TIMEOUT_MS)
+        ),
+      ]);
+
+      if (!result || !result.body) {
+        throw new Error('Handler returned invalid response');
+      }
+
+      const body = JSON.parse(result.body);
+      console.log(`[AUTH] vendor/login completed in ${Date.now() - startTime}ms`);
+      return c.json(body, result.statusCode);
+    } catch (error: any) {
+      const statusCode = error?.message?.includes('timeout') ? 503 : 500;
+      return c.json(
+        {
+          message: statusCode === 503 ? 'Service Unavailable' : 'Internal Server Error',
+          error: error?.message || 'Internal Server Error',
+        },
+        statusCode
+      );
+    }
+  });
+
+  /** Silent refresh: custom JWT refresh (warmpawz-uat / warmpawz-api) or Cognito opaque refresh. */
+  app.post('/auth/refresh', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const refreshToken =
+      typeof (body as any)?.refreshToken === 'string' ? (body as any).refreshToken : '';
+    const out = await executeAuthRefresh(refreshToken);
+    return c.json(out.body as Parameters<typeof c.json>[0], out.status);
+  });
 
   app.post('/auth/send-otp', async (c) => {
     try {
@@ -1188,6 +1756,98 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
     }
   });
 
+  /** Exchange admin-issued one-time code for customer JWT + profile (customer-web bootstrap). */
+  app.post('/auth/customer-portal-session', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const code = typeof body?.code === 'string' ? body.code.trim() : '';
+      const requestId =
+        c.req.header('x-request-id') ||
+        c.req.header('X-Request-Id') ||
+        `req-${Date.now()}`;
+
+      const out = await consumeCustomerPortalCodeAndBuildPayload({ code, requestId });
+      if (!out.ok) {
+        return c.json(
+          {
+            success: false,
+            error: { code: out.errorCode || 'UNAUTHORIZED', message: out.error },
+            meta: { timestamp: new Date().toISOString(), requestId, version: 'v1' },
+          },
+          out.status as 400 | 401 | 403 | 404 | 500
+        );
+      }
+
+      return c.json(
+        {
+          success: true,
+          data: out.data,
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId,
+            version: 'v1',
+          },
+        },
+        200
+      );
+    } catch (error: any) {
+      console.error('[AUTH] customer-portal-session error:', error);
+      return c.json(
+        {
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: error?.message || 'Internal Server Error' },
+        },
+        500
+      );
+    }
+  });
+
+  /** Exchange admin-issued one-time code for verify-otp-shaped vendor session (vendor-web bootstrap). */
+  app.post('/auth/vendor-portal-session', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const code = typeof body?.code === 'string' ? body.code.trim() : '';
+      const requestId =
+        c.req.header('x-request-id') ||
+        c.req.header('X-Request-Id') ||
+        `req-${Date.now()}`;
+
+      const out = await consumeVendorPortalCodeAndBuildPayload({ code, requestId });
+      if (!out.ok) {
+        return c.json(
+          {
+            success: false,
+            error: { code: out.errorCode || 'UNAUTHORIZED', message: out.error },
+            meta: { timestamp: new Date().toISOString(), requestId, version: 'v1' },
+          },
+          out.status as 400 | 401 | 403 | 404 | 500
+        );
+      }
+
+      return c.json(
+        {
+          success: true,
+          data: out.successBody,
+          meta: {
+            timestamp: new Date().toISOString(),
+            requestId,
+            version: 'v1',
+          },
+        },
+        200
+      );
+    } catch (error: any) {
+      console.error('[AUTH] vendor-portal-session error:', error);
+      return c.json(
+        {
+          success: false,
+          error: { code: 'INTERNAL_ERROR', message: error?.message || 'Internal Server Error' },
+        },
+        500
+      );
+    }
+  });
+
   // Compatibility alias: /auth/otp/verify (for web/mobile clients)
   app.post('/auth/otp/verify', async (c) => {
     const startTime = Date.now();
@@ -1249,6 +1909,7 @@ export function registerAuthEndpointsEnhanced(app: Hono) {
       }, statusCode);
     }
   });
+
 }
 
 async function createApiGatewayEvent(c: any, bodyParser?: () => Promise<any>): Promise<any> {
@@ -1297,6 +1958,12 @@ async function createApiGatewayEvent(c: any, bodyParser?: () => Promise<any>): P
   } catch (e) {
     console.warn('[AUTH] Error processing headers:', e);
   }
+
+  // Hono: always merge UAT headers from the request API (raw Node headers sometimes omit custom fields).
+  const xUatMode = c.req.header('x-uat-mode') || c.req.header('X-UAT-Mode');
+  if (xUatMode) headers['x-uat-mode'] = xUatMode;
+  const xUatToken = c.req.header('x-uat-token') || c.req.header('X-UAT-Token');
+  if (xUatToken) headers['x-uat-token'] = xUatToken;
 
   const url = new URL(c.req.url);
   // Ensure body is stringified for API Gateway event format

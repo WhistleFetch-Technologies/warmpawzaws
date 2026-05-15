@@ -16,6 +16,7 @@ import { apiClient } from '@/lib/api-client';
 import { Package, Calendar, CreditCard, Clock, ChevronRight, CheckCircle, Gift, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 interface ActivePackage {
   id: string;
@@ -147,7 +148,7 @@ export function PackageAwareBookingFlow({
     for (let i = 0; i < 14; i++) {
       const date = new Date(today);
       date.setDate(date.getDate() + i);
-      dates.push(date.toISOString().split('T')[0]);
+      dates.push(formatLocalDateYYYYMMDD(date));
     }
     return dates;
   };

@@ -6,8 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
+import { formatRatingNumberOrDash } from '@/lib/rating-display';
 
 interface InsuranceProviderProps {
   phone?: string;
@@ -85,7 +88,10 @@ export function InsuranceProvider(props: InsuranceProviderProps) {
       
       // Load insurance plans
       const plansData = await apiClient.get<any>(`/customer/vendor/${props.vendorId}/services?category=insurance`);
-      const plansList = plansData.services || plansData.plans || [];
+      const plansList =
+        Array.isArray(plansData?.services) || Array.isArray(plansData?.packages)
+          ? mergeCustomerVendorServicesPayload(plansData)
+          : plansData.plans || [];
       
       // If no plans from API, use default plans
       if (plansList.length === 0) {
@@ -304,7 +310,7 @@ This is a digital policy document. Please keep this for your records.
         {provider && (
           <div className="grid grid-cols-3 gap-3 mb-4">
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
-              <div className="text-2xl font-bold text-white">{provider.rating || '4.7'}</div>
+              <div className="text-2xl font-bold text-white">{formatRatingNumberOrDash(provider.rating)}</div>
               <div className="text-white/80 text-xs">Rating</div>
             </div>
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
@@ -557,6 +563,7 @@ This is a digital policy document. Please keep this for your records.
             petName={selectedPet.name}
             petBreed={selectedPet.breed}
             baseAmount={selectedPlan.price}
+            priceIncludesTax={catalogPriceIncludesTax(selectedPlan)}
             duration={0}
             quantity={1}
             customerPhone={phone}

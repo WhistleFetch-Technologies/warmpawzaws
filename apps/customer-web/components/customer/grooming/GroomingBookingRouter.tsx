@@ -1,15 +1,26 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, Scissors, Star } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, Scissors, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { RateServiceModal } from '../RateServiceModal'; // ✅ NEW: Import for rating modal
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 interface GroomingBookingRouterProps {
   phone: string;
@@ -93,6 +104,7 @@ export function GroomingBookingRouter({
   // ✅ FIX: Prevent step from resetting to 'service' if we have service context
   // Use a ref to track if we've already initialized to avoid loops
   const initializedRef = useRef(false);
+  const packageRedirectRef = useRef(false);
   useEffect(() => {
     if (!initializedRef.current && hasServiceContext && step === 'service') {
       // If we have service context but step is 'service', move to datetime
@@ -167,6 +179,74 @@ export function GroomingBookingRouter({
   const [selectedServiceIds, setSelectedServiceIds] = useState<Set<string>>(
     new Set(selectedServices?.map(s => s.id || s.serviceId) || (serviceId ? [serviceId] : []))
   );
+
+  const groomingProvidersDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: selectedServiceType === 'at_center' ? 'at_center' : 'at_home',
+    category: 'grooming',
+  });
+
+  const groomingProviderStatValue = useMemo(() => {
+    const st =
+      groomingProvidersDiscovery.isLoading || groomingProvidersDiscovery.isFetching
+        ? 'loading'
+        : groomingProvidersDiscovery.isError
+          ? 'error'
+          : 'success';
+    return formatDiscoveryCountStat(groomingProvidersDiscovery.data, st);
+  }, [
+    groomingProvidersDiscovery.data,
+    groomingProvidersDiscovery.isLoading,
+    groomingProvidersDiscovery.isFetching,
+    groomingProvidersDiscovery.isError,
+  ]);
+
+  /** Deep link / profile context: vendor package rows must go to purchase-package, not one-off booking. */
+  useEffect(() => {
+    if (packageRedirectRef.current) return;
+    const vid = vendorId;
+    if (!vid) return;
+
+    const fromList = (selectedServices || []).filter(Boolean) as Record<string, unknown>[];
+    let pkgRow: Record<string, unknown> | null =
+      (fromList.find((r) => isVendorServicePackageRow(r)) as Record<string, unknown> | null) || null;
+
+    if (!pkgRow && serviceId && vendorServices.length > 0) {
+      const vs = vendorServices.find(
+        (row: any) =>
+          String(row?.id) === String(serviceId) || String(row?.serviceId || row?.service_id) === String(serviceId)
+      );
+      if (vs && isVendorServicePackageRow(vs)) pkgRow = vs as Record<string, unknown>;
+    }
+
+    if (!pkgRow && selectedVendorService && isVendorServicePackageRow(selectedVendorService)) {
+      pkgRow = selectedVendorService as Record<string, unknown>;
+    }
+
+    if (!pkgRow) return;
+
+    packageRedirectRef.current = true;
+    const nav = buildWalkerServiceDataForVendorPackagePurchase({
+      vendorId: String(vid),
+      vendorName: vendorNameProp || groomer?.name,
+      serviceRow: pkgRow,
+      serviceTypeCategory: 'grooming',
+      serviceStyle: String(serviceStyle || serviceType || selectedServiceType || 'at_home'),
+    });
+    if (nav) onNavigate('purchase-package', nav);
+  }, [
+    vendorId,
+    selectedServices,
+    serviceId,
+    vendorServices,
+    selectedVendorService,
+    vendorNameProp,
+    groomer,
+    serviceStyle,
+    serviceType,
+    selectedServiceType,
+    onNavigate,
+  ]);
   
   // Package awareness state
   const [activePackage, setActivePackage] = useState<any>(null);
@@ -178,7 +258,13 @@ export function GroomingBookingRouter({
   // Add Pet/Address modal states
   const [showAddPetModal, setShowAddPetModal] = useState(false);
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
-  
+
+  useEffect(() => {
+    if (step === 'datetime' && pets.length === 1 && !selectedPet) {
+      setSelectedPet(pets[0]);
+    }
+  }, [step, pets, selectedPet]);
+
   // Payment integration state
   const [showPaymentPage, setShowPaymentPage] = useState(false);
   
@@ -226,6 +312,7 @@ export function GroomingBookingRouter({
         serviceStyle: style,
         icon: style === 'at_home' ? Home : Building2,
         color: style === 'at_home' ? 'green' : 'purple',
+        isPackage: !!(s.isPackage ?? s.metadata?.isPackage),
       }));
     }
     return [];
@@ -243,7 +330,7 @@ export function GroomingBookingRouter({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         dayNum: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),
@@ -398,8 +485,9 @@ export function GroomingBookingRouter({
       // Load actual vendor grooming services
       const servicesResponse = await apiClient.get(`/customer/vendor/${vendorId}/services?category=grooming`) as any;
       if (servicesResponse.success && servicesResponse.services) {
-        setVendorServices(servicesResponse.services);
-        console.log('Loaded vendor services:', servicesResponse.services.length);
+        const merged = mergeCustomerVendorServicesPayload(servicesResponse);
+        setVendorServices(merged);
+        console.log('Loaded vendor services:', merged.length);
       }
     } catch (error) {
       console.error('Error loading vendor services:', error);
@@ -543,49 +631,101 @@ export function GroomingBookingRouter({
   };
 
   const handleNext = () => {
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
-    const currentIdx = steps.indexOf(step);
-    
-    // ✅ FIX: Skip address for at_center (customer goes to salon)
-    // at_home requires address, at_center does not
-    if (step === 'pet' && selectedServiceType === 'at_center') {
-      setStep('payment');
-      return;
+    if (step === 'service' && vendorId && vendorServices.length > 0) {
+      const rawIds = Array.from(selectedServiceIds);
+      const packageRows = rawIds
+        .map((id) =>
+          vendorServices.find(
+            (vs: any) => String(vs.id) === String(id) || String(vs.serviceId || vs.service_id) === String(id)
+          )
+        )
+        .filter(Boolean)
+        .filter((vs: any) => isVendorServicePackageRow(vs));
+      if (packageRows.length > 0) {
+        const nav = buildWalkerServiceDataForVendorPackagePurchase({
+          vendorId: String(vendorId),
+          vendorName: vendorNameProp || groomer?.name,
+          serviceRow: packageRows[0] as Record<string, unknown>,
+          serviceTypeCategory: 'grooming',
+          serviceStyle: String(selectedServiceType),
+        });
+        if (nav) {
+          onNavigate('purchase-package', nav);
+          return;
+        }
+      }
     }
-    
-    if (currentIdx < steps.length - 1) {
-      setStep(steps[currentIdx + 1]);
+    if (step === 'service') {
+      setStep('datetime');
     }
   };
 
+  /** Single-page booking: validate schedule + pet + address (home) then go to review/payment step */
+  const handleContinueFromBookingDetails = () => {
+    if (!selectedDate || !selectedTime) {
+      toast.error('Please select date and time');
+      return;
+    }
+    if (!selectedPet) {
+      toast.error('Please select a pet');
+      return;
+    }
+    if (selectedServiceType === 'at_home' && !selectedAddress) {
+      toast.error('Please select a delivery address');
+      return;
+    }
+    if (selectedServiceType === 'at_center') {
+      setSelectedAddress({ id: 'clinic' });
+    }
+
+    trackBookingStep({
+      step: 'pet_selection',
+      serviceCategory: 'grooming',
+      serviceStyle: selectedServiceType as 'at_center' | 'at_home',
+      vendorId,
+      petId: selectedPet?.id,
+      phone,
+      metadata: { source: 'grooming_consolidated_form' },
+    });
+    if (selectedServiceType === 'at_home') {
+      trackBookingStep({
+        step: 'address_selection',
+        serviceCategory: 'grooming',
+        serviceStyle: 'at_home',
+        vendorId,
+        petId: selectedPet?.id,
+        phone,
+        metadata: { source: 'grooming_consolidated_form' },
+      });
+    }
+
+    setStep('payment');
+  };
+
   const handleBack = useCallback(() => {
-    const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
-    const currentIdx = steps.indexOf(step);
-    
-    // ✅ FIX: Handle back from payment for at_center (customer goes to salon, no address needed)
-    if (step === 'payment' && selectedServiceType === 'at_center') {
-      setStep('pet');
-      return;
-    }
-    
-    // ✅ FIX: Handle back from address step - skip if we came with service context
-    if (step === 'address' && hasServiceContext) {
-      setStep('pet');
-      return;
-    }
-    
-    // ✅ FIX: Handle back from datetime when we have service context (skip service selection)
-    if (step === 'datetime' && hasServiceContext) {
-      onBack(); // Go back to vendor listing/profile
-      return;
-    }
-    
-    if (currentIdx > 0) {
-      setStep(steps[currentIdx - 1]);
-    } else {
+    if (step === 'confirmation') {
       onBack();
+      return;
     }
-  }, [step, selectedServiceType, hasServiceContext, onBack]);
+    if (step === 'payment') {
+      setShowPaymentPage(false);
+      setStep('datetime');
+      return;
+    }
+    if (step === 'datetime') {
+      if (hasServiceContext) {
+        onBack();
+        return;
+      }
+      setStep('service');
+      return;
+    }
+    if (step === 'service') {
+      onBack();
+      return;
+    }
+    onBack();
+  }, [step, hasServiceContext, onBack]);
 
   // ✅ NEW: Expose handleBack to parent for header navigation
   useEffect(() => {
@@ -667,46 +807,28 @@ export function GroomingBookingRouter({
   const selectedServiceOption = serviceOptions.find(s => s.id === selectedServiceType);
 
   const renderStepIndicator = () => {
-    // ✅ FIX: Only show steps that are relevant - skip 'Service' if already selected from profile
     const skipServiceStep = hasServiceContext && selectedVendorService;
-    // ✅ FIX: Also skip 'Address' for at_center services
-    const skipAddressStep = selectedServiceType === 'at_center';
-    
-    const steps = (skipServiceStep && skipAddressStep)
-      ? ['Date/Time', 'Pet', 'Payment']
-      : skipServiceStep
-      ? ['Date/Time', 'Pet', 'Address', 'Payment']
-      : skipAddressStep
-      ? ['Service', 'Date/Time', 'Pet', 'Payment']
-      : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
-    
-    const currentStepMap: Record<BookingStep, number> = {
-      service: skipServiceStep ? -1 : 0, 
-      datetime: skipServiceStep ? 0 : 1, 
-      pet: skipServiceStep && skipAddressStep ? 1 : (skipServiceStep ? 1 : (skipAddressStep ? 2 : 2)), 
-      address: (skipServiceStep && skipAddressStep) ? -1 : (skipServiceStep ? 2 : (skipAddressStep ? -1 : 3)), 
-      payment: skipServiceStep && skipAddressStep ? 2 : (skipServiceStep && !skipAddressStep ? 3 : (skipAddressStep ? 3 : 4)), 
-      confirmation: skipServiceStep && skipAddressStep ? 3 : (skipServiceStep || skipAddressStep ? 4 : 5)
-    };
-    const currentIdx = currentStepMap[step];
+    const steps = skipServiceStep ? ['Details', 'Payment'] : ['Service', 'Details', 'Payment'];
+    const currentIdx =
+      step === 'service' ? 0 : step === 'datetime' ? (skipServiceStep ? 0 : 1) : 0;
 
     return (
       <div className="flex items-center justify-center gap-2 mb-6">
         {steps.map((s, idx) => {
-          // Map visual index to actual step index
-          const actualStepIdx = skipServiceStep ? idx + 1 : idx;
-          const isCompleted = actualStepIdx < currentIdx;
-          const isCurrent = actualStepIdx === currentIdx;
-          
+          const isCompleted = idx < currentIdx;
+          const isCurrent = idx === currentIdx;
+
           return (
             <div key={s} className="flex items-center">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                isCompleted || isCurrent ? 'bg-[#FF8C42] text-white' : 'bg-gray-200 text-gray-500'
-              }`}>
-                {isCompleted ? <CheckCircle2 className="w-5 h-5" /> : idx + 1}
+              <div
+                className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
+                  isCompleted || isCurrent ? 'bg-[#FF8C42] text-white' : 'bg-gray-200 text-gray-500'
+                }`}
+              >
+                {isCompleted ? <CheckCircle2 className="h-5 w-5" /> : idx + 1}
               </div>
               {idx < steps.length - 1 && (
-                <div className={`w-8 h-0.5 ${isCompleted ? 'bg-[#FF8C42]' : 'bg-gray-200'}`} />
+                <div className={`h-0.5 w-8 ${isCompleted ? 'bg-[#FF8C42]' : 'bg-gray-200'}`} />
               )}
             </div>
           );
@@ -720,6 +842,13 @@ export function GroomingBookingRouter({
     if (step === 'confirmation') {
       return { title: 'Booking Confirmed', subtitle: 'Your appointment is scheduled', icon: CheckCircle2 };
     }
+    if (step === 'datetime') {
+      return {
+        title: 'Book Grooming',
+        subtitle: 'Schedule, pet & location',
+        icon: selectedServiceType === 'at_home' ? Home : Building2,
+      };
+    }
     if (selectedServiceType === 'at_home') {
       return { title: 'Book Grooming', subtitle: groomer?.name || groomer?.businessName || 'Home grooming service', icon: Home };
     }
@@ -730,50 +859,122 @@ export function GroomingBookingRouter({
   const HeaderIcon = headerInfo.icon;
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: '50+', label: 'Groomers', icon: <Scissors className="w-4 h-4" /> },
-    { value: '1K+', label: 'Bookings' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+  const groomingProviderStatLabel =
+    selectedServiceType === 'at_center' ? 'Salons' : 'Groomers';
+  const dashboardStats = useMemo(
+    () => [
+      {
+        value: groomingProviderStatValue,
+        label: groomingProviderStatLabel,
+        icon: <Scissors className="w-4 h-4" />,
+      },
+      { value: '1K+', label: 'Bookings' },
+      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ],
+    [groomingProviderStatValue, groomingProviderStatLabel]
+  );
 
   // ✅ FIX: Prepare step indicators for header
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
-    
+
     const skipServiceStep = hasServiceContext && selectedVendorService;
-    const skipAddressStep = selectedServiceType === 'at_center';
-    
-    const stepLabels = (skipServiceStep && skipAddressStep)
-      ? ['Date/Time', 'Pet', 'Payment']
-      : skipServiceStep
-      ? ['Date/Time', 'Pet', 'Address', 'Payment']
-      : skipAddressStep
-      ? ['Service', 'Date/Time', 'Pet', 'Payment']
-      : ['Service', 'Date/Time', 'Pet', 'Address', 'Payment'];
-    
-    const currentStepMap: Record<BookingStep, number> = {
-      service: skipServiceStep ? -1 : 0, 
-      datetime: skipServiceStep ? 0 : 1, 
-      pet: skipServiceStep && skipAddressStep ? 1 : (skipServiceStep ? 1 : (skipAddressStep ? 2 : 2)), 
-      address: (skipServiceStep && skipAddressStep) ? -1 : (skipServiceStep ? 2 : (skipAddressStep ? -1 : 3)), 
-      payment: skipServiceStep && skipAddressStep ? 2 : (skipServiceStep && !skipAddressStep ? 3 : (skipAddressStep ? 3 : 4)), 
-      confirmation: skipServiceStep && skipAddressStep ? 3 : (skipServiceStep || skipAddressStep ? 4 : 5)
-    };
-    const currentIdx = currentStepMap[step];
-    
-    return stepLabels.map((label, idx) => {
-      const actualStepIdx = skipServiceStep ? idx + 1 : idx;
-      return {
-        label,
-        isCompleted: actualStepIdx < currentIdx,
-        isCurrent: actualStepIdx === currentIdx
-      };
-    });
+    const stepLabels = skipServiceStep ? ['Details', 'Payment'] : ['Service', 'Details', 'Payment'];
+
+    const currentIdx =
+      step === 'service' ? 0 : step === 'datetime' ? (skipServiceStep ? 0 : 1) : 0;
+
+    return stepLabels.map((label, idx) => ({
+      label,
+      isCompleted: idx < currentIdx,
+      isCurrent: idx === currentIdx,
+    }));
   };
+
+  const reviewTotal =
+    (allSelectedServices && allSelectedServices.length > 0
+      ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
+      : selectedServiceOption?.price ?? allSelectedServices?.[0]?.price ?? price ?? 0) ?? 0;
+
+  const groomingPrePaymentSummary = (
+    <>
+      {allSelectedServices && allSelectedServices.length > 0 ? (
+        <div className="space-y-3 pb-4 border-b">
+          {allSelectedServices.map((service, index) => {
+            const serviceIdValue = service.id || service.serviceId || '';
+            const serviceNameValue = service.name || service.serviceName || 'Service';
+            const servicePrice = service.price || 0;
+            const serviceDuration = service.duration || 0;
+            const serviceStyleValue = service.serviceStyle || service.service_style || selectedServiceType;
+
+            return (
+              <div key={serviceIdValue || index} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
+                <div
+                  className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    serviceStyleValue === 'at_home' ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600'
+                  }`}
+                >
+                  {serviceStyleValue === 'at_home' ? <Home className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-gray-900">{serviceNameValue}</h3>
+                  {serviceDuration > 0 && <p className="text-sm text-gray-500">{serviceDuration} mins</p>}
+                </div>
+                <p className="font-bold text-orange-600 flex-shrink-0">₹{servicePrice}</p>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        (() => {
+          const svc = selectedServiceOption || allSelectedServices?.[0];
+          const svcName = svc?.name || svc?.serviceName || serviceName || 'Grooming Service';
+          const svcDuration = svc?.duration ?? duration ?? 0;
+          const svcPrice = svc?.price ?? price ?? 0;
+          return (
+            <div className="flex items-center gap-3 pb-4 border-b">
+              <div
+                className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                  selectedServiceType === 'at_home' ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600'
+                }`}
+              >
+                {selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold">{svcName}</h3>
+                {svcDuration > 0 && <p className="text-sm text-gray-500">{svcDuration} mins</p>}
+              </div>
+              <p className="font-bold">₹{Number(svcPrice).toLocaleString('en-IN')}</p>
+            </div>
+          );
+        })()
+      )}
+
+      <div className="flex items-center gap-3 py-4 border-b">
+        <Calendar className="w-5 h-5 text-gray-400" />
+        <div className="flex-1">
+          <p className="text-sm text-gray-500">Date & Time</p>
+          <p className="font-medium">
+            {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at{' '}
+            {selectedTime}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 py-4 border-b last:border-b-0">
+        <User className="w-5 h-5 text-gray-400" />
+        <div className="flex-1">
+          <p className="text-sm text-gray-500">Pet</p>
+          <p className="font-medium">
+            {selectedPet?.name} ({selectedPet?.breed})
+          </p>
+        </div>
+      </div>
+    </>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 relative overflow-hidden">
-      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader - Hide when on payment step */}
       {step !== 'payment' && (
         <ServiceDashboardHeader
           serviceName={headerInfo.title}
@@ -788,7 +989,27 @@ export function GroomingBookingRouter({
         />
       )}
 
+      {step === 'payment' && !showPaymentPage && (
+        <PrePaymentBookingReview
+          title="Booking Summary"
+          subtitle="Review before payment"
+          headerIcon={CreditCard}
+          stats={dashboardStats}
+          onBack={handleBack}
+          summaryBody={groomingPrePaymentSummary}
+          total={{ label: 'Total', amountFormatted: `₹${reviewTotal.toLocaleString('en-IN')}` }}
+          totalTextClassName="text-orange-600"
+          primaryButton={{
+            label: 'Proceed to Payment',
+            onClick: handleProceedToPayment,
+            disabled: processing,
+            loading: processing,
+          }}
+        />
+      )}
+
       {/* Main Content */}
+      {(step !== 'payment' || showPaymentPage || step === 'confirmation') && (
       <div className="max-w-md mx-auto px-4 pt-6 min-h-[calc(82vh)] pb-24 relative z-10">
         {/* ✅ FIX: Render payment page as full-screen overlay to escape router layout */}
         {step === 'payment' && showPaymentPage ? (
@@ -804,7 +1025,11 @@ export function GroomingBookingRouter({
             category="grooming"
             vendorId={vendorId || ''}
             vendorName={groomer?.name || vendorNameProp || 'Grooming Professional'}
-            vendorAddress={selectedServiceType === 'at_center' ? (groomer?.address || groomer?.business_address) : undefined} // ✅ NEW: Clinic address
+            vendorAddress={
+              (groomer?.address || groomer?.business_address || groomer?.service_area || groomer?.businessAddress) as
+                | string
+                | undefined
+            }
             staffName={selectedServiceType === 'at_home' ? (groomer?.name || 'Grooming Professional') : undefined} // ✅ NEW: Staff name for home services
             staffPhoto={selectedServiceType === 'at_home' ? (groomer?.photo || groomer?.profile_photo) : undefined} // ✅ NEW: Staff photo for home services
             bookingDate={selectedDate}
@@ -816,12 +1041,19 @@ export function GroomingBookingRouter({
             address={selectedAddress}
             showAddressSelection={selectedServiceType === 'at_home'}
             baseAmount={allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) || selectedServiceOption?.price || price || 499}
+            priceIncludesTax={
+              catalogPriceIncludesTax(selectedServiceOption) ||
+              (!!(allSelectedServices?.length) && catalogPriceIncludesTax(allSelectedServices[0]))
+            }
             duration={calculateTotalDuration() || selectedServiceOption?.duration || duration || 60}
             quantity={1}
             customerPhone={phone}
             customerId={customerId || undefined}
             selectedServices={allSelectedServices}
             onBack={() => setShowPaymentPage(false)}
+            onPaymentAbandoned={() => {
+              if (selectedDate) void loadTimeSlots(selectedDate);
+            }}
             onSuccess={handlePaymentSuccess}
             />
           </div>
@@ -941,19 +1173,20 @@ export function GroomingBookingRouter({
           </div>
         )}
 
-        {/* Date & Time Selection */}
+        {/* Schedule, pet, address & notes — single scrollable page */}
         {step === 'datetime' && (
-          <div className="space-y-6">
+          <div className="space-y-8 pb-4">
             <div>
               <h2 className="text-lg font-bold text-gray-900 mb-3">Select Date</h2>
               <div className="flex gap-2 overflow-x-auto pb-2">
                 {dates.map((d) => (
                   <button
                     key={d.date}
+                    type="button"
                     onClick={() => setSelectedDate(d.date)}
                     className={`flex-shrink-0 w-16 p-3 rounded-xl text-center transition-all ${
-                      selectedDate === d.date 
-                        ? 'bg-orange-500 text-white' 
+                      selectedDate === d.date
+                        ? 'bg-orange-500 text-white'
                         : 'bg-white border border-gray-200 hover:border-orange-300'
                     }`}
                   >
@@ -967,11 +1200,12 @@ export function GroomingBookingRouter({
 
             {selectedDate && (
               <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-3">Select Time</h2>
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Select Time</h2>
+                <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
                 {loadingSlots ? (
                   <div className="flex items-center justify-center py-8">
                     <div className="text-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto mb-2"></div>
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto mb-2" />
                       <p className="text-sm text-gray-500">Loading available slots...</p>
                     </div>
                   </div>
@@ -985,11 +1219,12 @@ export function GroomingBookingRouter({
                     {timeSlots.map((slot) => (
                       <button
                         key={slot.time}
+                        type="button"
                         onClick={() => slot.available && setSelectedTime(slot.time)}
                         disabled={!slot.available}
                         className={`p-3 rounded-xl text-center transition-all ${
-                          selectedTime === slot.time 
-                            ? 'bg-orange-500 text-white' 
+                          selectedTime === slot.time
+                            ? 'bg-orange-500 text-white'
                             : slot.available
                               ? 'bg-white border border-gray-200 hover:border-orange-300'
                               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -1003,333 +1238,202 @@ export function GroomingBookingRouter({
               </div>
             )}
 
-            <Button 
-              onClick={handleNext} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!selectedDate || !selectedTime}
-            >
-              Continue
-            </Button>
-          </div>
-        )}
-
-        {/* Pet Selection */}
-        {step === 'pet' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
-              <button
-                onClick={() => setShowAddPetModal(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-200 transition"
-              >
-                <Plus className="w-4 h-4" />
-                Add Pet
-              </button>
-            </div>
-            
-            {/* Required notice */}
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
-              <Dog className="w-4 h-4 text-amber-600 flex-shrink-0" />
-              <p className="text-sm text-amber-800">
-                A pet profile is required for this service to provide the best care.
-              </p>
-            </div>
-            
-            <div className="space-y-3">
-              {pets.length > 0 ? (
-                pets.map((pet) => (
-                  <button
-                    key={pet.id}
-                    onClick={() => setSelectedPet(pet)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all flex items-center gap-4 ${
-                      selectedPet?.id === pet.id 
-                        ? 'border-[#FF8C42] bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
-                    }`}
-                  >
-                    <div className="w-14 h-14 rounded-full bg-orange-100 flex items-center justify-center">
-                      {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog') ? (
-                        <Dog className="w-7 h-7 text-orange-600" />
-                      ) : pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat') ? (
-                        <Cat className="w-7 h-7 text-orange-600" />
-                      ) : (
-                        <User className="w-7 h-7 text-orange-600" />
-                      )}
-                    </div>
-                    <div className="flex-1 text-left">
-                      <h3 className="font-semibold text-gray-900">{pet.name}</h3>
-                      <p className="text-sm text-gray-500 capitalize">{pet.breed}</p>
-                    </div>
-                    {selectedPet?.id === pet.id && (
-                      <CheckCircle2 className="w-6 h-6 text-orange-500" />
+            <div className="space-y-4 border-t border-gray-100 pt-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">Your pet</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowAddPetModal(true)}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-sm font-medium hover:bg-orange-200 transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Pet
+                </button>
+              </div>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
+                <Dog className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <p className="text-sm text-amber-800">
+                  A pet profile is required for this service to provide the best care.
+                </p>
+              </div>
+              {pets.length > 1 ? (
+                <select
+                  className="h-12 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-900 outline-none focus:ring-2 focus:ring-orange-500"
+                  value={selectedPet?.id || ''}
+                  onChange={(e) => {
+                    const pet = pets.find((p) => p.id === e.target.value);
+                    if (pet) setSelectedPet(pet);
+                  }}
+                  aria-label="Select pet"
+                >
+                  <option value="">Select a pet</option>
+                  {pets.map((pet) => (
+                    <option key={pet.id} value={pet.id}>
+                      {pet.name}
+                      {pet.breed ? ` · ${pet.breed}` : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : pets.length === 1 ? (
+                <div className="flex items-center gap-4 rounded-xl border-2 border-[#FF8C42] bg-orange-50 p-4">
+                  <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-orange-100">
+                    {pets[0].species === 'dog' || (pets[0].species || '').toLowerCase().includes('dog') ? (
+                      <Dog className="h-7 w-7 text-orange-600" />
+                    ) : pets[0].species === 'cat' || (pets[0].species || '').toLowerCase().includes('cat') ? (
+                      <Cat className="h-7 w-7 text-orange-600" />
+                    ) : (
+                      <User className="h-7 w-7 text-orange-600" />
                     )}
-                  </button>
-                ))
-              ) : (
-                <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                  <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center">
-                    <Dog className="w-8 h-8 text-gray-400" />
                   </div>
-                  <p className="text-gray-600 font-medium mb-2">No pets added yet</p>
-                  <p className="text-sm text-gray-500 mb-4">Add your pet to continue with the booking</p>
+                  <div className="min-w-0 flex-1 text-left">
+                    <h3 className="font-semibold text-gray-900">{pets[0].name}</h3>
+                    <p className="text-sm capitalize text-gray-500">{pets[0].breed}</p>
+                  </div>
+                  <CheckCircle2 className="h-6 w-6 flex-shrink-0 text-orange-500" />
+                </div>
+              ) : (
+                <div className="rounded-xl border-2 border-dashed border-gray-200 py-12 text-center">
+                  <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+                    <Dog className="h-8 w-8 text-gray-400" />
+                  </div>
+                  <p className="mb-2 font-medium text-gray-600">No pets added yet</p>
+                  <p className="mb-4 text-sm text-gray-500">Add your pet to continue with the booking</p>
                   <button
+                    type="button"
                     onClick={() => setShowAddPetModal(true)}
-                    className="px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition"
+                    className="rounded-xl bg-orange-500 px-6 py-3 font-medium text-white transition hover:bg-orange-600"
                   >
                     + Add Your First Pet
                   </button>
                 </div>
               )}
             </div>
-            <Button 
-              onClick={handleNext} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={!selectedPet}
-            >
-              {selectedPet ? 'Continue' : 'Select a Pet to Continue'}
-            </Button>
-          </div>
-        )}
 
-        {/* Address Selection (required for all grooming services) */}
-        {step === 'address' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">
-                {selectedServiceType === 'at_home' ? 'Select Your Address' : 'Confirm Clinic Address'}
-              </h2>
-              {(selectedServiceType === 'at_home' || selectedServiceType === 'home') && (
-                <button
-                  onClick={() => setShowAddAddressModal(true)}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-blue-100 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-200 transition"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Address
-                </button>
-              )}
-            </div>
-            
-            {/* Required notice for home services */}
-            {(selectedServiceType === 'at_home' || selectedServiceType === 'home') && (
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                <p className="text-sm text-blue-800">
-                  An address is required for home service delivery.
-                </p>
+            <div className="space-y-4 border-t border-gray-100 pt-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">
+                  {selectedServiceType === 'at_home' ? 'Service address' : 'Clinic location'}
+                </h2>
+                {(selectedServiceType === 'at_home' || selectedServiceType === 'home') && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddAddressModal(true)}
+                    className="flex items-center gap-1 rounded-lg bg-blue-100 px-3 py-1.5 text-sm font-medium text-blue-600 transition hover:bg-blue-200"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Address
+                  </button>
+                )}
               </div>
-            )}
-            
-            <div className="space-y-3">
-              {(selectedServiceType === 'at_home' || selectedServiceType === 'home') ? (
-                addresses.length > 0 ? (
-                  addresses.map((addr) => (
-                    <button
-                      key={addr.id}
-                      onClick={() => setSelectedAddress(addr)}
-                      className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
-                        selectedAddress?.id === addr.id 
-                          ? 'border-[#FF8C42] bg-orange-50' 
-                          : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
-                          {(addr.label || '').toLowerCase() === 'home' ? (
-                            <Home className="w-4 h-4 text-blue-600" />
-                          ) : (addr.label || '').toLowerCase() === 'work' ? (
-                            <Building2 className="w-4 h-4 text-blue-600" />
-                          ) : (
-                            <MapPin className="w-4 h-4 text-blue-600" />
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-semibold text-gray-900">{addr.label || 'Address'}</h3>
-                            {addr.isDefault && (
-                              <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Default</span>
+              {(selectedServiceType === 'at_home' || selectedServiceType === 'home') && (
+                <div className="flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3">
+                  <MapPin className="h-4 w-4 flex-shrink-0 text-blue-600" />
+                  <p className="text-sm text-blue-800">An address is required for home service delivery.</p>
+                </div>
+              )}
+              <div className="space-y-3">
+                {selectedServiceType === 'at_home' || selectedServiceType === 'home' ? (
+                  addresses.length > 0 ? (
+                    addresses.map((addr) => (
+                      <button
+                        key={addr.id}
+                        type="button"
+                        onClick={() => setSelectedAddress(addr)}
+                        className={`w-full rounded-xl border-2 p-4 text-left transition-all ${
+                          selectedAddress?.id === addr.id
+                            ? 'border-[#FF8C42] bg-orange-50'
+                            : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-100">
+                            {(addr.label || '').toLowerCase() === 'home' ? (
+                              <Home className="h-4 w-4 text-blue-600" />
+                            ) : (addr.label || '').toLowerCase() === 'work' ? (
+                              <Building2 className="h-4 w-4 text-blue-600" />
+                            ) : (
+                              <MapPin className="h-4 w-4 text-blue-600" />
                             )}
                           </div>
-                          <p className="text-sm text-gray-600">{addr.addressLine1 || addr.address}</p>
-                          <p className="text-sm text-gray-500">{addr.city} - {addr.pincode}</p>
-                          {addr.landmark && <p className="text-xs text-gray-400">Near: {addr.landmark}</p>}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-semibold text-gray-900">{addr.label || 'Address'}</h3>
+                              {addr.isDefault && (
+                                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">Default</span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-600">{addr.addressLine1 || addr.address}</p>
+                            <p className="text-sm text-gray-500">
+                              {addr.city} - {addr.pincode}
+                            </p>
+                            {addr.landmark && <p className="text-xs text-gray-400">Near: {addr.landmark}</p>}
+                          </div>
+                          {selectedAddress?.id === addr.id && <CheckCircle2 className="h-6 w-6 flex-shrink-0 text-orange-500" />}
                         </div>
-                        {selectedAddress?.id === addr.id && (
-                          <CheckCircle2 className="w-6 h-6 text-orange-500" />
-                        )}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="rounded-xl border-2 border-dashed border-gray-200 py-12 text-center">
+                      <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+                        <MapPin className="h-8 w-8 text-gray-400" />
                       </div>
-                    </button>
-                  ))
+                      <p className="mb-2 font-medium text-gray-600">No addresses saved</p>
+                      <p className="mb-4 text-sm text-gray-500">Add an address to continue with the booking</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddAddressModal(true)}
+                        className="rounded-xl bg-blue-500 px-6 py-3 font-medium text-white transition hover:bg-blue-600"
+                      >
+                        + Add Your Address
+                      </button>
+                    </div>
+                  )
                 ) : (
-                  <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                    <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center">
-                      <MapPin className="w-8 h-8 text-gray-400" />
-                    </div>
-                    <p className="text-gray-600 font-medium mb-2">No addresses saved</p>
-                    <p className="text-sm text-gray-500 mb-4">Add an address to continue with the booking</p>
-                    <button
-                      onClick={() => setShowAddAddressModal(true)}
-                      className="px-6 py-3 bg-blue-500 text-white rounded-xl font-medium hover:bg-blue-600 transition"
-                    >
-                      + Add Your Address
-                    </button>
-                  </div>
-                )
-              ) : (
-                <div className="p-4 rounded-xl border-2 border-[#FF8C42] bg-orange-50">
-                  <div className="flex items-start gap-3">
-                    <Building2 className="w-5 h-5 text-orange-500 mt-0.5" />
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{groomer?.business_name || groomer?.name || 'Grooming Center'}</h3>
-                      <p className="text-sm text-gray-600">{groomer?.address || 'Address will be shared after confirmation'}</p>
+                  <div className="rounded-xl border-2 border-[#FF8C42] bg-orange-50 p-4">
+                    <div className="flex items-start gap-3">
+                      <Building2 className="mt-0.5 h-5 w-5 text-orange-500" />
+                      <div>
+                        <h3 className="font-semibold text-gray-900">
+                          {groomer?.business_name || groomer?.name || 'Grooming Center'}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          {groomer?.address || 'Address will be shared after confirmation'}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-            
-            {/* Confirm selected address */}
-            {selectedServiceType === 'at_home' && selectedAddress && addresses.length > 0 && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-sm text-green-800 font-medium">
-                  ✓ Service will be delivered to: {selectedAddress?.label || 'Selected Address'}
-                </p>
+                )}
               </div>
-            )}
-            
-            <Button 
-              onClick={() => {
-                if (selectedServiceType === 'at_center') setSelectedAddress({ id: 'clinic' });
-                handleNext();
-              }} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={selectedServiceType === 'at_home' && !selectedAddress}
-            >
-              {selectedServiceType === 'at_home' && !selectedAddress ? 'Select an Address to Continue' : 'Continue'}
-            </Button>
-          </div>
-            )}
-          </>
-        )}
-
-        {/* Payment Summary - Now using UniversalPaymentPage */}
-        {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
-            
-            <div className="bg-white rounded-xl p-4 space-y-4">
-              {/* ✅ Updated: Show all selected services */}
-              {allSelectedServices && allSelectedServices.length > 0 ? (
-                <div className="space-y-3 pb-4 border-b">
-                  {allSelectedServices.map((service, index) => {
-                    const serviceIdValue = service.id || service.serviceId || '';
-                    const serviceNameValue = service.name || service.serviceName || 'Service';
-                    const servicePrice = service.price || 0;
-                    const serviceDuration = service.duration || 0;
-                    const serviceStyleValue = service.serviceStyle || service.service_style || selectedServiceType;
-                    
-                    return (
-                      <div key={serviceIdValue || index} className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                          serviceStyleValue === 'at_home' ? 'bg-green-100 text-green-600' :
-                          'bg-purple-100 text-purple-600'
-                        }`}>
-                          {serviceStyleValue === 'at_home' ? <Home className="w-6 h-6" /> :
-                           <Building2 className="w-6 h-6" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-gray-900">{serviceNameValue}</h3>
-                          {serviceDuration > 0 && (
-                            <p className="text-sm text-gray-500">{serviceDuration} mins</p>
-                          )}
-                        </div>
-                        <p className="font-bold text-orange-600 flex-shrink-0">₹{servicePrice}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                /* Fallback: Single service display - with fallbacks for missing data */
-                (() => {
-                  const svc = selectedServiceOption || allSelectedServices?.[0];
-                  const svcName = svc?.name || svc?.serviceName || serviceName || 'Grooming Service';
-                  const svcDuration = svc?.duration ?? duration ?? 0;
-                  const svcPrice = svc?.price ?? price ?? 0;
-                  return (
-                    <div className="flex items-center gap-3 pb-4 border-b">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                        selectedServiceType === 'at_home' ? 'bg-green-100 text-green-600' :
-                        'bg-purple-100 text-purple-600'
-                      }`}>
-                        {selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> :
-                         <Building2 className="w-6 h-6" />}
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold">{svcName}</h3>
-                        {svcDuration > 0 && (
-                          <p className="text-sm text-gray-500">{svcDuration} mins</p>
-                        )}
-                      </div>
-                      <p className="font-bold">₹{Number(svcPrice).toLocaleString('en-IN')}</p>
-                    </div>
-                  );
-                })()
-              )}
-
-              {/* Date & Time */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <Calendar className="w-5 h-5 text-gray-400" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Date & Time</p>
-                  <p className="font-medium">
-                    {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {selectedTime}
+              {selectedServiceType === 'at_home' && selectedAddress && addresses.length > 0 && (
+                <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+                  <p className="text-sm font-medium text-green-800">
+                    ✓ Service will be delivered to: {selectedAddress?.label || 'Selected Address'}
                   </p>
                 </div>
-              </div>
-
-              {/* Pet */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <User className="w-5 h-5 text-gray-400" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Pet</p>
-                  <p className="font-medium">{selectedPet?.name} ({selectedPet?.breed})</p>
-                </div>
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Additional Notes (Optional)
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Any special requests or concerns..."
-                  className="w-full p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  rows={3}
-                />
-              </div>
+              )}
             </div>
 
-            {/* Price Breakdown */}
-            <div className="bg-white rounded-xl p-4">
-              <div className="flex justify-between items-center text-lg">
-                <span className="font-bold">Total</span>
-                <span className="font-bold text-orange-600">
-                  ₹{(allSelectedServices && allSelectedServices.length > 0 
-                    ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
-                    : (selectedServiceOption?.price ?? allSelectedServices?.[0]?.price ?? price ?? 0)).toLocaleString('en-IN')}
-                </span>
-              </div>
+            <div className="border-t border-gray-100 pt-6">
+              <label className="mb-2 block text-sm font-medium text-gray-700">Notes for the provider (optional)</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Any special requests or concerns..."
+                className="w-full resize-none rounded-xl border border-gray-200 p-3 focus:border-transparent focus:ring-2 focus:ring-orange-500"
+                rows={3}
+              />
             </div>
 
-            <Button 
-              onClick={handleProceedToPayment} 
+            <Button
+              type="button"
+              onClick={handleContinueFromBookingDetails}
               className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={processing}
             >
-              {processing ? 'Processing...' : 'Proceed to Payment'}
+              Review booking and pay
             </Button>
           </div>
+        )}
+        </>
         )}
 
         {/* Confirmation */}
@@ -1561,6 +1665,7 @@ export function GroomingBookingRouter({
           />
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -1828,7 +1933,10 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
         
         // Try reverse geocoding
         try {
-          const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+          const apiKey =
+            (await getGoogleMapsBrowserApiKey()) ||
+            process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+            '';
           if (!apiKey) {
             console.warn('Google Maps API key not configured');
             toast.error('Location services not configured. Please enter address manually.');

@@ -10,11 +10,14 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { toast } from 'sonner';
 
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
 import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { InstantTeleQueue } from '../InstantTele/InstantTeleQueue';
 
 // ============================================================================
@@ -74,6 +77,15 @@ interface TeleConsultationRouterProps {
   phone: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
+  /** When true (e.g. `?service=tele` or Book Now from tele promos), skip mode selection and open instant vet list. */
+  skipModeSelection?: boolean;
+  /**
+   * When true (e.g. Home → Veterinary Care → "Tele Consult" tile), skip mode selection and
+   * open the SCHEDULED consultation provider list directly. Back from the provider list
+   * returns to the parent (home) instead of the mode-selection screen.
+   * `skipModeSelection` (instant) takes precedence if both are true.
+   */
+  skipToScheduled?: boolean;
 }
 
 type FlowStep =
@@ -103,7 +115,7 @@ function ModeSelection({ onSelectScheduled, onSelectInstant, onBack }: ModeSelec
   const dashboardStats = [
     { value: '24/7', label: 'Available', icon: <Clock className="w-4 h-4" /> },
     { value: '<5min', label: 'Avg Wait' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
   return (
@@ -233,11 +245,11 @@ function InstantVendorList({ vendors, loading, onSelectVendor, onBack }: Instant
   const dashboardStats = [
     { value: vendors.length.toString(), label: 'Available now' },
     { value: '<5min', label: 'Connect' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+    <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
       <ServiceDashboardHeader
         serviceName="Available now"
         serviceSubtitle="Vets ready for instant video call"
@@ -326,11 +338,11 @@ function InstantServiceSelection({ phone, services, loading, onSelectService, on
   const dashboardStats = [
     { value: '24/7', label: 'Available', icon: <Clock className="w-4 h-4" /> },
     { value: `${services.length}`, label: 'Services' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+    <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
       {/* ✅ FIX: Add ServiceDashboardHeader for consistent UI */}
       <ServiceDashboardHeader
         serviceName="Instant Consultation"
@@ -370,8 +382,14 @@ function InstantServiceSelection({ phone, services, loading, onSelectService, on
                 <div className="flex items-center justify-between">
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold text-base text-slate-900">{service.name}</h3>
-                    {service.description && (
-                      <p className="text-sm text-slate-500 mt-1 leading-snug">{service.description}</p>
+                    {service.description?.trim() && (
+                      <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                        <ServiceDescriptionInline
+                          description={service.description}
+                          title={service.name}
+                          className="m-0 text-sm leading-snug text-slate-500"
+                        />
+                      </div>
                     )}
                     <div className="flex items-center gap-3 mt-2 text-xs text-slate-500">
                       <span className="flex items-center gap-1">
@@ -386,6 +404,7 @@ function InstantServiceSelection({ phone, services, loading, onSelectService, on
                   </div>
                   <div className="text-right flex-shrink-0 ml-4">
                     <p className="font-bold text-lg text-[#FF8C42]">₹{service.price}</p>
+                    <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
                     <ChevronRight className="w-5 h-5 text-slate-400 ml-auto" />
                   </div>
                 </div>
@@ -416,14 +435,14 @@ function InstantPetSelection({ phone, selectedService, pets, loading, onSelectPe
   const dashboardStats = [
     { value: '24/7', label: 'Available', icon: <Clock className="w-4 h-4" /> },
     { value: `₹${selectedService.price}`, label: 'Price' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+    <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
       {/* ✅ FIX: Add ServiceDashboardHeader for consistent UI */}
       <ServiceDashboardHeader
-        serviceName="Select Pet"
+        serviceName="Tele-Consultation"
         serviceSubtitle={selectedService.name}
         serviceIcon={PawPrint}
         iconColor="text-white"
@@ -537,7 +556,7 @@ function CallingVendorScreen({
     console.log('[CallingVendor] 📍 API Base URL:', apiBase);
     console.log('[CallingVendor] 🔗 SSE URL:', sseUrl);
     console.log('[CallingVendor] 📋 Booking ID:', bookingId);
-    
+
     try {
       const eventSource = new EventSource(sseUrl);
       eventSourceRef.current = eventSource;
@@ -569,18 +588,18 @@ function CallingVendorScreen({
 
           const data = JSON.parse(event.data);
           console.log('[CallingVendor] Parsed data:', data);
-          
+
           setStatus('accepted');
           toast.success(`${vendorName} accepted your call!`);
-          
+
           const finalBookingId = data.bookingId || bookingId;
           const finalAmount = Number(data.totalAmount) || servicePrice;
-          
+
           console.log('[CallingVendor] Calling onVendorAccepted with:', {
             bookingId: finalBookingId,
             totalAmount: finalAmount,
           });
-          
+
           onVendorAccepted(finalBookingId, finalAmount);
         } catch (e) {
           console.error('[CallingVendor] ❌ Parse error in vendor_accepted:', e);
@@ -642,7 +661,7 @@ function CallingVendorScreen({
           1: 'OPEN',
           2: 'CLOSED',
         }[eventSource.readyState]);
-        
+
         // If connection is closed, log it but don't take action
         // The stream should automatically reconnect
         if (eventSource.readyState === EventSource.CLOSED) {
@@ -674,7 +693,7 @@ function CallingVendorScreen({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+    <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
       <ServiceDashboardHeader
         serviceName="Calling..."
         serviceSubtitle={`${vendorName} - ${serviceName}`}
@@ -712,7 +731,10 @@ function CallingVendorScreen({
                   <p className="font-medium text-gray-900">{serviceName}</p>
                   <p className="text-sm text-gray-500">Video Consultation</p>
                 </div>
-                <p className="font-bold text-lg text-[#FF8C42]">₹{servicePrice}</p>
+                <div className="text-right">
+                  <p className="font-bold text-lg text-[#FF8C42]">₹{servicePrice}</p>
+                  <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                </div>
               </div>
             </Card>
 
@@ -778,8 +800,10 @@ function CallingVendorScreen({
 // MAIN COMPONENT
 // ============================================================================
 
-export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsultationRouterProps) {
-  const [step, setStep] = useState<FlowStep>('mode-selection');
+export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSelection, skipToScheduled }: TeleConsultationRouterProps) {
+  const [step, setStep] = useState<FlowStep>(
+    skipModeSelection ? 'instant-vendor-list' : skipToScheduled ? 'provider-list' : 'mode-selection'
+  );
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
   const [selectedService, setSelectedService] = useState<PlatformService | null>(null);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
@@ -787,7 +811,8 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
 
   // Instant flow (available-now → vendor → service → pet → calling → payment)
   const [availableNowVendors, setAvailableNowVendors] = useState<AvailableNowVendor[]>([]);
-  const [loadingAvailableNow, setLoadingAvailableNow] = useState(false);
+  const [loadingAvailableNow, setLoadingAvailableNow] = useState(!!skipModeSelection);
+  const deepLinkInstantFetchRef = useRef(false);
   const [selectedInstantVendor, setSelectedInstantVendor] = useState<AvailableNowVendor | null>(null);
   const [vendorTeleServices, setVendorTeleServices] = useState<PlatformService[]>([]);
   const [loadingVendorServices, setLoadingVendorServices] = useState(false);
@@ -886,7 +911,7 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
     setStep('provider-list');
   };
 
-  const handleSelectInstant = async () => {
+  const loadInstantVendorsAndGo = useCallback(async (revertToModeOnError: boolean) => {
     setLoadingAvailableNow(true);
     setAvailableNowVendors([]);
     setSelectedInstantVendor(null);
@@ -899,9 +924,20 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
     } catch (err) {
       console.error('Error loading available-now vets:', err);
       toast.error('Could not load available vets. Try again.');
+      if (revertToModeOnError) setStep('mode-selection');
     } finally {
       setLoadingAvailableNow(false);
     }
+  }, []);
+
+  useEffect(() => {
+    if (!skipModeSelection || deepLinkInstantFetchRef.current) return;
+    deepLinkInstantFetchRef.current = true;
+    void loadInstantVendorsAndGo(true);
+  }, [skipModeSelection, loadInstantVendorsAndGo]);
+
+  const handleSelectInstant = () => {
+    void loadInstantVendorsAndGo(false);
   };
 
   const handleSelectProvider = (provider: Provider) => {
@@ -916,7 +952,9 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
       const response = await apiClient.get<any>(
         `/customer/vendor/${vendorId}/services?serviceStyle=tele`
       );
-      let list = response?.services || response?.tele?.services || [];
+      let list = Array.isArray(response?.services)
+        ? mergeCustomerVendorServicesPayload(response)
+        : response?.tele?.services || [];
       if (Array.isArray(response) && response.length) list = response;
       const mapped: PlatformService[] = (list || []).map((s: any) => ({
         id: s.id || s.service_id,
@@ -1036,10 +1074,14 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
   };
 
   const handleProceedToPayment = (bookingData: any) => {
-    // Navigate to universal payment page
+    // Scheduled tele should pick slot only once (inside provider profile),
+    // then proceed directly to payment.
     onNavigate('payment', {
       ...bookingData,
+      vendorId: bookingData?.vendorId || selectedProvider?.vendorId || selectedProvider?.providerId,
+      vendorName: bookingData?.vendorName || selectedProvider?.vendorName || selectedProvider?.name,
       serviceType: 'tele',
+      serviceStyle: 'tele',
       category: 'vet',
       flowType: 'tele-scheduled',
     });
@@ -1055,7 +1097,11 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
         onBack();
         break;
       case 'provider-list':
-        setStep('mode-selection');
+        if (skipToScheduled) {
+          onBack();
+        } else {
+          setStep('mode-selection');
+        }
         break;
       case 'provider-profile':
         setSelectedProvider(null);
@@ -1079,6 +1125,15 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
         setStep('instant-service');
         break;
       case 'instant-calling':
+        if (callingBookingId) {
+          apiClient.post(`/customer/tele/instant-cancel/${callingBookingId}`)
+            .then(() => {
+              console.log('[TeleRouter] Booking cancelled successfully');
+            })
+            .catch((err) => {
+              console.error('[TeleRouter] Failed to cancel booking:', err);
+            });
+        }
         setCallingBookingId(null);
         setSelectedPet(null);
         setStep('instant-pet');
@@ -1197,7 +1252,7 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate }: TeleConsul
         return null;
       }
       return (
-        <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+        <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
           <ServiceDashboardHeader
             serviceName="Waiting in Queue"
             serviceSubtitle={`${selectedInstantVendor.vendorName} - ${selectedService.name}`}

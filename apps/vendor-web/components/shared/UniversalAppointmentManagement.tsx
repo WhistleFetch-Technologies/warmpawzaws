@@ -45,6 +45,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AppointmentDetailModal } from '../vendor/AppointmentDetailModal';
+import { DeclineBookingModal } from '../vendor/DeclineBookingModal';
 import { VendorChatModal } from '../vendor/VendorChatModal';
 import { VendorTeleConsultationFlow } from '../vendor/VendorTeleConsultationFlow';
 import {
@@ -133,6 +134,13 @@ export function UniversalAppointmentManagement({
     appointments: 0,
     earnings: 0
   });
+  /** Bookings → Earnings tab: loaded from GET /vendor/:id/earnings (vendor_earnings), not sum of list rows */
+  const [tabEarnings, setTabEarnings] = useState<{
+    total: number;
+    pending: number;
+    txnCount: number;
+    loading: boolean;
+  }>({ total: 0, pending: 0, txnCount: 0, loading: false });
   
   // OTP Modal State
   const [showOTPModal, setShowOTPModal] = useState(false);
@@ -153,6 +161,7 @@ export function UniversalAppointmentManagement({
   // Appointment Detail Modal State
   const [showAppointmentDetail, setShowAppointmentDetail] = useState(false);
   const [detailBookingId, setDetailBookingId] = useState<string | null>(null);
+  const [declineVendorBooking, setDeclineVendorBooking] = useState<Booking | null>(null);
 
   // GPS tracking state
   const [isTracking, setIsTracking] = useState<{ [key: string]: boolean }>({});
@@ -233,6 +242,39 @@ export function UniversalAppointmentManagement({
     loadBookings();
   }, [selectedDate, activeFilter, userId, userType]);
 
+  useEffect(() => {
+    if (activeTab !== 'earnings') return;
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const vid =
+      userType === 'staff'
+        ? String(userData?.vendor_id || userData?.vendorId || '').trim() || userId
+        : userId;
+    if (!uuidRe.test(vid)) {
+      setTabEarnings({ total: 0, pending: 0, txnCount: 0, loading: false });
+      return;
+    }
+    let cancelled = false;
+    setTabEarnings((s) => ({ ...s, loading: true }));
+    (async () => {
+      try {
+        const res = (await apiClient.get(`/vendor/${vid}/earnings?period=lifetime`)) as any;
+        if (cancelled) return;
+        const e = res?.earnings;
+        setTabEarnings({
+          total: Number(e?.totalEarnings ?? 0),
+          pending: Number(e?.pendingSettlement ?? 0),
+          txnCount: Array.isArray(e?.transactions) ? e.transactions.length : 0,
+          loading: false,
+        });
+      } catch {
+        if (!cancelled) setTabEarnings({ total: 0, pending: 0, txnCount: 0, loading: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, userId, userType, userData?.vendor_id, userData?.vendorId]);
+
   const loadBookings = async () => {
     try {
       setLoading(true);
@@ -297,7 +339,9 @@ export function UniversalAppointmentManagement({
           online: mappedBookings.filter((b: Booking) => b.communicationType === 'video').length,
           phone: mappedBookings.filter((b: Booking) => b.communicationType === 'call').length,
           appointments: mappedBookings.length,
-          earnings: mappedBookings.reduce((sum: number, b: Booking) => sum + b.price, 0)
+          earnings: mappedBookings
+            .filter((b: Booking) => String(b.status).toLowerCase() === 'completed')
+            .reduce((sum: number, b: Booking) => sum + Number(b.price || 0), 0),
         });
         
         // Generate time slots
@@ -321,47 +365,41 @@ export function UniversalAppointmentManagement({
     }
   };
 
-  const handleAccept = async (booking: Booking) => {
-    try {
-      setCompletingBooking(true);
-      const endpoint = getActionEndpoint(booking.id, 'accept');
-      const data = await apiClient.put<any>(endpoint, {}) as any;
-
-      if (data && data.success) {
-        toast.success('Booking accepted!');
-        loadBookings();
-      } else {
-        toast.error(data?.error || 'Failed to accept booking');
-      }
-    } catch (error: any) {
-      console.error('Error accepting booking:', error);
-      toast.error(error.message || 'Failed to accept booking');
-    } finally {
-      setCompletingBooking(false);
-    }
-  };
+  const declineVendorId =
+    userType === 'staff'
+      ? String(userData?.vendor_id || userData?.vendorId || '')
+      : userId;
 
   const handleReject = async (booking: Booking) => {
-    const reason = prompt('Reason for rejection (optional):');
-    if (reason === null) return;
+    if (userType === 'staff') {
+      const reason = prompt('Reason for rejection (optional):');
+      if (reason === null) return;
 
-    try {
-      setCompletingBooking(true);
-      const endpoint = getActionEndpoint(booking.id, 'reject');
-      const data = await apiClient.put<any>(endpoint, { reason }) as any;
+      try {
+        setCompletingBooking(true);
+        const endpoint = getActionEndpoint(booking.id, 'reject');
+        const data = await apiClient.put<any>(endpoint, { reason }) as any;
 
-      if (data && data.success) {
-        toast.success('Booking rejected');
-        loadBookings();
-      } else {
-        toast.error(data?.error || 'Failed to reject booking');
+        if (data && data.success) {
+          toast.success('Booking rejected');
+          loadBookings();
+        } else {
+          toast.error(data?.error || 'Failed to reject booking');
+        }
+      } catch (error: any) {
+        console.error('Error rejecting booking:', error);
+        toast.error(error.message || 'Failed to reject booking');
+      } finally {
+        setCompletingBooking(false);
       }
-    } catch (error: any) {
-      console.error('Error rejecting booking:', error);
-      toast.error(error.message || 'Failed to reject booking');
-    } finally {
-      setCompletingBooking(false);
+      return;
     }
+
+    setDeclineVendorBooking({
+      ...booking,
+      scheduledDate: booking.date,
+      scheduledTime: booking.time,
+    } as any);
   };
 
   // Helper function to check if booking is tele consultation
@@ -638,7 +676,7 @@ export function UniversalAppointmentManagement({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-20">
+      <div className="vendor-app-column bg-white min-h-screen pb-20">
         {/* Header */}
         <div className="p-4 bg-white border-b border-gray-200 sticky top-0 z-10">
           <div className="flex items-center gap-3 mb-4">
@@ -872,28 +910,31 @@ export function UniversalAppointmentManagement({
 
                       {/* Action Buttons */}
                       <div className="flex gap-2 flex-wrap mt-3" onClick={(e) => e.stopPropagation()}>
-                        {booking.status === 'pending' && (
-                          <>
-                            <Button
-                              onClick={() => handleAccept(booking)}
-                              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
-                              size="sm"
-                              disabled={completingBooking}
-                            >
-                              <CheckCircle className="w-4 h-4 mr-2" />
-                              Accept
-                            </Button>
-                            <Button
-                              onClick={() => handleReject(booking)}
-                              variant="outline"
-                              className="flex-1 border-red-500 text-red-600 hover:bg-red-50"
-                              size="sm"
-                              disabled={completingBooking}
-                            >
-                              <XCircle className="w-4 h-4 mr-2" />
-                              Reject
-                            </Button>
-                          </>
+                        {userType === 'staff' && booking.status === 'pending' && (
+                          <Button
+                            onClick={() => handleReject(booking)}
+                            variant="outline"
+                            className="flex-1 border-red-500 text-red-600 hover:bg-red-50"
+                            size="sm"
+                            disabled={completingBooking}
+                          >
+                            <XCircle className="w-4 h-4 mr-2" />
+                            Reject
+                          </Button>
+                        )}
+
+                        {(userType === 'vendor' || userType === 'solo' || userType === 'solo_vendor') &&
+                          (booking.status === 'pending' || booking.status === 'confirmed') && (
+                          <Button
+                            onClick={() => handleReject(booking)}
+                            variant="outline"
+                            className="flex-1 border-red-500 text-red-600 hover:bg-red-50"
+                            size="sm"
+                            disabled={completingBooking}
+                          >
+                            <XCircle className="w-4 h-4 mr-2" />
+                            Decline (refund per policy)
+                          </Button>
                         )}
 
                         {booking.status === 'confirmed' && (
@@ -1003,21 +1044,41 @@ export function UniversalAppointmentManagement({
           </>
         )}
 
-        {/* EARNINGS TAB */}
+        {/* EARNINGS TAB — uses vendor_earnings via API (center-aware); stats.earnings = completed-only sum from current list */}
         {activeTab === 'earnings' && (
           <div className="p-4">
             <div className="bg-white rounded-xl p-6 border border-gray-200">
               <h3 className="font-semibold text-gray-900 mb-4">Earnings Summary</h3>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Total Earnings</span>
-                  <span className="font-bold text-lg text-gray-900">₹{stats.earnings.toLocaleString()}</span>
+              {tabEarnings.loading ? (
+                <div className="flex justify-center py-10">
+                  <Loader2 className="h-10 w-10 animate-spin text-[#FF8C42]" aria-hidden />
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Total Appointments</span>
-                  <span className="font-semibold text-gray-900">{stats.appointments}</span>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center gap-3">
+                    <span className="text-gray-600">Total recorded earnings</span>
+                    <span className="font-bold text-lg text-gray-900 shrink-0">
+                      ₹{tabEarnings.total.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center gap-3">
+                    <span className="text-gray-600">Pending settlement</span>
+                    <span className="font-semibold text-gray-900 shrink-0">
+                      ₹{tabEarnings.pending.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center gap-3">
+                    <span className="text-gray-600">Earning records</span>
+                    <span className="font-semibold text-gray-900 shrink-0">{tabEarnings.txnCount}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 pt-3 border-t border-gray-100 leading-relaxed">
+                    Totals include all visits recorded for payout after completion (same source as Finance →
+                    Earnings). In the Bookings tab, &quot;Overview&quot; below shows only appointments loaded for
+                    the selected date and filters — completed revenue from that list: ₹
+                    {stats.earnings.toLocaleString()}.
+                  </p>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -1161,6 +1222,18 @@ export function UniversalAppointmentManagement({
             setDetailBookingId(null);
           }}
           onRefresh={() => loadBookings()}
+        />
+      )}
+
+      {declineVendorBooking && declineVendorId && (
+        <DeclineBookingModal
+          booking={declineVendorBooking as any}
+          vendorId={declineVendorId}
+          onClose={() => setDeclineVendorBooking(null)}
+          onSuccess={() => {
+            setDeclineVendorBooking(null);
+            loadBookings();
+          }}
         />
       )}
     </div>

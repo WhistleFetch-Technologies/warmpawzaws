@@ -33,7 +33,10 @@ import {
   Home as HomeIcon
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { aggregateAverageRatingStat } from '@/lib/rating-display';
+import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
+import { StarRating } from '../shared/StarRating';
 
 // Map config roleId to roleId used in specialization_master applicable_roles
 const ROLE_ID_FOR_PROBLEM_GRID: Record<string, string> = {
@@ -152,13 +155,16 @@ export function HomeServiceLanding({
         services.forEach((service: any) => {
           const vendorId = service.vendorId;
           if (!vendorMap.has(vendorId)) {
+            const rc = Number(service.vendorReviewCount ?? 0) || 0;
+            const rawV = service.vendorRating != null ? Number(service.vendorRating) : NaN;
+            const vr = rc > 0 && Number.isFinite(rawV) && rawV > 0 ? rawV : 0;
             vendorMap.set(vendorId, {
               id: vendorId,
               name: service.vendorName || 'Provider',
               photo: service.vendorPhoto || service.vendorLogo,
-              rating: service.vendorRating || 4.5,
-              reviewCount: service.vendorReviewCount || 0,
-              distance: Math.random() * 5 + 0.5,
+              rating: vr,
+              reviewCount: rc,
+              distance: service.distance ?? null,
               price: service.price || 0
             });
           }
@@ -167,15 +173,17 @@ export function HomeServiceLanding({
         const allProviders = Array.from(vendorMap.values());
         setFeaturedProviders(allProviders.slice(0, 5));
 
+        const rated = allProviders.filter((p: any) => p.reviewCount > 0 && p.rating > 0);
         setStats({
           activeProviders: allProviders.length || 50,
           sessions: '5K',
-          rating: allProviders.length > 0
-            ? (allProviders.reduce((acc: number, p: any) => acc + (p.rating || 4.5), 0) / allProviders.length).toFixed(1)
-            : '4.7'
+          rating:
+            rated.length > 0
+              ? (rated.reduce((acc: number, p: any) => acc + p.rating, 0) / rated.length).toFixed(1)
+              : '—',
         });
       } catch (e) {
-        setStats({ activeProviders: 50, sessions: '5K', rating: '4.7' });
+        setStats({ activeProviders: 50, sessions: '5K', rating: '—' });
       }
 
       // Load previous providers for this customer
@@ -188,11 +196,14 @@ export function HomeServiceLanding({
           const prevVendorMap = new Map();
           bookings.forEach((booking: any) => {
             if (booking.vendorId && !prevVendorMap.has(booking.vendorId)) {
+              const brc = Number(booking.vendorReviewCount ?? 0) || 0;
+              const braw = booking.vendorRating != null ? Number(booking.vendorRating) : NaN;
+              const br = brc > 0 && Number.isFinite(braw) && braw > 0 ? braw : 0;
               prevVendorMap.set(booking.vendorId, {
                 id: booking.vendorId,
                 name: booking.vendorName || 'Provider',
                 photo: booking.vendorPhoto,
-                rating: booking.vendorRating || 4.5,
+                rating: br,
                 lastVisit: new Date(booking.scheduledDate).toLocaleDateString()
               });
             }
@@ -214,7 +225,7 @@ export function HomeServiceLanding({
       }
     } catch (error) {
       console.error('Error loading landing data:', error);
-      setStats({ activeProviders: 50, sessions: '5K', rating: '4.7' });
+      setStats({ activeProviders: 50, sessions: '5K', rating: '—' });
     } finally {
       setLoading(false);
     }
@@ -336,20 +347,36 @@ export function HomeServiceLanding({
         <div className="mb-6">
           <h2 className="text-lg font-semibold mb-3">What do you need?</h2>
           <div className="grid grid-cols-3 gap-3">
-            {(problemsFromApi && problemsFromApi.length > 0 ? problemsFromApi : config.problems).slice(0, 6).map((problem) => (
+            {(problemsFromApi && problemsFromApi.length > 0 ? problemsFromApi : config.problems).slice(0, 6).map((problem) => {
+              const locked = isEmergencyProblemTileLocked({ id: problem.id, name: problem.name });
+              return (
               <Card
                 key={problem.id}
-                className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm text-center"
-                onClick={() => onNavigate('problem_selected', { problemId: problem.id })}
+                className={`p-4 transition-all border border-gray-100 bg-white shadow-sm text-center relative ${
+                  locked
+                    ? 'cursor-not-allowed opacity-80'
+                    : 'cursor-pointer hover:shadow-md'
+                }`}
+                onClick={
+                  locked
+                    ? undefined
+                    : () => onNavigate('problem_selected', { problemId: problem.id })
+                }
               >
+                {locked && (
+                  <span className="absolute top-2 right-2 text-[8px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded-md">
+                    Soon
+                  </span>
+                )}
                 <div className="flex justify-center mb-2 min-h-[2rem]">
                   {'iconName' in problem ? <ProblemIcon problem={problem} /> : <span className="text-2xl">{(problem as any).icon}</span>}
                 </div>
-                <p className="text-xs font-medium text-gray-700 leading-tight">
+                <p className={`text-xs font-medium leading-tight ${locked ? 'text-slate-500' : 'text-gray-700'}`}>
                   {problem.name}
                 </p>
               </Card>
-            ))}
+            );
+            })}
           </div>
         </div>
 
@@ -385,14 +412,19 @@ export function HomeServiceLanding({
                     <div className="flex-1">
                       <h3 className="font-semibold mb-1">{provider.name || 'Provider'}</h3>
                       <div className="flex items-center gap-3 text-xs">
-                        <div className="flex items-center gap-1 text-amber-500">
-                          <Star className="w-3 h-3 fill-current" />
-                          <span className="font-semibold">{provider.rating?.toFixed(1) || '4.5'}</span>
-                          <span className="text-gray-400">({provider.reviewCount || 0})</span>
-                        </div>
+                        <StarRating
+                          rating={provider.rating}
+                          reviewCount={provider.reviewCount}
+                          starsClassName="w-3 h-3"
+                          textClassName="text-xs text-gray-500"
+                        />
                         <div className="flex items-center gap-1 text-gray-500">
                           <MapPin className="w-3 h-3" />
-                          <span>{provider.distance?.toFixed(1) || '2.0'} km</span>
+                          <span>{provider.distance != null
+                            ? (provider.distance < 1
+                              ? `${Math.round(provider.distance * 1000)} m`
+                              : `${Math.round(provider.distance)} km`)
+                            : null}</span>
                         </div>
                       </div>
                     </div>
@@ -436,8 +468,12 @@ export function HomeServiceLanding({
                   </div>
                   <p className="text-sm font-medium text-gray-800 truncate text-center">{provider.name}</p>
                   <div className="flex items-center justify-center gap-1 mt-1">
-                    <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                    <span className="text-xs text-gray-600">{provider.rating?.toFixed(1) || '4.5'}</span>
+                    <StarRating
+                      rating={provider.rating}
+                      reviewCount={provider.reviewCount}
+                      starsClassName="w-3 h-3"
+                      textClassName="text-xs text-gray-600"
+                    />
                   </div>
                   <p className="text-xs text-gray-400 mt-1 text-center">{provider.lastVisit}</p>
                 </Card>
@@ -454,7 +490,7 @@ export function HomeServiceLanding({
                 <Package className="w-5 h-5 text-[#FF8C42]" />
                 <h2 className="text-lg font-semibold">Packages</h2>
               </div>
-              <Badge className="bg-green-100 text-green-700 border-none">Save more</Badge>
+              <Badge className="border-none bg-orange-100 text-orange-800">Save more</Badge>
             </div>
             <div className="space-y-3">
               {featuredPackages.slice(0, 3).map((pkg) => (
@@ -475,7 +511,7 @@ export function HomeServiceLanding({
                       <div className="flex items-center gap-2">
                         <span className="text-lg font-bold text-[#FF8C42]">₹{pkg.price}</span>
                         {pkg.discount > 0 && (
-                          <Badge className="bg-green-500 text-white border-none text-xs">
+                          <Badge className="border-none bg-[#FF8C42] text-xs text-white">
                             -{pkg.discount}%
                           </Badge>
                         )}

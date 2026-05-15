@@ -223,7 +223,7 @@ export function VendorPrescriptionModal({
   return (
     <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center">
       {/* Mobile-optimized container */}
-      <div className="w-full max-w-[430px] h-full sm:h-auto sm:max-h-[90vh] bg-white sm:rounded-2xl flex flex-col overflow-hidden sm:mx-4">
+      <div className="vendor-modal-sheet w-full h-full sm:h-auto sm:max-h-[90vh] bg-white sm:rounded-2xl flex flex-col overflow-hidden sm:mx-4">
         {/* Header */}
         <div className="bg-gradient-to-r from-purple-600 to-purple-700 text-white px-4 py-3 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">

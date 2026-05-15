@@ -37,11 +37,10 @@ if (!fs.existsSync(path.join(appDir, 'node_modules'))) {
 console.log('🚀 Starting dev server on http://localhost:3003...');
 console.log('');
 
-const server = spawn('npx', ['next', 'dev', '-p', '3003'], {
+const server = spawn(process.execPath, [path.join(__dirname, 'start-dev.cjs')], {
   stdio: 'inherit',
   env: process.env,
-  shell: true,
-  cwd: appDir
+  cwd: appDir,
 });
 
 server.on('error', (error) => {

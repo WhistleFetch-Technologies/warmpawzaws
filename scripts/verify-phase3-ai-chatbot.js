@@ -16,7 +16,7 @@ const path = require('path');
 const BACKEND_FILES = {
   'bedrock-client': 'backend/lambda/src/utils/bedrock-client.ts',
   'ai-chatbot': 'backend/lambda/src/endpoints/ai-chatbot.ts',
-  'support-crm': 'backend/lambda/src/endpoints/support-crm.ts',
+  'support-crm': 'backend/lambda/src/endpoints/supportCrm/endpoint/support-crm.ts',
 };
 
 const EXPECTED_ENDPOINTS = {
@@ -34,6 +34,7 @@ const EXPECTED_ENDPOINTS = {
     { method: 'POST', path: '/support/tickets/:ticketId/respond' },
     { method: 'PUT', path: '/support/tickets/:ticketId/assign' },
     { method: 'PUT', path: '/support/tickets/:ticketId/status' },
+    { method: 'POST', path: '/support/tickets/:ticketId/suggest-reply' },
   ],
 };
 

@@ -11,11 +11,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   Image,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -174,16 +174,16 @@ export function ShoppingCartScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -199,7 +199,7 @@ export function ShoppingCartScreen({
           <Text style={styles.emptySubtitle}>Add items to get started</Text>
           <TouchableOpacity
             style={styles.shopButton}
-            onPress={() => onNavigate && onNavigate('ShopDashboard')}
+            onPress={() => onNavigate && onNavigate('MainTabs', { screen: 'Store' })}
           >
             <Text style={styles.shopButtonText}>Start Shopping</Text>
           </TouchableOpacity>
@@ -265,7 +265,7 @@ export function ShoppingCartScreen({
           </View>
         </>
       )}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

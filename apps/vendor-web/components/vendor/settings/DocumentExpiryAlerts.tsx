@@ -24,6 +24,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface VendorDocument {
   id: string;
@@ -352,10 +353,19 @@ export function DocumentExpiryAlerts({
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Upload New Document (Optional)
                 </label>
-                <label className="block cursor-pointer">
-                  <div className={`border-2 border-dashed rounded-xl p-4 text-center transition ${
-                    newDocumentFile ? 'border-green-300 bg-green-50' : 'border-gray-300 hover:border-[#FF8C42]'
-                  }`}>
+                <TouchFilePicker
+                  onFileChange={(e) => {
+                    setNewDocumentFile(e.target.files?.[0] || null);
+                  }}
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="block w-full min-h-[5rem] overflow-hidden rounded-xl"
+                  innerClassName="flex w-full min-h-[5rem] items-center justify-center p-0"
+                >
+                  <div
+                    className={`w-full border-2 border-dashed rounded-xl p-4 text-center transition ${
+                      newDocumentFile ? 'border-green-300 bg-green-50' : 'border-gray-300 hover:border-[#FF8C42]'
+                    }`}
+                  >
                     {newDocumentFile ? (
                       <div className="flex items-center justify-center gap-2 text-green-700">
                         <CheckCircle2 className="w-5 h-5" />
@@ -368,13 +378,7 @@ export function DocumentExpiryAlerts({
                       </div>
                     )}
                   </div>
-                  <input
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={(e) => setNewDocumentFile(e.target.files?.[0] || null)}
-                    className="hidden"
-                  />
-                </label>
+                </TouchFilePicker>
               </div>
 
               <div className="flex gap-3 pt-4">

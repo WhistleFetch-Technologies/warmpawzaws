@@ -33,6 +33,46 @@ async function getApiKey(): Promise<string> {
 }
 
 /**
+ * Resolve an Indian postal code (6 digits) to its approximate centroid using Google Geocoding.
+ * Returns null when the API key is unavailable or geocoding fails.
+ */
+export async function geocodeIndiaPincode(pincode: string): Promise<GeocodeResult | null> {
+  const pin = String(pincode ?? '').replace(/\D/g, '');
+  if (pin.length !== 6) return null;
+
+  const apiKey = await getApiKey();
+  if (!apiKey) {
+    console.warn('[Geocode] No API key for pincode geocode');
+    return null;
+  }
+
+  try {
+    const components = encodeURIComponent(`country:IN|postal_code:${pin}`);
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?components=${components}&key=${apiKey}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data.status !== 'OK' || !data.results?.[0]) return null;
+
+    const loc = data.results[0].geometry?.location;
+    if (loc?.lat == null || loc?.lng == null) return null;
+
+    return {
+      latitude: parseFloat(String(loc.lat)),
+      longitude: parseFloat(String(loc.lng)),
+      formattedAddress: data.results[0].formatted_address,
+    };
+  } catch (err) {
+    console.warn('[Geocode] Pincode geocode failed:', (err as Error).message);
+    return null;
+  }
+}
+
+/**
  * Geocode an address string to coordinates
  * Returns null if geocoding fails or API key unavailable
  */

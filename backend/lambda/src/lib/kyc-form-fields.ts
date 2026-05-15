@@ -816,6 +816,25 @@ export interface RoleKYCConfig {
   requiresAnnualRevalidation?: boolean;
 }
 
+/** Veterinary clinic / business vet — prod DB role is usually `vet_clinic`; KYC key `veterinary_clinic` is legacy alias */
+function buildVeterinaryClinicKYC(roleName: 'veterinary_clinic' | 'vet_clinic'): RoleKYCConfig {
+  return {
+    roleName,
+    displayName: 'Veterinary Clinic',
+    vendorTypes: ['business'],
+    fields: [
+      ...OWNER_AADHAAR_FIELDS,
+      ...UNIVERSAL_KYC_FIELDS.filter(f => f.id === 'panNumber' || f.id === 'panCard'),
+      ...HEALTHCARE_VET_FIELDS,
+      ...BUSINESS_REGISTRATION_FIELDS,
+      { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true },
+    ],
+    sections: KYC_SECTIONS,
+    hardBlockFields: ['ownerAadhaarNumber', 'panNumber', 'vciRegistrationNumber', 'stateCouncilRegistration', 'degreeDoc', 'shopActLicenseNumber', 'addressProof'],
+    softBlockFields: ['municipalPermission', 'indemnityInsuranceDoc'],
+  };
+}
+
 export const ROLE_KYC_CONFIGS: Record<string, RoleKYCConfig> = {
   // ============================================================================
   // DOG WALKER / PET WALKER
@@ -888,23 +907,10 @@ export const ROLE_KYC_CONFIGS: Record<string, RoleKYCConfig> = {
   },
 
   // ============================================================================
-  // VETERINARY CLINIC
+  // VETERINARY CLINIC (prod canonical: vet_clinic; veterinary_clinic = same KYC)
   // ============================================================================
-  'veterinary_clinic': {
-    roleName: 'veterinary_clinic',
-    displayName: 'Veterinary Clinic',
-    vendorTypes: ['business'],
-    fields: [
-      ...OWNER_AADHAAR_FIELDS,
-      ...UNIVERSAL_KYC_FIELDS.filter(f => f.id === 'panNumber' || f.id === 'panCard'),
-      ...HEALTHCARE_VET_FIELDS,
-      ...BUSINESS_REGISTRATION_FIELDS,
-      { ...ADDRESS_PROOF_FIELD, required: true, isMandatory: true },
-    ],
-    sections: KYC_SECTIONS,
-    hardBlockFields: ['ownerAadhaarNumber', 'panNumber', 'vciRegistrationNumber', 'stateCouncilRegistration', 'degreeDoc', 'shopActLicenseNumber', 'addressProof'],
-    softBlockFields: ['municipalPermission', 'indemnityInsuranceDoc'],
-  },
+  'veterinary_clinic': buildVeterinaryClinicKYC('veterinary_clinic'),
+  'vet_clinic': buildVeterinaryClinicKYC('vet_clinic'),
 
   // ============================================================================
   // PET PHARMACY

@@ -55,7 +55,7 @@ export function PlatformSettings() {
   const [activeTab, setActiveTab] = useState<'general' | 'business' | 'booking' | 'notifications' | 'security' | 'features'>('general');
   const [config, setConfig] = useState<PlatformConfig>({
     general: {
-      platformName: 'WarmPawz',
+      platformName: 'Warmpawz',
       supportEmail: 'support@warmpawz.com',
       supportPhone: '+91-1800-XXX-XXXX',
       maintenanceMode: false,

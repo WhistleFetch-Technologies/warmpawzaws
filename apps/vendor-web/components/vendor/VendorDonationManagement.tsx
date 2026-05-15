@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Settings, Plus, Search, Filter, Edit, Trash2 } from 'lucide-react';
+import { Settings, Plus, Search, Filter, Edit, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 interface VendorDonationManagementProps {
   vendorId: string;
@@ -32,28 +33,22 @@ export function VendorDonationManagement({ vendorId, onBack }: VendorDonationMan
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+      <div className="flex items-center justify-center h-screen bg-gray-50 vendor-app-column">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42]"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-      <div className="bg-[#FF8C42] text-white p-4 sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-          )}
-          <div>
-            <h1 className="text-xl font-bold">Donation Management</h1>
-            <p className="text-sm text-white/80">Manage your settings</p>
-          </div>
-        </div>
-      </div>
-
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column min-h-screen bg-white">
+        <VendorHeader
+          tone="brand"
+          title="Donation Management"
+          subtitle="Manage your settings"
+          showBack={Boolean(onBack)}
+          onBack={onBack}
+        />
       <div className="p-4">
         <div className="bg-white rounded-xl p-8 text-center border border-gray-200">
           <Settings className="w-16 h-16 mx-auto mb-4 text-gray-300" />
@@ -64,6 +59,7 @@ export function VendorDonationManagement({ vendorId, onBack }: VendorDonationMan
             Get Started
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

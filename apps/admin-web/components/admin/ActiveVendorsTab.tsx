@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Eye, Phone, RefreshCw, Plus, User, Building2, Power, PowerOff, AlertCircle, Search, X, FileText, Edit, Trash2 } from 'lucide-react';
+import { Eye, Phone, RefreshCw, Plus, User, Building2, Power, PowerOff, AlertCircle, Search, X, FileText, Edit, Trash2, ExternalLink } from 'lucide-react';
 import { Button, Input } from '@warmpawz/ui';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getVendorWebBaseUrl } from '@/lib/api-client';
 import { CustomDropdown } from './CustomDropdown';
 import { VendorDetailsModal } from './VendorDetailsModal';
 import { EditVendorDocumentsModal } from './EditVendorDocumentsModal';
@@ -66,6 +66,7 @@ export function ActiveVendorsTab() {
   const [totalCount, setTotalCount] = useState(0);
   const [cities, setCities] = useState<string[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [portalLoadingId, setPortalLoadingId] = useState<string | null>(null);
 
   // Debounce search to avoid too many API calls
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -221,6 +222,34 @@ export function ActiveVendorsTab() {
       window.open(`tel:${vendor.phone}`, '_self');
     } else {
       alert('Phone number not available');
+    }
+  };
+
+  const handleOpenVendorPortal = async (vendorId: string) => {
+    setPortalLoadingId(vendorId);
+    try {
+      const res = await apiClient.post<{ success?: boolean; code?: string; error?: string }>(
+        `/admin/vendors/${vendorId}/vendor-portal-code`,
+        {}
+      );
+      const raw = res as Record<string, unknown>;
+      const code = (typeof raw?.code === 'string' ? raw.code : null) || null;
+      if (!code) {
+        const err = typeof raw?.error === 'string' ? raw.error : 'No portal code returned';
+        alert(err);
+        return;
+      }
+      const base = getVendorWebBaseUrl();
+      window.open(
+        `${base.replace(/\/+$/, '')}/session/from-admin?code=${encodeURIComponent(code)}`,
+        '_blank',
+        'noopener,noreferrer'
+      );
+    } catch (error: unknown) {
+      console.error('Open vendor portal failed:', error);
+      alert(error instanceof Error ? error.message : 'Failed to open vendor portal');
+    } finally {
+      setPortalLoadingId(null);
     }
   };
 
@@ -559,6 +588,17 @@ export function ActiveVendorsTab() {
                     >
                       <Phone className="w-4 h-4 mr-2" />
                       Call
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="hover:bg-amber-50 hover:border-amber-200 text-amber-800"
+                      onClick={() => handleOpenVendorPortal(vendor.id)}
+                      disabled={portalLoadingId === vendor.id}
+                      title="Opens vendor app in a new tab (admin session)"
+                    >
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      {portalLoadingId === vendor.id ? 'Opening…' : 'Open portal'}
                     </Button>
                   </div>
                   {/* ✅ NEW: Edit Documents button */}

@@ -254,7 +254,7 @@ jobs:
           # Next.js requires NEXT_PUBLIC_ prefix (not VITE_)
           # Use DEV_API_URL secret if set, otherwise fall back to API Gateway format
           # NOTE: Set DEV_API_URL secret to actual API Gateway invoke URL after first deploy
-          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.DEV_API_URL || 'https://dev.api.warmpawz.com' }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.DEV_API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com' }}
           NEXT_PUBLIC_COGNITO_USER_POOL_ID: ${{ secrets.DEV_COGNITO_USER_POOL_ID }}
           NEXT_PUBLIC_COGNITO_CLIENT_ID: ${{ secrets.DEV_COGNITO_CLIENT_ID }}
           NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
@@ -448,7 +448,7 @@ jobs:
           
           if [ -z "$API_ENDPOINT" ] || [ "$API_ENDPOINT" = "None" ] || [ "$API_ENDPOINT" = "null" ]; then
             # Fallback to default or secret
-            API_ENDPOINT="${{ secrets.DEV_API_URL || 'https://dev.api.warmpawz.com' }}"
+            API_ENDPOINT="${{ secrets.DEV_API_URL || 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com' }}"
             echo "⚠️  Using fallback API endpoint: $API_ENDPOINT"
           else
             echo "✅ API Gateway endpoint: $API_ENDPOINT"
@@ -504,7 +504,7 @@ jobs:
   # ============================================
   # DATABASE SCHEMA DEPLOYMENT (Safe & Automated)
   # ============================================
-  # Automatically checks if schema exists and runs migrations only if needed
+  # Checks schema state for logging; always runs migrate:up (idempotent) for pending SQL
   # Infrastructure is protected - RDS will NOT be recreated
   database-schema-deploy:
     name: 🗄️ Deploy Database Schema (Safe)
@@ -1048,28 +1048,26 @@ jobs:
           # Schema exists if we have at least 2 key tables OR more than 5 total tables
           if [ "$KEY_TABLES_COUNT" -ge "2" ] || [ "$TOTAL_TABLES" -gt "5" ]; then
             echo "schema_exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Database schema already exists"
-            echo "   Migrations will be skipped"
+            echo "✅ Database schema already exists (core tables detected)"
+            echo "   migrate:up still runs next — idempotent, applies pending SQL migrations"
           else
             echo "schema_exists=false" >> $GITHUB_OUTPUT
             echo "⚠️  Database schema not found or incomplete"
-            echo "   Will run migrations to create schema"
+            echo "   migrate:up will create/extend schema (idempotent)"
           fi
 
       - name: Install migration dependencies
-        if: steps.check-schema.outputs.schema_exists != 'true'
         working-directory: db
         run: |
           echo "📦 Installing migration dependencies..."
           npm ci
 
-      - name: Run database migrations (if schema missing)
-        if: steps.check-schema.outputs.schema_exists != 'true'
+      - name: Run database migrations (idempotent)
         working-directory: db
         run: |
           echo "🚀 Running database migrations..."
-          echo "   This will create all tables, indexes, and constraints"
-          echo "   Migrations are idempotent - safe to run multiple times"
+          echo "   Applies pending schema (CREATE IF NOT EXISTS, etc.)"
+          echo "   Safe on existing databases — skips already-applied DDL"
           npm run migrate:up
         env:
           DATABASE_URL: ${{ steps.db-creds-updated.outputs.database_url || steps.db-creds.outputs.database_url }}
@@ -1103,11 +1101,9 @@ jobs:
           echo "📊 Schema Deployment Summary"
           echo "============================"
           if [ "${{ steps.check-schema.outputs.schema_exists }}" = "true" ]; then
-            echo "✅ Schema already exists - migrations skipped"
-            echo "   No changes needed"
+            echo "✅ Core schema was already present — migrate:up ran for any new migrations"
           else
-            echo "✅ Schema deployed successfully"
-            echo "   All migrations completed"
+            echo "✅ migrate:up completed (initial or incremental schema)"
           fi
           echo ""
           echo "📋 Next steps:"

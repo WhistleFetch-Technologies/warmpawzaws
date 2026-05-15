@@ -10,10 +10,10 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { WebView } from 'react-native-webview';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { apiClient } from '../../lib/api-client';
@@ -71,7 +71,8 @@ export function VideoConsultationScreen({
       if (participantId) params.push(`participantId=${encodeURIComponent(participantId)}`);
 
       const query = params.length ? `?${params.join('&')}` : '';
-      const url = `${CUSTOMER_WEB_BASE_URL.replace(/\\/$/, '')}/video/${bookingId}${query}`;
+      const base = CUSTOMER_WEB_BASE_URL.replace(/\/$/, '');
+      const url = `${base}/video/${bookingId}${query}`;
       setWebUrl(url);
 
       setCallStatus('active');
@@ -132,7 +133,7 @@ export function VideoConsultationScreen({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={handleEndCall} style={styles.endCallButton}>
           <Text style={styles.endCallButtonText}>End Call</Text>
@@ -173,7 +174,7 @@ export function VideoConsultationScreen({
           }}
         />
       )}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

@@ -11,11 +11,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { AppointmentApi, ReschedulingApi } from '../../services/api';
 
@@ -24,6 +24,7 @@ interface AppointmentRescheduleScreenProps {
   currentDate?: string;
   currentTime?: string;
   phone: string;
+  customerId?: string;
   onBack: () => void;
   onNavigate?: (screen: string, data?: any) => void;
   onSuccess?: () => void;
@@ -34,6 +35,7 @@ export function AppointmentRescheduleScreen({
   currentDate,
   currentTime,
   phone,
+  customerId,
   onBack,
   onNavigate,
   onSuccess,
@@ -90,7 +92,8 @@ export function AppointmentRescheduleScreen({
         appointmentId,
         selectedDate,
         selectedTime,
-        reason || undefined
+        reason || undefined,
+        customerId
       );
 
       Alert.alert(
@@ -129,7 +132,7 @@ export function AppointmentRescheduleScreen({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -218,7 +221,7 @@ export function AppointmentRescheduleScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

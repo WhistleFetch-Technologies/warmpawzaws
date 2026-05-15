@@ -11,14 +11,17 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
   Image,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
+import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { customerFacingRating, normalizeReviewCount } from '../../utils/rating-display';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 
 type ViewType = 
   | 'landing'
@@ -42,7 +45,7 @@ interface Product {
   description: string;
   price: number;
   originalPrice?: number;
-  rating: number;
+  rating?: number;
   reviews: number;
   image: string;
   category: string;
@@ -90,7 +93,7 @@ export function PharmacyStoreScreen({
   const [stats, setStats] = useState({
     activePharmacies: 0,
     orders: '50K+',
-    rating: '4.7',
+    rating: '—' as string,
   });
 
   useEffect(() => {
@@ -112,10 +115,17 @@ export function PharmacyStoreScreen({
       services.forEach((service: any) => {
         const vendorId = service.vendorId;
         if (!pharmacyMap.has(vendorId)) {
+          const rc =
+            Number(service.vendorReviewCount ?? service.vendor_review_count ?? 0) || 0;
+          const r =
+            service.vendorRating != null ? Number(service.vendorRating) : NaN;
+          const rating =
+            rc > 0 && Number.isFinite(r) && r > 0 ? r : 0;
           pharmacyMap.set(vendorId, {
             id: vendorId,
             name: service.vendorName,
-            rating: service.vendorRating || 4.7,
+            rating,
+            reviewCount: rc,
             completedOrders: service.vendorReviewCount || 0,
           });
         }
@@ -124,12 +134,22 @@ export function PharmacyStoreScreen({
       const allPharmacies = Array.from(pharmacyMap.values());
       setPharmacies(allPharmacies);
       
+      const rated = allPharmacies.filter(
+        (p: any) =>
+          (p.reviewCount ?? 0) > 0 && p.rating != null && Number(p.rating) > 0
+      );
+      const avgRating =
+        rated.length > 0
+          ? (
+              rated.reduce((acc: number, p: any) => acc + Number(p.rating), 0) /
+              rated.length
+            ).toFixed(1)
+          : '—';
+
       setStats({
-        activePharmacies: allPharmacies.length || 25,
+        activePharmacies: allPharmacies.length || 0,
         orders: '50K+',
-        rating: allPharmacies.length > 0 
-          ? (allPharmacies.reduce((acc: number, p: any) => acc + (p.rating || 4.7), 0) / allPharmacies.length).toFixed(1)
-          : '4.7',
+        rating: avgRating,
       });
 
       // Load products from API
@@ -139,21 +159,28 @@ export function PharmacyStoreScreen({
           const pharmacyProducts = await CustomerApi.getPharmacyProducts(allPharmacies[0].id);
           const productsData = Array.isArray(pharmacyProducts) ? pharmacyProducts : (pharmacyProducts as any).products || [];
           
-          const formattedProducts: Product[] = productsData.map((prod: any) => ({
+          const formattedProducts: Product[] = productsData.map((prod: any) => {
+            const reviewCount = normalizeReviewCount(prod.reviewCount ?? prod.reviews);
+            const avgRating = customerFacingRating(
+              prod.rating ?? prod.averageRating,
+              reviewCount
+            );
+            return {
             id: prod.id || prod.productId,
             name: prod.name || prod.productName,
             description: prod.description || '',
             price: prod.price || prod.unitPrice || 0,
             originalPrice: prod.originalPrice || prod.mrp,
-            rating: prod.rating || prod.averageRating || 4.5,
-            reviews: prod.reviewCount || prod.reviews || 0,
+            rating: avgRating ?? 0,
+            reviews: reviewCount,
             image: prod.image || prod.imageUrl || '',
             category: prod.category || 'otc',
             prescriptionRequired: prod.prescriptionRequired || prod.requiresPrescription || false,
             vendorId: prod.vendorId || allPharmacies[0].id,
             vendorName: prod.vendorName || allPharmacies[0].name,
             inStock: prod.inStock !== false && prod.stockQuantity > 0,
-          }));
+          };
+          });
           
           setProducts(formattedProducts);
         } else {
@@ -265,7 +292,8 @@ export function PharmacyStoreScreen({
         <Text style={styles.subtitle}>Medicines & health products</Text>
       </View>
 
-      <ScrollView style={styles.landingContent}>
+      <BrandedStackBelowHeader>
+      <ScrollView style={styles.landingScroll} contentContainerStyle={styles.landingContent}>
         <View style={styles.statsContainer}>
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>{stats.activePharmacies}+</Text>
@@ -276,7 +304,9 @@ export function PharmacyStoreScreen({
             <Text style={styles.statLabel}>Orders</Text>
           </View>
           <View style={styles.statCard}>
-            <Text style={styles.statNumber}>⭐ {stats.rating}</Text>
+            <Text style={styles.statNumber}>
+              {stats.rating !== '—' ? `⭐ ${stats.rating}` : '—'}
+            </Text>
             <Text style={styles.statLabel}>Avg Rating</Text>
           </View>
         </View>
@@ -308,6 +338,7 @@ export function PharmacyStoreScreen({
           <Text style={styles.primaryButtonText}>Browse Products</Text>
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -395,7 +426,8 @@ export function PharmacyStoreScreen({
                       <Text style={styles.rxBadgeText}>RX</Text>
                     </View>
                   )}
-                  {product.originalPrice && (
+                  {product.originalPrice != null &&
+                    hasEffectivePriceReduction(product.originalPrice, product.price) && (
                     <View style={styles.discountBadge}>
                       <Text style={styles.discountBadgeText}>
                         {Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)}% OFF
@@ -412,13 +444,14 @@ export function PharmacyStoreScreen({
                   </Text>
                   <View style={styles.productRating}>
                     <Text style={styles.ratingIcon}>⭐</Text>
-                    <Text style={styles.ratingText}>{product.rating}</Text>
+                    <Text style={styles.ratingText}>{formatRatingOrDash(product.rating)}</Text>
                     <Text style={styles.reviewsText}>({product.reviews})</Text>
                   </View>
                   <View style={styles.productFooter}>
                     <View>
                       <Text style={styles.productPrice}>₹{product.price}</Text>
-                      {product.originalPrice && (
+                      {product.originalPrice != null &&
+                        hasEffectivePriceReduction(product.originalPrice, product.price) && (
                         <Text style={styles.originalPrice}>₹{product.originalPrice}</Text>
                       )}
                     </View>
@@ -469,6 +502,7 @@ export function PharmacyStoreScreen({
           <Text style={styles.headerTitle}>{selectedProduct.name}</Text>
         </View>
 
+        <BrandedStackBelowHeader>
         <ScrollView style={styles.productDetailContainer}>
           <Image
             source={{ uri: selectedProduct.image }}
@@ -482,12 +516,13 @@ export function PharmacyStoreScreen({
             </Text>
             <View style={styles.productDetailRating}>
               <Text style={styles.ratingIcon}>⭐</Text>
-              <Text style={styles.ratingText}>{selectedProduct.rating}</Text>
+              <Text style={styles.ratingText}>{formatRatingOrDash(selectedProduct.rating)}</Text>
               <Text style={styles.reviewsText}>({selectedProduct.reviews} reviews)</Text>
             </View>
             <View style={styles.productDetailPriceContainer}>
               <Text style={styles.productDetailPrice}>₹{selectedProduct.price}</Text>
-              {selectedProduct.originalPrice && (
+              {selectedProduct.originalPrice != null &&
+                hasEffectivePriceReduction(selectedProduct.originalPrice, selectedProduct.price) && (
                 <Text style={styles.productDetailOriginalPrice}>
                   ₹{selectedProduct.originalPrice}
                 </Text>
@@ -526,6 +561,7 @@ export function PharmacyStoreScreen({
             </TouchableOpacity>
           </View>
         </ScrollView>
+        </BrandedStackBelowHeader>
       </View>
     );
   };
@@ -539,6 +575,7 @@ export function PharmacyStoreScreen({
         <Text style={styles.headerTitle}>Shopping Cart</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.cartContainer}>
         {cart.length === 0 ? (
           <View style={styles.emptyCart}>
@@ -607,6 +644,7 @@ export function PharmacyStoreScreen({
           </>
         )}
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -619,6 +657,7 @@ export function PharmacyStoreScreen({
         <Text style={styles.headerTitle}>Checkout</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.checkoutContainer}>
         <View style={styles.checkoutSection}>
           <Text style={styles.checkoutSectionTitle}>Order Summary</Text>
@@ -646,6 +685,7 @@ export function PharmacyStoreScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -674,21 +714,21 @@ export function PharmacyStoreScreen({
 
   if (loading && currentView === 'landing') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {currentView === 'landing' && renderLanding()}
       {currentView === 'store' && renderStore()}
       {currentView === 'product_detail' && renderProductDetail()}
       {currentView === 'cart' && renderCart()}
       {currentView === 'checkout' && renderCheckout()}
       {currentView === 'confirmation' && renderConfirmation()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -700,8 +740,10 @@ const styles = StyleSheet.create({
   header: {
     padding: spacing.md,
     backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+    paddingBottom: spacing.md + 4,
+  },
+  landingScroll: {
+    flex: 1,
   },
   backButton: {
     fontSize: typography.body,
@@ -725,8 +767,9 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   landingContent: {
-    flex: 1,
     padding: spacing.md,
+    paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
   statsContainer: {
     flexDirection: 'row',

@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Briefcase, TrendingUp, Package, Settings, ArrowLeft, Stethoscope, Ambulance, Microscope, Plus, Edit2, Trash2, Search, AlertTriangle } from 'lucide-react';
+import { Package, Stethoscope, Ambulance, Microscope, Plus, Edit2, Trash2, Search, AlertTriangle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { Button } from '@/components/ui/button';
 
 interface InventoryItem {
   id: string;
@@ -117,30 +119,83 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
 
   const lowStockItems = inventory.filter(item => item.quantity <= item.minStock);
 
-  return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-      <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-0 text-white">
-        <div className="flex items-center gap-4 mb-4">
-          <button onClick={onBack} className="p-0 hover:bg-white/10 rounded-lg">
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <div>
-            <h2 className="text-xl font-bold">Business Hub</h2>
-            <p className="text-white/70 text-sm">
-              {isVet ? 'Manage vet services & equipment' : 'Manage inventory & store settings'}
-            </p>
-          </div>
-        </div>
-      </div>
+  const closeItemModal = () => {
+    setShowAddModal(false);
+    setEditingItem(null);
+    setItemForm({ name: '', sku: '', category: '', quantity: 0, minStock: 5, price: 0, unit: 'pcs' });
+  };
 
-      <div className="p-4">
-        <div className="flex gap-3 mb-4">
+  const inFormMode = showAddModal;
+
+  const listTitle =
+    isVet && activeTab === 'vet-services'
+      ? 'Business Hub'
+      : isVet && activeTab === 'inventory'
+        ? 'Pharmacy'
+        : 'Inventory';
+
+  const listSubtitle =
+    isVet && activeTab === 'vet-services'
+      ? 'Manage vet services & equipment'
+      : isVet && activeTab === 'inventory'
+        ? 'Manage inventory & stock'
+        : 'Manage inventory & store settings';
+
+  return (
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column min-h-screen bg-white">
+        <VendorHeader
+          title={
+            inFormMode
+              ? editingItem
+                ? 'Edit item'
+                : 'Add item'
+              : listTitle
+          }
+          subtitle={inFormMode ? 'Enter product details below' : listSubtitle}
+          onBack={inFormMode ? closeItemModal : onBack}
+          actions={
+            inFormMode
+              ? [
+                  <Button
+                    key="save-item"
+                    type="button"
+                    size="sm"
+                    className="h-9 shrink-0 bg-orange-500 text-white hover:bg-orange-600"
+                    onClick={handleSaveItem}
+                  >
+                    {editingItem ? 'Save' : 'Add'}
+                  </Button>,
+                ]
+              : activeTab === 'inventory'
+                ? [
+                    <Button
+                      key="add-inv"
+                      type="button"
+                      size="sm"
+                      className="h-9 shrink-0 bg-orange-500 text-white hover:bg-orange-600"
+                      onClick={() => {
+                        setEditingItem(null);
+                        setItemForm({ name: '', sku: '', category: '', quantity: 0, minStock: 5, price: 0, unit: 'pcs' });
+                        setShowAddModal(true);
+                      }}
+                    >
+                      <Plus className="mr-1 h-4 w-4" />
+                      Add
+                    </Button>,
+                  ]
+                : undefined
+          }
+        />
+
+      <div className={`px-4 sm:px-6 ${inFormMode ? 'py-2' : 'py-4'}`}>
+        <div className={`flex gap-3 ${inFormMode ? 'mb-2' : 'mb-4'}`}>
           {isVet && (
             <button
               onClick={() => setActiveTab('vet-services')}
-              className={`flex-1 px-4 py-0 rounded-lg font-medium flex items-center justify-center gap-3 ${
+              className={`flex flex-1 items-center justify-center gap-3 rounded-lg px-4 py-2 font-medium ${
                 activeTab === 'vet-services'
-                  ? 'bg-[primary] text-white'
+                  ? 'bg-orange-500 text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
             >
@@ -150,9 +205,9 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
           )}
           <button
             onClick={() => setActiveTab('inventory')}
-            className={`flex-1 px-4 py-0 rounded-lg font-medium flex items-center justify-center gap-3 ${
+            className={`flex flex-1 items-center justify-center gap-3 rounded-lg px-4 py-2 font-medium ${
               activeTab === 'inventory'
-                ? 'bg-[primary] text-white'
+                ? 'bg-orange-500 text-white'
                 : 'bg-gray-100 text-gray-600'
             }`}
           >
@@ -196,7 +251,7 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
         {activeTab === 'inventory' && (
           <div className="space-y-4">
             {/* Low Stock Alert */}
-            {lowStockItems.length > 0 && (
+            {!showAddModal && lowStockItems.length > 0 && (
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center gap-3">
                 <AlertTriangle className="w-5 h-5 text-amber-600" />
                 <p className="text-sm text-amber-800">
@@ -205,77 +260,71 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
               </div>
             )}
 
-            {/* Search and Add */}
-            <div className="flex gap-2">
-              <div className="flex-1 relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search inventory..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm"
-                />
-              </div>
-              <button
-                onClick={() => { setShowAddModal(true); setEditingItem(null); setItemForm({ name: '', sku: '', category: '', quantity: 0, minStock: 5, price: 0, unit: 'pcs' }); }}
-                className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-medium flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" /> Add
-              </button>
+            {/* Search */}
+            {!showAddModal && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search inventory..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 py-2 pl-9 pr-4 text-sm"
+              />
             </div>
+            )}
 
             {/* Inventory List */}
-            {inventoryLoading ? (
-              <div className="text-center py-8 text-gray-500">Loading...</div>
-            ) : filteredInventory.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                <p>No items found</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {filteredInventory.map(item => (
-                  <div key={item.id} className="bg-white border border-gray-200 rounded-lg p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-medium text-gray-900">{item.name}</h4>
-                          {item.quantity <= item.minStock && (
-                            <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full">Low Stock</span>
-                          )}
+            {!showAddModal &&
+              (inventoryLoading ? (
+                <div className="text-center py-8 text-gray-500">Loading...</div>
+              ) : filteredInventory.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Package className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                  <p>No items found</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredInventory.map(item => (
+                    <div key={item.id} className="bg-white border border-gray-200 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-medium text-gray-900">{item.name}</h4>
+                            {item.quantity <= item.minStock && (
+                              <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full">Low Stock</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500">SKU: {item.sku} • {item.category}</p>
                         </div>
-                        <p className="text-xs text-gray-500">SKU: {item.sku} • {item.category}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-gray-900">{item.quantity} {item.unit}</p>
-                        <p className="text-sm text-gray-500">₹{item.price}/{item.unit}</p>
-                      </div>
-                      <div className="flex gap-1 ml-3">
-                        <button
-                          onClick={() => { setEditingItem(item); setItemForm({ ...item }); setShowAddModal(true); }}
-                          className="p-2 text-gray-400 hover:text-blue-600"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteItem(item.id)}
-                          className="p-2 text-gray-400 hover:text-red-600"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="text-right">
+                          <p className="font-bold text-gray-900">{item.quantity} {item.unit}</p>
+                          <p className="text-sm text-gray-500">₹{item.price}/{item.unit}</p>
+                        </div>
+                        <div className="flex gap-1 ml-3">
+                          <button
+                            onClick={() => { setEditingItem(item); setItemForm({ ...item }); setShowAddModal(true); }}
+                            className="p-2 text-gray-400 hover:text-blue-600"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteItem(item.id)}
+                            className="p-2 text-gray-400 hover:text-red-600"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              ))}
 
             {/* Add/Edit Modal */}
             {showAddModal && (
-              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl w-full max-w-md p-4">
-                  <h3 className="text-lg font-bold mb-4">{editingItem ? 'Edit Item' : 'Add New Item'}</h3>
+              <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 vendor-modal-overlay-host">
+                <div className="w-full max-w-md max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-2.5rem))] overflow-y-auto overscroll-y-contain rounded-xl bg-white p-4 shadow-lg">
                   <div className="space-y-3">
                     <input
                       type="text"
@@ -331,25 +380,29 @@ export function VendorBusinessHub({ vendorId, vendorData, onBack }: VendorBusine
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg"
                     />
                   </div>
-                  <div className="flex gap-2 mt-4">
-                    <button
-                      onClick={() => { setShowAddModal(false); setEditingItem(null); }}
-                      className="flex-1 py-2 border border-gray-200 rounded-lg font-medium"
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row-reverse sm:justify-end">
+                    <Button
+                      type="button"
+                      className="h-11 w-full bg-orange-500 text-white hover:bg-orange-600 sm:w-auto sm:min-w-[120px]"
+                      onClick={handleSaveItem}
+                    >
+                      {editingItem ? 'Save' : 'Add item'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-11 w-full border-gray-200 sm:w-auto sm:min-w-[120px]"
+                      onClick={closeItemModal}
                     >
                       Cancel
-                    </button>
-                    <button
-                      onClick={handleSaveItem}
-                      className="flex-1 py-2 bg-orange-500 text-white rounded-lg font-medium"
-                    >
-                      {editingItem ? 'Update' : 'Add Item'}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
             )}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

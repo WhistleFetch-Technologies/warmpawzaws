@@ -179,7 +179,6 @@ export class LoyaltySegmentationService {
       return false;
     }
 
-    // Vendor segments can have different criteria
     const criteria = segment.criteria;
     const matchType = segment.match_type || 'all';
 
@@ -187,9 +186,145 @@ export class LoyaltySegmentationService {
       return true;
     }
 
-    // For now, vendor segments are simpler - can be extended
-    // Most vendor segments would be based on tier, subscription, etc.
-    return true; // Placeholder - implement vendor-specific logic as needed
+    const results: boolean[] = [];
+
+    for (const [key, value] of Object.entries(criteria)) {
+      if (value === null || value === undefined) continue;
+
+      let matches = false;
+
+      switch (key) {
+        case 'subscription_active':
+          matches = await this.evaluateVendorSubscriptionActive(vendorId);
+          break;
+
+        case 'subscription_plans':
+          matches = await this.evaluateVendorSubscriptionPlans(vendorId, value as string[]);
+          break;
+
+        case 'vendor_tiers':
+          matches = await this.evaluateVendorTiers(vendorId, value as string[]);
+          break;
+
+        case 'location':
+          matches = await this.evaluateVendorLocation(vendorId, value as any);
+          break;
+
+        default:
+          console.warn(`[Vendor Segment] Unknown criterion: ${key}`);
+          continue;
+      }
+
+      results.push(matches);
+    }
+
+    if (matchType === 'all') {
+      return results.length > 0 && results.every(r => r === true);
+    } else {
+      return results.some(r => r === true);
+    }
+  }
+
+  // ============================================================================
+  // VENDOR CRITERION EVALUATION HELPERS
+  // ============================================================================
+
+  /**
+   * Check if vendor has any active subscription (status='active', within date range)
+   */
+  private async evaluateVendorSubscriptionActive(vendorId: string): Promise<boolean> {
+    try {
+      const result = await query(
+        `SELECT 1 FROM vendor_tier_subscriptions
+         WHERE vendor_id = $1
+           AND status = 'active'
+           AND start_date <= CURRENT_DATE
+           AND end_date >= CURRENT_DATE
+         LIMIT 1`,
+        [vendorId]
+      );
+      return (result.rows?.length ?? 0) > 0;
+    } catch (error: any) {
+      console.error('[Vendor Segment] Error checking subscription active:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if vendor's active subscription is on one of the required plans/tiers
+   */
+  private async evaluateVendorSubscriptionPlans(vendorId: string, plans: string[]): Promise<boolean> {
+    try {
+      const result = await query(
+        `SELECT 1 FROM vendor_tier_subscriptions vts
+         JOIN vendor_tiers vt ON vts.tier_id = vt.id
+         WHERE vts.vendor_id = $1
+           AND vts.status = 'active'
+           AND vts.start_date <= CURRENT_DATE
+           AND vts.end_date >= CURRENT_DATE
+           AND (vt.tier_name = ANY($2::text[]) OR vt.display_name = ANY($2::text[]))
+         LIMIT 1`,
+        [vendorId, plans]
+      );
+      return (result.rows?.length ?? 0) > 0;
+    } catch (error: any) {
+      console.error('[Vendor Segment] Error checking subscription plans:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if vendor's current tier (from vendors table or active subscription) matches required tiers
+   */
+  private async evaluateVendorTiers(vendorId: string, tiers: string[]): Promise<boolean> {
+    try {
+      // Check active subscription tier first, then fallback to vendors.tier column
+      const result = await query(
+        `SELECT 1 FROM (
+           (SELECT vt.tier_name FROM vendor_tier_subscriptions vts
+            JOIN vendor_tiers vt ON vts.tier_id = vt.id
+            WHERE vts.vendor_id = $1
+              AND vts.status = 'active'
+              AND vts.start_date <= CURRENT_DATE
+              AND vts.end_date >= CURRENT_DATE
+            ORDER BY vts.created_at DESC LIMIT 1)
+           UNION ALL
+           (SELECT v.tier AS tier_name FROM vendors v WHERE v.id = $1 AND v.tier IS NOT NULL)
+         ) t
+         WHERE t.tier_name = ANY($2::text[])
+         LIMIT 1`,
+        [vendorId, tiers]
+      );
+      return (result.rows?.length ?? 0) > 0;
+    } catch (error: any) {
+      console.error('[Vendor Segment] Error checking vendor tiers:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if vendor is located in required cities/states/pincodes
+   */
+  private async evaluateVendorLocation(vendorId: string, criteria: any): Promise<boolean> {
+    try {
+      const vendor = await select('vendors', { id: vendorId });
+      if (vendor.length === 0) return false;
+      const v = vendor[0];
+
+      if (criteria.cities && criteria.cities.length > 0) {
+        if (!v.city || !criteria.cities.includes(v.city)) return false;
+      }
+      if (criteria.states && criteria.states.length > 0) {
+        if (!v.state || !criteria.states.includes(v.state)) return false;
+      }
+      if (criteria.pincodes && criteria.pincodes.length > 0) {
+        if (!v.pincode || !criteria.pincodes.includes(v.pincode)) return false;
+      }
+      return true;
+    } catch (error: any) {
+      console.error('[Vendor Segment] Error checking vendor location:', error);
+      return false;
+    }
   }
 
   /**
@@ -265,8 +400,83 @@ export class LoyaltySegmentationService {
     return segmentIds.some(segmentId => customerSegments.includes(segmentId));
   }
 
+  /**
+   * Get all segments a vendor belongs to
+   */
+  async getVendorSegments(vendorId: string, useCache: boolean = true): Promise<string[]> {
+    try {
+      // Check cache first
+      if (useCache) {
+        const cached = await query(
+          `SELECT segment_id FROM vendor_segment_assignments
+           WHERE vendor_id = $1 AND is_active = true
+           AND (expires_at IS NULL OR expires_at > NOW())`,
+          [vendorId]
+        );
+
+        if (cached.rows.length > 0) {
+          return cached.rows.map((r: any) => r.segment_id);
+        }
+      }
+
+      // Evaluate all active vendor/both segments
+      const segments = await query(
+        `SELECT * FROM loyalty_segments
+         WHERE is_active = true
+         AND segment_type IN ('vendor', 'both')
+         ORDER BY priority DESC`,
+        []
+      );
+
+      const matchingSegments: string[] = [];
+
+      for (const segment of segments.rows) {
+        const matches = await this.evaluateVendorSegment(vendorId, segment as LoyaltySegment);
+        if (matches) {
+          matchingSegments.push(segment.id);
+
+          // Cache the assignment
+          await query(
+            `INSERT INTO vendor_segment_assignments (vendor_id, segment_id, is_active)
+             VALUES ($1, $2, true)
+             ON CONFLICT (vendor_id, segment_id)
+             DO UPDATE SET is_active = true, assigned_at = NOW()`,
+            [vendorId, segment.id]
+          );
+        } else {
+          // Remove from cache if no longer matches
+          await query(
+            `UPDATE vendor_segment_assignments
+             SET is_active = false
+             WHERE vendor_id = $1 AND segment_id = $2`,
+            [vendorId, segment.id]
+          );
+        }
+      }
+
+      return matchingSegments;
+    } catch (error: any) {
+      console.error('Error getting vendor segments:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Check if vendor belongs to specific segments
+   */
+  async vendorBelongsToSegments(vendorId: string, segmentIds: string[]): Promise<boolean> {
+    if (!segmentIds || segmentIds.length === 0) {
+      return true; // No segment requirement
+    }
+
+    // Always re-evaluate vendor segments for rule checks to avoid stale
+    // assignment cache when subscription state changes.
+    const vendorSegments = await this.getVendorSegments(vendorId, false);
+    return segmentIds.some(segmentId => vendorSegments.includes(segmentId));
+  }
+
   // ============================================================================
-  // CRITERION EVALUATION HELPERS
+  // CRITERION EVALUATION HELPERS (CUSTOMER)
   // ============================================================================
 
   private async evaluateServiceCategories(customerId: string, categories: string[]): Promise<boolean> {

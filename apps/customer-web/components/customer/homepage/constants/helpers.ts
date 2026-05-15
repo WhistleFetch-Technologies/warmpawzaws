@@ -1,4 +1,4 @@
-import { Heart, HomeIcon, Star } from "lucide-react";
+import { Bone, Cat, Heart, HomeIcon, Star } from "lucide-react";
 
 /**
  * Extract city and state from customer profile data
@@ -93,27 +93,37 @@ export const serviceBaseOnpincode = (
 };
 
 
-export const adoptionOptions = (adoptionStats: { adoptablePets: string | number, certifiedBreeders: string | number, rehomingListings: string | number }) => {
+/** Vendor-shaped metadata for `resolveFeaturedVendorDestination` (cta_link, service_category, etc.). */
+export type AdoptionHomeNavMeta = Record<string, unknown>;
 
-    return [
-        {
-            title: 'Adopt from NGOs',
-            description: 'Give a home to rescued pets',
-            Icon: Heart,
-            count: `${adoptionStats.adoptablePets}+ pets`
-        },
-        {
-            title: 'Certified Breeders',
-            description: 'Ethical & verified breeders',
-            Icon: Star,
-            count: `${adoptionStats.certifiedBreeders}+ breeders`
-        },
-        {
-            title: 'Pet Rehoming',
-            description: 'Find loving owners',
-            Icon: HomeIcon,
-            count: `${adoptionStats.rehomingListings}+ listings`
-        },
-    ];
+export const adoptionOptions = (adoptionStats: {
+  adoptablePets: string | number;
+  rehomingListings: string | number;
+}) => {
+  return [
+    {
+      title: 'Adopt from NGOs',
+      description: 'Give a home to rescued pets',
+      Icon: Heart,
+      count: `${adoptionStats.adoptablePets}+ pets`,
+      navMeta: { cta_link: '/adoption' } satisfies AdoptionHomeNavMeta,
+    },
+    {
+      title: 'Pet Rehoming',
+      description: 'Find loving owners',
+      Icon: HomeIcon,
+      count: `${adoptionStats.rehomingListings}+ listings`,
+      navMeta: { cta_link: '/rehoming' } satisfies AdoptionHomeNavMeta,
+    },
+  ];
+};
 
-}
+/** Premium Pet Food row — same nav resolution as featured spotlight; opens shop with Food category. */
+const PET_FOOD_SHOP_NAV_META = { service_category: 'food' } satisfies AdoptionHomeNavMeta;
+
+export const petFoodSpotlightBrands = () => [
+  { name: 'Royal Canin', discount: '25% OFF', Icon: Star, navMeta: PET_FOOD_SHOP_NAV_META },
+  { name: 'Pedigree', discount: '30% OFF', Icon: Bone, navMeta: PET_FOOD_SHOP_NAV_META },
+  { name: 'Drools', discount: '20% OFF', Icon: Bone, navMeta: PET_FOOD_SHOP_NAV_META },
+  { name: 'Whiskas', discount: '15% OFF', Icon: Cat, navMeta: PET_FOOD_SHOP_NAV_META },
+];

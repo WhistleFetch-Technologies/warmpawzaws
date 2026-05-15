@@ -35,6 +35,24 @@ interface EnhancedAddressAutocompleteProps {
   };
 }
 
+/** 6-digit postal code: prefer Places `postal_code`, else parse from formatted text (common for India when component is missing). */
+function resolvePincodeFromPlace(
+  rawPostal: string | undefined,
+  formattedAddress: string,
+  extraText?: string
+): string | undefined {
+  const digits = (s: string) => s.replace(/\D/g, '');
+  let pin = rawPostal ? digits(rawPostal).slice(0, 8) : '';
+  if (pin.length >= 6) pin = pin.slice(0, 6);
+  if (/^\d{6}$/.test(pin)) return pin;
+  for (const text of [formattedAddress, extraText || '']) {
+    if (!text) continue;
+    const m = text.match(/\b(\d{6})\b/);
+    if (m && /^[0-9]{6}$/.test(m[1])) return m[1];
+  }
+  return undefined;
+}
+
 export function EnhancedAddressAutocomplete({
   value,
   onChange,
@@ -303,7 +321,10 @@ export function EnhancedAddressAutocomplete({
         const lng = place.geometry?.location?.lng?.() ?? 0;
         const formattedAddress = place.formatted_address ?? prediction.description;
 
-        const parseAddressComponents = (addressComponents: any[] | undefined): AddressComponents => {
+        const parseAddressComponents = (
+          addressComponents: any[] | undefined,
+          predictionDescription: string
+        ): AddressComponents => {
           const components: AddressComponents = {
             coordinates: { lat, lng },
             formattedAddress,
@@ -311,6 +332,8 @@ export function EnhancedAddressAutocomplete({
             lng,
             placeId: place.place_id,
           };
+
+          let rawPostal: string | undefined;
 
           addressComponents?.forEach((component: any) => {
             const types = component.types;
@@ -323,7 +346,7 @@ export function EnhancedAddressAutocomplete({
             } else if (types.includes('administrative_area_level_1')) {
               components.state = component.long_name;
             } else if (types.includes('postal_code')) {
-              components.pincode = component.long_name;
+              rawPostal = component.long_name || component.short_name || rawPostal;
             } else if (types.includes('country')) {
               components.country = component.long_name;
             } else if (types.includes('point_of_interest') || types.includes('establishment')) {
@@ -331,10 +354,13 @@ export function EnhancedAddressAutocomplete({
             }
           });
 
+          const pin = resolvePincodeFromPlace(rawPostal, formattedAddress, predictionDescription);
+          if (pin) components.pincode = pin;
+
           return components;
         };
 
-        const components = parseAddressComponents(place.address_components);
+        const components = parseAddressComponents(place.address_components, prediction.description);
         onChange(formattedAddress, components);
       }
     );

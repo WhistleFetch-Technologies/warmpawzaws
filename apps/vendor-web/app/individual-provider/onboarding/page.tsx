@@ -26,6 +26,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 // Role options for individual providers
 
@@ -358,18 +359,17 @@ export default function IndividualProviderOnboardingPage() {
                   )}
                 </div>
                 <div className="flex-1">
-                  <label className="cursor-pointer">
-                    <div className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg hover:bg-[#FF7A29] transition-colors inline-flex items-center gap-2">
+                  <TouchFilePicker
+                    onFileChange={handlePhotoChange}
+                    accept="image/*"
+                    className="inline-block min-h-[2.75rem] min-w-[9rem] rounded-lg"
+                    innerClassName="items-center justify-center"
+                  >
+                    <span className="inline-flex items-center gap-2 rounded-lg bg-[#FF8C42] px-4 py-2 text-white transition-colors hover:bg-[#FF7A29]">
                       <Upload className="w-4 h-4" />
                       Choose Photo
-                    </div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handlePhotoChange}
-                      className="hidden"
-                    />
-                  </label>
+                    </span>
+                  </TouchFilePicker>
                 </div>
               </div>
             </div>

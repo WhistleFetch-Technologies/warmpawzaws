@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface DoctorManagementProps {
   clinicId: string;
@@ -181,7 +182,7 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+      <div className="flex items-center justify-center h-screen bg-gray-50 vendor-app-column">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading staff...</p>
@@ -194,7 +195,7 @@ export function DoctorManagement({ clinicId, clinicData, onBack }: DoctorManagem
   const roleLabelPlural = clinicData?.roleId === 'pet_clinic' || clinicData?.roleId === 'veterinary_clinic' ? 'Doctors' : 'Staff';
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 vendor-app-column">
       {/* Header */}
       <div className="bg-[#5D4037] text-white p-4 sticky top-0 z-10">
         <div className="flex items-center gap-3 mb-4">
@@ -706,7 +707,7 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50">
-      <div className="bg-white rounded-t-3xl w-full max-w-[430px] max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-t-3xl vendor-modal-sheet max-h-[90vh] overflow-y-auto mx-auto">
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 z-10">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-gray-900">
@@ -743,18 +744,17 @@ function StaffFormModal({ clinicId, clinicData, staff, onClose, onSuccess }: Sta
                 )}
               </div>
               <div className="flex-1">
-                <label className="cursor-pointer">
-                  <div className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg hover:bg-[#FF7A29] transition-colors inline-flex items-center gap-2">
+                <TouchFilePicker
+                  onFileChange={handlePhotoChange}
+                  accept="image/*"
+                  className="inline-block min-h-[2.75rem] min-w-[9rem] rounded-lg"
+                  innerClassName="items-center justify-center"
+                >
+                  <span className="inline-flex items-center gap-2 rounded-lg bg-[#FF8C42] px-4 py-2 text-white transition-colors hover:bg-[#FF7A29]">
                     <Upload className="w-4 h-4" />
                     Choose Photo
-                  </div>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoChange}
-                    className="hidden"
-                  />
-                </label>
+                  </span>
+                </TouchFilePicker>
               </div>
             </div>
           </div>

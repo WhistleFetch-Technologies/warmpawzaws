@@ -5,8 +5,8 @@ import { ArrowLeft, Plane, Star, Sparkles, ChevronRight, Package, Truck, Shield 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { averageStarDisplayFromNumbers, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
-import { PromotionBanner } from './shared/PromotionBanner';
 
 interface RelocationServicesLandingProps {
   phone: string;
@@ -26,22 +26,28 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
   const loadRelocationServices = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=relocation&roleId=pet_relocation`;
+      const endpoint = `/customer/discover-services?category=relocation&roleId=pet_relocation&serviceStyle=at_center`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[] }>(endpoint);
       const serviceList = data.vendors || data.services || [];
       setRelocationServices(serviceList);
       
+      const rated = serviceList.filter((s: any) => {
+        const rc = Number(s.reviewCount ?? s.reviews_count ?? s.totalReviews ?? 0) || 0;
+        const raw = s.rating != null ? Number(s.rating) : NaN;
+        return rc > 0 && Number.isFinite(raw) && raw > 0;
+      });
       setStats({
         activeServices: serviceList.length || 25,
         relocations: '500+',
-        rating: serviceList.length > 0 
-          ? Number(serviceList.reduce((acc: number, s: any) => acc + Number(s.rating || 4.7), 0) / serviceList.length).toFixed(1) 
-          : '4.7'
+        rating:
+          rated.length > 0
+            ? (rated.reduce((acc: number, s: any) => acc + Number(s.rating), 0) / rated.length).toFixed(1)
+            : '—',
       });
     } catch (error) {
       console.error('Error loading relocation services:', error);
       setRelocationServices([]);
-      setStats({ activeServices: 25, relocations: '500+', rating: '4.7' });
+      setStats({ activeServices: 25, relocations: '500+', rating: '—' });
     } finally {
       setLoading(false);
     }
@@ -105,9 +111,6 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
       <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
         <div className="space-y-8">
           
-          {/* Promotion Banner */}
-          <PromotionBanner service="relocation" maxPromotions={3} />
-
           {/* Service Types */}
           <div>
             <h2 className="text-lg font-bold text-slate-900 mb-4">Relocation Options</h2>
@@ -159,12 +162,23 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 truncate">{service.vendorName || service.businessName || `Relocation Service ${index}`}</h3>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 flex-wrap">
+                        {(() => {
+                          const rc = Number(service.reviewCount ?? service.reviews_count ?? service.totalReviews ?? 0) || 0;
+                          const raw = service.rating != null ? Number(service.rating) : NaN;
+                          const ok = rc > 0 && Number.isFinite(raw) && raw > 0;
+                          return ok ? (
+                        <>
                         <span className="flex items-center gap-1 text-orange-500 font-bold">
                           <Star className="w-3 h-3 fill-current" />
-                          {service.rating || 4.7}
+                          {raw.toFixed(1)}
                         </span>
                         <span>•</span>
+                        </>
+                          ) : (
+                        <span className="text-slate-400">No reviews yet</span>
+                          );
+                        })()}
                         <span>{service.serviceName || 'Full Service'}</span>
                       </div>
                     </div>

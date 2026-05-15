@@ -17,7 +17,7 @@
  * ============================================================================
  */
 
-import { Pool, PoolClient, QueryResult } from 'pg';
+import type { Pool, PoolClient, QueryResult } from 'pg';
 import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 
 // ============================================================================
@@ -86,6 +86,19 @@ async function fetchDbCredentials(): Promise<void> {
 // ============================================================================
 
 let pool: Pool | null = null;
+let pgModulePromise: Promise<any> | null = null;
+
+/**
+ * Load 'pg' module in an ESM-safe way.
+ * Node 20 + ESM can error if CommonJS paths are required at init time.
+ * Dynamic import defers resolution and allows the bundler/runtime to pick the right entry.
+ */
+async function getPgModule(): Promise<any> {
+  if (!pgModulePromise) {
+    pgModulePromise = import('pg');
+  }
+  return pgModulePromise;
+}
 
 /**
  * Get or create the PostgreSQL connection pool
@@ -103,13 +116,18 @@ export async function getRdsPool(): Promise<Pool> {
       throw new Error('Database credentials not available');
     }
 
-    console.log('[DB] Creating connection pool...');
     // ✅ FIX: Reduce pool size to prevent connection exhaustion
     // Lambda functions share the same RDS instance, so we need to be conservative
     // Each Lambda instance can have its own pool, so max: 5 per instance is safer
     // With many concurrent Lambda invocations, even 5 per instance can exhaust RDS
     const poolMax = parseInt(process.env.DB_POOL_MAX || '5', 10);
-    
+    const connectionTimeoutMillis = parseInt(
+      process.env.DB_CONNECTION_TIMEOUT_MS || '10000',
+      10,
+    );
+
+    console.log('[DB] Creating connection pool...', { poolMax, connectionTimeoutMillis });
+
     // ✅ FIX: RDS Proxy doesn't support statement_timeout option
     // Only set statement_timeout if NOT using RDS Proxy (direct RDS connection)
     const isRdsProxy = DB_HOST?.includes('proxy') || DB_HOST?.includes('.proxy.');
@@ -121,7 +139,9 @@ export async function getRdsPool(): Promise<Pool> {
       password: DB_PASSWORD,
       max: poolMax, // Reduced from 50 to 10 to prevent connection exhaustion
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000, // Reduced timeout to fail faster
+      // Time to wait when acquiring a connection from the pool (or opening a new one). If all
+      // connections are busy (pool exhaustion / RDS at max_connections), this fires ~at this limit.
+      connectionTimeoutMillis,
       ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     };
     
@@ -133,7 +153,8 @@ export async function getRdsPool(): Promise<Pool> {
       console.log('[DB] Using RDS Proxy - statement_timeout disabled (not supported)');
     }
     
-    pool = new Pool(poolConfig);
+    const { Pool: PgPool } = await getPgModule();
+    pool = new PgPool(poolConfig) as Pool;
 
     // Handle pool errors
     pool.on('error', (err) => {
@@ -243,9 +264,24 @@ export async function query(
       throw new Error('Database connection pool exhausted. Please try again in a moment. If this persists, contact support.');
     }
     
-    // Handle query timeout
-    if (error?.message?.includes('Query exceeded') || error?.message?.includes('timeout')) {
-      throw new Error(`Query timeout: ${error.message}. Query took ${duration}ms. Consider optimizing or adding indexes.`);
+    // Connection checkout / TCP timeout from pg pool (connectionTimeoutMillis, default 10s)
+    if (
+      error?.message?.includes('Connection terminated due to connection timeout') ||
+      error?.message?.includes('timeout exceeded when trying to connect')
+    ) {
+      throw new Error(
+        `Database connection acquisition timed out after ${duration}ms. ` +
+          `This usually means the pool could not get a free connection in time (RDS max_connections, high Lambda concurrency, or slow new connects), ` +
+          `or the database was unreachable from Lambda (VPC/security group). It is not the same as a slow SQL query. ` +
+          `Original: ${error.message}`
+      );
+    }
+
+    // Our explicit query-statement race timeout (QUERY_TIMEOUT_MS)
+    if (error?.message?.includes('Query exceeded')) {
+      throw new Error(
+        `Query timeout: ${error.message}. Query took ${duration}ms. Consider optimizing or adding indexes.`
+      );
     }
     
     // Provide more helpful error messages
@@ -339,6 +375,141 @@ export async function select(
 }
 
 /**
+ * Migration 617 adds support_tickets.attachments; many RDS DBs never ran it.
+ * Older Lambdas may still INSERT/UPDATE a top-level `attachments` JSONB column → PG error.
+ * Merge into metadata.attachments and drop the column so rows work with or without 617.
+ */
+function normalizeSupportTicketsRowForInsertOrUpdate(row: Record<string, any>): Record<string, any> {
+  if (!row || typeof row !== 'object' || !Object.prototype.hasOwnProperty.call(row, 'attachments')) {
+    return row;
+  }
+  const out = { ...row };
+  const top = out.attachments;
+  delete out.attachments;
+  const prevMeta =
+    out.metadata != null && typeof out.metadata === 'object' && !Array.isArray(out.metadata)
+      ? { ...(out.metadata as Record<string, unknown>) }
+      : {};
+  const existingAttach = prevMeta.attachments;
+  if (!Array.isArray(existingAttach) || existingAttach.length === 0) {
+    prevMeta.attachments = Array.isArray(top) ? top : [];
+  }
+  out.metadata = prevMeta;
+  return out;
+}
+
+/** Matches support_tickets.category CHECK (053_admin_endpoints_tables). */
+const SUPPORT_TICKET_CATEGORIES = new Set([
+  'general',
+  'technical',
+  'billing',
+  'account',
+  'service',
+  'other',
+]);
+
+/** UI / legacy labels → valid DB category (avoids 500 on CHECK violation). */
+const SUPPORT_TICKET_CATEGORY_ALIASES: Record<string, string> = {
+  booking: 'service',
+  order: 'other',
+  payment: 'billing',
+  refund: 'billing',
+};
+
+const SUPPORT_TICKET_PRIORITIES = new Set(['low', 'medium', 'high', 'urgent']);
+const SUPPORT_TICKET_SOURCES = new Set([
+  'customer',
+  'vendor',
+  'ai_chatbot',
+  'chat_handoff',
+  'admin',
+  'system',
+]);
+
+const SUPPORT_TICKET_STATUSES = new Set([
+  'open',
+  'in_progress',
+  'resolved',
+  'closed',
+  'escalated',
+  'cancelled',
+]);
+
+function normalizeSupportTicketsCheckConstraints(row: Record<string, any>): Record<string, any> {
+  const out = { ...row };
+  if (Object.prototype.hasOwnProperty.call(out, 'category')) {
+    const c = out.category;
+    if (c == null || c === '') {
+      out.category = 'general';
+    } else if (typeof c === 'string') {
+      const s = c.trim().toLowerCase();
+      if (SUPPORT_TICKET_CATEGORIES.has(s)) {
+        out.category = s;
+      } else {
+        out.category = SUPPORT_TICKET_CATEGORY_ALIASES[s] ?? 'general';
+      }
+    } else {
+      out.category = 'general';
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(out, 'priority')) {
+    const p = out.priority;
+    if (p == null || p === '') {
+      out.priority = 'medium';
+    } else {
+      const s = String(p).trim().toLowerCase();
+      out.priority = SUPPORT_TICKET_PRIORITIES.has(s) ? s : 'medium';
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(out, 'source')) {
+    const s = out.source;
+    if (s == null || s === '') {
+      out.source = 'customer';
+    } else {
+      const k = String(s).trim().toLowerCase();
+      out.source = SUPPORT_TICKET_SOURCES.has(k) ? k : 'customer';
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(out, 'status')) {
+    const st = out.status;
+    if (st == null || st === '') {
+      out.status = 'open';
+    } else {
+      const k = String(st).trim().toLowerCase();
+      out.status = SUPPORT_TICKET_STATUSES.has(k) ? k : 'open';
+    }
+  }
+  return out;
+}
+
+/**
+ * Migration 013 renamed `products.stock_quantity` → `products.stock`.
+ * Map legacy payloads so INSERT/UPDATE never reference a removed column.
+ *
+ * Always shallow-clones so callers are not mutated. Uses `in` instead of
+ * `hasOwnProperty` so non-plain objects still normalize when they expose
+ * `stock_quantity` as an own property after spread.
+ */
+export function normalizeProductsTableRowForPg<T extends Record<string, any>>(row: T): T {
+  if (!row || typeof row !== 'object') {
+    return row;
+  }
+  const out = { ...(row as Record<string, any>) };
+  if (!('stock_quantity' in out)) {
+    return out as T;
+  }
+  const hasUsableStock =
+    out.stock !== undefined && out.stock !== null && out.stock !== '';
+  if (!hasUsableStock) {
+    const raw = out.stock_quantity;
+    const n = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
+    out.stock = Number.isFinite(n) ? n : 0;
+  }
+  delete out.stock_quantity;
+  return out as T;
+}
+
+/**
  * Execute an INSERT query
  * ✅ FIX: Properly handle JSONB columns by serializing objects to JSON strings
  */
@@ -346,16 +517,45 @@ export async function insert(
   table: string,
   data: any | any[]
 ): Promise<any[]> {
-  const dataArray = Array.isArray(data) ? data : [data];
+  let dataArray = Array.isArray(data) ? data : [data];
   if (dataArray.length === 0) return [];
 
-  const keys = Object.keys(dataArray[0]);
+  // SCOPE: support_tickets only — no other tables pass through this branch.
+  if (table === 'support_tickets') {
+    dataArray = dataArray.map((row) => {
+      let merged = normalizeSupportTicketsRowForInsertOrUpdate({ ...row });
+      merged = normalizeSupportTicketsCheckConstraints(merged);
+      // Never send top-level attachments to PG unless column exists (migration 617); strip defensively.
+      if (merged && typeof merged === 'object') delete (merged as Record<string, unknown>).attachments;
+      return merged;
+    });
+  }
+
+  if (table === 'products') {
+    dataArray = dataArray.map((row) => {
+      const normalized = normalizeProductsTableRowForPg({ ...row });
+      if (normalized && typeof normalized === 'object') {
+        delete (normalized as Record<string, unknown>).stock_quantity;
+      }
+      return normalized;
+    });
+  }
+
+  // support_tickets: never include `attachments` in INSERT column list (local UI often still hits deployed API;
+  // this also guards older bundles or stray ...rest payloads).
+  const keys =
+    table === 'support_tickets'
+      ? Object.keys(dataArray[0]).filter((k) => k !== 'attachments')
+      : Object.keys(dataArray[0]);
   
   // ✅ FIX: Known JSONB columns that need JSON.stringify and ::jsonb cast
   const jsonbColumns = new Set([
     'application_payload',
-    'uploaded_documents', 
+    'uploaded_documents',
+    'specifications',
     'metadata',
+    'images',
+    'tags',
     'operating_hours',
     'config',
     'settings',
@@ -370,7 +570,15 @@ export async function insert(
     'cancellation_windows',      // cancellation_policies
     'vendor_cancellation_penalty',
     'no_show_policy',
+    'policy_extensions', // vendor_refund_tiers — reschedule / no-show JSON
     'setting_value',             // admin_settings
+    'attachments',               // support_tickets (URLs / metadata array)
+    'documents',                 // insurance_claims, insurance_policies JSONB arrays
+    'coverage',                  // insurance_plans.coverage (019 legacy JSONB)
+    'criteria',                  // loyalty_segments.criteria
+    'conditions',                // loyalty_action_rules.conditions
+    'multiplier_conditions',     // loyalty_action_rules.multiplier_conditions
+    'metadata_resolvers',        // action_sources.metadata_resolvers
   ]);
   
   // Also check for columns ending with common JSONB suffixes
@@ -380,7 +588,9 @@ export async function insert(
            key.endsWith('_metadata') || 
            key.endsWith('_payload') ||
            key.endsWith('_data') ||
-           key.endsWith('_settings');
+           key.endsWith('_settings') ||
+           key.endsWith('_details') ||
+           key.endsWith('_resolvers');
   };
   
   // ✅ FIX: Build placeholders with ::jsonb cast for JSONB columns
@@ -422,6 +632,20 @@ export async function update(
   filters: Record<string, any>,
   data: any
 ): Promise<any[]> {
+  let payload = data;
+  // SCOPE: support_tickets only — other tables use generic update path unchanged.
+  if (table === 'support_tickets' && payload && typeof payload === 'object') {
+    payload = normalizeSupportTicketsCheckConstraints(
+      normalizeSupportTicketsRowForInsertOrUpdate({ ...payload }),
+    );
+    delete (payload as Record<string, unknown>).attachments;
+  }
+
+  if (table === 'products' && payload && typeof payload === 'object') {
+    payload = normalizeProductsTableRowForPg({ ...payload });
+    delete (payload as Record<string, unknown>).stock_quantity;
+  }
+
   const setClause: string[] = [];
   const params: any[] = [];
   let paramIndex = 1;
@@ -429,8 +653,11 @@ export async function update(
   // ✅ FIX: Known JSONB columns that need JSON.stringify and ::jsonb cast
   const jsonbColumns = new Set([
     'application_payload',
-    'uploaded_documents', 
+    'uploaded_documents',
+    'specifications',
     'metadata',
+    'images',
+    'tags',
     'operating_hours',
     'config',
     'settings',
@@ -446,7 +673,14 @@ export async function update(
     'cancellation_windows',
     'vendor_cancellation_penalty',
     'no_show_policy',
+    'policy_extensions', // vendor_refund_tiers — reschedule / no-show JSON
     'setting_value',   // admin_settings
+    'attachments',     // support_tickets
+    'documents',       // insurance_claims, insurance_policies JSONB arrays
+    'criteria',        // loyalty_segments.criteria
+    'conditions',      // loyalty_action_rules.conditions
+    'multiplier_conditions',
+    'metadata_resolvers', // action_sources.metadata_resolvers
   ]);
   
   // Also check for columns ending with common JSONB suffixes
@@ -456,11 +690,13 @@ export async function update(
            key.endsWith('_metadata') || 
            key.endsWith('_payload') ||
            key.endsWith('_data') ||
-           key.endsWith('_settings');
+           key.endsWith('_settings') ||
+           key.endsWith('_details') ||
+           key.endsWith('_resolvers');
   };
 
   // Build SET clause
-  for (const [key, value] of Object.entries(data)) {
+  for (const [key, value] of Object.entries(payload)) {
     if (value !== undefined) {
       // ✅ FIX: Handle JSONB columns first (including arrays stored as JSONB like uploaded_documents)
       if (isJsonbColumn(key) && value !== null && typeof value === 'object') {
@@ -566,8 +802,18 @@ export async function upsert(
   data: any | any[],
   conflictColumn: string = 'id'
 ): Promise<any[]> {
-  const dataArray = Array.isArray(data) ? data : [data];
+  let dataArray = Array.isArray(data) ? data : [data];
   if (dataArray.length === 0) return [];
+
+  if (table === 'products') {
+    dataArray = dataArray.map((row) => {
+      const normalized = normalizeProductsTableRowForPg({ ...row });
+      if (normalized && typeof normalized === 'object') {
+        delete (normalized as Record<string, unknown>).stock_quantity;
+      }
+      return normalized;
+    });
+  }
 
   const keys = Object.keys(dataArray[0]);
   const placeholders = dataArray.map((_, idx) => {
@@ -691,6 +937,5 @@ export function handleDbError(error: any): never {
 // EXPORTS
 // ============================================================================
 
-export { Pool, PoolClient, QueryResult };
-export type { Pool as PoolType, PoolClient as PoolClientType };
+export type { Pool as PoolType, PoolClient as PoolClientType, QueryResult };
 

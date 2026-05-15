@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { FileText, Upload, Search, Calendar, ArrowLeft, Truck, Edit2, Send, FileEdit, Trash2, ClipboardList } from 'lucide-react';
+import { FileText, Upload, Search, Calendar, ArrowLeft, Truck, Edit2, Send, FileEdit, Trash2, ClipboardList, TestTube, Beaker } from 'lucide-react';
 import { CapabilityGate } from '../CapabilityGate';
 import { UploadResults } from './UploadResults';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { isDiagnosticsCenter } from '@/lib/vendor-utils';
 
@@ -81,9 +82,9 @@ export function DiagnosticResults({ vendorId, vendorData, onBack, onNavigateToOr
   };
 
   const handleDelete = async (test: DiagnosticTest) => {
-    if (!confirm('Remove this test?')) return;
+    if (!confirm('Remove this test? This cannot be undone.')) return;
     try {
-      await apiClient.put(`/vendor/${vendorId}/diagnostics/tests/${test.id}`, { isAvailable: false });
+      await apiClient.delete(`/vendor/${vendorId}/diagnostics/tests/${test.id}`);
       toast.success('Test removed');
       loadTests();
     } catch (err: any) {
@@ -120,6 +121,12 @@ export function DiagnosticResults({ vendorId, vendorData, onBack, onNavigateToOr
   // ✅ Check if vendor is diagnostics center to show Lab Orders link
   const showLabOrdersLink = isDiagnosticsCenter(vendorData) && onNavigateToOrders;
 
+  const stats = {
+    total: tests.length,
+    published: tests.filter((t) => t.is_available).length,
+    categories: [...new Set(tests.map((t) => t.category).filter(Boolean))].length,
+  };
+
   return (
     <CapabilityGate
       requireAny={['diagnostic_results', 'diagnostics', 'test_catalog']}
@@ -127,7 +134,7 @@ export function DiagnosticResults({ vendorId, vendorData, onBack, onNavigateToOr
       showDisabledMessage
       disabledMessage="Diagnostic tests management is not available for your account"
     >
-      <div className="space-y-4 w-full max-w-[430px] mx-auto">
+      <div className="space-y-4 vendor-app-column">
         {/* Header with Back Arrow */}
         <div className="flex items-center gap-3">
           {onBack && (
@@ -150,6 +157,37 @@ export function DiagnosticResults({ vendorId, vendorData, onBack, onNavigateToOr
             <Upload className="w-4 h-4" />
             Add Test
           </button>
+        </div>
+
+        {/* Stats — aligned with /medical/diagnostics catalog summary */}
+        <div className="grid grid-cols-3 gap-2">
+          <Card className="p-3">
+            <CardContent className="p-0 flex items-center gap-2">
+              <TestTube className="h-8 w-8 text-purple-500 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Total</p>
+                <p className="text-lg font-bold">{stats.total}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="p-3">
+            <CardContent className="p-0 flex items-center gap-2">
+              <Beaker className="h-8 w-8 text-green-500 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Published</p>
+                <p className="text-lg font-bold">{stats.published}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="p-3">
+            <CardContent className="p-0 flex items-center gap-2">
+              <FileText className="h-8 w-8 text-blue-500 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">Categories</p>
+                <p className="text-lg font-bold">{stats.categories}</p>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Lab Orders Link - Only for diagnostics centers */}

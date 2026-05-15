@@ -40,7 +40,7 @@ interface VendorProfile {
  * - Center/Business vendors -> CenterProfileManager (ProfileManager)
  * 
  * Both are feature-rich enhanced profiles with:
- * - Photo upload
+ * - Photo upload (solo); center listing photos via Dashboard → Gallery
  * - Address autocomplete
  * - Specializations (Problem Grid)
  * - Availability/Schedule management
@@ -161,7 +161,7 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50 w-full">
-        <div className="w-full max-w-[430px] mx-auto flex justify-center">
+        <div className="vendor-app-column flex justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
         </div>
       </div>
@@ -171,7 +171,7 @@ export default function ProfilePage() {
   if (!vendorId) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50 w-full">
-        <div className="w-full max-w-[430px] mx-auto text-center px-4">
+        <div className="vendor-app-column text-center px-4">
           <p className="text-gray-600 mb-4">Vendor not found</p>
           <button 
             onClick={() => router.push('/onboarding')}

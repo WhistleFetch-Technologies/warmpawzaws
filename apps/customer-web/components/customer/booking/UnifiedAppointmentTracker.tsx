@@ -62,6 +62,9 @@ interface UnifiedAppointmentTrackerProps {
   className?: string;
 }
 
+/** Bottom offset above tab bar; avoids Tailwind `bottom-6` + `bottom-24` conflicts from merge order on iOS. */
+const defaultBottomAboveTabBar = 'bottom-[calc(var(--customer-tabbed-nav-offset)+0.5rem)]';
+
 export function UnifiedAppointmentTracker({
   customerPhone,
   onJoinCall,
@@ -71,6 +74,7 @@ export function UnifiedAppointmentTracker({
   className = '',
 }: UnifiedAppointmentTrackerProps) {
   const router = useRouter();
+  const bottomOffsetClass = className.trim() ? className : defaultBottomAboveTabBar;
   const [items, setItems] = useState<AppointmentItem[]>([]);
   const [isMinimized, setIsMinimized] = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
@@ -274,7 +278,7 @@ export function UnifiedAppointmentTracker({
     const isUrgent = nextItem.type === 'tele' && secondsRemaining <= 300; // 5 minutes
 
     return (
-      <div className={`fixed bottom-6 right-6 z-50 ${className}`}>
+      <div className={`fixed right-6 z-40 ${bottomOffsetClass}`}>
         <button
           onClick={() => setIsMinimized(false)}
           className={`rounded-full shadow-lg p-4 flex items-center gap-3 transition-all hover:scale-105 ${
@@ -309,7 +313,7 @@ export function UnifiedAppointmentTracker({
 
   // Expanded view - show full card
   return (
-    <div className={`fixed bottom-6 right-6 z-50 w-80 max-w-[calc(100vw-3rem)] ${className}`}>
+    <div className={`fixed right-6 z-40 w-80 max-w-[calc(100vw-3rem)] ${bottomOffsetClass}`}>
       <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
         {/* Header */}
         <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF7029] p-4 text-white">
@@ -418,14 +422,11 @@ export function UnifiedAppointmentTracker({
                           // ✅ FIX: Use router.push with path format for CloudFront compatibility
                           // Path format /video/[bookingId] works with CloudFront rewrite rules
                           // This enables client-side navigation without full page refresh
-                          const queryParams = new URLSearchParams();
                           if (customerPhone) {
-                            queryParams.set('customerId', customerPhone);
-                            queryParams.set('phone', customerPhone);
+                            localStorage.setItem('customerPhone', customerPhone);
+                            localStorage.setItem('phone', customerPhone);
                           }
-                          const queryString = queryParams.toString();
-                          const videoUrl = `/video/${item.bookingId}${queryString ? `?${queryString}` : ''}`;
-                          router.push(videoUrl);
+                          router.push(`/video/${item.bookingId}`);
                         }
                       }}
                       className="flex-1 bg-purple-600 hover:bg-purple-700 text-white text-xs"

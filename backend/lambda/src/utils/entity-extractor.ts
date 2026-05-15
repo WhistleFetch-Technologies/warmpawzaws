@@ -305,6 +305,97 @@ export function parseSelectedServices(raw: any): any[] {
   return [];
 }
 
+function sumSelectedServicesVendorAmount(booking: any): number | null {
+  const rows = parseSelectedServices(booking.selected_services ?? booking.selectedServices);
+  if (!rows.length) return null;
+  let sum = 0;
+  for (const r of rows) {
+    const row = r as Record<string, unknown>;
+    const unit = Number(row.price ?? row.unitPrice ?? row.amount ?? row.totalPrice ?? 0);
+    const qtyRaw = row.quantity ?? row.qty ?? 1;
+    const qty = Number(qtyRaw);
+    const q = Number.isFinite(qty) && qty > 0 ? qty : 1;
+    if (Number.isFinite(unit) && unit > 0) sum += unit * q;
+  }
+  return sum > 0 ? Math.round(sum * 100) / 100 : null;
+}
+
+export type VendorBookingPriceContext = {
+  serviceSnap?: { price?: number; basePrice?: number } | null;
+  vendorSvc?: { custom_price?: unknown; price?: unknown } | null;
+  catalogBasePrice?: number | null;
+  legacyServicePrice?: number | null;
+};
+
+function vendorSvcConfiguredAmount(
+  vendorSvc: VendorBookingPriceContext['vendorSvc'] | null | undefined
+): number | null {
+  if (!vendorSvc) return null;
+  const cp = vendorSvc.custom_price;
+  const pr = vendorSvc.price;
+  const vc =
+    cp != null && String(cp).trim() !== '' && Number(cp) > 0
+      ? Number(cp)
+      : pr != null && String(pr).trim() !== '' && Number(pr) > 0
+        ? Number(pr)
+        : NaN;
+  return Number.isFinite(vc) && vc > 0 ? Math.round(vc * 100) / 100 : null;
+}
+
+/**
+ * Amount to show vendors: their list / configured service price — not customer checkout
+ * (booking.total_amount and often booking.base_price may include GST, platform fee, delivery, etc.).
+ *
+ * Priority: explicit multi-service line prices → vendor_services list price → catalog/snapshot
+ * list price → legacy services → booking.base_price → total_amount.
+ */
+export function resolveVendorVisibleBookingAmount(
+  booking: any,
+  ctx?: VendorBookingPriceContext | null
+): number {
+  const fromSelected = sumSelectedServicesVendorAmount(booking);
+  if (fromSelected != null && fromSelected > 0) return fromSelected;
+
+  // Stay-based bookings (boarding, pet sitting, etc.): list price is per unit, but
+  // `base_price` holds the line total for the actual stay/duration. Prefer it for vendors.
+  const hasStay =
+    (booking?.check_out_date != null && String(booking.check_out_date).trim() !== '') ||
+    (booking?.checkOutDate != null && String(booking.checkOutDate).trim() !== '');
+  const hasTimedVisit =
+    booking?.total_duration_minutes != null && Number(booking.total_duration_minutes) > 0;
+  if (hasStay || hasTimedVisit) {
+    const sub = parseFloat(String(booking?.base_price ?? booking?.basePrice ?? ''));
+    if (Number.isFinite(sub) && sub > 0) {
+      return Math.round(sub * 100) / 100;
+    }
+  }
+
+  const fromVendorRow = vendorSvcConfiguredAmount(ctx?.vendorSvc);
+  if (fromVendorRow != null) return fromVendorRow;
+
+  const snap = ctx?.serviceSnap;
+  if (snap != null) {
+    const p = Number(snap.price ?? snap.basePrice ?? 0);
+    if (Number.isFinite(p) && p > 0) return Math.round(p * 100) / 100;
+  }
+
+  const cat = ctx?.catalogBasePrice;
+  if (cat != null && Number.isFinite(Number(cat)) && Number(cat) > 0) {
+    return Math.round(Number(cat) * 100) / 100;
+  }
+
+  const leg = ctx?.legacyServicePrice;
+  if (leg != null && Number.isFinite(leg) && leg > 0) {
+    return Math.round(leg * 100) / 100;
+  }
+
+  const base = parseFloat(String(booking.base_price ?? booking.basePrice ?? ''));
+  if (Number.isFinite(base) && base > 0) return Math.round(base * 100) / 100;
+
+  const gross = parseFloat(String(booking.total_amount ?? booking.totalAmount ?? '0'));
+  return Number.isFinite(gross) ? Math.round(gross * 100) / 100 : 0;
+}
+
 /**
  * Build standardized booking response
  */
@@ -326,6 +417,9 @@ export function buildBookingResponse(booking: any, extras?: {
     petId: booking.pet_id || booking.petId,
     bookingDate: booking.booking_date || booking.bookingDate,
     bookingTime: booking.booking_time || booking.bookingTime,
+    checkInDate: booking.check_in_date || booking.checkInDate || booking.booking_date || booking.bookingDate,
+    checkOutDate: booking.check_out_date || booking.checkOutDate,
+    checkOutTime: booking.check_out_time != null ? String(booking.check_out_time).slice(0, 5) : booking.checkOutTime,
     serviceType: booking.service_type || booking.serviceType,
     status: booking.status,
     basePrice: booking.base_price || booking.basePrice,

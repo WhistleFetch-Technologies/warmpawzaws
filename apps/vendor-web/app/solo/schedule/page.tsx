@@ -15,7 +15,6 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { 
-  ArrowLeft, 
   Plus, 
   Calendar, 
   Clock, 
@@ -47,6 +46,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 interface AvailabilitySlot {
   id: string;
@@ -438,57 +438,51 @@ export default function SoloSchedulePage() {
   const dateSlots = slots.filter(s => s.date === selectedDate);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="bg-white border-b sticky top-0 z-10">
-          <div className="p-4 flex items-center gap-3">
-            <button
-              onClick={() => router.push('/dashboard')}
-              className="w-10 h-10 flex items-center justify-center hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 text-gray-700" />
-            </button>
-            <div className="flex-1">
-              <h1 className="text-xl font-bold text-gray-900">My Schedule</h1>
-              <p className="text-sm text-gray-600">Manage your availability and time slots</p>
-            </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="My Schedule"
+          subtitle="Manage your availability and time slots"
+          onBack={() => router.push('/dashboard')}
+          actions={[
             <Button
+              key="add-holiday"
+              type="button"
               onClick={() => setShowHolidayDialog(true)}
               variant="outline"
               size="sm"
+              className="h-9 shrink-0 text-sm"
             >
-              <Calendar className="w-4 h-4 mr-2" />
+              <Calendar className="mr-1 inline h-4 w-4" />
               Add Holiday
-            </Button>
-          </div>
+            </Button>,
+          ]}
+        />
 
-          {/* Date Selector */}
-          <div className="px-4 pb-4">
-            <Label htmlFor="date" className="text-sm font-medium text-gray-700 mb-2 block">
-              Select Date
-            </Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="date"
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
-                className="max-w-xs"
-              />
-              {isHoliday && (
-                <Badge className="bg-red-100 text-red-700">
-                  <Coffee className="w-3 h-3 mr-1" />
-                  Holiday
-                </Badge>
-              )}
-            </div>
+        <div className="border-b border-gray-200 bg-white px-4 pb-4 sm:px-6">
+          <Label htmlFor="date" className="mb-2 block text-sm font-medium text-gray-700">
+            Select Date
+          </Label>
+          <div className="flex items-center gap-2">
+            <Input
+              id="date"
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              min={new Date().toISOString().split('T')[0]}
+              className="max-w-xs"
+            />
+            {isHoliday && (
+              <Badge className="bg-red-100 text-red-700">
+                <Coffee className="mr-1 inline h-3 w-3" />
+                Holiday
+              </Badge>
+            )}
           </div>
         </div>
 
         {/* Info Banner */}
-        <div className="p-4">
+        <div className="p-4 sm:px-6">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-start gap-2">
             <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
             <div className="flex-1 text-sm text-blue-800">

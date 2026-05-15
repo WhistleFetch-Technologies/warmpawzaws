@@ -59,10 +59,11 @@ async function incrementFormVersion(roleId: string) {
  * Role name aliases/mappings for common variations
  */
 const ROLE_NAME_ALIASES: Record<string, string[]> = {
-  'veterinarian': ['veterinarian', 'vet', 'Veterinarian', 'vet_solo', 'vet_clinic', 'veterinary_clinic'],
+  // Do not map clinic names onto veterinarian — clinic uses vet_clinic / veterinary_clinic onboarding + KYC
+  'veterinarian': ['veterinarian', 'vet', 'Veterinarian', 'vet_solo'],
   'vet_solo': ['vet_solo', 'veterinarian', 'vet', 'Veterinarian'],
-  'vet_clinic': ['vet_clinic', 'veterinary_clinic', 'veterinarian', 'vet'],
-  'veterinary_clinic': ['veterinary_clinic', 'vet_clinic', 'veterinarian', 'vet'],
+  'vet_clinic': ['vet_clinic', 'veterinary_clinic'],
+  'veterinary_clinic': ['veterinary_clinic', 'vet_clinic'],
   'pet_walker': ['pet_walker', 'walker', 'Pet Walker'],
   'pet_groomer': ['pet_groomer', 'groomer', 'Pet Grooming Salon'],
   'diagnostics_center': ['diagnostics_center', 'diagnostic_center', 'diagnostics'],
@@ -75,6 +76,20 @@ const ROLE_NAME_ALIASES: Record<string, string[]> = {
  */
 async function getRoleByName(roleId: string): Promise<any | null> {
   console.log(`[getRoleByName] Looking up role: "${roleId}"`);
+
+  // Vendor catalogue passes roles.id (UUID); admin designer uses role name — support both first.
+  const uuidLike =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(roleId || '').trim());
+  if (uuidLike) {
+    const byId = await query(
+      'SELECT * FROM roles WHERE id = $1::uuid AND is_active = true LIMIT 1',
+      [roleId.trim()]
+    );
+    if (byId.rows?.length) {
+      console.log(`[getRoleByName] Resolved UUID to role name: ${byId.rows[0].name}`);
+      return byId.rows[0];
+    }
+  }
   
   // Try exact match first (only active roles)
   let roles = await select('roles', { name: roleId, is_active: true });

@@ -18,10 +18,43 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 // Password verification
 import * as crypto from 'crypto';
+import { resolveAdminPermissions, DEFAULT_MASTER_ADMIN_EMAIL } from '../../../utils/admin-rbac-permissions';
+import { createVendorPortalCode } from '../../../lib/services/admin/vendor-portal-session-service';
+import {
+	getTemporaryVendorSuppressionParams,
+	sqlExcludeSuppressedBookingRows,
+	sqlExcludeSuppressedSettlementRows,
+} from '../../../utils/temporary-vendor-ui-suppression';
 
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
+
+const hashPassword = (password: string): string => {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
+};
+
+/** Same idea as API Gateway uat-authorizer: never treat UAT bearer as valid on prod. */
+function isLambdaProductionStage(): boolean {
+  return (
+    process.env.NODE_ENV === 'production' ||
+    process.env.STAGE === 'prod' ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME?.includes('prod'))
+  );
+}
+
+/** UAT mode from env (Lambda) or client header (admin-web sends X-UAT-Mode in dev). */
+function isUatModeRequestHeader(headers: Record<string, string | undefined> | undefined): boolean {
+  if (process.env.UAT_MODE === 'true') return true;
+  if (!headers) return false;
+  const raw =
+    headers['x-uat-mode'] ??
+    headers['X-UAT-Mode'] ??
+    headers['X-Uat-Mode'];
+  return String(raw || '').toLowerCase() === 'true';
+}
 
 function createApiGatewayEvent(req: any): any {
   // ✅ FIX: In Hono, headers are accessed via req.raw.headers
@@ -107,7 +140,7 @@ class GetAnalyticsOverviewHandler extends BaseHandler {
         FROM vendors`),
         query(`SELECT COUNT(*) as total_customers FROM customers`),
         query(`SELECT 
-          COUNT(*) as total_bookings,
+          COUNT(*) FILTER (WHERE status <> 'pending_payment') as total_bookings,
           COUNT(*) FILTER (WHERE status = 'completed') as completed_bookings,
           COALESCE(SUM(total_amount) FILTER (WHERE status = 'completed'), 0) as total_revenue,
           COALESCE(SUM(total_amount) FILTER (WHERE status = 'completed' AND booking_date >= DATE_TRUNC('month', CURRENT_DATE)), 0) as this_month_revenue
@@ -282,39 +315,8 @@ class AdminLoginHandler extends BaseHandler {
         return this.error('Email and password are required', 400);
       }
 
-      // Check UAT mode - ONLY check UAT_MODE env variable for security
+      // UAT_MODE only affects which JWT issuer/expiry is used after credentials are verified — same DB checks as prod.
       const isUATMode = process.env.UAT_MODE === 'true';
-
-      // In UAT mode, allow any admin login with 60s token expiry
-      if (isUATMode) {
-        console.log(`[ADMIN AUTH] UAT Mode: Admin login for ${email} with 60s token expiry`);
-        
-        // Generate proper JWT tokens for UAT mode
-        const { generateUATJWTToken } = await import('../../../utils/jwt-generator');
-        const tokens = await generateUATJWTToken({
-          userId: 'uat-admin',
-          phone: email, // Use email as identifier
-          role: 'admin',
-          expiresIn: 60, // 60 seconds for UAT mode testing
-        });
-        
-        return this.success({
-          success: true,
-          token: {
-            access_token: tokens.accessToken,
-            id_token: tokens.idToken,
-            refresh_token: tokens.refreshToken,
-            expires_in: tokens.expiresIn,
-            token_type: 'Bearer',
-          },
-          admin: {
-            id: 'uat-admin',
-            email: email,
-            name: 'Admin User',
-            role: 'admin',
-          },
-        });
-      }
 
       // Check admin credentials (case-insensitive email matching)
       // Use direct query for case-insensitive email lookup
@@ -410,6 +412,8 @@ class AdminLoginHandler extends BaseHandler {
         }
       }
 
+      const permissions = await resolveAdminPermissions(String(admin.id), admin.role, admin.email);
+
       return this.success({
         success: true,
         token: {
@@ -425,9 +429,187 @@ class AdminLoginHandler extends BaseHandler {
           name: admin.name || admin.email,
           role: admin.role || 'admin',
         },
+        permissions,
       });
     } catch (error: any) {
       return this.error(error.message || 'Login failed', 500);
+    }
+  }
+}
+
+/** Email for admin row lookup from Cognito ID token (admin login uses `phone_${email}` as username). */
+function adminEmailFromCognitoIdPayload(payload: Record<string, unknown>): string | null {
+  const emailRaw = payload.email;
+  if (typeof emailRaw === 'string' && emailRaw.trim()) {
+    return emailRaw.trim();
+  }
+  const un = String(payload['cognito:username'] || '');
+  if (un.startsWith('phone_')) {
+    return un.slice('phone_'.length) || null;
+  }
+  return un || null;
+}
+
+class AdminRefreshTokenHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    try {
+      const body = this.parseBody(context.event);
+      const refreshToken =
+        typeof body.refreshToken === 'string'
+          ? body.refreshToken.trim()
+          : typeof (body as any).refresh_token === 'string'
+            ? String((body as any).refresh_token).trim()
+            : '';
+
+      if (!refreshToken) {
+        return this.error('refreshToken is required', 400);
+      }
+
+      const parts = refreshToken.split('.');
+      const looksLikeJwt = parts.length === 3;
+
+      if (looksLikeJwt) {
+        const { verifyProductionJWTToken, generateProductionJWTToken } = await import(
+          '../../../utils/jwt-generator'
+        );
+        const prodResult = await verifyProductionJWTToken(refreshToken);
+        if (prodResult.valid && prodResult.payload) {
+          const p = prodResult.payload as Record<string, unknown>;
+          if (p.token_use !== 'refresh') {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const adminId = String(p.sub || '').trim();
+          if (!adminId) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const adminResult = await query('SELECT * FROM admins WHERE id = $1::uuid LIMIT 1', [adminId]);
+          if (adminResult.rows.length === 0 || adminResult.rows[0].is_active === false) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const admin = adminResult.rows[0];
+          const tokens = await generateProductionJWTToken({
+            userId: admin.id,
+            phone: admin.email,
+            role: 'admin',
+            expiresIn: 24 * 60 * 60,
+          });
+          const permissions = await resolveAdminPermissions(String(admin.id), admin.role, admin.email);
+          return this.success({
+            success: true,
+            token: {
+              access_token: tokens.accessToken,
+              id_token: tokens.idToken,
+              refresh_token: tokens.refreshToken,
+              expires_in: tokens.expiresIn,
+              token_type: 'Bearer',
+            },
+            admin: {
+              id: admin.id,
+              email: admin.email,
+              name: admin.name || admin.email,
+              role: admin.role || 'admin',
+            },
+            permissions,
+          });
+        }
+
+        const { verifyUATJWTToken, generateUATJWTToken } = await import('../../../utils/jwt-generator');
+        const uatResult = await verifyUATJWTToken(refreshToken);
+        if (uatResult.valid && uatResult.payload) {
+          const p = uatResult.payload as Record<string, unknown>;
+          if (p.token_use !== 'refresh') {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const adminId = String(p.sub || '').trim();
+          if (!adminId) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const adminResult = await query('SELECT * FROM admins WHERE id = $1::uuid LIMIT 1', [adminId]);
+          if (adminResult.rows.length === 0 || adminResult.rows[0].is_active === false) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const admin = adminResult.rows[0];
+          const tokens = await generateUATJWTToken({
+            userId: admin.id,
+            phone: admin.email,
+            role: 'admin',
+            expiresIn: 3600,
+          });
+          const permissions = await resolveAdminPermissions(String(admin.id), admin.role, admin.email);
+          return this.success({
+            success: true,
+            token: {
+              access_token: tokens.accessToken,
+              id_token: tokens.idToken,
+              refresh_token: tokens.refreshToken,
+              expires_in: tokens.expiresIn,
+              token_type: 'Bearer',
+            },
+            admin: {
+              id: admin.id,
+              email: admin.email,
+              name: admin.name || admin.email,
+              role: admin.role || 'admin',
+            },
+            permissions,
+          });
+        }
+      }
+
+      const cognitoUserPoolId = process.env.COGNITO_USER_POOL_ID || '';
+      const cognitoClientId = process.env.COGNITO_CLIENT_ID || '';
+      if (cognitoUserPoolId && cognitoClientId) {
+        try {
+          const { refreshCognitoUserSession } = await import('../../../utils/cognito-client');
+          const cognitoTokens = await refreshCognitoUserSession(refreshToken);
+          const { verifyIdToken } = await import('../../../utils/jwt-verification');
+          const idPayload = await verifyIdToken(cognitoTokens.idToken);
+          if (!idPayload) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const userType = idPayload['custom:user_type'];
+          if (userType !== 'admin') {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const emailHint = adminEmailFromCognitoIdPayload(idPayload as Record<string, unknown>);
+          if (!emailHint) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const adminResult = await query(
+            'SELECT * FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1',
+            [emailHint]
+          );
+          if (adminResult.rows.length === 0 || adminResult.rows[0].is_active === false) {
+            return this.error('Invalid or expired refresh token', 401);
+          }
+          const admin = adminResult.rows[0];
+          const permissions = await resolveAdminPermissions(String(admin.id), admin.role, admin.email);
+          return this.success({
+            success: true,
+            token: {
+              access_token: cognitoTokens.accessToken,
+              id_token: cognitoTokens.idToken,
+              refresh_token: cognitoTokens.refreshToken,
+              expires_in: cognitoTokens.expiresIn,
+              token_type: 'Bearer',
+            },
+            admin: {
+              id: admin.id,
+              email: admin.email,
+              name: admin.name || admin.email,
+              role: admin.role || 'admin',
+            },
+            permissions,
+          });
+        } catch (cognitoErr: any) {
+          console.warn('[ADMIN AUTH] Cognito refresh failed:', cognitoErr?.message || cognitoErr);
+        }
+      }
+
+      return this.error('Invalid or expired refresh token', 401);
+    } catch (error: any) {
+      console.error('[ADMIN AUTH] Refresh error:', error);
+      return this.error(error.message || 'Refresh failed', 500);
     }
   }
 }
@@ -436,13 +618,52 @@ class GetCurrentAdminHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       // Extract admin ID from JWT token
-      const authHeader = context.event.headers?.authorization || context.event.headers?.Authorization;
+      const hdr = context.event.headers || {};
+      const authHeader = hdr.authorization || hdr.Authorization;
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return this.error('Authentication required', 401);
       }
 
-      const token = authHeader.replace('Bearer ', '');
-      
+      const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+      // Dev-only: accept synthetic uat-token-* when UAT is explicitly on (env or X-UAT-Mode), not on prod stage.
+      if (
+        !isLambdaProductionStage() &&
+        isUatModeRequestHeader(hdr as Record<string, string | undefined>) &&
+        token.startsWith('uat-token-')
+      ) {
+        console.log('[ADMIN AUTH] /admin/auth/me UAT bearer bypass (non-prod + UAT + uat-token)');
+        let adminResult = await query(
+          'SELECT id, email, name, role, is_active, created_at, last_login_at FROM admins WHERE LOWER(email) = LOWER($1) LIMIT 1',
+          [DEFAULT_MASTER_ADMIN_EMAIL]
+        );
+        if (adminResult.rows.length === 0) {
+          adminResult = await query(
+            `SELECT id, email, name, role, is_active, created_at, last_login_at FROM admins
+             ORDER BY created_at ASC NULLS LAST LIMIT 1`,
+            []
+          );
+        }
+        if (adminResult.rows.length === 0) {
+          return this.error('Admin not found', 404);
+        }
+        const admin = adminResult.rows[0];
+        const permissions = await resolveAdminPermissions(String(admin.id), admin.role, admin.email);
+        return this.success({
+          success: true,
+          admin: {
+            id: admin.id,
+            email: admin.email,
+            name: admin.name || admin.email,
+            role: admin.role || 'admin',
+            isActive: admin.is_active !== false,
+            createdAt: admin.created_at,
+            lastLoginAt: admin.last_login_at,
+          },
+          permissions,
+        });
+      }
+
       // Verify JWT token and extract admin ID
       try {
         const { extractAndVerifyAuthToken } = await import('../../../utils/jwt-verification');
@@ -474,9 +695,7 @@ class GetCurrentAdminHandler extends BaseHandler {
 
         const admin = adminResult.rows[0];
 
-        // For now, return all permissions (we can add RBAC later)
-        // In production, you would fetch permissions from user_roles and role_permissions tables
-        const permissions = ['*']; // All permissions for now
+        const permissions = await resolveAdminPermissions(String(admin.id), admin.role, admin.email);
 
         return this.success({
           success: true,
@@ -489,7 +708,7 @@ class GetCurrentAdminHandler extends BaseHandler {
             createdAt: admin.created_at,
             lastLoginAt: admin.last_login_at,
           },
-          permissions: permissions,
+          permissions,
         });
       } catch (tokenError: any) {
         console.error('[ADMIN AUTH] Token verification failed:', tokenError);
@@ -517,10 +736,9 @@ class AdminSignupHandler extends BaseHandler {
         return this.error('Admin already exists', 409);
       }
 
-      // Create admin (password should be hashed in production)
       const newAdmin = await insert('admins', {
         email,
-        password_hash: password, // TODO: Hash password properly
+        password_hash: hashPassword(password),
         name: name || email,
         role: 'admin',
         is_active: true,
@@ -600,7 +818,11 @@ class GetActiveVendorsHandler extends BaseHandler {
           GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type, onboarding_status FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE v.status = 'approved' AND v.is_active = true
         ORDER BY v.updated_at DESC
       `);
@@ -710,7 +932,7 @@ class GetVendorDetailsHandler extends BaseHandler {
             'isActive', st.is_active
           )), '[]'::json) FROM staff st WHERE st.vendor_id = v.id AND st.is_active = true) as staff_list,
           -- Stats
-          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id) as total_bookings,
+          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status <> 'pending_payment') as total_bookings,
           (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings,
           (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'cancelled') as cancelled_bookings,
           (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status IN ('pending', 'confirmed')) as pending_bookings,
@@ -731,13 +953,23 @@ class GetVendorDetailsHandler extends BaseHandler {
             'date', b.booking_date,
             'createdAt', b.created_at
           ) ORDER BY b.created_at DESC), '[]'::json)
-          FROM (SELECT * FROM bookings WHERE vendor_id = v.id ORDER BY created_at DESC LIMIT 10) b
+          FROM (
+            SELECT *
+            FROM bookings
+            WHERE vendor_id = v.id AND status <> 'pending_payment'
+            ORDER BY created_at DESC
+            LIMIT 10
+          ) b
           LEFT JOIN vendor_services vs ON vs.service_id = b.service_id AND vs.vendor_id = b.vendor_id
           LEFT JOIN services s ON s.id = b.service_id
           LEFT JOIN customers c ON c.id = b.customer_id) as recent_orders
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT id, vendor_type, onboarding_status, phone FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         LEFT JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
         WHERE v.id = $1
       `, [vendorId]);
@@ -840,6 +1072,7 @@ class GetVendorDetailsHandler extends BaseHandler {
           LEFT JOIN services s ON s.id = b.service_id
           LEFT JOIN customers c ON c.id = b.customer_id
           WHERE b.vendor_id = $1
+            AND b.status <> 'pending_payment'
           ORDER BY b.created_at DESC
           LIMIT 20
         `, [vendorId]);
@@ -1151,6 +1384,9 @@ class DeleteVendorHandler extends BaseHandler {
     if (!vendorId) {
       return this.error('Vendor ID is required', 400);
     }
+    if (!isValidUUID(vendorId)) {
+      return this.error('Invalid vendor ID format', 400);
+    }
 
     try {
       // Check if vendor exists
@@ -1184,22 +1420,56 @@ class DeleteVendorHandler extends BaseHandler {
         }
       );
 
-      // 2. Soft delete the associated vendor_identity record (if exists)
-      // Find vendor_identity by vendor_id or by phone
-      let vendorIdentityRecords = [];
+      // 2. Soft delete ALL associated vendor_identity records
+      // ✅ CRITICAL FIX: Find ALL vendor_identity records by vendor_id, vendor_identity_id, or phone
+      let vendorIdentityRecords: any[] = [];
       
-      if (vendor.vendor_identity_id) {
-        vendorIdentityRecords = await select('vendor_identity', { id: vendor.vendor_identity_id });
-      }
-      
-      // If not found by vendor_identity_id, try by phone
-      if (vendorIdentityRecords.length === 0 && vendor.phone) {
-        vendorIdentityRecords = await select('vendor_identity', { phone: vendor.phone });
+      // First, find by vendor_id (most important - catches all related identities)
+      if (vendorId) {
+        const byVendorId = await select('vendor_identity', { vendor_id: vendorId });
+        vendorIdentityRecords.push(...byVendorId);
       }
 
+      // Also check by vendor_identity_id if exists
+      if (vendor.vendor_identity_id) {
+        const byIdentityId = await select('vendor_identity', { id: vendor.vendor_identity_id });
+        // Add only if not already in the array
+        for (const vi of byIdentityId) {
+          if (!vendorIdentityRecords.find((v: any) => v.id === vi.id)) {
+            vendorIdentityRecords.push(vi);
+          }
+        }
+      }
+
+      // Also check by phone (in case vendor_id wasn't set)
+      if (vendor.phone) {
+        const byPhone = await select('vendor_identity', { phone: vendor.phone });
+        // Filter out already deleted ones and add only active ones
+        const activeByPhone = byPhone.filter((vi: any) => 
+          vi.is_deleted !== true && 
+          vi.is_deleted !== 't' &&
+          !(typeof vi.is_deleted === 'string' && vi.is_deleted.toLowerCase() === 'true')
+        );
+        // Add only if not already in the array
+        for (const vi of activeByPhone) {
+          if (!vendorIdentityRecords.find((v: any) => v.id === vi.id)) {
+            vendorIdentityRecords.push(vi);
+          }
+        }
+      }
+
+      // Remove duplicates based on id
+      const uniqueRecords = vendorIdentityRecords.filter((vi: any, index: number, self: any[]) =>
+        index === self.findIndex((v: any) => v.id === vi.id)
+      );
+
       // Update all matching vendor_identity records
-      for (const vi of vendorIdentityRecords) {
-        if (vi.is_deleted !== true) {
+      for (const vi of uniqueRecords) {
+        const isDeleted = vi.is_deleted === true || 
+          vi.is_deleted === 't' ||
+          (typeof vi.is_deleted === 'string' && vi.is_deleted.toLowerCase() === 'true');
+        
+        if (!isDeleted) {
           await update(
             'vendor_identity',
             { id: vi.id },
@@ -1215,7 +1485,98 @@ class DeleteVendorHandler extends BaseHandler {
               }
             }
           );
+          console.log(`✅ [DELETE-VENDOR] Marked vendor_identity ${vi.id} as deleted`);
         }
+      }
+      
+      if (uniqueRecords.length > 0) {
+        console.log(`✅ [DELETE-VENDOR] Deleted ${uniqueRecords.length} vendor_identity record(s) associated with vendor ${vendorId}`);
+      }
+
+      // 3. Propagate soft-delete across all vendor-related tables
+      // This keeps delete behavior consistent even when new vendor_* tables are added.
+      try {
+        const propagationSql = `
+DO $$
+DECLARE
+  r RECORD;
+  v_vendor_id uuid := '${vendorId}'::uuid;
+  v_phone text := ${vendor.phone ? `'${String(vendor.phone).replace(/'/g, "''")}'` : 'NULL'};
+BEGIN
+  CREATE TEMP TABLE tmp_deleted_vendors ON COMMIT DROP AS
+    SELECT v_vendor_id AS id;
+
+  CREATE TEMP TABLE tmp_deleted_vendor_identity ON COMMIT DROP AS
+    SELECT id
+    FROM vendor_identity
+    WHERE vendor_id = v_vendor_id
+       OR (v_phone IS NOT NULL AND phone = v_phone)
+       OR is_deleted = true;
+
+  FOR r IN
+    SELECT t.table_name
+    FROM information_schema.tables t
+    WHERE t.table_schema = 'public'
+      AND t.table_type = 'BASE TABLE'
+      AND (
+        t.table_name = 'vendors'
+        OR t.table_name = 'vendor_identity'
+        OR t.table_name LIKE 'vendor_%'
+      )
+      AND EXISTS (
+        SELECT 1 FROM information_schema.columns c
+        WHERE c.table_schema='public'
+          AND c.table_name=t.table_name
+          AND c.column_name='is_deleted'
+      )
+  LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns c
+      WHERE c.table_schema='public' AND c.table_name=r.table_name AND c.column_name='vendor_id'
+    ) THEN
+      EXECUTE format(
+        'UPDATE %I SET is_deleted = true WHERE is_deleted = false AND vendor_id IN (SELECT id FROM tmp_deleted_vendors)',
+        r.table_name
+      );
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns c
+      WHERE c.table_schema='public' AND c.table_name=r.table_name AND c.column_name='vendor_identity_id'
+    ) THEN
+      EXECUTE format(
+        'UPDATE %I SET is_deleted = true WHERE is_deleted = false AND vendor_identity_id IN (SELECT id FROM tmp_deleted_vendor_identity)',
+        r.table_name
+      );
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns c
+      WHERE c.table_schema='public' AND c.table_name=r.table_name AND c.column_name='referrer_vendor_id'
+    ) THEN
+      EXECUTE format(
+        'UPDATE %I SET is_deleted = true WHERE is_deleted = false AND referrer_vendor_id IN (SELECT id FROM tmp_deleted_vendors)',
+        r.table_name
+      );
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns c
+      WHERE c.table_schema='public' AND c.table_name=r.table_name AND c.column_name='referred_vendor_id'
+    ) THEN
+      EXECUTE format(
+        'UPDATE %I SET is_deleted = true WHERE is_deleted = false AND referred_vendor_id IN (SELECT id FROM tmp_deleted_vendors)',
+        r.table_name
+      );
+    END IF;
+  END LOOP;
+END $$;
+`;
+        await query(propagationSql);
+        console.log(`✅ [DELETE-VENDOR] Propagated is_deleted=true across vendor-related tables for vendor ${vendorId}`);
+      } catch (cascadeErr) {
+        console.error(`❌ [DELETE-VENDOR] Propagation failed for vendor ${vendorId}:`, cascadeErr);
+        throw cascadeErr;
       }
 
       // Create notification for vendor (optional, since they're deleted)
@@ -1298,6 +1659,7 @@ class GetVendorActivityHistoryHandler extends BaseHandler {
           LEFT JOIN services s ON s.id = b.service_id
           LEFT JOIN customers c ON c.id = b.customer_id
           WHERE b.vendor_id = $1
+            AND b.status <> 'pending_payment'
           ORDER BY b.created_at DESC
           LIMIT $2 OFFSET $3
         `, [vendorId, limit, offset]);
@@ -1484,7 +1846,11 @@ class GetVendorDocumentsHandler extends BaseHandler {
           v.registration_number,
           v.phone as v_phone
         FROM vendors v
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT id, phone FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         LEFT JOIN vendor_onboarding_applications voa ON voa.vendor_identity_id = vi.id
         WHERE v.id = $1
         ORDER BY voa.submitted_at DESC NULLS LAST
@@ -2781,10 +3147,28 @@ class CreateVendorHandler extends BaseHandler {
     try {
       const body = this.parseBody(context.event);
       
+      // ✅ CRITICAL FIX: Exclude is_deleted from body to prevent it from being set to true
+      const { is_deleted, tier: incomingTier, commission_percentage: incomingComm, ...safeBody } = body;
+      let tier: unknown = incomingTier;
+      let commission: unknown = incomingComm;
+      if (tier == null || String(tier).trim() === '') {
+        const { resolveNewVendorOnboardingTier } = await import('../../../utils/onboarding-f100-tier');
+        const tr = await resolveNewVendorOnboardingTier({
+          email: body.email,
+          businessName: body.business_name,
+        });
+        tier = tr.tier;
+        commission = tr.commission_percentage;
+      } else if (commission == null || String(commission).trim() === '') {
+        commission = 15;
+      }
       const vendor = await insert('vendors', {
-        ...body,
+        ...safeBody,
+        tier,
+        commission_percentage: commission,
         status: 'pending',
         is_active: false,
+        is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors
         created_at: new Date().toISOString(),
       });
 
@@ -2804,8 +3188,15 @@ class GetSettlementStatsHandler extends BaseHandler {
     try {
       // First check if table and columns exist
       let stats;
+      const suppression = getTemporaryVendorSuppressionParams();
+      const suppressionWhere = suppression
+        ? ` WHERE ${sqlExcludeSuppressedSettlementRows('settlements', 1, 2)}`
+        : '';
+      const suppressionParams =
+        suppression && suppression.vendorIds?.length ? [suppression.vendorIds, suppression.cutoffDateIst] : [];
       try {
-        stats = await query(`
+        stats = await query(
+          `
           SELECT 
             COUNT(*) as total_settlements,
             COUNT(*) FILTER (WHERE COALESCE(settlement_status, status) IN ('pending', 'processing')) as pending_settlements,
@@ -2813,11 +3204,15 @@ class GetSettlementStatsHandler extends BaseHandler {
             COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)) FILTER (WHERE COALESCE(settlement_status, status) IN ('completed', 'processed')), 0) as total_paid,
             COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)) FILTER (WHERE COALESCE(settlement_status, status) IN ('pending', 'processing')), 0) as pending_amount
           FROM settlements
-        `);
+          ${suppressionWhere}
+        `,
+          suppressionParams.length ? suppressionParams : undefined,
+        );
       } catch {
         // Try without status filter (schema may differ)
         try {
-          stats = await query(`
+          stats = await query(
+            `
             SELECT 
               COUNT(*) as total_settlements,
               0 as pending_settlements,
@@ -2825,7 +3220,10 @@ class GetSettlementStatsHandler extends BaseHandler {
               COALESCE(SUM(COALESCE(net_amount, vendor_amount, total_amount)), 0) as total_paid,
               0 as pending_amount
             FROM settlements
-          `);
+            ${suppressionWhere}
+          `,
+            suppressionParams.length ? suppressionParams : undefined,
+          );
         } catch {
           // Table doesn't exist - return defaults
           stats = { rows: [{
@@ -3316,169 +3714,6 @@ class GetVendorRefundTiersHandler extends BaseHandler {
 }
 
 // ============================================================================
-// MISSING ENDPOINTS - TAX FLEXIBLE
-// ============================================================================
-
-class GetTaxFlexibleConfigurationHandler extends BaseHandler {
-  async handle(context: HandlerContext): Promise<HandlerResponse> {
-    try {
-      const config = await select('platform_settings', {
-        setting_key: 'tax:flexible:configuration'
-      });
-
-      return this.success({
-        config: config.length > 0 ? config[0].setting_value : {
-          enabled: false,
-          defaultTaxRate: 18,
-          rules: [],
-        },
-      });
-    } catch (error: any) {
-      return this.error(error.message || 'Failed to fetch tax configuration', 500);
-    }
-  }
-}
-
-class GetTaxFlexibleRulesHandler extends BaseHandler {
-  async handle(context: HandlerContext): Promise<HandlerResponse> {
-    try {
-      // Try to create table if it doesn't exist
-      await query(`
-        CREATE TABLE IF NOT EXISTS tax_flexible_rules (
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          name VARCHAR(255) NOT NULL,
-          description TEXT,
-          tax_type VARCHAR(50) DEFAULT 'gst',
-          rate DECIMAL(5,2) NOT NULL DEFAULT 18.00,
-          category VARCHAR(100),
-          service_type VARCHAR(100),
-          region VARCHAR(100),
-          priority INT DEFAULT 0,
-          is_active BOOLEAN DEFAULT true,
-          conditions JSONB DEFAULT '{}',
-          created_at TIMESTAMP DEFAULT NOW(),
-          updated_at TIMESTAMP DEFAULT NOW()
-        )
-      `);
-
-      const flexResult = await query(`
-        SELECT * FROM tax_flexible_rules
-        ORDER BY priority DESC, created_at DESC
-      `);
-      const flexRows = Array.isArray(flexResult) ? flexResult : (flexResult as any)?.rows ?? [];
-
-      if (flexRows.length > 0) {
-        const rules = flexRows.map((r: any) => {
-          // Parse conditions from metadata if available
-          let serviceTypes: string[] | undefined;
-          let vendorRoles: string[] | undefined;
-          try {
-            if (r.conditions_metadata) {
-              const metadata = JSON.parse(r.conditions_metadata);
-              serviceTypes = metadata.serviceTypes;
-              vendorRoles = metadata.vendorRoles;
-            }
-          } catch (e) {
-            // Ignore parse errors
-          }
-          // Fallback to single fields if metadata not available
-          if (!serviceTypes && r.service_style) {
-            serviceTypes = [r.service_style];
-          }
-          if (!vendorRoles && r.role_id) {
-            vendorRoles = [r.role_id];
-          }
-          
-          const conditions = typeof r.conditions === 'object' ? r.conditions : (r.conditions ? JSON.parse(r.conditions || '{}') : {});
-          // Override with parsed metadata if available
-          if (serviceTypes) conditions.serviceTypes = serviceTypes;
-          if (vendorRoles) conditions.vendorRoles = vendorRoles;
-          
-          return {
-            id: r.id,
-            name: r.name ?? r.rule_name,
-            description: r.description ?? null,
-            taxType: r.tax_type ?? 'gst',
-            rate: parseFloat(r.rate) ?? 18,
-            calculationMethod: 'percentage',
-            priority: Number(r.priority) ?? 100,
-            isActive: r.is_active !== false,
-            conditions,
-            exemptions: {},
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          };
-        });
-        return this.success({ success: true, rules });
-      }
-
-      // Fallback: show gst_rules so seeded data appears in Flexible Tax Rules UI
-      try {
-        const gstResult = await query(`
-          SELECT *, 
-                 COALESCE(conditions_metadata, '{}'::text) as conditions_metadata
-          FROM gst_rules
-          ORDER BY priority DESC, created_at DESC
-        `);
-        const gstRows = Array.isArray(gstResult) ? gstResult : (gstResult as any)?.rows ?? [];
-        const rules = gstRows.map((r: any) => {
-          // Parse conditions from metadata if available
-          let serviceTypes: string[] | undefined;
-          let vendorRoles: string[] | undefined;
-          try {
-            if (r.conditions_metadata) {
-              const metadata = JSON.parse(r.conditions_metadata);
-              serviceTypes = metadata.serviceTypes;
-              vendorRoles = metadata.vendorRoles;
-            }
-          } catch (e) {
-            // Ignore parse errors
-          }
-          // Fallback to single fields if metadata not available
-          if (!serviceTypes && r.service_style) {
-            serviceTypes = [r.service_style];
-          }
-          if (!vendorRoles && r.role_id) {
-            vendorRoles = [r.role_id];
-          }
-          
-          return {
-            id: r.id,
-            name: r.rule_name ?? r.name ?? 'GST Rule',
-            description: r.description ?? null,
-            taxType: 'gst',
-            rate: parseFloat(r.gst_rate) ?? 18,
-            calculationMethod: (r.gst_type === 'fixed' ? 'fixed' : 'percentage') as any,
-            priority: Number(r.priority) ?? 100,
-            isActive: r.enabled !== false,
-            tax_category_id: r.tax_category_id ?? null,
-            role_id: r.role_id ?? null,
-            service_style: r.service_style ?? null,
-            conditions: {
-              categoryIds: r.tax_category_id ? [r.tax_category_id] : undefined,
-              serviceTypes,
-              vendorRoles,
-              minAmount: r.min_amount != null ? parseFloat(r.min_amount) : undefined,
-              maxAmount: r.max_amount != null ? parseFloat(r.max_amount) : undefined,
-              states: [r.customer_state, r.vendor_state].filter(Boolean),
-              transactionType: 'both',
-            },
-            exemptions: {},
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-          };
-        });
-        return this.success({ success: true, rules });
-      } catch (_) {
-        return this.success({ success: true, rules: [] });
-      }
-    } catch (error: any) {
-      return this.success({ success: true, rules: [] });
-    }
-  }
-}
-
-// ============================================================================
 // MISSING ENDPOINTS - VENDOR ROLES
 // ============================================================================
 
@@ -3596,6 +3831,20 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     }
   });
 
+  app.post('/admin/auth/refresh', async (c) => {
+    try {
+      const requestBody = await c.req.json().catch(() => ({}));
+      const handler = new AdminRefreshTokenHandler();
+      const event = createApiGatewayEventWithBody(c.req, requestBody);
+      const context = createLambdaContext();
+      const result = await handler.execute(event, context);
+      return c.json(JSON.parse(result.body), result.statusCode);
+    } catch (error: any) {
+      console.error('[ADMIN AUTH] Refresh endpoint error:', error);
+      return c.json({ error: error.message || 'Internal server error' }, 500);
+    }
+  });
+
   app.get('/admin/auth/me', async (c) => {
     try {
       const handler = new GetCurrentAdminHandler();
@@ -3634,6 +3883,32 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
   app.post('/admin/auth/reset-test-user', async (c) => {
     // Reset test admin user for UAT
     return c.json({ success: true, message: 'Test user reset (UAT mode)' });
+  });
+
+  // Admin opens vendor-web as this vendor (one-time code; exchange at POST /auth/vendor-portal-session)
+  app.post('/admin/vendors/:vendorId/vendor-portal-code', async (c) => {
+    try {
+      const vendorId = c.req.param('vendorId');
+      const adminId = c.get('userId') as string | undefined;
+      const result = await createVendorPortalCode({ adminId, vendorId });
+      if (!result.ok) {
+        return c.json(
+          { success: false, error: result.error, code: result.errorCode },
+          result.status
+        );
+      }
+      return c.json({
+        success: true,
+        code: result.code,
+        expiresAt: result.expiresAt,
+      });
+    } catch (error: any) {
+      console.error('[vendor-portal-code] Error:', error);
+      return c.json(
+        { success: false, error: error?.message || 'Failed to create portal code' },
+        500
+      );
+    }
   });
 
   // Vendors - Get active vendors with enriched data and filtering
@@ -3707,6 +3982,18 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
 
       const whereClause = whereConditions.join(' AND ');
 
+      const supBook = getTemporaryVendorSuppressionParams();
+      const limIdx = paramIdx;
+      const offIdx = paramIdx + 1;
+      let bookingSupSql = 'TRUE';
+      const vendorListParams: unknown[] = [...params, limit, offset];
+      if (supBook) {
+        const sVend = paramIdx + 2;
+        const sDate = paramIdx + 3;
+        bookingSupSql = sqlExcludeSuppressedBookingRows('b', sVend, sDate);
+        vendorListParams.push(supBook.vendorIds, supBook.cutoffDateIst);
+      }
+
       // ✅ DIRECT QUERY: Get active vendors (approved + is_active). No requirement for published services
       // so approved vendors appear even before they publish; active_services_count shows 0 when none.
       const vendorsResult = await query(`
@@ -3747,32 +4034,40 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           -- Services count (can be 0)
           (SELECT COUNT(*) FROM vendor_services vs WHERE vs.vendor_id = v.id AND vs.is_enabled = true AND vs.publish_status = 'published') as active_services_count,
           -- Completed bookings count
-          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings_count,
+          (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed' AND (${bookingSupSql})) as completed_bookings_count,
           -- Total revenue (last 30 days)
-          (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed' AND b.created_at >= NOW() - INTERVAL '30 days') as revenue_30_days,
+          (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed' AND b.created_at >= NOW() - INTERVAL '30 days' AND (${bookingSupSql})) as revenue_30_days,
           -- Average rating
           (SELECT COALESCE(AVG(rating), 0) FROM reviews rv WHERE rv.vendor_id = v.id) as avg_rating,
           -- Review count
           (SELECT COUNT(*) FROM reviews rv WHERE rv.vendor_id = v.id) as review_count,
           -- Last active
-          GREATEST(v.updated_at, (SELECT MAX(created_at) FROM bookings b WHERE b.vendor_id = v.id)) as last_activity,
+          GREATEST(v.updated_at, (SELECT MAX(b.created_at) FROM bookings b WHERE b.vendor_id = v.id AND (${bookingSupSql}))) as last_activity,
           -- Discovery health: availability (vendor_availability_v2 only)
           (EXISTS (SELECT 1 FROM vendor_availability_v2 va WHERE va.vendor_id = v.id AND COALESCE(va.is_enabled, va.is_available, true) = true)
           ) as has_availability
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type, onboarding_status FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
         ORDER BY v.updated_at DESC
-        LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
-      `, [...params, limit, offset]);
+        LIMIT $${limIdx} OFFSET $${offIdx}
+      `, vendorListParams);
 
       // Get total count for pagination (same WHERE, no EXISTS)
       const countResult = await query(`
         SELECT COUNT(DISTINCT v.id) as total
         FROM vendors v
         LEFT JOIN roles r ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
       `, params);
 
@@ -3944,7 +4239,11 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
           (SELECT COALESCE(SUM(total_amount), 0) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') AS total_revenue
         FROM vendors v
         LEFT JOIN roles r             ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi  ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
         ORDER BY v.updated_at DESC
         LIMIT $${paramIdx} OFFSET $${paramIdx + 1}
@@ -3955,7 +4254,11 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         SELECT COUNT(DISTINCT v.id) AS total
         FROM vendors v
         LEFT JOIN roles r             ON r.id = v.role_id
-        LEFT JOIN vendor_identity vi  ON vi.phone = v.phone
+        LEFT JOIN LATERAL (
+          SELECT vendor_type FROM vendor_identity
+          WHERE phone = v.phone AND (is_deleted IS NULL OR is_deleted = false)
+          ORDER BY created_at DESC LIMIT 1
+        ) vi ON true
         WHERE ${whereClause}
       `, params);
       const totalCount = parseInt(countResult.rows[0]?.total) || 0;
@@ -4196,11 +4499,34 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         paramIndex++;
       }
 
+      const suppression = getTemporaryVendorSuppressionParams();
+      if (suppression) {
+        queryText += ` AND ${sqlExcludeSuppressedSettlementRows('settlements', paramIndex, paramIndex + 1)}`;
+        queryParams.push(suppression.vendorIds, suppression.cutoffDateIst);
+        paramIndex += 2;
+      }
+
       queryText += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       queryParams.push(limit, offset);
 
       const settlements = await query(queryText, queryParams);
-      const total = await query('SELECT COUNT(*) as count FROM settlements' + (status && status !== 'all' ? ` WHERE settlement_status = '${status}'` : '')).catch(() => ({ rows: [{ count: '0' }] }));
+
+      let countSql = 'SELECT COUNT(*) as count FROM settlements WHERE 1=1';
+      const countParams: any[] = [];
+      let ci = 1;
+      if (status && status !== 'all') {
+        countSql += ` AND settlement_status = $${ci}`;
+        countParams.push(status);
+        ci++;
+      }
+      if (suppression) {
+        countSql += ` AND ${sqlExcludeSuppressedSettlementRows('settlements', ci, ci + 1)}`;
+        countParams.push(suppression.vendorIds, suppression.cutoffDateIst);
+        ci += 2;
+      }
+      const total = await query(countSql, countParams.length ? countParams : undefined).catch(() => ({
+        rows: [{ count: '0' }],
+      }));
 
       return c.json({
         success: true,
@@ -4493,6 +4819,24 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       (out as any).hours_operator = ['gte', 'lte', 'gt', 'lt'].includes(v) ? v : null;
     }
     if (hoursThr !== undefined && hoursThr !== null) (out as any).hours_threshold = Number.isFinite(Number(hoursThr)) ? Number(hoursThr) : null;
+    // Unified cancellation+refund extensions (JSON). Merges body.policyExtensions with flat fields for backward compatibility.
+    const mergeExt: Record<string, unknown> = {};
+    const rawExt = body.policyExtensions ?? body.policy_extensions;
+    if (rawExt && typeof rawExt === 'object' && !Array.isArray(rawExt)) {
+      Object.assign(mergeExt, rawExt as Record<string, unknown>);
+    }
+    if (body.rescheduleAllowed === true || body.rescheduleAllowed === false) {
+      mergeExt.rescheduleAllowed = body.rescheduleAllowed;
+    }
+    if (body.noShowPolicy && typeof body.noShowPolicy === 'object') {
+      mergeExt.noShowPolicy = body.noShowPolicy;
+    }
+    if (body.providerPolicy && typeof body.providerPolicy === 'object') {
+      mergeExt.providerPolicy = body.providerPolicy;
+    }
+    if (Object.keys(mergeExt).length > 0) {
+      (out as any).policy_extensions = mergeExt;
+    }
     return out;
   };
 
@@ -4535,267 +4879,52 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
     }
   });
 
-  // Tax Flexible
-  app.get('/admin/tax/flexible/configuration', async (c) => {
-    const handler = new GetTaxFlexibleConfigurationHandler();
+  /** Unified finance label: same rows as vendor_refund_tiers (cancellation + refund). */
+  app.get('/admin/finance/policies', async (c) => {
+    const handler = new GetVendorRefundTiersHandler();
     const event = createApiGatewayEvent(c.req);
     const context = createLambdaContext();
     const result = await handler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    const parsed = JSON.parse(result.body);
+    const tiers = parsed.refundTiers ?? parsed.tiers ?? [];
+    return c.json({ ...parsed, policies: tiers }, result.statusCode);
   });
 
-  app.get('/admin/tax/flexible/rules', async (c) => {
-    const handler = new GetTaxFlexibleRulesHandler();
-    const event = createApiGatewayEvent(c.req);
-    const context = createLambdaContext();
-    const result = await handler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
-  });
-
-  app.post('/admin/tax/flexible/rules', async (c) => {
+  app.post('/admin/finance/policies', async (c) => {
     try {
       const body = await c.req.json().catch(() => ({}));
-      // Handle multiple service styles - store first one in service_style field, all in JSON if available
-      const serviceTypes = body.conditions?.serviceTypes || (body.service_style ? [body.service_style] : []);
-      const serviceStyle = Array.isArray(serviceTypes) && serviceTypes.length > 0 ? serviceTypes[0] : null;
-      const serviceStylesJson = Array.isArray(serviceTypes) && serviceTypes.length > 0 ? JSON.stringify(serviceTypes) : null;
-      
-      // Handle multiple vendor roles - store first one in role_id field, all in JSON if available
-      const vendorRoles = body.conditions?.vendorRoles || (body.role_id ? [body.role_id] : []);
-      const roleId = Array.isArray(vendorRoles) && vendorRoles.length > 0 ? vendorRoles[0] : null;
-      const vendorRolesJson = Array.isArray(vendorRoles) && vendorRoles.length > 0 ? JSON.stringify(vendorRoles) : null;
-      
-      const taxCategoryId = body.conditions?.categoryIds?.[0] ?? body.tax_category_id ?? body.conditions?.taxCategoryId ?? null;
-      
-      // Allow rate to be 0 - only default to 18 if rate is undefined/null
-      const gstRate = body.rate !== undefined && body.rate !== null ? body.rate : 18;
-      
-      const ruleData: any = {
-        rule_name: body.name ?? 'Tax Rule',
-        description: body.description ?? null,
-        enabled: body.isActive !== false,
-        priority: body.priority ?? 100,
-        gst_rate: gstRate,
-        gst_type: body.calculationMethod === 'fixed' ? 'fixed' : 'percentage',
-        role_id: roleId || null,
-        service_style: serviceStyle || null,
-        category: body.conditions?.category ?? null,
-        tax_category_id: taxCategoryId || null,
-        min_amount: body.conditions?.minAmount ?? null,
-        max_amount: body.conditions?.maxAmount ?? null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      
-      // Store multiple values in conditions_metadata column (add column if it doesn't exist)
-      if (serviceStylesJson || vendorRolesJson) {
-        const metadata = {
-          serviceTypes: serviceTypes.length > 0 ? serviceTypes : undefined,
-          vendorRoles: vendorRoles.length > 0 ? vendorRoles : undefined,
-        };
-        ruleData.conditions_metadata = JSON.stringify(metadata);
-        
-        // Ensure the column exists
-        try {
-          await query(`
-            ALTER TABLE gst_rules 
-            ADD COLUMN IF NOT EXISTS conditions_metadata TEXT
-          `);
-        } catch (e) {
-          // Column might already exist or table might not exist yet, ignore
-          console.warn('Could not add conditions_metadata column:', e);
-        }
-      }
-      const inserted = await insert('gst_rules', ruleData);
-      const r = Array.isArray(inserted) ? inserted[0] : inserted;
-      
-      // Parse conditions from metadata if available
-      let parsedServiceTypes: string[] | undefined;
-      let parsedVendorRoles: string[] | undefined;
-      try {
-        if ((r as any).conditions_metadata) {
-          const metadata = JSON.parse((r as any).conditions_metadata);
-          parsedServiceTypes = metadata.serviceTypes;
-          parsedVendorRoles = metadata.vendorRoles;
-        }
-      } catch (e) {
-        // Ignore parse errors
-      }
-      // Fallback to single fields if metadata not available
-      if (!parsedServiceTypes && r.service_style) {
-        parsedServiceTypes = [r.service_style];
-      }
-      if (!parsedVendorRoles && r.role_id) {
-        parsedVendorRoles = [r.role_id];
-      }
-      
-      return c.json({
-        success: true,
-        rule: {
-          id: r.id,
-          name: r.rule_name,
-          description: r.description,
-          taxType: 'gst',
-          rate: parseFloat(r.gst_rate) ?? 18,
-          calculationMethod: r.gst_type === 'fixed' ? 'fixed' : 'percentage',
-          priority: Number(r.priority) ?? 100,
-          isActive: r.enabled !== false,
-          conditions: {
-            transactionType: 'both',
-            categoryIds: r.tax_category_id ? [r.tax_category_id] : undefined,
-            serviceTypes: parsedServiceTypes,
-            vendorRoles: parsedVendorRoles,
-          },
-          createdAt: r.created_at,
-          updatedAt: r.updated_at,
-        },
-      });
+      const row = mapRefundTierBodyToDb(body);
+      (row as any).created_at = new Date().toISOString();
+      (row as any).updated_at = new Date().toISOString();
+      const tier = await insert('vendor_refund_tiers', row);
+      return c.json({ success: true, policy: tier[0], tier: tier[0] });
     } catch (error: any) {
-      console.error('Error creating flexible tax rule:', error);
+      console.error('Error creating booking policy:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });
 
-  app.put('/admin/tax/flexible/rules/:id', async (c) => {
+  app.put('/admin/finance/policies/:id', async (c) => {
     try {
       const id = c.req.param('id');
       const body = await c.req.json().catch(() => ({}));
-      const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
-      if (body.name !== undefined) updateData.rule_name = body.name;
-      if (body.description !== undefined) updateData.description = body.description;
-      if (body.isActive !== undefined) updateData.enabled = body.isActive;
-      if (body.priority !== undefined) updateData.priority = body.priority;
-      // Allow rate to be 0 - only update if explicitly provided
-      if (body.rate !== undefined && body.rate !== null) updateData.gst_rate = body.rate;
-      if (body.calculationMethod !== undefined) updateData.gst_type = body.calculationMethod === 'fixed' ? 'fixed' : 'percentage';
-      const catId = body.conditions?.categoryIds?.[0] ?? body.tax_category_id ?? body.conditions?.taxCategoryId;
-      if (catId !== undefined) updateData.tax_category_id = catId || null;
-      
-      // Handle multiple service styles
-      const serviceTypes = body.conditions?.serviceTypes || (body.service_style ? [body.service_style] : []);
-      const svcStyle = Array.isArray(serviceTypes) && serviceTypes.length > 0 ? serviceTypes[0] : null;
-      if (body.conditions?.serviceTypes !== undefined) {
-        updateData.service_style = svcStyle || null;
-        const metadata: any = {};
-        if (serviceTypes.length > 0) metadata.serviceTypes = serviceTypes;
-        // Try to preserve existing metadata
-        try {
-          const existing = await query(`SELECT conditions_metadata FROM gst_rules WHERE id = $1`, [id]);
-          const existingRow = Array.isArray(existing) ? existing[0] : (existing as any)?.rows?.[0];
-          if (existingRow?.conditions_metadata) {
-            const existingMeta = JSON.parse(existingRow.conditions_metadata);
-            if (existingMeta.vendorRoles) metadata.vendorRoles = existingMeta.vendorRoles;
-          }
-        } catch (e) {
-          // Ignore errors
-        }
-        updateData.conditions_metadata = JSON.stringify(metadata);
-        
-        // Ensure the column exists
-        try {
-          await query(`
-            ALTER TABLE gst_rules 
-            ADD COLUMN IF NOT EXISTS conditions_metadata TEXT
-          `);
-        } catch (e) {
-          // Column might already exist, ignore
-        }
-      } else if (body.service_style !== undefined) {
-        updateData.service_style = body.service_style || null;
-      }
-      
-      // Handle multiple vendor roles
-      const vendorRoles = body.conditions?.vendorRoles || (body.role_id ? [body.role_id] : []);
-      const roleId = Array.isArray(vendorRoles) && vendorRoles.length > 0 ? vendorRoles[0] : null;
-      if (body.conditions?.vendorRoles !== undefined) {
-        updateData.role_id = roleId || null;
-        const metadata: any = {};
-        if (vendorRoles.length > 0) metadata.vendorRoles = vendorRoles;
-        // Try to preserve existing metadata
-        try {
-          const existing = await query(`SELECT conditions_metadata FROM gst_rules WHERE id = $1`, [id]);
-          const existingRow = Array.isArray(existing) ? existing[0] : (existing as any)?.rows?.[0];
-          if (existingRow?.conditions_metadata) {
-            const existingMeta = JSON.parse(existingRow.conditions_metadata);
-            if (existingMeta.serviceTypes) metadata.serviceTypes = existingMeta.serviceTypes;
-          }
-        } catch (e) {
-          // Ignore errors
-        }
-        updateData.conditions_metadata = JSON.stringify(metadata);
-        
-        // Ensure the column exists
-        try {
-          await query(`
-            ALTER TABLE gst_rules 
-            ADD COLUMN IF NOT EXISTS conditions_metadata TEXT
-          `);
-        } catch (e) {
-          // Column might already exist, ignore
-        }
-      } else if (body.role_id !== undefined) {
-        updateData.role_id = body.role_id || null;
-      }
-      const updated = await update('gst_rules', { id }, updateData);
-      const r = Array.isArray(updated) ? updated[0] : updated;
-      return c.json({
-        success: true,
-        rule: {
-          id: r.id,
-          name: r.rule_name,
-          description: r.description,
-          taxType: 'gst',
-          rate: parseFloat(r.gst_rate) ?? 18,
-          calculationMethod: r.gst_type === 'fixed' ? 'fixed' : 'percentage',
-          priority: Number(r.priority) ?? 100,
-          isActive: r.enabled !== false,
-          conditions: (() => {
-            // Try to parse conditions_metadata if available, otherwise use single fields
-            let serviceTypes: string[] | undefined;
-            let vendorRoles: string[] | undefined;
-            
-            try {
-              if ((r as any).conditions_metadata) {
-                const metadata = JSON.parse((r as any).conditions_metadata);
-                serviceTypes = metadata.serviceTypes;
-                vendorRoles = metadata.vendorRoles;
-              }
-            } catch (e) {
-              // Ignore parse errors
-            }
-            
-            // Fallback to single fields if metadata not available
-            if (!serviceTypes && r.service_style) {
-              serviceTypes = [r.service_style];
-            }
-            if (!vendorRoles && r.role_id) {
-              vendorRoles = [r.role_id];
-            }
-            
-            return {
-              transactionType: 'both',
-              categoryIds: r.tax_category_id ? [r.tax_category_id] : undefined,
-              serviceTypes,
-              vendorRoles,
-            };
-          })(),
-          createdAt: r.created_at,
-          updatedAt: r.updated_at,
-        },
-      });
+      const row = mapRefundTierBodyToDb(body);
+      (row as any).updated_at = new Date().toISOString();
+      const updated = await update('vendor_refund_tiers', { id }, row);
+      return c.json({ success: true, policy: updated[0], tier: updated[0] });
     } catch (error: any) {
-      console.error('Error updating flexible tax rule:', error);
+      console.error('Error updating booking policy:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });
 
-  app.delete('/admin/tax/flexible/rules/:id', async (c) => {
+  app.delete('/admin/finance/policies/:id', async (c) => {
     try {
       const id = c.req.param('id');
-      await update('gst_rules', { id }, { enabled: false, updated_at: new Date().toISOString() });
-      return c.json({ success: true, message: 'Tax rule deleted' });
+      await deleteRows('vendor_refund_tiers', { id });
+      return c.json({ success: true, message: 'Policy deleted' });
     } catch (error: any) {
-      console.error('Error deleting flexible tax rule:', error);
+      console.error('Error deleting booking policy:', error);
       return c.json({ success: false, error: error.message }, 500);
     }
   });

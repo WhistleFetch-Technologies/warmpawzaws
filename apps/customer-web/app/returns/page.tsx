@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import {
   ArrowLeft, Package, RefreshCcw, Clock, Check, X as XIcon,
   Truck, AlertCircle, ChevronDown, ChevronUp, Camera, Upload
@@ -59,7 +60,7 @@ export default function ReturnsPage() {
       setLoading(true);
       setError(null);
       
-      const customerId = localStorage.getItem('warmpawz_customer_id');
+      const customerId = getResolvedCustomerId();
       if (!customerId) {
         setReturns([]);
         setLoading(false);

@@ -9,6 +9,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { toast } from 'sonner';
 
 interface MealOrderCheckoutProps {
@@ -93,6 +97,13 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
   };
 
   const selectedAddress = addresses.find((a) => a.id === addressId);
+
+  const mealPlanImageUrl =
+    mealPlan?.mealImageUrl ||
+    (mealPlan?.dietary_requirements &&
+      typeof mealPlan.dietary_requirements === 'object' &&
+      (mealPlan.dietary_requirements as { mealImageUrl?: string }).mealImageUrl) ||
+    null;
   const buildDeliveryAddress = () => {
     if (!selectedAddress) return null;
     const parts = [
@@ -180,13 +191,17 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
         script.onload = () => resolve();
       });
 
-      const options = {
+      const checkoutEmail = await fetchCheckoutEmailForPrefill(phone);
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
         key: keyId,
-        amount: razorpayRes.amount,
+        amountPaise: Math.max(1, Math.round(Number(razorpayRes.amount))),
         currency: razorpayRes.currency || 'INR',
         name: 'Warmpawz',
         description: `Meal plan: ${mealPlan.name || 'Order'}`,
         order_id: razorpayRes.razorpayOrderId,
+        customerPhone: phone,
+        customerEmail: checkoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             await apiClient.post(`/meal/orders/${orderId}/confirm-payment`, {
@@ -199,10 +214,9 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
             toast.error(err?.message || 'Payment confirmation failed');
           }
         },
-        prefill: { contact: phone },
         theme: { color: '#FF8C42' },
         modal: { ondismiss: () => setSubmitting(false) },
-      };
+      });
       const razorpay = new (window as any).Razorpay(options);
       razorpay.open();
     } catch (err: any) {
@@ -249,9 +263,16 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       <form onSubmit={handleSubmit} className="p-4 space-y-4">
         <Card className="p-4">
           <div className="flex gap-3">
+            {mealPlanImageUrl ? (
+              <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0 border border-orange-100 bg-white">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={mealPlanImageUrl} alt="" className="w-full h-full object-cover" />
+              </div>
+            ) : (
             <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center shrink-0">
               <UtensilsCrossed className="w-6 h-6 text-orange-600" />
             </div>
+            )}
             <div>
               <h2 className="font-semibold text-slate-900">{mealPlan.name || mealPlan.plan_name || 'Meal Plan'}</h2>
               <p className="text-sm text-slate-600 line-clamp-2">{mealPlan.description || ''}</p>

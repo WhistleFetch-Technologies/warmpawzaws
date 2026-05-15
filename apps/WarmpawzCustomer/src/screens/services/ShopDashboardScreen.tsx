@@ -1,24 +1,27 @@
 /**
  * Shop Dashboard Screen - Mobile
- * Handles pet shop product browsing, categories, and shopping
+ * Handles browsing pet products, categories, and purchasing
  * Identical functionality to web app
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
   Image,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
+import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { customerFacingRating, normalizeReviewCount } from '../../utils/rating-display';
+import { hasEffectivePriceReduction } from '@warmpawz/shared-types';
 
 type ViewType = 
   | 'dashboard'
@@ -41,13 +44,13 @@ interface Product {
   description: string;
   price: number;
   originalPrice?: number;
-  rating: number;
+  rating?: number;
   reviews: number;
   image: string;
   category: string;
   vendor: {
     name: string;
-    rating: number;
+    rating?: number;
     location: string;
     deliveryTime: string;
   };
@@ -110,6 +113,13 @@ export function ShopDashboardScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+  const dashboardScrollRef = useRef<ScrollView>(null);
+  const topProductsSectionY = useRef(0);
+
+  const scrollToTopProducts = () => {
+    const y = Math.max(0, topProductsSectionY.current - 8);
+    dashboardScrollRef.current?.scrollTo({ y, animated: true });
+  };
 
   useEffect(() => {
     loadProducts();
@@ -133,26 +143,37 @@ export function ShopDashboardScreen({
       const response = await CustomerApi.searchProducts('', selectedCategory !== 'all' ? selectedCategory : undefined);
       const productsData = Array.isArray(response) ? response : (response as any).products || [];
       
-      const formattedProducts: Product[] = productsData.map((prod: any) => ({
+      const formattedProducts: Product[] = productsData.map((prod: any) => {
+        const reviewCount = normalizeReviewCount(prod.reviewCount ?? prod.reviews);
+        const avgRating = customerFacingRating(
+          prod.rating ?? prod.averageRating,
+          reviewCount
+        );
+        const vendorRc = normalizeReviewCount(
+          prod.vendorReviewCount ?? prod.vendor_review_count
+        );
+        const vendorAvg = customerFacingRating(prod.vendorRating, vendorRc);
+        return {
         id: prod.id || prod.productId,
         name: prod.name || prod.productName,
         description: prod.description || '',
         price: prod.price || prod.unitPrice || 0,
         originalPrice: prod.originalPrice || prod.mrp,
-        rating: prod.rating || prod.averageRating || 4.5,
-        reviews: prod.reviewCount || prod.reviews || 0,
+        rating: avgRating ?? 0,
+        reviews: reviewCount,
         image: prod.image || prod.imageUrl || '',
         category: prod.category || 'general',
         vendor: {
           name: prod.vendorName || 'Vendor',
-          rating: prod.vendorRating || 4.5,
+          rating: vendorAvg ?? 0,
           location: prod.vendorLocation || '',
           deliveryTime: prod.deliveryTime || '2-3 days',
         },
         stock: prod.inStock ? 'In Stock' : 'Out of Stock',
         badge: prod.badge || prod.tag || '',
         discount: prod.discount ? `${prod.discount}%` : undefined,
-      }));
+      };
+      });
       
       setProducts(formattedProducts);
     } catch (error) {
@@ -263,6 +284,7 @@ export function ShopDashboardScreen({
         </TouchableOpacity>
       </View>
 
+      <BrandedStackBelowHeader>
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.searchInput}
@@ -300,7 +322,7 @@ export function ShopDashboardScreen({
         ))}
       </ScrollView>
 
-      <ScrollView style={styles.dashboardContent}>
+      <ScrollView ref={dashboardScrollRef} style={styles.dashboardContent}>
         {/* Banner Carousel */}
         <View style={styles.bannerContainer}>
           <View
@@ -359,7 +381,7 @@ export function ShopDashboardScreen({
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>🔥 Hot Deals</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={scrollToTopProducts} accessibilityRole="button">
               <Text style={styles.sectionLink}>View All →</Text>
             </TouchableOpacity>
           </View>
@@ -402,19 +424,32 @@ export function ShopDashboardScreen({
                   </Text>
                   <View style={styles.vendorInfo}>
                     <Text style={styles.vendorName}>{product.vendor.name}</Text>
-                    <Text style={styles.ratingIcon}>⭐</Text>
-                    <Text style={styles.ratingText}>
-                      {product.vendor.rating}
-                    </Text>
+                    {product.vendor.rating > 0 ? (
+                      <>
+                        <Text style={styles.ratingIcon}>⭐</Text>
+                        <Text style={styles.ratingText}>
+                          {product.vendor.rating.toFixed(1)}
+                        </Text>
+                      </>
+                    ) : null}
                   </View>
                   <View style={styles.productRating}>
-                    <Text style={styles.ratingIcon}>⭐</Text>
-                    <Text style={styles.ratingText}>{product.rating}</Text>
-                    <Text style={styles.reviewsText}>({product.reviews})</Text>
+                    {product.reviews > 0 && product.rating > 0 ? (
+                      <>
+                        <Text style={styles.ratingIcon}>⭐</Text>
+                        <Text style={styles.ratingText}>
+                          {product.rating.toFixed(1)}
+                        </Text>
+                        <Text style={styles.reviewsText}>({product.reviews})</Text>
+                      </>
+                    ) : (
+                      <Text style={styles.reviewsText}>No customer reviews</Text>
+                    )}
                   </View>
                   <View style={styles.productPriceContainer}>
                     <Text style={styles.productPrice}>₹{product.price}</Text>
-                    {product.originalPrice && (
+                    {product.originalPrice != null &&
+                      hasEffectivePriceReduction(product.originalPrice, product.price) && (
                       <Text style={styles.originalPrice}>
                         ₹{product.originalPrice}
                       </Text>
@@ -428,57 +463,73 @@ export function ShopDashboardScreen({
         </View>
 
         {/* Top Products Grid */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Top Products</Text>
-            <TouchableOpacity>
-              <Text style={styles.sectionLink}>View All →</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.productsGrid}>
-            {filteredProducts.map(product => (
-              <TouchableOpacity
-                key={product.id}
-                style={styles.productCard}
-                onPress={() => {
-                  setSelectedProduct(product);
-                  setCurrentView('product_detail');
-                }}
-              >
-                <View style={styles.productImageContainer}>
-                  <Image
-                    source={{ uri: product.image }}
-                    style={styles.productImage}
-                    resizeMode="cover"
-                  />
-                </View>
-                <View style={styles.productInfo}>
-                  <Text style={styles.productCategory}>{product.category}</Text>
-                  <Text style={styles.productName} numberOfLines={2}>
-                    {product.name}
-                  </Text>
-                  <View style={styles.vendorBadge}>
-                    <Text style={styles.vendorBadgeText}>
-                      {product.vendor.name}
-                    </Text>
-                  </View>
-                  <View style={styles.productRating}>
-                    <Text style={styles.ratingIcon}>⭐</Text>
-                    <Text style={styles.ratingText}>{product.rating}</Text>
-                    <Text style={styles.deliveryText}>
-                      • {product.vendor.deliveryTime}
-                    </Text>
-                  </View>
-                  <Text style={styles.productPrice}>₹{product.price}</Text>
-                  <TouchableOpacity
-                    style={styles.addToCartButton}
-                    onPress={() => addToCart(product)}
-                  >
-                    <Text style={styles.addToCartButtonText}>Add to Cart</Text>
-                  </TouchableOpacity>
-                </View>
+        <View
+          onLayout={(e) => {
+            topProductsSectionY.current = e.nativeEvent.layout.y;
+          }}
+        >
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Top Products</Text>
+              <TouchableOpacity onPress={scrollToTopProducts} accessibilityRole="button">
+                <Text style={styles.sectionLink}>View All →</Text>
               </TouchableOpacity>
-            ))}
+            </View>
+            <View style={styles.productsGrid}>
+              {filteredProducts.map(product => (
+                <TouchableOpacity
+                  key={product.id}
+                  style={styles.productCard}
+                  onPress={() => {
+                    setSelectedProduct(product);
+                    setCurrentView('product_detail');
+                  }}
+                >
+                  <View style={styles.productImageContainer}>
+                    <Image
+                      source={{ uri: product.image }}
+                      style={styles.productImage}
+                      resizeMode="cover"
+                    />
+                  </View>
+                  <View style={styles.productInfo}>
+                    <Text style={styles.productCategory}>{product.category}</Text>
+                    <Text style={styles.productName} numberOfLines={2}>
+                      {product.name}
+                    </Text>
+                    <View style={styles.vendorBadge}>
+                      <Text style={styles.vendorBadgeText}>
+                        {product.vendor.name}
+                      </Text>
+                    </View>
+                    <View style={styles.productRating}>
+                      {product.reviews > 0 && product.rating > 0 ? (
+                        <>
+                          <Text style={styles.ratingIcon}>⭐</Text>
+                          <Text style={styles.ratingText}>
+                            {product.rating.toFixed(1)}
+                          </Text>
+                          <Text style={styles.deliveryText}>
+                            • {product.vendor.deliveryTime}
+                          </Text>
+                        </>
+                      ) : (
+                        <Text style={styles.reviewsText}>
+                          No reviews • {product.vendor.deliveryTime}
+                        </Text>
+                      )}
+                    </View>
+                    <Text style={styles.productPrice}>₹{product.price}</Text>
+                    <TouchableOpacity
+                      style={styles.addToCartButton}
+                      onPress={() => addToCart(product)}
+                    >
+                      <Text style={styles.addToCartButtonText}>Add to Cart</Text>
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
         </View>
 
@@ -523,6 +574,7 @@ export function ShopDashboardScreen({
           </View>
         </View>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -540,6 +592,7 @@ export function ShopDashboardScreen({
           <Text style={styles.headerTitle}>{selectedProduct.name}</Text>
         </View>
 
+        <BrandedStackBelowHeader>
         <ScrollView style={styles.productDetailContainer}>
           <Image
             source={{ uri: selectedProduct.image }}
@@ -552,13 +605,24 @@ export function ShopDashboardScreen({
               {selectedProduct.description}
             </Text>
             <View style={styles.productDetailRating}>
-              <Text style={styles.ratingIcon}>⭐</Text>
-              <Text style={styles.ratingText}>{selectedProduct.rating}</Text>
-              <Text style={styles.reviewsText}>({selectedProduct.reviews} reviews)</Text>
+              {selectedProduct.reviews > 0 && selectedProduct.rating > 0 ? (
+                <>
+                  <Text style={styles.ratingIcon}>⭐</Text>
+                  <Text style={styles.ratingText}>
+                    {selectedProduct.rating.toFixed(1)}
+                  </Text>
+                  <Text style={styles.reviewsText}>
+                    ({selectedProduct.reviews} reviews)
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.reviewsText}>No customer reviews</Text>
+              )}
             </View>
             <View style={styles.productDetailPriceContainer}>
               <Text style={styles.productDetailPrice}>₹{selectedProduct.price}</Text>
-              {selectedProduct.originalPrice && (
+              {selectedProduct.originalPrice != null &&
+                hasEffectivePriceReduction(selectedProduct.originalPrice, selectedProduct.price) && (
                 <Text style={styles.productDetailOriginalPrice}>
                   ₹{selectedProduct.originalPrice}
                 </Text>
@@ -566,7 +630,10 @@ export function ShopDashboardScreen({
             </View>
             <View style={styles.vendorInfoDetail}>
               <Text style={styles.vendorInfoText}>
-                Vendor: {selectedProduct.vendor.name} ⭐ {selectedProduct.vendor.rating}
+                Vendor: {selectedProduct.vendor.name}
+                {selectedProduct.vendor.rating > 0
+                  ? ` ⭐ ${selectedProduct.vendor.rating.toFixed(1)}`
+                  : ' — no seller reviews yet'}
               </Text>
               <Text style={styles.vendorInfoText}>
                 Delivery: {selectedProduct.vendor.deliveryTime}
@@ -598,6 +665,7 @@ export function ShopDashboardScreen({
             </TouchableOpacity>
           </View>
         </ScrollView>
+        </BrandedStackBelowHeader>
       </View>
     );
   };
@@ -611,6 +679,7 @@ export function ShopDashboardScreen({
         <Text style={styles.headerTitle}>Shopping Cart</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.cartContainer}>
         {cart.length === 0 ? (
           <View style={styles.emptyCart}>
@@ -679,6 +748,7 @@ export function ShopDashboardScreen({
           </>
         )}
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -691,6 +761,7 @@ export function ShopDashboardScreen({
         <Text style={styles.headerTitle}>Checkout</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.checkoutContainer}>
         <View style={styles.checkoutSection}>
           <Text style={styles.checkoutSectionTitle}>Order Summary</Text>
@@ -720,6 +791,7 @@ export function ShopDashboardScreen({
           )}
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -748,20 +820,20 @@ export function ShopDashboardScreen({
 
   if (loading && currentView === 'dashboard') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {currentView === 'dashboard' && renderDashboard()}
       {currentView === 'product_detail' && renderProductDetail()}
       {currentView === 'cart' && renderCart()}
       {currentView === 'checkout' && renderCheckout()}
       {currentView === 'confirmation' && renderConfirmation()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -776,8 +848,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: spacing.md,
     backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+    paddingBottom: spacing.md + 4,
   },
   backButton: {
     fontSize: typography.body,

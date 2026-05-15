@@ -18,6 +18,7 @@
 import { useState, useRef } from 'react';
 import { Upload, FileText, X, CheckCircle2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
@@ -164,62 +165,55 @@ export function PerforaInvoiceUpload({ orderId, onUploadComplete }: PerforaInvoi
       ) : (
         <>
           {/* File Upload */}
-          <div
-            className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
-              uploading ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-300 hover:border-[#FF8C42]'
-            }`}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={handleFileSelect}
-              className="hidden"
-              disabled={uploading}
-            />
-
-            {previewUrl ? (
+          {previewUrl ? (
+            <div
+              className={`rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
+                uploading ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-300'
+              }`}
+            >
               <div className="space-y-3">
                 {previewUrl.startsWith('blob:') && (
                   <img
                     src={previewUrl}
                     alt="Invoice preview"
-                    className="max-h-48 mx-auto rounded-lg"
+                    className="mx-auto max-h-48 rounded-lg"
                   />
                 )}
                 <div className="flex items-center justify-center gap-2">
-                  <FileText className="w-5 h-5 text-green-600" />
+                  <FileText className="h-5 w-5 text-green-600" />
                   <span className="text-sm text-gray-700">File selected</span>
                   <button
+                    type="button"
                     onClick={handleRemove}
                     className="text-red-500 hover:text-red-700"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {uploading ? (
-                  <Loader2 className="w-12 h-12 text-[#FF8C42] animate-spin mx-auto" />
-                ) : (
-                  <Upload className="w-12 h-12 text-gray-400 mx-auto" />
-                )}
-                <div>
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                    className="text-[#FF8C42] hover:text-[#FF7A29] font-medium text-sm"
-                  >
-                    {uploading ? 'Uploading...' : 'Click to upload invoice'}
-                  </button>
-                  <p className="text-xs text-gray-500 mt-1">
-                    PNG, JPG, or PDF (max 5MB)
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <TouchFilePicker
+              ref={fileInputRef}
+              accept="image/*,application/pdf"
+              disabled={uploading}
+              onFileChange={handleFileSelect}
+              className={`rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
+                uploading ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-300 hover:border-[#FF8C42]'
+              }`}
+              innerClassName="min-h-[10rem] gap-2"
+            >
+              {uploading ? (
+                <Loader2 className="mx-auto h-12 w-12 animate-spin text-[#FF8C42]" />
+              ) : (
+                <Upload className="mx-auto h-12 w-12 text-gray-400" />
+              )}
+              <p className="text-sm font-medium text-[#FF8C42]">
+                {uploading ? 'Uploading...' : 'Tap to upload invoice'}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">PNG, JPG, or PDF (max 5MB)</p>
+            </TouchFilePicker>
+          )}
 
           {/* Invoice Amount */}
           {invoiceUrl && (

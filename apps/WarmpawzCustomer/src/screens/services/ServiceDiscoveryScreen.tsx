@@ -11,13 +11,16 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   TextInput,
   FlatList,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
+import { formatDistanceDisplay } from '../../utils/distance-display';
+import { customerFacingRating } from '../../utils/rating-display';
 
 interface ServiceDiscoveryScreenProps {
   phone: string;
@@ -50,6 +53,11 @@ export function ServiceDiscoveryScreen({
     minRating: '',
     sortBy: 'rating',
   });
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+
+  useEffect(() => {
+    setUserLocation({ lat: 12.9716, lng: 77.5946 });
+  }, []);
 
   useEffect(() => {
     if (selectedCategory) {
@@ -64,7 +72,9 @@ export function ServiceDiscoveryScreen({
       setLoading(true);
       const response = await CustomerApi.searchServices({
         serviceType: selectedCategory,
-        location: filters.location,
+        location: filters.location || (userLocation ? `${userLocation.lat},${userLocation.lng}` : ''),
+        latitude: userLocation?.lat,
+        longitude: userLocation?.lng,
         minRating: filters.minRating ? parseFloat(filters.minRating) : undefined,
         sortBy: filters.sortBy,
       });
@@ -139,10 +149,20 @@ export function ServiceDiscoveryScreen({
           data={vendors}
           keyExtractor={(item) => item.id || item.vendorId}
           contentContainerStyle={styles.vendorList}
-          renderItem={({ item }) => (
+          renderItem={({ item }) => {
+            const face = customerFacingRating(
+              item.rating,
+              item.reviewCount ?? item.review_count
+            );
+            return (
             <TouchableOpacity
               style={styles.vendorCard}
-              onPress={() => onSelectVendor(item.id || item.vendorId)}
+              onPress={() =>
+                onSelectVendor(
+                  pickCustomerVendorAccountId(item as Record<string, unknown>) ||
+                    String(item.vendorId || item.id || '')
+                )
+              }
             >
               <View style={styles.vendorHeader}>
                 <View style={styles.vendorInfo}>
@@ -151,20 +171,21 @@ export function ServiceDiscoveryScreen({
                     {CATEGORIES.find((c) => c.id === selectedCategory)?.name}
                   </Text>
                 </View>
-                {item.rating && (
+                {face != null && (
                   <View style={styles.ratingContainer}>
-                    <Text style={styles.ratingText}>⭐ {item.rating.toFixed(1)}</Text>
+                    <Text style={styles.ratingText}>⭐ {face.toFixed(1)}</Text>
                   </View>
                 )}
               </View>
               {item.address && (
                 <Text style={styles.vendorAddress}>📍 {item.address}</Text>
               )}
-              {item.distance && (
-                <Text style={styles.vendorDistance}>{item.distance.toFixed(1)} km away</Text>
+              {formatDistanceDisplay(item) && (
+                <Text style={styles.vendorDistance}>{formatDistanceDisplay(item)}</Text>
               )}
             </TouchableOpacity>
-          )}
+            );
+          }}
           ListEmptyComponent={
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateText}>No vendors found</Text>
@@ -176,9 +197,9 @@ export function ServiceDiscoveryScreen({
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {!selectedCategory ? renderCategoryGrid() : renderVendorList()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

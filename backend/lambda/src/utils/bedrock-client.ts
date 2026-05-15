@@ -14,8 +14,28 @@
  * ============================================================================
  */
 
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
+import {
+  BedrockRuntimeClient,
+  InvokeModelCommand,
+  type InvokeModelCommandInput,
+} from '@aws-sdk/client-bedrock-runtime';
 import { query } from '../database/rds-connection';
+import { logErrorSafe } from './redact-for-log';
+
+/** Thrown when Bedrock guardrails block or strip content (caller maps to a safe user message). */
+export const BEDROCK_GUARDRAIL_BLOCKED = 'BEDROCK_GUARDRAIL_BLOCKED';
+
+/** Claude v2 / Instant use Text Completions on Bedrock, not the Messages API. */
+function isLegacyAnthropicCompletionModel(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  return id.includes('claude-v2') || id.includes('claude-instant') || id.includes('claude-v1');
+}
+
+/** Amazon Nova (Lite/Pro/Micro) InvokeModel uses messages + inferenceConfig, not Titan-style inputText. */
+function isAmazonNovaModel(modelId: string): boolean {
+  const id = modelId.toLowerCase();
+  return id.includes('nova') || id.includes('amazon.nova');
+}
 
 export interface BedrockConfig {
   client: BedrockRuntimeClient;
@@ -28,46 +48,74 @@ export interface BedrockConfig {
  */
 export async function getBedrockConfig(): Promise<BedrockConfig | null> {
   try {
+    // Admin UI saves AWS (including Bedrock) under admin:settings:aws (GET/POST /admin/settings/aws).
+    // Legacy key aws_config is still supported as fallback.
     const settingsResult = await query(
-      `SELECT setting_value FROM platform_settings WHERE setting_key = 'aws_config' LIMIT 1`
+      `SELECT COALESCE(
+         (SELECT setting_value FROM platform_settings WHERE setting_key = 'admin:settings:aws' LIMIT 1),
+         (SELECT setting_value FROM platform_settings WHERE setting_key = 'aws_config' LIMIT 1)
+       ) AS setting_value`
     );
-    
-    const awsSettings = settingsResult.rows[0]?.setting_value as any || null;
-    
-    if (!awsSettings?.bedrock?.enabled) {
-      console.warn('AWS Bedrock is not enabled in platform settings');
+
+    let raw = settingsResult.rows[0]?.setting_value as unknown;
+    if (raw == null) {
+      console.warn('[Bedrock] No admin:settings:aws / aws_config row; Bedrock disabled');
       return null;
     }
-    
-    if (!awsSettings.credentials?.accessKeyId || !awsSettings.credentials?.secretAccessKey) {
-      throw new Error('AWS credentials not configured');
+    if (typeof raw === 'string') {
+      try {
+        raw = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        console.warn('[Bedrock] AWS settings value is not valid JSON');
+        return null;
+      }
     }
-    
+
+    const awsSettings = raw as Record<string, any>;
+
+    if (!awsSettings?.bedrock?.enabled) {
+      console.warn('[Bedrock] bedrock.enabled is false in platform settings');
+      return null;
+    }
+
     let modelId = awsSettings.bedrock.modelId || 'us.amazon.nova-lite-v1:0';
-    
+
     // Fix: Remap base Nova ID to US Cross-Region Inference Profile
     if (modelId === 'amazon.nova-lite-v1:0') {
       modelId = 'us.amazon.nova-lite-v1:0';
     }
-    
+
     let region = (awsSettings.bedrock.region || 'ap-south-1').trim();
-    
+
     // Fix: US Inference Profiles are not accessible from ap-south-1
     if (modelId.startsWith('us.') && region === 'ap-south-1') {
       region = 'us-east-1';
     }
-    
-    const client = new BedrockRuntimeClient({
-      region,
-      credentials: {
-        accessKeyId: String(awsSettings.credentials.accessKeyId).trim(),
-        secretAccessKey: String(awsSettings.credentials.secretAccessKey).trim(),
-      },
-    });
-    
+
+    const accessKeyId = String(awsSettings.credentials?.accessKeyId || '').trim();
+    const secretAccessKey = String(awsSettings.credentials?.secretAccessKey || '').trim();
+    const hasStaticCredentials =
+      accessKeyId.length > 0 && secretAccessKey.length > 0;
+
+    // Lambda / ECS: use execution task role when keys are not stored in DB (recommended).
+    // Static IAM user keys still supported when both are set in admin AWS settings.
+    const client = hasStaticCredentials
+      ? new BedrockRuntimeClient({
+          region,
+          credentials: {
+            accessKeyId,
+            secretAccessKey,
+          },
+        })
+      : new BedrockRuntimeClient({ region });
+
+    if (!hasStaticCredentials) {
+      console.info('[Bedrock] Using default AWS credential chain (e.g. Lambda execution role) for region', region);
+    }
+
     return { client, modelId, region };
-  } catch (error: any) {
-    console.error('Error getting Bedrock config:', error);
+  } catch (error: unknown) {
+    logErrorSafe('BedrockConfig', error);
     return null;
   }
 }
@@ -94,38 +142,33 @@ export async function invokeBedrock(
   const { maxTokens = 1024, temperature = 0.5, topP = 0.9 } = options;
   
   try {
-    // Determine model format based on modelId
+    // Determine model format based on modelId (each family has a different InvokeModel JSON schema).
     let body: any;
-    
-    if (modelId.includes('claude') || modelId.includes('anthropic')) {
-      // Claude format
-      const messages: any[] = [];
-      
-      if (systemPrompt) {
-        messages.push({
-          role: 'system',
-          content: systemPrompt,
-        });
-      }
-      
-      messages.push({
-        role: 'user',
-        content: prompt,
-      });
-      
+
+    if (isLegacyAnthropicCompletionModel(modelId)) {
+      const humanText = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
+      const formattedPrompt = `\n\nHuman: ${humanText}\n\nAssistant:`;
       body = {
-        anthropic_version: 'bedrock-2023-05-31',
-        max_tokens: maxTokens,
+        prompt: formattedPrompt,
+        max_tokens_to_sample: maxTokens,
         temperature,
         top_p: topP,
-        messages,
       };
-    } else if (modelId.includes('nova') || modelId.includes('amazon')) {
-      // Amazon Nova/Titan format
-      const inputText = systemPrompt 
+    } else if (isAmazonNovaModel(modelId)) {
+      body = {
+        schemaVersion: 'messages-v1',
+        messages: [{ role: 'user', content: [{ text: prompt }] }],
+        ...(systemPrompt ? { system: [{ text: systemPrompt }] } : {}),
+        inferenceConfig: {
+          maxTokens,
+          temperature,
+          topP,
+        },
+      };
+    } else if (modelId.toLowerCase().includes('titan')) {
+      const inputText = systemPrompt
         ? `System: ${systemPrompt}\n\nHuman: ${prompt}\n\nAssistant:`
         : `Human: ${prompt}\n\nAssistant:`;
-      
       body = {
         inputText,
         textGenerationConfig: {
@@ -134,58 +177,120 @@ export async function invokeBedrock(
           topP: topP,
         },
       };
-    } else {
-      // Default to Claude format
-      const messages: any[] = [];
-      
-      if (systemPrompt) {
-        messages.push({
-          role: 'system',
-          content: systemPrompt,
-        });
-      }
-      
-      messages.push({
-        role: 'user',
-        content: prompt,
-      });
-      
+    } else if (modelId.includes('claude') || modelId.includes('anthropic')) {
+      // Claude 3+ Messages API on Bedrock
       body = {
         anthropic_version: 'bedrock-2023-05-31',
         max_tokens: maxTokens,
         temperature,
         top_p: topP,
-        messages,
+        ...(systemPrompt ? { system: systemPrompt } : {}),
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: prompt }],
+          },
+        ],
+      };
+    } else {
+      body = {
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: maxTokens,
+        temperature,
+        top_p: topP,
+        ...(systemPrompt ? { system: systemPrompt } : {}),
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: prompt }],
+          },
+        ],
       };
     }
     
-    const command = new InvokeModelCommand({
+    const guardrailId = process.env.BEDROCK_GUARDRAIL_ID?.trim();
+    const guardrailVersion = process.env.BEDROCK_GUARDRAIL_VERSION?.trim();
+
+    const commandInput: InvokeModelCommandInput = {
       modelId,
       body: JSON.stringify(body),
       contentType: 'application/json',
       accept: 'application/json',
-    });
-    
+    };
+    if (guardrailId && guardrailVersion) {
+      commandInput.guardrailIdentifier = guardrailId;
+      commandInput.guardrailVersion = guardrailVersion;
+    }
+
+    const command = new InvokeModelCommand(commandInput);
+
     const response = await client.send(command);
-    const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-    
-    // Extract text from response based on model type
-    if (modelId.includes('nova') || modelId.includes('amazon')) {
-      // Amazon Nova/Titan format
-      if (responseBody.results && responseBody.results.length > 0) {
+    const responseBody = JSON.parse(new TextDecoder().decode(response.body)) as Record<string, unknown>;
+
+    /** Guardrail-only or intervened bodies often omit `output` — treat as blocked so callers can message safely. */
+    const guardrailAction = responseBody['amazon-bedrock-guardrailAction'];
+    if (guardrailAction != null && String(guardrailAction).trim() !== '' && String(guardrailAction).toUpperCase() !== 'NONE') {
+      logErrorSafe('BedrockInvoke', { name: 'Guardrail', message: String(guardrailAction) });
+      throw new Error(BEDROCK_GUARDRAIL_BLOCKED);
+    }
+
+    if (isLegacyAnthropicCompletionModel(modelId)) {
+      if (typeof responseBody.completion === 'string') {
+        return responseBody.completion;
+      }
+    } else if (isAmazonNovaModel(modelId)) {
+      const blocks = (responseBody.output as Record<string, unknown> | undefined)?.message as
+        | { content?: unknown }
+        | undefined;
+      const arr = blocks?.content;
+      if (Array.isArray(arr)) {
+        /** Nova may return multiple blocks (reasoning stub + text); concatenate every `text` string. */
+        const parts: string[] = [];
+        for (const b of arr) {
+          if (b && typeof b === 'object' && typeof (b as { text?: unknown }).text === 'string') {
+            parts.push(String((b as { text: string }).text));
+          }
+        }
+        const joined = parts.join('\n').trim();
+        if (joined) return joined;
+      }
+    } else if (modelId.toLowerCase().includes('titan')) {
+      if (responseBody.results && responseBody.results.length > 0 && responseBody.results[0].outputText) {
         return responseBody.results[0].outputText;
       }
     } else {
-      // Claude format
-      if (responseBody.content && responseBody.content.length > 0) {
-        return responseBody.content[0].text;
+      if (responseBody.content && Array.isArray(responseBody.content) && responseBody.content.length > 0) {
+        const texts: string[] = [];
+        for (const block of responseBody.content as { text?: unknown }[]) {
+          if (block && typeof block.text === 'string') {
+            texts.push(block.text);
+          }
+        }
+        const joined = texts.join('\n').trim();
+        if (joined) return joined;
       }
     }
-    
+
+    logErrorSafe('BedrockInvoke', {
+      name: 'InvalidResponseShape',
+      modelId,
+      topKeys: Object.keys(responseBody).slice(0, 12),
+      stopReason: (responseBody as { stopReason?: unknown }).stopReason,
+    });
     throw new Error('Invalid response format from Bedrock');
-  } catch (error: any) {
-    console.error('Error invoking Bedrock:', error);
-    throw new Error(`Bedrock invocation failed: ${error.message}`);
+  } catch (error: unknown) {
+    const e = error as { message?: string; name?: string };
+    const msg = String(e?.message || error || '');
+    if (msg === BEDROCK_GUARDRAIL_BLOCKED) {
+      throw error instanceof Error ? error : new Error(BEDROCK_GUARDRAIL_BLOCKED);
+    }
+    const lower = msg.toLowerCase();
+    if (lower.includes('guardrail') || lower.includes('blocked by guardrail')) {
+      logErrorSafe('BedrockInvoke', { name: 'Guardrail', message: 'intervened_or_blocked' });
+      throw new Error(BEDROCK_GUARDRAIL_BLOCKED);
+    }
+    logErrorSafe('BedrockInvoke', error);
+    throw new Error(`Bedrock invocation failed: ${msg.slice(0, 240)}`);
   }
 }
 

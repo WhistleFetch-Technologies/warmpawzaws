@@ -13,6 +13,8 @@ export interface UseApiDataOptions<T> {
   enabled?: boolean; // Whether to fetch on mount
   onSuccess?: (data: T[]) => void;
   onError?: (error: Error) => void;
+  /** Applied after list extraction; e.g. normalize API rows */
+  transformData?: (data: T[]) => T[];
 }
 
 export interface UseApiDataReturn<T> {
@@ -30,6 +32,7 @@ export function useApiData<T = any>({
   enabled = true,
   onSuccess,
   onError,
+  transformData,
 }: UseApiDataOptions<T>): UseApiDataReturn<T> {
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,11 +62,13 @@ export function useApiData<T = any>({
   // Store callbacks in refs to prevent dependency issues
   const onSuccessRef = useRef(onSuccess);
   const onErrorRef = useRef(onError);
-  
+  const transformDataRef = useRef(transformData);
+
   useEffect(() => {
     onSuccessRef.current = onSuccess;
     onErrorRef.current = onError;
-  }, [onSuccess, onError]);
+    transformDataRef.current = transformData;
+  }, [onSuccess, onError, transformData]);
   
   // Update fetchData to use refs
   const fetchDataStable = useCallback(async (isManualRetry = false) => {
@@ -110,8 +115,10 @@ export function useApiData<T = any>({
         extractedData = [];
       }
 
-      setData(extractedData);
-      onSuccessRef.current?.(extractedData);
+      const t = transformDataRef.current;
+      const out = t ? t(extractedData) : extractedData;
+      setData(out);
+      onSuccessRef.current?.(out);
       isRateLimitedRef.current = false; // Reset rate limit flag on success
       retryCountRef.current = 0; // Reset retry count on success
       hasFetchedRef.current = true;

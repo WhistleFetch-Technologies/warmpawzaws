@@ -11,13 +11,14 @@
  * - Service styles restricted (no at_center style - solo providers visit customer or do tele)
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
-import { getRoleIcon, getRoleColorScheme } from '@/lib/vendor-icon-themes';
-import { hasVendorRole } from '@/lib/vendor-utils';
+import { getVendorAllowedServiceStyles, hasVendorRole } from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
+
+const logoImage = '/warmpawz-logo.svg';
 import {
   Calendar,
   Clock,
@@ -37,7 +38,6 @@ import {
   Monitor,
   User,
   TrendingUp,
-  FileText,
   Gift,
   Heart,
   MapPin,
@@ -45,8 +45,10 @@ import {
   X,
   Briefcase,
   ClipboardList,
+  Shield,
   Badge,
   Navigation,
+  Footprints,
   Map,
   Radio,
   icons
@@ -55,20 +57,31 @@ const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { toast } from 'sonner';
 import { AppointmentCard } from '@/components/shared/AppointmentCard';
 import { VendorNotificationModal } from '../../modals/VendorNotificationModal';
+import { VendorReviewsModal } from '../../modals/VendorReviewsModal';
 import { VendorChatConversationsModal } from '../../VendorChatConversationsModal';
 import { VendorChatModal } from '../../VendorChatModal';
 import { AppointmentDetailModal } from '../../AppointmentDetailModal';
 import { CommunicationHub } from '@/components/communication/CommunicationHub';
 import { VendorAnalytics } from '../../VendorAnalytics';
-import { AIChatBot } from '@/components/customer/AIChatBot';
+import { ChatWidget } from '@/components/customer/ChatWidget';
 import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
 import { useVendorCapabilities } from '@/hooks/useVendorCapabilities';
-import { formatBookingTime } from '../helpers';
+import {
+  formatBookingTime,
+  vendorNotificationUnreadCount,
+  SHOW_VENDOR_FOOTER_REPORTING_TAB,
+  getVendorDashboardRatingPresentation,
+  mergeVendorDashboardStats,
+} from '../helpers';
+import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayout';
 import { Dashboardstats, ScheduleItem, SoloProviderDashboardProps } from '../types';
 import { DashboardStats } from '@/components/shared/DashboardStats';
 
 
-export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashboardProps) {
+export function SoloProviderDashboard({
+  session,
+  vendorData,
+}: SoloProviderDashboardProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
@@ -79,7 +92,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     earnings: 0,
     pendingEarnings: 0,
     completedServices: 0,
-    rating: 4.8,
+    rating: null,
     totalReviews: 0,
   });
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
@@ -87,9 +100,23 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [vendor, setVendor] = useState(vendorData);
+  const effectiveVendor = useMemo(() => {
+    const merged = { ...(vendorData || {}), ...(vendor || {}) };
+    const bn =
+      vendorData?.businessName ||
+      vendorData?.business_name ||
+      vendor?.businessName ||
+      vendor?.business_name;
+    if (bn) {
+      merged.businessName = bn;
+      merged.business_name = bn;
+    }
+    return merged;
+  }, [vendor, vendorData]);
 
   // Modals
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+  const [reviewsModalOpen, setReviewsModalOpen] = useState(false);
   const [chatConversationsOpen, setChatConversationsOpen] = useState(false);
   const [selectedChatConversation, setSelectedChatConversation] = useState<{
     bookingId: string;
@@ -102,7 +129,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const [communicationMode, setCommunicationMode] = useState<'chat' | 'video' | null>(null);
   const [appointmentDetailModalOpen, setAppointmentDetailModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<ScheduleItem | null>(null);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
   // OTP modal for completing appointments
@@ -142,18 +169,23 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const effectiveRoleId = vendorData?.roleId || vendorData?.role_id || vendorData?.selected_role_id;
   const { capabilities, loading: capsLoading, roleName, initialLoadComplete } = useVendorCapabilities(effectiveRoleId);
 
-  // Service styles allowed for solo provider (no at_center)
-  // ✅ FIX: Solo groomers only have at_home, no tele
+  const allowedServiceStyles = useMemo(() => {
+    const list = getVendorAllowedServiceStyles(vendorData);
+    if (list.length > 0) return list;
+    if (hasVendorRole(vendorData, ['behaviorist_center', 'behaviorist_solo'])) {
+      return ['at_home'] as ('at_center' | 'at_home' | 'tele')[];
+    }
+    return ['at_home', 'tele'] as const;
+  }, [vendorData]);
+
+  // Copy-only role hints (allowedServiceStyles comes from admin launch config — do not override here)
   const isSoloGroomer = hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']);
   const isWalker = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
-  let allowedServiceStyles = isSoloGroomer 
-    ? ['at_home'] // Solo groomers only do home visits
-    : (vendorData?.allowedServiceStyles || vendorData?.serviceStyles?.selected || vendorData?.serviceStyles?.solo || ['at_home', 'tele']);
-  
-  // ✅ CRITICAL: Walkers only provide at_home services, remove tele
-  if (isWalker) {
-    allowedServiceStyles = allowedServiceStyles.filter((style: string) => style !== 'tele');
-  }
+  const isNutritionist = hasVendorRole(vendorData, [
+    'nutritionist',
+    'pet_nutritionist',
+    'nutritionist_center',
+  ]);
 
   // Check if custom_services capability is enabled
   const hasCustomServices = capabilities.custom_services || capabilities.customServices || false;
@@ -167,10 +199,13 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
   const hasPackages = hasPackagesCapability || isTrainerWalkerSitter;
 
   // Get role theme
-  const roleIcon = getRoleIcon(vendorData?.roleId);
-  const colorScheme = getRoleColorScheme(vendorData?.roleId);
 
   const vendorId = session.vendorId;
+
+  const ratingPresentation = useMemo(
+    () => getVendorDashboardRatingPresentation(stats.totalReviews, stats.rating),
+    [stats.totalReviews, stats.rating]
+  );
 
   // Fetch dashboard data
   const fetchDashboardData = useCallback(async (showRefresh = false) => {
@@ -184,15 +219,13 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
       const dashboardRes = await apiClient.get<any>(`/vendor/dashboard/${vendorId}?timeframe=${activeTab}`).catch(() => ({ success: false }));
 
       if (dashboardRes && dashboardRes.success) {
-        setStats(dashboardRes.stats || dashboardRes.data?.stats || {
-          appointments: 0,
-          consultations: 0,
-          earnings: 0,
-          pendingEarnings: 0,
-          completedServices: 0,
-          rating: 4.8,
-          totalReviews: 0,
-        });
+        const rawStats = dashboardRes.stats || dashboardRes.data?.stats;
+        setStats((prev) =>
+          mergeVendorDashboardStats(
+            prev,
+            rawStats && typeof rawStats === 'object' ? (rawStats as Record<string, unknown>) : null
+          )
+        );
         setVendor(dashboardRes.vendor || dashboardRes.data?.vendor || vendorData);
 
         // Transform bookings
@@ -220,6 +253,21 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
             // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
             isRescheduled: b.isRescheduled || b.rescheduled_at != null,
             rescheduledAt: b.rescheduled_at || null,
+            packagePurchaseId: b.packagePurchaseId ?? b.package_purchase_id,
+            packageSessionNumber:
+              b.packageSessionNumber != null
+                ? Number(b.packageSessionNumber)
+                : b.package_session_number != null
+                  ? Number(b.package_session_number)
+                  : undefined,
+            packageTotalSessions:
+              b.packageTotalSessions != null
+                ? Number(b.packageTotalSessions)
+                : b.package_total_sessions != null
+                  ? Number(b.package_total_sessions)
+                  : b.total_sessions != null
+                    ? Number(b.total_sessions)
+                    : undefined,
           }));
           setTodaySchedule(transformedBookings);
         }
@@ -240,9 +288,11 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
 
       // Fetch notifications
       const notificationsRes = await apiClient.get<any>(`/vendor/${vendorId}/notifications?limit=5`).catch(() => ({ success: false, notifications: [] }));
-      if (notificationsRes && notificationsRes.success) {
-        setNotifications(notificationsRes.notifications || []);
-      }
+      setNotificationUnreadCount(
+        notificationsRes && notificationsRes.success
+          ? vendorNotificationUnreadCount(notificationsRes)
+          : 0
+      );
 
       // Chat unread count for message icon badge
       if (capabilities.chat) {
@@ -266,9 +316,29 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         }));
       }
 
-      // Check profile completion
+      // Check profile completion + merge display name from API (stale local state fix)
       if (profileRes && profileRes.success) {
         const profile = profileRes.vendor || profileRes;
+        const biz = profile.businessName || profile.business_name || profile.name;
+        const owner =
+          profile.ownerName ||
+          profile.owner_name ||
+          profile.fullName ||
+          profile.full_name;
+        if (biz || owner) {
+          setVendor((prev: any) => ({
+            ...(prev || {}),
+            ...(biz ? { businessName: biz, business_name: biz } : {}),
+            ...(owner
+              ? {
+                  ownerName: profile.ownerName || profile.owner_name,
+                  owner_name: profile.owner_name || profile.ownerName,
+                  fullName: profile.fullName || profile.full_name,
+                  full_name: profile.full_name || profile.fullName,
+                }
+              : {}),
+          }));
+        }
         const isProfileComplete = !!(
           (profile.owner_name || profile.full_name) &&
           profile.phone &&
@@ -450,9 +520,13 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     setOtpError(null);
 
     try {
+      const sessionNum = (selectedAppointment as any).packageSessionNumber;
       const data = await apiClient.post<any>(`/vendor/bookings/${selectedAppointment.bookingId}/otp/verify`, {
         otp,
-        action: otpAction
+        action: otpAction,
+        ...(sessionNum != null && Number.isFinite(Number(sessionNum))
+          ? { sessionNumber: Number(sessionNum) }
+          : {}),
       });
 
       if (otpAction === 'start') {
@@ -513,6 +587,70 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     );
   }
 
+  const soloDashboardChromeFooter = (
+    <div className="w-full border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-2px_10px_rgba(0,0,0,0.06)] safe-area-bottom">
+      <div className="vendor-app-column mx-auto w-full">
+        <div className="flex items-center justify-around py-2">
+          <button
+            type="button"
+            onClick={() => setActiveBottomTab('home')}
+            className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
+              }`}
+          >
+            <div className="h-5 w-5 text-center">🏠</div>
+            <span className="text-[10px]">Home</span>
+          </button>
+
+          {isPharmacy ? (
+            <button
+              type="button"
+              onClick={() => router.push('/pharmacy/orders')}
+              className="flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 text-gray-400 active:text-[#FF8C42]"
+            >
+              <ClipboardList className="h-5 w-5" />
+              <span className="text-[10px]">Orders</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                router.push('/bookings');
+                setActiveBottomTab('bookings');
+              }}
+              className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
+                }`}
+            >
+              <Calendar className="h-5 w-5" />
+              <span className="text-[10px]">Bookings</span>
+            </button>
+          )}
+
+          {SHOW_VENDOR_FOOTER_REPORTING_TAB && (
+            <button
+              type="button"
+              onClick={() => setActiveBottomTab('reporting')}
+              className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
+                }`}
+            >
+              <BarChart3 className="h-5 w-5" />
+              <span className="text-[10px]">Reporting</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => router.push('/settings')}
+            className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
+              }`}
+          >
+            <Settings className="h-5 w-5" />
+            <span className="text-[10px]">Settings</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ✅ FIX: Prioritize vendorData.address (prop) over vendor.address (API response)
   // This ensures consistency with VendorBookingManagement which uses vendorData.address
   const displayAddress = (() => {
@@ -522,19 +660,18 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
     return [a.line1, a.line2, a.city, a.state].filter(Boolean).join(', ') || '';
   })();
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
-        {/* Header */}
-        <div className="p-4 bg-white border-b border-gray-200">
+  const soloDashboardChromeHeader = (
+    <div className="safe-area-top w-full border-b border-gray-200 bg-white shadow-sm">
+      <div className="vendor-app-column mx-auto w-full">
+        <div className="p-4 bg-white">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 ${colorScheme.primary} rounded-lg flex items-center justify-center`}>
-                <span className="text-2xl">{roleIcon}</span>
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-11 h-11 flex-shrink-0 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden">
+                <img src={logoImage} alt="Warmpawz" className="w-full h-full object-contain p-1" />
               </div>
-              <div>
-                <h1 className="font-semibold text-gray-900">
-                  {vendor?.ownerName || vendor?.owner_name || vendor?.fullName || vendor?.full_name || session.ownerName || 'Solo Provider'}
+              <div className="min-w-0">
+                <h1 className="font-semibold text-gray-900 truncate">
+                  {effectiveVendor?.ownerName || effectiveVendor?.owner_name || effectiveVendor?.fullName || effectiveVendor?.full_name || session.ownerName || 'Solo Provider'}
                 </h1>
                 <p className="text-xs text-gray-500">Solo Provider • {session.roleName || roleName || 'Service Provider'}</p>
                 {displayAddress && (
@@ -572,7 +709,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                 onClick={() => setNotificationModalOpen(true)}
               >
                 <Bell className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors" />
-                {notifications.filter((n: any) => !n.isRead).length > 0 && (
+                {notificationUnreadCount > 0 && (
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
               </button>
@@ -600,11 +737,23 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
                 Solo Provider
               </Badge>
             </div>
-            <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setReviewsModalOpen(true)}
+              className="flex items-center gap-1 rounded-lg px-1 py-0.5 -mr-1 hover:bg-gray-100 active:bg-gray-200 transition-colors text-left"
+              title="View customer reviews"
+              aria-label={ratingPresentation.ariaLabel}
+            >
               <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-              <span className="text-sm font-semibold">{stats.rating.toFixed(1)}</span>
-              <span className="text-xs text-gray-500">({stats.totalReviews} reviews)</span>
-            </div>
+              <span
+                className={`text-sm font-semibold ${ratingPresentation.showNumeric ? '' : 'text-gray-500 font-normal text-xs max-w-[7rem] leading-tight'}`}
+              >
+                {ratingPresentation.label}
+              </span>
+              <span className="text-xs text-gray-500">
+                ({stats.totalReviews} {stats.totalReviews === 1 ? 'review' : 'reviews'})
+              </span>
+            </button>
           </div>
 
           {/* Service Availability Note - for non-pharmacy service providers */}
@@ -623,6 +772,18 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
             </div>
           )}
         </div>
+        </div>
+        </div>
+  );
+
+  return (
+    <>
+    <VendorChromeLayout
+      className="bg-gray-50"
+      header={soloDashboardChromeHeader}
+      footer={soloDashboardChromeFooter}
+    >
+      <div className="vendor-app-column mx-auto w-full min-h-full bg-white">
 
         {/* Quick Actions for Solo Provider */}
         <div className="p-4 border-b border-gray-100">
@@ -672,17 +833,66 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         </div>
 
         {/* Additional Capabilities Section - hidden for pharmacy */}
-        {!isPharmacy && (capabilities.progress_tracking || capabilities.distance_pricing || capabilities.counseling) && (
+        {!isPharmacy &&
+          (capabilities.progress_tracking ||
+            isWalker ||
+            isNutritionist ||
+            capabilities.diet_charts ||
+            capabilities.meal_plans ||
+            capabilities.distance_pricing ||
+            capabilities.counseling ||
+            hasVendorRole(vendorData, ['pet_insurance', 'insurance'])) && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 mb-3">Additional Features</h2>
             <div className="grid grid-cols-3 gap-2">
-              {capabilities.progress_tracking && (
+              {hasVendorRole(vendorData, ['pet_insurance', 'insurance']) && (
                 <button
-                  onClick={() => router.push('/training/progress')}
-                  className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
+                  type="button"
+                  onClick={() => router.push('/insurance/policies')}
+                  className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
+                  title="Issued policies, plans, and claims"
                 >
-                  <TrendingUp className="w-6 h-6 text-green-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Progress</span>
+                  <Shield className="w-6 h-6 text-indigo-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Pet policies</span>
+                </button>
+              )}
+              {(capabilities.progress_tracking || isWalker) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isWalker) {
+                      router.push('/bookings?walkSessions=1');
+                    } else {
+                      router.push('/training/progress');
+                    }
+                  }}
+                  className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
+                  title={
+                    isWalker
+                      ? 'Opens your walk booking and Live tracker when one is confirmed or in progress'
+                      : 'Training and program progress'
+                  }
+                >
+                  {isWalker ? (
+                    <Footprints className="w-6 h-6 text-green-600 mb-1" />
+                  ) : (
+                    <TrendingUp className="w-6 h-6 text-green-600 mb-1" />
+                  )}
+                  <span className="text-xs font-medium text-gray-900">
+                    {isWalker ? 'Walk sessions' : 'Progress'}
+                  </span>
+                </button>
+              )}
+
+              {(capabilities.diet_charts || capabilities.meal_plans || isNutritionist) && (
+                <button
+                  type="button"
+                  onClick={() => router.push('/nutrition/dashboard')}
+                  className="bg-lime-50 border border-lime-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-lime-100 transition-colors"
+                  title="Diet, meal products, and orders"
+                >
+                  <ClipboardList className="w-6 h-6 text-lime-600 mb-1" />
+                  <span className="text-xs font-medium text-gray-900">Diet</span>
                 </button>
               )}
 
@@ -883,63 +1093,8 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           </div>
         )}
 
-        {/* Bottom padding for fixed nav */}
-        <div className="pb-24"></div>
-
-        {/* Bottom Navigation */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10">
-          <div className="max-w-[430px] mx-auto flex items-center justify-around py-3">
-            <button
-              onClick={() => setActiveBottomTab('home')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-            >
-              <div className="w-6 h-6">🏠</div>
-              <span className="text-xs">Home</span>
-            </button>
-
-            {isPharmacy ? (
-              <button
-                onClick={() => router.push('/pharmacy/orders')}
-                className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#FF8C42]"
-              >
-                <ClipboardList className="w-6 h-6" />
-                <span className="text-xs">Orders</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  router.push('/bookings');
-                  setActiveBottomTab('bookings');
-                }}
-                className={`flex flex-col items-center gap-1 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
-                  }`}
-              >
-                <Calendar className="w-6 h-6" />
-                <span className="text-xs">Bookings</span>
-              </button>
-            )}
-
-            <button
-              onClick={() => setActiveBottomTab('reporting')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-            >
-              <BarChart3 className="w-6 h-6" />
-              <span className="text-xs">Reporting</span>
-            </button>
-
-            <button
-              onClick={() => router.push('/settings')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-            >
-              <Settings className="w-6 h-6" />
-              <span className="text-xs">Settings</span>
-            </button>
-          </div>
-        </div>
       </div>
+    </VendorChromeLayout>
 
       {/* Modals */}
       <VendorNotificationModal
@@ -948,13 +1103,20 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         onClose={() => setNotificationModalOpen(false)}
         onNotificationsRead={() => fetchDashboardData(true)}
       />
+      {vendorId ? (
+        <VendorReviewsModal
+          vendorId={vendorId}
+          open={reviewsModalOpen}
+          onClose={() => setReviewsModalOpen(false)}
+        />
+      ) : null}
 
       {/* Chat conversations list - wire message button */}
       {capabilities.chat && (
         <VendorChatConversationsModal
           vendorId={vendorId}
           vendorPhone={vendorData?.phone || vendorData?.mobile}
-          vendorName={vendorData?.fullName || vendorData?.businessName}
+          vendorName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name}
           open={chatConversationsOpen}
           onClose={() => {
             setChatConversationsOpen(false);
@@ -979,7 +1141,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           bookingId={selectedChatConversation.bookingId}
           vendorId={vendorId}
           vendorPhone={vendorData?.phone || vendorData?.mobile}
-          vendorName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+          vendorName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Vendor'}
           customerPhone={selectedChatConversation.customerPhone}
           customerName={selectedChatConversation.customerName}
           bookingStatus={selectedChatConversation.bookingStatus}
@@ -998,7 +1160,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           mode={communicationMode}
           bookingId={selectedAppointment.bookingId}
           userId={vendorData?.phone || vendorData?.mobile || '+91'}
-          userName={vendorData?.fullName || vendorData?.businessName || 'Provider'}
+          userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Provider'}
           otherUserName={selectedAppointment.customerName}
           userType="vendor"
           onClose={() => {
@@ -1015,7 +1177,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
           bookingId={selectedAppointment.bookingId}
           vendorData={vendorData}
           roleId={vendorData?.roleId || vendorData?.role_id}
-          roleName={roleName}
+          roleName={roleName ?? undefined}
           capabilities={capabilities}
           onClose={() => {
             setAppointmentDetailModalOpen(false);
@@ -1046,7 +1208,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               </button>
             </div>
             <p className="text-sm text-gray-600 mb-4">
-              Ask the customer for the 6-digit OTP sent to their phone to {otpAction === 'start' ? 'start' : 'complete'} the service.
+              Ask the customer for the 4-digit booking OTP sent to their phone to {otpAction === 'start' ? 'start' : 'complete'} the service.
             </p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1055,10 +1217,10 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
               <input
                 type="text"
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="Enter 6-digit OTP"
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="Enter 4-digit OTP"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                maxLength={6}
+                maxLength={4}
                 autoFocus
               />
               {otpError && (
@@ -1105,7 +1267,7 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
 
       {/* Vendor Analytics */}
       {activeBottomTab === 'reporting' && (
-        <div className="fixed inset-0 bg-gray-50 z-20 overflow-y-auto pb-24">
+        <div className="fixed inset-0 z-30 overflow-y-auto bg-gray-50 pb-[calc(6rem+env(safe-area-inset-bottom,0px))]">
           <VendorAnalytics
             vendorId={vendorId}
             vendorData={vendorData}
@@ -1116,10 +1278,11 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
 
       {/* Vendor Settings - navigates to /settings (mobile-optimized VendorSettingsScreen) */}
 
-      {/* AI Support Bot */}
-      <AIChatBot
-        customerId={vendorId}
-        customerName={vendor?.fullName || vendor?.businessName || 'Provider'}
+      {/* AI Support Chat (same widget as business vendor dashboard) */}
+      <ChatWidget
+        userId={vendorId}
+        userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Provider'}
+        userType="vendor"
       />
 
       {/* Debug Overlay */}
@@ -1129,6 +1292,6 @@ export function SoloProviderDashboard({ session, vendorData }: SoloProviderDashb
         capabilities={capabilities}
         vendorData={vendorData}
       />
-    </div>
+    </>
   );
 }

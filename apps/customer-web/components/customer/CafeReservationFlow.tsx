@@ -7,6 +7,8 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
 
 interface CafeReservationFlowProps {
@@ -70,7 +72,7 @@ export function CafeReservationFlow(props: CafeReservationFlowProps) {
       setSubmitting(true);
       
       // Get customer ID
-      const customerId = localStorage.getItem('warmpawz_customer_id');
+      const customerId = getResolvedCustomerId();
       if (!customerId) {
         toast.error('Please login to create reservation');
         return;
@@ -89,7 +91,9 @@ export function CafeReservationFlow(props: CafeReservationFlowProps) {
       } catch {
         servicesResponse = await apiClient.get<any>(`/vendor/${vendorId}/services`);
       }
-      const allServices = servicesResponse?.services || servicesResponse || [];
+      const allServices = Array.isArray(servicesResponse?.services)
+        ? mergeCustomerVendorServicesPayload(servicesResponse)
+        : servicesResponse || [];
       const cafeService = allServices.find((s: any) => 
         s.serviceType === 'cafe' || 
         s.name?.toLowerCase().includes('reservation') ||

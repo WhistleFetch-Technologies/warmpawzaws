@@ -1,47 +1,13 @@
-import { Bone, Building2, Coffee, Dog, FlaskConical, GraduationCapIcon, Heart, HomeIcon, MapPin, PackageIcon, Palmtree, Phone, Pill, Scissors, Shield, ShoppingBag, Sparkles, Stethoscope, Users, Wheat } from "lucide-react";
+import { Bone, Building2, Coffee, Dog, DoorOpen, FlaskConical, GraduationCapIcon, Heart, HomeIcon, MapPin, PackageIcon, Palmtree, Phone, Pill, Scissors, Shield, ShoppingBag, Sparkles, Stethoscope, Users, Wheat } from "lucide-react";
+import { serviceScreenMap as sharedServiceScreenMap } from '@warmpawz/service-launch-mappings';
 
-export const serviceScreenMap: Record<string, string[]> = {
-    'vet': ['vet'],
-    'veterinary': ['vet'],
-    'grooming': ['grooming'],
-    'training': ['training'],
-    'walker': ['walker'],
-    'walking': ['walker'],
-    'boarding': ['boarding'],
-    'adoption': ['adoption'],
-    'mating': ['mating-dating-hub'],
-    'cafes': ['cafes'],
-    'photography': ['photography'],
-    'insurance': ['insurance'],
-    'breeder': ['breeder'],
-    'ambulance': ['ambulance'],
-    'emergency': ['ambulance'],
-    'nutritionist': ['nutritionist'],
-    'wellness': ['nutritionist'],
-    'relocation': ['relocation'],
-    'resort': ['resort'],
-    'holiday': ['holiday'],
-    'sunset': ['sunset'],
-    'shop': ['shop'],
-    'pharmacy': ['shop'],
-    'diagnostic': ['vet'],
-    'diagnostics': ['vet'],
-};
+/** Single source: `@warmpawz/service-launch-mappings` (re-export for existing imports). */
+export const serviceScreenMap = sharedServiceScreenMap;
 
 
 export const defaultBanners = [
     {
-        id: 'default-1',
-        title: "Get 50% OFF",
-        subtitle: "First Grooming Session",
-        gradientFrom: "#FF8C42",
-        gradientTo: "#FF6B35",
-        Icon: Scissors,
-        ctaText: "Claim Now",
-        ctaLink: "grooming"
-    },
-    {
-        id: 'default-2',
+        id: 'default-vet-checkup',
         title: "Free Health Checkup",
         subtitle: "Book Vet Appointment Today",
         gradientFrom: "#4CAF50",
@@ -50,16 +16,6 @@ export const defaultBanners = [
         ctaText: "Book Now",
         ctaLink: "vet"
     },
-    {
-        id: 'default-3',
-        title: "Premium Pet Food",
-        subtitle: "20% OFF on First Order",
-        gradientFrom: "#FF6B9D",
-        gradientTo: "#C44569",
-        Icon: Bone,
-        ctaText: "Shop Now",
-        ctaLink: "shop"
-    }
 ];
 
 
@@ -67,8 +23,8 @@ export const quickServices = [
     // PRIMARY SERVICES
     { icon: Stethoscope, label: 'Vet Care', color: 'bg-blue-100 text-blue-600', screen: 'vet', categoryId: 'vet' },
     { icon: Scissors, label: 'Grooming', color: 'bg-orange-100 text-orange-600', screen: 'grooming', categoryId: 'grooming' },
-    { icon: ShoppingBag, label: 'Pet Shop', color: 'bg-pink-100 text-pink-600', screen: 'shop', categoryId: 'shop' },
-    { icon: GraduationCapIcon, label: 'Trainer', color: 'bg-purple-100 text-purple-600', screen: 'training', categoryId: 'training' },
+    { icon: ShoppingBag, label: 'Pet Products', color: 'bg-pink-100 text-pink-600', screen: 'shop', categoryId: 'shop' },
+    { icon: GraduationCapIcon, label: 'Training', color: 'bg-purple-100 text-purple-600', screen: 'training', categoryId: 'training' },
 
     // HEALTHCARE SERVICES
     { icon: Pill, label: 'Pharmacy', color: 'bg-red-100 text-red-600', screen: 'pharmacy', categoryId: 'pharmacy' },
@@ -77,8 +33,9 @@ export const quickServices = [
     // CARE SERVICES
     { icon: Dog, label: 'Dog Walker', color: 'bg-green-100 text-green-600', screen: 'walker', categoryId: 'walker' },
     { icon: HomeIcon, label: 'Boarding', color: 'bg-indigo-100 text-indigo-600', screen: 'boarding', categoryId: 'boarding' },
+    { icon: DoorOpen, label: 'Pet Sitter', color: 'bg-slate-100 text-slate-700', screen: 'pet-sitter', categoryId: 'pet-sitter' },
     { icon: Heart, label: 'Adoption', color: 'bg-red-100 text-red-600', screen: 'adoption', categoryId: 'adoption' },
-    { icon: Heart, label: 'Mating & Dating', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub', categoryId: 'mating-dating-hub' },
+    { icon: Heart, label: 'Peer to Peer', color: 'bg-pink-100 text-pink-600', screen: 'mating-dating-hub', categoryId: 'mating-dating-hub' },
     { icon: Coffee, label: 'Pet Cafes', color: 'bg-amber-100 text-amber-600', screen: 'cafes', categoryId: 'cafes' },
 
     // SPECIALIZED SERVICES - NEW
@@ -98,9 +55,9 @@ export const quickServices = [
 
 
 export const defaultGroomingServices = [
-    { title: 'At Home Grooming', price: '₹999', rating: 4.8, Icon: HomeIcon, description: 'Professional grooming at your doorstep' },
-    { title: 'Salon Appointment', price: '₹799', rating: 4.9, Icon: Scissors, description: 'Premium salon experience' },
-    { title: 'Spa Package', price: '₹1499', rating: 5.0, Icon: Sparkles, description: 'Complete spa & wellness' },
+    { title: 'At Home Grooming', price: '₹999', Icon: HomeIcon, description: 'Professional grooming at your doorstep' },
+    { title: 'Salon Appointment', price: '₹799', Icon: Scissors, description: 'Premium salon experience' },
+    { title: 'Spa Package', price: '₹1499', Icon: Sparkles, description: 'Complete spa & wellness' },
 ];
 
 export const defaultVetServices = [
@@ -110,9 +67,9 @@ export const defaultVetServices = [
 ];
 
 export const defaultHotDeals = [
-    { title: 'Royal Canin Dog Food', price: '₹2,499', originalPrice: '₹3,499', discount: '30% OFF', Icon: Bone, rating: 4.7 },
-    { title: 'Pet Carrier Bag', price: '₹1,299', originalPrice: '₹2,199', discount: '40% OFF', Icon: PackageIcon, rating: 4.5 },
-    { title: 'GPS Collar Tracker', price: '₹3,999', originalPrice: '₹5,999', discount: '35% OFF', Icon: MapPin, rating: 4.9 },
+    { title: 'Royal Canin Dog Food', price: '₹2,499', originalPrice: '₹3,499', discount: '30% OFF', Icon: Bone },
+    { title: 'Pet Carrier Bag', price: '₹1,299', originalPrice: '₹2,199', discount: '40% OFF', Icon: PackageIcon },
+    { title: 'GPS Collar Tracker', price: '₹3,999', originalPrice: '₹5,999', discount: '35% OFF', Icon: MapPin },
 ];
 
 export const serviceNavigationMap: Record<string, string> = {
@@ -142,5 +99,7 @@ export const serviceNavigationMap: Record<string, string> = {
     'resort': 'resort',
     'holiday': 'holiday',
     'sunset': 'sunset',
-    'mating': 'mating-dating-hub'
+    'mating': 'mating-dating-hub',
+    'pet-sitter': 'pet-sitter',
+    'sitting': 'pet-sitter',
 };

@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Plus, Save, Check, AlertCircle, Clock, IndianRupee, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat, Users } from 'lucide-react';
+import { Plus, Save, Check, AlertCircle, Clock, IndianRupee, Info, Package, ChevronDown, ChevronUp, X, Edit, Trash2, Search, Stethoscope, Scissors, Heart, Activity, Sparkles, GraduationCap, Home, Phone, Syringe, Pill, FileText, Camera, MapPin, Dog, Cat, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -65,6 +67,25 @@ interface Service {
   isVendorEnabled?: boolean;
   serviceId?: string;
   catalogServiceId?: string;
+  /** Stable index from last full load — stable sort tie-break; do not reorder on toggle (pre-publish). */
+  _listOrder?: number;
+  publish_status?: string;
+}
+
+/** After at least one service is published, UI may group enabled rows first (stable within groups). */
+function hasAnyPublishedService(list: Service[]): boolean {
+  return list.some(s => (s.publishStatus ?? s.publish_status) === 'published');
+}
+
+/** Pre-publish: preserve list order. Post-publish: enabled first, then disabled; stable within each group. */
+function sortServicesForVendorDisplay(list: Service[], postPublishLayout: boolean): Service[] {
+  if (!postPublishLayout) return list;
+  return [...list].sort((a, b) => {
+    const ae = !!a.isEnabled;
+    const be = !!b.isEnabled;
+    if (ae !== be) return ae ? -1 : 1;
+    return (a._listOrder ?? 0) - (b._listOrder ?? 0);
+  });
 }
 
 export function VendorServiceConfigurationScreen({ 
@@ -85,7 +106,6 @@ export function VendorServiceConfigurationScreen({
   const [expandedServices, setExpandedServices] = useState<Set<string>>(new Set());
   const [showAddCustomDialog, setShowAddCustomDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState(''); // ✅ NEW: Search state
-  const [showBulkActions, setShowBulkActions] = useState(false); // ✅ NEW: Bulk actions state
   const [viewMode, setViewMode] = useState<'all' | 'enabled' | 'published'>('all'); // ✅ NEW: View mode filter
   const [editingService, setEditingService] = useState<Service | null>(null); // ✅ Service being edited (opens Edit modal)
   const [editForm, setEditForm] = useState({ price: 0, duration: 30, description: '' }); // ✅ Edit modal form state
@@ -93,7 +113,37 @@ export function VendorServiceConfigurationScreen({
   const [showDeleteDialog, setShowDeleteDialog] = useState<Service | null>(null); // ✅ NEW: Delete confirmation
   const [staffCount, setStaffCount] = useState<number>(0); // ✅ NEW: Track staff count for solo vendor check
   const [dirtyServiceIds, setDirtyServiceIds] = useState<Set<string>>(new Set()); // ✅ FIX: Track which services actually changed (dirty tracking)
-  
+  /** Scrollable list container — preserve scrollTop across silent reloads (toggle must not jump to top). */
+  const serviceListScrollRef = useRef<HTMLDivElement | null>(null);
+  /** While a toggle is in flight, layout commits re-apply scroll so focus/layout shifts don't jump the page. */
+  const toggleScrollSessionRef = useRef<{ snap: { win: number; inner: number | null }; active: boolean } | null>(
+    null
+  );
+
+  const applyScrollSnapshot = useCallback((snap: { win: number; inner: number | null }) => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo(0, snap.win);
+    }
+    const node = serviceListScrollRef.current;
+    if (node !== null && snap.inner !== null) {
+      node.scrollTop = snap.inner;
+    }
+  }, []);
+
+  const scheduleScrollSnapshotRestore = useCallback(
+    (snap: { win: number; inner: number | null }) => {
+      queueMicrotask(() => {
+        requestAnimationFrame(() => {
+          applyScrollSnapshot(snap);
+          requestAnimationFrame(() => {
+            applyScrollSnapshot(snap);
+          });
+        });
+      });
+    },
+    [applyScrollSnapshot]
+  );
+
   // Custom service form
   const [customServiceForm, setCustomServiceForm] = useState({
     serviceName: '',
@@ -157,6 +207,13 @@ export function VendorServiceConfigurationScreen({
     loadStaffCount(); // ✅ Load staff count to check if vendor is solo
   }, [vendorId, serviceStyle, roleId, isSoloProvider]);
 
+  // After each services update during an enable/disable toggle, restore scroll synchronously (before paint).
+  useLayoutEffect(() => {
+    const sess = toggleScrollSessionRef.current;
+    if (!sess?.active) return;
+    applyScrollSnapshot(sess.snap);
+  }, [services, applyScrollSnapshot]);
+
   // ✅ Load staff count to determine if vendor is solo
   const loadStaffCount = async () => {
     try {
@@ -170,10 +227,13 @@ export function VendorServiceConfigurationScreen({
     }
   };
 
-  const loadServices = async () => {
-    try {
+  const loadServices = async (options?: { silent?: boolean }) => {
+    const silent = options?.silent === true;
+    if (!silent) {
       setLoading(true);
-      
+    }
+
+    try {
       console.log(`🔄 Loading services for vendor ${vendorId}, style: ${serviceStyle}, roleId: ${roleId}`);
       
       // ✅ FIX: Fetch BOTH catalog services AND vendor's enabled services, then merge
@@ -212,16 +272,19 @@ export function VendorServiceConfigurationScreen({
       // 2. Fetch vendor's own added services for this style
       let vendorServices: any[] = [];
       try {
-        const vendorData = await apiClient.get(`/vendor/${vendorId}/services/${serviceStyle}`) as any;
-        if (vendorData?.services) {
-          vendorServices = vendorData.services;
+        const styleServicesResponse = await apiClient.get(`/vendor/${vendorId}/services/${serviceStyle}`) as any;
+        if (serviceStyle === 'at_home') {
+          console.log('At Home Services API:', styleServicesResponse);
+        }
+        if (styleServicesResponse?.services) {
+          vendorServices = styleServicesResponse.services;
           console.log(`🏪 Vendor services loaded: ${vendorServices.length}`);
           // ✅ No need to filter here - backend endpoint /vendor/:vendorId/services/:serviceStyle
           // already validates that serviceStyle is allowed before returning services
         }
         // ✅ FIX: Check for error message from API
-        if (vendorData?.error && vendorData?.success === false) {
-          toast.error(vendorData.error);
+        if (styleServicesResponse?.error && styleServicesResponse?.success === false) {
+          toast.error(styleServicesResponse.error);
           onBack();
           return;
         }
@@ -311,53 +374,46 @@ export function VendorServiceConfigurationScreen({
         };
       };
       
-      // Vendor's added services FIRST (so they always show for publishing, regardless of catalog role)
-      const vendorAddedFromCatalog: any[] = [];
-      // ✅ FIX: Track service_names that the vendor already has (to filter out duplicate catalog entries)
+      // ✅ Track service_names that the vendor already has (to filter out duplicate catalog entries)
       const vendorServiceNames = new Set<string>();
       vendorServices.forEach((s: any) => {
         const sName = (s.service_name || s.serviceName || s.name || '').toLowerCase().trim();
         if (sName) vendorServiceNames.add(sName);
       });
-      
+
+      // ✅ SINGLE PASS through catalog order: one row per catalog item (merged or draft placeholder).
+      // This prevents rows from jumping when toggling enabled / add-from-catalog (old merge put "added"
+      // and "not added" in separate blocks, so enabling moved an item from bottom section to top).
+      const catalogOrderedRows: any[] = [];
       catalogServices.forEach((catalogSvc: any) => {
-        // ✅ CRITICAL: Match by catalog.id (UUID), not by serviceId (TEXT)
-        // catalogSvc.catalogId is service_catalog.id (UUID) - this matches vendor_services.service_id (UUID)
-        const catalogUuid = catalogSvc.catalogId || catalogSvc.id; // Use catalog UUID for matching
+        const catalogUuid = catalogSvc.catalogId || catalogSvc.id;
         const vendorSvc = catalogUuid ? vendorServiceMap.get(String(catalogUuid)) : null;
+
         if (vendorSvc) {
-          // vendorSvc came from our GET request; backend already filtered by resolved vendor id, so it's ours
           const catalogServiceIdText = catalogSvc.serviceId || catalogSvc.service_id || 'unknown';
-          vendorAddedFromCatalog.push(formatMerged(catalogSvc, vendorSvc, catalogServiceIdText));
+          catalogOrderedRows.push(formatMerged(catalogSvc, vendorSvc, catalogServiceIdText));
+          return;
         }
+
+        if (catalogUuid && vendorServiceIds.has(String(catalogUuid))) {
+          return;
+        }
+
+        const catalogName = (catalogSvc.serviceName || catalogSvc.service_name || catalogSvc.name || '').toLowerCase().trim();
+        if (catalogName && vendorServiceNames.has(catalogName)) {
+          console.log(`🚫 Filtering out catalog entry "${catalogName}" - vendor already has a service with this name`);
+          return;
+        }
+
+        const catalogServiceIdText = catalogSvc.serviceId || catalogSvc.service_id || 'unknown';
+        const finalCatalogId = catalogServiceIdText || (catalogSvc.catalogId ? `catalog_${catalogSvc.catalogId}` : 'unknown');
+        catalogOrderedRows.push(formatMerged(catalogSvc, null, finalCatalogId));
       });
-      const catalogNotAdded = catalogServices
-        .filter((catalogSvc: any) => {
-          // ✅ CRITICAL: Check by catalog.id (UUID), not by serviceId (TEXT)
-          const catalogUuid = catalogSvc.catalogId || catalogSvc.id;
-          if (catalogUuid && vendorServiceIds.has(String(catalogUuid))) return false;
-          
-          // ✅ FIX: ALSO filter out catalog entries whose service_name already exists in vendor's services
-          // This prevents duplicate "Home Visit Consultation" entries that cause ID collisions when toggled
-          const catalogName = (catalogSvc.serviceName || catalogSvc.service_name || catalogSvc.name || '').toLowerCase().trim();
-          if (catalogName && vendorServiceNames.has(catalogName)) {
-            console.log(`🚫 Filtering out catalog entry "${catalogName}" - vendor already has a service with this name`);
-            return false;
-          }
-          
-          return true;
-        })
-        .map((catalogSvc: any) => {
-          const catalogServiceIdText = catalogSvc.serviceId || catalogSvc.service_id || 'unknown';
-          const finalCatalogId = catalogServiceIdText || (catalogSvc.catalogId ? `catalog_${catalogSvc.catalogId}` : 'unknown');
-          return formatMerged(catalogSvc, null, finalCatalogId);
-        });
-      
+
       // Vendor services not in catalog (e.g. custom or from different catalog)
       const customVendorServices = vendorServices
         .filter((s: any) => {
-          // Check if vendor service's service_id (catalog UUID) is in the catalog
-          const catalogUuid = s.service_id; // This is service_catalog.id (UUID)
+          const catalogUuid = s.service_id;
           return catalogUuid ? !catalogIds.has(String(catalogUuid)) : true;
         })
         .map((svc: any) => ({
@@ -375,12 +431,10 @@ export function VendorServiceConfigurationScreen({
           isPlatformService: false,
           isVendorEnabled: true,
         }));
-      
-      // ✅ FIX: Vendor's added services first, then catalog not yet added
-      // ✅ FIX: Deduplicate by ID to prevent React key conflicts
-      const mergedServices = [...vendorAddedFromCatalog, ...customVendorServices, ...catalogNotAdded];
+
+      const mergedServices = [...catalogOrderedRows, ...customVendorServices];
       const seenIds = new Set<string>();
-      const allServices = mergedServices.filter(s => {
+      const deduped = mergedServices.filter(s => {
         if (seenIds.has(s.id)) {
           console.warn(`⚠️ Duplicate service ID detected: ${s.id} (${s.name || s.serviceName}). Removing duplicate.`);
           return false;
@@ -388,104 +442,131 @@ export function VendorServiceConfigurationScreen({
         seenIds.add(s.id);
         return true;
       });
-      console.log(`✅ Total services: ${allServices.length} (${vendorAddedFromCatalog.length} added, ${customVendorServices.length} custom, ${catalogNotAdded.length} available to add)`);
-      
+      const allServices: Service[] = deduped.map((s, index) => ({
+        ...s,
+        _listOrder: index,
+      }));
+      console.log(`✅ Total services: ${allServices.length} (catalog order ${catalogOrderedRows.length}, custom ${customVendorServices.length})`);
+
+      let preserveScrollTop: number | null = null;
+      let preserveWindowY = 0;
+      if (silent) {
+        if (serviceListScrollRef.current) {
+          preserveScrollTop = serviceListScrollRef.current.scrollTop;
+        }
+        if (typeof window !== 'undefined') {
+          preserveWindowY = window.scrollY;
+        }
+      }
+
       setServices(allServices);
       setDirtyServiceIds(new Set()); // ✅ FIX: Clear dirty tracking after fresh load
       setHasChanges(false);
+
+      if (silent) {
+        scheduleScrollSnapshotRestore({
+          win: preserveWindowY,
+          inner: preserveScrollTop,
+        });
+      }
     } catch (error) {
       console.error('❌ Error loading services:', error);
       toast.error('Error loading services');
       setServices([]);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
   const toggleService = async (serviceId: string) => {
     const service = services.find(s => s.id === serviceId);
     if (!service) return;
-    
+
+    // Snapshot before any DOM/state work — restored after optimistic update, after each commit, and in finally.
+    const snap = {
+      win: typeof window !== 'undefined' ? window.scrollY : 0,
+      inner: serviceListScrollRef.current ? serviceListScrollRef.current.scrollTop : null,
+    };
+    toggleScrollSessionRef.current = { snap, active: true };
+
     const newEnabled = !service.isEnabled;
-    
-    // ✅ FIX: Use functional state update to avoid stale closure issues
-    setServices(prev => prev.map(s => 
-      s.id === serviceId ? { ...s, isEnabled: newEnabled } : s
-    ));
-    
+
+    flushSync(() => {
+      setServices(prev =>
+        prev.map(s => (s.id === serviceId ? { ...s, isEnabled: newEnabled } : s))
+      );
+    });
+    applyScrollSnapshot(snap);
+
     try {
       if (newEnabled && service.isPlatformService && !service.isVendorEnabled) {
-        // ✅ First time enabling a catalog service - ADD to vendor offerings
         console.log(`➕ Adding catalog service ${service.serviceName} to vendor offerings...`);
         const result = await apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
           catalogServiceId: service.serviceId || service.catalogServiceId || service.id,
           serviceStyle: serviceStyle,
           customPrice: service.customPrice || service.basePrice || service.price,
           customDuration: Math.max(5, Math.min(1440, Number(service.customDuration ?? service.duration ?? 30) || 30)),
-          isEnabled: true
+          isEnabled: true,
         }) as any;
-        
+
         if (result?.success) {
           toast.success(`${service.serviceName} added to your offerings!`);
-          // ✅ FIX: Reload from scratch to prevent duplicate ID issues
-          // The add-from-catalog endpoint may return an existing vendor_services.id
-          // that already belongs to another service in our list (matched by service_name)
-          await loadServices();
+          await loadServices({ silent: true });
         } else {
           throw new Error(result?.error || 'Failed to add service');
         }
       } else if (!newEnabled && service.isVendorEnabled) {
-        // Disabling an enabled vendor service - just update status
         console.log(`➖ Disabling vendor service ${service.serviceName}...`);
         await apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
           is_enabled: false,
           duration: service.customDuration ?? service.duration ?? 30,
         });
         toast.success(`${service.serviceName} disabled`);
-        // ✅ FIX: Use functional state update (no stale closure)
-        setServices(prev => prev.map(s => 
-          s.id === serviceId ? { ...s, isEnabled: false } : s
-        ));
       } else if (newEnabled && service.isVendorEnabled) {
-        // Re-enabling a previously disabled vendor service
         console.log(`✅ Re-enabling vendor service ${service.serviceName}...`);
         await apiClient.put(`/vendor/${vendorId}/services/${service.id}`, {
           is_enabled: true,
           duration: service.customDuration ?? service.duration ?? 30,
         });
         toast.success(`${service.serviceName} enabled`);
-        // ✅ FIX: Use functional state update (no stale closure)
-        setServices(prev => prev.map(s => 
-          s.id === serviceId ? { ...s, isEnabled: true } : s
-        ));
       } else if (newEnabled && !service.isVendorEnabled && service.isPlatformService) {
-        // Enabling a catalog service that hasn't been added yet - add it
         console.log(`➕ Adding and enabling catalog service ${service.serviceName}...`);
         const result = await apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
           catalogServiceId: service.serviceId || service.catalogServiceId || service.id,
           serviceStyle: serviceStyle,
           customPrice: service.customPrice || service.basePrice || service.price,
           customDuration: Math.max(5, Math.min(1440, Number(service.customDuration ?? service.duration ?? 30) || 30)),
-          isEnabled: true
+          isEnabled: true,
         }) as any;
-        
+
         if (result?.success) {
           toast.success(`${service.serviceName} added and enabled!`);
-          // ✅ FIX: Reload from scratch to prevent duplicate ID issues
-          await loadServices();
+          await loadServices({ silent: true });
         } else {
           throw new Error(result?.error || 'Failed to add service');
         }
       }
-      
-      setHasChanges(false); // Changes saved immediately
+
+      setHasChanges(false);
     } catch (error: any) {
       console.error('Error toggling service:', error);
       toast.error(error.message || 'Failed to update service');
-      // ✅ FIX: Use functional state update for revert (no stale closure)
-      setServices(prev => prev.map(s => 
-        s.id === serviceId ? { ...s, isEnabled: !newEnabled } : s
-      ));
+      flushSync(() => {
+        setServices(prev =>
+          prev.map(s => (s.id === serviceId ? { ...s, isEnabled: !newEnabled } : s))
+        );
+      });
+      applyScrollSnapshot(snap);
+    } finally {
+      scheduleScrollSnapshotRestore(snap);
+      applyScrollSnapshot(snap);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          toggleScrollSessionRef.current = null;
+        });
+      });
     }
   };
 
@@ -543,109 +624,6 @@ export function VendorServiceConfigurationScreen({
     setExpandedServices(newExpanded);
   };
 
-  // ✅ NEW: Bulk selection functions
-  const enableAllServices = () => {
-    setServices(prev => {
-      const allIds = prev.map(s => s.id);
-      setDirtyServiceIds(old => { const n = new Set(old); allIds.forEach(id => n.add(id)); return n; });
-      return prev.map(s => ({ ...s, isEnabled: true }));
-    });
-    setHasChanges(true);
-    toast.success('All services enabled');
-  };
-
-  const disableAllServices = () => {
-    setServices(prev => {
-      const allIds = prev.map(s => s.id);
-      setDirtyServiceIds(old => { const n = new Set(old); allIds.forEach(id => n.add(id)); return n; });
-      return prev.map(s => ({ ...s, isEnabled: false }));
-    });
-    setHasChanges(true);
-    toast.success('All services disabled');
-  };
-
-  // ✅ NEW: Batch publish/unpublish - run one request at a time with retry to avoid 503
-  const batchPublishServices = async () => {
-    const enabledServices = services.filter(s => s.isEnabled && s.publishStatus !== 'published');
-    if (enabledServices.length === 0) {
-      toast.info('No enabled services to publish');
-      return;
-    }
-
-    try {
-      setIsPublishing(true);
-      for (let i = 0; i < enabledServices.length; i++) {
-        const service = enabledServices[i];
-        if (service.id && service.id.startsWith('temp_')) {
-          const catalogId = service.serviceId || service.catalogServiceId || service.id.replace('temp_', '');
-          await apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
-            catalogServiceId: catalogId,
-            serviceStyle: serviceStyle,
-            customPrice: service.customPrice || service.basePrice || service.price,
-            customDuration: Math.max(5, Math.min(1440, Number(service.customDuration ?? service.duration ?? 30) || 30)),
-            isEnabled: true,
-            publish_status: 'published'
-          });
-        } else if (!service.isVendorEnabled && service.isPlatformService) {
-          await apiClient.post(`/vendor/${vendorId}/services/add-from-catalog`, {
-            catalogServiceId: service.serviceId || service.catalogServiceId || service.id,
-            serviceStyle: serviceStyle,
-            customPrice: service.customPrice || service.basePrice || service.price,
-            customDuration: Math.max(5, Math.min(1440, Number(service.customDuration ?? service.duration ?? 30) || 30)),
-            isEnabled: true,
-            publish_status: 'published'
-          });
-        } else {
-          if (!service.id || service.id.startsWith('temp_')) {
-            toast.error(`Service "${service.serviceName || service.name}" is not yet added. Please add it first.`);
-            continue;
-          }
-          const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(service.id);
-          if (!isUUID) continue;
-          const vendorServiceId = service.vendorServiceId ?? service.id;
-          await putWithRetry(() =>
-            apiClient.put(`/vendor/${vendorId}/services/${vendorServiceId}`, { publish_status: 'published' })
-          );
-        }
-        if (i < enabledServices.length - 1) await delayMs(250);
-      }
-      toast.success(`${enabledServices.length} service(s) published successfully!`);
-      await loadServices();
-    } catch (error) {
-      console.error('Error batch publishing:', error);
-      toast.error('Error publishing services');
-    } finally {
-      setIsPublishing(false);
-    }
-  };
-
-  const batchUnpublishServices = async () => {
-    const publishedServices = services.filter(s => s.publishStatus === 'published');
-    if (publishedServices.length === 0) {
-      toast.info('No published services to unpublish');
-      return;
-    }
-
-    try {
-      setIsPublishing(true);
-      for (let i = 0; i < publishedServices.length; i++) {
-        const service = publishedServices[i];
-        const vendorServiceId = service.vendorServiceId ?? service.id;
-        await putWithRetry(() =>
-          apiClient.put(`/vendor/${vendorId}/services/${vendorServiceId}`, { publish_status: 'draft' })
-        );
-        if (i < publishedServices.length - 1) await delayMs(250);
-      }
-      toast.success(`${publishedServices.length} service(s) unpublished successfully!`);
-      await loadServices();
-    } catch (error) {
-      console.error('Error batch unpublishing:', error);
-      toast.error('Error unpublishing services');
-    } finally {
-      setIsPublishing(false);
-    }
-  };
-
   const enableCategory = (category: string) => {
     setServices(prev => {
       const catIds = prev.filter(s => s.categoryName === category).map(s => s.id);
@@ -693,7 +671,7 @@ export function VendorServiceConfigurationScreen({
         setShowDeleteDialog(null);
         setHasChanges(false);
         // Reload services to ensure UI is in sync
-        await loadServices();
+        await loadServices({ silent: true });
       } else {
         toast.error(data?.error || 'Failed to delete service');
       }
@@ -711,7 +689,7 @@ export function VendorServiceConfigurationScreen({
 
       if (data && data.success) {
         toast.success('Service unpublished successfully');
-        await loadServices(); // Reload to get updated status
+        await loadServices({ silent: true }); // Reload to get updated status
       } else {
         toast.error(data?.error || 'Failed to unpublish service');
       }
@@ -742,7 +720,7 @@ export function VendorServiceConfigurationScreen({
       if (data && data.success) {
         toast.success('Service updated. You can publish when ready.');
         setEditingService(null);
-        await loadServices();
+        await loadServices({ silent: true });
       } else {
         toast.error(data?.error || 'Failed to update service');
       }
@@ -908,7 +886,7 @@ export function VendorServiceConfigurationScreen({
 
       console.log(`✅ ${toPublish.length} service(s) published`);
       toast.success(`${toPublish.length} service(s) published successfully!`);
-      await loadServices(); // Refresh to get updated publish_status
+      await loadServices({ silent: true }); // Refresh to get updated publish_status
     } catch (error) {
       console.error('❌ Error publishing services:', error);
       toast.error('Error publishing services');
@@ -974,7 +952,7 @@ export function VendorServiceConfigurationScreen({
         
         if (data && data.success) {
           console.log('✅ Package created:', data);
-          toast.success('Package created successfully! Pending admin approval.');
+          toast.success('Package created successfully!');
           return;
         } else {
           console.error('❌ Failed to create package:', data);
@@ -999,7 +977,7 @@ export function VendorServiceConfigurationScreen({
         toast.success('Custom service added successfully!');
         // Reload services; do not throw so modal can close (EnhancedPackageCreationModal calls onClose after onSubmit resolves)
         try {
-          await loadServices();
+          await loadServices({ silent: true });
         } catch (reloadErr) {
           console.warn('Services list reload failed after adding custom service:', reloadErr);
           toast.info('Service added. List may refresh shortly.');
@@ -1174,45 +1152,39 @@ export function VendorServiceConfigurationScreen({
     return '🐕';
   };
 
-  // Group services by category
-  const groupedServices = services.reduce((acc, service) => {
-    const category = service.categoryName || 'Other';
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push(service);
-    return acc;
-  }, {} as Record<string, Service[]>);
+  // Filter → optional post-publish ordering (enabled first, stable) → group by category
+  const filteredGroupedServices = useMemo(() => {
+    const postPublishLayout = hasAnyPublishedService(services);
+    const filtered = searchQuery
+      ? services.filter(service => {
+          const query = searchQuery.toLowerCase();
+          const name = (service.name || service.serviceName || '').toLowerCase();
+          const description = (service.description || '').toLowerCase();
+          const categoryName = (service.categoryName || service.category || '').toLowerCase();
+          const subCategoryName = (service.subCategoryName || service.subCategory || '').toLowerCase();
 
-  // ✅ Filter services based on search query
-  const filteredServices = searchQuery
-    ? services.filter(service => {
-        const query = searchQuery.toLowerCase();
-        const name = (service.name || service.serviceName || '').toLowerCase();
-        const description = (service.description || '').toLowerCase();
-        const categoryName = (service.categoryName || service.category || '').toLowerCase();
-        const subCategoryName = (service.subCategoryName || service.subCategory || '').toLowerCase();
-        
-        return name.includes(query) ||
-               description.includes(query) ||
-               categoryName.includes(query) ||
-               subCategoryName.includes(query);
-      })
-    : services;
-
-  // ✅ Group filtered services by category
-  const filteredGroupedServices = filteredServices.reduce((acc, service) => {
-    const category = service.categoryName || 'Other';
-    if (!acc[category]) {
-      acc[category] = [];
-    }
-    acc[category].push(service);
-    return acc;
-  }, {} as Record<string, Service[]>);
+          return (
+            name.includes(query) ||
+            description.includes(query) ||
+            categoryName.includes(query) ||
+            subCategoryName.includes(query)
+          );
+        })
+      : services;
+    const ordered = sortServicesForVendorDisplay(filtered, postPublishLayout);
+    return ordered.reduce((acc, service) => {
+      const category = service.categoryName || 'Other';
+      if (!acc[category]) {
+        acc[category] = [];
+      }
+      acc[category].push(service);
+      return acc;
+    }, {} as Record<string, Service[]>);
+  }, [services, searchQuery]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 vendor-app-column flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading services...</p>
@@ -1222,33 +1194,42 @@ export function VendorServiceConfigurationScreen({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-24">
-        {/* Header - Service Management > [Style] with Browse Catalog link */}
-        <div className="p-4 bg-white border-b sticky top-0 z-10">
-          <div className="flex items-center gap-3 mb-3">
-            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center" title="Back to Service Management">
-              <ArrowLeft className="w-5 h-5 text-gray-700" />
-            </button>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">{getStyleIcon()}</span>
-                <h1 className="font-semibold text-gray-900">{getStyleName()}</h1>
-              </div>
-              <p className="text-xs text-gray-500">Service Management · {vendorData?.businessName || vendorData?.fullName}</p>
-            </div>
-            {onBrowseCatalog && (
-              <button
-                onClick={onBrowseCatalog}
-                className="text-sm font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                title="Browse platform catalog"
-              >
-                <Package className="w-4 h-4" />
-                Add from Catalog
-              </button>
-            )}
-          </div>
-
+    <div className="vendor-page-shell flex h-[100dvh] max-h-[100dvh] flex-col bg-gray-50">
+      <div className="vendor-app-column flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+        <div className="shrink-0">
+          <VendorHeader
+            title={`${getStyleIcon()} ${getStyleName()}`}
+            subtitle={
+              vendorData?.businessName || vendorData?.fullName
+                ? `Service Management · ${vendorData?.businessName || vendorData?.fullName}`
+                : 'Service Management'
+            }
+            onBack={onBack}
+            actions={
+              onBrowseCatalog
+                ? [
+                    <Button
+                      key="browse-catalog"
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0 border-blue-200 text-xs text-blue-600 hover:bg-blue-50"
+                      onClick={onBrowseCatalog}
+                    >
+                      <Package className="mr-1 inline h-4 w-4" />
+                      Catalog
+                    </Button>,
+                  ]
+                : []
+            }
+          />
+        </div>
+        <div
+          ref={serviceListScrollRef}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-4"
+          style={{ overflowAnchor: 'none' }}
+        >
+        <div className="space-y-3 border-b border-gray-200 bg-white p-4">
           {/* ✅ Search Bar */}
           <div className="relative mb-3">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -1284,14 +1265,12 @@ export function VendorServiceConfigurationScreen({
             </div>
           </div>
 
-          {/* ✅ NEW: Staff Assignment & Bulk Actions */}
+          {/* Staff assignment (bulk Enable/Disable/Publish-all UI removed — re-add from git history if needed) */}
           {services.length > 0 && (
             <div className="mt-3 space-y-2">
-              {/* Staff Assignment Button - Disabled for solo vendors */}
               {enabledCount > 0 && (
                 <Button
                   onClick={() => {
-                    // Navigate to staff management - using window.location or router if available
                     if (typeof window !== 'undefined') {
                       window.location.href = `/staff?assignServices=true&serviceStyle=${serviceStyle}`;
                     } else {
@@ -1307,61 +1286,6 @@ export function VendorServiceConfigurationScreen({
                   {staffCount === 0 && <span className="ml-2 text-xs">(No staff)</span>}
                 </Button>
               )}
-
-              <button
-                onClick={() => setShowBulkActions(!showBulkActions)}
-                className="w-full text-xs font-medium text-[#FF8C42] py-2 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors"
-              >
-                {showBulkActions ? 'Hide Bulk Actions' : 'Show Bulk Actions'}
-              </button>
-              
-              {showBulkActions && (
-                <div className="mt-2 space-y-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={enableAllServices}
-                      className="text-xs"
-                    >
-                      <Check className="w-3 h-3 mr-1" />
-                      Enable All
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={disableAllServices}
-                      className="text-xs"
-                    >
-                      <X className="w-3 h-3 mr-1" />
-                      Disable All
-                    </Button>
-                  </div>
-                  {/* ✅ NEW: Batch Publish/Unpublish */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={batchPublishServices}
-                      disabled={isPublishing || services.filter(s => s.isEnabled && s.publishStatus !== 'published').length === 0}
-                      className="text-xs bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
-                    >
-                      <Check className="w-3 h-3 mr-1" />
-                      Publish All
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={batchUnpublishServices}
-                      disabled={isPublishing || publishedCount === 0}
-                      className="text-xs bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100"
-                    >
-                      <X className="w-3 h-3 mr-1" />
-                      Unpublish All
-                    </Button>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -1369,7 +1293,7 @@ export function VendorServiceConfigurationScreen({
         </div>
 
         {/* Info Banner */}
-        <div className="mx-4 mt-4 p-3 rounded-lg bg-orange-50 border border-orange-200">
+        <div className="mx-4 mt-4 rounded-lg border border-orange-200 bg-orange-50 p-3">
           <div className="flex items-start gap-2">
             <Info className="w-4 h-4 mt-0.5 flex-shrink-0 text-orange-500" />
             <div className="flex-1 text-xs">
@@ -1638,33 +1562,34 @@ export function VendorServiceConfigurationScreen({
             </>
           )}
         </div>
-      </div>
-
-      {/* Bottom Action Bar */}
-      {enabledCount > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
-          <div className="max-w-[430px] mx-auto p-4 flex gap-2">
-            {hasChanges && (
-              <Button
-                onClick={saveConfiguration}
-                disabled={saving}
-                variant="outline"
-                className="flex-1"
-              >
-                <Save className="w-4 h-4 mr-2" />
-                {saving ? 'Saving...' : 'Save'}
-              </Button>
-            )}
-            <Button
-              onClick={publishServices}
-              disabled={isPublishing || saving}
-              className="flex-1 bg-[#FF8C42] hover:bg-[#ff7a28] text-white"
-            >
-              {isPublishing ? 'Publishing...' : `Publish ${enabledCount} Service${enabledCount > 1 ? 's' : ''}`}
-            </Button>
-          </div>
         </div>
-      )}
+
+        {/* Bottom action bar: outside scroll region so it stays pinned (flex layout, not document scroll) */}
+        {enabledCount > 0 && (
+          <div className="shrink-0 border-t border-gray-200 bg-white shadow-[0_-4px_14px_rgba(0,0,0,0.06)] pb-[max(1rem,env(safe-area-inset-bottom,0px))] pt-3">
+            <div className="vendor-app-column-inner flex flex-wrap gap-2 px-4">
+              {hasChanges && (
+                <Button
+                  onClick={saveConfiguration}
+                  disabled={saving}
+                  variant="outline"
+                  className="flex-1 min-w-[8rem]"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {saving ? 'Saving...' : 'Save'}
+                </Button>
+              )}
+              <Button
+                onClick={publishServices}
+                disabled={isPublishing || saving}
+                className="flex-1 min-w-[8rem] bg-[#FF8C42] hover:bg-[#ff7a28] text-white"
+              >
+                {isPublishing ? 'Publishing...' : `Publish ${enabledCount} Service${enabledCount > 1 ? 's' : ''}`}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Enhanced Package Creation Modal */}
       <EnhancedPackageCreationModal

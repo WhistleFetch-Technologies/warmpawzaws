@@ -1,9 +1,16 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { CustomerApp } from '@/components/customer/CustomerApp';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
+import {
+  readProfileCompleted,
+  readOnboardingCompleted,
+  applyUnifiedProfileToCustomerLocalStorage,
+} from '@/lib/customer-flow-guards';
+import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
 
 interface CustomerSession {
   phone: string;
@@ -20,6 +27,7 @@ export default function HomePage() {
   const router = useRouter();
   const [session, setSession] = useState<CustomerSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [homeGateReady, setHomeGateReady] = useState(false);
   const hasRedirected = useRef(false);
 
   useEffect(() => {
@@ -27,9 +35,12 @@ export default function HomePage() {
     initializeSession();
 
     const storedPhone = localStorage.getItem('customerPhone');
-    const storedToken = localStorage.getItem('authToken');
+    // Must match password + OTP login: Cognito bundle lives in customerCognitoTokens, not always authToken.
+    const storedToken = getStoredCustomerJwtForSession();
     const storedCustomer = localStorage.getItem('customerData');
     const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
+    const stageOnboardingDone = localStorage.getItem('onboarding_completed') === 'true';
+    const onboardingFlagsDone = storedOnboarding === 'true' || stageOnboardingDone;
     const customerData = storedCustomer ? (() => { try { return JSON.parse(storedCustomer); } catch { return null; } })() : null;
 
     if (storedPhone && storedToken) {
@@ -39,9 +50,9 @@ export default function HomePage() {
         sessionToken: storedToken,
         verified: true,
         customer: customerData ?? undefined,
-        hasCompletedOnboarding: storedOnboarding === 'true',
+        hasCompletedOnboarding: onboardingFlagsDone,
         hasPets: !!(customerData?.pets?.length),
-        isNewUser: storedOnboarding !== 'true',
+        isNewUser: !onboardingFlagsDone,
       };
       setSession(cachedSession);
       setIsLoading(false);
@@ -50,32 +61,33 @@ export default function HomePage() {
       (async () => {
         try {
           const { apiClient } = require('@/lib/api-client');
-          const profileResponse: any = await apiClient.get(`/customer/profile/unified/${storedPhone}`);
+          const profileResponse: any = await apiClient.getOrUndefinedIfNotFound(
+            `/customer/profile/unified/${storedPhone}`
+          );
           if (profileResponse?.profile) {
             const data = profileResponse.profile;
-            const onboardingStatus = data.onboarding_status || data.onboardingStatus;
-            const profileCompleted = data.profile_completed || data.onboardingComplete;
-            const name = data.name || data.full_name || '';
-            const hasRealName = !!name && String(name).trim() !== '' && name !== `Customer ${(storedPhone || '').slice(-4)}`;
-            const hasBookings = (data.bookings?.length || 0) > 0;
-            const hasProfileId = !!data.id;
-            const isOnboarded = onboardingStatus === 'COMPLETED' || profileCompleted ||
-              (hasProfileId && hasRealName) || (hasProfileId && hasBookings);
             localStorage.setItem('customerData', JSON.stringify(data));
-            localStorage.setItem('customerId', data.id);
-            localStorage.setItem('customerOnboardingComplete', isOnboarded ? 'true' : 'false');
+            persistCustomerDatabaseId(data);
+            applyUnifiedProfileToCustomerLocalStorage(data, storedPhone);
+            const onboardingStatus = data.onboarding_status || data.onboardingStatus;
+            const effectiveOnboarded = readOnboardingCompleted();
             setSession({
               phone: storedPhone,
               sessionToken: storedToken,
               verified: true,
               customer: data,
-              hasCompletedOnboarding: isOnboarded,
+              hasCompletedOnboarding: effectiveOnboarded,
               hasPets: !!(data.pets?.length),
-              isNewUser: !isOnboarded && (onboardingStatus === 'INIT' || onboardingStatus === 'PHONE_VERIFIED'),
+              isNewUser: !effectiveOnboarded && (onboardingStatus === 'INIT' || onboardingStatus === 'PHONE_VERIFIED'),
             });
           }
         } catch (apiError: any) {
-          if (apiError?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+          if (
+            apiError?.code !== 'CORS_ERROR' &&
+            apiError?.statusCode !== 404 &&
+            typeof window !== 'undefined' &&
+            process.env.NODE_ENV === 'development'
+          ) {
             console.error('Error fetching customer profile (background):', apiError);
           }
         }
@@ -93,6 +105,31 @@ export default function HomePage() {
     }
   }, [isLoading, session, router]);
 
+  useEffect(() => {
+    if (isLoading || !session) return;
+    if (needsPasswordSetupAfterOtp() && getStoredCustomerJwtForSession()) {
+      router.replace('/auth/set-password?next=/');
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      // Preserve service deep links (e.g. tele) — do not strip query via profile/onboarding redirects
+      if (sp.get('service')) {
+        setHomeGateReady(true);
+        return;
+      }
+    }
+    if (!readProfileCompleted()) {
+      router.replace('/profile');
+      return;
+    }
+    if (!readOnboardingCompleted()) {
+      router.replace('/onboarding');
+      return;
+    }
+    setHomeGateReady(true);
+  }, [isLoading, session, router]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
@@ -108,9 +145,31 @@ export default function HomePage() {
     return null; 
   }
 
+  if (!homeGateReady) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <ErrorBoundary>
-      <CustomerApp initialSession={session} />
+      <Suspense
+        fallback={
+          <div className="min-h-screen bg-white flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" />
+              <p className="text-gray-600">Loading...</p>
+            </div>
+          </div>
+        }
+      >
+        <CustomerApp initialSession={session} />
+      </Suspense>
     </ErrorBoundary>
   );
 }

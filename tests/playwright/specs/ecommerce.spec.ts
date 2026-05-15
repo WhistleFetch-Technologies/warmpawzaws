@@ -414,7 +414,7 @@ test.describe('E-Commerce API - Bulk Upload', () => {
     
     if (response.ok()) {
       const contentType = response.headers()['content-type'];
-      expect(contentType).toMatch(/text\/csv|application\/octet-stream/);
+      expect(contentType).toMatch(/application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/octet-stream/);
     }
   });
 

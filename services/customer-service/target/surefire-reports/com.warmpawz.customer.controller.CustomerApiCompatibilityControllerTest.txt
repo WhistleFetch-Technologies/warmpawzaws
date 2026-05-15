@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.warmpawz.customer.controller.CustomerApiCompatibilityControllerTest
+-------------------------------------------------------------------------------
+Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 9.678 s -- in com.warmpawz.customer.controller.CustomerApiCompatibilityControllerTest

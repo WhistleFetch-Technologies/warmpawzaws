@@ -2,9 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 import { Utensils, Calendar, MapPin, Package, ArrowLeft, Key, Eye, EyeOff, Copy, Check, Phone, User, Truck, AlertCircle, CheckCircle } from 'lucide-react';
 import { PolicyDisplay } from '../shared/PolicyDisplay';
 import { toast } from 'sonner';
+import { MEAL_PLANS_COMING_SOON } from '../nutrition/constants';
+import { MealPlansComingSoon } from '../nutrition/MealPlansComingSoon';
 
 interface MealPlanBookingFlowProps {
   vendorId: string;
@@ -22,6 +28,7 @@ interface MealPlan {
   meals_per_day: number;
   price: number;
   is_active: boolean;
+  mealImageUrl?: string | null;
 }
 
 interface Pet {
@@ -64,6 +71,10 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
   const [deliveryPartner, setDeliveryPartner] = useState<{ name?: string; phone?: string } | null>(null);
 
   useEffect(() => {
+    if (MEAL_PLANS_COMING_SOON) {
+      setLoading(false);
+      return;
+    }
     loadData();
   }, [vendorId, customerPhone]);
 
@@ -72,6 +83,7 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]); // ✅ FIX GAP-9.2: Meal plan filters
 
   useEffect(() => {
+    if (MEAL_PLANS_COMING_SOON) return;
     // Get customer location
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -89,6 +101,10 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
   }, []);
 
   const loadData = async () => {
+    if (MEAL_PLANS_COMING_SOON) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
       
@@ -108,8 +124,11 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
         apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`),
       ]);
 
-      if (plansRes.plans || plansRes) {
-        setMealPlans(plansRes.plans || plansRes);
+      const plansList = plansRes?.mealPlans ?? plansRes?.plans;
+      if (Array.isArray(plansList)) {
+        setMealPlans(plansList);
+      } else if (Array.isArray(plansRes)) {
+        setMealPlans(plansRes);
       }
 
       if (customerRes.customer) {
@@ -171,6 +190,7 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
 
   // Poll for order status updates when tracking is shown
   useEffect(() => {
+    if (MEAL_PLANS_COMING_SOON) return;
     if (showTracking && orderId) {
       loadOrderTracking(orderId);
       const interval = setInterval(() => loadOrderTracking(orderId), 15000); // Poll every 15 seconds
@@ -268,14 +288,17 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
             });
           }
 
-          // Open Razorpay checkout
-          const options = {
-            key: orderRes.razorpay_key || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-            amount: totalAmount * 100,
+          const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
+          const options = buildSanitizedStandardRazorpayCheckoutOptions({
+            key: (orderRes.razorpay_key || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+            amountPaise: Math.max(1, Math.round(Number(totalAmount) * 100)),
             currency: 'INR',
             name: 'Warmpawz',
             description: `Meal Plan Order - ${plan?.name}`,
             order_id: orderRes.order_id,
+            customerPhone,
+            customerEmail: checkoutEmail,
+            includeInstrumentBlocks: true,
             handler: async (response: any) => {
               try {
                 // Verify payment
@@ -300,9 +323,6 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
                 setError('Payment verification failed. Please contact support.');
               }
             },
-            prefill: {
-              contact: customerPhone,
-            },
             theme: {
               color: '#FF8C42',
             },
@@ -311,7 +331,7 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
                 setProcessing(false);
               },
             },
-          };
+          });
 
           const razorpay = new (window as any).Razorpay(options);
           razorpay.open();
@@ -336,6 +356,14 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
       setProcessing(false);
     }
   };
+
+  if (MEAL_PLANS_COMING_SOON) {
+    return (
+      <div className="max-w-md mx-auto px-4 py-6">
+        <MealPlansComingSoon onDismiss={onCancel} />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -587,8 +615,14 @@ export function MealPlanBookingFlow({ vendorId, customerPhone, onSuccess, onCanc
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    {plan.mealImageUrl ? (
+                      <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 border border-gray-100 bg-white">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={plan.mealImageUrl} alt="" className="w-full h-full object-cover" />
+                      </div>
+                    ) : null}
+                    <div className="flex-1 min-w-0">
                       <h4 className="font-semibold text-gray-900">{plan.name}</h4>
                       <p className="text-sm text-gray-600 mt-1">{plan.description}</p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">

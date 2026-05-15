@@ -1,0 +1,8 @@
+{
+  "resourceArn": "arn:aws:rds:ap-south-1:057442119249:cluster:warmpawz-prod-cluster",
+  "secretArn": "arn:aws:secretsmanager:ap-south-1:057442119249:secret:warmpawz-prod-rds-master-20260207201049162400000001-hmqkCE",
+  "database": "warmpawz",
+  "sql": "SELECT id, method, route_pattern, action_name, success_predicate, entity_resolver, entity_type, reference_type, reference_id_resolver, enabled FROM action_sources WHERE method = 'PUT' AND route_pattern = '/bookings/:bookingId/status' ORDER BY action_name",
+  "includeResultMetadata": true,
+  "formatRecordsAs": "JSON"
+}

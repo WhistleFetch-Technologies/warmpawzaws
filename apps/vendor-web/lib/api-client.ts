@@ -3,6 +3,8 @@
  * Uses API Gateway (Lambda backend)
  */
 
+import { VENDOR_POST_LOGIN_401_GRACE_MS } from './vendor-session-from-api';
+
 type RuntimeConfig = {
   apiBaseUrl?: string;
   uatMode?: boolean;
@@ -20,46 +22,60 @@ function getRuntimeConfig(): RuntimeConfig {
   return window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
 }
 
+/** Current dev API Gateway (replaces retired gateway IDs in env / secrets). */
+const DEV_API_GATEWAY_URL = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+const LEGACY_DEV_API_GATEWAY_SUBDOMAIN = 'iixwc3fzfl';
+
+function normalizeDevApiBaseUrl(url: string | undefined): string {
+  if (!url || typeof url !== 'string') return '';
+  const t = url.trim().replace(/\/+$/, '');
+  if (t.includes(LEGACY_DEV_API_GATEWAY_SUBDOMAIN)) {
+    return DEV_API_GATEWAY_URL;
+  }
+  return t;
+}
+
 /**
  * Determine if we're in production environment
- * Checks: runtime config → NEXT_PUBLIC_ENVIRONMENT → NODE_ENV → hostname
+ * Hostname is checked early so deployed prod URLs call prod API even if a build-time env flag is wrong.
  */
 function isProductionEnvironment(): boolean {
   const cfg = getRuntimeConfig();
-  
-  // 1. Check runtime config environment field
-  if (cfg.environment) {
-    return cfg.environment === 'production';
-  }
-  
-  // 2. Check NEXT_PUBLIC_ENVIRONMENT env var
-  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_ENVIRONMENT) {
-    return process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
-  }
-  
-  // 3. Check NODE_ENV
-  if (typeof process !== 'undefined' && process.env?.NODE_ENV) {
-    return process.env.NODE_ENV === 'production';
-  }
-  
-  // 4. Check hostname (production CloudFront domains)
+
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
-    // Production CloudFront domains
-    if (hostname.includes('cloudfront.net') || 
-        hostname.includes('warmpawz.com') ||
-        hostname.includes('admin.warmpawz.com') ||
-        hostname.includes('vendor.warmpawz.com') ||
-        hostname.includes('customer.warmpawz.com')) {
-      return true;
-    }
-    // Development indicators
     if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('localhost')) {
       return false;
     }
+    if (hostname === 'd1s6ykkj381k58.cloudfront.net' || hostname.startsWith('dev.')) {
+      return false;
+    }
+    const isProdHostname =
+      hostname === 'vendor.warmpawz.com' ||
+      hostname === 'admin.warmpawz.com' ||
+      hostname === 'customer.warmpawz.com' ||
+      hostname === 'warmpawz.com' ||
+      hostname === 'www.warmpawz.com';
+    if (isProdHostname) {
+      return true;
+    }
+    if (hostname.includes('cloudfront.net')) {
+      return true;
+    }
   }
-  
-  // Default to production for safety
+
+  if (cfg.environment) {
+    return cfg.environment === 'production';
+  }
+
+  if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_ENVIRONMENT) {
+    return process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
+  }
+
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV) {
+    return process.env.NODE_ENV === 'production';
+  }
+
   return true;
 }
 
@@ -72,7 +88,7 @@ function getApiGatewayUrl(): string {
   const isProd = isProductionEnvironment();
   return isProd
     ? 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'
-    : 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+    : DEV_API_GATEWAY_URL;
 }
 
 export function getApiBaseUrl(): string {
@@ -80,14 +96,24 @@ export function getApiBaseUrl(): string {
   const cfg = getRuntimeConfig();
   
   if (cfg.apiBaseUrl) {
-    return cfg.apiBaseUrl;
+    return normalizeDevApiBaseUrl(cfg.apiBaseUrl);
   }
   
   if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_BASE_URL) {
-    return process.env.NEXT_PUBLIC_API_BASE_URL;
+    const envBase = normalizeDevApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
+    // Guard against accidental localhost build env leaking into deployed hosts.
+    if (typeof window !== 'undefined' && window.location) {
+      const host = window.location.hostname || '';
+      const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host.includes('localhost');
+      const envIsLocalhost = envBase.includes('localhost') || envBase.includes('127.0.0.1');
+      if (!(envIsLocalhost && !isLocalhost)) {
+        return envBase;
+      }
+    } else {
+      return envBase;
+    }
   }
   
-  // ✅ FIX: Use environment-aware API Gateway selection (no hardcoded fallback)
   return getApiGatewayUrl();
 }
 
@@ -106,18 +132,15 @@ export class ApiClient {
 
   constructor(baseUrl: string = getApiBaseUrl()) {
     this.baseUrl = baseUrl || '';
-    
-    // UAT Mode: Log API configuration for debugging
-    if (UAT_MODE && typeof window !== 'undefined') {
-      console.log('🔧 [UAT Mode] API Client Initialized (Vendor)');
-      console.log('   Base URL:', this.baseUrl);
-      console.log('   Environment:', process.env.NODE_ENV);
-    }
   }
 
   private getAuthToken(): string | null {
     if (typeof window !== 'undefined') {
-      // Try Cognito token first (preferred for AWS Serverless)
+      // Try Cognito token first (preferred for AWS Serverless).
+      // refreshVendorTokensIfNeeded() (called at the top of request()) updates localStorage
+      // before this getter runs, so the re-read below picks up any freshly issued token.
+      // TODO: convert getAuthToken to async and replace getCognitoIdToken() with
+      //       refreshVendorTokensIfNeeded() once callers are migrated to await the result.
       try {
         const { getCognitoIdToken } = require('./cognito-auth');
         const cognitoToken = getCognitoIdToken();
@@ -138,11 +161,28 @@ export class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    isRetry: boolean = false,
   ): Promise<T> {
+    // Re-resolve base URL at call time so deploy-time runtime config always wins,
+    // even if the client instance was created before runtime-config.js executed.
+    const resolvedBaseUrl = getApiBaseUrl();
+    if (resolvedBaseUrl && resolvedBaseUrl !== this.baseUrl) {
+      this.baseUrl = resolvedBaseUrl;
+    }
     if (!this.baseUrl) {
       throw new Error('API_BASE_URL is not configured (runtime-config.js missing or empty).');
     }
+    // Silently refresh the Cognito access token when it has expired but the 90-day
+    // refresh token window is still open.  Runs before getAuthToken() so the updated
+    // token is in localStorage by the time the synchronous read below fires.
+    try {
+      const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
+      await refreshVendorTokensIfNeeded();
+    } catch {
+      // Never let a refresh failure block the outgoing request.
+    }
+
     // Fix: Normalize URL to avoid double slashes
     const base = this.baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     const path = endpoint.replace(/^\/+/, '/');    // Ensure single leading slash
@@ -161,12 +201,6 @@ export class ApiClient {
     // ✅ UAT Mode: Send header to backend so it knows to use mock data
     if (UAT_MODE) {
       headers['X-UAT-Mode'] = 'true';
-    }
-    
-    // UAT Mode: Log API requests for debugging
-    if (UAT_MODE && typeof window !== 'undefined') {
-      console.log(`🌐 [UAT] API Request: ${options.method || 'GET'} ${endpoint}`);
-      console.log('   Full URL:', url);
     }
     
     // ✅ FIX: Add timeout to prevent requests from hanging indefinitely (30 seconds)
@@ -200,18 +234,48 @@ export class ApiClient {
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
       
-      // Handle 401: clear full vendor session so /auth shows login (prevents redirect loop)
-      // Skip clear/redirect when vendor just logged in (OTP) so dashboard can load; first 401 may be from role/profile fetch race
-      if (response.status === 401) {
+      // Handle 401: clear full vendor session so /auth shows login (prevents redirect loop).
+      // After OTP / admin portal bootstrap, several parallel calls may 401 once (token shape, race).
+      // Never strip the "just logged in" flag on first 401 — that made the *second* 401 wipe the session
+      // and send users to the phone login screen while the portal tab was still loading.
+      // Skip session clear for forgot-password verify/reset — invalid OTP / token should not redirect away from the flow.
+      const isVendorForgotPasswordFlow =
+        path.includes('/auth/vendor/forgot-password/verify-otp') ||
+        path.includes('/auth/vendor/forgot-password/reset');
+      if (response.status === 401 && !isVendorForgotPasswordFlow) {
         if (typeof window !== 'undefined') {
+          const loginAt = Number(sessionStorage.getItem('_warmpawz_vendor_login_at') || 0);
+          const inGrace = loginAt > 0 && Date.now() - loginAt < VENDOR_POST_LOGIN_401_GRACE_MS;
           const justLoggedIn = sessionStorage.getItem('_warmpawz_vendor_just_logged_in') === 'true';
-          if (justLoggedIn) {
-            sessionStorage.removeItem('_warmpawz_vendor_just_logged_in');
-            if (UAT_MODE) {
-              console.warn('[API Client] 401 after login – skipping clear/redirect so dashboard can load');
+
+          // Before clearing the session, attempt ONE silent refresh + retry.
+          // This is the key to 90-day persistent login: a single 401 (caused by
+          // an expired/rotated access token, post-deploy revalidation, clock
+          // skew, etc.) must not log the user out as long as the refresh token
+          // is still inside its 90-day window.
+          if (!isRetry) {
+            try {
+              const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
+              const renewed = await refreshVendorTokensIfNeeded({ force: true });
+              if (renewed?.idToken) {
+                // Silently retry the original request with the fresh token.
+                return this.request<T>(endpoint, options, true);
+              }
+            } catch {
+              /* refresh failed for an unknown reason — fall through */
             }
-            // Fall through to throw error; caller (e.g. useVendorCapabilities) will use fallback
+          }
+
+          if (justLoggedIn || inGrace) {
+            if (UAT_MODE) {
+              console.warn('[API Client] 401 during post-login grace – skipping session clear');
+            }
           } else {
+            // Final fallback: refresh attempt did not produce a new token AND
+            // we're outside the post-login grace. Only NOW do we clear the
+            // session and redirect — i.e. only when the refresh token itself
+            // was rejected (`refreshVendorTokensIfNeeded` already cleared
+            // storage on a confirmed 4xx in that case).
             const { clearVendorSession } = require('./session-utils');
             clearVendorSession();
             window.location.href = '/auth';
@@ -228,15 +292,6 @@ export class ApiClient {
         let errorMessage = 'Too many requests. Please wait a moment before trying again.';
         if (retryAfterSeconds > 0) {
           errorMessage = `Too many requests. Please wait ${retryAfterSeconds} second${retryAfterSeconds > 1 ? 's' : ''} before trying again.`;
-        }
-        
-        // Log rate limit error with details
-        if (UAT_MODE && typeof window !== 'undefined') {
-          console.error('❌ [UAT] Rate Limit Error (429):', {
-            endpoint,
-            retryAfter: retryAfterSeconds,
-            errorData
-          });
         }
         
         // Create error with retry information
@@ -286,12 +341,6 @@ export class ApiClient {
         }
       }
       
-      // Log the full error for debugging in UAT mode
-      if (UAT_MODE && typeof window !== 'undefined') {
-        console.error('❌ [UAT] API Error Response:', errorData);
-        console.error('❌ [UAT] Extracted error message:', errorMessage);
-      }
-      
       // Attach status code to error for better handling
       const error = new Error(errorMessage);
       (error as any).statusCode = response.status;
@@ -300,6 +349,49 @@ export class ApiClient {
     }
 
     return response.json();
+  }
+
+  /**
+   * GET binary (e.g. bulk XLSX template). Uses API Gateway base URL + auth — not relative `/api`,
+   * which fails on static-export vendor hosting.
+   */
+  async getBlob(endpoint: string): Promise<Blob> {
+    const resolvedBaseUrl = getApiBaseUrl().replace(/\/+$/, '');
+    const path = endpoint.replace(/^\/+/, '/');
+    const url = `${resolvedBaseUrl}${path}`;
+
+    try {
+      const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
+      await refreshVendorTokensIfNeeded();
+    } catch {
+      /* non-blocking */
+    }
+
+    const token = this.getAuthToken();
+    const headers: Record<string, string> = {
+      Accept:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/octet-stream, */*',
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (UAT_MODE) headers['X-UAT-Mode'] = 'true';
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    let response: Response;
+    try {
+      response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
+      clearTimeout(timeoutId);
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      throw e?.name === 'AbortError' ? new Error('Download timed out. Please try again.') : e;
+    }
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      throw new Error(errText.slice(0, 240) || `HTTP ${response.status}`);
+    }
+
+    return response.blob();
   }
 
   async get<T>(endpoint: string): Promise<T> {

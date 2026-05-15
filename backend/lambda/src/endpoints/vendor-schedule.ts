@@ -17,10 +17,20 @@
 
 import { Hono } from 'hono';
 import { select, query, insert, update } from '../database/rds-connection';
-import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendor/endpoints/vendor-profile.vendor';
+import {
+  resolveVendorById,
+  getVendorIdsForAvailabilityLookup,
+  resolveAndPersistVendorType,
+  parseRoleConfigJson,
+} from './vendor/endpoints/vendor-profile.vendor';
+import {
+  computeEffectiveAllowedServiceStyles,
+  parseRoleConfigSelectedServiceStyles,
+} from '../utils/effective-service-styles';
 import { validateScheduleSlot } from '../utils/scheduling-policy-enforcer';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { geocodeAddress } from '../lib/utils/geocode';
 
 /**
  * Generate time slots from a time window
@@ -1262,7 +1272,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
   /**
    * POST /vendor/:vendorId/toggle-online
-   * Toggle vendor online status (for solo providers)
+   * Toggle vendor online status (solo, business, and center — same discovery rules).
    */
   app.post("/vendor/:vendorId/toggle-online", async (c) => {
     try {
@@ -1271,6 +1281,11 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
       if (typeof isOnline !== 'boolean') {
         return c.json({ error: 'isOnline boolean is required' }, 400);
+      }
+
+      const resolved = await resolveVendorById((vendorId || '').trim());
+      if (!resolved?.id) {
+        return c.json({ error: 'Vendor not found' }, 404);
       }
 
       await query(
@@ -1282,7 +1297,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
         [
           isOnline,
           isOnline ? null : new Date(),
-          vendorId
+          resolved.id
         ]
       );
 
@@ -1449,6 +1464,11 @@ export function registerVendorScheduleEndpoints(app: Hono) {
             const newVendorId = identity.vendor_id || identityId;
             console.log(`[AVAILABILITY] 🔨 Auto-creating vendor record for approved vendor ${identityId}, using vendor ID: ${newVendorId}`);
             try {
+              const { resolveNewVendorOnboardingTier } = await import('../utils/onboarding-f100-tier');
+              const tr = await resolveNewVendorOnboardingTier({
+                email: payload.email,
+                businessName: payload.businessName || payload.business_name,
+              });
               const newVendor = await insert('vendors', {
                 id: newVendorId,
                 phone: identity.phone,
@@ -1463,6 +1483,9 @@ export function registerVendorScheduleEndpoints(app: Hono) {
                 pincode: payload.pin || payload.pincode || '',
                 status: 'active',
                 is_active: true,
+                is_deleted: false,
+                tier: tr.tier,
+                commission_percentage: tr.commission_percentage,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
               });
@@ -1501,6 +1524,48 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       // Use the actual vendor ID (might be different if found by phone or vendor_id)
       const finalVendorId = actualVendorId;
 
+      const vendorGeoRows = await select('vendors', { id: finalVendorId });
+      const vendorRowForGeo = vendorGeoRows[0] ?? null;
+
+      async function enrichSlotLocationData(
+        raw: unknown,
+        vendorRow: { latitude?: unknown; longitude?: unknown; service_radius?: unknown } | null
+      ): Promise<Record<string, unknown> | null> {
+        if (raw == null || typeof raw !== 'object') return null;
+        const loc = { ...(raw as Record<string, unknown>) };
+        const address = typeof loc.address === 'string' ? loc.address.trim() : '';
+        let latRaw = loc.lat ?? loc.latitude;
+        let lngRaw = loc.lng ?? loc.longitude;
+        let lat = latRaw != null && latRaw !== '' ? Number(latRaw) : NaN;
+        let lng = lngRaw != null && lngRaw !== '' ? Number(lngRaw) : NaN;
+        const hasValid = Number.isFinite(lat) && Number.isFinite(lng);
+        if (!hasValid && address) {
+          const geo = await geocodeAddress(address);
+          if (geo) {
+            lat = geo.latitude;
+            lng = geo.longitude;
+          } else if (vendorRow?.latitude != null && vendorRow?.longitude != null) {
+            lat = Number(vendorRow.latitude);
+            lng = Number(vendorRow.longitude);
+          }
+        }
+        let serviceRadiusKm = loc.serviceRadiusKm ?? loc.service_radius_km;
+        if (serviceRadiusKm == null || serviceRadiusKm === '') {
+          const sr = vendorRow?.service_radius;
+          if (sr != null && sr !== '') serviceRadiusKm = Number(sr);
+        } else {
+          serviceRadiusKm = Number(serviceRadiusKm);
+        }
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          loc.lat = lat;
+          loc.lng = lng;
+        }
+        if (Number.isFinite(Number(serviceRadiusKm))) {
+          loc.serviceRadiusKm = Number(serviceRadiusKm);
+        }
+        return loc;
+      }
+
       // Ensure vendor_availability_v2 has the required columns (add individually to avoid conflicts)
       try {
         await query(`ALTER TABLE vendor_availability_v2 ADD COLUMN IF NOT EXISTS service_styles TEXT[] DEFAULT '{}'`).catch(() => {});
@@ -1526,7 +1591,10 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
       for (const slot of slots) {
         const serviceStyles = slot.serviceStyles || slot.service_styles || ['at_center'];
-        const locationData = slot.locationData || slot.location_data || null;
+        let locationData = slot.locationData || slot.location_data || null;
+        if (locationData && typeof locationData === 'object') {
+          locationData = await enrichSlotLocationData(locationData, vendorRowForGeo);
+        }
         // Lead time per service style (e.g. at_home: 45 travel, at_center: 15 prep, tele: 5 setup); replaces single buffer_time
         const leadTimeByStyle = slot.leadTimeByStyle || slot.lead_time_by_style || null;
         let startTime = slot.timeWindowStart || slot.time_window_start || slot.startTime;
@@ -1694,24 +1762,69 @@ export function registerVendorScheduleEndpoints(app: Hono) {
       const { vendorId } = c.req.param();
 
       // Resolve vendor (frontend may pass vendor_identity id; data is stored by vendors.id)
-      const vendor = await resolveVendorById(vendorId);
+      let vendor = await resolveVendorById(vendorId);
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
+      const persistedVt = await resolveAndPersistVendorType(vendor);
+      vendor = { ...vendor, vendor_type: persistedVt };
       const actualVendorId = vendor.id;
       const availabilityIds = await getVendorIdsForAvailabilityLookup(actualVendorId);
 
-      // Allowed service styles from role (solo vs business) for slot creation UI
-      let allowedServiceStyles: string[] = [];
+      // Align with GET /vendor/:id/profile: parse role config + effective styles (solo strips at_center).
+      let roleConfig: Record<string, any> = {};
+      let vendorConfiguration: 'solo' | 'business' | null = null;
+      let selectedServiceStyles: string[] = [];
       try {
         const roles = await select('roles', { id: vendor.role_id });
         if (roles.length > 0) {
-          const roleConfig = roles[0].config || {};
-          const vendorType = (vendor as any).vendor_type === 'solo' ? 'solo' : 'business';
-          allowedServiceStyles = roleConfig?.serviceStyles?.[vendorType] || roleConfig?.serviceStyles?.selected || [];
-          if (!Array.isArray(allowedServiceStyles)) allowedServiceStyles = [];
+          roleConfig = parseRoleConfigJson(roles[0].config);
+          const rawVt = (vendor as any).vendor_type;
+          vendorConfiguration =
+            rawVt === 'solo' || rawVt === 'business'
+              ? rawVt
+              : roleConfig.vendorConfiguration === 'solo' || roleConfig.vendorConfiguration === 'business'
+                ? roleConfig.vendorConfiguration
+                : null;
+          selectedServiceStyles = parseRoleConfigSelectedServiceStyles(roleConfig?.serviceStyles);
         }
-      } catch (_) { /* ignore */ }
+      } catch (_) {
+        /* ignore */
+      }
+
+      const computedAllowedStyles = computeEffectiveAllowedServiceStyles(
+        selectedServiceStyles,
+        vendorConfiguration,
+        roleConfig?.serviceStyles
+      );
+      const allowedServiceStyles = computedAllowedStyles.length > 0 ? computedAllowedStyles : ['at_home', 'tele'];
+
+      const vLat =
+        vendor.latitude != null && vendor.latitude !== '' ? Number(vendor.latitude) : NaN;
+      const vLng =
+        vendor.longitude != null && vendor.longitude !== '' ? Number(vendor.longitude) : NaN;
+      const vendorCoordsOk = Number.isFinite(vLat) && Number.isFinite(vLng);
+
+      const mapSlotLocationData = (raw: unknown): Record<string, unknown> | null => {
+        if (raw == null) return null;
+        let ld: Record<string, unknown>;
+        try {
+          ld =
+            typeof raw === 'string'
+              ? JSON.parse(raw || '{}')
+              : ({ ...(raw as Record<string, unknown>) } as Record<string, unknown>);
+        } catch {
+          return null;
+        }
+        if (!ld || typeof ld !== 'object') return null;
+        const lat = ld.lat ?? ld.latitude;
+        const lng = ld.lng ?? ld.longitude;
+        const has = Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
+        if (!has && vendorCoordsOk) {
+          return { ...ld, lat: vLat, lng: vLng };
+        }
+        return ld;
+      };
 
       // Get availability slots (query by vendor_id OR vendor_identity_id so slots are found regardless of which id was used when saving)
       let slotsResult: { rows: any[] } = { rows: [] };
@@ -1773,21 +1886,27 @@ export function registerVendorScheduleEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        allowedServiceStyles: allowedServiceStyles.length > 0 ? allowedServiceStyles : ['at_center', 'at_home', 'tele'],
+        allowedServiceStyles,
         availability: {
           slots: slotsResult.rows.map((s: any) => {
-            const leadTimeByStyle = s.lead_time_by_style != null
-              ? (typeof s.lead_time_by_style === 'string' ? JSON.parse(s.lead_time_by_style) : s.lead_time_by_style)
-              : null;
+            let leadTimeByStyle: Record<string, unknown> | null = null;
+            if (s.lead_time_by_style != null) {
+              try {
+                leadTimeByStyle =
+                  typeof s.lead_time_by_style === 'string'
+                    ? JSON.parse(s.lead_time_by_style)
+                    : s.lead_time_by_style;
+              } catch {
+                leadTimeByStyle = null;
+              }
+            }
             return {
               id: s.id,
               dayOfWeek: s.day_of_week,
               startTime: s.time_window_start || s.start_time,
               endTime: s.time_window_end || s.end_time,
               serviceStyles: s.service_styles || (s.service_type ? [s.service_type] : ['at_center']),
-              locationData: typeof s.location_data === 'string'
-                ? JSON.parse(s.location_data)
-                : s.location_data,
+              locationData: mapSlotLocationData(s.location_data),
               leadTimeByStyle: leadTimeByStyle || undefined,
               bufferTime: leadTimeByStyle ? undefined : (s.buffer_time || s.buffer_time_minutes || 15),
               maxCapacity: s.max_capacity || 1,
@@ -1814,7 +1933,7 @@ export function registerVendorScheduleEndpoints(app: Hono) {
           })),
         },
         isOnline: vendor.is_online ?? true,
-        vendorType: vendor.vendor_type || 'business',
+        vendorType: (vendor as any).vendor_type || vendorConfiguration || 'business',
       });
     } catch (error: any) {
       console.error('Error fetching availability:', error);

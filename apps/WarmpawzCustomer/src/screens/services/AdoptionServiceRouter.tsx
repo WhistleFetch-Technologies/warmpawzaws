@@ -11,11 +11,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
+import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -54,6 +55,7 @@ export function AdoptionServiceRouter({
   const [loading, setLoading] = useState(false);
   const [customerId, setCustomerId] = useState<string>('');
   const [centers, setCenters] = useState<any[]>([]);
+  const [userLocation] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
   const [selectedCenter, setSelectedCenter] = useState<any | null>(null);
   const [pets, setPets] = useState<any[]>([]);
   const [selectedPet, setSelectedPet] = useState<any | null>(null);
@@ -105,7 +107,9 @@ export function AdoptionServiceRouter({
       setLoading(true);
       const response = await CustomerApi.searchServices({
         serviceType: 'adoption',
-        location: '', // TODO: Get from location service
+        location: `${userLocation.lat},${userLocation.lng}`,
+        latitude: userLocation.lat,
+        longitude: userLocation.lng,
       });
       setCenters(response.vendors || []);
       setCurrentView('center_list');
@@ -192,6 +196,7 @@ export function AdoptionServiceRouter({
         <Text style={styles.subtitle}>Find your perfect companion</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <View style={styles.landingContent}>
         <Text style={styles.landingIcon}>❤️</Text>
         <Text style={styles.landingTitle}>Welcome to Pet Adoption</Text>
@@ -207,6 +212,7 @@ export function AdoptionServiceRouter({
           <Text style={styles.primaryButtonText}>Browse Adoption Centers</Text>
         </TouchableOpacity>
       </View>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -219,6 +225,7 @@ export function AdoptionServiceRouter({
         <Text style={styles.headerTitle}>Adoption Centers</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
@@ -245,6 +252,7 @@ export function AdoptionServiceRouter({
           ))}
         </ScrollView>
       )}
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -257,6 +265,7 @@ export function AdoptionServiceRouter({
         <Text style={styles.headerTitle}>{selectedCenter?.name}</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.profileContainer}>
         {selectedCenter?.image && (
           <View style={styles.imagePlaceholder}>
@@ -293,6 +302,7 @@ export function AdoptionServiceRouter({
           <Text style={styles.primaryButtonText}>View Available Pets</Text>
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -305,6 +315,7 @@ export function AdoptionServiceRouter({
         <Text style={styles.headerTitle}>Available Pets</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       {loading ? (
         <ActivityIndicator size="large" color={colors.primary} />
       ) : (
@@ -340,6 +351,7 @@ export function AdoptionServiceRouter({
           ))}
         </ScrollView>
       )}
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -352,6 +364,7 @@ export function AdoptionServiceRouter({
         <Text style={styles.headerTitle}>Adoption Application</Text>
       </View>
 
+      <BrandedStackBelowHeader>
       <ScrollView style={styles.applicationContainer}>
         {selectedPet && (
           <View style={styles.selectedPetCard}>
@@ -453,6 +466,7 @@ export function AdoptionServiceRouter({
           )}
         </TouchableOpacity>
       </ScrollView>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -488,21 +502,21 @@ export function AdoptionServiceRouter({
 
   if (loading && currentView === 'landing') {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       {currentView === 'landing' && renderLanding()}
       {currentView === 'center_list' && renderCenterList()}
       {currentView === 'center_profile' && renderCenterProfile()}
       {currentView === 'pet_list' && renderPetList()}
       {currentView === 'application' && renderApplication()}
       {currentView === 'confirmation' && renderConfirmation()}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -514,8 +528,7 @@ const styles = StyleSheet.create({
   header: {
     padding: spacing.md,
     backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
+    paddingBottom: spacing.md + 4,
   },
   backButton: {
     fontSize: typography.body,

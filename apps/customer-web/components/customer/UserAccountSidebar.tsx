@@ -1,20 +1,44 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { Button } from '@/components/ui/button';
 import { 
-  ChevronLeft, Camera, Edit2, Save, X, User, Calendar, 
-  MessageSquare, Heart, Settings, ChevronRight, Package,
+  Camera, Edit2, Save, X, User, Calendar, 
+  MessageSquare, Heart, Settings, ChevronRight, Package, Package2,
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   ShoppingCart, Home as HomeIcon, FileText, Shield, AlertCircle, Mail,
-  Trash2, Plus, Check, ChevronDown, ArrowRight, Wallet, ShoppingBag,
-  Gift, Users, Award
+  Trash2, Plus, Check, Wallet, ShoppingBag,
+  Gift, Users, Award, Smartphone, Building2
 } from 'lucide-react';
 // Uses apiClient with Cognito auth
-import { apiClient } from '@/lib/api-client';
+import { apiClient, isUatMode } from '@/lib/api-client';
+import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { validateEmail } from '@/lib/validation';
+import { PresignableImage } from '@/components/shared/PresignableImage';
+import {
+  normalizeCustomerProfileFields,
+  overlayCustomerProfileAfterSave,
+  patchCustomerProfileKeysInLocalStorage,
+} from '@/lib/normalize-customer-profile-api';
+import {
+  inferCityStateFromCommaAddress,
+  mergeStreetAddressLineOnly,
+} from '@/lib/profile-address-format';
+import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+const CUSTOMER_SUPPORT_EMAIL = 'support@warmpawz.com';
+
+function setSupportInitialTab(tab: 'faq' | 'contact' | 'tickets') {
+  try {
+    sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, tab);
+  } catch {
+    /* ignore */
+  }
+}
 
 interface UserProfile {
   firstName: string;
@@ -23,12 +47,17 @@ interface UserProfile {
   phone: string;
   address: string;
   pincode: string;
+  houseNo: string;
+  floor: string;
+  city?: string;
+  state?: string;
   photo?: string;
 }
 
 interface Booking {
   id: string;
-  serviceType: 'walker' | 'grooming' | 'vet' | 'boarding';
+  /** Normalized from API (may be camelCase or snake_case source). */
+  serviceType: string;
   petId: string;
   petName: string;
   petPhoto?: string;
@@ -81,7 +110,8 @@ interface Address {
   city: string;
   state: string;
   pincode: string;
-  landmark?: string;
+  houseNo?: string;
+  floor?: string;
   coordinates?: { lat: number; lng: number };
   isDefault: boolean;
   createdAt: string;
@@ -103,6 +133,222 @@ interface PaymentMethod {
   updatedAt: string;
 }
 
+/** Path/query segment for phone-based payment routes (avoids broken URLs when phone contains + or spaces). */
+function encodePaymentPhoneForPath(phone: string): string {
+  return encodeURIComponent(String(phone).trim());
+}
+
+const PAYMENT_METHODS_LS_PREFIX = 'warmpawz_payments_v2_';
+
+function paymentMethodsLocalStorageKey(phone: string): string {
+  const d = String(phone).replace(/\D/g, '');
+  const k = d.length >= 10 ? d.slice(-10) : d || 'unknown';
+  return PAYMENT_METHODS_LS_PREFIX + k;
+}
+
+function readLocalPaymentMethods(phone: string): PaymentMethod[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(paymentMethodsLocalStorageKey(phone));
+    if (!raw) return [];
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((item) =>
+        item && typeof item === 'object'
+          ? normalizePaymentMethodFromApi(item as Record<string, unknown>)
+          : null
+      )
+      .filter((pm): pm is PaymentMethod => pm != null);
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalPaymentMethods(phone: string, methods: PaymentMethod[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(paymentMethodsLocalStorageKey(phone), JSON.stringify(methods));
+  } catch {
+    /* quota */
+  }
+}
+
+/** API list wins on id clash; keeps local-only rows when API returns empty (refresh resilience). */
+function mergePaymentMethodLists(apiList: PaymentMethod[], localList: PaymentMethod[]): PaymentMethod[] {
+  const map = new Map<string, PaymentMethod>();
+  for (const p of localList) {
+    if (p.id) map.set(p.id, p);
+  }
+  for (const p of apiList) {
+    if (p.id) map.set(p.id, p);
+  }
+  return Array.from(map.values()).sort((a, b) =>
+    String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+  );
+}
+
+type PaymentFormState = {
+  type: 'card' | 'upi' | 'netbanking';
+  cardNumber: string;
+  cardHolderName: string;
+  expiryMonth: string;
+  expiryYear: string;
+  cvv: string;
+  cardType: 'visa' | 'mastercard' | 'rupay' | 'amex';
+  upiId: string;
+  bankName: string;
+  isDefault: boolean;
+};
+
+const CARD_TYPE_SELECTOR_LABELS: Record<PaymentFormState['cardType'], string> = {
+  visa: 'Visa',
+  mastercard: 'Mastercard',
+  rupay: 'RuPay',
+  amex: 'Amex',
+};
+
+/** POST only fields for the selected type so backend does not see leftover card defaults. */
+function buildPaymentMethodPostBody(np: PaymentFormState): Record<string, unknown> {
+  const base: Record<string, unknown> = {
+    type: np.type,
+    isDefault: np.isDefault,
+  };
+  if (np.type === 'card') {
+    base.cardNumber = np.cardNumber;
+    base.cardHolderName = np.cardHolderName;
+    base.expiryMonth = np.expiryMonth;
+    base.expiryYear = np.expiryYear;
+    base.cvv = np.cvv;
+    base.cardType = np.cardType;
+    return base;
+  }
+  if (np.type === 'upi') {
+    base.upiId = np.upiId.trim();
+    return base;
+  }
+  base.bankName = np.bankName.trim();
+  return base;
+}
+
+/**
+ * Prefer real payload fields over `payment_type` (DB often stores everything as "card").
+ * Order: UPI handle → net banking (bank name, no card digits) → card (≥4 digits).
+ */
+function inferPaymentKindFromFields(
+  last4Str: string,
+  upiRaw: string | undefined,
+  bankRaw: string | undefined
+): PaymentMethod['type'] | null {
+  const upi = upiRaw != null ? String(upiRaw).trim() : '';
+  const bank = bankRaw != null ? String(bankRaw).trim() : '';
+  const digits = last4Str.replace(/\D/g, '');
+  if (upi.length > 0) return 'upi';
+  if (bank.length > 0 && digits.length < 4) return 'netbanking';
+  if (digits.length >= 4) return 'card';
+  return null;
+}
+
+/** Map API/DB type strings + present fields → UI payment kind (fallback when fields are ambiguous). */
+function resolvePaymentMethodKind(
+  row: Record<string, unknown>,
+  last4Str: string,
+  upiStr: string | undefined,
+  bankStr: string | undefined
+): PaymentMethod['type'] {
+  const fromFields = inferPaymentKindFromFields(last4Str, upiStr, bankStr);
+  if (fromFields) return fromFields;
+
+  const upiT = upiStr != null ? String(upiStr).trim() : '';
+  if (upiT.includes('@')) return 'upi';
+
+  const raw = String(row.type ?? row.payment_type ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+  const c = raw.replace(/_/g, '');
+  if (raw === 'upi' || c === 'upi' || raw.includes('upi')) return 'upi';
+  if (
+    c === 'netbanking' ||
+    raw === 'net_banking' ||
+    c === 'banktransfer' ||
+    raw === 'bank_transfer' ||
+    c === 'nb'
+  ) {
+    return 'netbanking';
+  }
+  if (
+    c === 'card' ||
+    c === 'debitcard' ||
+    c === 'creditcard' ||
+    raw === 'debit_card' ||
+    raw === 'credit_card'
+  ) {
+    return 'card';
+  }
+
+  const last4 = last4Str.replace(/\D/g, '');
+  const hasUpi = Boolean(upiStr && upiStr.trim());
+  const hasBank = Boolean(bankStr && bankStr.trim());
+  if (hasUpi && last4.length < 4) return 'upi';
+  if (hasBank && last4.length < 4 && !hasUpi) return 'netbanking';
+  return 'card';
+}
+
+/** Use in list UI so labels match data even if `pm.type` was wrong in state/localStorage. */
+function effectivePaymentDisplayKind(pm: PaymentMethod): PaymentMethod['type'] {
+  return (
+    inferPaymentKindFromFields(pm.cardNumber || '', pm.upiId, pm.bankName) ?? pm.type
+  );
+}
+
+/** Normalize GET payload whether API returns mapped fields, raw DB rows, or enhanced `methods` items (last4/brand). */
+function normalizePaymentMethodFromApi(row: Record<string, unknown>): PaymentMethod | null {
+  const id = row.id != null ? String(row.id) : '';
+  if (!id) return null;
+  const last4 =
+    row.cardNumber ?? row.card_last4 ?? row.last4 ?? row.last_four ?? '';
+  const last4Str = String(last4 || '');
+  const upiStr = (row.upiId ?? row.upi_id) as string | undefined;
+  const bankStr = (row.bankName ?? row.bank_name) as string | undefined;
+  const type = resolvePaymentMethodKind(row, last4Str, upiStr, bankStr);
+
+  return {
+    id,
+    type,
+    cardNumber: last4Str,
+    cardHolderName: (row.cardHolderName ?? row.card_holder_name) as string | undefined,
+    expiryMonth:
+      row.expiryMonth != null
+        ? String(row.expiryMonth)
+        : row.card_expiry_month != null
+          ? String(row.card_expiry_month)
+          : undefined,
+    expiryYear:
+      row.expiryYear != null
+        ? String(row.expiryYear)
+        : row.card_expiry_year != null
+          ? String(row.card_expiry_year)
+          : undefined,
+    cardType: (row.cardType ?? row.card_brand ?? row.brand ?? row.cardBrand) as PaymentMethod['cardType'],
+    upiId: upiStr != null && String(upiStr).trim() !== '' ? String(upiStr).trim() : undefined,
+    bankName: bankStr != null && String(bankStr).trim() !== '' ? String(bankStr).trim() : undefined,
+    isDefault: Boolean(row.isDefault ?? row.is_default),
+    createdAt:
+      row.createdAt != null
+        ? String(row.createdAt)
+        : row.created_at != null
+          ? String(row.created_at)
+          : '',
+    updatedAt:
+      row.updatedAt != null
+        ? String(row.updatedAt)
+        : row.updated_at != null
+          ? String(row.updated_at)
+          : '',
+  };
+}
+
 interface NotificationSettings {
   push: boolean;
   email: boolean;
@@ -113,19 +359,128 @@ interface NotificationSettings {
   newsletter: boolean;
 }
 
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  push: true,
+  email: false,
+  sms: true,
+  bookingUpdates: true,
+  promotions: true,
+  newServices: false,
+  newsletter: false,
+};
+
+function notificationSettingsStorageKey(phone: string): string {
+  const clean = phone.replace(/\D/g, '');
+  return `warmpawz_notification_settings_${clean || 'unknown'}`;
+}
+
+function httpStatusFromApiError(err: unknown): number | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  const o = err as { statusCode?: number; status?: number };
+  return o.statusCode ?? o.status;
+}
+
+function mergeNotificationSettings(partial: Partial<NotificationSettings> | undefined | null): NotificationSettings {
+  if (!partial || typeof partial !== 'object') {
+    return { ...DEFAULT_NOTIFICATION_SETTINGS };
+  }
+  return { ...DEFAULT_NOTIFICATION_SETTINGS, ...partial };
+}
+
+function normalizeCustomerBookingRow(raw: Record<string, unknown>): Booking {
+  const r = raw as Record<string, any>;
+  const serviceTypeRaw =
+    r.serviceType ??
+    r.service_type ??
+    r.service_category ??
+    r.serviceCategory ??
+    '';
+  const serviceType = String(serviceTypeRaw).trim() || 'service';
+
+  const statusRaw = String(r.status ?? '').toLowerCase();
+  let status: Booking['status'];
+  if (statusRaw === 'completed') status = 'completed';
+  else if (statusRaw === 'cancelled' || statusRaw === 'canceled') status = 'cancelled';
+  else status = 'active';
+
+  const id = String(r.id ?? r.booking_id ?? '');
+  const petId = String(r.pet_id ?? r.petId ?? '');
+  const petName = String(r.pet_name ?? r.petName ?? 'Pet');
+  const vendorId = String(r.vendor_id ?? r.vendorId ?? '');
+  const vendorName = String(r.vendor_name ?? r.vendorName ?? 'Vendor');
+
+  const totalSessions = Math.max(1, Number(r.total_sessions ?? r.totalSessions ?? 1) || 1);
+  const completedSessions = Number(r.completed_sessions ?? r.completedSessions ?? 0) || 0;
+  const upcomingSessions =
+    Number(r.upcoming_sessions ?? r.upcomingSessions ?? Math.max(0, totalSessions - completedSessions)) || 0;
+
+  const price = Number(r.price ?? r.amount ?? r.total_amount ?? 0) || 0;
+  const startDate = String(
+    r.booking_date ?? r.start_date ?? r.startDate ?? r.created_at ?? r.bookingDate ?? ''
+  );
+
+  const freq = (r.frequency ?? 'single') as Booking['frequency'];
+  const sched = (r.schedule ?? 'anytime') as Booking['schedule'];
+
+  return {
+    id,
+    serviceType,
+    petId,
+    petName,
+    petPhoto: r.pet_photo ?? r.petPhoto,
+    vendorId,
+    vendorName,
+    vendorPhoto: r.vendor_photo ?? r.vendorPhoto,
+    startDate,
+    endDate: r.end_date ?? r.endDate,
+    duration: String(r.duration ?? r.duration_minutes ?? '—'),
+    frequency: ['single', 'weekly', 'monthly'].includes(freq) ? freq : 'single',
+    schedule: ['morning', 'evening', 'anytime'].includes(sched) ? sched : 'anytime',
+    sessionsPerDay: r.sessions_per_day ?? r.sessionsPerDay,
+    totalSessions,
+    completedSessions,
+    upcomingSessions,
+    status,
+    price,
+    requiresOTP: Boolean(r.requires_otp ?? r.requiresOTP ?? r.requires_start_otp),
+    completionOTP: r.completion_otp ?? r.completionOTP ?? r.otp_code ?? r.otpCode,
+    otpVerifiedAt: r.otp_verified_at ?? r.otpVerifiedAt,
+  };
+}
+
+function formatServiceTypeLabel(serviceType: string | undefined): string {
+  const t = (serviceType ?? '').trim().replace(/_/g, ' ');
+  if (!t) return 'Service';
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 interface UserAccountSidebarProps {
   phone: string;
   onClose: () => void;
+  /** X button: exit to app home (full shell reset). Falls back to closing the sheet if omitted. */
+  onNavigateHome?: () => void;
   onViewBooking?: (bookingId: string, petId: string) => void;
-  onViewCustomerProfile?: () => void;
   onViewAppointments?: () => void;
   onViewWallet?: () => void;
+  /** Full-page `/my-packages` (same pattern as wallet). */
+  onViewMyPackages?: () => void;
   onNavigate?: (path: string) => void;
 }
 
-export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustomerProfile, onViewAppointments, onViewWallet, onNavigate }: UserAccountSidebarProps) {
+export function UserAccountSidebar({
+  phone,
+  onClose,
+  onNavigateHome,
+  onViewBooking,
+  onViewAppointments,
+  onViewWallet,
+  onViewMyPackages,
+  onNavigate,
+}: UserAccountSidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeView, setActiveView] = useState<'menu' | 'profile' | 'bookings' | 'cart' | 'saved' | 'addresses' | 'payments' | 'notifications' | 'help'>('menu');
+  const [activeView, setActiveView] = useState<
+    'menu' | 'profile' | 'bookings' | 'cart' | 'saved' | 'addresses' | 'payments' | 'notifications' | 'help'
+  >('menu');
   
   // Profile states
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -178,48 +533,32 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   });
   
   // Notification states
-  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({
-    push: true,
-    email: false,
-    sms: true,
-    bookingUpdates: true,
-    promotions: true,
-    newServices: false,
-    newsletter: false
-  });
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(() => ({
+    ...DEFAULT_NOTIFICATION_SETTINGS,
+  }));
   const [loadingNotifications, setLoadingNotifications] = useState(true);
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showScrollIndicator, setShowScrollIndicator] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setTimeout(() => setIsOpen(true), 50);
     loadProfile();
     loadBookings();
+    try {
+      const v = sessionStorage.getItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
+      if (v === 'bookings') {
+        setActiveView('bookings');
+        sessionStorage.removeItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
+      }
+    } catch {
+      /* ignore */
+    }
   }, [phone]);
 
-  // Handle scroll to hide indicator
+  // Reset scroll position when view changes
   useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      if (container.scrollTop > 50) {
-        setShowScrollIndicator(false);
-      } else {
-        setShowScrollIndicator(true);
-      }
-    };
-
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  // Reset scroll indicator when view changes
-  useEffect(() => {
-    setShowScrollIndicator(true);
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }
@@ -241,28 +580,37 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadProfile = async () => {
     try {
       setLoading(true);
-      const result = await apiClient.get<{ profile?: UserProfile }>(`/customer/profile?phone=${encodeURIComponent(phone)}`);
+      const result = await apiClient.get<{ profile?: UserProfile & { name?: string; profile_photo_url?: string } }>(
+        `/customer/profile?phone=${encodeURIComponent(phone)}`
+      );
 
       if (result && result.profile) {
-        setProfile({
-          firstName: result.profile.firstName || '',
-          lastName: result.profile.lastName || '',
-          email: result.profile.email || '',
-          phone: result.profile.phone || phone,
-          address: result.profile.address || '',
-          pincode: result.profile.pincode || '',
-          photo: result.profile.photo || ''
+        const base = normalizeCustomerProfileFields(result.profile as any, phone);
+        const raw = result.profile as any;
+        const addressLine = mergeStreetAddressLineOnly({
+          address: base.address,
+          city: base.city,
+          state: base.state,
         });
-        setPhotoPreview(result.profile.photo || '');
-        setOriginalProfile({
-          firstName: result.profile.firstName || '',
-          lastName: result.profile.lastName || '',
-          email: result.profile.email || '',
-          phone: result.profile.phone || phone,
-          address: result.profile.address || '',
-          pincode: result.profile.pincode || '',
-          photo: result.profile.photo || ''
-        });
+        const houseNo = String(raw.houseNo ?? raw.house_no ?? '').trim();
+        const floor = String(raw.floor ?? '').trim();
+        const { city: ic, state: ist } = inferCityStateFromCommaAddress(addressLine);
+        const next: UserProfile = {
+          firstName: base.firstName,
+          lastName: base.lastName,
+          email: base.email,
+          phone: base.phone,
+          address: addressLine,
+          pincode: base.pincode,
+          houseNo,
+          floor,
+          city: ic ?? base.city,
+          state: ist ?? base.state,
+          photo: base.photo,
+        };
+        setProfile(next);
+        setPhotoPreview(base.photo);
+        setOriginalProfile({ ...next });
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -327,6 +675,11 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
       return;
     }
 
+    if (!profile.houseNo?.trim()) {
+      alert('Please enter House No / Flat No');
+      return;
+    }
+
     if (!validateEmail(profile.email)) {
       alert('Please enter a valid email address');
       return;
@@ -339,9 +692,29 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
     setSaving(true);
     try {
-      await apiClient.post(`/customer/profile?phone=${encodeURIComponent(phone)}`, { phone: phone, profile: profile });
+      const addr = profile.address.trim();
+      const { city: inferredCity, state: inferredState } = inferCityStateFromCommaAddress(addr);
+      const cityResolved = (profile.city?.trim() || inferredCity || '').trim();
+      const stateResolved = (profile.state?.trim() || inferredState || '').trim();
+      const payload: UserProfile = {
+        ...profile,
+        address: addr,
+        city: cityResolved || profile.city,
+        state: stateResolved || profile.state,
+        houseNo: profile.houseNo.trim(),
+        floor: (profile.floor || '').trim(),
+      };
+      await apiClient.post(`/customer/profile?phone=${encodeURIComponent(phone)}`, { phone: phone, profile: payload });
+      patchCustomerProfileKeysInLocalStorage({
+        pincode: payload.pincode,
+        address: payload.address,
+        city: payload.city,
+        state: payload.state,
+      });
       alert('✅ Profile updated successfully!');
       await loadProfile();
+      setProfile((prev) => overlayCustomerProfileAfterSave(prev, payload));
+      setOriginalProfile((prev) => overlayCustomerProfileAfterSave(prev, payload));
       setEditMode(false);
     } catch (error: any) {
       console.error('Error saving profile:', error);
@@ -366,6 +739,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     localStorage.removeItem('authToken');
     localStorage.removeItem('customerData');
     localStorage.removeItem('customerOnboardingComplete');
+    localStorage.removeItem('onboarding_completed');
+    localStorage.removeItem('profile_completed');
     localStorage.removeItem('customerJourneyStage');
     
     // Redirect to auth page
@@ -381,9 +756,12 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadBookings = async () => {
     try {
       setLoadingBookings(true);
-      const result = await apiClient.get<{ bookings?: Booking[] }>(`/customer/bookings?phone=${encodeURIComponent(phone)}`);
+      const result = await apiClient.get<{ bookings?: Record<string, unknown>[] }>(
+        `/customer/bookings?phone=${encodeURIComponent(phone)}`
+      );
       console.log('📚 [CUSTOMER-PROFILE] Loaded bookings:', result);
-      setBookings(result.bookings || []);
+      const rows = Array.isArray(result.bookings) ? result.bookings : [];
+      setBookings(rows.map((row) => normalizeCustomerBookingRow(row)));
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {
@@ -458,7 +836,9 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   const loadAddresses = async () => {
     try {
       setLoadingAddresses(true);
-      const result = await apiClient.get<{ addresses?: Address[] }>(`/customer/addresses/${phone}`);
+      const result = await apiClient.get<{ addresses?: Address[] }>(
+        `/customer/addresses?phone=${encodeURIComponent(phone)}`
+      );
       setAddresses(result.addresses || []);
     } catch (error) {
       console.error('Error loading addresses:', error);
@@ -469,11 +849,16 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
   const saveAddress = async (addressData: any) => {
     try {
+      const payload = {
+        ...addressData,
+        flatNo: null,
+        addressLine2: null,
+      };
       let data: any;
       if (editingAddress) {
-        data = await apiClient.put(`/customer/${phone}/addresses/${editingAddress.id}`, addressData) as any;
+        data = await apiClient.put(`/customer/${phone}/addresses/${editingAddress.id}`, payload) as any;
       } else {
-        data = await apiClient.post(`/customer/${phone}/addresses`, addressData) as any;
+        data = await apiClient.post(`/customer/${phone}/addresses`, payload) as any;
       }
 
       if (data && data.success) {
@@ -512,11 +897,56 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   // PAYMENT FUNCTIONS
   // ============================================
   
+  /** Fetch list from API (query route first — avoids some API Gateway path-param quirks). */
+  const fetchPaymentMethodsFromApi = async (): Promise<PaymentMethod[]> => {
+    const phoneSeg = encodePaymentPhoneForPath(phone);
+    const qPhone = encodeURIComponent(phone.trim());
+    type PayGet = {
+      paymentMethods?: unknown[];
+      methods?: unknown[];
+      success?: boolean;
+    };
+    let raw: unknown[] = [];
+    try {
+      const alt = await apiClient.get<PayGet>(
+        `/customer/payment-methods?phone=${qPhone}`
+      );
+      raw = Array.isArray(alt.paymentMethods)
+        ? alt.paymentMethods
+        : Array.isArray(alt.methods)
+          ? alt.methods
+          : [];
+    } catch (e) {
+      console.warn('GET /customer/payment-methods failed, trying path route:', e);
+    }
+    if (raw.length === 0) {
+      try {
+        const primary = await apiClient.get<PayGet>(`/customer/payments/${phoneSeg}`);
+        raw = Array.isArray(primary.paymentMethods) ? primary.paymentMethods : [];
+      } catch (e) {
+        console.warn('GET /customer/payments/:phone failed:', e);
+      }
+    }
+    const apiList = raw
+      .map((row) =>
+        row && typeof row === 'object'
+          ? normalizePaymentMethodFromApi(row as Record<string, unknown>)
+          : null
+      )
+      .filter((pm): pm is PaymentMethod => pm != null);
+
+    const localList = readLocalPaymentMethods(phone);
+    return mergePaymentMethodLists(apiList, localList);
+  };
+
   const loadPayments = async () => {
     try {
       setLoadingPayments(true);
-      const result = await apiClient.get<{ paymentMethods?: PaymentMethod[] }>(`/customer/payments/${phone}`);
-      setPaymentMethods(result.paymentMethods || []);
+      const normalized = await fetchPaymentMethodsFromApi();
+      setPaymentMethods(normalized);
+      if (normalized.length > 0) {
+        writeLocalPaymentMethods(phone, normalized);
+      }
     } catch (error) {
       console.error('Error loading payment methods:', error);
     } finally {
@@ -540,6 +970,19 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
           alert('❌ CVV must be 3 digits');
           return;
         }
+        const eyDigits = newPayment.expiryYear.replace(/\D/g, '');
+        if (eyDigits.length !== 2 && eyDigits.length !== 4) {
+          alert('❌ Year must be 2 digits (YY) or 4 digits (YYYY)');
+          return;
+        }
+        const fullYear =
+          eyDigits.length === 2 ? parseInt(`20${eyDigits}`, 10) : parseInt(eyDigits, 10);
+        const minY = new Date().getFullYear();
+        const maxY = minY + 25;
+        if (Number.isNaN(fullYear) || fullYear < minY || fullYear > maxY) {
+          alert(`❌ Enter a valid expiry year (${minY}–${maxY})`);
+          return;
+        }
       } else if (newPayment.type === 'upi') {
         if (!newPayment.upiId) {
           alert('❌ Please enter UPI ID');
@@ -552,8 +995,17 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
         }
       }
 
-      await apiClient.post(`/customer/payments/${phone}`, newPayment);
-      alert('✅ Payment method added successfully!');
+      const phoneSeg = encodePaymentPhoneForPath(phone);
+      const postBody = buildPaymentMethodPostBody(newPayment);
+      const created = await apiClient.post<{
+        success?: boolean;
+        paymentMethod?: Record<string, unknown>;
+      }>(`/customer/payments/${phoneSeg}`, postBody);
+      const added =
+        created?.paymentMethod && typeof created.paymentMethod === 'object'
+          ? normalizePaymentMethodFromApi(created.paymentMethod as Record<string, unknown>)
+          : null;
+
       setShowPaymentForm(false);
       setNewPayment({
         type: 'card',
@@ -567,10 +1019,30 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
         bankName: '',
         isDefault: false
       });
-      await loadPayments();
-    } catch (error) {
+
+      // Single list update: refetch, then append POST response if GET missed it (avoids loadPayments wiping merged state).
+      setLoadingPayments(true);
+      try {
+        let list = await fetchPaymentMethodsFromApi();
+        if (added && !list.some((p) => p.id === added.id)) {
+          list = [...list, added];
+        }
+        setPaymentMethods(list);
+        writeLocalPaymentMethods(phone, list);
+      } finally {
+        setLoadingPayments(false);
+      }
+
+      alert('✅ Payment method added successfully!');
+    } catch (error: unknown) {
       console.error('Error saving payment method:', error);
-      alert('❌ Failed to save payment method');
+      const msg =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'object' && error !== null && 'message' in error
+            ? String((error as { message?: string }).message)
+            : 'Failed to save payment method';
+      alert(`❌ ${msg}`);
     }
   };
 
@@ -578,7 +1050,13 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     if (!confirm('Are you sure you want to remove this payment method?')) return;
 
     try {
-      await apiClient.delete(`/customer/payments/${phone}/${paymentId}`);
+      await apiClient.delete(
+        `/customer/payments/${encodePaymentPhoneForPath(phone)}/${encodeURIComponent(paymentId)}`
+      );
+      writeLocalPaymentMethods(
+        phone,
+        readLocalPaymentMethods(phone).filter((p) => p.id !== paymentId)
+      );
       alert('✅ Payment method removed!');
       await loadPayments();
     } catch (error) {
@@ -590,29 +1068,84 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
   // NOTIFICATION FUNCTIONS
   // ============================================
   
+  const notificationSettingsQueryUrl = `/customer/notifications?phone=${encodeURIComponent(phone)}`;
+
   const loadNotificationSettings = async () => {
     try {
       setLoadingNotifications(true);
-      const result = await apiClient.get<{ settings?: NotificationSettings }>(`/customer/notifications/${phone}`);
-      if (result.settings) {
-        setNotificationSettings(result.settings);
+      // Query-string URL matches GET /customer/notifications; POST uses the same path (deployed Lambda must include POST handler).
+      const result = await apiClient.get<{ settings?: Partial<NotificationSettings> }>(
+        `${notificationSettingsQueryUrl}&limit=1`
+      );
+      const merged = mergeNotificationSettings(result.settings);
+      setNotificationSettings(merged);
+      try {
+        if (typeof window !== 'undefined' && result.settings) {
+          localStorage.setItem(notificationSettingsStorageKey(phone), JSON.stringify(merged));
+        }
+      } catch {
+        /* ignore quota */
       }
     } catch (error) {
       console.error('Error loading notification settings:', error);
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = localStorage.getItem(notificationSettingsStorageKey(phone));
+          if (raw) {
+            const parsed = JSON.parse(raw) as Partial<NotificationSettings>;
+            setNotificationSettings(mergeNotificationSettings(parsed));
+          }
+        }
+      } catch {
+        /* ignore */
+      }
     } finally {
       setLoadingNotifications(false);
     }
   };
 
   const toggleNotification = async (key: keyof NotificationSettings) => {
-    const newSettings = { ...notificationSettings, [key]: !notificationSettings[key] };
-    setNotificationSettings(newSettings);
+    const previous = notificationSettings;
+    const next = { ...previous, [key]: !previous[key] };
+    // Normalize so every channel key is an explicit boolean in state and in JSON (matches backend merge).
+    const payload = mergeNotificationSettings(next);
+    setNotificationSettings(payload);
+
+    const persistLocal = () => {
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(notificationSettingsStorageKey(phone), JSON.stringify(payload));
+        }
+      } catch {
+        /* ignore */
+      }
+    };
 
     try {
-      await apiClient.put(`/customer/notifications/${phone}`, newSettings);
-    } catch (error) {
-      console.error('Error updating notification settings:', error);
-      setNotificationSettings(notificationSettings);
+      // PUT is present on older Lambda bundles; POST matches GET /customer/notifications on current code.
+      await apiClient.put(`/customer/notifications/${encodeURIComponent(phone)}`, payload);
+      persistLocal();
+    } catch (putErr) {
+      try {
+        await apiClient.post(notificationSettingsQueryUrl, payload);
+        persistLocal();
+      } catch (postErr) {
+        const put404 = httpStatusFromApiError(putErr) === 404;
+        const post404 = httpStatusFromApiError(postErr) === 404;
+        // Remote dev API may not have POST yet; PUT may 404 if phone has no DB row. In UAT, keep toggles in localStorage.
+        if (isUatMode() && put404 && post404) {
+          if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+            console.warn(
+              '[notifications] PUT and POST returned 404 — saved toggles locally only. ' +
+                'For a real API: run backend/lambda `npm run start:local` and set NEXT_PUBLIC_API_BASE_URL=http://localhost:3000 in apps/customer-web/.env.local, or deploy the Lambda.'
+            );
+          }
+          persistLocal();
+        } else {
+          console.error('Error updating notification settings:', putErr, postErr);
+          setNotificationSettings(previous);
+        }
+      }
     }
   };
 
@@ -624,6 +1157,35 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
     setIsOpen(false);
     setTimeout(onClose, 300);
   };
+
+  const handleHeaderCloseToHome = () => {
+    if (onNavigateHome) {
+      onNavigateHome();
+      return;
+    }
+    handleClose();
+  };
+
+  const handleSidebarBack = () => {
+    if (showAddressForm) {
+      setShowAddressForm(false);
+      setEditingAddress(null);
+      return;
+    }
+    if (showPaymentForm) {
+      setShowPaymentForm(false);
+      return;
+    }
+    if (activeView !== 'menu') {
+      setActiveView('menu');
+      setEditMode(false);
+      setShowAddressForm(false);
+      setShowPaymentForm(false);
+      setEditingAddress(null);
+    }
+  };
+
+  const showProfileMenuBack = activeView !== 'menu' || showAddressForm || showPaymentForm;
 
   const getServiceIcon = (type: string) => {
     switch (type) {
@@ -649,15 +1211,29 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
   const menuItems = [
     { icon: User, label: 'My Profile', color: 'from-blue-100 to-blue-200 text-blue-600', view: 'profile' as const },
-    { icon: ShoppingBag, label: 'My Orders', color: 'from-orange-100 to-orange-200 text-orange-600', action: 'orders', isExternal: true },
+    {
+      icon: Package2,
+      label: 'My packages',
+      color: 'from-orange-100 to-orange-200 text-orange-600',
+      action: 'my-packages' as const,
+      isExternal: true,
+    },
+    { icon: ShoppingBag, label: 'My Orders', color: 'from-orange-100 to-orange-200 text-orange-600', action: 'orders', isExternal: true, comingSoon: !isCustomerEcommerceEnabled() },
     { icon: Wallet, label: 'My Wallet', color: 'from-emerald-100 to-emerald-200 text-emerald-600', action: 'wallet', isExternal: true },
     { icon: Award, label: 'Rewards & Loyalty', color: 'from-amber-100 to-amber-200 text-amber-600', action: 'rewards-loyalty', isExternal: true },
     { icon: Users, label: 'Refer & Earn', color: 'from-cyan-100 to-cyan-200 text-cyan-600', action: 'referral-system', isExternal: true },
     { icon: Calendar, label: 'My Appointments', color: 'from-purple-100 to-purple-200 text-purple-600', action: 'appointments', isExternal: true },
     { icon: MapPin, label: 'Address Book', color: 'from-green-100 to-green-200 text-green-600', action: 'addresses', isExternal: true },
     { icon: Package, label: 'My Bookings', color: 'from-teal-100 to-teal-200 text-teal-600', view: 'bookings' as const, badge: activeBookings.length },
-    { icon: ShoppingCart, label: 'My Cart', color: 'from-pink-100 to-pink-200 text-pink-600', view: 'cart' as const, badge: cartItems.length },
-    { icon: Heart, label: 'Saved Items', color: 'from-red-100 to-red-200 text-red-600', view: 'saved' as const, badge: savedItems.length },
+    {
+      icon: ShoppingCart,
+      label: 'My Cart',
+      color: 'from-pink-100 to-pink-200 text-pink-600',
+      view: 'cart' as const,
+      badge: cartItems.length,
+      comingSoon: !isCustomerEcommerceEnabled(),
+    },
+    { icon: Heart, label: 'Saved Items', color: 'from-red-100 to-red-200 text-red-600', view: 'saved' as const, badge: savedItems.length, comingSoon: !isCustomerEcommerceEnabled() },
     { icon: CreditCard, label: 'Payment Settings', color: 'from-yellow-100 to-yellow-200 text-yellow-600', view: 'payments' as const },
     { icon: Bell, label: 'Notifications', color: 'from-indigo-100 to-indigo-200 text-indigo-600', view: 'notifications' as const },
     { icon: HelpCircle, label: 'Help & Support', color: 'from-gray-100 to-gray-200 text-gray-600', view: 'help' as const },
@@ -670,86 +1246,58 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
       }`}
     >
       {/* Full Screen Mobile Container */}
-      <div className="w-full max-w-[430px] mx-auto h-full bg-white flex flex-col">
-        
-        {/* Header - Fixed */}
-        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] px-6 pt-12 pb-6 flex-shrink-0">
-          <div className="flex items-center justify-between mb-6">
-            <button 
-              onClick={handleClose}
-              className="w-11 h-11 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm active:scale-95 transition-transform"
-            >
-              <X className="w-6 h-6 text-white" />
-            </button>
-            {activeView !== 'menu' && (
-              <button 
-                onClick={() => {
-                  setActiveView('menu');
-                  setEditMode(false);
-                  setShowAddressForm(false);
-                  setShowPaymentForm(false);
-                  setEditingAddress(null);
-                }}
-                className="text-white flex items-center gap-2 active:opacity-70 transition-opacity"
-              >
-                <ChevronLeft className="w-5 h-5" />
-                <span className="font-medium">Back</span>
-              </button>
-            )}
-          </div>
-
-          {/* User Profile Section */}
-          {loading ? (
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-white/20 rounded-full animate-pulse"></div>
-              <div className="flex-1">
-                <div className="h-5 bg-white/20 rounded w-32 mb-2"></div>
-                <div className="h-4 bg-white/20 rounded w-24"></div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 bg-white rounded-full overflow-hidden flex items-center justify-center">
-                {photoPreview ? (
-                  <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
-                ) : (
-                  <User className="w-8 h-8 text-[#FF8C42]" />
-                )}
-              </div>
-              <div>
-                <h2 className="text-white font-bold text-lg">
-                  {profile?.firstName || 'User'} {profile?.lastName || ''}
-                </h2>
-                <p className="text-white/90 text-sm">{phone}</p>
-              </div>
-            </div>
-          )}
-        </div>
+      <div className="w-full max-w-customer mx-auto h-full bg-gray-50 flex flex-col">
+        <ServiceDashboardHeader
+          serviceName={
+            loading
+              ? 'Account'
+              : [profile?.firstName, profile?.lastName].filter(Boolean).join(' ').trim() || 'Account'
+          }
+          serviceSubtitle={loading ? undefined : phone}
+          serviceIcon={
+            <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white">
+              {loading ? (
+                <span className="h-8 w-8 animate-pulse rounded-full bg-white/40" aria-hidden />
+              ) : photoPreview ? (
+                <PresignableImage src={photoPreview} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <User className="h-6 w-6 text-[#FF8C42]" />
+              )}
+            </span>
+          }
+          iconColor="text-white"
+          stats={[]}
+          onCloseToHome={handleHeaderCloseToHome}
+          onBack={showProfileMenuBack ? handleSidebarBack : undefined}
+          showBackButton={showProfileMenuBack}
+          bottomEdge="sheet"
+          sheetToneClass="bg-gray-50"
+        />
 
         {/* Scrollable Content Area - Fixed Height with Proper Overflow */}
         <div 
           ref={scrollContainerRef}
-          className="flex-1 overflow-y-auto overscroll-contain relative" 
+          className="-mt-1 flex-1 min-h-0 overflow-y-auto overscroll-contain relative pb-24" 
           style={{ WebkitOverflowScrolling: 'touch' }}
         >
-          {/* Scroll Indicator - Shows user can scroll */}
-          {showScrollIndicator && activeView !== 'menu' && (
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10 pointer-events-none animate-bounce">
-              <div className="bg-[#FF8C42] text-white rounded-full p-2 shadow-lg">
-                <ChevronDown className="w-5 h-5" />
-              </div>
-            </div>
-          )}
-
           {activeView === 'menu' && (
-            <div className="p-5 space-y-3 pb-8">
-              {menuItems.map((item, index) => (
+            <div className="p-5 space-y-3">
+              {menuItems.map((item, index) => {
+                const isComingSoon = 'comingSoon' in item && item.comingSoon;
+                return (
                 <button
                   key={index}
+                  type="button"
+                  disabled={isComingSoon}
+                  aria-disabled={isComingSoon || undefined}
                   onClick={() => {
+                    if (isComingSoon) return;
                     if (item.isExternal) {
                       if (item.action === 'appointments' && onViewAppointments) {
                         onViewAppointments();
+                        handleClose();
+                      } else if (item.action === 'my-packages' && onViewMyPackages) {
+                        onViewMyPackages();
                         handleClose();
                       } else if (item.action === 'wallet' && onViewWallet) {
                         onViewWallet();
@@ -769,24 +1317,36 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                       setActiveView(item.view);
                     }
                   }}
-                  className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"
+                  className={`w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-2xl transition-all shadow-sm text-left ${
+                    isComingSoon
+                      ? 'opacity-60 cursor-not-allowed'
+                      : 'active:scale-[0.98] active:bg-gray-50'
+                  }`}
                 >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-14 h-14 bg-gradient-to-br ${item.color} rounded-2xl flex items-center justify-center`}>
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className={`w-14 h-14 shrink-0 bg-gradient-to-br ${item.color} rounded-2xl flex items-center justify-center`}>
                       <item.icon className="w-7 h-7" />
                     </div>
-                    <span className="font-semibold text-gray-800 text-[15px]">{item.label}</span>
+                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                      <span className="font-semibold text-gray-800 text-[15px]">{item.label}</span>
+                      {isComingSoon && (
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200/80 shrink-0">
+                          Coming Soon
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    {item.badge !== undefined && item.badge > 0 && (
+                  <div className="flex items-center gap-3 shrink-0">
+                    {item.badge !== undefined && item.badge > 0 && !isComingSoon && (
                       <span className="min-w-[26px] h-[26px] px-2 bg-[#FF8C42] text-white rounded-full flex items-center justify-center text-xs font-bold">
                         {item.badge}
                       </span>
                     )}
-                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                    <ChevronRight className={`w-5 h-5 ${isComingSoon ? 'text-gray-300' : 'text-gray-400'}`} />
                   </div>
                 </button>
-              ))}
+              );
+              })}
 
               {/* Logout Button */}
               <button 
@@ -859,7 +1419,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                     <div className="relative">
                       <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-lg">
                         {photoPreview ? (
-                          <img src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
+                          <PresignableImage src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <User className="w-16 h-16 text-gray-400" />
@@ -939,15 +1499,108 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                     <div>
                       <label className="block text-xs font-semibold text-gray-500 mb-2.5">Address</label>
                       {editMode ? (
-                        <textarea
-                          value={profile.address}
-                          onChange={(e) => setProfile({ ...profile, address: e.target.value })}
-                          rows={3}
-                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-none"
+                        <>
+                          <EnhancedAddressAutocomplete
+                            value={profile.address}
+                            onChange={(address: string, components?: AddressComponents) => {
+                              setProfile((prev) => {
+                                const updated: UserProfile = { ...prev, address };
+                                if (components?.pincode) {
+                                  updated.pincode = components.pincode;
+                                }
+                                if (components?.city) {
+                                  updated.city = components.city;
+                                }
+                                if (components?.state) {
+                                  updated.state = components.state;
+                                }
+                                return updated;
+                              });
+                            }}
+                            placeholder="Search address, landmark, city..."
+                            className="w-full"
+                            required
+                          />
+                          <p className="text-xs text-gray-500 mt-1.5">
+                            Type to search for your address, landmark or area
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl whitespace-pre-wrap">
+                          {profile.address || '-'}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2.5">
+                        House No / Flat No <span className="text-red-500">*</span>
+                      </label>
+                      {editMode ? (
+                        <input
+                          type="text"
+                          value={profile.houseNo}
+                          onChange={(e) => setProfile({ ...profile, houseNo: e.target.value })}
+                          placeholder="e.g., A-101, Flat 12B"
+                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                         />
                       ) : (
-                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.address || '-'}</p>
+                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
+                          {profile.houseNo?.trim() || '—'}
+                        </p>
                       )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2.5">Floor</label>
+                      {editMode ? (
+                        <input
+                          type="text"
+                          value={profile.floor}
+                          onChange={(e) => setProfile({ ...profile, floor: e.target.value })}
+                          placeholder="e.g., 1st Floor"
+                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                        />
+                      ) : (
+                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
+                          {profile.floor?.trim() || '—'}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-2.5">City</label>
+                        {editMode ? (
+                          <input
+                            type="text"
+                            value={profile.city || ''}
+                            onChange={(e) => setProfile({ ...profile, city: e.target.value })}
+                            placeholder="City"
+                            className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                          />
+                        ) : (
+                          <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
+                            {profile.city?.trim() || '—'}
+                          </p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 mb-2.5">State</label>
+                        {editMode ? (
+                          <input
+                            type="text"
+                            value={profile.state || ''}
+                            onChange={(e) => setProfile({ ...profile, state: e.target.value })}
+                            placeholder="State"
+                            className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                          />
+                        ) : (
+                          <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
+                            {profile.state?.trim() || '—'}
+                          </p>
+                        )}
+                      </div>
                     </div>
 
                     <div>
@@ -956,7 +1609,12 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                         <input
                           type="text"
                           value={profile.pincode}
-                          onChange={(e) => setProfile({ ...profile, pincode: e.target.value })}
+                          onChange={(e) =>
+                            setProfile({
+                              ...profile,
+                              pincode: e.target.value.replace(/\D/g, '').slice(0, 6),
+                            })
+                          }
                           maxLength={6}
                           className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
                         />
@@ -973,20 +1631,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
           {/* Bookings View */}
           {activeView === 'bookings' && (
             <div className="p-5 pb-8">
-              <div className="flex items-center justify-between mb-6">
+              <div className="mb-6">
                 <h3 className="text-2xl font-bold text-gray-800">My Bookings</h3>
-                {onViewCustomerProfile && (
-                  <button
-                    onClick={() => {
-                      onViewCustomerProfile();
-                      handleClose();
-                    }}
-                    className="text-sm text-[#FF8C42] hover:text-[#FF7029] font-medium flex items-center gap-1"
-                  >
-                    View Full History
-                    <ArrowRight className="w-4 h-4" />
-                  </button>
-                )}
               </div>
               
               {/* Stats */}
@@ -1036,7 +1682,7 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between mb-2">
                             <h4 className="font-bold text-gray-800">
-                              {booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1)}
+                              {formatServiceTypeLabel(booking.serviceType)}
                             </h4>
                             <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor(booking.status)}`}>
                               {booking.status}
@@ -1083,12 +1729,19 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                             <div className="mb-3">
                               <div className="flex items-center justify-between text-xs text-gray-600 mb-1.5">
                                 <span>{booking.completedSessions}/{booking.totalSessions} sessions</span>
-                                <span>{Math.round((booking.completedSessions / booking.totalSessions) * 100)}%</span>
+                                <span>
+                                  {Math.round(
+                                    (booking.completedSessions / Math.max(booking.totalSessions, 1)) * 100
+                                  )}
+                                  %
+                                </span>
                               </div>
                               <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                                 <div 
                                   className="h-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B35]"
-                                  style={{ width: `${(booking.completedSessions / booking.totalSessions) * 100}%` }}
+                                  style={{
+                                    width: `${(booking.completedSessions / Math.max(booking.totalSessions, 1)) * 100}%`,
+                                  }}
                                 />
                               </div>
                             </div>
@@ -1122,7 +1775,15 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                   <ShoppingCart className="w-20 h-20 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-gray-800 font-semibold text-lg mb-2">Your cart is empty</h3>
                   <p className="text-gray-600 mb-6">Add products to get started</p>
-                  <Button onClick={handleClose} className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white h-12 px-8">
+                  <Button
+                    onClick={() => {
+                      if (onNavigate) {
+                        onNavigate('shop');
+                      }
+                      handleClose();
+                    }}
+                    className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white h-12 px-8"
+                  >
                     Continue Shopping
                   </Button>
                 </div>
@@ -1259,6 +1920,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                           <p className="text-sm text-gray-600">{addr.addressLine1}</p>
                           {addr.addressLine2 && <p className="text-sm text-gray-600">{addr.addressLine2}</p>}
                           <p className="text-sm text-gray-600">{addr.city}, {addr.state} - {addr.pincode}</p>
+                          {addr.houseNo && <p className="text-sm text-gray-600 mt-1">House / Flat: {addr.houseNo}</p>}
+                          {addr.floor && <p className="text-sm text-gray-600">Floor: {addr.floor}</p>}
                           <p className="text-sm text-gray-600 mt-1.5">📞 {addr.phone}</p>
                         </div>
                       </div>
@@ -1318,21 +1981,86 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {paymentMethods.map((pm) => (
-                    <div key={pm.id} className="bg-white border border-gray-200 rounded-2xl p-4">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <div className="flex items-center gap-2 mb-2">
-                            <h4 className="font-bold text-gray-800 text-lg">
-                              {pm.type === 'card' ? `${pm.cardType?.toUpperCase()} ****${pm.cardNumber}` : 
-                               pm.type === 'upi' ? pm.upiId : pm.bankName}
-                            </h4>
+                  {paymentMethods.map((pm) => {
+                    const kind = effectivePaymentDisplayKind(pm);
+                    const last4Digits = (pm.cardNumber || '').replace(/\D/g, '').slice(-4);
+                    const brandRaw = pm.cardType ? String(pm.cardType).replace(/_/g, ' ').trim() : '';
+                    const brandPretty =
+                      brandRaw.length > 0 && brandRaw.length <= 24 ? brandRaw.toUpperCase() : '';
+                    const cardHeadline =
+                      last4Digits.length > 0
+                        ? `${brandPretty ? `${brandPretty} · ` : ''}•••• ${last4Digits}`
+                        : brandPretty || 'Saved card';
+
+                    const typeMeta =
+                      kind === 'card'
+                        ? {
+                            label: 'Card',
+                            sub: 'Debit or credit card',
+                            Icon: CreditCard,
+                            badgeClass: 'bg-orange-500 text-white',
+                          }
+                        : kind === 'upi'
+                          ? {
+                              label: 'UPI',
+                              sub: 'Unified Payments',
+                              Icon: Smartphone,
+                              badgeClass: 'bg-violet-600 text-white',
+                            }
+                          : {
+                              label: 'Net banking',
+                              sub: 'Bank account',
+                              Icon: Building2,
+                              badgeClass: 'bg-sky-600 text-white',
+                            };
+
+                    const TypeIcon = typeMeta.Icon;
+
+                    return (
+                    <div
+                      key={pm.id}
+                      className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm"
+                    >
+                      <div className="flex gap-3 mb-3">
+                        <div
+                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${typeMeta.badgeClass}`}
+                          aria-hidden
+                        >
+                          <TypeIcon className="h-6 w-6 text-white" strokeWidth={2} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <span className={`text-xs font-bold uppercase tracking-wide px-2 py-0.5 rounded-md ${typeMeta.badgeClass}`}>
+                              {typeMeta.label}
+                            </span>
                             {pm.isDefault && (
-                              <span className="px-2.5 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-lg">Default</span>
+                              <span className="px-2.5 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-lg">
+                                Default
+                              </span>
                             )}
                           </div>
-                          {pm.type === 'card' && <p className="text-sm text-gray-600">{pm.cardHolderName}</p>}
-                          {pm.type === 'card' && <p className="text-sm text-gray-600">Expires: {pm.expiryMonth}/{pm.expiryYear}</p>}
+                          <p className="text-xs text-gray-500 mb-1">{typeMeta.sub}</p>
+                          <h4 className="font-bold text-gray-900 text-base break-all leading-snug">
+                            {kind === 'card'
+                              ? cardHeadline
+                              : kind === 'upi'
+                                ? pm.upiId || 'UPI ID on file'
+                                : pm.bankName || 'Bank on file'}
+                          </h4>
+                          {kind === 'card' && pm.cardHolderName ? (
+                            <p className="text-sm text-gray-600 mt-1">{pm.cardHolderName}</p>
+                          ) : null}
+                          {kind === 'card' && (pm.expiryMonth || pm.expiryYear) ? (
+                            <p className="text-sm text-gray-600">
+                              Expires {pm.expiryMonth || '—'}/{pm.expiryYear || '—'}
+                            </p>
+                          ) : null}
+                          {kind === 'upi' && pm.upiId ? (
+                            <p className="text-sm text-gray-500 mt-1">Pay with this UPI ID at checkout.</p>
+                          ) : null}
+                          {kind === 'netbanking' && pm.bankName ? (
+                            <p className="text-sm text-gray-600 mt-1">Net banking · {pm.bankName}</p>
+                          ) : null}
                         </div>
                       </div>
                       <Button 
@@ -1344,7 +2072,8 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                         Remove
                       </Button>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               )}
                 </>
@@ -1452,11 +2181,12 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                           <label className="block text-sm font-semibold text-gray-700 mb-2">Year</label>
                           <input
                             type="text"
-                            placeholder="YY"
-                            maxLength={2}
+                            placeholder="YYYY"
+                            maxLength={4}
+                            inputMode="numeric"
                             value={newPayment.expiryYear}
                             onChange={(e) => {
-                              const value = e.target.value.replace(/\D/g, '');
+                              const value = e.target.value.replace(/\D/g, '').slice(0, 4);
                               setNewPayment({ ...newPayment, expiryYear: value });
                             }}
                             className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
@@ -1480,18 +2210,19 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
 
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-2">Card Type</label>
-                        <div className="grid grid-cols-4 gap-2">
-                          {['visa', 'mastercard', 'rupay', 'amex'].map((type) => (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {(['visa', 'mastercard', 'rupay', 'amex'] as const).map((type) => (
                             <button
                               key={type}
-                              onClick={() => setNewPayment({ ...newPayment, cardType: type as any })}
-                              className={`p-3 border-2 rounded-xl text-sm font-semibold capitalize transition-all ${
+                              type="button"
+                              onClick={() => setNewPayment({ ...newPayment, cardType: type })}
+                              className={`flex min-h-[3rem] items-center justify-center px-2 py-2 border-2 rounded-xl text-center text-xs sm:text-sm font-semibold leading-snug transition-all ${
                                 newPayment.cardType === type
                                   ? 'border-[#FF8C42] bg-orange-50 text-[#FF8C42]'
                                   : 'border-gray-200 bg-white text-gray-600'
                               }`}
                             >
-                              {type}
+                              {CARD_TYPE_SELECTOR_LABELS[type]}
                             </button>
                           ))}
                         </div>
@@ -1625,7 +2356,14 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
             <div className="p-5 pb-8">
               <h3 className="text-2xl font-bold text-gray-800 mb-6">Help & Support</h3>
               <div className="space-y-3">
-                <button className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupportInitialTab('faq');
+                    onNavigate?.('support_help');
+                  }}
+                  className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"
+                >
                   <div className="w-12 h-12 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl flex items-center justify-center flex-shrink-0">
                     <HelpCircle className="w-6 h-6 text-blue-600" />
                   </div>
@@ -1636,7 +2374,14 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                   <ChevronRight className="w-5 h-5 text-gray-400" />
                 </button>
 
-                <button className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupportInitialTab('contact');
+                    onNavigate?.('support_help');
+                  }}
+                  className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"
+                >
                   <div className="w-12 h-12 bg-gradient-to-br from-green-100 to-green-200 rounded-xl flex items-center justify-center flex-shrink-0">
                     <MessageSquare className="w-6 h-6 text-green-600" />
                   </div>
@@ -1647,18 +2392,33 @@ export function UserAccountSidebar({ phone, onClose, onViewBooking, onViewCustom
                   <ChevronRight className="w-5 h-5 text-gray-400" />
                 </button>
 
-                <button className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== 'undefined') {
+                      window.location.href = `mailto:${CUSTOMER_SUPPORT_EMAIL}`;
+                    }
+                  }}
+                  className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"
+                >
                   <div className="w-12 h-12 bg-gradient-to-br from-purple-100 to-purple-200 rounded-xl flex items-center justify-center flex-shrink-0">
                     <Mail className="w-6 h-6 text-purple-600" />
                   </div>
                   <div className="flex-1 text-left">
                     <p className="font-semibold text-gray-800">Email Support</p>
-                    <p className="text-sm text-gray-600">support@warmpawz.com</p>
+                    <p className="text-sm text-gray-600">{CUSTOMER_SUPPORT_EMAIL}</p>
                   </div>
                   <ChevronRight className="w-5 h-5 text-gray-400" />
                 </button>
 
-                <button className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSupportInitialTab('contact');
+                    onNavigate?.('support_help');
+                  }}
+                  className="w-full flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-2xl active:scale-[0.98] active:bg-gray-50 transition-all shadow-sm"
+                >
                   <div className="w-12 h-12 bg-gradient-to-br from-red-100 to-red-200 rounded-xl flex items-center justify-center flex-shrink-0">
                     <AlertCircle className="w-6 h-6 text-red-600" />
                   </div>
@@ -1704,7 +2464,14 @@ function NotificationToggle({ label, description, enabled, onToggle }: {
         <p className="text-sm text-gray-600 mt-0.5">{description}</p>
       </div>
       <button
-        onClick={onToggle}
+        type="button"
+        role="switch"
+        aria-checked={enabled}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onToggle();
+        }}
         className={`w-14 h-8 rounded-full relative transition-colors flex-shrink-0 ml-4 ${
           enabled ? 'bg-[#FF8C42]' : 'bg-gray-300'
         }`}
@@ -1727,11 +2494,11 @@ function AddressForm({ address, onSave, onCancel }: {
     name: address?.name || '',
     phone: address?.phone || '',
     addressLine1: address?.addressLine1 || '',
-    addressLine2: address?.addressLine2 || '',
     city: address?.city || '',
     state: address?.state || '',
     pincode: address?.pincode || '',
-    landmark: address?.landmark || '',
+    houseNo: address?.houseNo || '',
+    floor: address?.floor || '',
     isDefault: address?.isDefault || false
   });
 
@@ -1753,8 +2520,12 @@ function AddressForm({ address, onSave, onCancel }: {
 
         // Reverse geocode using Google Maps
         try {
+          const apiKey =
+            (await getGoogleMapsBrowserApiKey()) ||
+            process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+            '';
           const response = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}`
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
           );
           const data = await response.json();
 
@@ -1829,6 +2600,10 @@ function AddressForm({ address, onSave, onCancel }: {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.houseNo?.trim()) {
+      alert('Please enter House No / Flat No');
+      return;
+    }
     onSave(formData);
   };
 
@@ -1926,13 +2701,7 @@ function AddressForm({ address, onSave, onCancel }: {
               if (components.pincode && !formData.pincode) {
                 updates.pincode = components.pincode;
               }
-              if (components.street && !formData.addressLine2) {
-                updates.addressLine2 = components.street;
-              }
-              if (components.landmark && !formData.landmark) {
-                updates.landmark = components.landmark;
-              }
-              
+
               if (Object.keys(updates).length > 0) {
                 setFormData(prev => ({ ...prev, ...updates }));
               }
@@ -1941,16 +2710,6 @@ function AddressForm({ address, onSave, onCancel }: {
           placeholder="Search address, landmark, city..."
           className="w-full"
           required
-        />
-      </div>
-
-      <div>
-        <label className="block text-xs font-semibold text-gray-500 mb-2.5">Address Line 2 (Optional)</label>
-        <input
-          type="text"
-          value={formData.addressLine2}
-          onChange={(e) => setFormData({ ...formData, addressLine2: e.target.value })}
-          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
         />
       </div>
 
@@ -1990,11 +2749,24 @@ function AddressForm({ address, onSave, onCancel }: {
       </div>
 
       <div>
-        <label className="block text-xs font-semibold text-gray-500 mb-2.5">Landmark (Optional)</label>
+        <label className="block text-xs font-semibold text-gray-500 mb-2.5">House No / Flat No *</label>
         <input
           type="text"
-          value={formData.landmark}
-          onChange={(e) => setFormData({ ...formData, landmark: e.target.value })}
+          value={formData.houseNo}
+          onChange={(e) => setFormData({ ...formData, houseNo: e.target.value })}
+          placeholder="e.g., A-101, Flat 12B"
+          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+          required
+        />
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-gray-500 mb-2.5">Floor</label>
+        <input
+          type="text"
+          value={formData.floor}
+          onChange={(e) => setFormData({ ...formData, floor: e.target.value })}
+          placeholder="e.g., 1st Floor"
           className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
         />
       </div>

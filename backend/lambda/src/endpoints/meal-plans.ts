@@ -21,6 +21,8 @@ import { isValidUUID } from '../types/entities';
 import { getRazorpayConfig, razorpayRequest } from '../utils/payments/razorpay-client';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { randomUUID } from 'crypto';
+import { getFeeGlobalsMap } from '../utils/admin-fee-settings-db';
+import { presignMealPlanRowDisplayFields } from '../utils/s3-media-presign';
 
 export function registerMealPlanEndpoints(app: Hono) {
 
@@ -308,21 +310,49 @@ export function registerMealPlanEndpoints(app: Hono) {
         });
       }
 
-      return c.json({
-        success: true,
-        mealPlans: filteredPlans.map((mp: any) => {
+      const mealPlans = await Promise.all(
+        filteredPlans.map(async (mp: any) => {
           const distanceKm = mp.distance_km || null;
           const estimatedDeliveryMinutes = distanceKm != null ? Math.round(15 + distanceKm * 3) : null; // Phase 1: ETA ~15min + 3min/km
+          const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(
+            mp as Record<string, unknown>,
+          );
+          let suitableFor = mp.suitable_for;
+          let ingredients = mp.ingredients;
+          let nutritionInfo = mp.nutrition_info;
+          try {
+            suitableFor = typeof mp.suitable_for === 'string' ? JSON.parse(mp.suitable_for) : mp.suitable_for;
+          } catch {
+            suitableFor = mp.suitable_for;
+          }
+          try {
+            ingredients = typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients;
+          } catch {
+            ingredients = mp.ingredients;
+          }
+          try {
+            nutritionInfo = typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info;
+          } catch {
+            nutritionInfo = mp.nutrition_info;
+          }
+
           return {
             ...mp,
-            photos: typeof mp.photos === 'string' ? JSON.parse(mp.photos) : mp.photos,
-            suitableFor: typeof mp.suitable_for === 'string' ? JSON.parse(mp.suitable_for) : mp.suitable_for,
-            ingredients: typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients,
-            nutritionInfo: typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info,
+            photos,
+            suitableFor,
+            ingredients,
+            nutritionInfo,
+            dietary_requirements,
+            mealImageUrl,
             distanceKm,
             estimatedDeliveryMinutes, // Phase 1: for customer UI "ETA ~X min"
           };
         }),
+      );
+
+      return c.json({
+        success: true,
+        mealPlans,
         filters: {
           maxRadius: maxRadius > 0 ? maxRadius : null,
           appliedFilters: filters ? filters.split(',').map(f => f.trim()) : [],
@@ -357,15 +387,21 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const mp = result.rows[0];
 
+      const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(
+        mp as Record<string, unknown>,
+      );
+
       return c.json({
         success: true,
         mealPlan: {
           ...mp,
-          photos: typeof mp.photos === 'string' ? JSON.parse(mp.photos) : mp.photos,
+          photos,
           suitableFor: typeof mp.suitable_for === 'string' ? JSON.parse(mp.suitable_for) : mp.suitable_for,
           ingredients: typeof mp.ingredients === 'string' ? JSON.parse(mp.ingredients) : mp.ingredients,
           nutritionInfo: typeof mp.nutrition_info === 'string' ? JSON.parse(mp.nutrition_info) : mp.nutrition_info,
           deliverySlots: typeof mp.delivery_slots === 'string' ? JSON.parse(mp.delivery_slots) : mp.delivery_slots,
+          dietary_requirements,
+          mealImageUrl,
         },
       });
     } catch (error: any) {
@@ -407,18 +443,14 @@ export function registerMealPlanEndpoints(app: Hono) {
         } else if (logisticsType === 'warmpawz') {
           deliveryFee = 50;
         }
-        const feeSettings = await query(
-          `SELECT * FROM admin_settings WHERE setting_key IN ('platform_fee_percentage', 'convenience_fee', 'max_platform_fee') AND (service_type = 'meal' OR service_type = 'nutritionist' OR service_type = 'all' OR service_type IS NULL)`
-        ).catch(() => ({ rows: [] }));
-        const feeMap: Record<string, any> = {};
-        for (const row of feeSettings.rows) {
-          feeMap[row.setting_key] = row.setting_value;
-        }
+        const feeMap = await getFeeGlobalsMap();
         const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
         const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
         platformFee = Math.round(subtotal * (platformFeePercentage / 100));
         if (maxPlatformFee > 0 && platformFee > maxPlatformFee) platformFee = maxPlatformFee;
-        convenienceFee = parseFloat(feeMap['convenience_fee'] || '0');
+        convenienceFee = parseFloat(
+          feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0'
+        );
       } catch (_) {
         deliveryFee = logisticsType === 'warmpawz' ? 50 : 0;
         platformFee = Math.round(subtotal * 0.02);
@@ -606,20 +638,13 @@ export function registerMealPlanEndpoints(app: Hono) {
         }
         
         // Get platform and convenience fees from admin_settings or finance_rules
-        const feeSettings = await query(
-          `SELECT * FROM admin_settings 
-           WHERE setting_key IN ('platform_fee_percentage', 'convenience_fee', 'max_platform_fee')
-           AND (service_type = 'meal' OR service_type = 'nutritionist' OR service_type = 'all' OR service_type IS NULL)`
-        ).catch(() => ({ rows: [] }));
-        
-        const feeMap: Record<string, any> = {};
-        for (const row of feeSettings.rows) {
-          feeMap[row.setting_key] = row.setting_value;
-        }
-        
+        const feeMap = await getFeeGlobalsMap();
+
         const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
         const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
-        convenienceFee = parseFloat(feeMap['convenience_fee'] || '0');
+        convenienceFee = parseFloat(
+          feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0'
+        );
         
         platformFee = Math.round(subtotal * (platformFeePercentage / 100));
         if (maxPlatformFee > 0 && platformFee > maxPlatformFee) {

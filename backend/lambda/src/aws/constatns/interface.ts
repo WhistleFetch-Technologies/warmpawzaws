@@ -58,6 +58,7 @@ export type NotificationEventType =
     // Meal Delivery Events
     | 'meal_order_received'
     | 'meal_order_preparing'
+    | 'meal_order_eta_updated'
     | 'meal_order_pickup'
     | 'meal_order_delivered'
     // Rating/Review Events
@@ -204,6 +205,10 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationEventType, {
     meal_order_preparing: {
         title: '👨‍🍳 Meal Being Prepared',
         body: 'Your fresh meal is being prepared. ETA: {eta} minutes.',
+    },
+    meal_order_eta_updated: {
+        title: '⏱️ Meal ETA Updated',
+        body: 'Your meal preparation ETA is now {preparationEtaMinutes} minutes.',
     },
     meal_order_pickup: {
         title: '🚴 Pickup In Progress',

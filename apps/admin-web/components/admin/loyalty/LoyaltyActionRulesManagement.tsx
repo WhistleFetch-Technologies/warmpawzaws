@@ -108,6 +108,10 @@ export function LoyaltyActionRulesManagement() {
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
   const [editingRule, setEditingRule] = useState<LoyaltyActionRule | null>(null);
+  const [actionOptions, setActionOptions] = useState<string[]>([]);
+  const [loadingActions, setLoadingActions] = useState<boolean>(false);
+  const actionsAbortRef = React.useRef<AbortController | null>(null);
+  const debounceRef = React.useRef<number | undefined>(undefined);
   const [formData, setFormData] = useState<ActionRuleFormData>({
     action_name: '',
     action_category: 'loyalty',
@@ -145,6 +149,42 @@ export function LoyaltyActionRulesManagement() {
       setLoading(false);
     }
   };
+
+  // Load distinct action names (searchable)
+  const loadActions = async (q: string) => {
+    try {
+      actionsAbortRef.current?.abort();
+      const ac = new AbortController();
+      actionsAbortRef.current = ac;
+      setLoadingActions(true);
+
+      const params = new URLSearchParams();
+      if (q?.trim()) params.set('search', q.trim());
+      params.set('limit', '100');
+
+      const res = await apiClient.get<any>(`/admin/loyalty/actions?${params.toString()}`, {
+        signal: ac.signal,
+      } as any);
+      const items = Array.isArray(res?.actions) ? res.actions : [];
+      setActionOptions(items.filter((v: any) => typeof v === 'string' && v.length > 0));
+    } catch (e) {
+      if (!(actionsAbortRef.current && actionsAbortRef.current.signal.aborted)) {
+        setActionOptions([]);
+      }
+    } finally {
+      setLoadingActions(false);
+    }
+  };
+
+  // Prime action list on dialog open
+  useEffect(() => {
+    if (showDialog) {
+      loadActions('');
+    } else {
+      actionsAbortRef.current?.abort();
+      window.clearTimeout(debounceRef.current);
+    }
+  }, [showDialog]);
 
   const handleCreate = () => {
     setEditingRule(null);
@@ -242,6 +282,24 @@ export function LoyaltyActionRulesManagement() {
       return `${rule.points_value} points per ₹${rule.base_amount || 100}`;
     }
   };
+
+  const selectedSegmentIds = formData.conditions?.segment_ids || [];
+  const allowedSegmentTypes: Array<LoyaltySegment['segment_type']> =
+    formData.user_type === 'customer'
+      ? ['customer', 'both']
+      : formData.user_type === 'vendor'
+        ? ['vendor', 'both']
+        : ['customer', 'vendor', 'both'];
+  const availableSegments = segments.filter((s) => allowedSegmentTypes.includes(s.segment_type));
+  const missingSelectedSegments = selectedSegmentIds.filter(
+    (id) => !availableSegments.some((s) => s.id === id)
+  );
+  const targetEntityLabel =
+    formData.user_type === 'both'
+      ? 'customers/vendors'
+      : formData.user_type === 'vendor'
+        ? 'vendors'
+        : 'customers';
 
   return (
     <div className="space-y-6">
@@ -361,16 +419,34 @@ export function LoyaltyActionRulesManagement() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="action_name">Action Name *</Label>
-                <Input
-                  id="action_name"
-                  value={formData.action_name}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                    setFormData((prev) => ({ ...prev, action_name: e.target.value }))
-                  }
-                  placeholder="buy_medicine, book_grooming"
-                />
+                <>
+                  <Input
+                    id="action_name"
+                    list="action-name-options"
+                    value={formData.action_name}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                      const val = e.target.value;
+                      setFormData((prev) => ({ ...prev, action_name: val }));
+                      window.clearTimeout(debounceRef.current);
+                      debounceRef.current = window.setTimeout(() => {
+                        loadActions(val);
+                      }, 250);
+                    }}
+                    placeholder={loadingActions ? 'Loading actions…' : 'Search or select (e.g., buy_medicine)'}
+                    autoComplete="off"
+                  />
+                  <datalist id="action-name-options">
+                    {actionOptions.map((name) => (
+                      <option key={name} value={name} />
+                    ))}
+                  </datalist>
+                </>
                 <p className="text-xs text-muted-foreground">
-                  Unique identifier (e.g., buy_medicine, book_grooming)
+                  {loadingActions
+                    ? 'Loading actions…'
+                    : actionOptions.length
+                      ? `${actionOptions.length} actions · You can also type a custom name`
+                      : 'Type to search or enter a custom action (e.g., buy_medicine)'}
                 </p>
               </div>
 
@@ -484,22 +560,20 @@ export function LoyaltyActionRulesManagement() {
                 Target Segments (Optional)
               </Label>
               <p className="text-xs text-muted-foreground">
-                Select segments to target. Rule will ONLY apply to customers in selected segments.
+                Select segments to target. Rule will ONLY apply to {targetEntityLabel} in selected segments.
               </p>
               <div className="max-h-40 overflow-y-auto border rounded-md p-3 space-y-2">
-                {segments.length === 0 ? (
+                {availableSegments.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">
-                    No segments available. Create segments first.
+                    No compatible segments available for selected user type.
                   </p>
                 ) : (
-                  segments
-                    .filter(s => s.segment_type === 'customer' || s.segment_type === 'both')
-                    .map((segment) => (
+                  availableSegments.map((segment) => (
                       <div key={segment.id} className="flex items-center space-x-2">
                         <input
                           type="checkbox"
                           id={`segment-${segment.id}`}
-                          checked={formData.conditions?.segment_ids?.includes(segment.id) || false}
+                          checked={selectedSegmentIds.includes(segment.id)}
                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                             const currentIds = formData.conditions?.segment_ids || [];
                             const newIds = e.target.checked
@@ -522,9 +596,14 @@ export function LoyaltyActionRulesManagement() {
                     ))
                 )}
               </div>
-              {formData.conditions?.segment_ids && formData.conditions.segment_ids.length > 0 && (
+              {missingSelectedSegments.length > 0 && (
+                <p className="text-xs text-amber-600">
+                  ⚠ {missingSelectedSegments.length} linked segment(s) are not compatible with current user type or inactive.
+                </p>
+              )}
+              {selectedSegmentIds.length > 0 && (
                 <p className="text-xs text-green-600">
-                  ✓ {formData.conditions.segment_ids.length} segment(s) selected
+                  ✓ {selectedSegmentIds.length} segment(s) selected
                 </p>
               )}
             </div>

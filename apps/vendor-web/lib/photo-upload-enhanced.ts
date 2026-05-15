@@ -20,18 +20,18 @@ export interface PhotoUploadResult {
 }
 
 /**
- * Upload staff photo using presigned URL with progress tracking
+ * Upload a single image to S3 via presigned PUT (same flow as staff photos).
+ * @param folder S3 key prefix, e.g. `staff/{vendorId}` or `meal-products/{vendorId}`
  */
-export async function uploadStaffPhotoWithProgress(
+export async function uploadImageWithProgress(
   file: File,
-  vendorId: string,
+  folder: string,
   options: PhotoUploadOptions = {}
 ): Promise<PhotoUploadResult> {
   const { onProgress, maxRetries = 3, verifyUpload = true } = options;
   let lastError: string | undefined;
   let retries = 0;
 
-  // Validate file
   if (!file || file.size === 0) {
     return {
       success: false,
@@ -59,11 +59,10 @@ export async function uploadStaffPhotoWithProgress(
     try {
       if (onProgress) onProgress(10);
 
-      // Step 1: Get presigned URL
       const presignedResponse = await apiClient.post('/upload/presigned-url', {
         fileName: file.name,
         fileType: file.type,
-        folder: `staff/${vendorId}`,
+        folder,
       }) as any;
 
       if (presignedResponse?.error) {
@@ -106,9 +105,12 @@ export async function uploadStaffPhotoWithProgress(
 
       if (onProgress) onProgress(100);
 
+      const displayUrl =
+        (typeof presignedResponse.displayUrl === 'string' && presignedResponse.displayUrl) ||
+        presignedResponse.publicUrl;
       return {
         success: true,
-        url: presignedResponse.publicUrl,
+        url: displayUrl,
         publicUrl: presignedResponse.publicUrl,
         fileName: presignedResponse.fileKey,
         retries,
@@ -132,6 +134,15 @@ export async function uploadStaffPhotoWithProgress(
     error: lastError || 'Upload failed after retries',
     retries,
   };
+}
+
+/** Staff directory under vendor (existing callers). */
+export async function uploadStaffPhotoWithProgress(
+  file: File,
+  vendorId: string,
+  options: PhotoUploadOptions = {}
+): Promise<PhotoUploadResult> {
+  return uploadImageWithProgress(file, `staff/${vendorId}`, options);
 }
 
 /**

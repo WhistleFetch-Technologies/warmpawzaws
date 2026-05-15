@@ -3,7 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import {
+  getResolvedCustomerId,
+  isCustomerDatabaseUuid,
+  persistCustomerDatabaseId,
+} from '@/lib/customer-id-storage';
 import { ChimeVideoCall } from '@/components/teleCommunication/ChimeVideoCall';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 interface VideoPageClientProps {
   bookingId?: string;
@@ -35,7 +41,6 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      // Prefer query params (mobile WebView/deep links), then localStorage
       const urlParams = new URLSearchParams(window.location.search);
       const qpCustomerId =
         urlParams.get('customerId') ||
@@ -48,8 +53,8 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
         urlParams.get('phone') ||
         '';
 
-      if (qpCustomerId) {
-        localStorage.setItem('customerId', qpCustomerId);
+      if (qpCustomerId && isCustomerDatabaseUuid(qpCustomerId)) {
+        persistCustomerDatabaseId(qpCustomerId.trim());
       }
       if (qpPhone) {
         localStorage.setItem('customerPhone', qpPhone);
@@ -58,13 +63,38 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
       }
 
       const storedId =
-        localStorage.getItem('customerId') ||
+        getResolvedCustomerId() ||
         localStorage.getItem('customerPhone') ||
         localStorage.getItem('customer_phone') ||
         localStorage.getItem('phone') ||
         '';
 
       setParticipantId(qpCustomerId || qpPhone || storedId);
+
+      // Strip sensitive query params only — keep bookingId, meetingId, etc.
+      if (qpCustomerId || qpPhone || urlParams.get('meetingId')) {
+        const customerKeys = [
+          'customerId',
+          'customer_id',
+          'participantId',
+          'customerPhone',
+          'customer_phone',
+          'phone',
+          'meetingId',
+        ];
+        const u = new URL(window.location.href);
+        let changed = false;
+        for (const k of customerKeys) {
+          if (u.searchParams.has(k)) {
+            u.searchParams.delete(k);
+            changed = true;
+          }
+        }
+        if (changed) {
+          const qs = u.searchParams.toString();
+          window.history.replaceState({}, '', u.pathname + (qs ? `?${qs}` : '') + u.hash);
+        }
+      }
     }
     void loadBookingData();
   }, [bookingId]);
@@ -100,10 +130,10 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
           }
           
           // Try customer_id first (UUID)
-          if (booking.customer_id) {
-            localStorage.setItem('customerId', booking.customer_id);
+          if (booking.customer_id && isCustomerDatabaseUuid(String(booking.customer_id))) {
+            persistCustomerDatabaseId(String(booking.customer_id).trim());
             console.log('[VideoPageClient] Extracted customerId from booking data');
-            return booking.customer_id;
+            return String(booking.customer_id).trim();
           }
           
           // Fallback to customer_phone if customer_id not available
@@ -167,19 +197,20 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
   // This component handles the entire flow including joining
   if (participantId) {
     return (
-      <ChimeVideoCall
-        bookingId={bookingId}
-        participantType="customer"
-        participantId={participantId}
-        vendorName={bookingData?.vendorName || bookingData?.staffName || 'Service Provider'}
-        customerName={bookingData?.customerName || 'Customer'}
-        serviceName={bookingData?.serviceName || 'Tele Consultation'}
-        onEndCall={(duration) => {
-          console.log('Call ended, duration:', duration);
-          // Navigate back to homepage after call ends
-          router.push('/');
-        }}
-      />
+      <div className="min-h-[100dvh] h-[100dvh] max-h-[100dvh] overflow-hidden bg-slate-900">
+        <ChimeVideoCall
+          bookingId={bookingId}
+          participantType="customer"
+          participantId={participantId}
+          vendorName={bookingData?.vendorName || bookingData?.staffName || 'Service Provider'}
+          customerName={bookingData?.customerName || 'Customer'}
+          serviceName={bookingData?.serviceName || 'Tele Consultation'}
+          onEndCall={(duration) => {
+            console.log('Call ended, duration:', duration);
+            router.push('/');
+          }}
+        />
+      </div>
     );
   }
 
@@ -199,7 +230,7 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
           Go to Login
         </button>
         <button
-          onClick={() => router.back()}
+          onClick={() => goBackOrHome(router)}
           className="mt-3 px-6 py-2 text-gray-400 hover:text-white transition"
         >
           Go Back

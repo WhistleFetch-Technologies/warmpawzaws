@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, CheckCircle, XCircle, Loader, Package, TrendingUp } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Calendar, Clock, Loader, Package, TrendingUp } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -72,8 +71,15 @@ export function PetProfile({
     try {
       setLoading(true);
       console.log(`🐾 [PET-PROFILE] Loading booking history for pet: ${petId} (${petName})`);
-
-      const data = await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`) as any;
+      let data: any;
+      try {
+        data = (await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`)) as any;
+      } catch (primaryError) {
+        console.warn('🐾 [PET-PROFILE] Primary pet-bookings endpoint failed, trying fallback:', primaryError);
+        data = (await apiClient.get(
+          `/customer/bookings?phone=${encodeURIComponent(phone)}&petId=${encodeURIComponent(petId)}`
+        )) as any;
+      }
 
       console.log('✅ [PET-PROFILE] Loaded bookings:', data);
 
@@ -143,84 +149,126 @@ export function PetProfile({
     return '🐾';
   };
 
-  return (
-    <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      
-      {/* Pet Header */}
-      <div className="p-6 bg-gradient-to-b from-[#FF8C42]/10 to-transparent">
-          <div className="flex items-center gap-4 mb-6">
-            <div className="w-20 h-20 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-full flex items-center justify-center text-4xl">
-              {getPetEmoji(petType)}
-            </div>
-            <div className="flex-1">
-              <h2 className="text-2xl font-semibold text-gray-900">{petName}</h2>
-              <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded">{petType}</span>
-                {petBreed && <span>• {petBreed}</span>}
-              </div>
-              {(petAge || petGender) && (
-                <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
-                  {petAge && <span>{petAge}</span>}
-                  {petAge && petGender && <span>•</span>}
-                  {petGender && <span>{petGender}</span>}
-                </div>
-              )}
-            </div>
-          </div>
+  const photoUrl = petImage?.trim();
 
-          {/* Stats Cards */}
-          <div className="grid grid-cols-4 gap-2">
-            <Card className="p-3 text-center">
-              <div className="text-2xl font-bold text-[#FF8C42]">{stats.total}</div>
-              <div className="text-xs text-gray-500 mt-1">Total</div>
-            </Card>
-            <Card className="p-3 text-center">
-              <div className="text-2xl font-bold text-blue-600">{stats.confirmed}</div>
-              <div className="text-xs text-gray-500 mt-1">Upcoming</div>
-            </Card>
-            <Card className="p-3 text-center">
-              <div className="text-2xl font-bold text-green-600">{stats.completed}</div>
-              <div className="text-xs text-gray-500 mt-1">Done</div>
-            </Card>
-            <Card className="p-3 text-center">
-              <div className="text-2xl font-bold text-yellow-600">{stats.inProgress}</div>
-              <div className="text-xs text-gray-500 mt-1">Active</div>
-            </Card>
+  return (
+    <div className="pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))]">
+      <div className="bg-gradient-to-b from-[#FF8C42]/12 to-transparent px-4 pb-5 pt-3">
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative h-[5.5rem] w-[5.5rem] shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-[#FF8C42] to-[#FF7029] shadow-md ring-2 ring-white">
+            {photoUrl ? (
+              <img
+                src={photoUrl}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover object-center"
+              />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center text-4xl" aria-hidden>
+                {getPetEmoji(petType)}
+              </span>
+            )}
+          </div>
+          <div className="w-full min-w-0 text-center">
+            <h2 className="text-[22px] font-bold leading-tight tracking-tight text-gray-900">{petName}</h2>
+            <p className="mt-2 text-[15px] text-gray-600">
+              <span className="font-medium text-[#FF8C42]">{petType || 'Pet'}</span>
+              {petBreed ? (
+                <>
+                  <span className="text-gray-300"> · </span>
+                  <span>{petBreed}</span>
+                </>
+              ) : null}
+            </p>
+            {(petAge || petGender) && (
+              <p className="mt-1.5 text-[13px] text-gray-500">
+                {petAge && <span>{petAge}</span>}
+                {petAge && petGender && <span className="text-gray-300"> · </span>}
+                {petGender && <span className="capitalize">{petGender}</span>}
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Service History */}
-        <div className="px-4 pb-20">
-          <div className="flex items-center gap-2 mb-4">
-            <TrendingUp className="w-5 h-5 text-[#FF8C42]" />
-            <h3 className="font-semibold text-gray-900">Service History</h3>
+        <div className="mt-5 grid grid-cols-2 gap-2.5">
+          <Card className="rounded-2xl border-gray-100/80 p-3.5 text-center shadow-[0_2px_10px_rgba(0,0,0,0.05)]">
+            <div className="text-2xl font-bold tabular-nums text-[#FF8C42]">{stats.total}</div>
+            <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">Total</div>
+          </Card>
+          <Card className="rounded-2xl border-gray-100/80 p-3.5 text-center shadow-[0_2px_10px_rgba(0,0,0,0.05)]">
+            <div className="text-2xl font-bold tabular-nums text-blue-600">{stats.confirmed}</div>
+            <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">Upcoming</div>
+          </Card>
+          <Card className="rounded-2xl border-gray-100/80 p-3.5 text-center shadow-[0_2px_10px_rgba(0,0,0,0.05)]">
+            <div className="text-2xl font-bold tabular-nums text-green-600">{stats.completed}</div>
+            <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">Done</div>
+          </Card>
+          <Card className="rounded-2xl border-gray-100/80 p-3.5 text-center shadow-[0_2px_10px_rgba(0,0,0,0.05)]">
+            <div className="text-2xl font-bold tabular-nums text-amber-500">{stats.inProgress}</div>
+            <div className="mt-1 text-[11px] font-medium uppercase tracking-wide text-gray-500">Active</div>
+          </Card>
+        </div>
+      </div>
+
+      <div className="px-4 pt-1">
+        <div className="mb-3 flex items-center gap-2">
+          <TrendingUp className="h-5 w-5 shrink-0 text-[#FF8C42]" aria-hidden />
+          <h3 className="text-base font-bold text-gray-900">Service History</h3>
+        </div>
+
+        <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
+          <div className="-mx-4 mb-3 overflow-x-auto px-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <TabsList className="inline-flex h-auto min-h-10 w-max flex-nowrap items-stretch gap-1 rounded-xl bg-gray-100/90 p-1">
+              <TabsTrigger
+                value="all"
+                className="shrink-0 flex-none rounded-lg px-3 py-2 text-xs data-[state=active]:shadow-sm"
+              >
+                All ({stats.total})
+              </TabsTrigger>
+              <TabsTrigger
+                value="confirmed"
+                className="shrink-0 flex-none rounded-lg px-3 py-2 text-xs data-[state=active]:shadow-sm"
+              >
+                Upcoming
+              </TabsTrigger>
+              <TabsTrigger
+                value="in_progress"
+                className="shrink-0 flex-none rounded-lg px-3 py-2 text-xs data-[state=active]:shadow-sm"
+              >
+                Active
+              </TabsTrigger>
+              <TabsTrigger
+                value="completed"
+                className="shrink-0 flex-none rounded-lg px-3 py-2 text-xs data-[state=active]:shadow-sm"
+              >
+                Done
+              </TabsTrigger>
+              <TabsTrigger
+                value="cancelled"
+                className="shrink-0 flex-none rounded-lg px-3 py-2 text-xs data-[state=active]:shadow-sm"
+              >
+                Cancelled
+              </TabsTrigger>
+            </TabsList>
           </div>
 
-          <Tabs value={selectedTab} onValueChange={setSelectedTab} className="w-full">
-            <TabsList className="w-full grid grid-cols-5 mb-4">
-              <TabsTrigger value="all" className="text-xs">All ({stats.total})</TabsTrigger>
-              <TabsTrigger value="confirmed" className="text-xs">Upcoming</TabsTrigger>
-              <TabsTrigger value="in_progress" className="text-xs">Active</TabsTrigger>
-              <TabsTrigger value="completed" className="text-xs">Done</TabsTrigger>
-              <TabsTrigger value="cancelled" className="text-xs">Cancelled</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value={selectedTab}>
-              {loading ? (
-                <div className="flex items-center justify-center py-12">
-                  <Loader className="w-8 h-8 animate-spin text-[#FF8C42]" />
-                </div>
-              ) : filteredBookings.length === 0 ? (
-                <div className="text-center py-12">
-                  <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500">No service history for {petName}</p>
-                  <p className="text-sm text-gray-400 mt-1">Book your first service to get started!</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {filteredBookings.map((booking) => (
-                    <Card key={booking.id} className="p-4 hover:shadow-md transition-shadow">
+          <TabsContent value={selectedTab} className="mt-0">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader className="h-8 w-8 animate-spin text-[#FF8C42]" />
+              </div>
+            ) : filteredBookings.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-gray-200 bg-white/60 py-12 text-center">
+                <Package className="mx-auto mb-3 h-12 w-12 text-gray-300" aria-hidden />
+                <p className="font-medium text-gray-600">No service history for {petName}</p>
+                <p className="mt-1 text-sm text-gray-400">Book your first service to get started.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredBookings.map((booking) => (
+                  <Card
+                    key={booking.id}
+                    className="rounded-2xl border-gray-100/80 p-4 shadow-[0_2px_12px_rgba(0,0,0,0.06)] transition-shadow hover:shadow-md"
+                  >
                       {/* Header */}
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1">
@@ -257,9 +305,9 @@ export function PetProfile({
                   ))}
                 </div>
               )}
-            </TabsContent>
-          </Tabs>
-        </div>
-    </>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
   );
 }

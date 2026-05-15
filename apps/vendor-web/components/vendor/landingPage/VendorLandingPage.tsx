@@ -9,13 +9,13 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { useVendorCapabilities } from '../hooks/useVendorCapabilities';
-import { getVendorRoleId, isDiagnosticsCenter } from '@/lib/vendor-utils';
+import { getVendorRoleId, getVendorProgressRoleType, hasVendorRole, isDiagnosticsCenter } from '@/lib/vendor-utils';
 import { DoctorManagement } from '../clinic/DoctorManagement';
 import { VendorBusinessHub } from '../business/VendorBusinessHub'; // ✅ NEW
 import { VetSpecializedServicesManager } from '../clinic/VetSpecializedServicesManager'; // ✅ NEW: Vet-specific services
 import { ResortManagementDashboard } from '../resort/ResortManagementDashboard'; // ✅ NEW: Pet resort management
-import { NutritionistMealManager } from '../NutritionistMealManager'; // ✅ NEW: Nutritionist meal plans
 import { EnhancedVendorOnboarding } from '../onboarding/EnhancedVendorOnboarding';
+import { WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT } from '../VendorSetPasswordGate';
 import { VendorApplicationSubmitted } from '../VendorApplicationSubmitted';
 import { VendorApplicationUnderReview } from '../VendorApplicationUnderReview';
 import { VendorClarificationRequested } from '../VendorClarificationRequested';
@@ -31,6 +31,7 @@ const VendorDashboard = React.lazy(() =>
 // ✅ REMOVED: VendorScheduleManagement - Using AdvancedAvailabilityManager as standard
 // import { VendorScheduleManagement } from './VendorScheduleManagement';
 import { VendorServiceManagementComplete } from '../VendorServiceManagementComplete';
+import { VendorHeader } from '../VendorHeader';
 import { VendorConsultationScreen } from '../VendorConsultationScreen';
 import { VendorBookingManagement } from '../VendorBookingManagement';
 import { VendorTeleConsultationFlow } from '../VendorTeleConsultationFlow';
@@ -73,69 +74,14 @@ import { VendorPolicyManagement } from '../VendorPolicyManagement'; // ✅ NEW: 
 import { VendorDistancePricing } from '../VendorDistancePricing'; // ✅ NEW: Distance pricing
 import { VendorSupportDashboard } from '../VendorSupportDashboard'; // ✅ NEW: Support tickets
 import { ServicePromotionsManagement } from '../ServicePromotionsManagement'; // ✅ NEW: Service Promotions
-import { ArrowLeft } from 'lucide-react'; // ✅ NEW: For navigation
 import { TeleCallNotification } from '../notification/teleNotification/TeleCallNotification'; // ✅ P2P Video Call Notification
 import { VendorNewBookingOrderAlert } from '../VendorNewBookingOrderAlert'; // Rule 4: Large new appointment/order alert
+import { isPharmacyVendor } from './constants/helpers';
 import { useVendorNotificationService } from '../hooks/useVendorNotificationService';
 import { PackageManagementContainer } from '../packages/PackageManagementContainer';
+import { ApplicationData, VendorData, VendorLandingPageProps, VendorStatus } from './constants/interface';
 
-interface VendorLandingPageProps {
-  vendorId: string;
-  phone: string;
-  vendorType?: string;
-  serviceStyle?: 'at_home' | 'at_center' | 'both';
-  initialVendorData?: any;
-  onComplete?: () => void;
-  justSubmitted?: boolean; // ✅ NEW: Flag to indicate fresh submission
-}
 
-type VendorStatus =
-  | 'new'                    // No profile created yet
-  | 'profile_incomplete'     // Profile created but not submitted
-  | 'submitted'              // Just submitted, show success
-  | 'pending'                // Under admin review
-  | 'approved_services'      // Approved, needs service setup (Stage 1)
-  | 'approved_availability'  // Services done, needs availability (Stage 2)
-  | 'setup_completed'        // All done, show completion screen (Stage 3)
-  | 'rejected'               // Rejected
-  | 'clarification'          // Clarification requested
-  | 'documents_required'     // Documents need to be re-uploaded
-  | 'active';                // Setup complete, active
-
-interface VendorData {
-  id: string;
-  phone: string;
-  vendorType?: string;
-  serviceStyle?: string;
-  applicationId?: string;
-  applicationStatus?: string;
-  profileCreated?: boolean;
-  setupCompleted?: boolean;
-  isActive?: boolean;
-  documentNotes?: string;
-  setupStage?: 'services_pending' | 'availability_pending' | 'completed';
-  servicesConfigured?: boolean;
-  availabilityConfigured?: boolean;
-  previousStatus?: string;
-  wasApprovedBefore?: boolean;
-  reapprovalReason?: string;
-  roleId?: string; // ✅ Role UUID
-  roleName?: string; // ✅ Role name (e.g., 'veterinary_clinic', 'groomer_center')
-  submittedAt?: string; // Application submission timestamp
-  createdAt?: string; // Record creation timestamp
-  infoRequestMessage?: string; // Clarification/info request message
-  rejectionReason?: string; // Rejection reason if application was rejected
-  fullName?: string; // Vendor full name
-  businessName?: string; // Business name
-}
-
-interface ApplicationData {
-  id: string;
-  status: string;
-  rejectionReason?: string;
-  allowResubmit?: boolean;
-  clarificationNotes?: string;
-}
 
 export function VendorLandingPage({
   vendorId,
@@ -168,7 +114,6 @@ export function VendorLandingPage({
   const [showBusinessHub, setShowBusinessHub] = useState(false);
   const [showSupportDashboard, setShowSupportDashboard] = useState(false);
   const [showVetSpecialized, setShowVetSpecialized] = useState(false);
-  const [showNutritionistMealManager, setShowNutritionistMealManager] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [showPortfolio, setShowPortfolio] = useState(false);
   const [showCCTV, setShowCCTV] = useState(false);
@@ -333,6 +278,20 @@ export function VendorLandingPage({
     })();
     return () => { cancelled = true; };
   }, [status, vendorData, vendorId]);
+
+  // Open Gallery when returning from /profile (Get started sets sessionStorage before router.push('/'))
+  useEffect(() => {
+    if (typeof window === 'undefined' || status !== 'active' || !vendorData) return;
+    try {
+      if (sessionStorage.getItem('warmpawz_vendor_open_gallery') === '1') {
+        sessionStorage.removeItem('warmpawz_vendor_open_gallery');
+        setShowProfile(false);
+        setShowGallery(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [status, vendorData]);
 
   {/* P2P VIDEO CALL: Check for incoming calls periodically (for tele consultations)*/ }
   useEffect(() => {
@@ -655,6 +614,9 @@ export function VendorLandingPage({
         // Show submitted screen
         setStatus('submitted');
         toast.success('Application submitted successfully!');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event(WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT));
+        }
         return;
       }
 
@@ -811,6 +773,9 @@ export function VendorLandingPage({
         // Show submitted screen
         setStatus('submitted');
         toast.success('Application submitted successfully!');
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event(WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT));
+        }
       } else {
         console.error('❌ Failed to submit application:', result);
         toast.error(result?.error || 'Failed to submit application. Please try again.');
@@ -916,7 +881,7 @@ export function VendorLandingPage({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-white vendor-app-column flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
@@ -931,7 +896,7 @@ export function VendorLandingPage({
     console.log('📝 Rendering re-onboarding screen with mode:', reEditMode);
     return (
       <div className="min-h-screen bg-gray-50">
-        <div className="w-full max-w-[430px] mx-auto p-4 bg-blue-50 border-b-2 border-blue-200">
+        <div className="vendor-app-column p-4 bg-blue-50 border-b-2 border-blue-200">
           <div className="flex items-start gap-3">
             <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
               <span className="text-white text-sm">!</span>
@@ -965,7 +930,7 @@ export function VendorLandingPage({
         <div className="min-h-screen bg-gray-50">
           {/* Show warning banner if documents are required */}
           {status === 'documents_required' && (
-            <div className="w-full max-w-[430px] mx-auto p-4 bg-orange-50 border-b-2 border-orange-200">
+            <div className="vendor-app-column p-4 bg-orange-50 border-b-2 border-orange-200">
               <div className="flex items-start gap-3">
                 <div className="w-6 h-6 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
                   <span className="text-white text-sm">!</span>
@@ -1137,7 +1102,31 @@ export function VendorLandingPage({
           <ProfileManager
             vendorId={vendorId}
             vendorData={vendorData}
-            onBack={() => setShowProfile(false)}
+            onNavigateToGallery={() => {
+              setShowProfile(false);
+              setShowGallery(true);
+            }}
+            onBack={async () => {
+              setShowProfile(false);
+              try {
+                const res = await apiClient.get('/vendor/profile') as any;
+                const v = res?.vendor;
+                if (res?.success && v) {
+                  const biz = v.businessName ?? v.business_name ?? v.name;
+                  setVendorData((prev: any) => ({
+                    ...(prev || {}),
+                    ...(biz
+                      ? { businessName: biz, business_name: biz }
+                      : {}),
+                    ownerName: v.ownerName ?? v.owner_name ?? prev?.ownerName,
+                    owner_name: v.owner_name ?? v.ownerName ?? prev?.owner_name,
+                    profilePhotoUrl: v.profilePhotoUrl ?? v.profile_photo_url ?? prev?.profilePhotoUrl,
+                  }));
+                }
+              } catch {
+                /* non-blocking */
+              }
+            }}
           />
         );
       }
@@ -1168,17 +1157,6 @@ export function VendorLandingPage({
             vendorId={vendorId}
 
             onBack={() => setShowVetSpecialized(false)}
-          />
-        );
-      }
-
-      // ✅ NEW: Nutritionist Meal Manager
-      if (showNutritionistMealManager) {
-        return (
-          <NutritionistMealManager
-            vendorId={vendorId}
-
-            onBack={() => setShowNutritionistMealManager(false)}
           />
         );
       }
@@ -1244,26 +1222,28 @@ export function VendorLandingPage({
       // ✅ NEW: Prescription List
       if (showPrescriptionList) {
         return (
-          <div className="min-h-screen bg-gray-50">
-            <div className="bg-white border-b sticky top-0 z-10">
-              <div className="max-w-4xl mx-auto px-4 py-4 flex items-center gap-4">
-                <button onClick={() => setShowPrescriptionList(false)} className="p-2 hover:bg-gray-100 rounded-full">
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <h1 className="text-xl font-bold">Prescriptions</h1>
-                <button
-                  onClick={() => {
-                    setShowPrescriptionList(false);
-                    setShowPrescription(true);
-                  }}
-                  className="ml-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Create New
-                </button>
+          <div className="vendor-page-shell bg-gray-50">
+            <div className="vendor-app-column min-h-screen bg-white">
+              <VendorHeader
+                title="Prescriptions"
+                onBack={() => setShowPrescriptionList(false)}
+                actions={[
+                  <button
+                    key="create-rx"
+                    type="button"
+                    onClick={() => {
+                      setShowPrescriptionList(false);
+                      setShowPrescription(true);
+                    }}
+                    className="h-9 shrink-0 rounded-lg bg-blue-600 px-3 text-sm text-white hover:bg-blue-700"
+                  >
+                    Create New
+                  </button>,
+                ]}
+              />
+              <div className="mx-auto w-full max-w-4xl px-4 py-6">
+                <PrescriptionList vendorId={vendorId} />
               </div>
-            </div>
-            <div className="max-w-4xl mx-auto px-4 py-6">
-              <PrescriptionList vendorId={vendorId} />
             </div>
           </div>
         );
@@ -1272,11 +1252,14 @@ export function VendorLandingPage({
       // ✅ Diagnostics center: Lab orders dashboard first; Test catalog secondary
       if (showDiagnosticsOrders) {
         return (
-          <div className="min-h-screen bg-gray-50">
-            <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="min-h-screen bg-gray-50 vendor-screen-safe-top">
+            <div className="max-w-6xl mx-auto px-4 pb-6">
               <DiagnosticsOrderDashboard
                 vendorId={vendorId}
-                onBack={() => setShowDiagnosticsOrders(false)}
+                onBack={() => {
+                  setShowDiagnosticsOrders(false);
+                  setShowDiagnostics(true);
+                }}
                 onSelectBooking={(bookingId) => setSelectedDiagnosticsBookingId(bookingId)}
               />
               {selectedDiagnosticsBookingId && (
@@ -1303,17 +1286,14 @@ export function VendorLandingPage({
       // ✅ NEW: Diagnostic Results (Test catalog)
       if (showDiagnostics) {
         return (
-          <div className="min-h-screen bg-gray-50">
-            <div className="max-w-6xl mx-auto px-4 py-6">
+          <div className="min-h-screen bg-gray-50 vendor-screen-safe-top">
+            <div className="max-w-6xl mx-auto px-4 pb-6">
               <DiagnosticResults
                 vendorId={vendorId}
                 vendorData={vendorData}
                 onBack={() => {
                   setShowDiagnostics(false);
-                  // ✅ FIX: Use proper role detection helper
-                  if (isDiagnosticsCenter(vendorData)) {
-                    setShowDiagnosticsOrders(true);
-                  }
+                  // Back from test catalog → main vendor dashboard (home). Lab orders: explicit "Lab Orders" row (onNavigateToOrders).
                 }}
                 onNavigateToOrders={() => {
                   setShowDiagnostics(false);
@@ -1341,10 +1321,11 @@ export function VendorLandingPage({
 
       // ✅ FIX: Progress Tracking Dashboard
       if (showProgressTracking) {
+        const progressRoleType = getVendorProgressRoleType(vendorData);
         return (
           <ProgressTrackingDashboard
             vendorId={vendorId}
-
+            roleType={progressRoleType}
             onBack={() => setShowProgressTracking(false)}
           />
         );
@@ -1547,19 +1528,8 @@ export function VendorLandingPage({
         );
       }
 
-      // 4. Nutritionist
-      if (vendorData?.roleId === 'nutritionist') {
-        console.log('🥗 Rendering NutritionistMealManager');
-        return (
-          <NutritionistMealManager
-            vendorId={vendorId}
-
-            onBack={() => {
-              // Handle logout
-            }}
-          />
-        );
-      }
+      // 4. Nutritionist — same home dashboard as other solo vendors (VendorDashboard).
+      // Nutritionist meal products & orders: Additional Features "Diet" → /nutrition/dashboard only.
 
       // 5. Sunset Services (Memorial/Cremation)
       if (vendorData?.roleId === 'sunset_services') {
@@ -1571,8 +1541,8 @@ export function VendorLandingPage({
         );
       }
 
-      // 6. Insurance Provider
-      if (vendorData?.roleId === 'insurance') {
+      // 6. Pet / general insurance provider (plan creation + links to issued policies & claims)
+      if (vendorData?.roleId === 'insurance' || vendorData?.roleId === 'pet_insurance') {
         console.log('🛡️ Rendering InsuranceVendorContainer');
         return (
           <InsuranceVendorContainer
@@ -1617,12 +1587,14 @@ export function VendorLandingPage({
       const roleName = (vendorData as any)?.roleName || (vendorData as any)?.role_name || '';
       const PET_PRODUCTS_STORE_UUID = '5056756d-3b05-457a-9725-3f922800b520';
       const PET_PHARMACY_UUID = ''; // Add if known
-      const isRetailVendor = vendorRoleId === 'pet_products_store' || vendorRoleId === 'product_seller' ||
-        vendorRoleId === 'pet_pharmacy' || vendorRoleId === PET_PRODUCTS_STORE_UUID ||
+      const isRetailVendor =
+        vendorRoleId === 'pet_products_store' || vendorRoleId === 'product_seller' ||
+        vendorRoleId === PET_PRODUCTS_STORE_UUID ||
         roleName === 'pet_products_store' || roleName === 'Pet Store / Retailer' ||
         vendorRoleId?.includes('retail') || vendorRoleId?.includes('store') ||
         (vendorData as any)?.vendor_type === 'seller';
-      if (isRetailVendor) {
+      // Pet pharmacy often has customer_service "shop" and retail-like caps; never send to ecommerce Seller Hub.
+      if (isRetailVendor && !isPharmacyVendor(vendorData)) {
         console.log('🏪 Pet Products Store detected - redirecting to Seller Hub. RoleId:', vendorRoleId, 'RoleName:', roleName);
         router.push('/seller');
         return (
@@ -1637,6 +1609,20 @@ export function VendorLandingPage({
 
       // ✅ Full VendorDashboard (Figma UI) – all options, appointment models, navigation
       console.log('🎯 Rendering VendorDashboard (Figma UI) for vendor:', vendorId);
+
+      const isGroomerVendorPortfolioUnwired = hasVendorRole(vendorData, [
+        'groomer',
+        'groomer_solo',
+        'groomer_center',
+        'grooming_solo',
+        'pet_groomer',
+        'grooming_salon',
+        'pet_grooming',
+        'grooming',
+      ]);
+
+      /** Dog walkers: "progress" is walk sessions (OTP start / end session / GPS), not training program trackers. */
+      const isWalkerVendor = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
 
       return (
         <>
@@ -1662,7 +1648,9 @@ export function VendorLandingPage({
               onNavigateToLiveTracking={() => setShowLiveTracking(true)}
               onNavigateToSpecializedServices={() => setShowSpecializedServices(true)}
               onNavigateToGallery={() => setShowGallery(true)}
-              onNavigateToPortfolio={() => setShowPortfolio(true)}
+              onNavigateToPortfolio={
+                isGroomerVendorPortfolioUnwired ? undefined : () => setShowPortfolio(true)
+              }
               onNavigateToCCTV={() => setShowCCTV(true)}
               onNavigateToControlledSubstances={() => setShowControlledSubstances(true)}
               onNavigateToPrescription={() => setShowPrescription(true)}
@@ -1681,7 +1669,13 @@ export function VendorLandingPage({
                 else setShowDiagnostics(true);
               }}
               onNavigateToPricing={() => setShowPricing(true)}
-              onNavigateToProgressTracking={() => setShowProgressTracking(true)}
+              onNavigateToProgressTracking={() => {
+                if (isWalkerVendor) {
+                  router.push('/bookings?walkSessions=1');
+                } else {
+                  setShowProgressTracking(true);
+                }
+              }}
               onNavigateToPackages={undefined}
               onNavigateToCustomServices={() => setShowCustomServices(true)}
               onNavigateToAdoptionSystem={() => setShowAdoptionSystem(true)}
@@ -1715,9 +1709,10 @@ export function VendorLandingPage({
               </DialogContent>
             </Dialog>
           )}
-          {newBookingAlert && (
+          {newBookingAlert && vendorId && (
             <VendorNewBookingOrderAlert
               notification={newBookingAlert}
+              vendorId={vendorId}
               onView={(bookingId) => {
                 setNewBookingAlert(null);
                 setShowBookingManagement(true);

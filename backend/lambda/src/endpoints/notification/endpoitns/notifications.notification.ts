@@ -21,6 +21,29 @@ import { sendSMS } from '../../../utils/sms-service';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { UserType } from 'src/endpoints/constants';
+import {
+  DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS,
+  fetchCustomerNotificationSettings,
+  normalizeCustomerNotificationSettings,
+  persistCustomerNotificationSettings,
+} from '../../../utils/customer-notification-settings';
+
+async function resolveCustomerIdForNotificationPhone(phone: string): Promise<string | null> {
+  const raw = decodeURIComponent(String(phone)).trim();
+  const digits = raw.replace(/\D/g, '');
+  if (!digits || digits.length < 10) return null;
+  let customers = await select('customers', { phone: digits });
+  if (customers.length > 0 && (customers[0] as any).id) return (customers[0] as any).id as string;
+  if (digits.length === 10) {
+    customers = await select('customers', { phone: `+91${digits}` });
+    if (customers.length > 0 && (customers[0] as any).id) return (customers[0] as any).id as string;
+  }
+  if (raw !== digits) {
+    customers = await select('customers', { phone: raw });
+    if (customers.length > 0 && (customers[0] as any).id) return (customers[0] as any).id as string;
+  }
+  return null;
+}
 
 export function registerNotificationEndpoints(app: Hono) {
   /**
@@ -298,39 +321,38 @@ export function registerNotificationEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '50', 10);
 
       if (!phone) {
-        // ✅ FIX: Return empty array instead of error for missing phone
         return c.json({
           success: true,
           notifications: [],
-          count: 0
+          count: 0,
+          settings: { ...DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS },
         }, 200);
       }
 
-      // Find customer by phone with error handling
-      let customers;
+      let customerId: string | null = null;
       try {
-        customers = await select('customers', { phone: phone.replace(/[^0-9]/g, '') });
+        customerId = await resolveCustomerIdForNotificationPhone(phone);
       } catch (dbError: any) {
         console.error('Database error finding customer:', dbError);
-        // ✅ FIX: Return empty array on DB error
         return c.json({
           success: true,
           notifications: [],
-          count: 0
+          count: 0,
+          settings: { ...DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS },
         }, 200);
       }
 
-      if (customers.length === 0) {
+      if (!customerId) {
         return c.json({
           success: true,
           notifications: [],
-          count: 0
+          count: 0,
+          settings: { ...DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS },
         }, 200);
       }
 
-      const customerId = customers[0].id;
+      const settings = await fetchCustomerNotificationSettings(customerId);
 
-      // Get notifications with error handling
       let notifications;
       try {
         notifications = await query(
@@ -342,11 +364,11 @@ export function registerNotificationEndpoints(app: Hono) {
         );
       } catch (dbError: any) {
         console.error('Database error fetching notifications:', dbError);
-        // ✅ FIX: Return empty array on DB error
         return c.json({
           success: true,
           notifications: [],
-          count: 0
+          count: 0,
+          settings,
         }, 200);
       }
 
@@ -354,15 +376,58 @@ export function registerNotificationEndpoints(app: Hono) {
         success: true,
         notifications: notifications.rows || [],
         count: (notifications.rows || []).length,
+        settings,
       });
     } catch (error: any) {
       console.error('Error fetching customer notifications:', error);
-      // ✅ FIX: Return empty array instead of 500
       return c.json({
         success: true,
         notifications: [],
-        count: 0
+        count: 0,
+        settings: { ...DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS },
       }, 200);
+    }
+  });
+
+  /**
+   * POST /customer/notifications?phone=
+   * Save notification channel toggles (customer-web profile). Uses POST so API Gateway proxies match GET /customer/notifications.
+   */
+  app.post("/customer/notifications", async (c) => {
+    try {
+      const phone = c.req.query('phone');
+      if (!phone?.trim()) {
+        return c.json({ error: 'phone query parameter is required' }, 400);
+      }
+
+      const body = await c.req.json().catch(() => ({}));
+      const customerId = await resolveCustomerIdForNotificationPhone(phone);
+
+      if (!customerId) {
+        const merged = normalizeCustomerNotificationSettings({
+          ...DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS,
+          ...(typeof body === 'object' && body ? body : {}),
+        });
+        return c.json({ success: true, settings: merged, persisted: false });
+      }
+
+      try {
+        const merged = await persistCustomerNotificationSettings(customerId, body);
+        return c.json({ success: true, settings: merged, persisted: true });
+      } catch (err: any) {
+        const msg = err?.message || '';
+        if (msg.includes('column "preferences"')) {
+          const merged = normalizeCustomerNotificationSettings({
+            ...DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS,
+            ...(typeof body === 'object' && body ? body : {}),
+          });
+          return c.json({ success: true, settings: merged, persisted: false });
+        }
+        throw err;
+      }
+    } catch (error: any) {
+      console.error('Error saving customer notification settings:', error);
+      return c.json({ error: error?.message || 'Failed to save notification settings' }, 500);
     }
   });
 

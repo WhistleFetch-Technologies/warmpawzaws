@@ -2,9 +2,16 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { TestTube, Calendar, Clock, FileText, Truck, CreditCard } from 'lucide-react';
+import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
+import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
+import { TestTube, Calendar, Clock, FileText, Truck, CreditCard, Home, Building2, MapPin, CheckCircle2, Plus } from 'lucide-react';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { AddAddressModal } from '../shared/AddAddressModal';
 import { toast } from 'sonner';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
 
 declare global {
   interface Window {
@@ -12,9 +19,18 @@ declare global {
   }
 }
 
+export interface DiagnosticsPackageHint {
+  /** Package display name (e.g. from Health Packages carousel) */
+  name?: string;
+  /** Short labels or codes shown on package cards (e.g. CBC, LFT) — used to pre-select matching catalog tests */
+  testLabels?: string[];
+}
+
 interface DiagnosticsBookingFlowProps {
   vendorId: string;
   customerPhone: string;
+  /** When set (e.g. user tapped Book on a health package), we try to pre-select matching published tests */
+  packageHint?: DiagnosticsPackageHint | null;
   onSuccess?: (bookingId: string) => void;
   onCancel?: () => void;
   onBack?: () => void;
@@ -35,7 +51,7 @@ interface DiagnosticTest {
   home_collection_fee?: number;
 }
 
-export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onCancel, onBack }: DiagnosticsBookingFlowProps) {
+export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, onSuccess, onCancel, onBack }: DiagnosticsBookingFlowProps) {
   const [tests, setTests] = useState<DiagnosticTest[]>([]);
   const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,12 +68,20 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
   const [selectedPetId, setSelectedPetId] = useState<string>('');
   const [customerPets, setCustomerPets] = useState<{ id: string; name: string; species?: string; breed?: string; age?: string }[]>([]);
   const [address, setAddress] = useState('');
+  const [addresses, setAddresses] = useState<any[]>([]);
+  const [selectedAddress, setSelectedAddress] = useState<any>(null);
+  const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   const [preferredSampleType, setPreferredSampleType] = useState<'home' | 'center'>('center');
 
   // Payment-before-booking: step 'form' | 'payment'; booking is created only after payment success
   const [step, setStep] = useState<'form' | 'payment'>('form');
   const [pendingBookingPayload, setPendingBookingPayload] = useState<Record<string, unknown> | null>(null);
   const pendingPayloadRef = useRef<Record<string, unknown> | null>(null);
+  const packageHintAppliedRef = useRef(false);
+
+  useEffect(() => {
+    packageHintAppliedRef.current = false;
+  }, [vendorId, packageHint?.name, packageHint?.testLabels?.join('|')]);
 
   useEffect(() => {
     loadTests();
@@ -82,22 +106,117 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
     return () => { cancelled = true; };
   }, [customerPhone]);
 
+  // Load customer addresses for home collection
+  useEffect(() => {
+    if (!customerPhone) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const addressResponse = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
+        if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
+          if (!cancelled) {
+            setAddresses(addressResponse.addresses);
+            // Auto-select default address if available
+            const defaultAddr = addressResponse.addresses.find((a: any) => a.isDefault || a.is_default);
+            if (defaultAddr) {
+              setSelectedAddress(defaultAddr);
+              const formattedAddr = defaultAddr.formattedAddress || 
+                `${defaultAddr.addressLine1 || defaultAddr.address || ''}, ${defaultAddr.city || ''}, ${defaultAddr.pincode || ''}`.trim();
+              setAddress(formattedAddr);
+            } else if (addressResponse.addresses.length === 1) {
+              // Auto-select if only one address
+              const addr = addressResponse.addresses[0];
+              setSelectedAddress(addr);
+              const formattedAddr = addr.formattedAddress || 
+                `${addr.addressLine1 || addr.address || ''}, ${addr.city || ''}, ${addr.pincode || ''}`.trim();
+              setAddress(formattedAddr);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error loading addresses:', error);
+        if (!cancelled) setAddresses([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [customerPhone]);
+
   const loadTests = async () => {
+    if (isLegacyMockDiagnosticVendorId(vendorId)) {
+      setError(
+        'This lab listing is no longer valid. Go back to Diagnostic Labs, refresh if needed, and choose a lab from the list.'
+      );
+      toast.error('Invalid lab. Open Diagnostic Labs again and pick a real lab.');
+      setTests([]);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
+      setError(null);
+      setTests([]);
       // publishedOnly=true: only tests with is_available=true (published) for booking
       const response = await apiClient.get<any>(`/vendor/${vendorId}/diagnostics/tests?publishedOnly=true`);
-      
-      if (response.success && response.tests) {
-        setTests(response.tests);
+
+      if (response && typeof response === 'object' && response.success === false) {
+        const msg =
+          (typeof response.error === 'string' && response.error) ||
+          (typeof response.message === 'string' && response.message) ||
+          'Could not load lab tests for this vendor.';
+        setError(msg);
+        toast.error(msg);
+        return;
+      }
+
+      const list = Array.isArray(response?.tests) ? response.tests : [];
+      setTests(list);
+
+      if (list.length === 0) {
+        setError(
+          'No published tests are available for this lab. Choose another lab, or ask the lab to publish tests in their catalog.'
+        );
       }
     } catch (err: any) {
       console.error('Error loading tests:', err);
-      setError('Failed to load diagnostic tests');
+      const msg =
+        err?.message?.includes('403') || err?.statusCode === 403 || err?.status === 403
+          ? 'This lab is not set up for online test booking.'
+          : formatCustomerApiFailure(err, 'Could not load tests for this lab');
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
   };
+
+  // Pre-select tests when user opened booking from a health package (best-effort match on name/code)
+  useEffect(() => {
+    if (packageHintAppliedRef.current) return;
+    const labels = (packageHint?.testLabels || []).map((l) => l.trim().toLowerCase()).filter(Boolean);
+    if (!labels.length || tests.length === 0) return;
+
+    const matched: string[] = [];
+    for (const t of tests) {
+      const name = (t.test_name || '').toLowerCase();
+      const code = (t.test_code || '').toLowerCase();
+      const hit = labels.some((l) => {
+        if (!l) return false;
+        if (code && (code === l || code.includes(l) || l.includes(code))) return true;
+        if (name.includes(l)) return true;
+        const tokens = name.split(/[\s,/+&()-]+/).filter(Boolean);
+        return tokens.some((w) => w === l || w.startsWith(l) || l.startsWith(w));
+      });
+      if (hit) matched.push(t.id);
+    }
+
+    if (matched.length > 0) {
+      setSelectedTests(matched);
+      packageHintAppliedRef.current = true;
+      if (packageHint?.name) {
+        toast.success(`Selected matching tests for “${packageHint.name}”. Adjust if needed.`);
+      }
+    }
+  }, [tests, packageHint]);
 
   const toggleTest = (testId: string) => {
     setSelectedTests(prev => 
@@ -155,7 +274,11 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
       bookingType: 'scheduled',
       bookingDate: selectedDate,
       bookingTime: selectedTime,
-      address: preferredSampleType === 'home' ? address : undefined,
+      address: preferredSampleType === 'home' 
+        ? (selectedAddress?.formattedAddress || 
+           `${selectedAddress?.addressLine1 || selectedAddress?.address || ''}, ${selectedAddress?.city || ''}, ${selectedAddress?.pincode || ''}`.trim() || 
+           address) 
+        : undefined,
       amount: totalAmountNum,
       notes: JSON.stringify({
         tests: selectedTestDetails.map(t => ({
@@ -194,6 +317,10 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
     }
     if (!patientName.trim()) {
       setError('Patient name is required');
+      return;
+    }
+    if (preferredSampleType === 'home' && !selectedAddress && !address.trim()) {
+      setError('Please select or enter a home address for collection');
       return;
     }
 
@@ -272,22 +399,43 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
         throw new Error('Failed to create payment order');
       }
 
-      const options = {
-        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: amount * 100,
+      const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+        key: (keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+        amountPaise: Math.max(1, Math.round(Number(amount) * 100)),
         currency: 'INR',
         name: 'Warmpawz',
         description: 'Diagnostic tests booking',
         order_id: orderId,
+        customerPhone,
+        customerEmail: checkoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
-            await apiClient.post('/razorpay/verify-payment', {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            });
+            // Verify payment with retry
+            const MAX_RETRIES = 3;
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                await apiClient.post('/razorpay/verify-payment', {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                }, undefined, 30000);
+                break;
+              } catch (verifyErr: any) {
+                console.error(`[VERIFY] Attempt ${attempt}/${MAX_RETRIES} failed:`, verifyErr?.message);
+                if (attempt === MAX_RETRIES) throw verifyErr;
+                await new Promise((r) => setTimeout(r, attempt * 1000));
+              }
+            }
 
-            const createPayload = { ...pendingPayloadRef.current };
+            const createPayload = {
+              ...pendingPayloadRef.current,
+              razorpay_order_id:
+                response.razorpay_order_id ||
+                response?.razorpayOrderId ||
+                orderId,
+            };
             let bookingResponse: any;
             try {
               bookingResponse = await apiClient.post<any>('/bookings/create', createPayload);
@@ -325,7 +473,6 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
             setProcessing(false);
           }
         },
-        prefill: { contact: customerPhone },
         theme: { color: '#FF8C42' },
         modal: {
           ondismiss: () => {
@@ -333,7 +480,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
             toast.info('Payment cancelled');
           },
         },
-      };
+      });
 
       if (!window.Razorpay) {
         await loadRazorpayScript();
@@ -357,7 +504,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
   const dashboardStats = [
     { value: `${tests.length}+`, label: 'Tests' },
     { value: '1K+', label: 'Bookings' },
-    { value: '*4.7', label: 'Rating' }
+    { value: '—', label: 'Rating' }
   ];
 
   if (loading) {
@@ -508,8 +655,17 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
           </div>
           <div className="divide-y max-h-96 overflow-y-auto">
             {filteredTests.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                No tests found
+              <div className="p-8 text-center text-gray-500 space-y-2">
+                <p className="font-medium text-gray-700">
+                  {tests.length === 0
+                    ? error || 'No published tests for this lab yet.'
+                    : 'No tests match your search or category.'}
+                </p>
+                {tests.length === 0 && (
+                  <p className="text-sm">
+                    Labs must publish tests in their vendor catalog. Try another lab from the list or book individual tests from a lab card below.
+                  </p>
+                )}
               </div>
             ) : (
               filteredTests.map((test) => (
@@ -720,17 +876,87 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
 
           {preferredSampleType === 'home' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-0">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Home Address *
               </label>
-              <textarea
-                value={address}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setAddress(e.target.value)}
-                required={preferredSampleType === 'home'}
-                rows={3}
-                placeholder="Enter complete address for home collection"
-                className="w-full px-4 py-0 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-              />
+              {addresses.length > 0 ? (
+                <div className="space-y-3">
+                  {addresses.map((addr) => (
+                    <button
+                      key={addr.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedAddress(addr);
+                        const formattedAddr = addr.formattedAddress || 
+                          `${addr.addressLine1 || addr.address || ''}, ${addr.city || ''}, ${addr.pincode || ''}`.trim();
+                        setAddress(formattedAddr);
+                      }}
+                      className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+                        selectedAddress?.id === addr.id 
+                          ? 'border-[#FF8C42] bg-orange-50' 
+                          : 'border-gray-200 bg-white hover:border-[#FF8C42]/50'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                          {(addr.label || '').toLowerCase() === 'home' ? (
+                            <Home className="w-4 h-4 text-blue-600" />
+                          ) : (addr.label || '').toLowerCase() === 'work' ? (
+                            <Building2 className="w-4 h-4 text-blue-600" />
+                          ) : (
+                            <MapPin className="w-4 h-4 text-blue-600" />
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-gray-900">{addr.label || 'Address'}</h3>
+                            {addr.isDefault && (
+                              <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">Default</span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600">{addr.addressLine1 || addr.address}</p>
+                          <p className="text-sm text-gray-500">{addr.city} - {addr.pincode}</p>
+                          {addr.landmark && <p className="text-xs text-gray-400">Near: {addr.landmark}</p>}
+                        </div>
+                        {selectedAddress?.id === addr.id && (
+                          <CheckCircle2 className="w-6 h-6 text-orange-500" />
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setShowAddAddressModal(true)}
+                    className="w-full p-3 border-2 border-dashed border-gray-300 rounded-xl text-gray-600 hover:border-[#FF8C42] hover:text-[#FF8C42] transition flex items-center justify-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add New Address
+                  </button>
+                </div>
+              ) : (
+                <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-xl">
+                  <div className="w-16 h-16 mx-auto mb-3 bg-gray-100 rounded-full flex items-center justify-center">
+                    <MapPin className="w-8 h-8 text-gray-400" />
+                  </div>
+                  <p className="text-gray-600 font-medium mb-2">No addresses saved</p>
+                  <p className="text-sm text-gray-500 mb-4">Add an address to continue with home collection</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddAddressModal(true)}
+                    className="px-6 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition"
+                  >
+                    + Add Your Address
+                  </button>
+                </div>
+              )}
+              {/* Show selected address confirmation */}
+              {selectedAddress && addresses.length > 0 && (
+                <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-800 font-medium">
+                    ✓ Home collection will be at: {selectedAddress?.label || 'Selected Address'}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -793,6 +1019,33 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, onSuccess, onC
         </div>
       </form>
       </div>
+
+      {/* Add Address Modal */}
+      <AddAddressModal
+        phone={customerPhone}
+        isOpen={showAddAddressModal}
+        onClose={() => setShowAddAddressModal(false)}
+        onSuccess={(savedAddress) => {
+          setShowAddAddressModal(false);
+          if (savedAddress) {
+            setSelectedAddress(savedAddress);
+            const formattedAddr = savedAddress.formattedAddress || 
+              `${savedAddress.addressLine1 || savedAddress.address || ''}, ${savedAddress.city || ''}, ${savedAddress.pincode || ''}`.trim();
+            setAddress(formattedAddr);
+            // Refresh addresses list
+            (async () => {
+              try {
+                const addressResponse = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
+                if (addressResponse?.addresses && Array.isArray(addressResponse.addresses)) {
+                  setAddresses(addressResponse.addresses);
+                }
+              } catch (error) {
+                console.error('Error refreshing addresses:', error);
+              }
+            })();
+          }
+        }}
+      />
     </div>
   );
 }

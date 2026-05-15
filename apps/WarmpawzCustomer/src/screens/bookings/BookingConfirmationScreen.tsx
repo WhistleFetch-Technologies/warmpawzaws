@@ -11,10 +11,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
+import { useTabAwareBottomInset } from '../../navigation/useTabAwareBottomInset';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -35,6 +36,7 @@ export function BookingConfirmationScreen({
 }: BookingConfirmationScreenProps) {
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const scrollBottomInset = useTabAwareBottomInset();
 
   useEffect(() => {
     loadBookingDetails();
@@ -55,30 +57,34 @@ export function BookingConfirmationScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   if (!booking) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Booking not found</Text>
           <TouchableOpacity style={styles.backButton} onPress={onBack}>
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+    <ScreenShell style={styles.container} edges={['top', 'left', 'right']}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={[styles.contentContainer, { paddingBottom: scrollBottomInset }]}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Success Icon */}
         <View style={styles.successIconContainer}>
           <View style={styles.successIcon}>
@@ -188,6 +194,20 @@ export function BookingConfirmationScreen({
             <Text style={styles.viewBookingButtonText}>View Booking Details</Text>
           </TouchableOpacity>
 
+          {booking.vendorName && onNavigate && (
+            <TouchableOpacity
+              style={styles.chatButton}
+              onPress={() =>
+                onNavigate('Chat', {
+                  bookingId,
+                  recipientName: booking.vendorName,
+                })
+              }
+            >
+              <Text style={styles.chatButtonText}>Message provider</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={styles.homeButton}
             onPress={() => onNavigate && onNavigate('Home')}
@@ -196,7 +216,7 @@ export function BookingConfirmationScreen({
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -385,6 +405,19 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  chatButton: {
+    backgroundColor: colors.white,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  chatButtonText: {
+    color: colors.primary,
+    fontSize: 16,
+    fontWeight: '600',
   },
   homeButton: {
     backgroundColor: colors.white,

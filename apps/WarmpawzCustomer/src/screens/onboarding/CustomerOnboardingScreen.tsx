@@ -10,9 +10,9 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   Image,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -53,7 +53,7 @@ export function CustomerOnboardingScreen({ phone, customerId, onComplete }: Cust
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Orange Top Section */}
         <View style={styles.topSection}>
@@ -164,7 +164,7 @@ export function CustomerOnboardingScreen({ phone, customerId, onComplete }: Cust
           </View>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Clock, ChevronDown, ChevronUp, Check } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 
 interface ServicePackageSelectorProps {
   vendorId: string;
@@ -56,7 +57,7 @@ export function ServicePackageSelector({
       
       let allServices: any[] = [];
       if (data?.success && data?.services && Array.isArray(data.services)) {
-        allServices = data.services;
+        allServices = mergeCustomerVendorServicesPayload(data);
         console.log(`📦 [SERVICE-SELECTOR] Found ${allServices.length} services (customer endpoint)`);
       } else if (data?.services?.[styleKey]?.services) {
         allServices = data.services[styleKey].services;

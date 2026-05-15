@@ -54,19 +54,25 @@ export function registerAdsRecommendationEndpoints(app: Hono) {
     
     const result = await query(sql, [limit]);
 
-    const providers = (result.rows || []).map((row: any) => ({
-      id: row.campaign_id,
-      vendorId: row.vendor_id,
-      campaignId: row.campaign_id,
-      name: row.vendor_name,
-      businessName: row.business_name,
-      photo: row.photo,
-      rating: parseFloat(row.rating || '4.5'),
-      reviewCount: parseInt(row.review_count || '0'),
-      specialization: row.specialization,
-      isVerified: row.is_verified,
-      adCreative: row.ad_creative || {},
-    }));
+    const providers = (result.rows || []).map((row: any) => {
+      const reviewCount = parseInt(row.review_count || '0', 10);
+      const raw = row.rating != null ? parseFloat(String(row.rating)) : NaN;
+      const rating =
+        reviewCount > 0 && Number.isFinite(raw) ? raw : null;
+      return {
+        id: row.campaign_id,
+        vendorId: row.vendor_id,
+        campaignId: row.campaign_id,
+        name: row.vendor_name,
+        businessName: row.business_name,
+        photo: row.photo,
+        rating,
+        reviewCount,
+        specialization: row.specialization,
+        isVerified: row.is_verified,
+        adCreative: row.ad_creative || {},
+      };
+    });
 
     return c.json({ success: true, providers });
   } catch (error: any) {
@@ -292,21 +298,27 @@ app.get('/providers/top', async (c) => {
     
     const result = await query(sql, params);
 
-    const providers = (result.rows || []).map((row: any) => ({
-      providerId: row.id,
-      vendorId: row.id,
-      name: row.name,
-      businessName: row.business_name,
-      photo: row.photo,
-      rating: parseFloat(row.rating || '4.5'),
-      reviewCount: parseInt(row.review_count || '0'),
-      specialization: row.specialization,
-      isVerified: row.is_verified,
-      nextAvailableSlot: row.next_available_slot,
-      startingPrice: row.starting_price ? parseFloat(row.starting_price) : null,
-      completedServices: parseInt(row.completed_services || '0'),
-      score: parseFloat(row.score || '0'),
-    }));
+    const providers = (result.rows || []).map((row: any) => {
+      const reviewCount = parseInt(row.review_count || '0', 10);
+      const raw = row.rating != null ? parseFloat(String(row.rating)) : NaN;
+      const rating =
+        reviewCount > 0 && Number.isFinite(raw) ? raw : null;
+      return {
+        providerId: row.id,
+        vendorId: row.id,
+        name: row.name,
+        businessName: row.business_name,
+        photo: row.photo,
+        rating,
+        reviewCount,
+        specialization: row.specialization,
+        isVerified: row.is_verified,
+        nextAvailableSlot: row.next_available_slot,
+        startingPrice: row.starting_price ? parseFloat(row.starting_price) : null,
+        completedServices: parseInt(row.completed_services || '0'),
+        score: parseFloat(row.score || '0'),
+      };
+    });
 
     return c.json({ success: true, providers });
   } catch (error: any) {
@@ -407,7 +419,7 @@ app.get('/products/similar', async (c) => {
       FROM products p
       LEFT JOIN vendors v ON p.vendor_id = v.id
       WHERE p.is_active = true
-        AND p.stock_quantity > 0
+        AND p.stock > 0
     `;
 
     if (category) {

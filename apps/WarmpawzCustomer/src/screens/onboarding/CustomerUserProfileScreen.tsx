@@ -11,12 +11,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
   Image,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { API_BASE_URL } from '../../config/aws';
 import { AddressAutocomplete, type AddressComponents } from '../../components/AddressAutocomplete';
@@ -222,7 +222,7 @@ export function CustomerUserProfileScreen({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -234,14 +234,6 @@ export function CustomerUserProfileScreen({
             style={styles.logoImage}
             resizeMode="contain"
           />
-        </View>
-
-        {/* Orange Circle Icon */}
-        <View style={styles.iconSection}>
-          <View style={styles.orangeCircle}>
-            <Text style={styles.iconText}>👤</Text>
-          </View>
-          <Text style={styles.title}>Create Your{'\n'}Profile 👤</Text>
         </View>
 
         {/* Content */}
@@ -395,7 +387,7 @@ export function CustomerUserProfileScreen({
           )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -411,35 +403,11 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     paddingTop: spacing.lg,
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
   logoImage: {
     width: 80,
     height: 80,
-  },
-  iconSection: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-    paddingHorizontal: spacing.md,
-  },
-  orangeCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  iconText: {
-    fontSize: 48,
-  },
-  title: {
-    fontSize: typography.fontSizes['3xl'],
-    fontWeight: typography.fontWeights.bold,
-    color: colors.text,
-    textAlign: 'center',
-    lineHeight: 36,
   },
   content: {
     paddingHorizontal: spacing.md,

@@ -15,8 +15,11 @@
 
 import React, { useRef, useState } from 'react';
 import { Camera, Upload, X, Loader2, AlertCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
+import { cn } from '@/components/ui/utils';
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import { fileMatchesAccept } from '@/lib/capacitor-file-pick';
 
 interface PhotoUploadProps {
   photoUrl?: string;
@@ -47,7 +50,8 @@ export function PhotoUpload({
   className = '',
   disabled = false,
 }: PhotoUploadProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const overlayFileRef = useRef<HTMLInputElement>(null);
+  const mainFileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState<string | null>(photoUrl || null);
   const [dragActive, setDragActive] = useState(false);
@@ -63,8 +67,8 @@ export function PhotoUpload({
   const handleFileSelect = async (file: File) => {
     setError(null);
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
+    // Validate file type (extension fallback when MIME is empty or octet-stream — common on Android)
+    if (!fileMatchesAccept(file, accept)) {
       setError('Please select an image file');
       toast.error('Invalid file type. Please select an image.');
       return;
@@ -137,12 +141,15 @@ export function PhotoUpload({
     }
   };
 
+  const clearFileInputs = () => {
+    if (overlayFileRef.current) overlayFileRef.current.value = '';
+    if (mainFileRef.current) mainFileRef.current.value = '';
+  };
+
   const handleRemove = () => {
     setPreview(null);
     setError(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    clearFileInputs();
   };
 
   return (
@@ -178,8 +185,9 @@ export function PhotoUpload({
               />
               {!disabled && (
                 <button
+                  type="button"
                   onClick={handleRemove}
-                  className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-colors"
+                  className="absolute top-1 right-1 z-20 bg-red-500 text-white p-1 rounded-full hover:bg-red-600 transition-colors"
                   title="Remove photo"
                 >
                   <X className="w-3 h-3" />
@@ -194,19 +202,21 @@ export function PhotoUpload({
 
           {/* Upload Overlay */}
           {!disabled && (
-            <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
-              <button
-                onClick={() => fileInputRef.current?.click()}
+            <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors hover:bg-black/10">
+              <TouchFilePicker
+                ref={overlayFileRef}
+                onFileChange={handleFileInputChange}
+                accept={accept}
                 disabled={uploading || disabled}
-                className="absolute bottom-2 right-2 bg-blue-500 text-white p-2 rounded-full cursor-pointer hover:bg-blue-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Upload photo"
+                className="absolute bottom-2 right-2 h-9 w-9 rounded-full"
+                innerClassName="items-center justify-center rounded-full bg-blue-500 text-white"
               >
                 {uploading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Camera className="w-4 h-4" />
+                  <Camera className="h-4 w-4" />
                 )}
-              </button>
+              </TouchFilePicker>
             </div>
           )}
 
@@ -223,40 +233,40 @@ export function PhotoUpload({
 
         {/* Upload Controls */}
         <div className="flex-1">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={accept}
-            onChange={handleFileInputChange}
-            className="hidden"
-            disabled={uploading || disabled}
-          />
-
           <div className="space-y-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
+            <TouchFilePicker
+              ref={mainFileRef}
+              onFileChange={handleFileInputChange}
+              accept={accept}
               disabled={uploading || disabled}
-              className="w-full"
+              className="w-full min-h-[2.5rem] rounded-md"
+              innerClassName="flex w-full min-h-[2.5rem] items-center justify-center"
             >
-              {uploading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Uploading...
-                </>
-              ) : preview ? (
-                <>
-                  <Camera className="w-4 h-4 mr-2" />
-                  Change Photo
-                </>
-              ) : (
-                <>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Photo
-                </>
-              )}
-            </Button>
+              <span
+                className={cn(
+                  buttonVariants({ variant: 'outline', size: 'sm' }),
+                  'w-full',
+                  (uploading || disabled) && 'opacity-50'
+                )}
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading...
+                  </>
+                ) : preview ? (
+                  <>
+                    <Camera className="mr-2 h-4 w-4" />
+                    Change Photo
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Upload Photo
+                  </>
+                )}
+              </span>
+            </TouchFilePicker>
 
             <p className="text-xs text-gray-500">
               Drag and drop an image here, or click to select

@@ -1,10 +1,21 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { canonicalProductId } from '@/lib/product-id';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 import {
-  ArrowLeft, ShoppingCart, Heart, Star, Truck, Shield, Tag,
+  mergeLineIntoWarmpawzCartStorage,
+  CART_UPDATED_EVENT,
+  WARMPAWZ_CART_KEY,
+} from '@/lib/warmpawz-cart-storage';
+import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
+import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import {
+  ArrowLeft, ShoppingCart, Star, Truck, Shield, Tag,
   Package, Store, Check, Plus, Minus, Share2, ChevronRight,
   Clock, ThumbsUp, User, AlertCircle, RefreshCcw
 } from 'lucide-react';
@@ -93,9 +104,16 @@ export default function ProductDetailClient() {
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectedVariations, setSelectedVariations] = useState<Record<string, string>>({});
   const [showReviews, setShowReviews] = useState(false);
-  const [isInWishlist, setIsInWishlist] = useState(false);
   const [isInCart, setIsInCart] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
+
+  const wishlistProductId = useMemo(() => {
+    if (product) {
+      const c = canonicalProductId(product as unknown as Record<string, unknown>);
+      return (c || productId || '').trim();
+    }
+    return (productId || '').trim();
+  }, [product, productId]);
 
   // ============================================================================
   // DATA LOADING
@@ -104,19 +122,54 @@ export default function ProductDetailClient() {
   useEffect(() => {
     if (productId) {
       loadProductData();
-      checkWishlistStatus();
-      checkCartStatus();
       recordProductView();
     }
   }, [productId]);
+
+  useEffect(() => {
+    if (!wishlistProductId || typeof window === 'undefined') return;
+    const sync = () => {
+      const cart = JSON.parse(localStorage.getItem(WARMPAWZ_CART_KEY) || '[]');
+      setIsInCart(
+        cart.some((item: CartItem) => String(item.product_id) === String(wishlistProductId))
+      );
+    };
+    sync();
+    window.addEventListener(CART_UPDATED_EVENT, sync);
+    return () => {
+      window.removeEventListener(CART_UPDATED_EVENT, sync);
+    };
+  }, [wishlistProductId]);
 
   const loadProductData = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [productRes, reviewsRes, alsoBoughtRes, similarRes] = await Promise.all([
-        apiClient.get<any>(`/ecommerce/products/${productId}`),
+      console.log('[shop/product] load detail', {
+        routeParamProductId: productId,
+        fetchPathPrimary: `/ecommerce/products/${productId}`,
+      });
+
+      let productRes: any;
+      try {
+        productRes = await apiClient.get<any>(`/ecommerce/products/${productId}`);
+      } catch (firstErr: any) {
+        const is404 =
+          firstErr?.status === 404 ||
+          firstErr?.statusCode === 404 ||
+          String(firstErr?.message || '').includes('404');
+        if (is404) {
+          console.warn('[shop/product] ecommerce detail 404, retrying /products/:id', {
+            productId,
+          });
+          productRes = await apiClient.get<any>(`/products/${productId}`);
+        } else {
+          throw firstErr;
+        }
+      }
+
+      const [reviewsRes, alsoBoughtRes, similarRes] = await Promise.all([
         apiClient.get<any>(`/products/${productId}/reviews`).catch(() => ({ reviews: [] })),
         apiClient.get<any>(`/products/${productId}/also-bought`).catch(() => ({ products: [] })),
         apiClient.get<any>(`/ads-recommendations/products/${productId}/similar`).catch(() => ({ products: [] })),
@@ -124,17 +177,36 @@ export default function ProductDetailClient() {
 
       if (productRes?.product) {
         const p = productRes.product;
+        const resolvedId = canonicalProductId(p) || productId;
+        console.log('[shop/product] detail ok', {
+          routeParamProductId: productId,
+          resolvedProductId: resolvedId,
+          rowKeys: p && typeof p === 'object' ? Object.keys(p) : [],
+        });
+        const compareOrOriginal = p.original_price ?? p.compare_at_price;
+        const rc = Number(p.review_count ?? 0) || 0;
+        const rawRating = p.rating != null ? Number(p.rating) : NaN;
+        const rating =
+          rc > 0 && Number.isFinite(rawRating) && rawRating > 0 ? rawRating : 0;
         setProduct({
           ...p,
+          id: resolvedId,
           stock: p.stock_quantity || p.stock || 0,
           price: parseFloat(p.price) || 0,
-          original_price: p.original_price ? parseFloat(p.original_price) : undefined,
-          rating: p.rating || 4.5,
-          review_count: p.review_count || 0,
+          original_price:
+            compareOrOriginal != null && String(compareOrOriginal) !== ''
+              ? parseFloat(String(compareOrOriginal))
+              : undefined,
+          rating,
+          review_count: rc,
           images: p.images || [],
           emoji: p.emoji || '🐾',
         });
       } else {
+        console.warn('[shop/product] response missing product wrapper', {
+          productId,
+          keys: productRes && typeof productRes === 'object' ? Object.keys(productRes) : [],
+        });
         setError('Product not found');
       }
 
@@ -151,7 +223,7 @@ export default function ProductDetailClient() {
 
   const recordProductView = async () => {
     try {
-      const customerId = localStorage.getItem('warmpawz_customer_id');
+      const customerId = getResolvedCustomerId();
       if (customerId) {
         await apiClient.post(`/products/${productId}/view`, { customerId });
       }
@@ -160,51 +232,31 @@ export default function ProductDetailClient() {
     }
   };
 
-  const checkWishlistStatus = () => {
-    if (typeof window !== 'undefined') {
-      const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-      setIsInWishlist(wishlist.includes(productId));
-    }
-  };
-
-  const checkCartStatus = () => {
-    if (typeof window !== 'undefined') {
-      const cart = JSON.parse(localStorage.getItem('warmpawz_cart') || '[]');
-      setIsInCart(cart.some((item: CartItem) => item.product_id === productId));
-    }
-  };
-
   // ============================================================================
   // ACTIONS
   // ============================================================================
 
-  const toggleWishlist = async () => {
-    if (typeof window !== 'undefined') {
-      const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-      
-      if (isInWishlist) {
-        const newWishlist = wishlist.filter((id: string) => id !== productId);
-        localStorage.setItem('warmpawz_wishlist', JSON.stringify(newWishlist));
-        setIsInWishlist(false);
-      } else {
-        wishlist.push(productId);
-        localStorage.setItem('warmpawz_wishlist', JSON.stringify(wishlist));
-        setIsInWishlist(true);
-      }
-
-      // Sync with backend if customer is logged in
-      const customerId = localStorage.getItem('warmpawz_customer_id');
-      if (customerId) {
-        try {
-          await apiClient.post(`/customer/${customerId}/wishlist`, {
-            productId,
-            action: isInWishlist ? 'remove' : 'add'
-          });
-        } catch (e) {
-          console.error('Failed to sync wishlist:', e);
-        }
-      }
-    }
+  const mergeLineIntoLocalCart = (): boolean => {
+    if (!product || product.stock === 0) return false;
+    const lineId = wishlistProductId || productId;
+    const ok = mergeLineIntoWarmpawzCartStorage({
+      lineId: String(lineId),
+      quantity,
+      product: {
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        original_price: product.original_price,
+        emoji: product.emoji,
+        images: product.images,
+        vendor_name: product.vendor_name,
+        stock: product.stock,
+      },
+      selectedVariations:
+        Object.keys(selectedVariations).length > 0 ? selectedVariations : undefined,
+    });
+    if (ok) setIsInCart(true);
+    return ok;
   };
 
   const addToCart = async () => {
@@ -212,44 +264,15 @@ export default function ProductDetailClient() {
 
     setAddingToCart(true);
     try {
-      const cart = JSON.parse(localStorage.getItem('warmpawz_cart') || '[]');
-      const existingIndex = cart.findIndex((item: CartItem) => item.product_id === productId);
-
-      if (existingIndex >= 0) {
-        cart[existingIndex].quantity += quantity;
-      } else {
-        cart.push({
-          product_id: productId,
-          product: {
-            id: product.id,
-            name: product.name,
-            price: product.price,
-            original_price: product.original_price,
-            emoji: product.emoji,
-            images: product.images,
-            vendor_name: product.vendor_name,
-            stock: product.stock,
-          },
-          quantity,
-          selected_variations: Object.keys(selectedVariations).length > 0 ? selectedVariations : undefined,
-        });
-      }
-
-      localStorage.setItem('warmpawz_cart', JSON.stringify(cart));
-      setIsInCart(true);
-
-      // Dispatch custom event for cart update
-      window.dispatchEvent(new CustomEvent('cart-updated'));
-    } catch (err) {
-      console.error('Failed to add to cart:', err);
+      mergeLineIntoLocalCart();
     } finally {
       setAddingToCart(false);
     }
   };
 
   const buyNow = () => {
-    addToCart();
-    router.push('/checkout');
+    if (!mergeLineIntoLocalCart()) return;
+    router.push('/cart?buynow=1');
   };
 
   const shareProduct = async () => {
@@ -257,7 +280,7 @@ export default function ProductDetailClient() {
       try {
         await navigator.share({
           title: product.name,
-          text: `Check out ${product.name} on WarmPawz!`,
+          text: `Check out ${product.name} on Warmpawz!`,
           url: window.location.href,
         });
       } catch (e) {
@@ -290,13 +313,43 @@ export default function ProductDetailClient() {
     : 0;
 
   const finalPrice = product ? product.price * quantity : 0;
-  const averageRating = reviews.length > 0 
-    ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length 
-    : product?.rating || 4.5;
+
+  const loadedReviewCount = reviews.length;
+  const productReviewCount = product?.review_count ?? 0;
+  let displayAvg = 0;
+  let reviewDisplayCount = 0;
+  if (loadedReviewCount > 0) {
+    displayAvg =
+      reviews.reduce((sum, r) => sum + Number(r.rating || 0), 0) / loadedReviewCount;
+    reviewDisplayCount = loadedReviewCount;
+  } else if (product && productReviewCount > 0) {
+    const pr = Number(product.rating);
+    displayAvg = Number.isFinite(pr) && pr > 0 ? pr : 0;
+    reviewDisplayCount = productReviewCount;
+  }
+  const showProductRatingRow = displayAvg > 0 && reviewDisplayCount > 0;
 
   // ============================================================================
   // RENDER
   // ============================================================================
+
+  if (!isCustomerEcommerceEnabled()) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-orange-50/30 flex items-center justify-center px-6">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-lg max-w-sm">
+          <ShoppingCart className="w-16 h-16 mx-auto mb-4 text-orange-300" />
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Shop coming soon</h2>
+          <p className="text-slate-500 mb-6">We&apos;re preparing the Warmpawz marketplace for customers.</p>
+          <button
+            onClick={() => goBackOrHome(router)}
+            className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg"
+          >
+            Go Back
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -334,7 +387,7 @@ export default function ProductDetailClient() {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <button
-              onClick={() => router.back()}
+              onClick={() => goBackOrHome(router)}
               className="p-2 hover:bg-slate-100 rounded-xl"
             >
               <ArrowLeft className="w-5 h-5 text-slate-600" />
@@ -346,14 +399,11 @@ export default function ProductDetailClient() {
               >
                 <Share2 className="w-5 h-5 text-slate-600" />
               </button>
-              <button
-                onClick={toggleWishlist}
-                className={`p-2 rounded-xl transition-colors ${
-                  isInWishlist ? 'bg-red-50 text-red-500' : 'hover:bg-slate-100 text-slate-600'
-                }`}
-              >
-                <Heart className={`w-5 h-5 ${isInWishlist ? 'fill-current' : ''}`} />
-              </button>
+              <WishlistProductHeartButton
+                productId={wishlistProductId}
+                visualVariant="header-toolbar"
+                heartClassName="w-5 h-5"
+              />
               <button
                 onClick={() => router.push('/shop')}
                 className="relative p-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl"
@@ -384,6 +434,14 @@ export default function ProductDetailClient() {
           <div className="space-y-4">
             {/* Main Image */}
             <div className="aspect-square bg-white rounded-2xl border border-slate-100 overflow-hidden flex items-center justify-center relative">
+              <button
+                type="button"
+                onClick={() => goBackOrHome(router)}
+                className="absolute top-3 left-3 z-20 flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-slate-200/90 bg-white/95 text-slate-900 shadow-md backdrop-blur-sm touch-manipulation active:scale-[0.98] transition-transform hover:bg-white lg:hidden"
+                aria-label="Go back"
+              >
+                <ArrowLeft className="h-5 w-5 shrink-0" aria-hidden />
+              </button>
               {product.images && product.images.length > 0 ? (
                 <img 
                   src={product.images[selectedImage]} 
@@ -396,7 +454,7 @@ export default function ProductDetailClient() {
               
               {/* Discount Badge */}
               {discount > 0 && (
-                <div className="absolute top-4 left-4 px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-lg">
+                <div className="absolute top-3 left-14 z-10 px-3 py-1.5 bg-red-500 text-white text-sm font-bold rounded-lg lg:top-4 lg:left-4">
                   {discount}% OFF
                 </div>
               )}
@@ -439,21 +497,32 @@ export default function ProductDetailClient() {
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900">{product.name}</h1>
 
             {/* Rating */}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-1">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <Star
                     key={star}
                     className={`w-5 h-5 ${
-                      star <= Math.round(averageRating)
+                      showProductRatingRow && star <= Math.round(displayAvg)
                         ? 'text-amber-400 fill-amber-400'
                         : 'text-slate-200'
                     }`}
                   />
                 ))}
               </div>
-              <span className="font-semibold text-slate-900">{averageRating.toFixed(1)}</span>
-              <span className="text-slate-500">({product.review_count} reviews)</span>
+              {showProductRatingRow ? (
+                <>
+                  <span className="font-semibold text-slate-900">
+                    {Number(displayAvg).toFixed(1)}
+                  </span>
+                  <span className="text-slate-500">
+                    ({reviewDisplayCount}{' '}
+                    {reviewDisplayCount === 1 ? 'review' : 'reviews'})
+                  </span>
+                </>
+              ) : (
+                <span className="text-sm text-slate-500">No customer reviews</span>
+              )}
             </div>
 
             {/* Price */}

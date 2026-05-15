@@ -27,6 +27,8 @@ export interface ProfessionalProfile {
     city: string;
     state: string;
     pincode: string;
+    latitude?: number;
+    longitude?: number;
     description?: string;
     photo_url?: string;
     qualifications?: string;
@@ -36,6 +38,10 @@ export interface ProfessionalProfile {
     operating_hours?: string;
     availability?: AvailabilitySchedule; // Enhanced scheduling
     role_name?: string;
+    /** Default home-visit radius (km) on vendor row; also fallback when saving availability slots */
+    service_radius?: number | null;
+    /** When true, vendor can appear in customer “instant tele” lists (requires tele service + identity join, etc.) */
+    available_for_instant_tele?: boolean;
 }
 
 export interface ProfessionalProfileManagerProps {
@@ -49,6 +55,8 @@ export interface ProfileManagerProps {
     vendorId: string;
     vendorData?: any;
     onBack: () => void;
+    /** When set (e.g. from VendorLandingPage), "Get started" opens gallery; otherwise `/profile` uses home + session flag. */
+    onNavigateToGallery?: () => void;
 }
 
 // Alias for backward compatibility
@@ -58,10 +66,14 @@ export interface CenterProfile {
     // Basic Info
     centerName: string;
     description: string;
+    disclaimer: string;
+    disclaimerPoints: string[];
     address: string;
     city: string;
     state: string;
     pincode: string;
+    latitude?: number;
+    longitude?: number;
 
     // Operating Hours - Day by Day
     operatingHours: {

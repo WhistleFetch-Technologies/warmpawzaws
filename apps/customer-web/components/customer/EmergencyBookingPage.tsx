@@ -5,7 +5,10 @@ import { ArrowLeft, AlertTriangle, Phone, MapPin, Clock, Stethoscope } from 'luc
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
+import { formatDistanceDisplay } from '@/lib/distance-display';
 
 interface EmergencyBookingPageProps {
   phone?: string;
@@ -63,7 +66,7 @@ export function EmergencyBookingPage(props: EmergencyBookingPageProps) {
   const handleBookEmergency = async (vetId: string) => {
     try {
       // Get customer ID
-      const customerId = localStorage.getItem('warmpawz_customer_id');
+      const customerId = getResolvedCustomerId();
       if (!customerId) {
         toast.error('Please login to create emergency booking');
         return;
@@ -76,7 +79,9 @@ export function EmergencyBookingPage(props: EmergencyBookingPageProps) {
       } catch {
         servicesResponse = await apiClient.get<any>(`/vendor/${vetId}/services`);
       }
-      const allServices = servicesResponse?.services || servicesResponse || [];
+      const allServices = Array.isArray(servicesResponse?.services)
+        ? mergeCustomerVendorServicesPayload(servicesResponse)
+        : servicesResponse || [];
       const emergencyService = allServices.find((s: any) => 
         s.serviceType === 'emergency' || 
         s.name?.toLowerCase().includes('emergency') ||
@@ -152,10 +157,10 @@ export function EmergencyBookingPage(props: EmergencyBookingPageProps) {
                         <Stethoscope className="w-5 h-5 text-red-600" />
                         <h3 className="font-semibold text-gray-900">{vet.name}</h3>
                       </div>
-                      {vet.distance && (
+                      {formatDistanceDisplay(vet) && (
                         <div className="flex items-center gap-1 text-sm text-gray-600 mb-2">
                           <MapPin className="w-4 h-4" />
-                          {vet.distance} away
+                          {formatDistanceDisplay(vet)}
                         </div>
                       )}
                       <div className="flex items-center gap-1 text-sm text-gray-600">

@@ -1,404 +1,278 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { ArrowLeft, Heart, Loader2, ShoppingBag, Trash2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { canonicalProductId } from '@/lib/product-id';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { goBackOrHome, consumeWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import {
-  Heart, ShoppingCart, Trash2, ArrowLeft, Package,
-  Store, Star, Check, AlertCircle, ShoppingBag
-} from 'lucide-react';
+  readWishlistIds,
+  setWishlistIds,
+  WISHLIST_UPDATED_EVENT,
+} from '@/lib/warmpawz-wishlist-local';
 
-// ============================================================================
-// TYPES
-// ============================================================================
-
-interface WishlistItem {
+type WishlistRow = {
+  /** Id as stored in `warmpawz_wishlist` — stable React key + localStorage removal. */
+  storageKey: string;
+  /** Canonical id for `/shop/[id]` and API. */
   id: string;
-  product_id: string;
-  product: {
-    id: string;
-    name: string;
-    description: string;
-    price: number;
-    original_price?: number;
-    images: string[];
-    emoji?: string;
-    rating: number;
-    review_count: number;
-    stock: number;
-    vendor_id: string;
-    vendor_name: string;
-    is_active: boolean;
-  };
-  added_at: string;
+  name: string;
+  price: number;
+  image?: string;
+  emoji?: string;
+  missing?: boolean;
+};
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function sameIdSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = new Set(a.map(String));
+  for (const x of b) {
+    if (!sa.has(String(x))) return false;
+  }
+  return true;
 }
 
-// ============================================================================
-// MAIN COMPONENT
-// ============================================================================
+async function fetchProductSummary(storageKey: string): Promise<WishlistRow> {
+  const paths = [
+    `/ecommerce/products/${encodeURIComponent(storageKey)}`,
+    `/products/${encodeURIComponent(storageKey)}`,
+  ];
+  for (const path of paths) {
+    try {
+      const res = await apiClient.get<{ product?: Record<string, unknown> }>(path);
+      const p = res?.product;
+      if (!p || typeof p !== 'object') continue;
+      const id = canonicalProductId(p as Record<string, unknown>) || storageKey;
+      const images = p.images as unknown;
+      const firstImg =
+        Array.isArray(images) && images[0] != null ? String(images[0]) : undefined;
+      return {
+        storageKey,
+        id,
+        name: String(p.name ?? 'Product'),
+        price: parseFloat(String(p.price ?? '0')) || 0,
+        image: firstImg,
+        emoji: p.emoji != null ? String(p.emoji) : undefined,
+      };
+    } catch {
+      continue;
+    }
+  }
+  return {
+    storageKey,
+    id: storageKey,
+    name: 'Product unavailable',
+    price: 0,
+    missing: true,
+  };
+}
 
 export default function WishlistPage() {
   const router = useRouter();
-  const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
+  const shopEnabled = isCustomerEcommerceEnabled();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedItems, setSelectedItems] = useState<string[]>([]);
-  const [processing, setProcessing] = useState<string | null>(null);
+  const [rows, setRows] = useState<WishlistRow[]>([]);
+  const loadGenRef = useRef(0);
+  const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    loadWishlist();
-  }, []);
+  const loadWishlist = useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
+    if (!isCustomerEcommerceEnabled()) {
+      setRows([]);
+      setLoading(false);
+      return;
+    }
 
-  const loadWishlist = async () => {
+    const gen = ++loadGenRef.current;
+    if (mode === 'initial') setLoading(true);
+
     try {
-      setLoading(true);
-      setError(null);
+      const localIds = [...new Set(readWishlistIds())];
+      let merged = [...localIds];
+      const customerId = getResolvedCustomerId();
 
-      const customerId = localStorage.getItem('warmpawz_customer_id');
-      
-      if (customerId) {
-        // Load from API
-        const result = await apiClient.get<any>(`/customer/${customerId}/wishlist`);
-        setWishlist(result?.wishlist?.items || []);
-      } else {
-        // Load from localStorage
-        const localWishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-        if (localWishlist.length > 0) {
-          // Fetch product details for local wishlist
-          const products = await Promise.all(
-            localWishlist.map(async (productId: string) => {
-              try {
-                const result = await apiClient.get<any>(`/ecommerce/products/${productId}`);
-                return result?.product;
-              } catch {
-                return null;
-              }
-            })
-          );
-          
-          setWishlist(
-            products
-              .filter((p: any) => p !== null)
-              .map((p: any, index: number) => ({
-                id: `local-${index}`,
-                product_id: p.id,
-                product: {
-                  id: p.id,
-                  name: p.name,
-                  description: p.description,
-                  price: parseFloat(p.price) || 0,
-                  original_price: p.original_price ? parseFloat(p.original_price) : undefined,
-                  images: p.images || [],
-                  emoji: p.emoji || '🐾',
-                  rating: p.rating || 4.5,
-                  review_count: p.review_count || 0,
-                  stock: p.stock_quantity || p.stock || 0,
-                  vendor_id: p.vendor_id,
-                  vendor_name: p.vendor_name || 'Unknown Seller',
-                  is_active: p.is_active,
-                },
-                added_at: new Date().toISOString(),
-              }))
-          );
+      if (customerId && UUID_RE.test(customerId)) {
+        try {
+          const res = await apiClient.get<{
+            wishlist?: { items?: { product_id?: string; id?: string }[] };
+          }>(`/customer/${encodeURIComponent(customerId)}/wishlist`);
+          const items = res?.wishlist?.items ?? [];
+          for (const it of items) {
+            const pid = String(it.product_id || it.id || '').trim();
+            if (pid && !merged.some((x) => String(x) === pid)) merged.push(pid);
+          }
+          if (!sameIdSet(localIds, merged)) {
+            setWishlistIds(merged);
+          }
+        } catch {
+          /* ignore */
         }
       }
-    } catch (err: any) {
-      console.error('Error loading wishlist:', err);
-      setError(err.message || 'Failed to load wishlist');
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const removeFromWishlist = async (productId: string) => {
-    try {
-      setProcessing(productId);
-      
-      const customerId = localStorage.getItem('warmpawz_customer_id');
-      
-      if (customerId) {
-        await apiClient.delete(`/customer/${customerId}/wishlist/${productId}`);
-      }
-      
-      // Update local storage
-      const localWishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-      localStorage.setItem(
-        'warmpawz_wishlist',
-        JSON.stringify(localWishlist.filter((id: string) => id !== productId))
-      );
-      
-      // Update state
-      setWishlist(wishlist.filter((item) => item.product_id !== productId));
-      setSelectedItems(selectedItems.filter((id) => id !== productId));
-    } catch (err) {
-      console.error('Error removing from wishlist:', err);
-    } finally {
-      setProcessing(null);
-    }
-  };
+      if (gen !== loadGenRef.current) return;
 
-  const addToCart = async (item: WishlistItem) => {
-    try {
-      setProcessing(item.product_id);
-      
-      // Add to cart in localStorage
-      const cart = JSON.parse(localStorage.getItem('warmpawz_cart') || '[]');
-      const existingIndex = cart.findIndex((c: any) => c.product_id === item.product_id);
-      
-      if (existingIndex >= 0) {
-        cart[existingIndex].quantity += 1;
-      } else {
-        cart.push({
-          product_id: item.product_id,
-          product: item.product,
-          quantity: 1,
+      const summaries = await Promise.all(merged.map((storageKey) => fetchProductSummary(storageKey)));
+      if (gen !== loadGenRef.current) return;
+      setRows(summaries);
+    } finally {
+      if (mode === 'initial') setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    consumeWishlistOpenedFromShop();
+  }, []);
+
+  useEffect(() => {
+    void loadWishlist('initial');
+  }, [loadWishlist]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const scheduleRefresh = () => {
+      if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
+      refreshDebounceRef.current = setTimeout(() => {
+        refreshDebounceRef.current = null;
+        void loadWishlist('refresh');
+      }, 120);
+    };
+
+    window.addEventListener(WISHLIST_UPDATED_EVENT, scheduleRefresh as EventListener);
+    return () => {
+      window.removeEventListener(WISHLIST_UPDATED_EVENT, scheduleRefresh as EventListener);
+      if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
+    };
+  }, [loadWishlist]);
+
+  const removeRow = async (row: WishlistRow) => {
+    const next = readWishlistIds().filter((id) => {
+      const s = String(id);
+      return s !== String(row.storageKey) && s !== String(row.id);
+    });
+    setWishlistIds(next);
+    setRows((r) => r.filter((x) => x.storageKey !== row.storageKey));
+
+    const customerId = getResolvedCustomerId();
+    if (customerId && UUID_RE.test(customerId)) {
+      try {
+        await apiClient.post(`/customer/${encodeURIComponent(customerId)}/wishlist`, {
+          productId: row.id,
+          action: 'remove',
         });
+      } catch {
+        /* ignore */
       }
-      
-      localStorage.setItem('warmpawz_cart', JSON.stringify(cart));
-      window.dispatchEvent(new CustomEvent('cart-updated'));
-      
-      // Remove from wishlist
-      await removeFromWishlist(item.product_id);
-    } catch (err) {
-      console.error('Error adding to cart:', err);
-    } finally {
-      setProcessing(null);
     }
   };
 
-  const addAllToCart = async () => {
-    for (const item of wishlist.filter((i) => i.product.stock > 0)) {
-      await addToCart(item);
-    }
-  };
-
-  const toggleSelect = (productId: string) => {
-    setSelectedItems((prev) =>
-      prev.includes(productId)
-        ? prev.filter((id) => id !== productId)
-        : [...prev, productId]
-    );
-  };
-
-  const selectAll = () => {
-    if (selectedItems.length === wishlist.length) {
-      setSelectedItems([]);
-    } else {
-      setSelectedItems(wishlist.map((item) => item.product_id));
-    }
-  };
-
-  // Calculate total savings
-  const totalSavings = wishlist.reduce((sum, item) => {
-    if (item.product.original_price && item.product.original_price > item.product.price) {
-      return sum + (item.product.original_price - item.product.price);
-    }
-    return sum;
-  }, 0);
-
-  // ============================================================================
-  // RENDER
-  // ============================================================================
-
-  if (loading) {
+  if (!shopEnabled) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-orange-50/30 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-orange-200 border-t-orange-500 mx-auto"></div>
-          <p className="mt-4 text-slate-500">Loading wishlist...</p>
+      <div className="relative flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
+        <button
+          type="button"
+          onClick={() => goBackOrHome(router)}
+          className="absolute left-4 top-4 rounded-lg bg-white/90 p-2 shadow-sm"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-5 w-5 text-gray-700" />
+        </button>
+        <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-lg">
+          <Heart className="mx-auto mb-4 h-16 w-16 text-red-200" />
+          <h2 className="mb-2 text-xl font-bold text-gray-800">Coming soon</h2>
+          <p className="text-gray-500">
+            Saved items and wishlist will be available when the marketplace launches.
+          </p>
         </div>
       </div>
     );
   }
 
+  if (loading) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50">
+        <Loader2 className="h-10 w-10 animate-spin text-orange-500" />
+        <p className="mt-3 text-sm text-gray-500">Loading saved items…</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-orange-50/30">
-      {/* Header */}
-      <header className="bg-white border-b border-slate-100 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.back()}
-              className="p-2 hover:bg-slate-100 rounded-xl"
-            >
-              <ArrowLeft className="w-5 h-5 text-slate-600" />
-            </button>
-            <div>
-              <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <Heart className="w-6 h-6 text-red-500 fill-red-500" />
-                My Wishlist
-              </h1>
-              <p className="text-sm text-slate-500">{wishlist.length} items saved</p>
-            </div>
-          </div>
-          {wishlist.length > 0 && (
-            <button
-              onClick={addAllToCart}
-              className="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2"
-            >
-              <ShoppingCart className="w-4 h-4" />
-              Add All to Cart
-            </button>
-          )}
+    <div className="mx-auto min-h-screen w-full max-w-customer bg-gradient-to-br from-orange-50 via-white to-amber-50 pb-24">
+      <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-orange-100/80 bg-white/95 px-4 py-3 backdrop-blur">
+        <button
+          type="button"
+          onClick={() => goBackOrHome(router)}
+          className="rounded-lg p-2 hover:bg-orange-50"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-5 w-5 text-gray-800" />
+        </button>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Heart className="h-6 w-6 shrink-0 text-red-500" />
+          <h1 className="truncate text-lg font-bold text-gray-900">Saved items</h1>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {error ? (
-          <div className="text-center py-20 bg-white rounded-2xl border border-slate-100">
-            <AlertCircle className="w-16 h-16 mx-auto mb-4 text-red-300" />
-            <p className="text-slate-600 font-medium">Unable to load wishlist</p>
-            <p className="text-sm text-slate-400 mt-1">{error}</p>
-            <button
-              onClick={loadWishlist}
-              className="mt-4 px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
-            >
-              Try Again
-            </button>
+      {rows.length === 0 ? (
+        <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
+          <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-white shadow-sm">
+            <ShoppingBag className="h-12 w-12 text-orange-300" />
           </div>
-        ) : wishlist.length === 0 ? (
-          <div className="text-center py-20 bg-white rounded-2xl border border-slate-100">
-            <Heart className="w-20 h-20 mx-auto mb-6 text-slate-200" />
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">Your wishlist is empty</h2>
-            <p className="text-slate-500 mb-6">Save items you love to your wishlist</p>
-            <button
-              onClick={() => router.push('/shop')}
-              className="px-8 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl"
+          <h2 className="mb-2 text-xl font-semibold text-gray-900">Nothing saved yet</h2>
+          <p className="mb-8 max-w-xs text-gray-500">
+            Tap the heart on a product in the shop to save it here.
+          </p>
+          <Link
+            href="/shop"
+            className="rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 px-8 py-3 font-semibold text-white shadow-md"
+          >
+            Browse shop
+          </Link>
+        </div>
+      ) : (
+        <ul className="space-y-3 px-3 pt-4">
+          {rows.map((row) => (
+            <li
+              key={row.storageKey}
+              className="flex items-center gap-3 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm"
             >
-              Start Shopping
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* Savings Banner */}
-            {totalSavings > 0 && (
-              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl p-4 mb-6 text-white flex items-center justify-between">
-                <div>
-                  <p className="font-semibold">Total Potential Savings</p>
-                  <p className="text-sm text-emerald-100">If you buy all discounted items</p>
+              <Link
+                href={`/shop/${encodeURIComponent(row.id)}`}
+                className="flex min-w-0 flex-1 items-center gap-3 text-left"
+              >
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-2xl">
+                  {row.image ? (
+                    <img src={row.image} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span>{row.emoji || '🛍️'}</span>
+                  )}
                 </div>
-                <p className="text-2xl font-bold">₹{totalSavings.toLocaleString()}</p>
-              </div>
-            )}
-
-            {/* Wishlist Items */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {wishlist.map((item) => {
-                const discount =
-                  item.product.original_price && item.product.original_price > item.product.price
-                    ? Math.round(
-                        ((item.product.original_price - item.product.price) /
-                          item.product.original_price) *
-                          100
-                      )
-                    : 0;
-
-                return (
-                  <div
-                    key={item.id}
-                    className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm hover:shadow-lg transition-all"
-                  >
-                    {/* Product Image */}
-                    <div
-                      onClick={() => router.push(`/shop/${item.product_id}`)}
-                      className="aspect-square bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center text-6xl cursor-pointer relative"
-                    >
-                      {item.product.emoji || '📦'}
-                      
-                      {/* Discount Badge */}
-                      {discount > 0 && (
-                        <div className="absolute top-3 left-3 px-2 py-1 bg-red-500 text-white text-xs font-bold rounded-lg">
-                          {discount}% OFF
-                        </div>
-                      )}
-                      
-                      {/* Out of Stock */}
-                      {item.product.stock === 0 && (
-                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                          <span className="px-4 py-2 bg-white text-slate-900 font-bold rounded-lg">
-                            Out of Stock
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Product Details */}
-                    <div className="p-4">
-                      {/* Vendor */}
-                      <p className="text-xs text-orange-600 font-medium mb-1 flex items-center gap-1">
-                        <Store className="w-3 h-3" />
-                        {item.product.vendor_name}
-                      </p>
-
-                      {/* Name */}
-                      <h3
-                        onClick={() => router.push(`/shop/${item.product_id}`)}
-                        className="font-semibold text-slate-900 line-clamp-2 h-12 mb-2 cursor-pointer hover:text-orange-600"
-                      >
-                        {item.product.name}
-                      </h3>
-
-                      {/* Rating */}
-                      <div className="flex items-center gap-1 mb-3">
-                        <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-                        <span className="text-sm font-medium text-slate-900">
-                          {item.product.rating}
-                        </span>
-                        <span className="text-sm text-slate-400">
-                          ({item.product.review_count})
-                        </span>
-                      </div>
-
-                      {/* Price */}
-                      <div className="flex items-center gap-2 mb-4">
-                        <span className="text-xl font-bold text-slate-900">
-                          ₹{item.product.price.toLocaleString()}
-                        </span>
-                        {item.product.original_price &&
-                          item.product.original_price > item.product.price && (
-                            <span className="text-sm text-slate-400 line-through">
-                              ₹{item.product.original_price.toLocaleString()}
-                            </span>
-                          )}
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => addToCart(item)}
-                          disabled={item.product.stock === 0 || processing === item.product_id}
-                          className={`flex-1 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
-                            item.product.stock === 0
-                              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                              : 'bg-gradient-to-r from-orange-500 to-amber-500 text-white hover:shadow-lg'
-                          }`}
-                        >
-                          {processing === item.product_id ? (
-                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                          ) : (
-                            <>
-                              <ShoppingCart className="w-4 h-4" />
-                              Add to Cart
-                            </>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => removeFromWishlist(item.product_id)}
-                          disabled={processing === item.product_id}
-                          className="p-2.5 border border-slate-200 text-slate-500 rounded-xl hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-all"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </>
-        )}
-      </main>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-gray-900">{row.name}</p>
+                  <p className="text-sm text-orange-600">
+                    {row.missing ? 'Unavailable' : `₹${Math.round(row.price)}`}
+                  </p>
+                </div>
+              </Link>
+              <button
+                type="button"
+                onClick={() => void removeRow(row)}
+                className="shrink-0 rounded-xl p-3 text-red-500 hover:bg-red-50"
+                aria-label="Remove from saved"
+              >
+                <Trash2 className="h-5 w-5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

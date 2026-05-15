@@ -28,6 +28,8 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 
 // ============================================================================
 // TYPES
@@ -339,7 +341,7 @@ export function UnifiedBookingEngine({
     // For instant tele booking, use current date/time
     if (selectedServiceStyle === 'tele' && teleBookingType === 'instant') {
       const now = new Date();
-      setSelectedDate(now.toISOString().split('T')[0]);
+      setSelectedDate(formatLocalDateYYYYMMDD(now));
       setSelectedTime(now.toTimeString().split(' ')[0].substring(0, 5));
     }
     
@@ -484,7 +486,11 @@ export function UnifiedBookingEngine({
             {service ? (
               <div className="border rounded-lg p-4 mb-4">
                 <h3 className="font-semibold">{service.name}</h3>
-                <p className="text-gray-600">{service.description}</p>
+                <ServiceDescriptionInline
+                  description={service.description}
+                  title={service.name}
+                  className="m-0 text-sm leading-relaxed text-gray-600"
+                />
                 <p className="text-primary font-bold mt-0">₹{service.price}</p>
               </div>
             ) : (
@@ -626,7 +632,7 @@ export function UnifiedBookingEngine({
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
+                min={formatLocalDateYYYYMMDD(new Date())}
                 className="w-full p-0 border rounded-lg"
               />
             </div>

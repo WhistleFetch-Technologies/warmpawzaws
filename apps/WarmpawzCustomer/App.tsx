@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef, CommonActions } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { PaperProvider } from 'react-native-paper';
@@ -63,6 +63,7 @@ import { ProductDetailScreen } from './src/screens/shop/ProductDetailScreen';
 import { OrderReturnScreen } from './src/screens/orders/OrderReturnScreen';
 import { PaymentFailureRecoveryScreen } from './src/screens/payments/PaymentFailureRecoveryScreen';
 import { ChatScreen } from './src/screens/chat/ChatScreen';
+import { CustomerChatInboxScreen } from './src/screens/chat/CustomerChatInboxScreen';
 import { SubscriptionsScreen } from './src/screens/subscriptions/SubscriptionsScreen';
 import { ProblemDiscoveryScreen } from './src/screens/services/ProblemDiscoveryScreen';
 // Batch 2: New screens
@@ -101,11 +102,22 @@ import { WishlistScreen } from './src/screens/shop/WishlistScreen';
 import { OrderInvoiceScreen } from './src/screens/orders/OrderInvoiceScreen';
 // Phase 3: AI Chatbot
 import { AIChatbotScreen } from './src/screens/ai-chatbot/AIChatbotScreen';
+import { SupportTicketThreadScreen } from './src/screens/support/SupportTicketThreadScreen';
+
+// Push notifications
+import { Platform } from 'react-native';
+import {
+  registerForPushNotifications,
+  registerPushTokenWithBackend,
+  setupNotificationListeners,
+} from './src/utils/notifications';
 
 // Import theme
 import { colors } from './src/theme/colors';
 
 const Stack = createNativeStackNavigator();
+
+const navigationRef = createNavigationContainerRef();
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -114,29 +126,110 @@ export default function App() {
   const [showUserProfile, setShowUserProfile] = useState(false);
 
   useEffect(() => {
-    // Check for existing session
+    // Restore the persisted customer session at cold start so users who
+    // logged in within the last 90 days stay logged in (silent refresh
+    // happens transparently on the next API call).
     const checkSession = async () => {
       try {
-        // Initialize API service with network monitoring
         const { ApiService } = require('./src/services/api');
         await ApiService.initialize();
-        
-        // TODO: Check AsyncStorage for existing session
-        // For now, always show auth screen
+
+        const { loadStoredCustomerSession } = require('./src/services/auth-session');
+        const stored = await loadStoredCustomerSession();
+
+        if (stored && stored.phone) {
+          setSession({
+            phone: stored.phone,
+            customerId: stored.customerId,
+            customer: stored.customer,
+            sessionToken: stored.accessToken,
+            verified: true,
+            isNewUser: !!stored.isNewUser && !stored.hasCompletedOnboarding,
+            hasCompletedOnboarding: !!stored.hasCompletedOnboarding,
+            hasPets: !!stored.hasPets,
+          });
+        }
         setIsLoading(false);
       } catch (error) {
         console.error('Session check error:', error);
         setIsLoading(false);
       }
     };
-    
+
     checkSession();
-    
+
     // Cleanup
     return () => {
       // Cleanup if needed
     };
   }, []);
+
+  // Set up notification listeners exactly once. The handler routes taps to the
+  // booking the notification refers to; if no bookingId is present we fall back
+  // to the in-app notification center. This makes home-screen popups dismiss
+  // promptly because the refresh is triggered as soon as a push lands while the
+  // app is foregrounded.
+  useEffect(() => {
+    const cleanup = setupNotificationListeners(
+      (_notification) => {
+        // Foreground: expo-notifications will display its own banner via
+        // setNotificationHandler in utils/notifications.ts. Nothing to do here
+        // beyond letting screens that subscribe to their own polling pick up
+        // fresh state on the next interval.
+      },
+      (response) => {
+        try {
+          if (!navigationRef.isReady()) return;
+          const data: any = response?.notification?.request?.content?.data || {};
+          const bookingId = data.bookingId || data.booking_id;
+          if (bookingId) {
+            (navigationRef.navigate as (name: string, params: object) => void)(
+              'BookingDetail',
+              { bookingId }
+            );
+            return;
+          }
+          (navigationRef.navigate as (name: string) => void)('NotificationCenter');
+        } catch (err) {
+          console.warn('[push] tap handler failed:', err);
+        }
+      }
+    );
+    return cleanup;
+  }, []);
+
+  // Register for push notifications once the user is fully onboarded and we
+  // have a customerId to associate the token with. Guarded by AsyncStorage so
+  // we don't re-register the same token on every relaunch.
+  useEffect(() => {
+    if (!session?.hasCompletedOnboarding || !session?.customerId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const tokenInfo = await registerForPushNotifications();
+        if (cancelled || !tokenInfo) return;
+
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        const cacheKey = `push_token_registered:${session.customerId}`;
+        const last = await AsyncStorage.getItem(cacheKey);
+        if (last === tokenInfo.token) return;
+
+        const ok = await registerPushTokenWithBackend(
+          session.customerId,
+          tokenInfo.token,
+          Platform.OS === 'ios' ? 'ios' : 'android'
+        );
+        if (ok) await AsyncStorage.setItem(cacheKey, tokenInfo.token);
+      } catch (err) {
+        console.warn('[push] bootstrap failed (non-fatal):', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.hasCompletedOnboarding, session?.customerId]);
 
   const handleAuthSuccess = (authSession: any) => {
     setSession(authSession);
@@ -194,9 +287,28 @@ export default function App() {
   };
 
   const handleNavigate = (screen: string, data?: any) => {
-    // Handle navigation to different screens
     console.log('Navigate to:', screen, data);
-    // Navigation handled via Stack Navigator
+    if (!navigationRef.isReady()) return;
+    // Bottom tabs: use merge so stack returns to MainTabs and the correct tab is focused (names match BottomTabNavigator Tab.Screen).
+    if (screen === 'MainTabs' && data && typeof data === 'object' && typeof data.screen === 'string') {
+      const tabParams: { screen: string; params?: object } = { screen: data.screen };
+      if (data.params != null && typeof data.params === 'object') {
+        tabParams.params = data.params;
+      }
+      navigationRef.dispatch(
+        CommonActions.navigate({
+          name: 'MainTabs',
+          params: tabParams,
+          merge: true,
+        })
+      );
+      return;
+    }
+    if (data === undefined || data === null) {
+      (navigationRef.navigate as (name: string) => void)(screen);
+    } else {
+      (navigationRef.navigate as (name: string, params: object) => void)(screen, data);
+    }
   };
 
   const handleServiceSelect = (serviceId: string, vendorId: string) => {
@@ -204,9 +316,12 @@ export default function App() {
     setSession({ ...session, navigationTarget: { screen: 'ServiceDetail', serviceId, vendorId } });
   };
 
-  const handleBookService = (serviceId: string, vendorId: string) => {
-    // Navigate to booking creation
-    setSession({ ...session, navigationTarget: { screen: 'BookingCreation', serviceId, vendorId } });
+  const handleBookService = (serviceId: string, vendorId: string, serviceName?: string) => {
+    handleNavigate('ServiceBookingFlow', {
+      serviceId,
+      vendorId,
+      serviceName: serviceName || 'Service',
+    });
   };
 
   if (isLoading) {
@@ -218,7 +333,7 @@ export default function App() {
       <SafeAreaProvider>
         <PaperProvider>
           <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
-          <NavigationContainer>
+          <NavigationContainer ref={navigationRef}>
             <Stack.Navigator
               screenOptions={{
                 headerShown: false,
@@ -283,6 +398,7 @@ export default function App() {
                         phone={session.phone}
                         customerId={session.customerId}
                         onNavigate={handleNavigate}
+                        // Home header avatar: stack CustomerProfile; My Bookings footer also uses CustomerProfile so Back returns to BookingList.
                         onProfileClick={() => handleNavigate('CustomerProfile')}
                         onPetClick={(petId) => handleNavigate('PetProfileDashboard', { petId })}
                         onAddPet={() => handleNavigate('CustomerPetsPage')}
@@ -294,6 +410,24 @@ export default function App() {
                       <CustomerHomeScreen
                         {...props}
                         phone={session.phone}
+                        customerId={session.customerId}
+                        onNavigate={handleNavigate}
+                      />
+                    )}
+                  </Stack.Screen>
+                  <Stack.Screen name="CustomerChatInbox">
+                    {(props) => (
+                      <CustomerChatInboxScreen
+                        {...props}
+                        phone={session.phone}
+                        customerId={session.customerId}
+                        onBack={() => {
+                          if (navigationRef.canGoBack()) {
+                            navigationRef.goBack();
+                          } else {
+                            handleNavigate('MainTabs', { screen: 'Home' });
+                          }
+                        }}
                         onNavigate={handleNavigate}
                       />
                     )}
@@ -460,13 +594,30 @@ export default function App() {
                       <BookingCreationScreen
                         {...props}
                         phone={session.phone}
-                        vendorId={session.navigationTarget?.vendorId || ''}
-                        serviceId={session.navigationTarget?.serviceId || ''}
+                        vendorId={
+                          session.navigationTarget?.vendorId ||
+                          props.route?.params?.vendorId ||
+                          ''
+                        }
+                        serviceId={
+                          session.navigationTarget?.serviceId ||
+                          props.route?.params?.serviceId ||
+                          ''
+                        }
+                        serviceName={
+                          session.navigationTarget?.serviceName ||
+                          props.route?.params?.serviceName
+                        }
                         onComplete={(bookingId) => {
                           setSession({ ...session, navigationTarget: null });
                           handleNavigate('BookingList');
                         }}
-                        onBack={() => setSession({ ...session, navigationTarget: null })}
+                        onBack={() => {
+                          setSession({ ...session, navigationTarget: null });
+                          if (navigationRef.canGoBack()) {
+                            navigationRef.goBack();
+                          }
+                        }}
                       />
                     )}
                   </Stack.Screen>
@@ -475,6 +626,7 @@ export default function App() {
                       <BookingListScreen
                         {...props}
                         phone={session.phone}
+                        onNavigate={handleNavigate}
                         onSelectBooking={(bookingId) => handleNavigate('BookingDetail', { bookingId })}
                         onBack={() => setSession({ ...session, navigationTarget: null })}
                       />
@@ -495,16 +647,17 @@ export default function App() {
                     {(props) => (
                       <BookingConfirmationScreen
                         {...props}
-                        bookingData={props.route?.params?.bookingData || {}}
-                        onViewBooking={(bookingId, petId) =>
-                          handleNavigate('BookingDetail', { bookingId })
-                        }
-                        onBackToHome={() =>
-                          setSession({ ...session, navigationTarget: null })
-                        }
-                        onBack={() =>
-                          setSession({ ...session, navigationTarget: null })
-                        }
+                        bookingId={props.route?.params?.bookingId || ''}
+                        phone={session.phone}
+                        customerId={session.customerId}
+                        onBack={() => {
+                          if (navigationRef.canGoBack()) {
+                            navigationRef.goBack();
+                          } else {
+                            handleNavigate('MainTabs', { screen: 'Home' });
+                          }
+                        }}
+                        onNavigate={handleNavigate}
                       />
                     )}
                   </Stack.Screen>
@@ -587,7 +740,13 @@ export default function App() {
                       <CustomerProfileScreen
                         {...props}
                         phone={session.phone}
-                        onBack={() => setSession({ ...session, navigationTarget: null })}
+                        onBack={() => {
+                          if (props.navigation.canGoBack()) {
+                            props.navigation.goBack();
+                          } else {
+                            handleNavigate('MainTabs', { screen: 'Home' });
+                          }
+                        }}
                         onNavigate={handleNavigate}
                       />
                     )}
@@ -599,8 +758,16 @@ export default function App() {
                         phone={session.phone}
                         onBack={() => handleNavigate('CustomerProfile')}
                         onNavigate={handleNavigate}
-                        onLogout={() => {
-                          setSession({ phone: '', isAuthenticated: false, navigationTarget: null });
+                        onLogout={async () => {
+                          try {
+                            const { clearCustomerSession } = require('./src/services/auth-session');
+                            await clearCustomerSession();
+                          } catch (e) {
+                            console.warn('[customer-app] logout cleanup failed:', e);
+                          }
+                          setSession(null);
+                          setOnboardingStage(null);
+                          setShowUserProfile(false);
                         }}
                       />
                     )}
@@ -732,7 +899,7 @@ export default function App() {
                         {...props}
                         phone={session.phone}
                         customerId={session.customerId}
-                        onBack={() => handleNavigate('ShopDashboard')}
+                        onBack={() => handleNavigate('MainTabs', { screen: 'Home' })}
                         onNavigate={handleNavigate}
                       />
                     )}
@@ -756,7 +923,7 @@ export default function App() {
                         {...props}
                         productId={props.route?.params?.productId || ''}
                         phone={session.phone}
-                        onBack={() => handleNavigate('ShopDashboard')}
+                        onBack={() => handleNavigate('MainTabs', { screen: 'Store' })}
                         onNavigate={handleNavigate}
                       />
                     )}
@@ -805,7 +972,22 @@ export default function App() {
                         recipientName={props.route?.params?.recipientName}
                         recipientAvatar={props.route?.params?.recipientAvatar}
                         phone={session.phone}
-                        onBack={() => handleNavigate('BookingDetail', { bookingId: props.route?.params?.bookingId })}
+                        customerName={
+                          session.customer?.full_name ||
+                          session.customer?.name ||
+                          session.customer?.displayName ||
+                          'Customer'
+                        }
+                        supportChat={props.route?.params?.type === 'support'}
+                        onBack={() => {
+                          if (navigationRef.canGoBack()) {
+                            navigationRef.goBack();
+                          } else if (props.route?.params?.bookingId) {
+                            handleNavigate('BookingDetail', { bookingId: props.route?.params?.bookingId });
+                          } else {
+                            handleNavigate('MainTabs');
+                          }
+                        }}
                         onNavigate={handleNavigate}
                       />
                     )}
@@ -926,6 +1108,7 @@ export default function App() {
                         currentDate={props.route?.params?.currentDate}
                         currentTime={props.route?.params?.currentTime}
                         phone={session.phone}
+                        customerId={session.customerId}
                         onBack={() => handleNavigate('AppointmentDetail', { appointmentId: props.route?.params?.appointmentId })}
                         onNavigate={handleNavigate}
                         onSuccess={() => handleNavigate('AppointmentDetail', { appointmentId: props.route?.params?.appointmentId })}
@@ -1091,7 +1274,13 @@ export default function App() {
                         vendorId={props.route?.params?.vendorId || ''}
                         phone={session.phone}
                         customerId={session.customerId}
-                        onBack={() => handleNavigate('ServiceDiscovery')}
+                        onBack={() => {
+                          if (props.navigation.canGoBack()) {
+                            props.navigation.goBack();
+                          } else {
+                            handleNavigate('ServiceDiscovery');
+                          }
+                        }}
                         onNavigate={handleNavigate}
                       />
                     )}
@@ -1102,27 +1291,18 @@ export default function App() {
                         {...props}
                         serviceId={props.route?.params?.serviceId || ''}
                         vendorId={props.route?.params?.vendorId || ''}
-                        serviceName={props.route?.params?.serviceName || ''}
+                        serviceName={props.route?.params?.serviceName || 'Service'}
                         phone={session.phone}
                         customerId={session.customerId}
-                        onBack={() => handleNavigate('ServiceDetail', { 
-                          serviceId: props.route?.params?.serviceId,
-                          vendorId: props.route?.params?.vendorId 
-                        })}
+                        onBack={() => {
+                          if (navigationRef.canGoBack()) {
+                            navigationRef.goBack();
+                          } else {
+                            handleNavigate('MainTabs', { screen: 'Home' });
+                          }
+                        }}
                         onNavigate={handleNavigate}
                         onSuccess={(bookingId) => handleNavigate('BookingConfirmation', { bookingId })}
-                      />
-                    )}
-                  </Stack.Screen>
-                  <Stack.Screen name="BookingConfirmation">
-                    {(props) => (
-                      <BookingConfirmationScreen
-                        {...props}
-                        bookingId={props.route?.params?.bookingId || ''}
-                        phone={session.phone}
-                        customerId={session.customerId}
-                        onBack={() => handleNavigate('Home')}
-                        onNavigate={handleNavigate}
                       />
                     )}
                   </Stack.Screen>
@@ -1156,6 +1336,21 @@ export default function App() {
                         customerId={session.customerId}
                         onBack={() => handleNavigate('HelpSupport')}
                         onNavigate={handleNavigate}
+                      />
+                    )}
+                  </Stack.Screen>
+                  <Stack.Screen name="SupportTicketThread">
+                    {(props) => (
+                      <SupportTicketThreadScreen
+                        ticketId={props.route?.params?.ticketId || ''}
+                        customerId={session.customerId}
+                        onBack={() => {
+                          if (navigationRef.canGoBack()) {
+                            navigationRef.goBack();
+                          } else {
+                            handleNavigate('AIChatbot');
+                          }
+                        }}
                       />
                     )}
                   </Stack.Screen>
@@ -1331,7 +1526,7 @@ export default function App() {
                         {...props}
                         phone={session.phone}
                         customerId={session.customerId}
-                        onBack={() => handleNavigate('ShopDashboard')}
+                        onBack={() => handleNavigate('MainTabs', { screen: 'Store' })}
                         onNavigate={handleNavigate}
                       />
                     )}

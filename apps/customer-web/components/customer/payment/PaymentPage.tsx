@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ArrowLeft, CreditCard, Wallet, Tag, ChevronRight, 
   CheckCircle2, Shield, X, Percent, Info, MapPin,
@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
+import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { toast } from 'sonner';
 
 // Razorpay type declaration
@@ -42,6 +44,7 @@ interface PaymentPageProps {
     addressLine1?: string;
     city?: string;
     pincode?: string;
+    state?: string;
   };
   
   // Pricing
@@ -50,6 +53,7 @@ interface PaymentPageProps {
   
   // Customer
   customerPhone: string;
+  customerEmail?: string;
   customerId?: string;
   
   // Navigation
@@ -92,6 +96,14 @@ interface TaxBreakdown {
   isInterState: boolean;
 }
 
+function taxCalculateResponseHasPayload(res: any): boolean {
+  if (!res || res.success !== true) return false;
+  const err = res.error;
+  if (typeof err === 'string' && err.trim()) return false;
+  if (err != null && typeof err === 'object') return false;
+  return Array.isArray(res.items) && res.items.length > 0;
+}
+
 export function PaymentPage({
   bookingId,
   serviceId,
@@ -109,6 +121,7 @@ export function PaymentPage({
   baseAmount,
   duration,
   customerPhone,
+  customerEmail,
   customerId,
   onBack,
   onSuccess,
@@ -120,6 +133,7 @@ export function PaymentPage({
   const [useWallet, setUseWallet] = useState(false);
   const [savedMethods, setSavedMethods] = useState<SavedPaymentMethod[]>([]);
   const [selectedMethod, setSelectedMethod] = useState<string>('razorpay');
+  const [profileCheckoutEmail, setProfileCheckoutEmail] = useState<string | undefined>(undefined);
   
   // Coupon state
   const [couponCode, setCouponCode] = useState('');
@@ -139,11 +153,134 @@ export function PaymentPage({
     isInterState: false,
   });
 
+  const applyDefaultGstBreakdown = useCallback(
+    (ratePct: number) => {
+      const totalTax = (baseAmount * ratePct) / 100;
+      setTaxBreakdown({
+        subtotal: baseAmount,
+        cgst: totalTax / 2,
+        sgst: totalTax / 2,
+        igst: 0,
+        totalTax,
+        total: baseAmount + totalTax,
+        taxRate: ratePct,
+        isInterState: false,
+      });
+    },
+    [baseAmount]
+  );
+
+  const calculateTax = useCallback(async () => {
+    const addr = address;
+    const customerLocation =
+      addr?.state && String(addr.state).trim()
+        ? {
+            state: String(addr.state).trim(),
+            city: addr.city,
+            pincode: addr.pincode,
+          }
+        : undefined;
+
+    try {
+      const taxRes = await apiClient.post<any>('/tax/calculate', {
+        items: [
+          {
+            id: serviceId || 'service',
+            type: 'service',
+            serviceId,
+            amount: baseAmount,
+            quantity: 1,
+            category: 'pet_services',
+            serviceStyle,
+          },
+        ],
+        vendorId,
+        customerId,
+        customerPhone,
+        customerLocation,
+      });
+
+      if (taxCalculateResponseHasPayload(taxRes)) {
+        const cgst = taxRes.totalCGST || 0;
+        const sgst = taxRes.totalSGST || 0;
+        const igst = taxRes.totalIGST || 0;
+        const totalTax = taxRes.totalTax ?? cgst + sgst + igst;
+        const rawRate = Number(taxRes.items?.[0]?.taxRate);
+        const declaredRate = Number.isFinite(rawRate) ? rawRate : 18;
+        const taxRate = resolveGstDisplayRatePercent(
+          baseAmount,
+          totalTax,
+          declaredRate,
+          18
+        );
+        const interState =
+          typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0;
+
+        setTaxBreakdown({
+          subtotal: baseAmount,
+          cgst,
+          sgst,
+          igst,
+          totalTax,
+          total: baseAmount + totalTax,
+          taxRate,
+          isInterState: interState,
+        });
+        return;
+      }
+
+      if (baseAmount > 0) {
+        console.warn('Tax calculate returned no usable items; using default 18% split', taxRes);
+        applyDefaultGstBreakdown(18);
+      }
+    } catch (error) {
+      console.error('Tax calculation error, using default 18%:', error);
+      if (baseAmount > 0) {
+        applyDefaultGstBreakdown(18);
+      }
+    }
+  }, [
+    address,
+    applyDefaultGstBreakdown,
+    baseAmount,
+    customerId,
+    customerPhone,
+    serviceId,
+    serviceStyle,
+    vendorId,
+  ]);
+
   useEffect(() => {
     loadPaymentData();
     loadRazorpayScript();
     calculateTax();
-  }, [customerPhone, baseAmount]);
+  }, [customerPhone, baseAmount, calculateTax]);
+
+  useEffect(() => {
+    if (customerEmail) {
+      setProfileCheckoutEmail(undefined);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const profileResponse = (await apiClient.get(
+          `/customer/profile?phone=${encodeURIComponent(customerPhone)}`
+        )) as any;
+        const profile = profileResponse?.profile ?? profileResponse;
+        const em = profile?.email;
+        if (!cancelled && typeof em === 'string' && em.includes('@')) {
+          const t = em.trim();
+          if (t) setProfileCheckoutEmail(t);
+        }
+      } catch {
+        if (!cancelled) setProfileCheckoutEmail(undefined);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [customerPhone, customerEmail]);
 
   const loadRazorpayScript = () => {
     if (typeof window !== 'undefined' && !window.Razorpay) {
@@ -186,58 +323,6 @@ export function PaymentPage({
       console.error('Error loading payment data:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const calculateTax = async () => {
-    try {
-      // Get customer and vendor locations for tax calculation
-      const taxRes = await apiClient.post<any>('/tax/calculate', {
-        items: [{
-          id: serviceId || 'service',
-          type: 'service',
-          serviceId,
-          amount: baseAmount,
-          quantity: 1,
-          category: 'pet_services',
-          serviceStyle: serviceStyle,
-        }],
-        vendorId,
-        customerId,
-      });
-      
-      if (taxRes.success) {
-        const cgst = taxRes.totalCGST || 0;
-        const sgst = taxRes.totalSGST || 0;
-        const igst = taxRes.totalIGST || 0;
-        const totalTax = taxRes.totalTax || cgst + sgst + igst;
-        
-        setTaxBreakdown({
-          subtotal: baseAmount,
-          cgst,
-          sgst,
-          igst,
-          totalTax,
-          total: baseAmount + totalTax,
-          taxRate: taxRes.items?.[0]?.taxRate || 18,
-          isInterState: igst > 0,
-        });
-      }
-    } catch (error) {
-      console.error('Tax calculation error, using default 18%:', error);
-      // Fallback to 18% GST
-      const taxRate = 18;
-      const totalTax = (baseAmount * taxRate) / 100;
-      setTaxBreakdown({
-        subtotal: baseAmount,
-        cgst: totalTax / 2,
-        sgst: totalTax / 2,
-        igst: 0,
-        totalTax,
-        total: baseAmount + totalTax,
-        taxRate,
-        isInterState: false,
-      });
     }
   };
 
@@ -349,22 +434,39 @@ export function PaymentPage({
         throw new Error('Failed to create payment order');
       }
       
-      // Step 4: Open Razorpay checkout
-      const options = {
-        key: orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: finalAmount * 100,
+      // Step 4: Open Razorpay Standard Checkout (shared options; desktop UPI may still be QR-only per Razorpay)
+      const resolvedCheckoutEmail =
+        typeof customerEmail === 'string' && customerEmail.includes('@')
+          ? customerEmail.trim()
+          : profileCheckoutEmail;
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+        key: (orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+        amountPaise: Math.max(1, Math.round(Number(finalAmount) * 100)),
         currency: 'INR',
         name: 'Warmpawz',
         description: `${serviceName} - ${vendorName}`,
         order_id: orderRes.orderId,
+        customerPhone,
+        customerEmail: resolvedCheckoutEmail,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
-            // Verify payment
-            await apiClient.post('/razorpay/verify-payment', {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            });
+            // Verify payment with retry
+            const MAX_RETRIES = 3;
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                await apiClient.post('/razorpay/verify-payment', {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                }, undefined, 30000);
+                break; // success
+              } catch (verifyErr: any) {
+                console.error(`[VERIFY] Attempt ${attempt}/${MAX_RETRIES} failed:`, verifyErr?.message);
+                if (attempt === MAX_RETRIES) throw verifyErr;
+                await new Promise((r) => setTimeout(r, attempt * 1000));
+              }
+            }
             
             // Apply coupon if used
             if (appliedCoupon) {
@@ -387,9 +489,6 @@ export function PaymentPage({
             setProcessing(false);
           }
         },
-        prefill: {
-          contact: customerPhone,
-        },
         theme: {
           color: '#FF8C42',
         },
@@ -399,7 +498,7 @@ export function PaymentPage({
             toast.info('Payment cancelled');
           },
         },
-      };
+      });
       
       if (window.Razorpay) {
         const razorpay = new window.Razorpay(options);
@@ -449,7 +548,7 @@ export function PaymentPage({
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-orange-50 pb-32">
       {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40">
+      <header className="bg-white shadow-sm sticky top-0 z-40 cw-header-safe-top cw-header-safe-x">
         <div className="max-w-lg mx-auto px-4 py-4 flex items-center gap-4">
           <button onClick={onBack} className="text-gray-600 hover:text-gray-900">
             <ArrowLeft className="w-6 h-6" />

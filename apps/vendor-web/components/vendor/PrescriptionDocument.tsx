@@ -9,13 +9,60 @@ import {
   Phone, 
   Mail, 
   MapPin,
-  Calendar,
-  User,
   FileText,
   Pill,
   Clock
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { toast } from 'sonner';
+import { apiClient } from '@/lib/api-client';
+import { getCustomerWebOrigin } from '@/lib/customer-web-url';
+
+/** Print without a popup — works on many mobile WebViews where window.open is blocked. */
+function printPrescriptionFromHtml(htmlBody: string, title: string): boolean {
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.cssText =
+    'position:fixed;left:0;top:0;width:0;height:0;border:none;opacity:0;pointer-events:none;';
+  document.body.appendChild(iframe);
+  const win = iframe.contentWindow;
+  const doc = win?.document;
+  if (!doc) {
+    try {
+      document.body.removeChild(iframe);
+    } catch {
+      /* */
+    }
+    return false;
+  }
+  const styles = `@page{size:A4;margin:10mm;}body{margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;font-size:11pt;color:#1a1a1a;}`;
+  doc.open();
+  doc.write(
+    `<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${title}</title><style>${styles}</style></head><body>${htmlBody}</body></html>`
+  );
+  doc.close();
+
+  const runPrint = () => {
+    try {
+      win?.focus();
+      win?.print();
+    } catch (e) {
+      console.warn('[PrescriptionDocument] iframe.print failed', e);
+    }
+    setTimeout(() => {
+      try {
+        document.body.removeChild(iframe);
+      } catch {
+        /* */
+      }
+    }, 1500);
+  };
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(runPrint);
+  });
+  return true;
+}
 
 interface Medication {
   name: string;
@@ -175,7 +222,7 @@ const PrintablePrescription = forwardRef<HTMLDivElement, { prescription: Prescri
 
         {/* Patient & Date Info */}
         <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-200">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {/* Left - Pet/Patient Info */}
             <div>
               <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">Patient Details</h3>
@@ -260,30 +307,32 @@ const PrintablePrescription = forwardRef<HTMLDivElement, { prescription: Prescri
             <Pill size={16} className="text-blue-600" />
             Medications
           </h3>
-          <table className="w-full border-collapse border border-gray-300 text-sm">
+          <div className="w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+          <table className="w-full min-w-[520px] border-collapse border border-gray-300 text-sm">
             <thead>
               <tr className="bg-blue-50">
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">#</th>
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Medicine Name</th>
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Dosage</th>
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Frequency</th>
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Duration</th>
-                <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Instructions</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold text-gray-700 sm:px-3">#</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold text-gray-700 sm:px-3">Medicine Name</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold text-gray-700 sm:px-3">Dosage</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold text-gray-700 sm:px-3">Frequency</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold text-gray-700 sm:px-3">Duration</th>
+                <th className="border border-gray-300 px-2 py-2 text-left font-semibold text-gray-700 sm:px-3">Instructions</th>
               </tr>
             </thead>
             <tbody>
               {medications.map((med, index) => (
                 <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                  <td className="border border-gray-300 px-3 py-2 text-center text-gray-600">{index + 1}</td>
-                  <td className="border border-gray-300 px-3 py-2 font-medium text-gray-900">{med.name}</td>
-                  <td className="border border-gray-300 px-3 py-2 text-gray-700">{med.dosage || '-'}</td>
-                  <td className="border border-gray-300 px-3 py-2 text-gray-700">{med.frequency || '-'}</td>
-                  <td className="border border-gray-300 px-3 py-2 text-gray-700">{med.duration || '-'}</td>
-                  <td className="border border-gray-300 px-3 py-2 text-gray-700 text-xs">{med.instructions || '-'}</td>
+                  <td className="border border-gray-300 px-2 py-2 text-center text-gray-600 sm:px-3">{index + 1}</td>
+                  <td className="border border-gray-300 px-2 py-2 font-medium text-gray-900 sm:px-3">{med.name}</td>
+                  <td className="border border-gray-300 px-2 py-2 text-gray-700 sm:px-3">{med.dosage || '-'}</td>
+                  <td className="border border-gray-300 px-2 py-2 text-gray-700 sm:px-3">{med.frequency || '-'}</td>
+                  <td className="border border-gray-300 px-2 py-2 text-gray-700 sm:px-3">{med.duration || '-'}</td>
+                  <td className="border border-gray-300 px-2 py-2 text-xs text-gray-700 sm:px-3">{med.instructions || '-'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         {/* General Instructions */}
@@ -344,9 +393,18 @@ export default function PrescriptionDocument({
     const printContent = printRef.current;
     if (!printContent) return;
 
+    const title = `Prescription - ${prescription.pet.name}`;
+    const bodyHtml = printContent.outerHTML;
+
+    if (printPrescriptionFromHtml(bodyHtml, title)) {
+      return;
+    }
+
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
-      alert('Please allow pop-ups to print the prescription');
+      toast.error(
+        'Could not open the print dialog. Allow pop-ups for this site, or use Download and print the PDF from Files / Drive.'
+      );
       return;
     }
 
@@ -354,80 +412,162 @@ export default function PrescriptionDocument({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Prescription - ${prescription.pet.name}</title>
+          <meta charset="utf-8"/>
+          <title>${title}</title>
           <style>
-            @page { size: A4; margin: 0; }
-            body { margin: 0; padding: 0; }
+            @page { size: A4; margin: 10mm; }
+            body { margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; }
             * { box-sizing: border-box; }
           </style>
-          <script src="https://cdn.tailwindcss.com"></script>
         </head>
         <body>
-          ${printContent.outerHTML}
+          ${bodyHtml}
         </body>
       </html>
     `);
     printWindow.document.close();
-    
+
     setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
+      try {
+        printWindow.focus();
+        printWindow.print();
+      } catch {
+        toast.error('Print could not be started on this device. Try Download, then open the PDF and use Share → Print.');
+      }
+      setTimeout(() => {
+        try {
+          printWindow.close();
+        } catch {
+          /* */
+        }
+      }, 500);
+    }, 300);
   };
 
   const handleDownload = async () => {
-    // Use html2canvas and jspdf if available, otherwise just print
     try {
       const html2canvas = (await import('html2canvas')).default;
       const { jsPDF } = await import('jspdf');
-      
-      if (printRef.current) {
-        const canvas = await html2canvas(printRef.current, {
-          scale: 2,
-          useCORS: true,
-          logging: false
-        });
-        
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const imgWidth = 210;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        
-        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-        pdf.save(`Prescription_${prescription.pet.name}_${prescription.prescriptionDate}.pdf`);
+
+      if (!printRef.current) {
+        toast.error('Nothing to export yet.');
+        return;
       }
-    } catch {
-      // Fallback to print
+
+      const canvas = await html2canvas(printRef.current, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgWidth = 210;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+      const safePet = String(prescription.pet.name || 'Pet').replace(/[^\w\s-]+/g, '_');
+      const fileName = `Prescription_${safePet}_${prescription.prescriptionDate}.pdf`;
+      const blob = pdf.output('blob');
+      const file = new File([blob], fileName, { type: 'application/pdf' });
+
+      const nav = navigator as Navigator & {
+        canShare?: (data: { files?: File[] }) => boolean;
+      };
+      if (
+        typeof nav.canShare === 'function' &&
+        nav.canShare({ files: [file] }) &&
+        typeof navigator.share === 'function'
+      ) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: `Prescription — ${prescription.pet.name}`,
+            text: 'Save to Files (iPhone) or pick another app.',
+          });
+          toast.success('If you do not see a file, choose “Save to Files” in the share sheet.');
+          onDownload?.();
+          return;
+        } catch (shareErr) {
+          console.warn('[PrescriptionDocument] share(files) failed, using download link', shareErr);
+        }
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success(
+        'PDF exported. On iPhone, open Files → Downloads or On My iPhone; on Android, check Downloads or Files.'
+      );
+      onDownload?.();
+    } catch (err) {
+      console.warn('[PrescriptionDocument] PDF export failed', err);
+      toast.message('PDF export failed on this device. Opening print instead…');
       handlePrint();
+      onDownload?.();
     }
-    
-    onDownload?.();
+  };
+
+  const mintCustomerViewUrl = async (): Promise<string | null> => {
+    try {
+      const mint = (await apiClient.post(`/prescriptions/${prescription.id}/mint-share-token`, {})) as {
+        success?: boolean;
+        exp?: number;
+        sig?: string;
+      };
+      if (!mint?.success || mint.exp == null || !mint.sig) return null;
+      const base = getCustomerWebOrigin();
+      const q = new URLSearchParams({ exp: String(mint.exp), sig: mint.sig });
+      return `${base}/prescriptions/${encodeURIComponent(prescription.id)}/view?${q.toString()}`;
+    } catch (e) {
+      console.warn('[PrescriptionDocument] mint-share-token', e);
+      return null;
+    }
   };
 
   const handleShare = async () => {
-    // Try Web Share API first
+    const customerUrl = await mintCustomerViewUrl();
+    const title = `Prescription for ${prescription.pet.name}`;
+    const text = `Prescription from ${prescription.doctor.businessName || prescription.doctor.name}`;
+
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `Prescription for ${prescription.pet.name}`,
-          text: `Prescription from ${prescription.doctor.businessName || prescription.doctor.name}`,
-          url: window.location.href
+          title,
+          text,
+          ...(customerUrl ? { url: customerUrl } : {}),
         });
         onShare?.();
         return;
-      } catch (err) {
-        console.log('Share cancelled');
+      } catch {
+        /* user cancelled or share failed */
       }
     }
 
-    // Fallback: Copy prescription summary to clipboard for WhatsApp
+    if (customerUrl) {
+      try {
+        await navigator.clipboard.writeText(`${text}\n${customerUrl}`);
+        toast.success('Link copied — opens the customer site so anyone with the link can view the prescription.');
+        onShare?.();
+        return;
+      } catch {
+        /* fall through */
+      }
+    }
+
     const summary = generatePrescriptionText(prescription);
     try {
       await navigator.clipboard.writeText(summary);
-      alert('Prescription copied to clipboard! You can paste it in WhatsApp.');
+      toast.success('Prescription copied. You can paste it into WhatsApp or Notes.');
       onShare?.();
     } catch {
-      alert('Unable to copy. Please use the print option instead.');
+      toast.error('Unable to copy. Try Print or Download instead.');
     }
   };
 
@@ -436,69 +576,77 @@ export default function PrescriptionDocument({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pl-[max(0.5rem,env(safe-area-inset-left,0px))] pr-[max(0.5rem,env(safe-area-inset-right,0px))]"
       onClick={onClose}
     >
       <motion.div
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
-        className="bg-gray-100 rounded-xl max-w-4xl w-full max-h-[95vh] overflow-hidden flex flex-col"
+        className="flex max-h-[min(92dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)-1rem))] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-gray-100 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Action Bar */}
+        {/* Action Bar — stacks on narrow screens; 44px min tap targets for mobile */}
         {showActions && (
-          <div className="bg-white border-b px-4 py-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-              <FileText size={20} className="text-blue-600" />
-              Prescription Document
-            </h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handlePrint}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
-              >
-                <Printer size={16} />
-                Print
-              </button>
-              <button
-                onClick={handleDownload}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm"
-              >
-                <Download size={16} />
-                Download
-              </button>
-              <button
-                onClick={handleShare}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm"
-              >
-                <Share2 size={16} />
-                Share
-              </button>
-              {onOrderMedicine && (
+          <div className="shrink-0 border-b bg-white px-3 py-2.5 sm:px-4 sm:py-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+              <h2 className="flex min-w-0 items-center gap-2 text-base font-semibold text-gray-800 sm:text-lg">
+                <FileText size={20} className="shrink-0 text-blue-600" aria-hidden />
+                <span className="truncate">Prescription Document</span>
+              </h2>
+              <div className="flex flex-wrap items-stretch justify-end gap-2 sm:justify-end">
                 <button
-                  onClick={onOrderMedicine}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition text-sm"
+                  type="button"
+                  onClick={handlePrint}
+                  className="inline-flex min-h-[44px] min-w-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700 sm:flex-initial touch-manipulation"
                 >
-                  <Pill size={16} />
-                  Order
+                  <Printer size={18} aria-hidden />
+                  Print
                 </button>
-              )}
-              {onClose && (
                 <button
-                  onClick={onClose}
-                  className="p-1.5 hover:bg-gray-100 rounded-full transition"
+                  type="button"
+                  onClick={() => void handleDownload()}
+                  className="inline-flex min-h-[44px] min-w-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-green-700 sm:flex-initial touch-manipulation"
                 >
-                  <X size={20} className="text-gray-500" />
+                  <Download size={18} aria-hidden />
+                  Download
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => void handleShare()}
+                  className="inline-flex min-h-[44px] min-w-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-purple-700 sm:flex-initial touch-manipulation"
+                >
+                  <Share2 size={18} aria-hidden />
+                  Share
+                </button>
+                {onOrderMedicine && (
+                  <button
+                    type="button"
+                    onClick={onOrderMedicine}
+                    className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-1.5 rounded-lg bg-orange-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-orange-700 sm:flex-initial touch-manipulation"
+                  >
+                    <Pill size={18} aria-hidden />
+                    Order
+                  </button>
+                )}
+                {onClose && (
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full p-2 transition hover:bg-gray-100 touch-manipulation"
+                    aria-label="Close"
+                  >
+                    <X size={22} className="text-gray-500" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
 
-        {/* Scrollable Document View */}
-        <div className="flex-1 overflow-auto p-4 flex justify-center">
-          <div className="shadow-xl rounded-lg overflow-hidden">
+        {/* Scrollable document — horizontal scroll on small screens for A4-width content */}
+        <div className="flex min-h-0 flex-1 justify-center overflow-auto overscroll-contain p-2 sm:p-4 [-webkit-overflow-scrolling:touch]">
+          <div className="shadow-xl rounded-lg overflow-x-auto overflow-y-visible max-w-full">
             <PrintablePrescription ref={printRef} prescription={prescription} />
           </div>
         </div>
@@ -548,7 +696,7 @@ function generatePrescriptionText(prescription: PrescriptionData): string {
   }
   
   text += `\n━━━━━━━━━━━━━━━━━\n`;
-  text += `Generated via WarmPawz`;
+  text += `Generated via Warmpawz`;
   
   return text;
 }

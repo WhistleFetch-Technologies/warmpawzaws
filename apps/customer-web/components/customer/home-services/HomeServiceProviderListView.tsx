@@ -11,26 +11,26 @@
 
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type MouseEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ArrowLeft, 
   Search, 
-  Filter, 
   MapPin, 
-  Star, 
   Clock, 
   ChevronRight,
   X,
   SlidersHorizontal,
-  Navigation,
-  CheckCircle2,
   BadgeCheck
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
-import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
+import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
+import { HomeServiceType } from './UniversalHomeServiceRouter';
+import { StarRating } from '@/components/customer/shared/StarRating';
 
 interface ServiceConfig {
   roleId: string;
@@ -71,13 +71,46 @@ interface Provider {
   previouslyUsed?: boolean;
 }
 
+function ProviderListAvatar({
+  photoUrl,
+  businessName,
+  icon,
+  bgGradient,
+}: {
+  photoUrl: string;
+  businessName: string;
+  icon: string;
+  bgGradient: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [photoUrl]);
+  const show = Boolean(photoUrl && !failed);
+  return show ? (
+    <img
+      src={photoUrl}
+      alt={businessName}
+      className="h-full w-full object-cover"
+      onError={() => setFailed(true)}
+    />
+  ) : (
+    <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${bgGradient} text-3xl text-white`}>
+      {icon}
+    </div>
+  );
+}
+
 interface HomeServiceProviderListViewProps {
   phone: string;
   serviceType: HomeServiceType;
   config: ServiceConfig;
   selectedProblem?: string | null;
   onBack: () => void;
+  /** Opens provider/center profile (header chevron). */
   onSelectProvider: (provider: Provider) => void;
+  /** Opens full service list for booking (same as profile → “services” step). Omit to hide View Services. */
+  onViewProviderServices?: (provider: Provider) => void;
   onNavigate?: (screen: string, data?: any) => void;
 }
 
@@ -90,6 +123,7 @@ export function HomeServiceProviderListView({
   selectedProblem,
   onBack,
   onSelectProvider,
+  onViewProviderServices,
   onNavigate
 }: HomeServiceProviderListViewProps) {
 
@@ -166,18 +200,30 @@ export function HomeServiceProviderListView({
 
         const list = discoverData.providers ?? discoverData.vendors ?? [];
         if (discoverData.success && list.length > 0) {
-          const enrichedProviders: Provider[] = list.map((p: any) => ({
-            id: p.id || p.vendorId,
-            vendorId: p.vendorId || p.id,
+          const enrichedProviders: Provider[] = list.map((p: any) => {
+            const canonicalId = pickCustomerVendorAccountId(p as Record<string, unknown>) || String(p.vendorId || p.id || '');
+            return {
+            id: canonicalId,
+            vendorId: canonicalId,
             businessName: p.businessName || p.name || p.fullName,
             fullName: p.fullName ?? p.name ?? p.businessName,
             name: p.businessName || p.name || p.fullName || 'Provider',
-            photo: p.photoUrl || p.vendorProfileImage || p.photo || p.logo || '',
+            photo:
+              resolveVendorProfilePhotoUrl(p as Record<string, unknown>) ||
+              p.photoUrl ||
+              p.vendorProfileImage ||
+              p.photo ||
+              p.logo ||
+              '',
             logo: p.photoUrl || p.vendorProfileImage || p.logo || p.photo || '',
             address: [p.city, p.state].filter(Boolean).join(', ') || p.address || 'Location not specified',
             phone: p.phone || '',
             distance: typeof p.distance === 'number' ? p.distance : (userLocation ? calculateDistance(userLocation, p.latitude != null && p.longitude != null ? { lat: Number(p.latitude), lng: Number(p.longitude) } : undefined) : 999),
-            rating: Number(p.rating) || 4.5,
+            rating: (() => {
+              const rc = Number(p.totalReviews ?? p.reviewCount ?? 0) || 0;
+              const r = p.rating != null ? Number(p.rating) : NaN;
+              return rc > 0 && Number.isFinite(r) && r > 0 ? r : 0;
+            })(),
             reviewCount: Number(p.totalReviews ?? p.reviewCount ?? 0),
             specializations: Array.isArray(p.specializations) ? p.specializations : [],
             amenities: Array.isArray(p.amenities) ? p.amenities : [],
@@ -188,7 +234,8 @@ export function HomeServiceProviderListView({
             experience: Number(p.experience ?? p.yearsExperience ?? 0),
             serviceCount: Number(p.completedBookings ?? p.serviceCount ?? 0),
             previouslyUsed: Boolean(p.previouslyUsed),
-          }));
+          };
+          });
 
           console.log(`✅ [HOME-SERVICE-LIST] Found ${enrichedProviders.length} providers from discover-services`);
           setProviders(enrichedProviders);
@@ -218,8 +265,13 @@ export function HomeServiceProviderListView({
             address: service.vendorAddress || service.vendorLocation || 'Location not specified',
             phone: service.vendorPhone || '',
             distance: 999,
-            rating: service.vendorRating || 4.5,
-            reviewCount: service.vendorReviewCount || 0,
+            rating: (() => {
+              const rc = Number(service.vendorReviewCount ?? service.review_count ?? 0) || 0;
+              const r =
+                service.vendorRating != null ? Number(service.vendorRating) : NaN;
+              return rc > 0 && Number.isFinite(r) && r > 0 ? r : 0;
+            })(),
+            reviewCount: Number(service.vendorReviewCount ?? service.review_count ?? 0) || 0,
             specializations: service.specializations || [],
             amenities: service.amenities || [],
             nextAvailableSlot: 'Today',
@@ -481,27 +533,19 @@ export function HomeServiceProviderListView({
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
-              onClick={() => onSelectProvider(provider)}
-              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden active:scale-[0.98] transition-transform cursor-pointer"
+              className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
             >
               <div className="p-4">
                 <div className="flex gap-4">
                   {/* Provider Photo */}
                   <div className="relative">
-                    <div className="w-24 h-24 rounded-xl bg-gray-100 overflow-hidden">
-                      {provider.photo ? (
-                        <img
-                          src={provider.photo}
-                          alt={provider.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div 
-                          className={`w-full h-full bg-gradient-to-br ${config.bgGradient} flex items-center justify-center text-white text-3xl`}
-                        >
-                          {config.icon}
-                        </div>
-                      )}
+                    <div className="h-24 w-24 overflow-hidden rounded-xl bg-gray-100">
+                      <ProviderListAvatar
+                        photoUrl={provider.photo}
+                        businessName={provider.name}
+                        icon={config.icon}
+                        bgGradient={config.bgGradient}
+                      />
                     </div>
                     {provider.isVerified && (
                       <div className="absolute -top-1 -right-1 w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
@@ -509,41 +553,54 @@ export function HomeServiceProviderListView({
                       </div>
                     )}
                     {provider.previouslyUsed && (
-                      <div className="absolute -bottom-1 -right-1 px-1.5 py-0.5 bg-green-500 rounded-full">
-                        <span className="text-[10px] text-white font-medium">Used</span>
+                      <div
+                        className="absolute -bottom-1 -right-1 rounded-full px-1.5 py-0.5"
+                        style={{ backgroundColor: config.primaryColor }}
+                      >
+                        <span className="text-[10px] font-medium text-white">Used</span>
                       </div>
                     )}
                   </div>
 
                   {/* Provider Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between mb-1">
+                    <div className="flex items-start justify-between mb-1 gap-2">
                       <h3 className="font-semibold text-gray-800 truncate pr-2">
                         {provider.name}
                       </h3>
-                      <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      <button
+                        type="button"
+                        aria-label={`View ${provider.name} profile`}
+                        className="flex-shrink-0 p-1 -m-1 rounded-lg text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-orange-300"
+                        onClick={(e: MouseEvent) => {
+                          e.stopPropagation();
+                          onSelectProvider(provider);
+                        }}
+                      >
+                        <ChevronRight className="w-5 h-5" aria-hidden />
+                      </button>
                     </div>
 
                     {/* Rating & Reviews */}
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="flex items-center gap-1 bg-green-50 px-2 py-0.5 rounded-full">
-                        <Star className="w-3.5 h-3.5 text-green-600 fill-green-600" />
-                        <span className="text-sm font-medium text-green-700">
-                          {provider.rating.toFixed(1)}
-                        </span>
-                      </div>
-                      <span className="text-sm text-gray-500">
-                        ({provider.reviewCount} reviews)
-                      </span>
+                      <StarRating
+                        rating={provider.rating}
+                        reviewCount={provider.reviewCount}
+                        textClassName="text-xs text-gray-500"
+                      />
                     </div>
 
                     {/* Location & Distance */}
                     <div className="flex items-center gap-1 text-sm text-gray-500 mb-2">
                       <MapPin className="w-4 h-4" />
                       <span className="truncate">{provider.address}</span>
-                      <span className="flex-shrink-0 text-orange-600 font-medium">
-                        • {provider.distance} km
-                      </span>
+                      {provider.distance != null && provider.distance < 999 && (
+                        <span className="flex-shrink-0 text-orange-600 font-medium">
+                          • {Number(provider.distance) < 1
+                            ? `${Math.round(Number(provider.distance) * 1000)} m`
+                            : `${Math.round(Number(provider.distance))} km`}
+                        </span>
+                      )}
                     </div>
 
                     {/* Specializations */}
@@ -594,6 +651,23 @@ export function HomeServiceProviderListView({
                     ))}
                   </div>
                 )}
+
+                {onViewProviderServices && provider.serviceCount > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-orange-700 border-orange-300 hover:bg-orange-50"
+                      onClick={(e: MouseEvent) => {
+                        e.stopPropagation();
+                        onViewProviderServices(provider);
+                      }}
+                    >
+                      View Services
+                    </Button>
+                  </div>
+                )}
               </div>
             </motion.div>
           ))
@@ -616,7 +690,7 @@ export function HomeServiceProviderListView({
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl z-50 max-w-md mx-auto"
+              className="fixed bottom-0 left-0 right-0 mb-14 max-h-[calc(85vh-3.5rem)] overflow-y-auto bg-white rounded-t-3xl z-50 max-w-md mx-auto"
             >
               <div className="p-4">
                 <div className="flex items-center justify-between mb-4">
@@ -699,7 +773,7 @@ export function HomeServiceProviderListView({
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-3">
+                <div className="sticky bottom-3 bg-white pt-2 flex gap-3">
                   <button
                     onClick={clearFilters}
                     className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium"

@@ -11,10 +11,10 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -39,14 +39,14 @@ export function PetProfileDashboardScreen({
 
   useEffect(() => {
     loadPetData();
-  }, [petId]);
+  }, [phone, petId]);
 
   const loadPetData = async () => {
     try {
       setLoading(true);
       const [petResponse, bookingsResponse] = await Promise.all([
-        CustomerApi.getPetProfile(petId),
-        CustomerApi.getPetBookings(petId),
+        CustomerApi.getPet(phone, petId),
+        CustomerApi.getPetBookings(phone, petId),
       ]);
 
       setPet(petResponse.pet || petResponse);
@@ -61,31 +61,43 @@ export function PetProfileDashboardScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   if (!pet) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Pet not found</Text>
-          <TouchableOpacity style={styles.backButton} onPress={onBack}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={onBack}
+            hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.backButton}
+          hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
           <Text style={styles.backButtonText}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{pet.name}</Text>
@@ -163,7 +175,17 @@ export function PetProfileDashboardScreen({
                 <View style={styles.bookingInfo}>
                   <Text style={styles.bookingService}>{booking.serviceName}</Text>
                   <Text style={styles.bookingDate}>
-                    {new Date(booking.appointmentDate || booking.date).toLocaleDateString()}
+                    {(() => {
+                      const raw =
+                        booking.scheduledDate ||
+                        booking.scheduled_date ||
+                        booking.appointmentDate ||
+                        booking.date ||
+                        booking.bookingDate;
+                      if (!raw) return '—';
+                      const d = new Date(raw);
+                      return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString();
+                    })()}
                   </Text>
                 </View>
                 <View style={styles.bookingStatus}>
@@ -190,7 +212,7 @@ export function PetProfileDashboardScreen({
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -210,7 +232,12 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   backButton: {
-    padding: spacing.xs,
+    minWidth: 44,
+    minHeight: 44,
+    paddingHorizontal: spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   backButtonText: {
     fontSize: 16,

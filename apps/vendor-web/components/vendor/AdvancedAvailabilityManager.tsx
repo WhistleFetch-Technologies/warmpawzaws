@@ -10,27 +10,34 @@
  * - Breaks section (lunch, tea, custom)
  * - Holidays and vacation management
  * - Copy schedule across days
- * - Go Offline slider (solo providers only)
+ * - Online/offline toggle (all vendors — customer discovery)
+ * - Service radius (solo) / service distance km (center & business)
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { 
-  ArrowLeft, Save, Clock, Plus, X, Copy, Calendar, 
-  Coffee, Pause, MapPin, Loader2, ToggleLeft, ToggleRight,
+  Save, Clock, Plus, X, Copy, Calendar, 
+  Coffee, Pause, Loader2, ToggleLeft, ToggleRight,
   AlertCircle, ChevronDown, ChevronUp, Trash2, Check
 } from 'lucide-react';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { getVendorRoleName, isSoloVendor } from '@/lib/vendor-utils';
 
 interface AdvancedAvailabilityManagerProps {
   vendorId: string;
   vendorData?: any;
-  onBack: () => void;
+  /** Standalone pages (schedule, dashboard overlay); optional when embeddedInProfile */
+  onBack?: () => void;
+  /**
+   * Solo Professional Profile: no full-page shell, no sticky VendorHeader, no back —
+   * toolbar (title + Save) only so availability blends into the profile scroll.
+   */
+  embeddedInProfile?: boolean;
 }
 
 /** Lead time (minutes) per service style: at_home = travel to customer, at_center = prep, tele = setup */
@@ -46,6 +53,7 @@ interface TimeSlot {
     lat?: number;
     lng?: number;
     placeId?: string;
+    serviceRadiusKm?: number;
   };
   /** @deprecated Use leadTimeByStyle per style instead */
   bufferTime?: number;
@@ -87,12 +95,63 @@ const ALL_SERVICE_STYLES = [
   { id: 'tele', label: 'Tele/Video', icon: '📹', leadLabel: 'Setup time (min)' },
 ] as const;
 
+type SlotCanonicalStyle = 'at_center' | 'at_home' | 'tele';
+
+/** Map admin/API aliases to the three slot checkboxes (matches profile + GET /availability). */
+const STYLE_ALIAS_TO_CANONICAL: Record<string, SlotCanonicalStyle> = {
+  at_home: 'at_home',
+  home_visit: 'at_home',
+  at_center: 'at_center',
+  at_clinic: 'at_center',
+  tele: 'tele',
+  video_consultation: 'tele',
+};
+
+function coerceStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((x): x is string => typeof x === 'string' && x.length > 0);
+  }
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((x): x is string => typeof x === 'string' && x.length > 0);
+      }
+    } catch {
+      /* not JSON */
+    }
+    return [value.trim()];
+  }
+  return [];
+}
+
+function normalizeStylesToSlotCanonical(styles: unknown): SlotCanonicalStyle[] {
+  const list = coerceStringArray(styles);
+  const out = new Set<SlotCanonicalStyle>();
+  for (const raw of list) {
+    if (typeof raw !== 'string' || !raw.trim()) continue;
+    const k = raw.toLowerCase();
+    const mapped = STYLE_ALIAS_TO_CANONICAL[k];
+    if (mapped) {
+      out.add(mapped);
+      continue;
+    }
+    if (k === 'at_home' || k === 'at_center' || k === 'tele') {
+      out.add(k as SlotCanonicalStyle);
+    }
+  }
+  return Array.from(out);
+}
+
 /** Default lead times per style when creating a new slot */
 const DEFAULT_LEAD_TIME_BY_STYLE: LeadTimeByStyle = {
   at_home: 45,
   at_center: 15,
   tele: 5,
 };
+
+/** Stable fallback when allowedServiceStyles state is not an array (malformed API). */
+const EMPTY_ALLOWED_STYLES: readonly SlotCanonicalStyle[] = [];
 
 const BREAK_TYPES = [
   { id: 'lunch', label: 'Lunch Break', icon: '🍽️' },
@@ -161,7 +220,8 @@ function getOverlapDay(
 export function AdvancedAvailabilityManager({ 
   vendorId, 
   vendorData, 
-  onBack 
+  onBack,
+  embeddedInProfile = false,
 }: AdvancedAvailabilityManagerProps) {
   // State
   const [loading, setLoading] = useState(true);
@@ -201,64 +261,94 @@ export function AdvancedAvailabilityManager({
   
   // Get vendor role name
   const roleName = getVendorRoleName(vendorData);
+
+  /** Single source of truth for customer distance matching (km); persisted on vendors.service_radius when saving availability */
+  const [travelRadiusKm, setTravelRadiusKm] = useState(7);
+  /** Center/business: service coverage from business location (km), persisted as vendors.service_distance_km */
+  const [serviceDistanceKm, setServiceDistanceKm] = useState(10);
+
+  useEffect(() => {
+    const s = vendorData?.service_radius ?? vendorData?.serviceRadius;
+    if (s != null && s !== '' && !Number.isNaN(Number(s))) {
+      setTravelRadiusKm(Math.min(500, Math.max(1, Math.round(Number(s)))));
+    }
+  }, [vendorData?.service_radius, vendorData?.serviceRadius]);
+
+  useEffect(() => {
+    const d = vendorData?.service_distance_km ?? vendorData?.serviceDistanceKm;
+    if (d != null && d !== '' && !Number.isNaN(Number(d))) {
+      setServiceDistanceKm(Math.min(50, Math.max(0, Math.round(Number(d)))));
+    }
+  }, [vendorData?.service_distance_km, vendorData?.serviceDistanceKm]);
+
+  const buildLocationDataForSave = useCallback(
+    (slot: TimeSlot): TimeSlot['locationData'] | undefined => {
+      const styles = Array.isArray(slot.serviceStyles) ? slot.serviceStyles : [];
+      if (!styles.includes('at_home')) {
+        const ld = slot.locationData;
+        if (!ld || typeof ld !== 'object') return undefined;
+        const hasContent = Object.keys(ld).some((k) => {
+          const v = (ld as Record<string, unknown>)[k];
+          return v !== undefined && v !== null && v !== '';
+        });
+        return hasContent ? { ...ld } : undefined;
+      }
+      const addr = (vendorData?.address || '').trim();
+      const lat =
+        vendorData?.latitude != null && vendorData.latitude !== ''
+          ? Number(vendorData.latitude)
+          : undefined;
+      const lng =
+        vendorData?.longitude != null && vendorData.longitude !== ''
+          ? Number(vendorData.longitude)
+          : undefined;
+      const r = Number.isFinite(travelRadiusKm) && travelRadiusKm > 0 ? travelRadiusKm : 7;
+      return { address: addr, lat, lng, serviceRadiusKm: r };
+    },
+    [vendorData?.address, vendorData?.latitude, vendorData?.longitude, travelRadiusKm]
+  );
   
-  // Filter service styles based on role and allowed styles
-  const SERVICE_STYLES = ALL_SERVICE_STYLES.filter(style => allowedServiceStyles.includes(style.id as any));
-  
-  // Get default service style (first allowed style, or 'at_home' for groomer_solo)
+  const allowedStylesSafe = useMemo(
+    () => (Array.isArray(allowedServiceStyles) ? allowedServiceStyles : EMPTY_ALLOWED_STYLES),
+    [allowedServiceStyles]
+  );
+  const SERVICE_STYLES = ALL_SERVICE_STYLES.filter(style => allowedStylesSafe.includes(style.id as any));
+
   const getDefaultServiceStyle = useCallback((): ('at_center' | 'at_home' | 'tele')[] => {
     if (roleName?.toLowerCase() === 'groomer_solo') {
       return ['at_home'];
     }
-    return allowedServiceStyles.length > 0 ? [allowedServiceStyles[0]] : ['at_home'];
-  }, [roleName, allowedServiceStyles]);
+    return allowedStylesSafe.length > 0 ? [allowedStylesSafe[0]] : ['at_home'];
+  }, [roleName, allowedStylesSafe]);
 
-  // Load allowed service styles from vendor services endpoint
   useEffect(() => {
     const loadAllowedServiceStyles = async () => {
       try {
-        let styles: string[] = [];
-        
-        // ✅ Priority 1: Check vendorData.serviceStyles.selected (what vendor has actually configured)
-        // This is the most important - shows only what the vendor has selected/enabled
-        if (vendorData?.serviceStyles?.selected && Array.isArray(vendorData.serviceStyles.selected) && vendorData.serviceStyles.selected.length > 0) {
-          // Map role config style names to database style names
-          const styleMap: Record<string, string> = {
-            'at_home': 'at_home',
-            'home_visit': 'at_home',
-            'tele': 'tele',
-            'video_consultation': 'tele',
-            'at_center': 'at_center',
-            'at_clinic': 'at_center',
-          };
-          styles = vendorData.serviceStyles.selected
-            .map((s: string) => styleMap[s.toLowerCase()] || s)
-            .filter((s: string) => ['at_home', 'at_center', 'tele'].includes(s));
-          console.log('[AVAILABILITY] Using serviceStyles.selected from vendorData:', styles);
-        }
-        // ✅ Priority 2: Check vendorData.allowedServiceStyles (direct array)
-        else if (vendorData?.allowedServiceStyles && Array.isArray(vendorData.allowedServiceStyles)) {
-          styles = vendorData.allowedServiceStyles;
-          console.log('[AVAILABILITY] Using allowedServiceStyles from vendorData:', styles);
-        }
-        // ✅ Priority 3: Fetch from vendor services endpoint
-        else {
+        let rawStyles: string[] = [];
+
+        if (vendorData?.allowedServiceStyles && Array.isArray(vendorData.allowedServiceStyles) && vendorData.allowedServiceStyles.length > 0) {
+          rawStyles = [...vendorData.allowedServiceStyles];
+          console.log('[AVAILABILITY] Using allowedServiceStyles from vendorData:', rawStyles);
+        } else if (vendorData?.serviceStyles?.selected && Array.isArray(vendorData.serviceStyles.selected) && vendorData.serviceStyles.selected.length > 0) {
+          rawStyles = [...vendorData.serviceStyles.selected];
+          console.log('[AVAILABILITY] Using serviceStyles.selected from vendorData:', rawStyles);
+        } else {
           const servicesRes = await apiClient.get(`/vendor/${vendorId}/services`) as any;
-          if (servicesRes?.success && servicesRes?.allowedServiceStyles) {
-            styles = servicesRes.allowedServiceStyles;
-            console.log('[AVAILABILITY] Using allowedServiceStyles from services endpoint:', styles);
+          if (servicesRes?.success && servicesRes?.allowedServiceStyles != null) {
+            rawStyles = coerceStringArray(servicesRes.allowedServiceStyles);
+            console.log('[AVAILABILITY] Using allowedServiceStyles from services endpoint:', rawStyles);
           } else {
-            // Fallback: Use role-based defaults
             const roleNameLower = roleName?.toLowerCase() || '';
             if (roleNameLower === 'groomer_solo') {
-              styles = ['at_home'];
+              rawStyles = ['at_home'];
             } else {
-              // Default to all styles for other roles
-              styles = ['at_home', 'at_center', 'tele'];
+              rawStyles = ['at_home', 'at_center', 'tele'];
             }
           }
         }
-        
+
+        let styles = normalizeStylesToSlotCanonical(rawStyles as unknown);
+
         // ✅ CRITICAL: Filter out 'at_center' for ALL solo vendors (vet_solo, groomer_solo, etc.)
         // Solo vendors don't have a physical center/clinic location
         if (isSoloVendor(vendorData)) {
@@ -328,6 +418,14 @@ export function AdvancedAvailabilityManager({
         const profileRes = await apiClient.get(`/vendor/${vendorId}/profile`) as any;
         if (profileRes?.vendor) {
           setIsOnline(profileRes.vendor.is_online ?? profileRes.vendor.isOnline ?? true);
+          const sr = profileRes.vendor.service_radius ?? profileRes.vendor.serviceRadius;
+          if (sr != null && sr !== '' && !Number.isNaN(Number(sr))) {
+            setTravelRadiusKm(Math.min(500, Math.max(1, Math.round(Number(sr)))));
+          }
+          const sdk = profileRes.vendor.service_distance_km ?? profileRes.vendor.serviceDistanceKm;
+          if (sdk != null && sdk !== '' && !Number.isNaN(Number(sdk))) {
+            setServiceDistanceKm(Math.min(50, Math.max(0, Math.round(Number(sdk)))));
+          }
         }
       } catch (e) {
         console.warn('Failed to load vendor profile:', e);
@@ -349,8 +447,10 @@ export function AdvancedAvailabilityManager({
             availRes.availability.slots.forEach((slot: any) => {
               const dayIdx = slot.day_of_week ?? slot.dayOfWeek;
               if (dayIdx >= 0 && dayIdx <= 6) {
-                const slotStyles = slot.service_styles || slot.serviceStyles || [];
-                let filteredStyles = slotStyles.filter((s: string) => allowedServiceStyles.includes(s as any));
+                const slotStylesRaw = slot.service_styles ?? slot.serviceStyles ?? [];
+                const slotStyles = normalizeStylesToSlotCanonical(slotStylesRaw);
+                const allowed = Array.isArray(allowedServiceStyles) ? allowedServiceStyles : [];
+                let filteredStyles = slotStyles.filter((s) => allowed.includes(s));
                 if (isSoloVendor(vendorData)) {
                   filteredStyles = filteredStyles.filter((s: string) => s !== 'at_center');
                 }
@@ -497,14 +597,12 @@ export function AdvancedAvailabilityManager({
     });
   };
 
-  // Update slot (with overlap validation: no overlap with other slots or breaks on same day)
+  // Update slot — overlap with other slots/breaks is allowed while editing; handleSave blocks invalid saves.
   const updateSlot = (slotIdx: number, updates: Partial<TimeSlot>) => {
     const hasTimeChange = 'startTime' in updates || 'endTime' in updates;
-    const dayBreaks = breaks.filter(b => b.isRecurring && b.dayOfWeek === selectedDay);
 
     setSchedule(prev => {
-      const newSchedule = [...prev];
-      const daySlots = newSchedule[selectedDay]?.slots ?? [];
+      const daySlots = prev[selectedDay]?.slots ?? [];
       const merged = { ...daySlots[slotIdx], ...updates };
       const start = merged.startTime ?? '';
       const end = merged.endTime ?? '';
@@ -514,24 +612,13 @@ export function AdvancedAvailabilityManager({
           toast.error('End time must be after start time');
           return prev;
         }
-        for (let i = 0; i < daySlots.length; i++) {
-          if (i === slotIdx) continue;
-          const s = daySlots[i];
-          if (timeRangesOverlap(start, end, s.startTime, s.endTime)) {
-            toast.error('This slot overlaps another slot. Please choose a different time.');
-            return prev;
-          }
-        }
-        for (const b of dayBreaks) {
-          if (timeRangesOverlap(start, end, b.startTime, b.endTime)) {
-            toast.error('This slot overlaps a break. Please choose a different time.');
-            return prev;
-          }
-        }
       }
 
-      newSchedule[selectedDay].slots[slotIdx] = merged;
-      return newSchedule;
+      return prev.map((day, idx) =>
+        idx === selectedDay
+          ? { ...day, slots: day.slots.map((s, i) => (i === slotIdx ? merged : s)) }
+          : day
+      );
     });
   };
 
@@ -556,7 +643,7 @@ export function AdvancedAvailabilityManager({
             slots: day.slots.map((slot, idx) => {
               if (idx === slotIdx) {
                 // Get current styles
-                const currentStyles = [...slot.serviceStyles];
+                const currentStyles = [...(Array.isArray(slot.serviceStyles) ? slot.serviceStyles : [])];
                 
                 // Toggle the style: if already selected, remove it; otherwise add it
                 const newStyles = currentStyles.includes(style)
@@ -785,9 +872,21 @@ export function AdvancedAvailabilityManager({
     setTogglingOnline(true);
     try {
       const newStatus = !isOnline;
-      await apiClient.post(`/vendor/${vendorId}/toggle-online`, { isOnline: newStatus });
+      const data = await apiClient.post<{
+        message?: string;
+        cancelledUpcomingBookings?: number;
+      }>(`/vendor/${vendorId}/toggle-online`, { isOnline: newStatus });
       setIsOnline(newStatus);
-      toast.success(newStatus ? 'You are now online' : 'You are now offline');
+      const cancelled = typeof data?.cancelledUpcomingBookings === 'number' ? data.cancelledUpcomingBookings : 0;
+      if (newStatus) {
+        toast.success(data?.message || 'You are now online');
+      } else if (cancelled > 0) {
+        toast.success(
+          `${data?.message || 'You are now offline'} ${cancelled} upcoming booking${cancelled === 1 ? '' : 's'} cancelled; customers were notified.`
+        );
+      } else {
+        toast.success(data?.message || 'You are now offline');
+      }
     } catch (error) {
       console.error('Error toggling online status:', error);
       toast.error('Failed to update online status');
@@ -847,8 +946,10 @@ export function AdvancedAvailabilityManager({
               dayOfWeek: day.dayOfWeek,
               timeWindowStart: slot.startTime,
               timeWindowEnd: slot.endTime,
-              serviceStyles: slot.serviceStyles,
-              locationData: slot.locationData,
+              serviceStyles: Array.isArray(slot.serviceStyles)
+                ? slot.serviceStyles
+                : normalizeStylesToSlotCanonical(slot.serviceStyles as unknown),
+              locationData: buildLocationDataForSave(slot),
               leadTimeByStyle: slot.leadTimeByStyle || undefined,
               maxCapacity: slot.maxCapacity,
               isEnabled: slot.isEnabled,
@@ -860,7 +961,10 @@ export function AdvancedAvailabilityManager({
       console.log('[SAVE] Saving slots to /vendor/' + vendorId + '/availability:', slotsToSave);
       
       // Save availability slots
-      const availRes = await apiClient.post(`/vendor/${vendorId}/availability`, { slots: slotsToSave }) as any;
+      const availRes = await apiClient.post(`/vendor/${vendorId}/availability`, {
+        slots: slotsToSave,
+        ...(isSoloProvider ? { serviceRadiusKm: travelRadiusKm } : {}),
+      }) as any;
       console.log('[SAVE] Availability response:', availRes);
       
       if (!availRes?.success) {
@@ -891,6 +995,17 @@ export function AdvancedAvailabilityManager({
       const holidayCount = holidaysRes?.insertedCount || holidays.length;
       
       toast.success(`Saved: ${slotCount} slots, ${breakCount} breaks, ${holidayCount} holidays`);
+
+      if (!isSoloProvider) {
+        try {
+          await apiClient.put(`/vendor/${vendorId}/profile`, {
+            serviceDistanceKm,
+          } as any);
+        } catch (e) {
+          console.warn('[SAVE] serviceDistanceKm profile update:', e);
+          toast.warning('Schedule saved, but service distance could not be synced to profile. Try Save again.');
+        }
+      }
       
       // Reload data to confirm it persisted
       console.log('[SAVE] Reloading data to verify persistence...');
@@ -904,6 +1019,14 @@ export function AdvancedAvailabilityManager({
   };
 
   if (loading) {
+    if (embeddedInProfile) {
+      return (
+        <div className="flex flex-col items-center justify-center py-14 text-gray-600">
+          <Loader2 className="w-9 h-9 animate-spin text-[#FF8C42] mb-2" />
+          <p className="text-sm">Loading availability...</p>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -916,35 +1039,56 @@ export function AdvancedAvailabilityManager({
 
   const currentDaySlots = schedule[selectedDay]?.slots || [];
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-20">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center gap-4">
-            <button onClick={onBack} className="p-2 hover:bg-gray-100 rounded-lg">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="flex-1">
-              <h1 className="font-bold text-gray-900">Advanced Availability</h1>
-              <p className="text-sm text-gray-600">Manage your schedule, breaks, and holidays</p>
-            </div>
-            <Button
-              onClick={handleSave}
-              disabled={saving}
-              className="bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
-            >
-              {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-              Save All
-            </Button>
-          </div>
-        </div>
-      </div>
+  const saveAllButton = (
+    <Button
+      key="save-all"
+      type="button"
+      onClick={handleSave}
+      disabled={saving}
+      className="shrink-0 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white"
+    >
+      {saving ? (
+        <Loader2 className="mr-2 h-4 w-4 shrink-0 animate-spin" />
+      ) : (
+        <Save className="mr-2 h-4 w-4 shrink-0" />
+      )}
+      Save All
+    </Button>
+  );
 
-      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-        {/* Online Toggle - Solo providers only */}
-        {isSoloProvider && (
-          <div className="bg-white rounded-xl border p-4">
+  return (
+    <div className={embeddedInProfile ? 'w-full' : 'vendor-page-shell min-h-screen bg-gray-50'}>
+      <div
+        className={
+          embeddedInProfile
+            ? 'w-full flex flex-col'
+            : 'vendor-app-column flex min-h-screen min-h-0 flex-col bg-white pb-20'
+        }
+      >
+        {embeddedInProfile ? (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-gray-100 pb-4 mb-1">
+            <div className="min-w-0">
+              <h3 className="text-base font-semibold text-gray-900">Schedule & availability</h3>
+              <p className="text-sm text-gray-500">Weekly slots, breaks, and holidays</p>
+            </div>
+            {saveAllButton}
+          </div>
+        ) : (
+          <VendorHeader
+            title="Advanced Availability"
+            subtitle="Manage your schedule, breaks, and holidays"
+            onBack={onBack}
+            actions={[saveAllButton]}
+          />
+        )}
+        <div className={embeddedInProfile ? '' : 'min-h-0 flex-1 overflow-y-auto'}>
+          <div
+            className={
+              embeddedInProfile ? 'space-y-6' : 'mx-auto max-w-4xl space-y-6 px-4 py-6'
+            }
+          >
+        {/* Online / offline — same discovery rule for solo and center/business */}
+        <div className="bg-white rounded-xl border p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 {isOnline ? (
@@ -980,6 +1124,80 @@ export function AdvancedAvailabilityManager({
                   <ToggleLeft className="w-8 h-8" />
                 )}
               </button>
+            </div>
+        </div>
+
+        {/* Service radius — single source of truth (vendors.service_radius); uses profile address & map coordinates */}
+        {isSoloProvider && (
+          <div className="rounded-xl border border-amber-100 bg-amber-50/40 p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900">Service radius (km)</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Max distance you travel from the address in{' '}
+                  <span className="font-medium">My profile → Service Area and Location</span>.
+                  This distance is used so customers can find you for home visits, tele, and in-person offerings that depend on your area.
+                </p>
+              </div>
+              <div className="shrink-0 w-full sm:w-40">
+                <label htmlFor="travel-radius-km" className="sr-only">
+                  Service radius in kilometers
+                </label>
+                <Input
+                  id="travel-radius-km"
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={travelRadiusKm}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (Number.isNaN(v)) return;
+                    setTravelRadiusKm(Math.min(500, Math.max(1, v)));
+                  }}
+                  className="h-9"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!isSoloProvider && (
+          <div className="rounded-xl border border-blue-100 bg-blue-50/30 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900">Service distance (km)</p>
+                <p className="text-xs text-gray-600 mt-1">
+                  Coverage from your business address for in-person bookings (0–50 km). Saved with{' '}
+                  <span className="font-medium">Save All</span> to your profile for discovery.
+                </p>
+              </div>
+              <div className="shrink-0 w-full sm:w-52 space-y-2">
+                <label htmlFor="service-distance-km" className="sr-only">
+                  Service distance in kilometers
+                </label>
+                <Input
+                  id="service-distance-km"
+                  type="number"
+                  min={0}
+                  max={50}
+                  value={serviceDistanceKm}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    if (Number.isNaN(v)) return;
+                    setServiceDistanceKm(Math.min(50, Math.max(0, v)));
+                  }}
+                  className="h-9"
+                />
+                <input
+                  type="range"
+                  min={0}
+                  max={50}
+                  value={serviceDistanceKm}
+                  onChange={(e) => setServiceDistanceKm(Number(e.target.value))}
+                  className="w-full accent-[#FF8C42]"
+                  aria-label="Adjust service distance in kilometers"
+                />
+              </div>
             </div>
           </div>
         )}
@@ -1037,7 +1255,9 @@ export function AdvancedAvailabilityManager({
               </div>
             ) : (
               <div className="space-y-4">
-                {currentDaySlots.map((slot, slotIdx) => (
+                {currentDaySlots.map((slot, slotIdx) => {
+                  const slotStylesSafe = Array.isArray(slot.serviceStyles) ? slot.serviceStyles : [];
+                  return (
                   <div key={slot.id || `slot-${selectedDay}-${slotIdx}`} className="border rounded-lg p-4 bg-gray-50">
                     <div className="flex items-start justify-between mb-3">
                       <span className="text-sm font-medium text-gray-500">Slot {slotIdx + 1}</span>
@@ -1082,7 +1302,7 @@ export function AdvancedAvailabilityManager({
                                 toggleServiceStyle(slotIdx, style.id as any);
                               }}
                               className={`px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 transition-colors ${
-                                slot.serviceStyles.includes(style.id as any)
+                                slotStylesSafe.includes(style.id as any)
                                   ? 'bg-[#FF8C42] text-white'
                                   : 'bg-white border text-gray-600 hover:border-[#FF8C42]'
                               }`}
@@ -1097,54 +1317,11 @@ export function AdvancedAvailabilityManager({
                       </div>
                     </div>
 
-                    {/* Location for Solo (at_home only) - Hidden for walker solo */}
-                    {isSoloProvider && 
-                     slot.serviceStyles.includes('at_home') && 
-                     !roleName?.toLowerCase().includes('walker') && (
-                      <div className="mb-4 space-y-3">
-                        <div>
-                          <p className="text-sm text-gray-600 mb-2 flex items-center gap-1">
-                            <MapPin className="w-4 h-4" />
-                            Service Location
-                          </p>
-                          <EnhancedAddressAutocomplete
-                            value={slot.locationData?.address || ''}
-                            onChange={(address, components) => {
-                              updateSlot(slotIdx, {
-                                locationData: {
-                                  ...slot.locationData,
-                                  address,
-                                  lat: components?.lat ?? components?.coordinates?.lat,
-                                  lng: components?.lng ?? components?.coordinates?.lng,
-                                  placeId: components?.placeId,
-                                },
-                              });
-                            }}
-                            placeholder="Search for your service location..."
-                            className="w-full"
-                          />
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600 mb-1">Service radius (km) — max distance you travel</p>
-                          <Input
-                            type="number"
-                            min={1}
-                            max={50}
-                            value={(slot.locationData as any)?.serviceRadiusKm ?? 7}
-                            onChange={(e) => updateSlot(slotIdx, {
-                              locationData: { ...slot.locationData, serviceRadiusKm: parseInt(e.target.value, 10) || 7 },
-                            })}
-                            className="h-9 w-24"
-                          />
-                        </div>
-                      </div>
-                    )}
-
                     {/* Lead time (min) per service style - only for styles allowed in this slot */}
                     <div className="mb-4">
                       <p className="text-sm text-gray-600 mb-2">Lead time (min) per style</p>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {SERVICE_STYLES.filter(style => slot.serviceStyles.includes(style.id as any)).map(style => (
+                        {SERVICE_STYLES.filter(style => slotStylesSafe.includes(style.id as any)).map(style => (
                           <div key={style.id}>
                             <label className="text-xs text-gray-500 block mb-1">
                               {style.icon} {style.label} — {style.leadLabel}
@@ -1168,7 +1345,7 @@ export function AdvancedAvailabilityManager({
                             />
                           </div>
                         ))}
-                        {slot.serviceStyles.length === 0 && (
+                        {slotStylesSafe.length === 0 && (
                           <p className="text-sm text-gray-500 col-span-2">Select at least one service style above to set lead time.</p>
                         )}
                       </div>
@@ -1186,7 +1363,8 @@ export function AdvancedAvailabilityManager({
                       />
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
             )}
           </div>
@@ -1524,6 +1702,8 @@ export function AdvancedAvailabilityManager({
               )}
             </div>
           )}
+        </div>
+          </div>
         </div>
       </div>
     </div>

@@ -11,12 +11,14 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
+import { BrandedStackBelowHeader } from '../../components/layout/BrandedStackBelowHeader';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { formatDistanceDisplay } from '../../utils/distance-display';
 
 type ViewType = 
   | 'landing'
@@ -24,9 +26,8 @@ type ViewType =
   | 'grooming_home'
   | 'center_profile'
   | 'select_service'
-  | 'select_pet'
-  | 'select_time'
-  | 'select_address'
+  /** Pet + schedule + address (home) on one scrollable screen */
+  | 'booking_details'
   | 'payment'
   | 'confirmation';
 
@@ -67,6 +68,7 @@ export function GroomingServiceRouter({
   const [selectedVendor, setSelectedVendor] = useState<any | null>(null);
   const [services, setServices] = useState<any[]>([]);
   const [packages, setPackages] = useState<any[]>([]);
+  const [userLocation] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
 
   const [bookingFlow, setBookingFlow] = useState<BookingFlow>({
     serviceType: null,
@@ -115,7 +117,9 @@ export function GroomingServiceRouter({
       const response = await CustomerApi.searchServices({
         serviceType: 'grooming',
         serviceStyle: serviceType,
-        location: '', // TODO: Get from location service
+        location: `${userLocation.lat},${userLocation.lng}`,
+        latitude: userLocation.lat,
+        longitude: userLocation.lng,
       });
       setVendors(response.vendors || []);
     } catch (error) {
@@ -184,7 +188,7 @@ export function GroomingServiceRouter({
       ...prev,
       services: selectedServicesList,
     }));
-    setCurrentView('select_pet');
+    setCurrentView('booking_details');
   };
 
   const handleServiceSelect = (service: any, addOns: any[] = []) => {
@@ -193,26 +197,30 @@ export function GroomingServiceRouter({
       services: [service],
       addOns: addOns || [],
     }));
-    setCurrentView('select_pet');
+    setCurrentView('booking_details');
   };
 
-  const handlePetSelect = (pet: any) => {
-    setBookingFlow(prev => ({ ...prev, pet }));
-    setCurrentView('select_time');
-  };
-
-  const handleTimeSelect = (date: string, time: string) => {
+  const applySchedule = (date: string, time: string) => {
     setBookingFlow(prev => ({ ...prev, date, time }));
-    
-    if (bookingFlow.serviceType === 'home') {
-      setCurrentView('select_address');
-    } else {
-      setCurrentView('payment');
-    }
   };
 
-  const handleAddressSelect = (address: any) => {
+  const applyAddress = (address: any) => {
     setBookingFlow(prev => ({ ...prev, address }));
+  };
+
+  const goToPaymentFromDetails = () => {
+    if (!bookingFlow.pet) {
+      Alert.alert('Select pet', 'Please choose a pet for this booking.');
+      return;
+    }
+    if (!bookingFlow.date || !bookingFlow.time) {
+      Alert.alert('Schedule', 'Please set date and time for your visit.');
+      return;
+    }
+    if (bookingFlow.serviceType === 'home' && !bookingFlow.address) {
+      Alert.alert('Address', 'Please confirm a service address for home grooming.');
+      return;
+    }
     setCurrentView('payment');
   };
 
@@ -243,72 +251,89 @@ export function GroomingServiceRouter({
 
   const renderLanding = () => (
     <View style={styles.container}>
-      <Text style={styles.title}>Grooming Services</Text>
-      <Text style={styles.subtitle}>Choose your preferred grooming option</Text>
-
-      <View style={styles.optionsContainer}>
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={() => handleServiceTypeSelect('center')}
-        >
-          <Text style={styles.optionIcon}>✂️</Text>
-          <Text style={styles.optionTitle}>Grooming Center</Text>
-          <Text style={styles.optionDescription}>
-            Visit our grooming center for professional pet grooming
-          </Text>
+      <View style={styles.headerOrange}>
+        <TouchableOpacity onPress={onBack}>
+          <Text style={styles.backButtonWhite}>← Back</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.optionCard}
-          onPress={() => handleServiceTypeSelect('home')}
-        >
-          <Text style={styles.optionIcon}>🏠</Text>
-          <Text style={styles.optionTitle}>Home Grooming</Text>
-          <Text style={styles.optionDescription}>
-            Professional groomer visits your home for convenience
-          </Text>
-        </TouchableOpacity>
+        <Text style={styles.headerTitleWhite} numberOfLines={1}>
+          Grooming Services
+        </Text>
+        <View style={styles.headerRightSpacer} />
       </View>
+      <BrandedStackBelowHeader>
+        <View style={styles.contentPad}>
+          <Text style={styles.subtitle}>Choose your preferred grooming option</Text>
+
+          <View style={styles.optionsContainer}>
+            <TouchableOpacity
+              style={styles.optionCard}
+              onPress={() => handleServiceTypeSelect('center')}
+            >
+              <Text style={styles.optionIcon}>✂️</Text>
+              <Text style={styles.optionTitle}>Grooming Center</Text>
+              <Text style={styles.optionDescription}>
+                Visit our grooming center for professional pet grooming
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.optionCard}
+              onPress={() => handleServiceTypeSelect('home')}
+            >
+              <Text style={styles.optionIcon}>🏠</Text>
+              <Text style={styles.optionTitle}>Home Grooming</Text>
+              <Text style={styles.optionDescription}>
+                Professional groomer visits your home for convenience
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </BrandedStackBelowHeader>
     </View>
   );
 
   const renderVendorList = () => (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={styles.headerOrange}>
         <TouchableOpacity onPress={() => setCurrentView('landing')}>
-          <Text style={styles.backButton}>← Back</Text>
+          <Text style={styles.backButtonWhite}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>
+        <Text style={styles.headerTitleWhite} numberOfLines={2}>
           {bookingFlow.serviceType === 'center' ? 'Select Grooming Center' : 'Select Groomer'}
         </Text>
+        <View style={styles.headerRightSpacer} />
       </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} />
-      ) : (
-        <ScrollView style={styles.vendorList}>
-          {vendors.map((vendor) => (
-            <TouchableOpacity
-              key={vendor.id}
-              style={styles.vendorCard}
-              onPress={() => handleVendorSelect(vendor)}
-            >
-              <Text style={styles.vendorName}>{vendor.name}</Text>
-              <Text style={styles.vendorAddress}>{vendor.address}</Text>
-              {vendor.rating && (
-                <Text style={styles.vendorRating}>
-                  ⭐ {vendor.rating.toFixed(1)}
-                </Text>
-              )}
-              {vendor.distance && (
-                <Text style={styles.vendorDistance}>
-                  📍 {vendor.distance} km away
-                </Text>
-              )}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
+      <BrandedStackBelowHeader>
+        {loading ? (
+          <View style={styles.brandedLoadingWrap}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <ScrollView style={styles.vendorList} contentContainerStyle={styles.contentPad}>
+            {vendors.map((vendor) => (
+              <TouchableOpacity
+                key={vendor.id}
+                style={styles.vendorCard}
+                onPress={() => handleVendorSelect(vendor)}
+              >
+                <Text style={styles.vendorName}>{vendor.name}</Text>
+                <Text style={styles.vendorAddress}>{vendor.address}</Text>
+                {vendor.rating && (
+                  <Text style={styles.vendorRating}>
+                    ⭐ {vendor.rating.toFixed(1)}
+                  </Text>
+                )}
+                {formatDistanceDisplay(vendor) && (
+                  <Text style={styles.vendorDistance}>
+                    📍 {formatDistanceDisplay(vendor)}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -316,14 +341,18 @@ export function GroomingServiceRouter({
   // This matches the vet flow where services are selected from profile before booking
   const renderCenterProfile = () => (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={styles.headerOrange}>
         <TouchableOpacity onPress={() => setCurrentView(bookingFlow.serviceType === 'center' ? 'grooming_center' : 'grooming_home')}>
-          <Text style={styles.backButton}>← Back</Text>
+          <Text style={styles.backButtonWhite}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{selectedVendor?.name}</Text>
+        <Text style={styles.headerTitleWhite} numberOfLines={2}>
+          {selectedVendor?.name}
+        </Text>
+        <View style={styles.headerRightSpacer} />
       </View>
 
-      <ScrollView style={styles.profileContainer}>
+      <BrandedStackBelowHeader>
+      <ScrollView style={styles.profileContainer} contentContainerStyle={styles.contentPad}>
         {selectedVendor?.image && (
           <View style={styles.imagePlaceholder}>
             <Text style={styles.imageText}>📷</Text>
@@ -416,6 +445,7 @@ export function GroomingServiceRouter({
           </View>
         </View>
       </ScrollView>
+      </BrandedStackBelowHeader>
       
       {/* ✅ Fixed bottom book button */}
       <View style={styles.bottomButtonContainer}>
@@ -440,17 +470,23 @@ export function GroomingServiceRouter({
 
   const renderServiceSelection = () => (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={styles.headerOrange}>
         <TouchableOpacity onPress={() => setCurrentView('center_profile')}>
-          <Text style={styles.backButton}>← Back</Text>
+          <Text style={styles.backButtonWhite}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Service</Text>
+        <Text style={styles.headerTitleWhite} numberOfLines={2}>
+          Select Service
+        </Text>
+        <View style={styles.headerRightSpacer} />
       </View>
 
+      <BrandedStackBelowHeader>
       {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} />
+        <View style={styles.brandedLoadingWrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
       ) : (
-        <ScrollView style={styles.serviceList}>
+        <ScrollView style={styles.serviceList} contentContainerStyle={styles.contentPad}>
           {packages.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Service Packages</Text>
@@ -488,73 +524,85 @@ export function GroomingServiceRouter({
           </View>
         </ScrollView>
       )}
+      </BrandedStackBelowHeader>
     </View>
   );
 
-  const renderPetSelection = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('select_service')}>
-          <Text style={styles.backButton}>← Back</Text>
+  const renderBookingDetails = () => (
+    <View style={styles.flexFill}>
+      <View style={styles.headerOrange}>
+        <TouchableOpacity onPress={() => setCurrentView('center_profile')}>
+          <Text style={styles.backButtonWhite}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Pet</Text>
+        <Text style={styles.headerTitleWhite} numberOfLines={2}>
+          Book visit
+        </Text>
+        <View style={styles.headerRightSpacer} />
       </View>
 
-      <ScrollView style={styles.petList}>
-        {pets.map((pet) => (
-          <TouchableOpacity
-            key={pet.id}
-            style={styles.petCard}
-            onPress={() => handlePetSelect(pet)}
-          >
-            <Text style={styles.petName}>{pet.name}</Text>
-            <Text style={styles.petBreed}>{pet.breed}</Text>
-            <Text style={styles.petAge}>{pet.age} years old</Text>
-          </TouchableOpacity>
-        ))}
+      <BrandedStackBelowHeader>
+      <ScrollView
+        style={styles.petList}
+        contentContainerStyle={styles.contentPad}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.sectionHeader}>Your pet</Text>
+        {pets.length === 0 ? (
+          <Text style={styles.infoText}>No pets on file. Add a pet in your profile first.</Text>
+        ) : (
+          pets.map((pet) => (
+            <TouchableOpacity
+              key={pet.id}
+              style={[
+                styles.petCard,
+                bookingFlow.pet?.id === pet.id && styles.petCardSelected,
+              ]}
+              onPress={() => setBookingFlow((prev) => ({ ...prev, pet }))}
+            >
+              <Text style={styles.petName}>{pet.name}</Text>
+              <Text style={styles.petBreed}>{pet.breed}</Text>
+              <Text style={styles.petAge}>{pet.age} years old</Text>
+            </TouchableOpacity>
+          ))
+        )}
+
+        <Text style={[styles.sectionHeader, styles.sectionSpacer]}>Date & time</Text>
+        <Text style={styles.infoText}>
+          Full calendar integration can replace this shortcut. Tap below to set a demo slot.
+        </Text>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => applySchedule('2025-01-30', '10:00 AM')}
+        >
+          <Text style={styles.secondaryButtonText}>Use next available slot (demo)</Text>
+        </TouchableOpacity>
+
+        {bookingFlow.serviceType === 'home' && (
+          <>
+            <Text style={[styles.sectionHeader, styles.sectionSpacer]}>Service address</Text>
+            <Text style={styles.infoText}>
+              Address picker can plug in here. For now, confirm a default address.
+            </Text>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() =>
+                applyAddress({
+                  id: 'home-default',
+                  label: 'Home',
+                  address: selectedVendor?.address || 'Service address on file',
+                })
+              }
+            >
+              <Text style={styles.secondaryButtonText}>Use provider / default address</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        <TouchableOpacity style={[styles.primaryButton, styles.sectionSpacer]} onPress={goToPaymentFromDetails}>
+          <Text style={styles.primaryButtonText}>Continue to payment</Text>
+        </TouchableOpacity>
       </ScrollView>
-    </View>
-  );
-
-  const renderTimeSelection = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('select_pet')}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Date & Time</Text>
-      </View>
-
-      <Text style={styles.infoText}>
-        Time slot selection will be implemented with calendar component
-      </Text>
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={() => handleTimeSelect('2025-01-30', '10:00 AM')}
-      >
-        <Text style={styles.primaryButtonText}>Continue</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderAddressSelection = () => (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => setCurrentView('select_time')}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Select Address</Text>
-      </View>
-
-      <Text style={styles.infoText}>
-        Address selection will be implemented with location picker
-      </Text>
-      <TouchableOpacity
-        style={styles.primaryButton}
-        onPress={() => handleAddressSelect({ address: 'Home Address' })}
-      >
-        <Text style={styles.primaryButtonText}>Use Default Address</Text>
-      </TouchableOpacity>
+      </BrandedStackBelowHeader>
     </View>
   );
 
@@ -564,49 +612,58 @@ export function GroomingServiceRouter({
 
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
+        <View style={styles.headerOrange}>
           <TouchableOpacity
-            onPress={() =>
-              setCurrentView(
-                bookingFlow.serviceType === 'home' ? 'select_address' : 'select_time'
-              )
-            }
+            onPress={() => setCurrentView('booking_details')}
+            hitSlop={{ top: 16, bottom: 16, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
           >
-            <Text style={styles.backButton}>← Back</Text>
+            <Text style={styles.backButtonWhite}>← Back</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Payment</Text>
+          <Text style={styles.headerTitleWhite} numberOfLines={1}>
+            Booking Summary
+          </Text>
+          <View style={styles.headerRightSpacer} />
         </View>
 
-        <View style={styles.bookingSummary}>
-          <Text style={styles.summaryTitle}>Booking Summary</Text>
-          <Text style={styles.summaryItem}>
-            Service: {bookingFlow.services[0]?.name}
-          </Text>
-          <Text style={styles.summaryItem}>
-            Pet: {bookingFlow.pet?.name}
-          </Text>
-          <Text style={styles.summaryItem}>
-            Date: {bookingFlow.date}
-          </Text>
-          <Text style={styles.summaryItem}>
-            Time: {bookingFlow.time}
-          </Text>
-          {bookingFlow.addOns.length > 0 && (
-            <Text style={styles.summaryItem}>
-              Add-ons: {bookingFlow.addOns.length}
-            </Text>
-          )}
-          <Text style={styles.summaryTotal}>
-            Total: ₹{totalPrice}
-          </Text>
-        </View>
+        <BrandedStackBelowHeader>
+          <View style={styles.contentPad}>
+            <View style={styles.bookingSummary}>
+              <Text style={styles.summaryItem}>Provider: {bookingFlow.vendorName || selectedVendor?.name}</Text>
+              {!!selectedVendor?.address && (
+                <Text style={styles.summaryItem}>Location: {selectedVendor.address}</Text>
+              )}
+              <Text style={styles.summaryItem}>
+                Service: {bookingFlow.services[0]?.name}
+              </Text>
+              <Text style={styles.summaryItem}>
+                Pet: {bookingFlow.pet?.name}
+              </Text>
+              <Text style={styles.summaryItem}>
+                Date: {bookingFlow.date}
+              </Text>
+              <Text style={styles.summaryItem}>
+                Time: {bookingFlow.time}
+              </Text>
+              {bookingFlow.addOns.length > 0 && (
+                <Text style={styles.summaryItem}>
+                  Add-ons: {bookingFlow.addOns.length}
+                </Text>
+              )}
+              <Text style={styles.summaryTotal}>
+                Total: ₹{totalPrice}
+              </Text>
+            </View>
 
-        <TouchableOpacity
-          style={styles.primaryButton}
-          onPress={() => handlePayment({ method: 'wallet' })}
-        >
-          <Text style={styles.primaryButtonText}>Pay with Wallet</Text>
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              onPress={() => handlePayment({ method: 'wallet' })}
+            >
+              <Text style={styles.primaryButtonText}>Pay with Wallet</Text>
+            </TouchableOpacity>
+          </View>
+        </BrandedStackBelowHeader>
       </View>
     );
   };
@@ -642,24 +699,26 @@ export function GroomingServiceRouter({
 
   if (loading && currentView === 'landing') {
     return (
-      <SafeAreaView style={styles.container}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </SafeAreaView>
+      <ScreenShell style={styles.container}>
+        <View style={styles.screenContentPad}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {currentView === 'landing' && renderLanding()}
-      {(currentView === 'grooming_center' || currentView === 'grooming_home') && renderVendorList()}
-      {currentView === 'center_profile' && renderCenterProfile()}
-      {currentView === 'select_service' && renderServiceSelection()}
-      {currentView === 'select_pet' && renderPetSelection()}
-      {currentView === 'select_time' && renderTimeSelection()}
-      {currentView === 'select_address' && renderAddressSelection()}
-      {currentView === 'payment' && renderPayment()}
-      {currentView === 'confirmation' && renderConfirmation()}
-    </SafeAreaView>
+    <ScreenShell style={styles.container}>
+      <View style={styles.screenContentPad}>
+        {currentView === 'landing' && renderLanding()}
+        {(currentView === 'grooming_center' || currentView === 'grooming_home') && renderVendorList()}
+        {currentView === 'center_profile' && renderCenterProfile()}
+        {currentView === 'select_service' && renderServiceSelection()}
+        {currentView === 'booking_details' && renderBookingDetails()}
+        {currentView === 'payment' && renderPayment()}
+        {currentView === 'confirmation' && renderConfirmation()}
+      </View>
+    </ScreenShell>
   );
 }
 
@@ -667,28 +726,74 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.white,
-    padding: spacing.md,
   },
-  header: {
+  screenContentPad: {
+    flex: 1,
+    paddingBottom: spacing.md,
+  },
+  contentPad: {
+    paddingHorizontal: spacing.md,
+  },
+  headerOrange: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: spacing.lg,
+    justifyContent: 'space-between',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.primary,
+    paddingBottom: spacing.md + 4,
   },
-  backButton: {
+  backButtonWhite: {
     fontSize: typography.body,
-    color: colors.primary,
-    marginRight: spacing.md,
+    color: colors.white,
   },
-  headerTitle: {
-    fontSize: typography.h2,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
-  title: {
+  headerTitleWhite: {
+    flex: 1,
     fontSize: typography.h1,
     fontWeight: 'bold',
+    color: colors.white,
+    marginLeft: spacing.md,
+  },
+  headerRightSpacer: {
+    width: 44,
+    flexShrink: 0,
+  },
+  brandedLoadingWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+  },
+  summaryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: spacing.md,
+    marginBottom: spacing.lg,
+    width: '100%',
+  },
+  headerBackTap: {
+    minWidth: 44,
+    minHeight: 44,
+    marginRight: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  summaryBackGlyph: {
+    fontSize: 28,
+    lineHeight: 32,
     color: colors.text,
-    marginBottom: spacing.sm,
+    fontWeight: '600',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  summaryHeaderTitle: {
+    flex: 1,
+    flexShrink: 1,
+    fontSize: typography.fontSizes['2xl'],
+    fontWeight: '700',
+    color: colors.text,
   },
   subtitle: {
     fontSize: typography.body,
@@ -910,6 +1015,18 @@ const styles = StyleSheet.create({
   petList: {
     flex: 1,
   },
+  flexFill: {
+    flex: 1,
+  },
+  sectionHeader: {
+    fontSize: typography.h3,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: spacing.sm,
+  },
+  sectionSpacer: {
+    marginTop: spacing.lg,
+  },
   petCard: {
     backgroundColor: '#F9FAFB',
     borderRadius: borderRadius.md,
@@ -917,6 +1034,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.gray['200'],
+  },
+  petCardSelected: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+    backgroundColor: '#FFF7ED',
   },
   petName: {
     fontSize: typography.h3,
@@ -944,12 +1066,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.lg,
     marginBottom: spacing.lg,
-  },
-  summaryTitle: {
-    fontSize: typography.h3,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: spacing.md,
   },
   summaryItem: {
     fontSize: typography.body,

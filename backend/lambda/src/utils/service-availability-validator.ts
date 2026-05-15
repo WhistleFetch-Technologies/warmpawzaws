@@ -157,12 +157,22 @@ async function getRoleConfig(roleId: string): Promise<any | null> {
  * Get service details
  * ✅ FIX: Frontend sends service.service_id (base service UUID), so check vendor_services.service_id
  */
-async function getService(serviceId: string): Promise<any | null> {
+async function getService(serviceId: string, vendorId?: string): Promise<any | null> {
   try {
     // First: Try vendor_services.id (direct lookup - in case serviceId is vendor service UUID)
-    const vendorServicesById = await select('vendor_services', { id: serviceId });
-    if (vendorServicesById.length > 0) {
-      return vendorServicesById[0];
+    if (vendorId) {
+      const vendorServicesByIdAndVendor = await query(
+        `SELECT * FROM vendor_services WHERE id = $1::uuid AND vendor_id = $2::uuid LIMIT 1`,
+        [serviceId, vendorId]
+      );
+      if (vendorServicesByIdAndVendor.rows.length > 0) {
+        return vendorServicesByIdAndVendor.rows[0];
+      }
+    } else {
+      const vendorServicesById = await select('vendor_services', { id: serviceId });
+      if (vendorServicesById.length > 0) {
+        return vendorServicesById[0];
+      }
     }
 
     // Second: Try services table (base service)
@@ -172,13 +182,24 @@ async function getService(serviceId: string): Promise<any | null> {
     }
 
     // Third: Try vendor_services.service_id (PRIMARY - what frontend sends)
-    // Use raw query to check service_id column
-    const vendorServicesByServiceId = await query(
-      `SELECT * FROM vendor_services WHERE service_id = $1::uuid LIMIT 1`,
-      [serviceId]
-    );
-    if (vendorServicesByServiceId.rows.length > 0) {
-      return vendorServicesByServiceId.rows[0];
+    // IMPORTANT: scope by vendor when provided to avoid cross-vendor false negatives.
+    if (vendorId) {
+      const vendorServicesByServiceIdAndVendor = await query(
+        `SELECT * FROM vendor_services WHERE service_id = $1::uuid AND vendor_id = $2::uuid LIMIT 1`,
+        [serviceId, vendorId]
+      );
+      if (vendorServicesByServiceIdAndVendor.rows.length > 0) {
+        return vendorServicesByServiceIdAndVendor.rows[0];
+      }
+    } else {
+      // Backward-compatible fallback for legacy call sites without vendor context.
+      const vendorServicesByServiceId = await query(
+        `SELECT * FROM vendor_services WHERE service_id = $1::uuid LIMIT 1`,
+        [serviceId]
+      );
+      if (vendorServicesByServiceId.rows.length > 0) {
+        return vendorServicesByServiceId.rows[0];
+      }
     }
 
     return null;
@@ -199,11 +220,12 @@ async function getService(serviceId: string): Promise<any | null> {
 export async function validateServiceAvailability(
   serviceId: string,
   roleId: string,
+  vendorId?: string,
   customerId?: string
 ): Promise<ServiceAvailabilityResult> {
   try {
     // 1. Check if service exists
-    const service = await getService(serviceId);
+    const service = await getService(serviceId, vendorId);
     if (!service) {
       return {
         available: false,

@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import {
   Shield,
@@ -29,26 +28,49 @@ interface PolicyAcceptanceModalProps {
   customerId?: string;
 }
 
+interface CancellationBand {
+  withinHours: number;
+  percentage: number;
+  cancellationFee?: number;
+}
+
 interface PolicyDetails {
-  cancellation: {
-    fullRefundHours: number;
-    partialRefundHours: number;
-    partialRefundPercentage: number;
-    noRefundHours: number;
-  };
+  /** From API `policy.refundPercentages` only — no invented tiers in the UI. */
+  cancellationBands: CancellationBand[];
   reschedule: {
     allowed: boolean;
-    cutoffHours: number;
-    maxReschedules: number;
+    cutoffHours?: number;
+    maxReschedules?: number;
   };
   noShow: {
-    penaltyPercentage: number;
-    gracePeriodMinutes: number;
+    enabled: boolean;
+    refundPercentage?: number;
+    penaltyAmount?: number;
+    gracePeriodMinutes?: number;
   };
+  /** Platform copy only (per product decision). */
   refund: {
     processingDays: string;
     methods: string[];
   };
+}
+
+const REFUND_PROCESSING_COPY = {
+  processingDays: '5-7 business days',
+  methods: ['Wallet credit', 'Original payment method'],
+} as const;
+
+function cancellationBandsFromApi(policyData: { refundPercentages?: unknown }): CancellationBand[] {
+  const raw = policyData.refundPercentages;
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  return [...raw]
+    .map((r: any) => ({
+      withinHours: Number(r?.withinHours),
+      percentage: Math.min(100, Math.max(0, Number(r?.percentage))),
+      cancellationFee: r?.cancellationFee != null && Number.isFinite(Number(r.cancellationFee)) ? Number(r.cancellationFee) : 0,
+    }))
+    .filter((r) => Number.isFinite(r.withinHours) && r.withinHours >= 0)
+    .sort((a, b) => b.withinHours - a.withinHours);
 }
 
 export function PolicyAcceptanceModal({
@@ -88,53 +110,66 @@ export function PolicyAcceptanceModal({
         response = await apiClient.get<any>('/admin/settings/refund-policy');
       }
       
+      const asFiniteNumber = (v: unknown): number | undefined => {
+        if (typeof v === 'number' && Number.isFinite(v)) return v;
+        if (typeof v === 'string' && v.trim() !== '') {
+          const n = Number(v);
+          if (Number.isFinite(n)) return n;
+        }
+        return undefined;
+      };
+
       if (response.success && response.policy) {
         const policyData = response.policy;
-        // Transform API response to our format
-        const refundPercentages = policyData.refundPercentages || [];
-        
+        const extras = response.policyExtras as
+          | {
+              rescheduleAllowed?: boolean;
+              rescheduleCutoffHours?: number;
+              maxReschedulesPerBooking?: number;
+              noShowPolicy?: {
+                enabled?: boolean;
+                refundPercentage?: number;
+                penaltyAmount?: number;
+                gracePeriodMinutes?: number;
+              };
+            }
+          | undefined;
+
+        const ns = extras?.noShowPolicy;
+        const rescheduleAllowed = extras?.rescheduleAllowed === true;
+
         setPolicy({
-          cancellation: {
-            fullRefundHours: refundPercentages.find((r: any) => r.percentage === 100)?.withinHours || 48,
-            partialRefundHours: refundPercentages.find((r: any) => r.percentage > 0 && r.percentage < 100)?.withinHours || 24,
-            partialRefundPercentage: refundPercentages.find((r: any) => r.percentage > 0 && r.percentage < 100)?.percentage || 50,
-            noRefundHours: refundPercentages.find((r: any) => r.percentage === 0)?.withinHours || 2,
-          },
+          cancellationBands: cancellationBandsFromApi(policyData),
           reschedule: {
-            allowed: true,
-            cutoffHours: 12,
-            maxReschedules: 2,
+            allowed: rescheduleAllowed,
+            cutoffHours: asFiniteNumber(extras?.rescheduleCutoffHours),
+            maxReschedules: (() => {
+              const m = asFiniteNumber(extras?.maxReschedulesPerBooking);
+              return m !== undefined ? Math.floor(m) : undefined;
+            })(),
           },
           noShow: {
-            penaltyPercentage: 100,
-            gracePeriodMinutes: 15,
+            enabled: ns?.enabled === true,
+            refundPercentage: Number(ns?.refundPercentage ?? 0),
+            penaltyAmount: Number(ns?.penaltyAmount ?? 0),
+            gracePeriodMinutes: (() => {
+              const g = asFiniteNumber(ns?.gracePeriodMinutes);
+              return g !== undefined ? Math.floor(g) : undefined;
+            })(),
           },
           refund: {
-            processingDays: '5-7 business days',
-            methods: ['Wallet credit', 'Original payment method'],
+            processingDays: REFUND_PROCESSING_COPY.processingDays,
+            methods: [...REFUND_PROCESSING_COPY.methods],
           },
         });
       } else {
-        // Set defaults
         setPolicy({
-          cancellation: {
-            fullRefundHours: 48,
-            partialRefundHours: 24,
-            partialRefundPercentage: 50,
-            noRefundHours: 2,
-          },
-          reschedule: {
-            allowed: true,
-            cutoffHours: 12,
-            maxReschedules: 2,
-          },
-          noShow: {
-            penaltyPercentage: 100,
-            gracePeriodMinutes: 15,
-          },
+          cancellationBands: [],
+          reschedule: { allowed: false },
+          noShow: { enabled: false },
           refund: {
-            processingDays: '5-7 business days',
-            methods: ['Wallet credit', 'Original payment method'],
+            processingDays: REFUND_PROCESSING_COPY.processingDays,
+            methods: [...REFUND_PROCESSING_COPY.methods],
           },
         });
       }
@@ -142,24 +177,12 @@ export function PolicyAcceptanceModal({
       console.error('Error loading policies:', error);
       // Set defaults on error
       setPolicy({
-        cancellation: {
-          fullRefundHours: 48,
-          partialRefundHours: 24,
-          partialRefundPercentage: 50,
-          noRefundHours: 2,
-        },
-        reschedule: {
-          allowed: true,
-          cutoffHours: 12,
-          maxReschedules: 2,
-        },
-        noShow: {
-          penaltyPercentage: 100,
-          gracePeriodMinutes: 15,
-        },
+        cancellationBands: [],
+        reschedule: { allowed: false },
+        noShow: { enabled: false },
         refund: {
-          processingDays: '5-7 business days',
-          methods: ['Wallet credit', 'Original payment method'],
+          processingDays: REFUND_PROCESSING_COPY.processingDays,
+          methods: [...REFUND_PROCESSING_COPY.methods],
         },
       });
     } finally {
@@ -233,7 +256,9 @@ export function PolicyAcceptanceModal({
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
           <div className="flex items-center gap-2">
             <Shield className="w-5 h-5 text-[#FF8C42]" />
-            <h2 className="text-lg font-bold text-gray-900">Booking Policies</h2>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Booking Policies</h2>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -269,27 +294,54 @@ export function PolicyAcceptanceModal({
                 </button>
                 {expandedSection === 'cancellation' && (
                   <div className="px-4 pb-4 space-y-3 text-sm bg-gray-50">
-                  <div className="flex items-start gap-2">
-                    <div className="w-2 h-2 rounded-full bg-green-500 mt-1.5"></div>
-                    <div>
-                      <span className="font-medium text-green-700">100% refund</span>
-                      <span className="text-gray-600"> - Cancel {policy.cancellation.fullRefundHours}+ hours before</span>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <div className="w-2 h-2 rounded-full bg-yellow-500 mt-1.5"></div>
-                    <div>
-                      <span className="font-medium text-yellow-700">{policy.cancellation.partialRefundPercentage}% refund</span>
-                      <span className="text-gray-600"> - Cancel {policy.cancellation.partialRefundHours}-{policy.cancellation.fullRefundHours} hours before</span>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <div className="w-2 h-2 rounded-full bg-red-500 mt-1.5"></div>
-                    <div>
-                      <span className="font-medium text-red-700">No refund</span>
-                      <span className="text-gray-600"> - Cancel less than {policy.cancellation.noRefundHours} hours before</span>
-                    </div>
-                  </div>
+                    {policy.cancellationBands.length === 0 ? (
+                      <p className="text-gray-600">
+                        No cancellation refund tiers were returned for this booking. If you continue, platform defaults
+                        may apply at cancel time.
+                      </p>
+                    ) : (
+                      policy.cancellationBands.map((band, idx) => {
+                        const dot =
+                          band.percentage >= 100 ? 'bg-green-500' : band.percentage <= 0 ? 'bg-red-500' : 'bg-yellow-500';
+                        const labelClass =
+                          band.percentage >= 100
+                            ? 'text-green-700'
+                            : band.percentage <= 0
+                              ? 'text-red-700'
+                              : 'text-yellow-700';
+                        return (
+                          <div key={idx} className="flex items-start gap-2">
+                            <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${dot}`} />
+                            <div>
+                              {band.percentage <= 0 ? (
+                                <>
+                                  <span className={`font-medium ${labelClass}`}>No refund</span>
+                                  <span className="text-gray-600">
+                                    {' '}
+                                    — tier applies when fewer than {band.withinHours} hours remain before the booking
+                                    time.
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className={`font-medium ${labelClass}`}>{band.percentage}% refund</span>
+                                  <span className="text-gray-600">
+                                    {' '}
+                                    — tier applies when you cancel at least {band.withinHours} hours before the booking
+                                    time.
+                                  </span>
+                                </>
+                              )}
+                              {band.cancellationFee != null && band.cancellationFee > 0 ? (
+                                <span className="block text-xs text-gray-500 mt-1">
+                                  Cancellation fee when this tier applies: ₹{band.cancellationFee}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 )}
               </div>
@@ -312,24 +364,24 @@ export function PolicyAcceptanceModal({
                 </button>
                 {expandedSection === 'reschedule' && (
                   <div className="px-4 pb-4 space-y-3 text-sm bg-gray-50">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    <span className="text-gray-700">
-                      {policy.reschedule.allowed ? 'Rescheduling allowed' : 'Rescheduling not allowed'}
-                    </span>
-                  </div>
-                  {policy.reschedule.allowed && (
-                    <>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-green-500" />
+                      <span className="text-gray-700">
+                        {policy.reschedule.allowed ? 'Rescheduling allowed' : 'Rescheduling not allowed'}
+                      </span>
+                    </div>
+                    {policy.reschedule.allowed && policy.reschedule.cutoffHours != null && (
                       <div className="flex items-center gap-2 text-gray-600">
-                        <Info className="w-4 h-4 text-gray-400" />
-                        <span>Up to {policy.reschedule.cutoffHours} hours before booking</span>
+                        <Info className="w-4 h-4 text-gray-400 shrink-0" />
+                        <span>Latest reschedule: up to {policy.reschedule.cutoffHours} hours before booking</span>
                       </div>
+                    )}
+                    {policy.reschedule.allowed && policy.reschedule.maxReschedules != null && (
                       <div className="flex items-center gap-2 text-gray-600">
-                        <Info className="w-4 h-4 text-gray-400" />
-                        <span>Maximum {policy.reschedule.maxReschedules} reschedules per booking</span>
+                        <Info className="w-4 h-4 text-gray-400 shrink-0" />
+                        <span>Maximum {policy.reschedule.maxReschedules} reschedule(s) per booking</span>
                       </div>
-                    </>
-                  )}
+                    )}
                   </div>
                 )}
               </div>
@@ -352,14 +404,28 @@ export function PolicyAcceptanceModal({
                 </button>
                 {expandedSection === 'noshow' && (
                   <div className="px-4 pb-4 space-y-3 text-sm bg-gray-50">
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <AlertCircle className="w-4 h-4 text-orange-500" />
-                    <span>{policy.noShow.gracePeriodMinutes} minutes grace period after scheduled time</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-red-600">
-                    <Info className="w-4 h-4" />
-                    <span>No-show results in {policy.noShow.penaltyPercentage}% forfeiture of booking amount</span>
-                  </div>
+                    {!policy.noShow.enabled ? (
+                      <p className="text-gray-600">No-show policy is not enabled for this booking configuration.</p>
+                    ) : (
+                      <>
+                        {policy.noShow.gracePeriodMinutes != null && (
+                          <div className="flex items-center gap-2 text-gray-600">
+                            <AlertCircle className="w-4 h-4 text-orange-500 shrink-0" />
+                            <span>{policy.noShow.gracePeriodMinutes} minutes grace after scheduled time</span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 text-gray-700">
+                          <Info className="w-4 h-4 text-gray-400 shrink-0" />
+                          <span>No-show refund (where applicable): {policy.noShow.refundPercentage ?? 0}% of booking</span>
+                        </div>
+                        {(policy.noShow.penaltyAmount ?? 0) > 0 && (
+                          <div className="flex items-center gap-2 text-gray-700">
+                            <Info className="w-4 h-4 text-gray-400 shrink-0" />
+                            <span>Additional fixed penalty up to ₹{policy.noShow.penaltyAmount} may apply</span>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -401,12 +467,12 @@ export function PolicyAcceptanceModal({
               <Separator className="my-4" />
 
               {/* Acceptance Checkbox */}
-              <div className="flex items-start gap-3 p-4 bg-orange-50 rounded-xl border border-orange-200">
+              <div className="flex items-start gap-3 p-4 bg-orange-100 rounded-xl border border-orange-300">
                 <Checkbox
                   id="accept-policies"
                   checked={accepted}
                   onCheckedChange={(checked) => setAccepted(checked as boolean)}
-                  className="mt-0.5"
+                  className="mt-0.5 bg-white"
                 />
                 <label htmlFor="accept-policies" className="text-sm text-gray-700 cursor-pointer leading-relaxed">
                   I have read and agree to the cancellation, reschedule, no-show, and refund policies. 

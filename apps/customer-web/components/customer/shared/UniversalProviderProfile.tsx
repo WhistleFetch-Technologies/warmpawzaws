@@ -14,6 +14,10 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { AddAddressModal } from './AddAddressModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import { ServiceDescriptionInline } from './ServiceDescriptionInline';
+import { StarRating } from './StarRating';
 
 // ============================================================================
 // TYPES
@@ -158,6 +162,21 @@ function normalizeAddress(raw: any): Address {
   };
 }
 
+/** Minutes for slot API — backend uses this as service length for grid spacing */
+function serviceDurationMinutes(s: Service): number {
+  const raw = (s as any).duration ?? (s as any).duration_minutes ?? (s as any).custom_duration;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function servicesMatchingSelection(services: Service[], selected: Set<string>): Service[] {
+  if (!selected.size) return [];
+  const want = new Set([...selected].map((id) => String(id)));
+  return services.filter(
+    (s) => want.has(String(s.id)) || (s.serviceId && want.has(String(s.serviceId)))
+  );
+}
+
 export function UniversalProviderProfile({
   phone,
   provider,
@@ -202,7 +221,7 @@ export function UniversalProviderProfile({
     const date = new Date();
     date.setDate(date.getDate() + i);
     return {
-      date: date.toISOString().split('T')[0],
+      date: formatLocalDateYYYYMMDD(date),
       day: date.toLocaleDateString('en-US', { weekday: 'short' }),
       dayNum: date.getDate(),
       month: date.toLocaleDateString('en-US', { month: 'short' }),
@@ -213,13 +232,6 @@ export function UniversalProviderProfile({
   useEffect(() => {
     loadCustomerData();
   }, [phone]);
-
-  // Load time slots when date changes
-  useEffect(() => {
-    if (selectedDate && showBookingForm) {
-      loadTimeSlots(selectedDate);
-    }
-  }, [selectedDate, showBookingForm]);
 
   const refreshAddresses = async () => {
     if (serviceStyle !== 'at_home') return;
@@ -292,8 +304,21 @@ export function UniversalProviderProfile({
 
     try {
       setLoadingSlots(true);
+      const selectedList = servicesMatchingSelection(provider.services, selectedServices);
+      const sumMinutes = selectedList.reduce((sum, s) => sum + serviceDurationMinutes(s), 0);
+      const totalDuration = Math.max(15, sumMinutes > 0 ? sumMinutes : 30);
+      const serviceIds = selectedList
+        .map((s) => s.serviceId || s.id)
+        .filter(Boolean)
+        .join(',');
+      const params = new URLSearchParams({
+        date,
+        serviceStyle,
+        totalDuration: String(totalDuration),
+      });
+      if (serviceIds) params.set('serviceIds', serviceIds);
       const response = await apiClient.get(
-        `/customer/vendor/${vendorId}/available-slots?date=${date}&serviceStyle=${serviceStyle}`
+        `/customer/vendor/${vendorId}/available-slots?${params.toString()}`
       ) as any;
 
       if (response.success && response.slots) {
@@ -318,6 +343,14 @@ export function UniversalProviderProfile({
       setLoadingSlots(false);
     }
   };
+
+  // Refetch slots when date / form / selection change (loadTimeSlots reads latest `provider` from closure)
+  useEffect(() => {
+    if (selectedDate && showBookingForm) {
+      void loadTimeSlots(selectedDate);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- avoid re-running on every `provider.services` array identity from parent
+  }, [selectedDate, showBookingForm, selectedServices, serviceStyle]);
 
   const loadReviews = async () => {
     const vendorId = provider.vendorId || provider.providerId;
@@ -456,36 +489,43 @@ export function UniversalProviderProfile({
             />
           )}
           
-          {/* Back Button */}
-          <button
-            onClick={showBookingForm ? () => setShowBookingForm(false) : onBack}
-            className="absolute top-4 left-4 w-10 h-10 bg-white/20 backdrop-blur rounded-full flex items-center justify-center"
-          >
-            <ArrowLeft className="w-5 h-5 text-white" />
-          </button>
+          {/* Toolbar: safe-area so back/actions clear status bar (iOS / WebView) */}
+          <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 cw-header-safe-top cw-header-safe-x pointer-events-none">
+            <button
+              type="button"
+              onClick={showBookingForm ? () => setShowBookingForm(false) : onBack}
+              className="pointer-events-auto flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur transition-colors hover:bg-white/30"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-5 w-5 text-white" />
+            </button>
 
-          {/* Actions */}
-          <div className="absolute top-4 right-4 flex gap-2">
-            <button
-              onClick={() => setIsFavorite(!isFavorite)}
-              className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg"
-            >
-              <Heart className={`w-5 h-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />
-            </button>
-            <button
-              onClick={() => {
-                if (navigator.share) {
-                  navigator.share({
-                    title: provider.name,
-                    text: `Check out ${provider.name} on WarmPawz`,
-                    url: window.location.href,
-                  });
-                }
-              }}
-              className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg"
-            >
-              <Share2 className="w-5 h-5 text-gray-400" />
-            </button>
+            <div className="flex shrink-0 gap-2 pointer-events-auto">
+              <button
+                type="button"
+                onClick={() => setIsFavorite(!isFavorite)}
+                className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white shadow-lg"
+                aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                <Heart className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (navigator.share) {
+                    navigator.share({
+                      title: provider.name,
+                      text: `Check out ${provider.name} on Warmpawz`,
+                      url: window.location.href,
+                    });
+                  }
+                }}
+                className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white shadow-lg"
+                aria-label="Share"
+              >
+                <Share2 className="h-5 w-5 text-gray-400" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -527,11 +567,12 @@ export function UniversalProviderProfile({
             {/* Stats */}
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
               <div className="text-center">
-                <div className="flex items-center justify-center gap-1 text-amber-500">
-                  <Star className="w-4 h-4 fill-current" />
-                  <span className="font-bold">{Number(provider.rating || 0).toFixed(1)}</span>
-                </div>
-                <p className="text-xs text-gray-500">{provider.reviewCount || 0} reviews</p>
+                <StarRating
+                  rating={provider.rating}
+                  reviewCount={provider.reviewCount}
+                  starsClassName="w-4 h-4"
+                  textClassName="text-xs text-gray-500"
+                />
               </div>
               <div className="text-center">
                 <div className="font-bold text-gray-900">{provider.experienceYears || 0}+</div>
@@ -539,8 +580,12 @@ export function UniversalProviderProfile({
               </div>
               {provider.distance != null && (
                 <div className="text-center">
-                  <div className="font-bold text-gray-900">{Number(provider.distance || 0).toFixed(1)}</div>
-                  <p className="text-xs text-gray-500">km away</p>
+                  <div className="font-bold text-gray-900">
+                    {Number(provider.distance) < 1
+                      ? `${Math.round(Number(provider.distance) * 1000)} m`
+                      : `${Math.round(Number(provider.distance))} km`}
+                  </div>
+                  <p className="text-xs text-gray-500">away</p>
                 </div>
               )}
               <div className="text-center">
@@ -556,7 +601,7 @@ export function UniversalProviderProfile({
 
       {/* Booking Form (Slide-in from bottom) */}
       {showBookingForm ? (
-        <div className="px-4 py-4 pb-40">
+        <div className="px-4 pt-4 cw-scroll-pad-tabbar-sticky-cta">
           <h2 className="text-lg font-bold mb-4">Complete Your Booking</h2>
 
           {/* Selected Services Summary */}
@@ -572,8 +617,15 @@ export function UniversalProviderProfile({
                         <span className="px-1.5 py-0.5 text-xs font-semibold rounded bg-purple-100 text-purple-700">Package</span>
                       )}
                     </span>
-                    {service.description && (
-                      <p className="text-xs text-gray-600 mt-1 whitespace-pre-line line-clamp-4">{service.description}</p>
+                    {service.description?.trim() && (
+                      <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                        <ServiceDescriptionInline
+                          description={service.description}
+                          title={service.name}
+                          className="m-0 text-xs leading-snug text-gray-600"
+                          linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-[#FF8C42] hover:underline"
+                        />
+                      </div>
                     )}
                     <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
                       {service.duration > 0 && (
@@ -619,7 +671,8 @@ export function UniversalProviderProfile({
           {/* Time Selection */}
           {selectedDate && (
             <div className="mb-4">
-              <h3 className="font-medium text-sm mb-2">Select Time</h3>
+              <h3 className="font-medium text-sm mb-1">Select Time</h3>
+              <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
               {loadingSlots ? (
                 <div className="text-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500 mx-auto" />
@@ -766,8 +819,8 @@ export function UniversalProviderProfile({
             </div>
           </div>
 
-          {/* Tab Content - Extra padding for footer button above nav */}
-          <div className="px-4 py-4 pb-40">
+          {/* Tab Content — scroll padding matches globals (--customer-sticky-cta-scroll-padding) */}
+          <div className="px-4 pt-4 cw-scroll-pad-tabbar-sticky-cta">
             {activeTab === 'services' && (
               <div className="space-y-3">
                 <h3 className="font-medium text-gray-700">Available Services</h3>
@@ -786,31 +839,39 @@ export function UniversalProviderProfile({
                         }`}
                         onClick={() => toggleService(service.id)}
                       >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-medium text-gray-900">{service.name}</h4>
+                        <div className="flex w-full min-w-0 items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <h4 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
+                                {service.name}
+                              </h4>
                               {service.popular && (
-                                <Badge className="bg-amber-100 text-amber-700 text-xs">Popular</Badge>
+                                <Badge className="bg-amber-100 text-amber-700 text-xs shrink-0">Popular</Badge>
                               )}
                             </div>
-                            {service.description && (
-                              <p className="text-sm text-gray-500 mt-1 whitespace-pre-line line-clamp-3">{service.description}</p>
+                            {service.description?.trim() && (
+                              <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                                <ServiceDescriptionInline
+                                  description={service.description}
+                                  title={service.name}
+                                  className="m-0 text-sm leading-5 text-gray-500"
+                                />
+                              </div>
                             )}
-                            <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-                              <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                              <span className="flex min-w-0 items-center gap-1">
+                                <Clock className="h-3 w-3 shrink-0" />
                                 {service.duration} mins
                               </span>
                               {service.categoryName && (
-                                <span>{service.categoryName}</span>
+                                <span className="min-w-0 break-words">{service.categoryName}</span>
                               )}
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <div className="text-right">
-                              <p className="font-bold text-gray-900">{formatPriceWithSymbol(service.price)}</p>
-                            </div>
+                          <div className="ml-2 flex shrink-0 flex-col items-end gap-2">
+                            <p className="font-bold tabular-nums text-[#FF8C42] whitespace-nowrap">
+                              {formatPriceWithSymbol(service.price)}
+                            </p>
                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
                               isSelected 
                                 ? 'bg-orange-500 border-orange-500' 
@@ -820,6 +881,7 @@ export function UniversalProviderProfile({
                             </div>
                           </div>
                         </div>
+                        <p className="mt-2 text-right text-[11px] leading-4 text-gray-500 break-words">{INDICATIVE_PRICING_NOTE}</p>
                       </Card>
                     );
                   })
@@ -921,8 +983,8 @@ export function UniversalProviderProfile({
         </>
       )}
 
-      {/* Sticky Footer - Positioned above bottom navigation */}
-      <div className="fixed bottom-20 left-0 right-0 bg-white border-t shadow-lg z-[60] max-w-lg mx-auto">
+      {/* Sticky Footer — bottom/z-index/width aligned with BottomNavigation + globals.css tokens */}
+      <div className="fixed left-0 right-0 z-40 mx-auto w-full max-w-customer border-t border-gray-200 bg-white shadow-lg cw-fixed-above-customer-tabbar">
         {showBookingForm ? (
           <div className="p-4">
             <Button

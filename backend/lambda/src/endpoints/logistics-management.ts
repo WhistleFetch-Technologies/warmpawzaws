@@ -11,6 +11,12 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select, insert, update, deleteRecord } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import {
+  getPidgeCredentials,
+  fetchPidgeVendorToken,
+  clearPidgeTokenCache,
+  resolvePidgeBaseUrl,
+} from '../lib/services/pidge-logistics';
 
 // ============================================================================
 // LOGISTICS PARTNERS MANAGEMENT
@@ -107,7 +113,7 @@ class CreateLogisticsPartnerHandler extends BaseHandler {
       }
 
       // Validate partner_type
-      const validTypes = ['shiprocket', 'delhivery', 'dunzo', 'other'];
+      const validTypes = ['shiprocket', 'delhivery', 'dunzo', 'pidge', 'other'];
       if (!validTypes.includes(partner_type)) {
         return this.error(`partner_type must be one of: ${validTypes.join(', ')}`, 400);
       }
@@ -162,7 +168,7 @@ class UpdateLogisticsPartnerHandler extends BaseHandler {
 
       // Validate partner_type if provided
       if (body.partner_type) {
-        const validTypes = ['shiprocket', 'delhivery', 'dunzo', 'other'];
+        const validTypes = ['shiprocket', 'delhivery', 'dunzo', 'pidge', 'other'];
         if (!validTypes.includes(body.partner_type)) {
           return this.error(`partner_type must be one of: ${validTypes.join(', ')}`, 400);
         }
@@ -609,7 +615,7 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
         vehicleNumber: p.vehicle_number,
         phone: p.phone,
         status: p.status === 'active' ? 'available' : p.status,
-        rating: p.rating || 4.5,
+        rating: p.rating != null ? Number(p.rating) : null,
         estimatedArrival: Math.round(p.distance_km * 2), // Rough estimate: 2 min per km
         distance: p.distance_km,
       }));
@@ -668,6 +674,66 @@ export function registerLogisticsManagementEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error notifying logistics partner:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/logistics/pidge/vendor-login
+   * Proxies Pidge POST /v1.0/store/channel/vendor/login using stored credentials or optional body overrides.
+   * Admin-only (global /admin/* middleware). Returns Bearer token for Postman/debug; rotate via Pidge if revoked.
+   */
+  app.post('/admin/logistics/pidge/vendor-login', async (c) => {
+    try {
+      const body = (await c.req.json().catch(() => ({}))) as {
+        username?: string;
+        password?: string;
+        baseUrl?: string;
+      };
+
+      clearPidgeTokenCache();
+
+      let stored: Awaited<ReturnType<typeof getPidgeCredentials>> | null = null;
+      try {
+        stored = await getPidgeCredentials();
+      } catch {
+        stored = null;
+      }
+
+      const username =
+        typeof body.username === 'string' && body.username.trim()
+          ? body.username.trim()
+          : stored?.username;
+      const password =
+        typeof body.password === 'string' && body.password.trim()
+          ? body.password.trim()
+          : stored?.password;
+      const baseUrl = resolvePidgeBaseUrl(
+        (typeof body.baseUrl === 'string' && body.baseUrl.trim()
+          ? body.baseUrl.trim()
+          : stored?.baseUrl) || undefined
+      );
+
+      if (!username || !password) {
+        return c.json(
+          {
+            success: false,
+            error:
+              'Pidge username and password required. Save them on the Pidge partner (API Username + API Key) or pass username/password in the request body.',
+          },
+          400
+        );
+      }
+
+      const token = await fetchPidgeVendorToken(username, password, baseUrl);
+
+      return c.json({
+        success: true,
+        token,
+        authorization: `Bearer ${token}`,
+      });
+    } catch (error: any) {
+      console.error('[PIDGE] vendor-login:', error);
+      return c.json({ success: false, error: error.message || 'Pidge vendor login failed' }, 502);
     }
   });
 }

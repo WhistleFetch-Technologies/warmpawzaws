@@ -2,6 +2,7 @@
 
 import { Home, ShoppingCart, Calendar, User } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 
 interface BottomNavigationProps {
   currentScreen: string;
@@ -11,6 +12,7 @@ interface BottomNavigationProps {
 
 export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: BottomNavigationProps) {
   const { itemCount } = useCart();
+  const commerceEnabled = isCustomerEcommerceEnabled();
 
   const isActive = (screen: string) => {
     // Map screen names to navigation tabs - only highlight when exactly on that screen
@@ -25,7 +27,11 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
       return currentScreen === 'my-bookings' || currentScreen === 'appointments';
     }
     if (screen === 'profile') {
-      return currentScreen === 'customer-profile' || currentScreen === 'user-profile';
+      return (
+        currentScreen === 'customer-profile' ||
+        currentScreen === 'user-profile' ||
+        currentScreen === 'my-packages'
+      );
     }
     // For all other screens (like nutritionist, vet, etc.), no tab should be active
     return false;
@@ -40,8 +46,8 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 max-w-[430px] mx-auto">
-      <div className="flex items-center justify-around px-6 py-3">
+    <div className="cw-customer-tabbar-fixed fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-customer border-t border-gray-200 bg-white">
+      <div className="flex items-center justify-around px-4 py-3 sm:px-6">
         {/* Home Tab */}
         <button 
           onClick={() => handleNavClick('home')}
@@ -54,22 +60,34 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
         </button>
 
         {/* Cart Tab */}
-        <button 
-          onClick={() => handleNavClick('cart')}
-          className="flex flex-col items-center gap-1 relative"
-        >
-          <div className="relative">
-            <ShoppingCart className={`w-6 h-6 ${isActive('cart') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-            {itemCount > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                {itemCount}
-              </span>
-            )}
-          </div>
-          <span className={`text-xs ${isActive('cart') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
-            Cart
-          </span>
-        </button>
+        {commerceEnabled ? (
+          <button
+            type="button"
+            onClick={() => handleNavClick('cart')}
+            className="relative flex flex-col items-center gap-1"
+          >
+            <div className="relative">
+              <ShoppingCart className={`w-6 h-6 ${isActive('cart') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+              {itemCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <span className={`text-xs ${isActive('cart') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
+              Cart
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="relative flex flex-col items-center gap-1 opacity-40 cursor-not-allowed"
+          >
+            <ShoppingCart className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Soon</span>
+          </button>
+        )}
 
         {/* Bookings Tab */}
         <button 
@@ -94,9 +112,9 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
         </button>
       </div>
       
-      {/* Home Indicator */}
-      <div className="flex justify-center pb-2">
-        <div className="w-32 h-1 bg-black rounded-full"></div>
+      {/* Optional home indicator — keep subtle on devices with safe area */}
+      <div className="flex justify-center pb-1 sm:pb-2">
+        <div className="h-1 w-28 rounded-full bg-black/10 sm:bg-black/20" aria-hidden />
       </div>
     </div>
   );

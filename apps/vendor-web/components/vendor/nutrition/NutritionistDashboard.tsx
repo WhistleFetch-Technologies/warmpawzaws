@@ -3,7 +3,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { uploadImageWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 // 2D Sketch-style SVG Icons
 const Icons = {
@@ -142,6 +144,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   const [refreshing, setRefreshing] = useState(false);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<MealProduct | null>(null);
+  const [uploadingMealImage, setUploadingMealImage] = useState(false);
   // ✅ Track vendor-accepted orders locally (since we can't distinguish from payment confirmation in DB)
   // Use localStorage to persist across page refreshes
   const getStoredAcceptedOrders = (): Set<string> => {
@@ -191,8 +194,8 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     suitableFor: [] as string[],
     petTypes: ['Dog'] as string[],
     preparationTime: '60',
+    mealImageUrl: '',
   });
-  console.log("------------------------------------->", vendorId, formData);
   const fetchProducts = useCallback(async () => {
     try {
       const response = await apiClient.get(`/vendor/${vendorId}/meal-products`);
@@ -316,6 +319,12 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
         suitableFor: formData.suitableFor,
         petTypes: formData.petTypes,
         preparationLeadTime: parseInt(formData.preparationTime) || 60,
+        // Include empty string on edit so the API clears stored mealImageUrl when the vendor removes the image.
+        mealImageUrl: formData.mealImageUrl?.trim()
+          ? formData.mealImageUrl.trim()
+          : editingProduct
+            ? ''
+            : undefined,
       };
 
       if (editingProduct) {
@@ -422,7 +431,27 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       suitableFor: [],
       petTypes: ['Dog'],
       preparationTime: '60',
+      mealImageUrl: '',
     });
+  };
+
+  const handleMealImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploadingMealImage(true);
+    try {
+      const res = await uploadImageWithProgress(file, `meal-products/${vendorId}`, { verifyUpload: false });
+      if (!res.success || !(res.publicUrl || res.url)) {
+        toast.error(res.error || 'Image upload failed');
+        return;
+      }
+      const url = res.publicUrl || res.url || '';
+      setFormData((prev) => ({ ...prev, mealImageUrl: url }));
+      toast.success('Meal image uploaded');
+    } finally {
+      setUploadingMealImage(false);
+    }
   };
 
   const openEditModal = (product: MealProduct) => {
@@ -439,6 +468,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       suitableFor: metadata.suitableFor || [],
       petTypes: metadata.petTypes || ['Dog'],
       preparationTime: metadata.preparationLeadTime?.toString() || '60',
+      mealImageUrl: (metadata.mealImageUrl as string) || '',
     });
     setEditingProduct(product);
     setShowAddProduct(true);
@@ -497,14 +527,26 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
               </div>
             </div>
 
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-white transition-colors"
-            >
-              <span className={refreshing ? 'animate-spin' : ''}>{Icons.refresh}</span>
-              <span className="text-sm font-medium">Refresh</span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => router.push('/training/progress')}
+                className="flex items-center gap-2 px-3 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-white transition-colors text-sm font-medium"
+                title="Pet diet / program enrollment progress"
+              >
+                {Icons.clipboard}
+                <span className="hidden sm:inline">Program progress</span>
+                <span className="sm:hidden">Progress</span>
+              </button>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-white transition-colors"
+              >
+                <span className={refreshing ? 'animate-spin' : ''}>{Icons.refresh}</span>
+                <span className="text-sm font-medium">Refresh</span>
+              </button>
+            </div>
           </div>
 
           {/* Tabs */}
@@ -543,7 +585,11 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
           <div className="space-y-4">
             {/* Add Product Button */}
             <button
-              onClick={() => { resetForm(); setShowAddProduct(true); }}
+              onClick={() => {
+                resetForm();
+                setEditingProduct(null);
+                setShowAddProduct(true);
+              }}
               className="w-full py-4 border-2 border-dashed border-emerald-300 rounded-2xl text-emerald-600 font-medium hover:bg-emerald-50 transition-colors flex items-center justify-center gap-2"
             >
               {Icons.plus}
@@ -562,12 +608,18 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {products.map((product) => {
                   const metadata = product.metadata ? (typeof product.metadata === 'string' ? JSON.parse(product.metadata) : product.metadata) : {};
+                  const mealImg = (metadata as { mealImageUrl?: string }).mealImageUrl;
                   return (
                     <div key={product.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
-                      <div className="h-32 bg-gradient-to-br from-emerald-100 to-green-100 flex items-center justify-center">
+                      <div className="h-32 bg-gradient-to-br from-emerald-100 to-green-100 flex items-center justify-center overflow-hidden">
+                        {mealImg ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={mealImg} alt="" className="w-full h-full object-cover" />
+                        ) : (
                         <div className="w-16 h-16 bg-white/80 rounded-xl flex items-center justify-center text-emerald-600">
                           {Icons.utensils}
                         </div>
+                        )}
                       </div>
                       <div className="p-4">
                         <div className="flex items-start justify-between mb-2">
@@ -898,6 +950,37 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                   rows={2}
                   placeholder="Describe your meal..."
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Meal image (one photo)</label>
+                <p className="text-xs text-slate-500 mb-2">Shown to customers on meal lists. JPEG, PNG, or WebP up to 10MB.</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <TouchFilePicker
+                    onFileChange={handleMealImageFile}
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    disabled={uploadingMealImage}
+                    className="inline-block min-h-[2.5rem] min-w-[7rem] rounded-lg"
+                    innerClassName="items-center justify-center"
+                  >
+                    <span className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-800">
+                      {uploadingMealImage ? 'Uploading…' : formData.mealImageUrl ? 'Replace image' : 'Upload image'}
+                    </span>
+                  </TouchFilePicker>
+                  {formData.mealImageUrl ? (
+                    <>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={formData.mealImageUrl} alt="" className="h-16 w-16 rounded-lg object-cover border border-slate-200" />
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, mealImageUrl: '' })}
+                        className="text-sm text-red-600 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </>
+                  ) : null}
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4">

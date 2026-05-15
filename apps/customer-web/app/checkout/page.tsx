@@ -2,13 +2,22 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import {
   ShoppingCart, MapPin, CreditCard, CheckCircle, ArrowLeft,
   Truck, Shield, Tag, Plus, ChevronRight, AlertCircle, Package
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
+import { goBackOrHome, rememberShopBackFromCurrentUrl } from '@/lib/go-back-or-replace';
+import { CustomerPlacementBanners } from '@/components/customer/shared/CustomerPlacementBanners';
+import { clearWarmpawzCartStorage, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
 
 interface CartItem {
   id: string;
@@ -19,6 +28,42 @@ interface CartItem {
   image?: string;
   vendorId: string;
   vendorName?: string;
+}
+
+/** `warmpawz_cart` stores `{ product_id, product, quantity }` lines from `/shop`. */
+function normalizeStoredCartLines(raw: unknown[]): CartItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry: unknown, idx: number) => {
+    const row = entry as Record<string, unknown>;
+    const nested = row?.product as Record<string, unknown> | undefined;
+    if (nested && typeof nested === 'object') {
+      const productId = String(row.product_id || nested.id || '');
+      const price = Number(nested.price) || 0;
+      const qty = Math.max(1, Number(row.quantity) || 1);
+      const images = nested.images as string[] | undefined;
+      const image = Array.isArray(images) && images[0] ? String(images[0]) : undefined;
+      return {
+        id: productId || `cart-${idx}`,
+        productId,
+        name: String(nested.name ?? ''),
+        price,
+        quantity: qty,
+        image,
+        vendorId: String(nested.vendor_id ?? ''),
+        vendorName: nested.vendor_name != null ? String(nested.vendor_name) : undefined,
+      };
+    }
+    return {
+      id: String(row.id ?? row.productId ?? `cart-${idx}`),
+      productId: String(row.productId ?? row.id ?? ''),
+      name: String(row.name ?? ''),
+      price: Number(row.price) || 0,
+      quantity: Math.max(1, Number(row.quantity) || 1),
+      image: row.image != null ? String(row.image) : undefined,
+      vendorId: String(row.vendorId ?? ''),
+      vendorName: row.vendorName != null ? String(row.vendorName) : undefined,
+    };
+  });
 }
 
 interface Address {
@@ -37,12 +82,15 @@ interface Address {
     lat: number;
     lng: number;
   };
+  latitude?: number;
+  longitude?: number;
 }
 
 type CheckoutStep = 'address' | 'payment' | 'review' | 'confirmation';
 
 export default function CheckoutPage() {
   const router = useRouter();
+  const commerceEnabled = isCustomerEcommerceEnabled();
   const [currentStep, setCurrentStep] = useState<CheckoutStep>('address');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -84,20 +132,44 @@ export default function CheckoutPage() {
   const [orderId, setOrderId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!commerceEnabled) return;
     loadCheckoutData();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commerceEnabled]);
+
+  if (!commerceEnabled) {
+    return (
+      <div className="relative flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="absolute left-4 top-4 rounded-lg bg-white/90 p-2 shadow-sm"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-5 w-5 text-gray-700" />
+        </button>
+        <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-lg">
+          <ShoppingCart className="mx-auto mb-4 h-16 w-16 text-orange-200" />
+          <h2 className="mb-2 text-xl font-bold text-gray-800">Coming soon</h2>
+          <p className="text-gray-500">Checkout will be available when the marketplace launches.</p>
+        </div>
+      </div>
+    );
+  }
 
   const loadCheckoutData = async () => {
     try {
       setLoading(true);
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       
       // Load cart from localStorage
-      const savedCart = localStorage.getItem('warmpawz_cart');
+      const savedCart = localStorage.getItem(WARMPAWZ_CART_KEY);
       if (savedCart) {
-        const items = JSON.parse(savedCart);
+        const parsed = JSON.parse(savedCart) as unknown;
+        const raw = Array.isArray(parsed) ? parsed : [];
+        const items = normalizeStoredCartLines(raw);
         setCartItems(items);
-        
+
         // Calculate totals
         const sub = items.reduce((sum: number, item: CartItem) => sum + item.price * item.quantity, 0);
         setSubtotal(sub);
@@ -122,8 +194,8 @@ export default function CheckoutPage() {
 
         // Load wallet balance
         try {
-          const walletData = await apiClient.get<{ balance?: number }>(`/wallet/${customerId}`);
-          setWalletBalance(walletData?.balance || 0);
+          const walletData = await apiClient.get<{ balance?: number | string }>(`/wallet/${customerId}`);
+          setWalletBalance(Number(walletData?.balance ?? 0) || 0);
         } catch (e) {
           console.warn('Could not load wallet');
         }
@@ -171,7 +243,7 @@ export default function CheckoutPage() {
     }
 
     try {
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       const result = await apiClient.post<{ address?: Address }>(`/customer/${customerId}/addresses`, newAddress);
       
       if (result.address) {
@@ -193,7 +265,7 @@ export default function CheckoutPage() {
 
     try {
       setSubmitting(true);
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       const selectedAddress = addresses.find(a => a.id === selectedAddressId);
 
       const orderData = {
@@ -233,7 +305,7 @@ export default function CheckoutPage() {
           setCurrentStep('confirmation');
           
           // Clear cart
-          localStorage.removeItem('warmpawz_cart');
+          clearWarmpawzCartStorage();
           setCartItems([]);
         }
       }
@@ -251,7 +323,7 @@ export default function CheckoutPage() {
       const razorpayOrder = await apiClient.post<{ orderId: string; keyId: string; amount: number; currency: string }>('/razorpay/create-order', {
         bookingId: orderId,
         amount,
-        customerId: localStorage.getItem('customerId'),
+        customerId: getResolvedCustomerId(),
       });
 
       if (!razorpayOrder?.orderId) {
@@ -263,13 +335,22 @@ export default function CheckoutPage() {
         await loadRazorpayScript();
       }
 
-      const options = {
+      const selectedAddr = addresses.find((a) => a.id === selectedAddressId);
+      const checkoutEmail = selectedAddr?.phone
+        ? await fetchCheckoutEmailForPrefill(String(selectedAddr.phone))
+        : undefined;
+
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
         key: razorpayOrder.keyId,
-        amount: razorpayOrder.amount * 100, // in paise
+        amountPaise: Math.max(1, Math.round(Number(razorpayOrder.amount) * 100)),
         currency: razorpayOrder.currency || 'INR',
-        name: 'WarmPawz',
+        name: 'Warmpawz',
         description: 'Order Payment',
         order_id: razorpayOrder.orderId,
+        customerPhone: selectedAddr?.phone,
+        customerEmail: checkoutEmail,
+        prefillName: selectedAddr?.fullName,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
             // Verify payment
@@ -282,16 +363,12 @@ export default function CheckoutPage() {
             // Payment successful
             setOrderId(orderId);
             setCurrentStep('confirmation');
-            localStorage.removeItem('warmpawz_cart');
+            clearWarmpawzCartStorage();
             setCartItems([]);
           } catch (err: any) {
             console.error('Payment verification failed:', err);
             alert('Payment verification failed. Please contact support.');
           }
-        },
-        prefill: {
-          name: addresses.find(a => a.id === selectedAddressId)?.fullName || '',
-          contact: addresses.find(a => a.id === selectedAddressId)?.phone || '',
         },
         theme: {
           color: '#f97316', // orange-500
@@ -301,7 +378,7 @@ export default function CheckoutPage() {
             setSubmitting(false);
           },
         },
-      };
+      });
 
       const razorpay = new (window as any).Razorpay(options);
       razorpay.open();
@@ -349,7 +426,10 @@ export default function CheckoutPage() {
           <h2 className="text-xl font-bold text-gray-800 mb-2">Your cart is empty</h2>
           <p className="text-gray-500 mb-6">Add some products to proceed to checkout</p>
           <button
-            onClick={() => router.push('/shop')}
+            onClick={() => {
+              rememberShopBackFromCurrentUrl();
+              router.push('/shop');
+            }}
             className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg transition"
           >
             Continue Shopping
@@ -362,10 +442,10 @@ export default function CheckoutPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-amber-50">
       {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-50">
+      <header className="bg-white shadow-sm sticky top-0 z-50 cw-header-safe-top cw-header-safe-x">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center gap-4">
-            <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-lg">
+            <button type="button" onClick={() => goBackOrHome(router)} className="p-2 hover:bg-gray-100 rounded-lg">
               <ArrowLeft className="w-5 h-5" />
             </button>
             <h1 className="text-xl font-bold text-gray-800">Checkout</h1>
@@ -400,6 +480,10 @@ export default function CheckoutPage() {
             })}
           </div>
         </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 pt-4">
+        <CustomerPlacementBanners placement="checkout" />
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -519,7 +603,11 @@ export default function CheckoutPage() {
                               if (components.state) updates.state = components.state;
                               if (components.pincode) updates.pincode = components.pincode;
                               if (components.landmark) updates.landmark = components.landmark;
-                              if (components.coordinates) updates.coordinates = components.coordinates;
+                              if (components.coordinates) {
+                                updates.coordinates = components.coordinates;
+                                updates.latitude = components.coordinates.lat;
+                                updates.longitude = components.coordinates.lng;
+                              }
                             }
                             setNewAddress({ ...newAddress, ...updates });
                           }}
@@ -805,7 +893,10 @@ export default function CheckoutPage() {
                     View Orders
                   </button>
                   <button
-                    onClick={() => router.push('/shop')}
+                    onClick={() => {
+                      rememberShopBackFromCurrentUrl();
+                      router.push('/shop');
+                    }}
                     className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg"
                   >
                     Continue Shopping

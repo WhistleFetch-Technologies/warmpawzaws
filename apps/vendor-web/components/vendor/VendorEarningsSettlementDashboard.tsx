@@ -21,6 +21,11 @@ import {
 
 const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+import {
+  VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT,
+  VENDOR_MIN_PAYOUT_REQUEST_RS,
+} from '@/lib/vendor-payout';
 
 interface VendorEarningsSettlementDashboardProps {
   vendorId: string;
@@ -68,6 +73,7 @@ interface Analytics {
   commissionSaved: number;
   pendingAmount: number;
   processingAmount: number;
+  minPayoutRequestAmount: number;
 }
 
 interface Settlement {
@@ -110,6 +116,18 @@ interface Transaction {
   created_at: string;
 }
 
+/** Bank payout rows from GET /vendor/:id/settlements (`payouts` table). */
+interface VendorPayoutHistoryRow {
+  id: string;
+  amount: number;
+  status: string;
+  razorpayPayoutId?: string | null;
+  settlementId?: string | null;
+  failureReason?: string | null;
+  createdAt?: string;
+  processedAt?: string | null;
+}
+
 export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp }: VendorEarningsSettlementDashboardProps) {
   const router = useRouter();
   const handleBack = onBackProp ?? (() => router.push('/'));
@@ -122,6 +140,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   const [tierInfo, setTierInfo] = useState<TierInfo | null>(null);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [settlements, setSettlements] = useState<Settlement[]>([]);
+  const [payoutHistory, setPayoutHistory] = useState<VendorPayoutHistoryRow[]>([]);
   const [earnings, setEarnings] = useState<EarningsData | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   
@@ -283,15 +302,25 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
       
       const stats = dashboardRes?.stats || dashboardRes?.data?.stats || {};
       const summary = settlementsRes?.summary || {};
-      
+      /** Net requestable payout (POST /settlements/request subtracts queued/processing payouts from gross) */
+      const pendingAvailable =
+        summary.availableForPayout ??
+        summary.available_for_payout ??
+        summary.pending_amount ??
+        summary.pendingAmount ??
+        0;
+
       setAnalytics({
         totalRevenue: stats.totalEarnings || stats.earnings || 0,
         periodRevenue: stats.thisMonthEarnings || stats.earnings || 0,
         periodCount: stats.completedServices || stats.completedBookings || 0,
         avgSettlement: stats.averageBookingValue || 0,
         commissionSaved: summary.commission_saved || 0,
-        pendingAmount: summary.pending_amount ?? summary.pendingAmount ?? 0,
-        processingAmount: summary.processing_amount ?? summary.processingAmount ?? 0
+        pendingAmount: Number(pendingAvailable) || 0,
+        processingAmount: summary.processing_amount ?? summary.processingAmount ?? 0,
+        minPayoutRequestAmount:
+          Number(summary.minPayoutRequestAmount ?? summary.min_payout_request_amount) ||
+          VENDOR_MIN_PAYOUT_REQUEST_RS,
       });
     } catch (error) {
       console.error('Failed to fetch analytics:', error);
@@ -301,11 +330,20 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   const loadSettlements = async () => {
     try {
       const response = await apiClient.get<any>(`/vendor/${vendorId}/settlements?limit=20`).catch(() => null);
-      const list = response?.settlements;
+      if (!response) {
+        setSettlements([]);
+        setPayoutHistory([]);
+        return;
+      }
+      const root = response.data ?? response;
+      const list = root?.settlements ?? response?.settlements;
       setSettlements(Array.isArray(list) ? list : []);
+      const payouts = root?.payouts ?? response?.payouts;
+      setPayoutHistory(Array.isArray(payouts) ? payouts : []);
     } catch (error) {
       console.error('Failed to fetch settlements:', error);
       setSettlements([]);
+      setPayoutHistory([]);
     }
   };
 
@@ -350,8 +388,15 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     try {
       const response = await apiClient.get<any>(`/vendor/${vendorId}/bank-details`).catch(() => null);
       if (response?.bankDetails) {
-        setBankAccount(response.bankDetails);
-        setBankVerified(response.bankDetails.bank_verified || response.bankDetails.is_verified || false);
+        const b = response.bankDetails;
+        setBankAccount(b);
+        setBankVerified(
+          !!b.bank_verified ||
+            !!b.is_verified ||
+            !!b.verified ||
+            !!b.isVerified ||
+            (typeof b.verification_status === 'string' && b.verification_status.toLowerCase() === 'verified')
+        );
       }
     } catch (error) {
       console.error('Failed to fetch bank account:', error);
@@ -366,17 +411,20 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   };
 
   const handleRequestPayout = async () => {
-    // Align with backend: available = settlements pending + vendor_earnings pending
-    const availableAmount = Math.max(
-      analytics?.pendingAmount ?? 0,
-      earnings?.pendingSettlement ?? 0
-    );
+    // Single source: settlements summary.availableForPayout (loaded into analytics.pendingAmount)
+    const availableAmount = Math.max(0, Number(analytics?.pendingAmount ?? 0));
+    const minReq =
+      Number(analytics?.minPayoutRequestAmount) || VENDOR_MIN_PAYOUT_REQUEST_RS;
     if (availableAmount <= 0) {
-      alert('No amount available for payout');
+      toast.error('No amount available for payout');
+      return;
+    }
+    if (availableAmount < minReq) {
+      toast.error(VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT);
       return;
     }
     if (!bankVerified || !bankAccount) {
-      alert('Please add and verify your bank account in Settings first. Automatic settlement requires a verified bank account.');
+      toast.error('Please add and verify your bank account in Settings first.');
       router.push('/settings?tab=bank');
       return;
     }
@@ -390,14 +438,17 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
       });
       
       if (response?.success) {
-        alert('✅ Payout request submitted successfully!');
+        toast.success(
+          response?.message ||
+            'Payout request submitted. You will be notified when it is processed.'
+        );
         await loadAllData();
       } else {
-        alert(`❌ Failed to request payout: ${response?.error || 'Unknown error'}`);
+        toast.error(`Failed to request payout: ${response?.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error requesting payout:', error);
-      alert('❌ Error requesting payout. Please try again.');
+      toast.error('Error requesting payout. Please try again.');
     } finally {
       setRequestingPayout(false);
     }
@@ -522,26 +573,36 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     }
   };
 
-  // Unified available-for-payout amount (settlements + vendor_earnings pending)
-  const availableForPayout = Math.max(
-    analytics?.pendingAmount ?? 0,
-    earnings?.pendingSettlement ?? 0
-  );
+  /** Net amount still requestable (gross pending minus payouts already queued/processing) */
+  const availableForPayout = Math.max(0, Number(analytics?.pendingAmount ?? 0));
+  const minPayoutRequestAmount =
+    Number(analytics?.minPayoutRequestAmount) || VENDOR_MIN_PAYOUT_REQUEST_RS;
+  const canRequestPayout =
+    availableForPayout > 0 && availableForPayout >= minPayoutRequestAmount;
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'bg-green-100 text-green-700';
-      case 'processing': return 'bg-blue-100 text-blue-700';
-      case 'pending': return 'bg-yellow-100 text-yellow-700';
-      case 'failed': return 'bg-red-100 text-red-700';
-      default: return 'bg-gray-100 text-gray-700';
+    switch (String(status || '').toLowerCase()) {
+      case 'completed':
+      case 'processed':
+        return 'bg-green-100 text-green-700';
+      case 'processing':
+      case 'scheduled':
+        return 'bg-blue-100 text-blue-700';
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-700';
+      case 'failed':
+      case 'cancelled':
+      case 'canceled':
+        return 'bg-red-100 text-red-700';
+      default:
+        return 'bg-gray-100 text-gray-700';
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="w-full max-w-[430px] mx-auto bg-white text-center py-12">
+      <div className="vendor-root-scroll flex min-h-[100dvh] w-full items-center justify-center bg-gray-50">
+        <div className="vendor-app-column w-full px-4 text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading earnings dashboard...</p>
         </div>
@@ -550,22 +611,23 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full flex justify-center">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen shadow-lg sm:shadow-xl">
-        {/* Header - Mobile optimized */}
-        <div className="bg-gradient-to-r from-orange-500 to-amber-500 text-white sticky top-0 z-10">
-          <div className="px-4 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Button variant="ghost" size="icon" onClick={handleBack} className="rounded-full text-white hover:bg-white/20 -ml-2">
+    <>
+    <div className="vendor-root-scroll flex w-full justify-center bg-gray-50 overscroll-y-contain">
+      <div className="vendor-app-column w-full min-h-min bg-white shadow-lg sm:shadow-xl sm:mb-2 sm:rounded-b-lg">
+        {/* Header — compact strip; safe-area only where needed */}
+        <div className="sticky top-0 z-10 bg-gradient-to-r from-orange-500 to-amber-500 pt-[max(0px,env(safe-area-inset-top,0px))] text-white shadow-sm">
+          <div className="px-3 py-2 sm:px-4 sm:py-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+              <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+                <Button variant="ghost" size="icon" onClick={handleBack} className="rounded-full text-white hover:bg-white/20 -ml-1 shrink-0 sm:-ml-2">
                   <ArrowLeft className="w-5 h-5" />
                 </Button>
-                <div>
-                  <h1 className="text-lg font-bold">Earnings & Settlements</h1>
-                  <p className="text-xs text-white/80">Manage your revenue, settlements, and tier</p>
+                <div className="min-w-0">
+                  <h1 className="truncate text-base font-bold leading-tight sm:text-lg">Earnings & Settlements</h1>
+                  <p className="hidden text-[11px] text-white/80 sm:block sm:text-xs">Revenue, settlements & tier</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
                 <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={refreshing} className="text-white hover:bg-white/20 px-2">
                   <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
                 </Button>
@@ -573,7 +635,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                   <Button 
                     onClick={handleTierUpgradeClick} 
                     size="sm"
-                    className="bg-white text-orange-600 hover:bg-white/90 text-xs px-3"
+                    className="bg-white text-orange-600 hover:bg-white/90 text-xs px-2.5 sm:px-3"
                   >
                     <ArrowUp className="w-3 h-3 mr-1" />
                     Upgrade
@@ -584,21 +646,21 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
           </div>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="space-y-4 p-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:p-4 sm:pb-6">
         {/* Tier Badge Card - Mobile optimized */}
         {tierInfo && (
-          <div className="bg-gradient-to-br from-orange-500 to-amber-500 rounded-xl p-4 text-white">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+          <div className="bg-gradient-to-br from-orange-500 to-amber-500 rounded-xl p-3 text-white sm:p-4">
+            <div className="mb-3 flex flex-wrap items-start gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/20">
                 {getTierIcon(typeof tierInfo.current === 'string' ? tierInfo.current : 'bronze')}
               </div>
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <p className="text-xs opacity-80">Current Tier</p>
-                <p className="text-xl font-bold">{typeof tierInfo.name === 'string' ? tierInfo.name : 'Bronze'}</p>
+                <p className="text-lg font-bold sm:text-xl">{typeof tierInfo.name === 'string' ? tierInfo.name : 'Bronze'}</p>
               </div>
-              <div className="text-right">
+              <div className="ml-auto shrink-0 text-right">
                 <p className="text-xs opacity-80">Commission</p>
-                <p className="text-2xl font-bold">{(typeof tierInfo.commissionRate === 'number' ? (tierInfo.commissionRate > 1 ? tierInfo.commissionRate : tierInfo.commissionRate * 100) : 15).toFixed(0)}%</p>
+                <p className="text-xl font-bold sm:text-2xl">{(typeof tierInfo.commissionRate === 'number' ? (tierInfo.commissionRate > 1 ? tierInfo.commissionRate : tierInfo.commissionRate * 100) : 15).toFixed(0)}%</p>
               </div>
             </div>
             
@@ -752,7 +814,10 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                     <PiggyBank className="w-4 h-4 text-orange-500" />
                   </div>
                   <p className="text-lg font-bold text-orange-700">₹{availableForPayout.toLocaleString()}</p>
-                  {availableForPayout > 0 && (
+                  <p className="text-[10px] text-amber-900/80 mt-1 leading-tight">
+                    {VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT}
+                  </p>
+                  {canRequestPayout && (
                     <button
                       onClick={handleRequestPayout}
                       disabled={requestingPayout}
@@ -908,18 +973,18 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
               </div>
 
               {/* Additional Stats */}
-              <div className="grid grid-cols-3 gap-4">
-                <div className="border rounded-xl p-4 text-center">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
+                <div className="rounded-xl border p-3 text-center sm:p-4">
                   <p className="text-sm text-gray-500">Total Bookings</p>
-                  <p className="text-3xl font-bold text-gray-900">{earnings?.totalBookings || 0}</p>
+                  <p className="text-2xl font-bold text-gray-900 sm:text-3xl">{earnings?.totalBookings || 0}</p>
                 </div>
-                <div className="border rounded-xl p-4 text-center">
+                <div className="rounded-xl border p-3 text-center sm:p-4">
                   <p className="text-sm text-gray-500">Completed</p>
-                  <p className="text-3xl font-bold text-green-600">{earnings?.completedBookings || 0}</p>
+                  <p className="text-2xl font-bold text-green-600 sm:text-3xl">{earnings?.completedBookings || 0}</p>
                 </div>
-                <div className="border rounded-xl p-4 text-center">
+                <div className="rounded-xl border p-3 text-center sm:p-4">
                   <p className="text-sm text-gray-500">Avg. Booking Value</p>
-                  <p className="text-3xl font-bold text-gray-900">₹{(earnings?.avgBookingValue || 0).toLocaleString()}</p>
+                  <p className="text-2xl font-bold text-gray-900 sm:text-3xl">₹{(earnings?.avgBookingValue || 0).toLocaleString()}</p>
                 </div>
               </div>
 
@@ -930,8 +995,11 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                     <p className="text-sm text-orange-600">Pending Settlement</p>
                     <p className="text-3xl font-bold text-orange-700">₹{availableForPayout.toLocaleString()}</p>
                     <p className="text-xs text-orange-600 mt-1">Available for payout request</p>
+                    <p className="text-xs text-amber-900/85 mt-2 max-w-[220px] sm:max-w-none">
+                      {VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT}
+                    </p>
                   </div>
-                  {availableForPayout > 0 && (
+                  {canRequestPayout && (
                     <Button 
                       onClick={handleRequestPayout}
                       disabled={requestingPayout}
@@ -1054,7 +1122,10 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                                 </span>
                               </div>
                               <p className="text-sm text-gray-500 mt-1">
-                                {settlement.bookingCount || settlement.bookingIds?.length || 0} bookings
+                                {settlement.bookingCount ??
+                                  settlement.bookingIds?.length ??
+                                  (settlement.bookingId ? 1 : 0)}{' '}
+                                bookings
                               </p>
                               {settlement.payout_reference && (
                                 <p className="text-xs text-gray-400 mt-1">Ref: {settlement.payout_reference}</p>
@@ -1070,7 +1141,14 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                               </div>
                               <div>
                                 <p className="text-sm text-gray-500">Commission ({typeof settlement.commissionRate === 'number' && settlement.commissionRate > 1 ? (settlement.commissionRate || 0).toFixed(0) : ((settlement.commissionRate ?? 0.15) * 100).toFixed(0)}%)</p>
-                                <p className="font-medium text-red-600">-₹{(settlement.commission_amount || 0).toLocaleString()}</p>
+                                <p className="font-medium text-red-600">
+                                  -₹
+                                  {(
+                                    settlement.commissionAmount ??
+                                    (settlement as { commission_amount?: number }).commission_amount ??
+                                    0
+                                  ).toLocaleString()}
+                                </p>
                               </div>
                               <div>
                                 <p className="text-sm text-gray-500">Net Payout</p>
@@ -1101,6 +1179,40 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-8">
+                <h3 className="font-semibold text-gray-900 mb-4">Bank payout history</h3>
+                {payoutHistory.length === 0 ? (
+                  <div className="text-center py-8 bg-gray-50 rounded-xl text-gray-500 text-sm">
+                    No bank transfers yet. When Warmpawz sends money to your account, each transfer appears here.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {payoutHistory.map((p) => {
+                      const when = p.processedAt || p.createdAt;
+                      return (
+                        <div key={p.id} className="bg-gray-50 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-gray-900">₹{p.amount.toLocaleString()}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {when ? new Date(when).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
+                            </p>
+                            {p.razorpayPayoutId ? (
+                              <p className="text-xs text-gray-400 mt-1">Razorpay: {p.razorpayPayoutId}</p>
+                            ) : null}
+                            {p.failureReason ? (
+                              <p className="text-xs text-red-600 mt-1">{p.failureReason}</p>
+                            ) : null}
+                          </div>
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(p.status)}`}>
+                            {p.status}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1228,9 +1340,9 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
                                   </p>
                                 </div>
                               </div>
-                              <div className="mt-3 pt-3 border-t border-gray-200 flex-1 min-h-0 flex flex-col overflow-hidden">
-                                <p className="text-sm font-semibold text-gray-700 mb-1.5 shrink-0">Benefits</p>
-                                <ul className="space-y-1 overflow-y-auto flex-1 min-h-0 pr-1 text-xs text-gray-700 break-words">
+                              <div className="mt-3 flex min-h-0 flex-1 flex-col border-t border-gray-200 pt-3">
+                                <p className="mb-1.5 shrink-0 text-sm font-semibold text-gray-700">Benefits</p>
+                                <ul className="max-h-48 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1 text-xs text-gray-700 break-words sm:max-h-none sm:overflow-visible">
                                   {benefits.map((f, i) => (
                                     <li key={i} className="flex items-center gap-2">
                                       <CheckCircle className="w-3.5 h-3.5 flex-shrink-0 text-gray-500" />
@@ -1270,6 +1382,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
           )}
         </div>
       </div>
+    </div>
     </div>
 
       {/* Tier Upgrade Modal - terms acceptance and settlement schedule */}
@@ -1366,6 +1479,6 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
       )}
 
       {/* Bank account Add/Change redirects to Settings > Bank tab */}
-    </div>
+    </>
   );
 }

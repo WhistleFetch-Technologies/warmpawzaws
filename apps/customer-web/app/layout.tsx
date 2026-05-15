@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Providers } from './providers';
 
@@ -7,6 +7,15 @@ export const metadata: Metadata = {
   description: 'Find and book pet care services near you',
 };
 
+/** Lets env(safe-area-inset-*) apply under notch / home indicator in PWA / standalone WebViews. */
+export const viewport: Viewport = {
+  viewportFit: 'cover',
+};
+
+/** Must stay in sync with `lib/api-client.ts` `getApiGatewayUrl()` — analytics + REST use the same gateways. */
+const WARMPAWZ_API_GATEWAY_PROD = 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com';
+const WARMPAWZ_API_GATEWAY_DEV = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
+
 export default function RootLayout({
   children,
 }: {
@@ -14,7 +23,17 @@ export default function RootLayout({
 }) {
   // Inject production config if NEXT_PUBLIC_ENVIRONMENT is production
   const isProd = process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
-  const prodApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  /** When env is unset: prod builds → prod gateway; non-prod → dev gateway (never default prod to dev). */
+  const prodApiUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    (isProd ? WARMPAWZ_API_GATEWAY_PROD : WARMPAWZ_API_GATEWAY_DEV);
+  // Customer marketplace (build-time switch; runtime-config.js can override on client).
+  // Kept in sync with `lib/customer-ecommerce-flag.ts` and deploy scripts.
+  const customerEcommerceEnabledRaw = (
+    process.env.NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED || 'false'
+  ).toLowerCase();
+  const customerEcommerceEnabled =
+    customerEcommerceEnabledRaw === 'true' || customerEcommerceEnabledRaw === '1';
 
   return (
     <html lang="en">
@@ -69,27 +88,26 @@ export default function RootLayout({
           - Sets window.__NEXT_PUBLIC_API_BASE_URL__ = production API Gateway
           - Also sets production runtime config below
         */}
-        {prodApiUrl && (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
-                window.__NEXT_PUBLIC_API_BASE_URL__ = "${prodApiUrl}";
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+                window.__NEXT_PUBLIC_API_BASE_URL__ = ${JSON.stringify(prodApiUrl)};
               `,
-            }}
-          />
-        )}
+          }}
+        />
         {/* 
           Inject production runtime config ONLY when NEXT_PUBLIC_ENVIRONMENT=production.
           This ensures prod:customer, prod:vendor, prod:admin use production API Gateway.
         */}
-        {isProd && prodApiUrl && (
+        {isProd && (
           <script
             dangerouslySetInnerHTML={{
               __html: `
                 window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-                  apiBaseUrl: "${prodApiUrl}",
+                  apiBaseUrl: ${JSON.stringify(prodApiUrl)},
                   environment: "production",
-                  uatMode: false
+                  uatMode: false,
+                  customerEcommerceEnabled: ${JSON.stringify(customerEcommerceEnabled)}
                 };
               `,
             }}

@@ -99,7 +99,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
           <>
             {/* Logo */}
             <div className="flex justify-center pt-8 mb-6">
-              <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
+              <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
             </div>
 
             {/* Orange Circle Icon */}
@@ -177,7 +177,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
           <>
             {/* Logo */}
             <div className="flex justify-center pt-8 mb-6">
-              <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
+              <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
             </div>
 
             {/* Orange Circle Icon */}
@@ -313,7 +313,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
           <>
             {/* Logo */}
             <div className="flex justify-center pt-8 mb-6">
-              <img src={'/logo.png'} alt="WarmPawz" className="w-16 h-16 object-contain" />
+              <img src={'/logo.png'} alt="Warmpawz" className="w-16 h-16 object-contain" />
             </div>
 
             {/* Orange Circle Icon */}
@@ -829,7 +829,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
   };
 
   return (
-    <div className="min-h-screen bg-white flex flex-col w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-white flex flex-col w-full max-w-customer mx-auto">
       {/* Status Bar */}
       <div className="px-6 pt-3 pb-2 flex justify-between items-center">
         <span className="text-black text-sm">09:41</span>
@@ -857,7 +857,7 @@ export function CustomerPlanningJourney({ session, onComplete }: CustomerPlannin
       </div>
 
       {/* Fixed Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-[430px] mx-auto w-full">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-customer mx-auto w-full">
         {/* Progress Bar with Back Button */}
         <div className="flex items-center gap-3 mb-4">
           <button

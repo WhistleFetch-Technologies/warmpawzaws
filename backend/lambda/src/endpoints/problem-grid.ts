@@ -20,6 +20,8 @@ import { Hono } from 'hono';
 import { query, select } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { presignS3GetUrlIfApplicable, stripS3PresignQueryFromUrl } from '../utils/s3-media-presign';
+import { regeneratePresignedUrl } from './constants/helper';
 
 /** Clean service description: strip wrapping quotes, trim whitespace */
 function cleanDescription(desc: string | null | undefined): string | undefined {
@@ -30,6 +32,267 @@ function cleanDescription(desc: string | null | undefined): string | undefined {
   }
   cleaned = cleaned.replace(/\\"/g, '"');
   return cleaned || undefined;
+}
+
+/**
+ * SQL predicate matching `sqlVendorDiscoverableStatus` in service-discovery.customer.ts.
+ * Vendors are considered discoverable when their status is approved/active/activated, or
+ * when they are still pending and (solo, or in a non-prod env where we surface pending).
+ *
+ * Without this, prod's hardcoded `v.status = 'approved'` filter excluded vendors saved
+ * with status='active' (e.g. nutritionists like Whisker Wise) from problem/specialization
+ * search even though they are visible everywhere else (profile, by-style, etc.).
+ */
+function vendorDiscoverableStatusSql(alias = 'v', allowAllPending = false): string {
+  const statusInList = `LOWER(TRIM(COALESCE(${alias}.status::text, ''))) IN ('approved', 'active', 'activated')`;
+  const pendingClause = allowAllPending
+    ? `LOWER(TRIM(COALESCE(${alias}.status::text, ''))) = 'pending'`
+    : `(LOWER(TRIM(COALESCE(${alias}.status::text, ''))) = 'pending' AND LOWER(TRIM(COALESCE(${alias}.vendor_type::text, ''))) = 'solo')`;
+  return `(${statusInList} OR ${pendingClause})`;
+}
+
+function isVendorStatusDiscoverable(status: string | null | undefined, vendorType: string | null | undefined, allowAllPending = false): boolean {
+  const s = String(status ?? '').trim().toLowerCase();
+  const vt = String(vendorType ?? '').trim().toLowerCase();
+  if (s === 'approved' || s === 'active' || s === 'activated') return true;
+  if (s === 'pending') return allowAllPending || vt === 'solo';
+  return false;
+}
+
+function normalizeSpecializationKey(value: string | null | undefined): string {
+  if (!value) return '';
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+}
+
+function pushSpecializationKeyVariants(target: Set<string>, value: string | null | undefined): void {
+  if (!value) return;
+  const trimmed = String(value).trim();
+  if (!trimmed) return;
+  target.add(trimmed.toLowerCase());
+  const normalized = normalizeSpecializationKey(trimmed);
+  if (normalized) target.add(normalized);
+}
+
+/** Normalize a slug by replacing non-alphanumeric runs with underscore (mirrors service-discovery). */
+function aggressiveNormalizeSlugPG(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
+/**
+ * Customer tiles use short slugs (e.g. `barking`); vendors/catalog often store
+ * `excessive_barking` / display phrases. Expand search keys so profile specializations match tiles.
+ * Mirrors SPECIALIZATION_SYNONYM_CLUSTERS from service-discovery.customer.ts.
+ */
+function mergeBehavioralSpecializationSynonyms(target: Set<string>, problemId: string): void {
+  const raw = String(problemId || '').trim().toLowerCase();
+  const n = aggressiveNormalizeSlugPG(raw);
+  const allClusters: string[][] = [
+    ['barking', 'excessive_barking', 'excessive barking', 'excessive bark', 'vocalization'],
+    ['separation_anxiety', 'separation anxiety'],
+    ['fear_phobia', 'fear phobia', 'fear & phobias', 'fear and phobia', 'fear_phobias', 'fear and phobias'],
+    ['destructive', 'destructive_behavior', 'destructive behavior'],
+    ['resource_guarding', 'resource guarding', 'possessive behavior', 'possessive', 'guarding'],
+    ['diet_plan', 'diet plan', 'custom_diet', 'custom diet', 'custom_diet_plans', 'custom diet plans'],
+    ['weight_management', 'weight management'],
+    ['allergies', 'allergy_diet', 'allergy diet', 'food_allergies', 'food allergies'],
+    ['puppy_nutrition', 'puppy nutrition'],
+    ['senior_nutrition', 'senior nutrition', 'senior_pet_nutrition', 'senior pet nutrition'],
+    ['special_diet', 'prescription_diet', 'prescription diet', 'medical_diet', 'medical diet'],
+  ];
+  for (const syns of allClusters) {
+    const normSyns = syns.map((s) => aggressiveNormalizeSlugPG(s));
+    const hit = normSyns.includes(n) || syns.some((s) => s.toLowerCase() === raw);
+    if (hit) {
+      for (const s of syns) pushSpecializationKeyVariants(target, s);
+      break;
+    }
+  }
+}
+
+/** Align with service-discovery.roleConfigAllowsStyle (Admin role catalogue gates tele / at_home). */
+const PROBLEM_GRID_STYLE_ALIASES: Record<string, string> = {
+  at_clinic: 'at_center',
+  at_vendor: 'at_center',
+  at_center: 'at_center',
+  home_visit: 'at_home',
+  at_home: 'at_home',
+  video_consultation: 'tele',
+  online: 'tele',
+  tele: 'tele',
+};
+
+function pgNormalizeServiceStyle(style: string | null | undefined): string | null {
+  if (!style) return null;
+  const key = String(style).toLowerCase().trim().replace(/\s+/g, '_');
+  return PROBLEM_GRID_STYLE_ALIASES[key] || key;
+}
+
+function pgNormalizeServiceStylesArray(styles: any): string[] {
+  if (!styles) return [];
+  const arr = Array.isArray(styles) ? styles : (styles?.selected ?? styles?.solo ?? []);
+  if (!Array.isArray(arr)) return [];
+  const out: string[] = [];
+  for (const s of arr) {
+    const norm = pgNormalizeServiceStyle(s);
+    if (norm && !out.includes(norm)) out.push(norm);
+  }
+  return out;
+}
+
+/**
+ * Expand any role variant (base, *_solo, *_center, pet_*, etc.) to the full sibling set.
+ * Customer hubs and the customer Problem Grid send mixed role keys; the Admin role
+ * catalogue stores them inconsistently too. Without expansion, role-config lookups in
+ * /public/problems and customer service-style intersections silently fall back to the
+ * default ['at_home','at_center','tele'].
+ *
+ * Keep aligned with ROLE_EXPANSIONS in specialization-master.ts.
+ */
+function pgExpandRoleAliases(roleIdRaw: string): string[] {
+  const base = String(roleIdRaw || '')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_');
+  if (!base) return [];
+  const VET = ['veterinarian', 'vet', 'vet_solo', 'vet_clinic', 'vet_center', 'pet_clinic', 'veterinary_clinic'];
+  const GROOMER = ['groomer', 'groomer_solo', 'groomer_center', 'pet_groomer'];
+  const TRAINER = ['trainer', 'trainer_solo', 'trainer_center', 'pet_trainer'];
+  const WALKER = ['walker', 'walker_solo', 'pet_walker', 'dog_walker'];
+  const BEHAVIORIST = [
+    'behaviorist',
+    'behaviourist',
+    'behaviorist_solo',
+    'behaviorist_center',
+    'behaviourist_solo',
+    'pet_behaviorist',
+    'behavioral',
+  ];
+  const BOARDING = [
+    'boarding',
+    'boarding_solo',
+    'boarding_center',
+    'pet_boarding',
+    'pet_boarder',
+    'pet_daycare',
+    'pet_boarding_daycare',
+  ];
+  const NUTRITIONIST = [
+    'nutritionist',
+    'nutritionist_solo',
+    'nutritionist_center',
+    'pet_nutritionist',
+    'pet_nutritionist_solo',
+    'pet_nutritionist_center',
+  ];
+  const SITTER = ['sitter', 'pet_sitter', 'sitter_solo', 'pet_sitter_solo'];
+  const aliases: Record<string, string[]> = {};
+  const register = (group: string[]) => {
+    for (const k of group) aliases[k] = group;
+  };
+  register(VET);
+  register(GROOMER);
+  register(TRAINER);
+  register(WALKER);
+  register(BEHAVIORIST);
+  register(BOARDING);
+  register(NUTRITIONIST);
+  register(SITTER);
+  const list = aliases[base] || [base];
+  return Array.from(new Set(list));
+}
+
+function pgParseRoleConfig(roleConfig: any): any {
+  if (!roleConfig) return null;
+  try {
+    return typeof roleConfig === 'string' ? JSON.parse(roleConfig || '{}') : roleConfig;
+  } catch {
+    return null;
+  }
+}
+
+function pgRoleConfigAllowsStyle(roleConfig: any, serviceStyle: string | null | undefined): boolean {
+  const normalized = pgNormalizeServiceStyle(serviceStyle || '') || '';
+  if (!normalized) return true;
+  const config = pgParseRoleConfig(roleConfig);
+  if (!config) return true;
+
+  let styles: string[] = [];
+  if (config?.serviceStyles) {
+    if (Array.isArray(config.serviceStyles)) {
+      styles = pgNormalizeServiceStylesArray(config.serviceStyles);
+    } else if (typeof config.serviceStyles === 'object') {
+      const nestedStyles =
+        config.serviceStyles.selected || config.serviceStyles.solo || config.serviceStyles.business || [];
+      styles = pgNormalizeServiceStylesArray(Array.isArray(nestedStyles) ? nestedStyles : []);
+    }
+  } else if (config?.service_styles) {
+    styles = pgNormalizeServiceStylesArray(config.service_styles);
+  }
+
+  if (styles.length === 0) return true;
+
+  if (normalized === 'at_center') {
+    const centerAliases = ['at_center', 'at_vendor', 'at_clinic', 'center', 'clinic'];
+    if (styles.some((s) => centerAliases.includes(s))) return true;
+    return true;
+  }
+
+  if (normalized === 'tele' || normalized === 'at_home') {
+    const teleAliases = ['tele', 'online', 'video_consultation', 'video', 'remote'];
+    const atHomeAliases = ['at_home', 'home', 'at_home_visit', 'home_visit'];
+    const relevantAliases = normalized === 'tele' ? teleAliases : atHomeAliases;
+    return styles.some((s) => relevantAliases.includes(s) || s === normalized);
+  }
+
+  return styles.includes(normalized);
+}
+
+/**
+ * Vendors often store profile_photo_url as a bare S3 key (no https://).
+ * Same pattern as customer-profile + service-discovery getVendorPhotoUrl.
+ */
+async function resolveVendorPhotoForByProblemRow(raw: string | null | undefined): Promise<string | null> {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s || s === 'null' || s === 'undefined') return null;
+  if (s.startsWith('data:')) return s;
+
+  const stripped = stripS3PresignQueryFromUrl(s);
+
+  if (!stripped.includes('://')) {
+    return (await regeneratePresignedUrl(stripped)) || null;
+  }
+
+  const presigned = (await presignS3GetUrlIfApplicable(stripped)) ?? stripped;
+  if (presigned && presigned !== stripped) {
+    return presigned;
+  }
+  return (await regeneratePresignedUrl(stripped)) || presigned || stripped;
+}
+
+/** Optional image on vendor_services.metadata (or catalog) for customer cards */
+function pickServiceImageFromMetadata(metadata: unknown): string | null {
+  if (metadata == null) return null;
+  let m: Record<string, unknown>;
+  if (typeof metadata === 'string') {
+    try {
+      m = JSON.parse(metadata) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  } else if (typeof metadata === 'object' && !Array.isArray(metadata)) {
+    m = metadata as Record<string, unknown>;
+  } else {
+    return null;
+  }
+  for (const k of ['imageUrl', 'image_url', 'photoUrl', 'photo', 'thumbnail', 'thumbnail_url', 'cover', 'icon']) {
+    const v = m[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return null;
 }
 
 export function registerProblemGridEndpoints(app: Hono) {
@@ -578,15 +841,30 @@ export function registerProblemGridEndpoints(app: Hono) {
         roleIds = [];
         
         // ✅ FIX: Infer role from problemId for common training/behavioral problems
+        const BEHAVIOR_PROBLEM_ROLE_FALLBACK = [
+          'behaviorist_solo',
+          'behaviorist_center',
+          'behaviourist',
+          'behaviourist_solo',
+          'behaviourist_center',
+          'pet_behaviourist',
+          'dog_behaviourist',
+          'behaviorist',
+          'pet_behaviorist',
+          'trainer',
+          'trainer_solo',
+          'trainer_center',
+        ];
         const problemToRoleMap: Record<string, string[]> = {
-          'potty_training': ['trainer', 'trainer_solo', 'trainer_center'],
-          'basic_obedience': ['trainer', 'trainer_solo', 'trainer_center'],
-          'socialization': ['trainer', 'trainer_solo', 'trainer_center'],
-          'aggression': ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
-          'separation_anxiety': ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
-          'barking': ['behaviorist_solo', 'behaviorist_center'],
-          'destructive': ['behaviorist_solo', 'behaviorist_center'],
-          'fear_phobia': ['behaviorist_solo', 'behaviorist_center'],
+          potty_training: ['trainer', 'trainer_solo', 'trainer_center'],
+          basic_obedience: ['trainer', 'trainer_solo', 'trainer_center'],
+          socialization: ['trainer', 'trainer_solo', 'trainer_center'],
+          aggression: [...BEHAVIOR_PROBLEM_ROLE_FALLBACK],
+          separation_anxiety: [...BEHAVIOR_PROBLEM_ROLE_FALLBACK],
+          barking: [...BEHAVIOR_PROBLEM_ROLE_FALLBACK],
+          destructive: [...BEHAVIOR_PROBLEM_ROLE_FALLBACK],
+          fear_phobia: [...BEHAVIOR_PROBLEM_ROLE_FALLBACK],
+          resource_guarding: [...BEHAVIOR_PROBLEM_ROLE_FALLBACK],
         };
         
         if (problemToRoleMap[problemId]) {
@@ -654,9 +932,39 @@ export function registerProblemGridEndpoints(app: Hono) {
       if (roleIds.length > 0) {
       // Expand problem_grid role_id to actual roles.name values so trainer problems also match behaviorist vendors
       const problemRoleToVendorRoleNames: Record<string, string[]> = {
-        trainer: ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
-        behaviourist: ['behaviourist', 'behaviorist_solo', 'behaviorist_center'],
-        behaviorist: ['behaviorist_solo', 'behaviorist_center'],
+        trainer: [
+          'trainer',
+          'trainer_solo',
+          'trainer_center',
+          'behaviorist_solo',
+          'behaviorist_center',
+          'behaviourist',
+          'behaviourist_solo',
+          'behaviourist_center',
+          'pet_behaviourist',
+          'dog_behaviourist',
+          'behaviorist',
+          'pet_behaviorist',
+        ],
+        behaviourist: [
+          'behaviourist',
+          'behaviourist_solo',
+          'behaviourist_center',
+          'pet_behaviourist',
+          'dog_behaviourist',
+          'behaviorist_solo',
+          'behaviorist_center',
+          'behaviorist',
+          'pet_behaviorist',
+        ],
+        behaviorist: [
+          'behaviorist_solo',
+          'behaviorist_center',
+          'behaviourist',
+          'behaviourist_solo',
+          'pet_behaviourist',
+          'dog_behaviourist',
+        ],
       };
       let expandedRoleIds = [...roleIds];
       for (const rid of roleIds) {
@@ -669,6 +977,45 @@ export function registerProblemGridEndpoints(app: Hono) {
       } else {
         console.log(`[BY-PROBLEM] No roleIds to expand (role filter not applied)`);
       }
+
+      const specializationSearchKeys = new Set<string>();
+      for (const subCategoryId of subCategoryIds) {
+        pushSpecializationKeyVariants(specializationSearchKeys, subCategoryId);
+      }
+      mergeBehavioralSpecializationSynonyms(specializationSearchKeys, String(problemId));
+
+      try {
+        const currentKeys = [...specializationSearchKeys];
+        if (currentKeys.length > 0) {
+          const specMasterMatchResult = await query(
+            `SELECT DISTINCT specialization_id, name, display_name
+             FROM specialization_master
+             WHERE is_active = true
+               AND (
+                 LOWER(TRIM(COALESCE(specialization_id, ''))) = ANY($1::text[])
+                 OR LOWER(TRIM(COALESCE(name, ''))) = ANY($1::text[])
+                 OR LOWER(TRIM(COALESCE(display_name, ''))) = ANY($1::text[])
+                 OR regexp_replace(LOWER(TRIM(COALESCE(specialization_id, ''))), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
+                 OR regexp_replace(LOWER(TRIM(COALESCE(name, ''))), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
+                 OR regexp_replace(LOWER(TRIM(COALESCE(display_name, ''))), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
+               )`,
+            [currentKeys]
+          );
+
+          for (const row of specMasterMatchResult.rows || []) {
+            pushSpecializationKeyVariants(specializationSearchKeys, row.specialization_id);
+            pushSpecializationKeyVariants(specializationSearchKeys, row.name);
+            pushSpecializationKeyVariants(specializationSearchKeys, row.display_name);
+          }
+        }
+      } catch (specMasterErr: any) {
+        console.warn(`[BY-PROBLEM] specialization_master alias lookup failed: ${specMasterErr?.message || 'unknown error'}`);
+      }
+
+      const specializationKeys = [...specializationSearchKeys];
+      console.log(
+        `[BY-PROBLEM] specialization keys resolved: count=${specializationKeys.length}, keys=${JSON.stringify(specializationKeys.slice(0, 20))}`
+      );
 
       // Normalize legacy service styles: at_vendor → at_center, online → tele
       const styleToDbValues: Record<string, string[]> = {
@@ -698,9 +1045,11 @@ export function registerProblemGridEndpoints(app: Hono) {
                           process.env.STAGE === 'prod' ||
                           process.env.STAGE === 'production';
       const isDevOrUatEnvironment = !isProduction; // Allow pending in all non-prod environments
-      const statusFilter = isDevOrUatEnvironment 
-        ? `(v.status = 'approved' OR v.status = 'pending')`
-        : `v.status = 'approved'`;
+      // ✅ FIX (prod parity): include 'active' / 'activated' (saved by /vendor/auth/setup-account
+      // and admin approval flows) — not only 'approved'. Otherwise nutritionists like
+      // Whisker Wise (status='active') silently disappear from specialization search even
+      // though they are visible in by-style/services and on the profile API.
+      const statusFilter = vendorDiscoverableStatusSql('v', isDevOrUatEnvironment);
       
       console.log(`[BY-PROBLEM] 🔧 Environment check - isProduction: ${isProduction}, isDevOrUat: ${isDevOrUatEnvironment}`);
       console.log(`[BY-PROBLEM] 🔧 ENV vars - ENVIRONMENT: ${process.env.ENVIRONMENT || 'not set'}, NODE_ENV: ${process.env.NODE_ENV || 'not set'}, STAGE: ${process.env.STAGE || 'not set'}`);
@@ -716,6 +1065,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           vs.id as service_id,
           vs.service_name as name,
           COALESCE(vs.custom_description, (SELECT sc.description FROM service_catalog sc WHERE sc.service_name = vs.service_name AND sc.service_style = vs.service_style LIMIT 1), vs.service_name) as description,
+          vs.metadata as vendor_service_metadata,
           vs.price,
           vs.duration_minutes as duration,
           vs.service_style,
@@ -726,6 +1076,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           v.metadata as vendor_metadata,
           v.vendor_type,
           r.name as role_name,
+          r.config as role_config,
           COALESCE(AVG(rev.rating), 0) as vendor_rating,
           COUNT(DISTINCT rev.id) as vendor_reviews,
           v.city,
@@ -767,7 +1118,7 @@ export function registerProblemGridEndpoints(app: Hono) {
       // Match by subcategory: ILIKE on service_name (with %), exact match on vendor_specializations.specialization (no %)
       // ✅ FIX: If we have roleIds, we can be less strict on subcategory matching
       if (subCategoryIds.length > 0) {
-        const searchTerms = subCategoryIds.map((id: string) => `%${id}%`);
+        const searchTerms = specializationKeys.map((id: string) => `%${id}%`);
         // If we have roleIds, make subcategory matching optional (OR condition)
         // If no roleIds, require subcategory match
         if (roleIds.length > 0) {
@@ -776,34 +1127,64 @@ export function registerProblemGridEndpoints(app: Hono) {
           // Profile API shows: specializations: ["dermatology"] - this is in vendors.specializations
           servicesQuery += ` AND (
             r.name = ANY($${paramIndex}::text[]) OR
-            -- ✅ PRIMARY: Check vendors.specializations JSONB column (same schema as profile API)
-            -- This is where the profile API gets specializations from: GET /vendor/:vendorId/profile returns v.specializations
-            (v.specializations IS NOT NULL 
+            -- vendor_specializations: stored slug/UUID matches query keys directly
+            vs.vendor_id IN (
+              SELECT vsp.vendor_id FROM vendor_specializations vsp
+              WHERE LOWER(TRIM(vsp.specialization)) = ANY($${paramIndex + 2}::text[])
+                 OR regexp_replace(LOWER(TRIM(vsp.specialization)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+            ) OR
+            -- vendor_specializations: stored UUID → expand via specialization_master
+            EXISTS (
+              SELECT 1 FROM vendor_specializations vsp2
+              JOIN specialization_master sm
+                ON sm.is_active = true
+                   AND (sm.id::text = vsp2.specialization
+                     OR LOWER(TRIM(sm.specialization_id)) = LOWER(TRIM(vsp2.specialization))
+                     OR LOWER(TRIM(sm.name))              = LOWER(TRIM(vsp2.specialization))
+                     OR LOWER(TRIM(sm.display_name))      = LOWER(TRIM(vsp2.specialization)))
+              WHERE vsp2.vendor_id = v.id
+                AND (
+                  LOWER(TRIM(sm.specialization_id)) = ANY($${paramIndex + 2}::text[])
+                  OR LOWER(TRIM(sm.name))            = ANY($${paramIndex + 2}::text[])
+                  OR regexp_replace(LOWER(TRIM(sm.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+                  OR regexp_replace(LOWER(TRIM(sm.display_name)),      '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+                )
+            ) OR
+            -- vendors.specializations JSONB column (slug or UUID stored per element)
+            (v.specializations IS NOT NULL
              AND jsonb_typeof(v.specializations) = 'array'
              AND jsonb_array_length(v.specializations) > 0
-             AND EXISTS (
-               SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
-               WHERE spec = ANY($${paramIndex + 2}::text[])
+             AND (
+               EXISTS (
+                 SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec
+                 WHERE LOWER(TRIM(spec)) = ANY($${paramIndex + 2}::text[])
+                    OR regexp_replace(LOWER(TRIM(spec)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+               ) OR
+               EXISTS (
+                 SELECT 1 FROM jsonb_array_elements_text(v.specializations) elem(val)
+                 JOIN specialization_master sm2
+                   ON sm2.is_active = true
+                      AND (sm2.id::text = elem.val
+                        OR LOWER(TRIM(sm2.specialization_id)) = LOWER(TRIM(elem.val))
+                        OR LOWER(TRIM(sm2.name))              = LOWER(TRIM(elem.val)))
+                 WHERE LOWER(TRIM(sm2.specialization_id)) = ANY($${paramIndex + 2}::text[])
+                    OR regexp_replace(LOWER(TRIM(sm2.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+                    OR regexp_replace(LOWER(TRIM(sm2.display_name)),      '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+               )
              )) OR
-            -- ✅ SECONDARY: Check vendor_specializations table (where vendors store specializations from profile)
-            vs.vendor_id IN (
-              SELECT vendor_id 
-              FROM vendor_specializations 
-              WHERE specialization = ANY($${paramIndex + 2}::text[])
-            ) OR
-            -- ✅ FALLBACK: Check vendors.metadata.specializations
-            (v.metadata IS NOT NULL 
+            -- vendors.metadata.specializations fallback
+            (v.metadata IS NOT NULL
              AND v.metadata->'specializations' IS NOT NULL
-             AND jsonb_typeof(v.metadata->'specializations') = 'array'
-             AND jsonb_array_length(v.metadata->'specializations') > 0
+             AND (v.metadata->'specializations')::text NOT IN ('null', '[]', '')
              AND EXISTS (
-              SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
-              WHERE spec = ANY($${paramIndex + 2}::text[])
-            )) OR
-            -- Fallback: Check service name (partial match)
+               SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec
+               WHERE LOWER(TRIM(spec)) = ANY($${paramIndex + 2}::text[])
+                  OR regexp_replace(LOWER(TRIM(spec)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+             )) OR
+            -- Service name fallback
             vs.service_name ILIKE ANY($${paramIndex + 1}::text[])
           )`;
-          params.push(roleIds, searchTerms, subCategoryIds);
+          params.push(roleIds, searchTerms, specializationKeys);
           paramIndex += 3;
         } else {
           // No role filter: require subcategory match
@@ -811,34 +1192,64 @@ export function registerProblemGridEndpoints(app: Hono) {
           // The profile API shows: specializations: ["dermatology"] - this is in vendors.specializations
           // We need to check if the problemId (specialization ID) exists in this array
           servicesQuery += ` AND (
-            -- ✅ PRIMARY: Check vendor_specializations table (where profile API loads from first)
+            -- vendor_specializations: stored slug/UUID matches query keys directly
             vs.vendor_id IN (
-              SELECT vendor_id 
-              FROM vendor_specializations 
-              WHERE specialization = ANY($${paramIndex + 1}::text[])
+              SELECT vsp.vendor_id FROM vendor_specializations vsp
+              WHERE LOWER(TRIM(vsp.specialization)) = ANY($${paramIndex + 1}::text[])
+                 OR regexp_replace(LOWER(TRIM(vsp.specialization)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
             ) OR
-            -- ✅ SECONDARY: Check vendors.specializations JSONB column (same schema as profile API)
-            -- This is where the profile API gets specializations from
-            (v.specializations IS NOT NULL 
+            -- vendor_specializations: stored UUID → expand via specialization_master
+            EXISTS (
+              SELECT 1 FROM vendor_specializations vsp2
+              JOIN specialization_master sm
+                ON sm.is_active = true
+                   AND (sm.id::text = vsp2.specialization
+                     OR LOWER(TRIM(sm.specialization_id)) = LOWER(TRIM(vsp2.specialization))
+                     OR LOWER(TRIM(sm.name))              = LOWER(TRIM(vsp2.specialization))
+                     OR LOWER(TRIM(sm.display_name))      = LOWER(TRIM(vsp2.specialization)))
+              WHERE vsp2.vendor_id = v.id
+                AND (
+                  LOWER(TRIM(sm.specialization_id)) = ANY($${paramIndex + 1}::text[])
+                  OR LOWER(TRIM(sm.name))            = ANY($${paramIndex + 1}::text[])
+                  OR regexp_replace(LOWER(TRIM(sm.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+                  OR regexp_replace(LOWER(TRIM(sm.display_name)),      '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+                )
+            ) OR
+            -- vendors.specializations JSONB column (slug or UUID stored per element)
+            (v.specializations IS NOT NULL
              AND jsonb_typeof(v.specializations) = 'array'
              AND jsonb_array_length(v.specializations) > 0
-             AND EXISTS (
-               SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
-               WHERE spec = ANY($${paramIndex + 1}::text[])
+             AND (
+               EXISTS (
+                 SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec
+                 WHERE LOWER(TRIM(spec)) = ANY($${paramIndex + 1}::text[])
+                    OR regexp_replace(LOWER(TRIM(spec)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+               ) OR
+               EXISTS (
+                 SELECT 1 FROM jsonb_array_elements_text(v.specializations) elem(val)
+                 JOIN specialization_master sm2
+                   ON sm2.is_active = true
+                      AND (sm2.id::text = elem.val
+                        OR LOWER(TRIM(sm2.specialization_id)) = LOWER(TRIM(elem.val))
+                        OR LOWER(TRIM(sm2.name))              = LOWER(TRIM(elem.val)))
+                 WHERE LOWER(TRIM(sm2.specialization_id)) = ANY($${paramIndex + 1}::text[])
+                    OR regexp_replace(LOWER(TRIM(sm2.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+                    OR regexp_replace(LOWER(TRIM(sm2.display_name)),      '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+               )
              )) OR
-            -- ✅ FALLBACK: Check vendors.metadata.specializations
-            (v.metadata IS NOT NULL 
+            -- vendors.metadata.specializations fallback
+            (v.metadata IS NOT NULL
              AND v.metadata->'specializations' IS NOT NULL
-             AND jsonb_typeof(v.metadata->'specializations') = 'array'
-             AND jsonb_array_length(v.metadata->'specializations') > 0
+             AND (v.metadata->'specializations')::text NOT IN ('null', '[]', '')
              AND EXISTS (
-               SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
-               WHERE spec = ANY($${paramIndex + 1}::text[])
+               SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec
+               WHERE LOWER(TRIM(spec)) = ANY($${paramIndex + 1}::text[])
+                  OR regexp_replace(LOWER(TRIM(spec)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
              )) OR
-            -- Fallback: Check service name (partial match)
+            -- Service name fallback
             vs.service_name ILIKE ANY($${paramIndex}::text[])
           )`;
-          params.push(searchTerms, subCategoryIds);
+          params.push(searchTerms, specializationKeys);
           paramIndex += 2;
         }
       } else {
@@ -851,16 +1262,16 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
 
       servicesQuery += `
-        GROUP BY vs.id, vs.service_name, vs.custom_description, vs.price, vs.duration_minutes, vs.service_style,
+        GROUP BY vs.id, vs.service_name, vs.custom_description, vs.metadata, vs.price, vs.duration_minutes, vs.service_style,
                  vs.vendor_id, v.business_name, v.city, v.state, vs.created_at,
                  v.profile_photo_url, v.metadata, v.latitude, v.longitude${logoGroupBy},
-                 v.vendor_type, r.name
+                 v.vendor_type, r.name, r.config
         ORDER BY vendor_rating DESC, vs.created_at DESC
         LIMIT 50
       `;
 
       // ✅ SIMPLE TEST: First check if we can find vendors with the specialization
-      console.log(`[BY-PROBLEM] 🔍 Testing simple vendor lookup with specialization: ${JSON.stringify(subCategoryIds)}`);
+      console.log(`[BY-PROBLEM] 🔍 Testing simple vendor lookup with specialization keys: ${JSON.stringify(specializationKeys)}`);
       try {
         const simpleVendorTest = await query(`
           SELECT v.id, v.business_name, v.status, v.is_active, v.specializations, v.vendor_type
@@ -870,12 +1281,13 @@ export function registerProblemGridEndpoints(app: Hono) {
             AND jsonb_array_length(v.specializations) > 0
             AND EXISTS (
               SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
-              WHERE spec = ANY($1::text[])
+              WHERE LOWER(TRIM(spec)) = ANY($1::text[])
+                 OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
             )
-            AND (v.status = 'approved' OR v.status = 'pending')
+            AND ${vendorDiscoverableStatusSql('v', isDevOrUatEnvironment)}
             AND v.is_active = true
           LIMIT 5
-        `, [subCategoryIds]);
+        `, [specializationKeys]);
         console.log(`[BY-PROBLEM] 🔍 SIMPLE TEST: Found ${simpleVendorTest.rows.length} vendors with matching specialization:`, 
           simpleVendorTest.rows.map((r: any) => ({
             id: r.id,
@@ -899,6 +1311,9 @@ export function registerProblemGridEndpoints(app: Hono) {
       const servicesResult = await query(servicesQuery, params);
       
       console.log(`[BY-PROBLEM] Query returned ${servicesResult.rows.length} services`);
+      console.log(
+        `[BY-PROBLEM] Query returned vendors=${new Set((servicesResult.rows || []).map((r: any) => r.vendor_id)).size} for keyCount=${specializationKeys.length}`
+      );
       
       // ✅ FIX: If no results, try a fallback query to find vendors that should match but weren't returned
       // This handles cases where the main query might have a logic issue
@@ -908,10 +1323,10 @@ export function registerProblemGridEndpoints(app: Hono) {
           // Build fallback query - start from vendors table (same schema as profile API)
           let fallbackQuery = `
             SELECT DISTINCT vs.id, vs.service_name, vs.service_style, vs.is_enabled, vs.publish_status,
-                   vs.price, vs.duration_minutes, vs.created_at,
+                   vs.price, vs.duration_minutes, vs.created_at, vs.metadata as vendor_service_metadata,
                    v.id as vendor_id, v.business_name, v.status, v.is_active, v.vendor_type, v.specializations,
                    v.profile_photo_url, v.city, v.state, v.latitude, v.longitude, v.metadata,
-                   v.role_id, r.name as role_name
+                   v.role_id, r.name as role_name, r.config as role_config
             FROM vendors v
             -- ✅ Start from vendors table (same as profile API) - where specializations array is stored
             INNER JOIN vendor_services vs ON vs.vendor_id = v.id
@@ -941,11 +1356,14 @@ export function registerProblemGridEndpoints(app: Hono) {
              AND jsonb_array_length(v.specializations) > 0
              AND EXISTS (
                SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
-               WHERE spec = ANY($${fallbackParamIndex}::text[])
+               WHERE LOWER(TRIM(spec)) = ANY($${fallbackParamIndex}::text[])
+                  OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($${fallbackParamIndex}::text[])
              )) OR
             -- Fallback: Check vendor_specializations table
             v.id IN (
-              SELECT vendor_id FROM vendor_specializations WHERE specialization = ANY($${fallbackParamIndex}::text[])
+              SELECT vendor_id FROM vendor_specializations
+              WHERE LOWER(TRIM(specialization)) = ANY($${fallbackParamIndex}::text[])
+                 OR regexp_replace(LOWER(TRIM(specialization)), '[[:space:]-]+', '_', 'g') = ANY($${fallbackParamIndex}::text[])
             ) OR
             -- Fallback: Check vendors.metadata.specializations
             (v.metadata IS NOT NULL 
@@ -954,13 +1372,14 @@ export function registerProblemGridEndpoints(app: Hono) {
              AND jsonb_array_length(v.metadata->'specializations') > 0
              AND EXISTS (
                SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
-               WHERE spec = ANY($${fallbackParamIndex}::text[])
+               WHERE LOWER(TRIM(spec)) = ANY($${fallbackParamIndex}::text[])
+                  OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($${fallbackParamIndex}::text[])
              ))
           )
           LIMIT 50
           `;
           
-          fallbackParams.push(subCategoryIds);
+          fallbackParams.push(specializationKeys);
           
           const fallbackResult = await query(fallbackQuery, fallbackParams);
           console.log(`[BY-PROBLEM] 🔍 Fallback query returned ${fallbackResult.rows.length} services`);
@@ -974,6 +1393,7 @@ export function registerProblemGridEndpoints(app: Hono) {
                 service_name: row.service_name,
                 name: row.service_name,
                 description: row.service_name,
+                vendor_service_metadata: row.vendor_service_metadata,
                 price: row.price || '0',
                 duration_minutes: row.duration_minutes || 30,
                 duration: row.duration_minutes || 30,
@@ -989,6 +1409,7 @@ export function registerProblemGridEndpoints(app: Hono) {
                 vendorType: row.vendor_type,
                 role_name: row.role_name || '',
                 roleName: row.role_name || '',
+                role_config: row.role_config,
                 vendor_rating: 0,
                 vendorRating: 0,
                 vendor_reviews: 0,
@@ -1019,11 +1440,16 @@ export function registerProblemGridEndpoints(app: Hono) {
             array_agg(DISTINCT vs.publish_status) FILTER (WHERE vs.publish_status IS NOT NULL) as service_publish_status,
             EXISTS (
               SELECT 1 FROM vendor_specializations vs2 
-              WHERE vs2.vendor_id = v.id AND vs2.specialization = ANY($1::text[])
+              WHERE vs2.vendor_id = v.id
+                AND (
+                  LOWER(TRIM(vs2.specialization)) = ANY($1::text[])
+                  OR regexp_replace(LOWER(TRIM(vs2.specialization)), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
+                )
             ) as has_spec_in_table,
             EXISTS (
               SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
-              WHERE spec = ANY($1::text[])
+              WHERE LOWER(TRIM(spec)) = ANY($1::text[])
+                 OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
             ) as has_spec_in_jsonb,
             -- Test the actual query conditions
             COUNT(vs_match.id) as matching_service_count
@@ -1035,18 +1461,21 @@ export function registerProblemGridEndpoints(app: Hono) {
             AND (${serviceStyle ? `vs_match.service_style = '${serviceStyle}'` : 'true'})
             AND (
               v.id IN (
-                SELECT vendor_id FROM vendor_specializations WHERE specialization = ANY($1::text[])
+                SELECT vendor_id FROM vendor_specializations
+                WHERE LOWER(TRIM(specialization)) = ANY($1::text[])
+                   OR regexp_replace(LOWER(TRIM(specialization)), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
               ) OR
               (v.specializations IS NOT NULL AND EXISTS (
                 SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
-                WHERE spec = ANY($1::text[])
+                WHERE LOWER(TRIM(spec)) = ANY($1::text[])
+                   OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
               ))
             )
           WHERE v.id = $2
           GROUP BY v.id, v.business_name, v.status, v.is_active, v.vendor_type, v.specializations
         `;
         try {
-          const testResult = await query(testQuery, [subCategoryIds, testVendorId]);
+          const testResult = await query(testQuery, [specializationKeys, testVendorId]);
           if (testResult.rows.length > 0) {
             const vendor = testResult.rows[0];
             console.log(`[BY-PROBLEM] 🔍 TEST VENDOR DEBUG:`, JSON.stringify({
@@ -1063,7 +1492,7 @@ export function registerProblemGridEndpoints(app: Hono) {
               service_publish_status: vendor.service_publish_status,
               has_spec_in_table: vendor.has_spec_in_table,
               has_spec_in_jsonb: vendor.has_spec_in_jsonb,
-              would_match_status: isDevOrUatEnvironment ? (vendor.status === 'approved' || vendor.status === 'pending') : vendor.status === 'approved',
+              would_match_status: isVendorStatusDiscoverable(vendor.status, vendor.vendor_type, isDevOrUatEnvironment),
               would_match_active: vendor.is_active === true,
               would_match_vendor_type: true, // Business/clinic vendors can offer at_home services
               would_match_service: vendor.service_count > 0 && 
@@ -1071,7 +1500,8 @@ export function registerProblemGridEndpoints(app: Hono) {
                                    (vendor.service_publish_status && (vendor.service_publish_status.includes('published') || vendor.service_publish_status.includes('auto_published') || vendor.service_publish_status.includes(null))),
               would_match_service_style: serviceStyle ? (vendor.service_styles && vendor.service_styles.includes(serviceStyle)) : true,
               would_match_specialization: vendor.has_spec_in_table || vendor.has_spec_in_jsonb,
-              subCategoryIds: subCategoryIds
+              subCategoryIds: subCategoryIds,
+              specializationKeys
             }, null, 2));
           }
         } catch (testErr: any) {
@@ -1094,19 +1524,21 @@ export function registerProblemGridEndpoints(app: Hono) {
           WHERE (
             (v.specializations IS NOT NULL AND EXISTS (
               SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
-              WHERE spec = ANY($1::text[])
+              WHERE LOWER(TRIM(spec)) = ANY($1::text[])
+                 OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
             )) OR
             v.id IN (
               SELECT vendor_id 
               FROM vendor_specializations 
-              WHERE specialization = ANY($1::text[])
+              WHERE LOWER(TRIM(specialization)) = ANY($1::text[])
+                 OR regexp_replace(LOWER(TRIM(specialization)), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
             )
           )
           GROUP BY v.id, v.business_name, v.status, v.is_active, v.vendor_type, v.specializations
           LIMIT 10
         `;
         const debugServiceStyle = serviceStyle || 'at_home';
-        const debugResult = await query(debugQuery, [subCategoryIds, debugServiceStyle]).catch((err: any) => {
+        const debugResult = await query(debugQuery, [specializationKeys, debugServiceStyle]).catch((err: any) => {
           console.error(`[BY-PROBLEM] DEBUG query error:`, err.message);
           return { rows: [] };
         });
@@ -1127,7 +1559,12 @@ export function registerProblemGridEndpoints(app: Hono) {
         );
       }
 
-      const vendorIds = [...new Set(servicesResult.rows.map((r: any) => r.vendor_id))];
+      const rowsForRoleGate =
+        serviceStyle && servicesResult.rows?.length
+          ? servicesResult.rows.filter((row: any) => pgRoleConfigAllowsStyle(row.role_config, serviceStyle))
+          : servicesResult.rows || [];
+
+      const vendorIds = [...new Set(rowsForRoleGate.map((r: any) => r.vendor_id))];
       const specMap: Record<string, string[]> = {};
       if (vendorIds.length > 0) {
         try {
@@ -1144,11 +1581,17 @@ export function registerProblemGridEndpoints(app: Hono) {
       }
 
       // Calculate distance if location provided
-      let services = servicesResult.rows.map((service: any) => {
+      let services = rowsForRoleGate.map((service: any) => {
+        const nameStr = String(service.name || '').trim();
+        const descRaw = cleanDescription(service.description);
+        const descTrim = (descRaw || '').trim();
+        const description =
+          descTrim && descTrim !== nameStr ? descRaw : undefined;
+        const serviceImageRaw = pickServiceImageFromMetadata(service.vendor_service_metadata);
         const serviceData: any = {
           serviceId: service.service_id,
           name: service.name,
-          description: cleanDescription(service.description),
+          description,
           price: parseFloat(service.price || '0'),
           duration: parseInt(service.duration || '0'),
           serviceStyle: service.service_style,
@@ -1170,6 +1613,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           distanceFormatted: 'N/A',
           priceFormatted: `₹${parseFloat(service.price || '0').toLocaleString('en-IN')}`,
           serviceName: service.name,
+          serviceImageRaw,
         };
 
         // Calculate distance if coordinates available
@@ -1204,6 +1648,23 @@ export function registerProblemGridEndpoints(app: Hono) {
         const bScore = b.vendorRating * 0.7 + (b.distance ? (1 / (b.distance + 1)) * 0.3 : 0);
         return bScore - aScore;
       });
+
+      // Vendor + per-service images: bare S3 keys + HTTPS URLs → fresh https URL for <img src>
+      services = await Promise.all(
+        services.map(async (service: any) => {
+          const raw = service.photo || service.photoUrl;
+          const photo = await resolveVendorPhotoForByProblemRow(raw);
+          const serviceImageUrl = await resolveVendorPhotoForByProblemRow(service.serviceImageRaw);
+          const { serviceImageRaw, ...rest } = service;
+          return {
+            ...rest,
+            photo,
+            photoUrl: photo,
+            profile_photo_url: photo,
+            serviceImageUrl: serviceImageUrl || null,
+          };
+        })
+      );
 
       return c.json({
         success: true,
@@ -1294,7 +1755,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           WHERE status = 'completed'
           GROUP BY vendor_id
         ) b_stats ON b_stats.vendor_id = v.id
-        WHERE (v.status = 'approved' OR v.status = 'pending')
+        WHERE ${vendorDiscoverableStatusSql('v', false)}
           AND v.is_active = true
       `;
 
@@ -1438,7 +1899,7 @@ export function registerProblemGridEndpoints(app: Hono) {
                 SELECT vendor_id FROM vendor_specializations WHERE specialization = ANY($1::text[])
               )
             )
-            AND (v.status = 'approved' OR v.status = 'pending')
+            AND ${vendorDiscoverableStatusSql('v', false)}
             AND v.is_active = true
             LIMIT 10
           `;
@@ -1484,7 +1945,7 @@ export function registerProblemGridEndpoints(app: Hono) {
                 SELECT 1 FROM vendor_specializations vs 
                 WHERE vs.vendor_id = v.id AND vs.specialization = ANY($1::text[])
               ) as has_spec_in_table,
-              (v.status = 'approved' OR v.status = 'pending') as status_ok,
+              ${vendorDiscoverableStatusSql('v', false)} as status_ok,
               v.is_active as is_active_ok
             FROM vendors v
             LEFT JOIN roles r ON v.role_id = r.id
@@ -1804,7 +2265,7 @@ export function registerProblemGridEndpoints(app: Hono) {
   /**
    * GET /public/problems
    * Get problems for problem grid selector (used by ProblemGridSelector.tsx)
-   * Query params: roleId (required) - e.g., 'vet', 'groomer', 'trainer'
+   * Query params: roleId (required) — e.g. 'groomer', 'trainer', 'veterinarian', or 'all' for full catalog (home View All)
    * Note: This is a PUBLIC endpoint (no auth required) since problem grid is shown to all users
    * Returns: { id, name, displayName, icon, description, roleId, allowedServiceStyles: [...] }
    */
@@ -1820,7 +2281,11 @@ export function registerProblemGridEndpoints(app: Hono) {
         }, 400);
       }
 
-      // Query problem_grid_mappings for problems matching the role
+      const roleIdNorm = roleId.toLowerCase().trim();
+      /** Home "View All" uses roleId=all — must return every specialization, not a single generic row */
+      const isAllRoles = roleIdNorm === 'all' || roleIdNorm === '*' || roleIdNorm === 'every';
+
+      // Query problem_grid_mappings for problems matching the role (or all roles when roleId=all)
       // Include allowed_service_styles for service style filtering
       let problemsResult;
       try {
@@ -1839,10 +2304,10 @@ export function registerProblemGridEndpoints(app: Hono) {
             ) as allowed_service_styles,
             MIN(order_index) as order_index
           FROM problem_grid_mappings
-          WHERE role_id = $1
+          ${isAllRoles ? '' : 'WHERE role_id = $1'}
           GROUP BY problem_id, problem_name, problem_display_name, role_id
-          ORDER BY MIN(order_index) ASC, problem_name ASC`,
-          [roleId]
+          ORDER BY MIN(order_index) ASC, role_id ASC, problem_name ASC`,
+          isAllRoles ? [] : [roleId]
         );
       } catch (dbError: any) {
         console.error('Database error fetching problems:', dbError.message);
@@ -1866,13 +2331,62 @@ export function registerProblemGridEndpoints(app: Hono) {
         });
       }
 
+      // Combined catalog (home View All): use mapping styles as-is — each row may be a different role
+      if (isAllRoles) {
+        const problems = problemsResult.rows.map((row: any) => {
+          let mappingStyles: string[] = ['at_home', 'at_center', 'tele'];
+          try {
+            if (row.allowed_service_styles) {
+              if (typeof row.allowed_service_styles === 'string') {
+                mappingStyles = JSON.parse(row.allowed_service_styles);
+              } else if (Array.isArray(row.allowed_service_styles)) {
+                mappingStyles = row.allowed_service_styles;
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to parse allowed_service_styles for problem:', row.id);
+          }
+          const rId = row.roleId;
+          const finalStyles = allowedServiceStylesForProblem(
+            row.id,
+            mappingStyles.length > 0 ? mappingStyles : ['at_home', 'at_center', 'tele']
+          );
+          return {
+            id: row.id,
+            name: row.name,
+            displayName: row.displayName || row.name,
+            icon: getProblemEmoji(row.id, rId),
+            description: `Find ${row.displayName || row.name} specialists`,
+            roleId: rId,
+            allowedServiceStyles: finalStyles,
+            keywords: [row.name.toLowerCase(), row.id.toLowerCase()],
+          };
+        });
+        return c.json({
+          success: true,
+          problems,
+          count: problems.length,
+        });
+      }
+
       // Get role's allowed service styles from role config (Walker = at_home only; solo = At Home + Tele per admin)
       let roleAllowedStyles: string[] = ['at_home', 'at_center', 'tele'];
       try {
         const roleNameNorm = (roleId || '').toLowerCase().trim().replace(/\s+/g, '_');
+        const roleCandidates = pgExpandRoleAliases(roleNameNorm);
+        const roleCandidatesWithSpaces = roleCandidates.map((r) => r.replace(/_/g, ' '));
         const rolesByKey = await query(
-          `SELECT id, name, config FROM roles WHERE (name = $1 OR id::text = $1) AND (is_active = true OR is_active IS NULL) LIMIT 1`,
-          [roleNameNorm]
+          `SELECT id, name, config
+           FROM roles
+           WHERE (is_active = true OR is_active IS NULL)
+             AND (
+               lower(name) = ANY($1::text[])
+               OR lower(name) = ANY($2::text[])
+               OR id::text = ANY($1::text[])
+             )
+           ORDER BY updated_at DESC NULLS LAST
+           LIMIT 1`,
+          [roleCandidates, roleCandidatesWithSpaces]
         ).catch(() => ({ rows: [] }));
         const roleRow = rolesByKey.rows?.[0];
         if (roleRow?.config) {
@@ -1913,7 +2427,10 @@ export function registerProblemGridEndpoints(app: Hono) {
         const allowedServiceStyles = mappingStyles.filter((s: string) =>
           roleAllowedStyles.includes((s || '').toLowerCase().replace(/\s+/g, '_'))
         );
-        const finalStyles = allowedServiceStyles.length > 0 ? allowedServiceStyles : ['at_home'];
+        const finalStyles = allowedServiceStylesForProblem(
+          row.id,
+          allowedServiceStyles.length > 0 ? allowedServiceStyles : ['at_home']
+        );
 
         return {
           id: row.id,
@@ -2238,8 +2755,16 @@ function getProblemEmoji(problemId: string, roleId: string): string {
   return roleDefaults[roleId] || '🐾';
 }
 
+/** In-person only: destructive-habits work should not offer video consult. */
+function allowedServiceStylesForProblem(problemId: string, styles: string[]): string[] {
+  if (problemId !== 'destructive') return styles;
+  const out = styles.filter((s) => (s || '').toLowerCase() !== 'tele');
+  return out.length > 0 ? out : ['at_home', 'at_center'];
+}
+
 /**
  * Helper: Get default problems for a role when database has no mappings
+ * roleId "all" merges every catalog role (matches home "What's your pet needs?" View All).
  */
 function getDefaultProblemsForRole(roleId: string): any[] {
   const defaultProblems: Record<string, any[]> = {
@@ -2298,6 +2823,27 @@ function getDefaultProblemsForRole(roleId: string): any[] {
       { id: 'senior_nutrition', name: 'Senior Nutrition', displayName: 'Senior Nutrition', icon: '🦴', description: 'Elderly pet diet' },
     ],
   };
+
+  const norm = (roleId || '').toLowerCase().trim();
+  if (norm === 'all' || norm === '*' || norm === 'every') {
+    const stdStyles = ['at_home', 'at_center', 'tele'];
+    const withRole = (items: any[], apiRole: string) =>
+      items.map((p) => ({
+        ...p,
+        roleId: apiRole,
+        allowedServiceStyles: allowedServiceStylesForProblem(p.id, stdStyles),
+        keywords: [p.name.toLowerCase(), String(p.id).toLowerCase()],
+      }));
+    return [
+      ...withRole(defaultProblems.vet, 'veterinarian'),
+      ...withRole(defaultProblems.groomer, 'groomer'),
+      ...withRole(defaultProblems.trainer, 'trainer'),
+      ...withRole(defaultProblems.walker, 'walker'),
+      ...withRole(defaultProblems.boarding, 'boarding'),
+      ...withRole(defaultProblems.nutritionist, 'nutritionist'),
+      ...withRole(defaultProblems.behaviorist, 'behaviorist'),
+    ];
+  }
 
   return defaultProblems[roleId] || [
     { id: 'general', name: 'General Service', displayName: 'General Service', icon: '🐾', description: 'General pet services' }

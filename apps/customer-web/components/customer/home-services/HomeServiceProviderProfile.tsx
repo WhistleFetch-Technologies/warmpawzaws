@@ -1,46 +1,86 @@
 /**
- * HomeServiceProviderProfile - Full Provider Profile View
- * 
- * Features:
- * - Overview with photo, rating, reviews
- * - Photo gallery
- * - Location with map
- * - Contact information
- * - Services offered with pricing
- * - Amenities
- * - Reviews section
- * - Book Now CTA
+ * HomeServiceProviderProfile — home-service vendor profile (walker, sitter, grooming, etc.)
+ *
+ * Vet-style layout: ServiceDashboardHeader, hero carousel, overlapping identity card,
+ * phased CTA (“Select Services to Book” → Services emphasis → “Continue to book” → onSelectService).
+ * Fixed at bottom with no full-width bar — only the pill button. Set fixedFooterAboveBottomNav when this
+ * view is inside CustomerScreenWrapper so the CTA clears BottomNavigation (globals token).
  */
 
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  ArrowLeft, 
-  Star, 
-  MapPin, 
-  Phone, 
-  Clock, 
-  ChevronRight,
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
+import { StarRating } from '../shared/StarRating';
+import {
+  Star,
+  MapPin,
+  Phone,
   Heart,
   Share2,
-  BadgeCheck,
-  Calendar,
   MessageCircle,
   Navigation,
   Image as ImageIcon,
   X,
-  ExternalLink,
   Award,
   Users,
-  Briefcase
+  Footprints,
+  Scissors,
+  GraduationCap,
+  Stethoscope,
+  Brain,
+  Home,
+  FlaskConical,
+  Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
-import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import {
+  mergeCustomerFacilityPayload,
+  mergeVendorPhotoFieldsForHero,
+  ratingFromFacilityRoot,
+  resolveVendorCoverImageUrl,
+  resolveVendorProfileHeroGallery,
+  resolveVendorProfilePhotoUrl,
+} from '@/lib/vendor-display-media';
+import { HomeServiceType } from './UniversalHomeServiceRouter';
+
+/** Second identity-chip line derived only from vertical (not vendor-specific catalog copy). */
+const HOME_SERVICE_CONTEXT_LABEL: Record<HomeServiceType, string> = {
+  walker: 'At your home',
+  grooming: 'At your home',
+  training: 'At your home',
+  veterinary: 'Home visit',
+  behaviourist: 'At your home',
+  sitter: 'In your home',
+  diagnostics: 'At-home collection',
+};
+
+function profileHeroPlaceholderIcon(serviceType: HomeServiceType): LucideIcon {
+  switch (serviceType) {
+    case 'walker':
+      return Footprints;
+    case 'grooming':
+      return Scissors;
+    case 'training':
+      return GraduationCap;
+    case 'veterinary':
+      return Stethoscope;
+    case 'behaviourist':
+      return Brain;
+    case 'sitter':
+      return Home;
+    case 'diagnostics':
+      return FlaskConical;
+    default:
+      return Home;
+  }
+}
 
 interface ServiceConfig {
   roleId: string;
@@ -115,6 +155,11 @@ interface HomeServiceProviderProfileProps {
   onBack: () => void;
   onSelectService: () => void;
   onNavigate?: (screen: string, data?: any) => void;
+  /**
+   * When true, fixed CTA container uses `cw-fixed-above-customer-tabbar` so it sits above BottomNavigation.
+   * When false (default), `bottom-0` + safe-area — for full-screen routes without CustomerScreenWrapper.
+   */
+  fixedFooterAboveBottomNav?: boolean;
 }
 
 export function HomeServiceProviderProfile({
@@ -124,7 +169,8 @@ export function HomeServiceProviderProfile({
   config,
   onBack,
   onSelectService,
-  onNavigate
+  onNavigate,
+  fixedFooterAboveBottomNav = false,
 }: HomeServiceProviderProfileProps) {
 
   const [provider, setProvider] = useState<ProviderDetails | null>(null);
@@ -133,9 +179,17 @@ export function HomeServiceProviderProfile({
   const [isFavorite, setIsFavorite] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const tabsSectionRef = useRef<HTMLDivElement>(null);
+  const [profileBookingPhase, setProfileBookingPhase] = useState<'intro' | 'picking'>('intro');
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
 
   useEffect(() => {
     loadProviderDetails();
+  }, [vendorId]);
+
+  useEffect(() => {
+    setProfileBookingPhase('intro');
+    setSelectedServiceId(null);
   }, [vendorId]);
 
   const loadProviderDetails = async () => {
@@ -143,29 +197,71 @@ export function HomeServiceProviderProfile({
       setLoading(true);
       console.log(`📍 [HOME-SERVICE-PROFILE] Loading vendor details for: ${vendorId}`);
 
-      let vendor: any = null;
-      
-      // Load vendor details using apiClient
-      try {
-        const data = await apiClient.get<{ facility?: any; vendor?: any }>(`/customer/facility/${vendorId}`);
-        vendor = data.facility || data.vendor || data;
-        console.log('📦 [HOME-SERVICE-PROFILE] Facility response:', vendor);
-      } catch (e) {
-        // Fallback to vendor endpoint
-        try {
-          const data = await apiClient.get<{ vendor?: any }>(`/vendor/${vendorId}`);
-          vendor = data.vendor || data;
-          console.log('📦 [HOME-SERVICE-PROFILE] Vendor fallback response:', vendor);
-        } catch (e2) {
-          console.error('❌ [HOME-SERVICE-PROFILE] Could not load vendor');
+      const [facilityResponse, customerVendorResponse] = await Promise.all([
+        apiClient.get(`/customer/facility/${vendorId}`).catch(() => null),
+        apiClient.get(`/customer/vendor/${vendorId}`).catch(() => null),
+      ]);
+
+      let facilityRoot: Record<string, unknown> | null = null;
+      if (facilityResponse && typeof facilityResponse === 'object') {
+        const fr = facilityResponse as Record<string, unknown>;
+        if (fr.success !== false && (fr.vendor || fr.facility)) {
+          facilityRoot = fr;
         }
       }
 
-      if (!vendor) {
-        console.error('❌ [HOME-SERVICE-PROFILE] Could not load vendor');
-        setLoading(false);
-        return;
+      let customerVendorRow: Record<string, unknown> | null = null;
+      if (customerVendorResponse && typeof customerVendorResponse === 'object') {
+        const cv = customerVendorResponse as { vendor?: unknown };
+        const v = cv.vendor ?? customerVendorResponse;
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          customerVendorRow = v as Record<string, unknown>;
+        }
       }
+
+      let merged: Record<string, unknown>;
+      let ratingMeta: { average?: number; count?: number } = {};
+
+      if (facilityRoot) {
+        merged = mergeCustomerFacilityPayload(facilityRoot);
+        ratingMeta = ratingFromFacilityRoot(facilityRoot);
+        console.log('📦 [HOME-SERVICE-PROFILE] Facility merged vendor row:', merged);
+      } else {
+        try {
+          const data = await apiClient.get<{ vendor?: any }>(`/vendor/${vendorId}`);
+          merged = (data.vendor || data) as Record<string, unknown>;
+          console.log('📦 [HOME-SERVICE-PROFILE] Vendor fallback response:', merged);
+        } catch (e2) {
+          console.error('❌ [HOME-SERVICE-PROFILE] Could not load vendor');
+          setLoading(false);
+          return;
+        }
+      }
+
+      merged = mergeVendorPhotoFieldsForHero(merged, customerVendorRow);
+
+      const profilePhotoUrl = resolveVendorProfilePhotoUrl(merged);
+      const coverUrl = resolveVendorCoverImageUrl(merged);
+
+      const facilityForHero: Record<string, unknown> | null =
+        facilityRoot &&
+        typeof facilityRoot.facility === 'object' &&
+        facilityRoot.facility !== null
+          ? (facilityRoot.facility as Record<string, unknown>)
+          : null;
+      const gallery = resolveVendorProfileHeroGallery({
+        facility: facilityForHero,
+        vendor: merged,
+        profileProvider: {
+          photo: profilePhotoUrl,
+          photoUrl: profilePhotoUrl,
+        },
+      });
+
+      const latRaw = merged.latitude ?? merged.lat;
+      const lngRaw = merged.longitude ?? merged.lng;
+      const lat = latRaw != null && latRaw !== '' ? Number(latRaw) : NaN;
+      const lng = lngRaw != null && lngRaw !== '' ? Number(lngRaw) : NaN;
 
       // Load services (prefer customer endpoint so only published + vendor price)
       let services: any[] = [];
@@ -177,7 +273,7 @@ export function HomeServiceProviderProfile({
           servicesData = await apiClient.get<{ services: any[] }>(`/vendor/${vendorId}/services`);
         }
         if (servicesData?.services && Array.isArray(servicesData.services)) {
-          services = servicesData.services;
+          services = mergeCustomerVendorServicesPayload(servicesData);
         } else if (Array.isArray(servicesData)) {
           services = servicesData;
         }
@@ -196,31 +292,75 @@ export function HomeServiceProviderProfile({
         console.log('No reviews found');
       }
 
+      const businessName =
+        (merged.businessName as string) ||
+        (merged.business_name as string) ||
+        (merged.name as string) ||
+        (merged.fullName as string) ||
+        'Provider';
+      const fullName = (merged.fullName as string) || (merged.owner_name as string) || (merged.ownerName as string) || '';
+
+      const rcMerge = merged.reviewCount;
+      const parsedRc =
+        typeof rcMerge === 'number' && !Number.isNaN(rcMerge)
+          ? rcMerge
+          : rcMerge != null && String(rcMerge).trim() !== ''
+            ? parseInt(String(rcMerge), 10)
+            : NaN;
+      const reviewCount =
+        ratingMeta.count != null && Number.isFinite(ratingMeta.count)
+          ? ratingMeta.count
+          : Number.isFinite(parsedRc)
+            ? parsedRc
+            : reviews.length;
+
+      const rawAvg =
+        ratingMeta.average ??
+        (typeof merged.rating === 'number'
+          ? merged.rating
+          : merged.rating != null || merged.avgRating != null
+            ? parseFloat(String(merged.rating ?? merged.avgRating ?? ''))
+            : NaN);
+      const ratingAvg =
+        reviewCount > 0 && Number.isFinite(rawAvg) && rawAvg > 0 ? rawAvg : undefined;
+
+      const specs = merged.specializations;
+      const specFallback = merged.services;
+      const specializations: string[] = Array.isArray(specs)
+        ? (specs as string[])
+        : Array.isArray(specFallback)
+          ? (specFallback as string[])
+          : [];
+
       setProvider({
-        id: vendor.id || vendorId,
-        vendorId: vendor.vendorId || vendorId,
-        businessName: vendor.businessName || vendor.name || vendor.fullName,
-        fullName: vendor.fullName || vendor.name,
-        photo: vendor.photo || vendor.logo || vendor.profilePhoto,
-        logo: vendor.logo || vendor.photo,
-        coverImage: vendor.coverImage || vendor.banner || vendor.photo,
-        address: vendor.address || 'Address not specified',
-        phone: vendor.phone || '',
-        email: vendor.email || '',
-        website: vendor.website || '',
-        bio: vendor.bio || vendor.description || '',
-        description: vendor.description || vendor.bio || '',
-        rating: vendor.rating || vendor.avgRating || 4.5,
-        reviewCount: vendor.reviewCount || reviews.length || 0,
-        specializations: vendor.specializations || vendor.services || [],
-        amenities: vendor.amenities || [],
-        certifications: vendor.certifications || [],
-        experience: vendor.experience || vendor.yearsOfExperience || 0,
-        serviceCount: vendor.serviceCount || vendor.completedServices || 0,
-        isVerified: vendor.isVerified || vendor.verified || false,
-        operatingHours: vendor.operatingHours || vendor.hours || {},
-        coordinates: vendor.coordinates || { lat: 0, lng: 0 },
-        gallery: vendor.gallery || vendor.photos || [],
+        id: (merged.id as string) || vendorId,
+        vendorId: (merged.vendorId as string) || vendorId,
+        businessName,
+        fullName,
+        photo: profilePhotoUrl || '',
+        logo: (merged.logo as string) || (merged.logo_url as string) || profilePhotoUrl || '',
+        coverImage: coverUrl || '',
+        address:
+          (merged.address as string) ||
+          [merged.city, merged.state].filter(Boolean).join(', ') ||
+          'Address not specified',
+        phone: (merged.phone as string) || '',
+        email: (merged.email as string) || '',
+        website: (merged.website as string) || '',
+        bio: (merged.bio as string) || (merged.description as string) || '',
+        description: (merged.description as string) || (merged.bio as string) || '',
+        rating:
+          ratingAvg != null && Number.isFinite(Number(ratingAvg)) ? Number(ratingAvg) : 0,
+        reviewCount,
+        specializations,
+        amenities: (Array.isArray(merged.amenities) ? merged.amenities : []) as string[],
+        certifications: (Array.isArray(merged.certifications) ? merged.certifications : []) as string[],
+        experience: Number(merged.experience ?? merged.yearsOfExperience ?? merged.years_of_experience ?? 0),
+        serviceCount: Number(merged.serviceCount ?? merged.completedServices ?? merged.completed_bookings ?? 0),
+        isVerified: Boolean(merged.isVerified ?? merged.verified ?? merged.is_verified),
+        operatingHours: (merged.operatingHours || merged.operating_hours || merged.hours || {}) as ProviderDetails['operatingHours'],
+        coordinates: !Number.isNaN(lat) && !Number.isNaN(lng) ? { lat, lng } : { lat: 0, lng: 0 },
+        gallery,
         services: services,
         reviews: reviews
       });
@@ -238,9 +378,20 @@ export function HomeServiceProviderProfile({
   };
 
   const handleDirections = () => {
-    if (provider?.coordinates) {
-      const url = `https://www.google.com/maps/dir/?api=1&destination=${provider.coordinates.lat},${provider.coordinates.lng}`;
-      window.open(url, '_blank');
+    if (!provider) return;
+    const { lat, lng } = provider.coordinates;
+    if (lat && lng && lat !== 0 && lng !== 0) {
+      window.open(
+        `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`,
+        '_blank'
+      );
+      return;
+    }
+    if (provider.address?.trim()) {
+      window.open(
+        `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(provider.address)}`,
+        '_blank'
+      );
     }
   };
 
@@ -259,6 +410,51 @@ export function HomeServiceProviderProfile({
     // TODO: Save to favorites API
   };
 
+  const revealServicesAndScroll = useCallback(() => {
+    if (!provider) return;
+    setProfileBookingPhase('picking');
+    setActiveTab('services');
+    const svc = provider.services;
+    if (svc.length === 1) {
+      setSelectedServiceId(svc[0]!.id);
+    } else {
+      setSelectedServiceId(null);
+    }
+    requestAnimationFrame(() => {
+      tabsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [provider]);
+
+  const continueBookingDisabled = useMemo(() => {
+    if (!provider || profileBookingPhase !== 'picking') return false;
+    const n = provider.services.length;
+    if (n <= 1) return false;
+    return !selectedServiceId;
+  }, [provider, profileBookingPhase, selectedServiceId]);
+
+  const heroPhotos = useMemo(
+    () => (provider?.gallery ?? []).filter((u) => typeof u === 'string' && u.trim().length > 0),
+    [provider?.gallery]
+  );
+  const hasPhotos = heroPhotos.length > 0;
+  const PlaceholderIcon = profileHeroPlaceholderIcon(serviceType);
+  const dashboardStats = useMemo(() => {
+    if (!provider) return [];
+    return [
+      { value: provider.rating.toFixed(1), label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+      { value: String(provider.reviewCount), label: 'Reviews' },
+      {
+        value:
+          provider.serviceCount > 0
+            ? `${provider.serviceCount}+`
+            : String(Math.max(provider.services.length, 0)),
+        label: provider.serviceCount > 0 ? 'Bookings' : 'Services',
+        icon: <Users className="w-4 h-4" />,
+      },
+    ];
+  }, [provider]);
+  const headerSubtitle = `${config.displayName} · ${config.priceUnit}`;
+
   const tabs: { id: TabType; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'services', label: 'Services' },
@@ -268,7 +464,7 @@ export function HomeServiceProviderProfile({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
+      <div className="mx-auto flex min-h-screen w-full max-w-customer items-center justify-center bg-white">
         <div className="text-center">
           <div 
             className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4"
@@ -282,7 +478,7 @@ export function HomeServiceProviderProfile({
 
   if (!provider) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
+      <div className="mx-auto flex min-h-screen w-full max-w-customer items-center justify-center bg-white">
         <div className="text-center p-6">
           <p className="text-gray-600 mb-4">Provider not found</p>
           <button
@@ -296,160 +492,171 @@ export function HomeServiceProviderProfile({
     );
   }
 
+  const accentSoft: CSSProperties = {
+    backgroundColor: `color-mix(in srgb, ${config.primaryColor} 14%, white)`,
+  };
+  const accentFg: CSSProperties = { color: config.primaryColor };
+
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto pb-24">
-      {/* Cover Image & Header */}
-      <div className="relative">
-        <div className="h-48 bg-gray-200 overflow-hidden">
-          {provider.coverImage ? (
-            <img
-              src={provider.coverImage}
-              alt={provider.businessName}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className={`w-full h-full bg-gradient-to-br ${config.bgGradient}`} />
-          )}
-        </div>
+    <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden border-black/[0.04] bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] sm:border-x sm:shadow-[0_0_48px_rgba(0,0,0,0.06)]">
+      <ServiceDashboardHeader
+        className="!z-0 isolation-auto"
+        serviceName={provider.businessName}
+        serviceSubtitle={headerSubtitle}
+        serviceIcon={<span className="text-2xl leading-none">{config.icon}</span>}
+        iconColor="text-white"
+        stats={dashboardStats}
+        onBack={onBack}
+        showBackButton
+        headerColor="bg-[#FF8C42]"
+        bottomEdge="flat"
+      />
 
-        {/* Back & Action Buttons */}
-        <div className="absolute top-4 left-4 right-4 flex justify-between">
-          <button
-            onClick={onBack}
-            className="w-10 h-10 rounded-full bg-white/90 shadow-md flex items-center justify-center"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-700" />
-          </button>
-          <div className="flex gap-2">
-            <button
-              onClick={toggleFavorite}
-              className="w-10 h-10 rounded-full bg-white/90 shadow-md flex items-center justify-center"
-            >
-              <Heart 
-                className={`w-5 h-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} 
+      <div className="relative z-0 w-full flex-1">
+        {hasPhotos ? (
+          <div className="relative w-full -mt-3 sm:-mt-3">
+            <div className="overflow-hidden rounded-t-[24px] bg-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] sm:rounded-t-[28px]">
+              <VendorHeroPhotoCarousel
+                photos={heroPhotos}
+                name={provider.businessName}
+                frameClassName="relative aspect-[5/4] w-full max-h-[420px] overflow-hidden sm:aspect-auto sm:h-[280px] sm:max-h-none"
               />
-            </button>
-            <button
-              onClick={handleShare}
-              className="w-10 h-10 rounded-full bg-white/90 shadow-md flex items-center justify-center"
-            >
-              <Share2 className="w-5 h-5 text-gray-700" />
-            </button>
+            </div>
           </div>
-        </div>
-
-        {/* Profile Photo */}
-        <div className="absolute -bottom-12 left-4">
-          <div className="w-24 h-24 rounded-2xl border-4 border-white bg-white shadow-lg overflow-hidden">
-            {provider.photo ? (
-              <img
-                src={provider.photo}
-                alt={provider.businessName}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div 
-                className={`w-full h-full bg-gradient-to-br ${config.bgGradient} flex items-center justify-center text-white text-3xl`}
+        ) : (
+          <div className="relative w-full -mt-3 sm:-mt-3">
+            <div className="overflow-hidden rounded-t-[24px] sm:rounded-t-[28px]">
+              <div
+                className={`relative flex aspect-[5/4] w-full max-h-[420px] items-center justify-center bg-gradient-to-br ${config.bgGradient} sm:aspect-auto sm:h-[280px] sm:max-h-none`}
               >
-                {config.icon}
+                <div className="text-center text-white">
+                  <PlaceholderIcon className="mx-auto mb-3 h-20 w-20 opacity-50" aria-hidden />
+                  <p className="text-sm opacity-80">No photos yet</p>
+                </div>
               </div>
-            )}
-          </div>
-          {provider.isVerified && (
-            <div className="absolute -top-1 -right-1 w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center border-2 border-white">
-              <BadgeCheck className="w-4 h-4 text-white" />
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Provider Info */}
-      <div className="pt-16 px-4">
-        <div className="flex items-start justify-between mb-2">
-          <div>
-            <h1 className="text-xl font-bold text-gray-800">{provider.businessName}</h1>
-            {provider.fullName && provider.fullName !== provider.businessName && (
-              <p className="text-sm text-gray-500">{provider.fullName}</p>
-            )}
           </div>
-        </div>
+        )}
 
-        {/* Rating & Stats */}
-        <div className="flex items-center gap-4 mb-4">
-          <div className="flex items-center gap-1 bg-green-50 px-2.5 py-1 rounded-full">
-            <Star className="w-4 h-4 text-green-600 fill-green-600" />
-            <span className="text-sm font-semibold text-green-700">{provider.rating.toFixed(1)}</span>
-            <span className="text-xs text-green-600">({provider.reviewCount})</span>
-          </div>
-          {provider.experience > 0 && (
-            <div className="flex items-center gap-1 text-sm text-gray-600">
-              <Briefcase className="w-4 h-4" />
-              <span>{provider.experience} yrs</span>
+        <div className="px-4 pb-36 sm:px-5">
+          <div className="relative z-10 -mt-6 mb-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h1 className="text-2xl font-bold text-gray-900">{provider.businessName}</h1>
+                {provider.fullName && provider.fullName !== provider.businessName ? (
+                  <p className="mt-0.5 text-sm text-gray-500">{provider.fullName}</p>
+                ) : null}
+              </div>
+              <div className="flex shrink-0 gap-1.5">
+                <button
+                  type="button"
+                  onClick={toggleFavorite}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-50 text-gray-600 hover:bg-gray-100"
+                  aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                >
+                  <Heart className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : ''}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleShare()}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-50 text-gray-600 hover:bg-gray-100"
+                  aria-label="Share"
+                >
+                  <Share2 className="h-5 w-5" />
+                </button>
+              </div>
             </div>
-          )}
-          {provider.serviceCount > 0 && (
-            <div className="flex items-center gap-1 text-sm text-gray-600">
-              <Users className="w-4 h-4" />
-              <span>{provider.serviceCount}+ served</span>
+
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <div className="rounded-lg bg-orange-50 px-3 py-1.5">
+                <StarRating
+                  rating={provider.rating}
+                  reviewCount={provider.reviewCount}
+                  starsClassName="h-5 w-5"
+                  textClassName="text-sm text-gray-600"
+                />
+              </div>
+              {provider.isVerified ? (
+                <span className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
+                  <Shield className="h-3.5 w-3.5" aria-hidden />
+                  Verified
+                </span>
+              ) : null}
             </div>
-          )}
-        </div>
 
-        {/* Quick Actions */}
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={handleCall}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-green-50 text-green-600 font-medium"
-          >
-            <Phone className="w-4 h-4" />
-            Call
-          </button>
-          <button
-            onClick={handleDirections}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-50 text-blue-600 font-medium"
-          >
-            <Navigation className="w-4 h-4" />
-            Directions
-          </button>
-          <button
-            onClick={() => onNavigate?.('chat', { vendorId: provider.id })}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-purple-50 text-purple-600 font-medium"
-          >
-            <MessageCircle className="w-4 h-4" />
-            Chat
-          </button>
-        </div>
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5">
+                <span className="text-lg leading-none" aria-hidden>
+                  {config.icon}
+                </span>
+                <span className="text-sm font-medium text-gray-700">{config.displayName}</span>
+              </div>
+              <div className="flex items-center gap-2 rounded-lg bg-purple-50 px-3 py-1.5">
+                <MapPin className="h-4 w-4 shrink-0 text-[#FF8C42]" aria-hidden />
+                <span className="text-sm font-medium text-gray-700">{HOME_SERVICE_CONTEXT_LABEL[serviceType]}</span>
+              </div>
+            </div>
 
-        {/* Location */}
-        <div className="flex items-start gap-2 mb-4 p-3 bg-gray-50 rounded-xl">
-          <MapPin className="w-5 h-5 text-gray-500 mt-0.5" />
-          <div>
-            <p className="text-sm text-gray-700">{provider.address}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="sticky top-0 z-10 bg-white border-b">
-        <div className="flex">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? 'border-orange-500 text-orange-600'
-                  : 'border-transparent text-gray-500'
-              }`}
+            <div
+              className={`mb-4 grid gap-2 border-t border-gray-100 pt-4 ${provider.address?.trim() ? 'grid-cols-3' : 'grid-cols-2'}`}
             >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
+              <button
+                type="button"
+                onClick={handleCall}
+                disabled={!provider.phone}
+                className="group flex flex-col items-center justify-center gap-1.5 rounded-xl bg-gray-50 p-3 transition-colors hover:bg-gray-100 disabled:pointer-events-none disabled:opacity-40"
+              >
+                <Phone className="h-5 w-5 text-[#FF8C42] transition-transform group-hover:scale-110" />
+                <span className="text-xs font-medium text-gray-700">Call</span>
+              </button>
+              {provider.address?.trim() ? (
+                <button
+                  type="button"
+                  onClick={handleDirections}
+                  className="group flex flex-col items-center justify-center gap-1.5 rounded-xl bg-gray-50 p-3 transition-colors hover:bg-gray-100"
+                >
+                  <Navigation className="h-5 w-5 text-[#FF8C42] transition-transform group-hover:scale-110" />
+                  <span className="text-xs font-medium text-gray-700">Directions</span>
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onNavigate?.('chat', { vendorId: provider.id })}
+                className="group flex flex-col items-center justify-center gap-1.5 rounded-xl bg-gray-50 p-3 transition-colors hover:bg-gray-100"
+              >
+                <MessageCircle className="h-5 w-5 text-[#FF8C42] transition-transform group-hover:scale-110" />
+                <span className="text-xs font-medium text-gray-700">Chat</span>
+              </button>
+            </div>
 
-      {/* Tab Content */}
-      <div className="p-4">
+            {provider.address?.trim() ? (
+              <div className="flex items-start gap-3 border-t border-gray-100 pt-4 text-sm">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                <span className="leading-relaxed text-gray-700">{provider.address}</span>
+              </div>
+            ) : null}
+          </div>
+
+          <div ref={tabsSectionRef} className="sticky top-0 z-10 scroll-mt-28 border-b border-gray-200 bg-white">
+            <div className="flex">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-1 border-b-2 py-3 text-sm font-medium transition-colors ${
+                    activeTab === tab.id
+                      ? 'border-[#FF8C42] text-[#FF8C42]'
+                      : 'border-transparent text-gray-500'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="py-4">
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className="space-y-6">
@@ -485,7 +692,7 @@ export function HomeServiceProviderProfile({
                 <div className="grid grid-cols-2 gap-2">
                   {provider.amenities.map((amenity, i) => (
                     <div key={i} className="flex items-center gap-2 text-sm text-gray-600">
-                      <div className="w-2 h-2 rounded-full bg-green-500" />
+                      <div className="w-2 h-2 shrink-0 rounded-full" style={{ backgroundColor: config.primaryColor }} />
                       {amenity}
                     </div>
                   ))}
@@ -533,6 +740,12 @@ export function HomeServiceProviderProfile({
         {/* Services Tab */}
         {activeTab === 'services' && (
           <div className="space-y-3">
+            {profileBookingPhase === 'picking' && provider.services.length > 1 ? (
+              <p className="rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-900">
+                Tap a service to select it, then use{' '}
+                <span className="font-medium text-gray-900">Continue to book</span> below.
+              </p>
+            ) : null}
             {provider.services.length === 0 ? (
               <div className="text-center py-8">
                 <p className="text-gray-500">No services listed</p>
@@ -541,13 +754,37 @@ export function HomeServiceProviderProfile({
               provider.services.map((service) => (
                 <div
                   key={service.id}
-                  className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm"
+                  role={profileBookingPhase === 'picking' ? 'button' : undefined}
+                  tabIndex={profileBookingPhase === 'picking' ? 0 : undefined}
+                  onClick={() => {
+                    if (profileBookingPhase === 'picking') setSelectedServiceId(service.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (profileBookingPhase !== 'picking') return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedServiceId(service.id);
+                    }
+                  }}
+                  className={`rounded-xl border bg-white p-4 shadow-sm transition-all ${
+                    profileBookingPhase === 'picking' ? 'cursor-pointer hover:border-orange-300' : ''
+                  } ${
+                    profileBookingPhase === 'picking' && selectedServiceId === service.id
+                      ? 'border-2 border-orange-600 ring-2 ring-orange-100'
+                      : 'border border-gray-100'
+                  }`}
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div className="flex-1">
                       <h4 className="font-medium text-gray-800">{service.name}</h4>
-                      {service.description && (
-                        <p className="text-sm text-gray-500 mt-1">{service.description}</p>
+                      {service.description?.trim() && (
+                        <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                          <ServiceDescriptionInline
+                            description={service.description}
+                            title={service.name}
+                            className="m-0 text-sm leading-5 text-gray-500"
+                          />
+                        </div>
                       )}
                     </div>
                     <div className="text-right ml-4">
@@ -674,16 +911,37 @@ export function HomeServiceProviderProfile({
             )}
           </div>
         )}
+          </div>
+        </div>
       </div>
 
-      {/* Fixed Book Now Button – standard orange to match vet dashboard (forensic theme compliance) */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 max-w-md mx-auto">
-        <button
-          onClick={onSelectService}
-          className="w-full py-4 rounded-xl text-white font-semibold text-lg bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] shadow-lg"
-        >
-          Book {config.displayName}
-        </button>
+      <div
+        className={`pointer-events-none fixed left-0 right-0 z-40 mx-auto flex w-full max-w-customer justify-center px-5 sm:px-6 ${
+          fixedFooterAboveBottomNav
+            ? 'cw-fixed-above-customer-tabbar py-3'
+            : 'bottom-0 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]'
+        }`}
+      >
+        <div className="pointer-events-auto mx-auto w-full max-w-xs sm:max-w-sm">
+          {profileBookingPhase === 'intro' ? (
+            <Button
+              type="button"
+              onClick={revealServicesAndScroll}
+              className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-lg hover:bg-orange-600"
+            >
+              Select Services to Book
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={() => onSelectService()}
+              disabled={continueBookingDisabled}
+              className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-lg hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-md"
+            >
+              {continueBookingDisabled ? 'Choose a service above' : 'Continue to book'}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Gallery Lightbox */}
@@ -695,12 +953,16 @@ export function HomeServiceProviderProfile({
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black z-50 flex items-center justify-center"
           >
-            <button
-              onClick={() => setShowGallery(false)}
-              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 flex items-center justify-center"
-            >
-              <X className="w-6 h-6 text-white" />
-            </button>
+            <div className="absolute right-0 top-0 z-10 flex justify-end cw-header-safe-top cw-header-safe-x">
+              <button
+                type="button"
+                onClick={() => setShowGallery(false)}
+                className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white/20"
+                aria-label="Close gallery"
+              >
+                <X className="h-6 w-6 text-white" />
+              </button>
+            </div>
             <img
               src={selectedImage}
               alt="Gallery"

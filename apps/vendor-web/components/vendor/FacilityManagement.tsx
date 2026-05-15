@@ -22,6 +22,7 @@ import {
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
 import { getApiBaseUrl } from '@/lib/api-config';
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { SpecializationSelector } from './SpecializationSelector'; // ✅ NEW
 import { formatOperatingHours } from '@/lib/format-utils';
 
@@ -357,7 +358,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-6">
+      <div className="vendor-app-column bg-white min-h-screen pb-6">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 p-4 z-10">
           <div className="flex items-center gap-3">
@@ -398,8 +399,14 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
         {/* Upload Area */}
         <div className="p-4">
           {canAddMore && (
-            <label className="block w-full cursor-pointer">
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 hover:border-[#FF8C42] hover:bg-orange-50 transition-all text-center">
+            <TouchFilePicker
+              onFileChange={handleFileSelect}
+              accept="image/*"
+              multiple
+              className="block w-full min-h-[12rem] overflow-hidden rounded-xl"
+              innerClassName="flex w-full min-h-[12rem] flex-col items-center justify-center p-8 text-center"
+            >
+              <div className="w-full border-2 border-dashed border-gray-300 rounded-xl p-6 transition-all hover:border-[#FF8C42] hover:bg-orange-50">
                 <Upload className="w-12 h-12 text-gray-400 mx-auto mb-3" />
                 <p className="font-medium text-gray-900 mb-1">Upload Facility Photos</p>
                 <p className="text-sm text-gray-500 mb-1">
@@ -407,14 +414,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
                 </p>
                 <p className="text-xs text-gray-400">JPG, PNG or WEBP • Max 5MB per photo</p>
               </div>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-            </label>
+            </TouchFilePicker>
           )}
 
           {!canAddMore && (

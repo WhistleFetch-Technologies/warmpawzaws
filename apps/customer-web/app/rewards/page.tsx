@@ -1,7 +1,10 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 
 // ============================================================================
 // TYPES
@@ -173,7 +176,7 @@ export default function RewardsPage() {
       setLoading(true);
       setError(null);
       
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       if (!customerId) {
         setError('Please log in to view rewards');
         setLoading(false);
@@ -248,7 +251,7 @@ export default function RewardsPage() {
       setRedeeming(reward.id);
       setError(null);
       
-      const customerId = localStorage.getItem('customerId');
+      const customerId = getResolvedCustomerId();
       if (!customerId) {
         setError('Please log in to redeem rewards');
         return;
@@ -274,10 +277,12 @@ export default function RewardsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading rewards...</p>
+      <div className="min-h-screen min-h-[100dvh] w-full flex justify-center bg-gray-50">
+        <div className="w-full max-w-customer mx-auto flex items-center justify-center px-4 py-12">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto" />
+            <p className="mt-4 text-sm text-gray-600">Loading rewards...</p>
+          </div>
         </div>
       </div>
     );
@@ -302,22 +307,39 @@ export default function RewardsPage() {
     : rewards;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Hero Section - Special design, keep as-is but update container */}
-      {balance && (
-        <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white">
-          <div className="max-w-7xl mx-auto px-6 py-8 text-center">
-            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full ${tierColors[balance.tier].bg} ${tierColors[balance.tier].text} mb-4`}>
+    <div className="min-h-screen min-h-[100dvh] w-full bg-gradient-to-br from-orange-50 to-amber-50 flex justify-center">
+      <div className="w-full max-w-customer mx-auto min-h-screen min-h-[100dvh] flex flex-col shadow-[0_0_0_1px_rgba(0,0,0,0.04)]">
+        <header className="sticky top-0 z-20 shrink-0 border-b border-orange-200/80 bg-white/90 backdrop-blur-sm cw-header-safe-top">
+          <div className="px-4 pb-3 pt-2 flex items-start gap-1">
+            <Link
+              href="/"
+              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-gray-800 -ml-1 hover:bg-stone-100 active:bg-stone-200/80 transition-colors"
+              aria-label="Back to home"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Link>
+            <div className="flex-1 min-w-0 pt-0.5 pr-1">
+              <h1 className="text-lg font-bold text-gray-800 leading-snug">Rewards & Loyalty</h1>
+              <p className="text-xs text-gray-500 mt-0.5">Earn points and redeem amazing rewards</p>
+            </div>
+          </div>
+        </header>
+
+        {/* Hero Section */}
+        {balance && (
+        <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shrink-0">
+          <div className="px-4 py-6 text-center">
+            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm ${tierColors[balance.tier].bg} ${tierColors[balance.tier].text} mb-3`}>
               <span>{tierColors[balance.tier].icon}</span>
               <span className="font-semibold capitalize">{balance.tier} Member</span>
             </div>
-            
-            <p className="text-5xl font-bold mb-2">{balance.points.toLocaleString()}</p>
-            <p className="text-white/80">Available Points</p>
-            
+
+            <p className="text-4xl font-bold tabular-nums mb-1">{balance.points.toLocaleString()}</p>
+            <p className="text-sm text-white/85">Available Points</p>
+
             {balance.next_tier && (
-              <div className="mt-6 bg-white/10 rounded-xl p-4">
-                <div className="flex justify-between text-sm mb-2">
+              <div className="mt-5 bg-white/10 rounded-xl p-3">
+                <div className="flex justify-between gap-2 text-xs mb-2 text-left">
                   <span>Progress to {balance.next_tier}</span>
                   <span>{balance.points_to_next_tier} points to go</span>
                 </div>
@@ -339,11 +361,10 @@ export default function RewardsPage() {
             )}
           </div>
         </div>
-      )}
+        )}
 
-      {/* Main Content - Match consistency pattern: max-w-7xl mx-auto p-6 or p-8 */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-6">
+        <div className="flex-1 overflow-y-auto pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
+        <div className="px-4 py-4">
           
           {/* Messages */}
           {error && (
@@ -361,23 +382,29 @@ export default function RewardsPage() {
           )}
 
           {/* Tabs */}
-          <div className="mb-6">
-            <div className="flex bg-white rounded-xl p-1 shadow-sm">
+          <div className="mb-4">
+            <div className="flex bg-white rounded-xl p-1 shadow-sm border border-stone-200/90" role="tablist">
               {[
-                { id: 'rewards', label: 'Redeem Points', icon: '🎁' },
-                { id: 'history', label: 'Points History', icon: '📜' },
-                { id: 'redeemed', label: 'My Rewards', icon: '🎫' },
+                { id: 'rewards', label: 'Redeem', icon: '🎁' },
+                { id: 'history', label: 'History', icon: '📜' },
+                { id: 'redeemed', label: 'Mine', icon: '🎫' },
               ].map(tab => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex-1 py-3 rounded-lg font-medium transition ${
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === tab.id}
+                  onClick={() => setActiveTab(tab.id as 'rewards' | 'history' | 'redeemed')}
+                  className={`flex-1 min-h-[44px] py-1.5 px-0.5 rounded-lg text-[11px] font-semibold transition flex flex-col items-center justify-center gap-0.5 leading-tight ${
                     activeTab === tab.id
-                      ? 'bg-orange-500 text-white'
-                      : 'text-gray-600 hover:bg-gray-100'
+                      ? 'bg-orange-500 text-white shadow-sm'
+                      : 'text-gray-600 hover:bg-stone-50'
                   }`}
                 >
-                  {tab.icon} {tab.label}
+                  <span className="text-base leading-none" aria-hidden>
+                    {tab.icon}
+                  </span>
+                  <span>{tab.label}</span>
                 </button>
               ))}
             </div>
@@ -408,7 +435,7 @@ export default function RewardsPage() {
             {!filterCategory && (
               <div className="mb-8">
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">⭐ Featured Rewards</h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   {rewards.filter(r => r.is_featured).map(reward => (
                     <div key={reward.id} className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-2xl p-5 border-2 border-orange-200">
                       <span className="text-3xl">{categoryIcons[reward.category]}</span>
@@ -434,7 +461,7 @@ export default function RewardsPage() {
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               {filterCategory ? `${categoryIcons[filterCategory]} ${filterCategory.charAt(0).toUpperCase() + filterCategory.slice(1)} Rewards` : 'All Rewards'}
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               {filteredRewards.map(reward => (
                 <div key={reward.id} className="bg-white rounded-2xl p-5 shadow-sm">
                   <div className="flex items-start gap-4">
@@ -564,6 +591,7 @@ export default function RewardsPage() {
             )}
           </div>
         )}
+        </div>
         </div>
       </div>
     </div>

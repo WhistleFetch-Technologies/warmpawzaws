@@ -5,8 +5,7 @@ export const dynamic = 'force-dynamic';
 import React from 'react';
 import { useRouter } from 'next/navigation';
 import { VendorAnalytics } from '@/components/vendor/VendorAnalytics';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 export default function AnalyticsPage() {
   const router = useRouter();
@@ -30,33 +29,20 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => router.back()}
-              className="rounded-full"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">Analytics</h1>
-              <p className="text-sm text-gray-500 mt-1">View your business performance metrics</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Analytics Component */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        <VendorAnalytics
-          vendorId={vendorId}
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="Analytics"
+          subtitle="View your business performance metrics"
           onBack={() => router.back()}
         />
+        <div className="w-full px-4 py-6 sm:px-6">
+          <VendorAnalytics
+            vendorId={vendorId}
+            onBack={() => router.back()}
+            suppressChrome
+          />
+        </div>
       </div>
     </div>
   );

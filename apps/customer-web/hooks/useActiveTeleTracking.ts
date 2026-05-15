@@ -91,18 +91,7 @@ export function useActiveVideoCall(
         localStorage.setItem('phone', session.customerPhone);
       }
 
-      // Build query parameters with customerId for deployed environments
-      // This ensures the video page can identify the user even if localStorage is cleared
-      const queryParams = new URLSearchParams();
-      if (session.customerId) {
-        queryParams.set('customerId', session.customerId);
-      } else if (session.customerPhone) {
-        queryParams.set('customerPhone', session.customerPhone);
-      }
-      const queryString = queryParams.toString();
-      
-      // Navigate to video page with customerId in query params - it will auto-join
-      const videoUrl = `/video/${session.bookingId}${queryString ? `?${queryString}` : ''}`;
+      const videoUrl = `/video/${session.bookingId}`;
       router.push(videoUrl);
     } catch (err: any) {
       console.error('Error joining call:', err);

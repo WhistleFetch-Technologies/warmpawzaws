@@ -3,96 +3,69 @@
  * Handles session persistence, expiry, and hard refresh detection
  */
 
+import { ensureCustomerIdStorageReconciledOnce } from './customer-id-storage';
+import { getCognitoTokens, clearCognitoTokens } from './cognito-auth';
+
+/** After OTP, customer must set password before treating login as complete (first-time / legacy OTP-only). */
+export const SESSION_KEY_NEEDS_PASSWORD_SETUP = 'warmpawz_needs_password_setup';
+
+export function setNeedsPasswordSetupAfterOtp(): void {
+  if (typeof window !== 'undefined') sessionStorage.setItem(SESSION_KEY_NEEDS_PASSWORD_SETUP, '1');
+}
+
+export function clearNeedsPasswordSetup(): void {
+  if (typeof window !== 'undefined') sessionStorage.removeItem(SESSION_KEY_NEEDS_PASSWORD_SETUP);
+}
+
+export function needsPasswordSetupAfterOtp(): boolean {
+  return typeof window !== 'undefined' && sessionStorage.getItem(SESSION_KEY_NEEDS_PASSWORD_SETUP) === '1';
+}
+
+/** Prefer Cognito bundle (`customerCognitoTokens`), then legacy `authToken` / `cognitoAccessToken`. */
+export function getStoredCustomerJwtForSession(): string | null {
+  if (typeof window === 'undefined') return null;
+  const c = getCognitoTokens();
+  if (c?.idToken) return c.idToken;
+  if (c?.accessToken) return c.accessToken;
+  return localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken');
+}
+
 /**
- * Check if this is a hard refresh
- * Uses multiple methods for reliability
- * 
- * FIXED: Re-enabled proper hard refresh detection with conservative approach
+ * Whether the current page load is a "hard refresh" (F5 / Ctrl-R / browser
+ * reload button).
+ *
+ * IMPORTANT: This used to clear the customer's session on every hard refresh
+ * when an auth token was already present — which kicked users out frequently,
+ * especially after every deploy. With the 90-day persistent-login requirement
+ * we no longer clear on reload. The token-refresh path (`cognito-auth.ts`)
+ * already handles short-lived access tokens by silently exchanging the
+ * refresh token whenever the access/id token is close to expiry, so a reload
+ * never needs to drop credentials.
+ *
+ * The function is retained (and still detects reloads) so callers can branch
+ * on the navigation type, but it always returns `false` to match the product
+ * requirement that "logout should only happen when the user explicitly taps
+ * Logout".
  */
 export function isHardRefresh(): boolean {
   if (typeof window === 'undefined') return false;
-  
-  // Add debug logging for troubleshooting
-  const debugInfo = {
-    hasToken: !!(localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken')),
-    hasSessionFlag: !!sessionStorage.getItem('_warmpawz_has_session'),
-    justLoggedIn: !!sessionStorage.getItem('_warmpawz_just_logged_in'),
-    pathname: window.location.pathname,
-    navigationType: 'unknown'
-  };
-  
-  try {
-    const perfEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
-    if (perfEntries.length > 0) {
-      debugInfo.navigationType = perfEntries[0].type;
-    }
-  } catch (e) {
-    // Performance API not available
-  }
-  
-  console.log('[Session Debug] isHardRefresh check:', debugInfo);
-  
-  // CRITICAL: Check if user just logged in - never clear session in this case
-  const justLoggedIn = sessionStorage.getItem('_warmpawz_just_logged_in');
-  if (justLoggedIn) {
-    // Clear the flag but don't clear session
-    sessionStorage.removeItem('_warmpawz_just_logged_in');
-    console.log('[Session] Just logged in - preserving session');
-    return false;
-  }
-  
-  // Check if session flag exists - if it does, user has an active session
-  const hasSessionFlag = sessionStorage.getItem('_warmpawz_has_session');
-  if (hasSessionFlag) {
-    // Session flag exists, not a hard refresh (sessionStorage persists within tab)
-    console.log('[Session] Session flag exists - preserving session');
-    return false;
-  }
-  
-  // Check if we're on the auth page - if so, don't clear (user is logging in)
-  if (window.location.pathname.includes('/auth')) {
-    console.log('[Session] On auth page - preserving session');
-    return false;
-  }
-  
-  // Method 1: Check navigation type (most reliable)
-  const hasToken = !!(localStorage.getItem('authToken') || localStorage.getItem('cognitoAccessToken'));
-  
+
+  // Best-effort logging only — never clear the session here.
   try {
     const perfEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
     if (perfEntries.length > 0) {
       const navType = perfEntries[0].type;
-      
+      const hasToken = !!getStoredCustomerJwtForSession();
       if (navType === 'reload') {
-        // Hard refresh detected (F5 or Ctrl+R)
-        // Only clear if we had a session before
-        if (hasToken) {
-          console.log('[Session] Hard refresh detected with existing token - CLEARING SESSION');
-          return true;
-        }
-      }
-      
-      if (navType === 'navigate' || navType === 'back_forward') {
-        // Normal navigation - not a hard refresh
-        console.log('[Session] Normal navigation - preserving session');
-        return false;
+        console.log(
+          `[Session] Reload detected (hasToken=${hasToken}) — keeping session; refresh-token flow will renew expired access tokens automatically.`,
+        );
       }
     }
-  } catch (e) {
-    console.warn('[Session] Performance API not available:', e);
+  } catch {
+    /* Performance API unavailable — nothing to do. */
   }
-  
-  // Method 2: Conservative fallback
-  // If we have tokens but no session flag, check navigation type
-  // Don't automatically clear - only clear if we confirmed reload above
-  if (hasToken && !hasSessionFlag) {
-    console.log('[Session] Has token but no session flag - treating as new tab, preserving session for now');
-    // This is likely a new tab - don't clear session
-    // New tabs should redirect to login naturally via the app logic
-    return false;
-  }
-  
-  console.log('[Session] No hard refresh detected - preserving session');
+
   return false;
 }
 
@@ -101,14 +74,24 @@ export function isHardRefresh(): boolean {
  */
 export function clearCustomerSession(): void {
   if (typeof window === 'undefined') return;
+
+  try {
+    clearCognitoTokens();
+  } catch {
+    /* ignore */
+  }
   
   localStorage.removeItem('customerPhone');
   localStorage.removeItem('customerId');
+  localStorage.removeItem('customer_id');
+  localStorage.removeItem('warmpawz_customer_id');
   localStorage.removeItem('authToken');
   localStorage.removeItem('customerData');
   localStorage.removeItem('customerProfile');
   localStorage.removeItem('customerPets');
   localStorage.removeItem('customerOnboardingComplete');
+  localStorage.removeItem('onboarding_completed');
+  localStorage.removeItem('profile_completed');
   localStorage.removeItem('customerJourneyStage');
   
   // Clear Cognito tokens
@@ -117,6 +100,17 @@ export function clearCustomerSession(): void {
   localStorage.removeItem('cognitoRefreshToken');
   localStorage.removeItem('cognitoTokenExpiry');
   localStorage.removeItem('cognitoUserInfo');
+  localStorage.removeItem('customerRefreshTokenExpiry');
+
+  // Aliases used by auth / legacy flows
+  localStorage.removeItem('customer_phone');
+  localStorage.removeItem('phone');
+  localStorage.removeItem('refreshToken');
+
+  // Tab session flags (avoid stale “logged in” after explicit sign-out)
+  sessionStorage.removeItem('_warmpawz_has_session');
+  sessionStorage.removeItem('_warmpawz_just_logged_in');
+  sessionStorage.removeItem(SESSION_KEY_NEEDS_PASSWORD_SETUP);
 }
 
 /**
@@ -148,36 +142,42 @@ export function isTokenExpired(token: string | null): boolean {
 }
 
 /**
- * Initialize session - clear on hard refresh
- * MUST be called synchronously before any component logic
+ * Initialize session.
+ *
+ * MUST be called synchronously before any component logic.
+ *
+ * Behaviour change (90-day persistent login):
+ *   - We NEVER clear the session here. Reloads, deploys and new tabs simply
+ *     restore whatever is in `localStorage` and kick off a silent refresh if
+ *     the access/id token has expired.
+ *   - The only path that clears the session is `clearCustomerSession()` (used
+ *     by the explicit logout flow).
+ *   - If the refresh token itself has expired or the server rejects it, the
+ *     refresh helper in `cognito-auth.ts` is the one that decides whether to
+ *     drop credentials — not this function.
  */
 export function initializeSession(): void {
   if (typeof window === 'undefined') return;
-  
-  // Check for hard refresh FIRST (before reading localStorage)
-  const isHard = isHardRefresh();
-  
-  if (isHard) {
-    console.log('[Session] Hard refresh detected - clearing customer session');
-    clearCustomerSession();
-    // Set flag so we know session was cleared
-    sessionStorage.setItem('_warmpawz_session_cleared', 'true');
-    return;
-  }
-  
-  // Check if session was cleared on previous hard refresh
+
+  // Best-effort detection only; we deliberately do NOT clear on reload.
+  isHardRefresh();
+
   const wasCleared = sessionStorage.getItem('_warmpawz_session_cleared');
   if (wasCleared === 'true') {
-    // Session was cleared, remove flag
     sessionStorage.removeItem('_warmpawz_session_cleared');
   }
-  
-  // Check token expiry
-  const token = localStorage.getItem('authToken') || 
-                localStorage.getItem('cognitoAccessToken');
-  
+
+  const token = getStoredCustomerJwtForSession();
   if (token && isTokenExpired(token)) {
-    console.log('[Session] Token expired - clearing customer session');
-    clearCustomerSession();
+    console.log('[Session] Access/id token expired - attempting silent refresh (90-day refresh window)');
+    import('./cognito-auth').then(({ refreshCognitoTokensIfNeeded }) => {
+      refreshCognitoTokensIfNeeded().catch(() => {
+        /* silent refresh failures are swallowed here so we don't kick the user
+         * out on a transient error; the next authenticated API call will
+         * trigger another refresh attempt. */
+      });
+    });
   }
+
+  ensureCustomerIdStorageReconciledOnce();
 }

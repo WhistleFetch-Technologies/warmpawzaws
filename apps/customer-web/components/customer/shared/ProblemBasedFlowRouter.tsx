@@ -85,6 +85,7 @@ type FlowStep =
 // ============================================================================
 
 interface ServiceStyleSelectorProps {
+  phone: string;
   problemId: string;
   problemTitle: string;
   category: string;
@@ -96,6 +97,7 @@ interface ServiceStyleSelectorProps {
 }
 
 function ServiceStyleSelector({ 
+  phone,
   problemId, 
   problemTitle, 
   category, 
@@ -436,7 +438,7 @@ export function ProblemBasedFlowRouter({
         walking: ['at_home'], // Walking is only at_home
         boarding: ['at_center'],
         behaviorist: ['tele', 'at_home', 'at_center'],
-        nutritionist: ['tele', 'at_home'], // Nutritionists offer tele and home visits
+        nutritionist: ['tele'], // Nutritionists: video call only
       };
 
       const allowedStyles = categoryStyleMap[category] || ['at_center'];
@@ -452,16 +454,12 @@ export function ProblemBasedFlowRouter({
 
           try {
             // Check if there are providers for this style + specialization
+            const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
             const response = await apiClient.get(
-              `/customer/services/by-style?style=${style.style}&category=${category}&roleId=${roleId}&specialization=${encodeURIComponent(problemId)}${locationParams}`
+              `/customer/services/by-style?style=${style.style}&category=${category}&roleId=${roleId}&specialization=${encodeURIComponent(problemId)}${locationParams}${phoneParam}`
             ) as any;
 
             let providers = response.providers || response.vendors || [];
-            
-            // ✅ FIX: Filter out business vendors when style is at_home
-            if (style.style === 'at_home') {
-              providers = providers.filter((p: any) => p.vendorType !== 'business');
-            }
             
             const isAvailable = providers.length > 0;
             // Phase 2: earliest slot from first provider's nextAvailable/nextAvailableSlot/nextAvailability
@@ -539,7 +537,7 @@ export function ProblemBasedFlowRouter({
         walking: ['at_home'],
         boarding: ['at_center'],
         behaviorist: ['tele', 'at_home', 'at_center'],
-        nutritionist: ['tele', 'at_home'],
+        nutritionist: ['tele'],
       };
       const allowedStyles = categoryStyleMap[category] || ['at_center'];
       
@@ -664,6 +662,7 @@ export function ProblemBasedFlowRouter({
     case 'style-selection':
       return (
         <ServiceStyleSelector
+          phone={phone}
           problemId={problemId}
           problemTitle={problemTitle}
           category={category}
@@ -731,6 +730,7 @@ export function ProblemBasedFlowRouter({
     default:
       return (
         <ServiceStyleSelector
+          phone={phone}
           problemId={problemId}
           problemTitle={problemTitle}
           category={category}

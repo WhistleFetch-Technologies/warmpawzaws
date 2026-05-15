@@ -1,9 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/api-client';
+import { goBackOrReplace } from '@/lib/go-back-or-replace';
+import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { petsApi } from '@/lib/api-client';
+import { fetchPetById } from '@/lib/fetch-customer-pet';
 import { PetProfile } from '@/components/customer/PetProfile';
 
 interface PetDetails {
@@ -43,49 +46,31 @@ export function PetDetailsClient({ petId: petIdProp }: PetDetailsClientProps) {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
+    if (!petId) return;
     const storedPhone = localStorage.getItem('customerPhone');
     if (!storedPhone) {
       router.push('/auth');
       return;
     }
     setPhone(storedPhone);
-  }, [router]);
-
-  useEffect(() => {
-    if (!petId || !phone) return;
-    loadPet();
+    void loadPet();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [petId, phone]);
+  }, [petId, router]);
 
   const loadPet = async () => {
     if (!petId) return;
+    const storedPhone =
+      typeof window !== 'undefined' ? localStorage.getItem('customerPhone') : null;
     try {
       setLoading(true);
       setError(null);
-      // Prefer GET /pets/:petId (same API surface as edit/delete); fallback to /customer/pets/:petId
-      let response: any = null;
-      try {
-        response = await apiClient.get<any>(`/pets/${petId}`);
-        if (response?.pet) {
-          setPet(normalizePet(response.pet));
-          return;
-        }
-      } catch {
-        // ignore
+      const raw = await fetchPetById(petId, storedPhone);
+      if (raw) {
+        setPet(normalizePet(raw));
+      } else {
+        setPet(null);
+        setError('Pet not found');
       }
-      response = await apiClient.get<any>(`/customer/pets/${petId}`);
-      if (response?.success && response?.pet) {
-        setPet(normalizePet(response.pet));
-        return;
-      }
-      if (response?.pets && Array.isArray(response.pets) && response.pets.length > 0) {
-        const match = response.pets.find((p: any) => p.id === petId);
-        if (match) {
-          setPet(normalizePet(match));
-          return;
-        }
-      }
-      setError('Pet not found');
     } catch (err: any) {
       console.error('Error loading pet details:', err);
       setError(err.message || 'Failed to load pet profile');
@@ -109,9 +94,9 @@ export function PetDetailsClient({ petId: petIdProp }: PetDetailsClientProps) {
     };
   }
 
-  const handleBack = () => {
-    router.push('/pets');
-  };
+  const handleBack = useCallback(() => {
+    goBackOrReplace(router, '/pets');
+  }, [router]);
 
   const startEdit = () => {
     setEditForm({
@@ -167,22 +152,19 @@ export function PetDetailsClient({ petId: petIdProp }: PetDetailsClientProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500" />
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-md items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50 shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-orange-500" />
       </div>
     );
   }
 
-  if (error || !pet || !phone) {
+  if (error || !pet) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50 p-6 text-center">
-        <p className="text-gray-700 mb-4">{error || 'Pet not found'}</p>
-        <button
-          onClick={handleBack}
-          className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition"
-        >
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50 p-6 text-center shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
+        <p className="mb-4 text-gray-700">{error || 'Pet not found'}</p>
+        <Button type="button" onClick={handleBack} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
           Back to Pets
-        </button>
+        </Button>
       </div>
     );
   }
@@ -190,45 +172,57 @@ export function PetDetailsClient({ petId: petIdProp }: PetDetailsClientProps) {
   const petAge = pet.age_years ? `${pet.age_years} years` : pet.age_months ? `${pet.age_months} months` : undefined;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      <div className="bg-white/90 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <button
+    <div className="mx-auto min-h-[100dvh] w-full max-w-md bg-gradient-to-b from-orange-50/90 to-amber-50/80 shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
+      <header className="sticky top-0 z-50 shrink-0 border-b border-orange-100/80 bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/85 cw-header-safe-top">
+        <div className="relative flex h-[3.25rem] items-center justify-center px-2">
+          <div className="absolute left-0.5 top-1/2 -translate-y-1/2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 shrink-0 text-gray-800"
               onClick={handleBack}
-              className="px-3 py-2 border rounded-lg text-gray-600 hover:bg-gray-50"
+              aria-label="Go back"
             >
-              ← Back
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">{pet.name}</h1>
-              <p className="text-sm text-gray-500">Pet Profile</p>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </div>
+          <div className="pointer-events-none max-w-[48%] text-center">
+            <h1 className="truncate text-lg font-bold tracking-tight text-gray-900">{pet.name}</h1>
+            <p className="truncate text-[11px] font-medium uppercase tracking-wide text-gray-500">
+              Pet Profile
+            </p>
+          </div>
+          {!editing && !deleteConfirm ? (
+            <div className="absolute right-0.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 shrink-0 text-[#FF8C42] hover:bg-orange-50 hover:text-[#FF7029]"
+                onClick={startEdit}
+                aria-label="Edit pet"
+              >
+                <Pencil className="h-5 w-5" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 shrink-0 text-red-600 hover:bg-red-50"
+                onClick={() => setDeleteConfirm(true)}
+                aria-label="Delete pet"
+              >
+                <Trash2 className="h-5 w-5" />
+              </Button>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {!editing && !deleteConfirm && (
-              <>
-                <button
-                  onClick={startEdit}
-                  className="px-3 py-2 border border-orange-500 text-orange-600 rounded-lg hover:bg-orange-50"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => setDeleteConfirm(true)}
-                  className="px-3 py-2 border border-red-500 text-red-600 rounded-lg hover:bg-red-50"
-                >
-                  Delete
-                </button>
-              </>
-            )}
-          </div>
+          ) : null}
         </div>
-      </div>
+      </header>
 
       {editing && (
-        <div className="max-w-7xl mx-auto p-6">
-          <div className="bg-white rounded-xl shadow-sm p-6 max-w-md">
+        <div className="px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+          <div className="rounded-2xl border border-gray-100/80 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
             <h2 className="text-lg font-semibold text-gray-800 mb-4">Edit Pet</h2>
             <div className="space-y-4">
               <div>
@@ -316,8 +310,8 @@ export function PetDetailsClient({ petId: petIdProp }: PetDetailsClientProps) {
       )}
 
       {deleteConfirm && (
-        <div className="max-w-7xl mx-auto p-6">
-          <div className="bg-white rounded-xl shadow-sm p-6 max-w-md">
+        <div className="px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+          <div className="rounded-2xl border border-red-100 bg-white p-5 shadow-[0_2px_12px_rgba(0,0,0,0.06)]">
             <p className="text-gray-700 mb-4">Are you sure you want to remove this pet? This cannot be undone.</p>
             <div className="flex gap-2">
               <button
@@ -341,7 +335,7 @@ export function PetDetailsClient({ petId: petIdProp }: PetDetailsClientProps) {
 
       {!editing && !deleteConfirm && (
         <PetProfile
-          phone={phone}
+          phone={phone || (typeof window !== 'undefined' ? localStorage.getItem('customerPhone') || '' : '')}
           petId={pet.id}
           petName={pet.name}
           petAge={petAge}

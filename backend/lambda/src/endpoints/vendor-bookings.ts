@@ -19,10 +19,17 @@ import { randomUUID } from 'crypto';
 import { select, update, query, insert } from '../database/rds-connection';
 import { logBookingStatusChange } from '../utils/audit-log';
 import { resolveVendorId } from '../utils/vendor-resolve';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds, parseSelectedServices } from '../utils/entity-extractor';
+import {
+  normalizeDbRow,
+  normalizeDbRows,
+  extractEntityIds,
+  parseSelectedServices,
+  resolveVendorVisibleBookingAmount,
+} from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
 import { getDiscoveryRules } from '../lib/rule-engine';
+import { loadBookingServiceSnapshot, snapshotToNestedService } from '../utils/booking-service-snapshot';
 
 // Helper function to format detailed address with all fields
 function formatDetailedAddress(addr: any): string {
@@ -46,6 +53,25 @@ function formatDetailedAddress(addr: any): string {
   if (addr.pincode) parts.push(addr.pincode);
   
   return parts.filter(Boolean).join(', ');
+}
+
+/** Walk / home-service countdown anchor: active GPS row, then booking columns (see GET /details). */
+function resolveActiveGpsSessionAnchor(sessions: unknown): string | null {
+  const rows = Array.isArray(sessions) ? (sessions as any[]) : [];
+  if (!rows.length) return null;
+  const active = rows
+    .slice()
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    .find((s) => {
+      const st = String(s?.status ?? '').toLowerCase().replace(/\s+/g, '_');
+      return st !== 'completed' && st !== 'cancelled';
+    });
+  if (!active) return null;
+  const anchor =
+    active.session_started_at ||
+    active.arrived_at ||
+    active.started_at;
+  return anchor != null && String(anchor).trim() !== '' ? String(anchor) : null;
 }
 
 export function registerVendorBookingsEndpoints(app: Hono) {
@@ -94,22 +120,29 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       const params: any[] = [...vendorIds];
       let paramIndex = vendorIds.length + 1;
 
+      // Calendar must show one row per actionable visit. For package purchases:
+      //   - HIDE the canonical parent (purchase-level row, no per-visit time/OTP).
+      //   - SHOW each child session booking individually (per-session time + OTP).
+      const PACKAGE_PARENT_HIDE = `(
+        b.package_purchase_id IS NULL
+        OR COALESCE(b.is_package_session, false) = true
+      )`;
+
       if (centerId) {
-        // Include bookings from same vendor IDs OR vendors with same center_id
         const vendorIdConditions = vendorIds.map((_, idx) => `b.vendor_id = $${idx + 1}`).join(' OR ');
         queryText = `SELECT b.* FROM bookings b
            LEFT JOIN vendors v ON v.id = b.vendor_id
            WHERE (
              (${vendorIdConditions})
              OR (v.center_id = $${paramIndex} AND v.center_id IS NOT NULL)
-           ) AND b.status != 'pending_payment'`;
+           ) AND b.status != 'pending_payment'
+             AND ${PACKAGE_PARENT_HIDE}`;
         params.push(centerId);
         paramIndex++;
       } else {
-        // No center_id, just match vendor IDs
         queryText = vendorIds.length === 1
-          ? 'SELECT b.* FROM bookings b WHERE b.vendor_id = $1 AND b.status != \'pending_payment\''
-          : 'SELECT b.* FROM bookings b WHERE (b.vendor_id = $1 OR b.vendor_id = $2) AND b.status != \'pending_payment\'';
+          ? `SELECT b.* FROM bookings b WHERE b.vendor_id = $1 AND b.status != 'pending_payment' AND ${PACKAGE_PARENT_HIDE}`
+          : `SELECT b.* FROM bookings b WHERE (b.vendor_id = $1 OR b.vendor_id = $2) AND b.status != 'pending_payment' AND ${PACKAGE_PARENT_HIDE}`;
       }
 
       // Filter by date
@@ -133,15 +166,52 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       const chatRules = await getDiscoveryRules('all', 'chat');
       const chatDays = chatRules.chat_available_days_post_appointment ?? 7;
 
+      // Pre-compute package progress for any session-children in this page.
+      const packagePurchaseIdsForProgress = Array.from(
+        new Set(
+          (result.rows || [])
+            .map((b: any) =>
+              b?.is_package_session && b?.package_purchase_id
+                ? String(b.package_purchase_id)
+                : ''
+            )
+            .filter(Boolean)
+        )
+      );
+      const progressByPackage = new Map<
+        string,
+        { completedSessions: number; totalSessions: number }
+      >();
+      if (packagePurchaseIdsForProgress.length > 0) {
+        const progressRes = await query(
+          `SELECT pp.id::text AS package_purchase_id,
+                  COALESCE(pp.total_sessions, 0)::int AS total_sessions,
+                  COALESCE(
+                    (SELECT COUNT(*)::int
+                     FROM bookings bx
+                     WHERE bx.package_purchase_id = pp.id
+                       AND COALESCE(bx.is_package_session, false) = true
+                       AND bx.status = 'completed'),
+                    0
+                  ) AS completed_sessions
+           FROM package_purchases pp
+           WHERE pp.id::text = ANY($1::text[])`,
+          [packagePurchaseIdsForProgress]
+        ).catch(() => ({ rows: [] as Array<Record<string, unknown>> }));
+        for (const row of progressRes.rows || []) {
+          progressByPackage.set(String(row.package_purchase_id), {
+            completedSessions: Number(row.completed_sessions) || 0,
+            totalSessions: Number(row.total_sessions) || 0,
+          });
+        }
+      }
+
       // Enrich bookings with customer, service, vendor, and related data (prescriptions, medical records, chat)
       const enrichedBookings = await Promise.all(
         result.rows.map(async (booking: any) => {
-          const [customer, service, vendor, prescriptions, medicalRecords, chatMessages] = await Promise.all([
+          const [customer, vendor, prescriptions, medicalRecords, chatMessages] = await Promise.all([
             booking.customer_id
               ? select('customers', { id: booking.customer_id }).catch(() => [])
-              : Promise.resolve([]),
-            booking.service_id
-              ? select('services', { id: booking.service_id }).catch(() => [])
               : Promise.resolve([]),
             // ✅ FIX: Add vendor lookup for chat enabled logic
             booking.vendor_id
@@ -171,18 +241,79 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           const medicalRecordCount = parseInt(medicalRecords.rows[0]?.count || '0', 10);
           const unreadMessageCount = parseInt(chatMessages.rows[0]?.count || '0', 10);
 
+          const serviceSnap = await loadBookingServiceSnapshot(booking.vendor_id, booking.service_id);
+          let serviceNested: Record<string, unknown> | null = serviceSnap ? snapshotToNestedService(serviceSnap) : null;
+          if (!serviceNested && booking.service_id) {
+            const legacy = await select('services', { id: booking.service_id }).catch(() => []);
+            if (legacy.length > 0) {
+              serviceNested = {
+                id: legacy[0].id,
+                serviceId: legacy[0].id,
+                name: legacy[0].name,
+                serviceName: legacy[0].name,
+                displayName: legacy[0].name,
+                description: legacy[0].description ?? null,
+                category: legacy[0].category ?? null,
+                sub_category: null,
+                service_style: booking.service_type ?? null,
+                serviceStyle: booking.service_type ?? null,
+                basePrice: Number(legacy[0].price ?? 0),
+                price: Number(legacy[0].price ?? 0),
+                duration: Number(legacy[0].duration_minutes ?? 30),
+                durationMinutes: Number(legacy[0].duration_minutes ?? 30),
+              };
+            }
+          }
+
+          const vendorVisibleAmount = resolveVendorVisibleBookingAmount(booking, { serviceSnap });
+          if (serviceNested) {
+            serviceNested = {
+              ...serviceNested,
+              price: vendorVisibleAmount,
+              basePrice: vendorVisibleAmount,
+            };
+          }
+          // Backend-computed progress for package session children.
+          const packageProgress =
+            booking.is_package_session && booking.package_purchase_id
+              ? progressByPackage.get(String(booking.package_purchase_id)) || null
+              : null;
+          const sessionDateTime =
+            booking.is_package_session && booking.booking_date && booking.booking_time
+              ? `${String(booking.booking_date).slice(0, 10)}T${String(booking.booking_time)}`
+              : undefined;
           return {
             ...booking,
+            total_amount: vendorVisibleAmount,
+            totalAmount: vendorVisibleAmount,
+            price: vendorVisibleAmount,
+            base_price: vendorVisibleAmount,
+            basePrice: vendorVisibleAmount,
+            serviceType: booking.service_type,
+            serviceStyle: booking.service_type,
+            serviceName: serviceSnap?.serviceName || booking.service_name,
             customer: customer.length > 0 ? {
               id: customer[0].id,
               name: customer[0].full_name,
               phone: customer[0].phone,
             } : null,
-            service: service.length > 0 ? {
-              id: service[0].id,
-              name: service[0].name,
-              category: service[0].category,
-            } : null,
+            service: serviceNested,
+            // Per-session aggregation for the calendar (vendor STRICT contract).
+            isPackageSession: Boolean(booking.is_package_session),
+            packagePurchaseId: booking.package_purchase_id || null,
+            parentBookingId: booking.parent_booking_id || null,
+            sessionNumber: booking.package_session_number ?? null,
+            sessionDateTime: sessionDateTime || null,
+            ...(packageProgress
+              ? {
+                  progress: {
+                    completed_sessions: packageProgress.completedSessions,
+                    total_sessions: packageProgress.totalSessions,
+                    completedSessions: packageProgress.completedSessions,
+                    totalSessions: packageProgress.totalSessions,
+                  },
+                }
+              : {}),
             // Rule engine: Chat available for chat_available_days_post_appointment days after completion
             chatEnabled: (() => {
               if (booking.status === 'cancelled') return false;
@@ -200,18 +331,9 @@ export function registerVendorBookingsEndpoints(app: Hono) {
             hasMedicalRecords: medicalRecordCount > 0,
             medicalRecordCount,
             isFollowUp: false, // Can be enhanced with follow_up_date check
-            // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
-            // Explicitly check if rescheduled_at exists and is not null/empty
-            isRescheduled: Boolean(booking.rescheduled_at),
-            rescheduledAt: booking.rescheduled_at || null,
           };
         })
       );
-
-      // Debug: Log first booking to verify isRescheduled is set
-      if (enrichedBookings.length > 0) {
-        console.log(`[VENDOR-BOOKINGS] First booking rescheduled_at: ${enrichedBookings[0].rescheduled_at}, isRescheduled: ${enrichedBookings[0].isRescheduled}`);
-      }
 
       return c.json({
         success: true,
@@ -487,18 +609,20 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         return c.json({ error: `Booking cannot be declined. Current status: ${oldStatus}` }, 400);
       }
 
+      const baseReason = (typeof reason === 'string' && reason.trim()) ? reason.trim() : 'Vendor declined booking';
+      const alt =
+        typeof suggestAlternative === 'string' && suggestAlternative.trim()
+          ? ` Suggested alternative: ${suggestAlternative.trim()}`
+          : '';
+      const cancellation_reason = baseReason + alt;
+
       const updated = await update('bookings',
         { id: bookingId },
         {
           status: 'cancelled',
-          cancellation_reason: reason || 'Vendor declined booking',
+          cancellation_reason,
           cancelled_at: new Date().toISOString(),
           cancelled_by: 'provider',
-          metadata: {
-            ...(booking.metadata || {}),
-            suggestAlternative: suggestAlternative || null,
-            declinedBy: 'vendor',
-          },
         }
       );
 
@@ -725,18 +849,27 @@ export function registerVendorBookingsEndpoints(app: Hono) {
           }
         }
 
-const [customer, service, catalogService, pet, vendor, prescriptions, activities, packagePurchase] = await Promise.all([
+      const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, packagePurchase] = await Promise.all([
         // Customer info
         booking.customer_id
           ? select('customers', { id: booking.customer_id }).catch(() => [])
           : Promise.resolve([]),
-        // Service info (legacy services table)
-        booking.service_id
-          ? select('services', { id: booking.service_id }).catch(() => [])
-          : Promise.resolve([]),
-        // Service catalog (when booking.service_id is catalog id) for name + specialization_ids + service_style
-        booking.service_id
-          ? query('SELECT service_name, display_name, description, category_id, duration_minutes, specialization_ids, service_style FROM service_catalog WHERE id = $1', [booking.service_id]).then((r: any) => r.rows).catch(() => [])
+        // Vendor Manage Service row (bookings usually reference vendor_services.id; same duration as customer booking)
+        booking.service_id && booking.vendor_id
+          ? query(
+              `SELECT id, service_id, service_name, duration_minutes, custom_duration, service_style, category, sub_category
+               FROM vendor_services
+               WHERE vendor_id = $1::uuid
+                 AND (id = $2::uuid OR service_id = $2::uuid)
+               ORDER BY
+                 CASE WHEN id = $2::uuid THEN 0 ELSE 1 END,
+                 CASE WHEN service_id = $2::uuid THEN 0 ELSE 1 END,
+                 updated_at DESC NULLS LAST
+               LIMIT 1`,
+              [booking.vendor_id, booking.service_id]
+            )
+              .then((r: any) => r.rows || [])
+              .catch(() => [])
           : Promise.resolve([]),
         // Pet info - use extracted petIdToUse
         petIdToUse
@@ -763,6 +896,84 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
         packagePurchasePromise,
       ]);
 
+      const vendorSvc = vendorServiceRows.length > 0 ? vendorServiceRows[0] : null;
+      const serviceCatalogLookupId = (vendorSvc?.service_id as string | undefined) || booking.service_id;
+
+      const [service, catalogService, serviceSnap] = await Promise.all([
+        serviceCatalogLookupId
+          ? select('services', { id: serviceCatalogLookupId }).catch(() => [])
+          : Promise.resolve([]),
+        serviceCatalogLookupId
+          ? query(
+              `SELECT service_name, display_name, description, category_id, category_name, base_price,
+                      duration_minutes, specialization_ids, service_style
+               FROM service_catalog WHERE id = $1`,
+              [serviceCatalogLookupId]
+            )
+              .then((r: any) => r.rows)
+              .catch(() => [])
+          : Promise.resolve([]),
+        loadBookingServiceSnapshot(booking.vendor_id, booking.service_id),
+      ]);
+
+      const manageDurationMinutes = vendorSvc
+        ? Number(
+            vendorSvc.custom_duration != null &&
+              vendorSvc.custom_duration !== '' &&
+              Number(vendorSvc.custom_duration) > 0
+              ? vendorSvc.custom_duration
+              : vendorSvc.duration_minutes
+          )
+        : NaN;
+      const pickDuration = (...candidates: unknown[]) => {
+        for (const c of candidates) {
+          const n = Number(c);
+          if (Number.isFinite(n) && n > 0) return n;
+        }
+        return 30;
+      };
+      const serviceDurationMinutes = Math.min(
+        1440,
+        Math.max(
+          5,
+          Math.round(
+            pickDuration(
+              Number.isFinite(manageDurationMinutes) && manageDurationMinutes > 0 ? manageDurationMinutes : null,
+              serviceSnap?.durationMinutes,
+              catalogService[0]?.duration_minutes,
+              service[0]?.duration_minutes,
+              (booking as any).duration,
+              (booking as any).total_duration_minutes
+            )
+          )
+        )
+      );
+
+      const gpsSessionsForAnchor = await select('gps_tracking_sessions', { booking_id: bookingId }).catch(() => []);
+      const gpsWalkAnchor = resolveActiveGpsSessionAnchor(gpsSessionsForAnchor);
+      const sessionClockAnchor =
+        gpsWalkAnchor ||
+        ((booking as any).session_started_at as string | undefined) ||
+        ((booking as any).started_at as string | undefined) ||
+        null;
+
+      const catalogBaseForVendor =
+        catalogService.length > 0 ? Number((catalogService[0] as any)?.base_price ?? 0) : null;
+      const legacyServicePx =
+        service.length > 0 ? Number((service[0] as any)?.price ?? 0) : null;
+      const vendorVisibleAmount = resolveVendorVisibleBookingAmount(booking, {
+        serviceSnap,
+        vendorSvc,
+        catalogBasePrice:
+          catalogBaseForVendor != null && Number.isFinite(catalogBaseForVendor) && catalogBaseForVendor > 0
+            ? catalogBaseForVendor
+            : null,
+        legacyServicePrice:
+          legacyServicePx != null && Number.isFinite(legacyServicePx) && legacyServicePx > 0
+            ? legacyServicePx
+            : null,
+      });
+
       // Build enriched booking response
       const enrichedBooking = {
         id: booking.id,
@@ -777,9 +988,14 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
         scheduledTime: booking.booking_time, // Alias for frontend compatibility
         schedule: booking.booking_time, // Alias for frontend compatibility
         startDate: booking.booking_date, // Alias for frontend compatibility
-        duration: booking.duration || 30,
-        totalAmount: parseFloat(booking.total_amount || '0'),
-        serviceStyle: booking.service_style || booking.service_type || 'at_clinic',
+        duration: serviceDurationMinutes,
+        totalAmount: vendorVisibleAmount,
+        total_amount: vendorVisibleAmount,
+        price: vendorVisibleAmount,
+        basePrice: vendorVisibleAmount,
+        base_price: vendorVisibleAmount,
+        serviceStyle: serviceSnap?.serviceStyle || booking.service_style || booking.service_type || 'at_clinic',
+        serviceType: booking.service_type,
         notes: booking.notes,
         specialInstructions: booking.special_instructions,
         paymentStatus: booking.payment_status || 'pending',
@@ -846,24 +1062,75 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
           photo_url: null,
         } : null),
         
-        // Service details (prefer catalog for name + specialization; fallback to legacy services)
-        serviceName: catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : (service.length > 0 ? service[0].name : booking.service_name || 'Unknown Service'),
-        serviceCategory: catalogService.length > 0 ? catalogService[0].category_id : (service.length > 0 ? service[0].category : null),
-        serviceDescription: catalogService.length > 0 ? catalogService[0].description : (service.length > 0 ? service[0].description : null),
-        // Service object for structured access (include specializationIds and service_style from catalog when available)
-        service: (catalogService.length > 0 || service.length > 0) ? {
-          id: (catalogService[0] || service[0])?.id || booking.service_id,
-          name: catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : service[0].name,
-          category: catalogService.length > 0 ? catalogService[0].category_id : service[0].category,
-          description: catalogService.length > 0 ? catalogService[0].description : service[0].description,
-          duration: (catalogService[0] || service[0])?.duration_minutes || booking.duration || 30,
-          specializationIds: catalogService.length > 0 && Array.isArray(catalogService[0].specialization_ids) ? catalogService[0].specialization_ids : (catalogService[0]?.specialization_ids ? [].concat(catalogService[0].specialization_ids) : []),
-          specialization_ids: catalogService.length > 0 && Array.isArray(catalogService[0].specialization_ids) ? catalogService[0].specialization_ids : (catalogService[0]?.specialization_ids ? [].concat(catalogService[0].specialization_ids) : []),
-          // ✅ FIX: Include service_style for tele consultation detection (handles center-based tele consultations)
-          service_style: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || null),
-          serviceStyle: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || null),
-        } : null,
-        
+        // Service details: merged snapshot (dev-raj) + service_style–matched vendor row + unified duration (develop)
+        serviceName:
+          (serviceSnap?.displayName || serviceSnap?.serviceName) ||
+          (catalogService.length > 0 ? (catalogService[0].display_name || catalogService[0].service_name) : null) ||
+          vendorSvc?.service_name ||
+          (service.length > 0 ? service[0].name : null) ||
+          booking.service_name ||
+          'Unknown Service',
+        serviceCategory:
+          serviceSnap?.category ||
+          (catalogService.length > 0 ? catalogService[0].category_id : null) ||
+          (service.length > 0 ? service[0].category : null) ||
+          vendorSvc?.category ||
+          null,
+        serviceDescription:
+          serviceSnap?.description ||
+          (catalogService.length > 0 ? catalogService[0].description : null) ||
+          (service.length > 0 ? service[0].description : null),
+        service: (() => {
+          const cat = catalogService[0];
+          const specRaw = cat?.specialization_ids;
+          const specArr: any[] = Array.isArray(specRaw)
+            ? specRaw
+            : specRaw != null
+              ? [specRaw as any]
+              : [];
+          if (serviceSnap) {
+            const base = snapshotToNestedService(serviceSnap);
+            return {
+              ...base,
+              price: vendorVisibleAmount,
+              basePrice: vendorVisibleAmount,
+              duration: serviceDurationMinutes,
+              duration_minutes: serviceDurationMinutes,
+              durationMinutes: serviceDurationMinutes,
+              specializationIds: specArr,
+              specialization_ids: specArr,
+            };
+          }
+          if (catalogService.length > 0 || service.length > 0 || vendorSvc) {
+            return {
+              id: (catalogService[0] || service[0])?.id || vendorSvc?.service_id || booking.service_id,
+              serviceId: booking.service_id,
+              name: catalogService.length > 0
+                ? (catalogService[0].display_name || catalogService[0].service_name)
+                : (vendorSvc?.service_name || (service.length > 0 ? service[0].name : null) || booking.service_name || 'Unknown Service'),
+              serviceName: catalogService.length > 0
+                ? (catalogService[0].display_name || catalogService[0].service_name)
+                : (vendorSvc?.service_name || (service.length > 0 ? service[0].name : null) || booking.service_name || 'Unknown Service'),
+              displayName: catalogService.length > 0
+                ? (catalogService[0].display_name || catalogService[0].service_name)
+                : (vendorSvc?.service_name || (service.length > 0 ? service[0].name : null) || booking.service_name || 'Unknown Service'),
+              category: catalogService.length > 0 ? catalogService[0].category_id : (service.length > 0 ? service[0].category : vendorSvc?.category),
+              sub_category: null,
+              description: catalogService.length > 0 ? catalogService[0].description : (service.length > 0 ? service[0].description : null),
+              duration: serviceDurationMinutes,
+              duration_minutes: serviceDurationMinutes,
+              durationMinutes: serviceDurationMinutes,
+              basePrice: vendorVisibleAmount,
+              price: vendorVisibleAmount,
+              specializationIds: specArr,
+              specialization_ids: specArr,
+              service_style: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || vendorSvc?.service_style || null),
+              serviceStyle: catalogService.length > 0 ? (catalogService[0].service_style || null) : (service[0]?.service_style || vendorSvc?.service_style || null),
+            };
+          }
+          return null;
+        })(),
+
         // ✅ Home service: customer/delivery location for GPS tracking (vendor = start, customer = destination)
         address_id: (booking as any).address_id || null,
         delivery_latitude: (booking as any).delivery_latitude != null ? String((booking as any).delivery_latitude) : null,
@@ -892,10 +1159,13 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
           pincode: vendor[0].pincode,
         } : null,
 
-        // OTP and session tracking
+        // OTP and session tracking (sessionClockAnchor: GPS session_started_at so refresh restores walk timer)
         otpCode: booking.otp_code,
         otpVerifiedAt: booking.otp_verified_at,
-        sessionStartedAt: booking.session_started_at,
+        sessionStartedAt: sessionClockAnchor,
+        session_started_at: sessionClockAnchor,
+        startedAt: (booking as any).started_at,
+        started_at: (booking as any).started_at,
         sessionEndedAt: booking.session_ended_at,
         completedAt: booking.completed_at,
         cancelledAt: booking.cancelled_at,
@@ -923,12 +1193,6 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
         // Timestamps
         createdAt: booking.created_at,
         updatedAt: booking.updated_at,
-        
-        // Rescheduled booking tracking: indicates if booking was rescheduled and when
-        // Explicitly check if rescheduled_at exists and is not null/empty
-        isRescheduled: Boolean(booking.rescheduled_at),
-        rescheduledAt: booking.rescheduled_at || null,
-        rescheduledFromBookingId: booking.rescheduled_from_booking_id || null,
       };
 
       return c.json({
@@ -977,9 +1241,11 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
       console.log(`📋 [VENDOR-BOOKINGS] Fetching bookings for vendor: ${paramVendorId} (alias, resolved: ${vendorId})`);
       console.log(`   Filters: date=${date}, status=${status}, startDate=${startDate}`);
 
+      // Hide canonical package-parent rows; show one row per session child.
+      const PARENT_HIDE = `AND (package_purchase_id IS NULL OR COALESCE(is_package_session, false) = true)`;
       let queryText = vendorIds.length === 1
-        ? 'SELECT * FROM bookings WHERE vendor_id = $1'
-        : 'SELECT * FROM bookings WHERE vendor_id = $1 OR vendor_id = $2';
+        ? `SELECT * FROM bookings WHERE vendor_id = $1 ${PARENT_HIDE}`
+        : `SELECT * FROM bookings WHERE (vendor_id = $1 OR vendor_id = $2) ${PARENT_HIDE}`;
       const params: any[] = [...vendorIds];
       let paramIndex = vendorIds.length + 1;
 
@@ -1011,27 +1277,58 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
       // Enrich bookings with customer and service data
       const enrichedBookings = await Promise.all(
         result.rows.map(async (booking: any) => {
-          const [customer, service] = await Promise.all([
-            booking.customer_id
-              ? select('customers', { id: booking.customer_id }).catch(() => [])
-              : Promise.resolve([]),
-            booking.service_id
-              ? select('services', { id: booking.service_id }).catch(() => [])
-              : Promise.resolve([]),
-          ]);
+          const customer = booking.customer_id
+            ? await select('customers', { id: booking.customer_id }).catch(() => [])
+            : [];
 
+          const serviceSnap = await loadBookingServiceSnapshot(booking.vendor_id, booking.service_id);
+          let serviceNested: Record<string, unknown> | null = serviceSnap ? snapshotToNestedService(serviceSnap) : null;
+          if (!serviceNested && booking.service_id) {
+            const legacy = await select('services', { id: booking.service_id }).catch(() => []);
+            if (legacy.length > 0) {
+              serviceNested = {
+                id: legacy[0].id,
+                serviceId: legacy[0].id,
+                name: legacy[0].name,
+                serviceName: legacy[0].name,
+                displayName: legacy[0].name,
+                description: legacy[0].description ?? null,
+                category: legacy[0].category ?? null,
+                sub_category: null,
+                service_style: booking.service_type ?? null,
+                serviceStyle: booking.service_type ?? null,
+                basePrice: Number(legacy[0].price ?? 0),
+                price: Number(legacy[0].price ?? 0),
+                duration: Number(legacy[0].duration_minutes ?? 30),
+                durationMinutes: Number(legacy[0].duration_minutes ?? 30),
+              };
+            }
+          }
+
+          const vendorVisibleAmountAlias = resolveVendorVisibleBookingAmount(booking, { serviceSnap });
+          if (serviceNested) {
+            serviceNested = {
+              ...serviceNested,
+              price: vendorVisibleAmountAlias,
+              basePrice: vendorVisibleAmountAlias,
+            };
+          }
           return {
             ...booking,
+            total_amount: vendorVisibleAmountAlias,
+            totalAmount: vendorVisibleAmountAlias,
+            price: vendorVisibleAmountAlias,
+            base_price: vendorVisibleAmountAlias,
+            basePrice: vendorVisibleAmountAlias,
+            serviceType: booking.service_type,
+            serviceStyle: booking.service_type,
+            serviceName: serviceSnap?.serviceName || booking.service_name,
             customer: customer.length > 0 ? {
               id: customer[0].id,
               name: customer[0].full_name || customer[0].name,
               phone: customer[0].phone,
             } : null,
-            service: service.length > 0 ? {
-              id: service[0].id,
-              name: service[0].name,
-              category: service[0].category,
-            } : null,
+            service: serviceNested,
             chatEnabled: true,
             hasUnreadMessages: false,
             unreadMessageCount: 0,
@@ -1040,10 +1337,6 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
             hasMedicalRecords: false,
             medicalRecordCount: 0,
             isFollowUp: false,
-            // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
-            // Explicitly check if rescheduled_at exists and is not null/empty
-            isRescheduled: Boolean(booking.rescheduled_at),
-            rescheduledAt: booking.rescheduled_at || null,
           };
         })
       );
@@ -1091,28 +1384,40 @@ const [customer, service, catalogService, pet, vendor, prescriptions, activities
       // Enrich bookings with customer and service data
       const enrichedBookings = await Promise.all(
         result.rows.map(async (booking: any) => {
-          const [customer, service] = await Promise.all([
-            booking.customer_id
-              ? select('customers', { id: booking.customer_id }).catch(() => [])
-              : Promise.resolve([]),
-            booking.service_id
-              ? select('services', { id: booking.service_id }).catch(() => [])
-              : Promise.resolve([]),
-          ]);
-
+          const customer = booking.customer_id
+            ? await select('customers', { id: booking.customer_id }).catch(() => [])
+            : [];
+          const serviceSnap = await loadBookingServiceSnapshot(booking.vendor_id, booking.service_id);
+          const legacy =
+            !serviceSnap && booking.service_id
+              ? await select('services', { id: booking.service_id }).catch(() => [])
+              : [];
+          const serviceLabel =
+            serviceSnap?.serviceName ||
+            (legacy.length > 0 ? legacy[0].name : null) ||
+            'Unknown Service';
+          const styleFromSnap = serviceSnap?.serviceStyle || serviceSnap?.service_style;
+          const vendorVisibleAmount = resolveVendorVisibleBookingAmount(booking, { serviceSnap });
           return {
             id: booking.id,
             customer_name: customer.length > 0 ? customer[0].full_name : 'Unknown',
-            service_name: service.length > 0 ? service[0].name : 'Unknown Service',
+            service_name: serviceLabel,
             booking_date: booking.booking_date,
             booking_time: booking.booking_time,
             status: booking.status,
-            total_amount: parseFloat(booking.total_amount || '0'),
-            service_style: booking.service_style || 'at_clinic',
-            // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
-            // Explicitly check if rescheduled_at exists and is not null/empty
-            isRescheduled: Boolean(booking.rescheduled_at),
-            rescheduledAt: booking.rescheduled_at || null,
+            total_amount: vendorVisibleAmount,
+            totalAmount: vendorVisibleAmount,
+            price: vendorVisibleAmount,
+            base_price: vendorVisibleAmount,
+            basePrice: vendorVisibleAmount,
+            service_style: styleFromSnap || booking.service_type || booking.service_style || 'at_clinic',
+            service: serviceSnap
+              ? {
+                  ...snapshotToNestedService(serviceSnap),
+                  price: vendorVisibleAmount,
+                  basePrice: vendorVisibleAmount,
+                }
+              : null,
           };
         })
       );

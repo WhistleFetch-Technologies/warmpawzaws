@@ -121,44 +121,90 @@ const CATEGORY_TO_SPEC: Record<string, string> = {
   behaviour: 'behavioral',
 };
 
-/** Expand role names for overlap matching (sitter → sitter,pet_sitter so we match specs with either) */
+/**
+ * Expand role names for overlap matching.
+ *
+ * Background — the customer hubs (Walker / Training / Nutrition / Pet Sitter / Boarding)
+ * call /public/problem-grid/:roleId with the base role first ("trainer", "groomer", ...)
+ * before falling back to *_solo / *_center variants. Specializations in the database are
+ * stored with a mix of role keys (admin sometimes uses "trainer_solo", sometimes
+ * "pet_trainer", sometimes legacy "trainer"). Without an entry for the base role here,
+ * `expandRoleIdsForOverlap(['trainer'])` returns only `['trainer']` and the SQL
+ * `applicable_roles && $1::text[]` overlap finds nothing.
+ *
+ * Each base role + every common variant must therefore expand to the full set of
+ * sibling role keys. Keep this in sync with `pgExpandRoleAliases` in problem-grid.ts.
+ */
 const ROLE_EXPANSIONS: Record<string, string[]> = {
+  // Sitter
   sitter: ['sitter', 'pet_sitter'],
   pet_sitter: ['sitter', 'pet_sitter'],
+
+  // Boarding
   boarding: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding'],
+  boarding_solo: ['boarding', 'boarding_solo', 'boarding_center', 'pet_boarder', 'pet_daycare', 'pet_boarding'],
+  boarding_center: ['boarding', 'boarding_solo', 'boarding_center', 'pet_boarder', 'pet_daycare', 'pet_boarding'],
   pet_boarding: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding'],
   pet_boarding_daycare: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding'],
-  pet_boarder: ['boarding', 'pet_boarder', 'pet_daycare'],
-  pet_daycare: ['boarding', 'pet_daycare', 'pet_sitter'],
-  walker: ['walker', 'pet_walker', 'dog_walker'],
-  pet_walker: ['walker', 'pet_walker', 'dog_walker'],
-  vet_solo: ['vet_solo', 'vet', 'veterinarian', 'vet_clinic'],
-  vet_clinic: ['vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian'],
-  veterinarian: ['vet', 'veterinarian', 'vet_clinic', 'vet_solo'],
-  groomer_solo: ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo'],
-  groomer_center: ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo'],
-  pet_groomer: ['groomer', 'pet_groomer', 'groomer_center', 'groomer_solo'],
-  trainer_solo: ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
-  trainer_center: ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
-  pet_trainer: ['trainer', 'pet_trainer', 'trainer_center', 'trainer_solo'],
+  pet_boarder: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_boarding'],
+  pet_daycare: ['boarding', 'pet_daycare', 'pet_sitter', 'pet_boarding'],
+
+  // Walker — every customer alias must resolve to the same expansion set
+  walker: ['walker', 'walker_solo', 'pet_walker', 'dog_walker'],
+  walker_solo: ['walker', 'walker_solo', 'pet_walker', 'dog_walker'],
+  pet_walker: ['walker', 'walker_solo', 'pet_walker', 'dog_walker'],
+  dog_walker: ['walker', 'walker_solo', 'pet_walker', 'dog_walker'],
+
+  // Vet
+  vet: ['vet', 'veterinarian', 'vet_solo', 'vet_clinic', 'vet_center', 'pet_clinic', 'veterinary_clinic'],
+  vet_solo: ['vet', 'veterinarian', 'vet_solo', 'vet_clinic', 'vet_center', 'pet_clinic', 'veterinary_clinic'],
+  vet_clinic: ['vet', 'veterinarian', 'vet_solo', 'vet_clinic', 'vet_center', 'pet_clinic', 'veterinary_clinic'],
+  vet_center: ['vet', 'veterinarian', 'vet_solo', 'vet_clinic', 'vet_center', 'pet_clinic', 'veterinary_clinic'],
+  pet_clinic: ['vet', 'veterinarian', 'vet_solo', 'vet_clinic', 'vet_center', 'pet_clinic', 'veterinary_clinic'],
+  veterinarian: ['vet', 'veterinarian', 'vet_solo', 'vet_clinic', 'vet_center', 'pet_clinic', 'veterinary_clinic'],
+  veterinary_clinic: ['vet', 'veterinarian', 'vet_solo', 'vet_clinic', 'vet_center', 'pet_clinic', 'veterinary_clinic'],
+
+  // Groomer
+  groomer: ['groomer', 'groomer_solo', 'groomer_center', 'pet_groomer'],
+  groomer_solo: ['groomer', 'groomer_solo', 'groomer_center', 'pet_groomer'],
+  groomer_center: ['groomer', 'groomer_solo', 'groomer_center', 'pet_groomer'],
+  pet_groomer: ['groomer', 'groomer_solo', 'groomer_center', 'pet_groomer'],
+
+  // Trainer
+  trainer: ['trainer', 'trainer_solo', 'trainer_center', 'pet_trainer'],
+  trainer_solo: ['trainer', 'trainer_solo', 'trainer_center', 'pet_trainer'],
+  trainer_center: ['trainer', 'trainer_solo', 'trainer_center', 'pet_trainer'],
+  pet_trainer: ['trainer', 'trainer_solo', 'trainer_center', 'pet_trainer'],
+
+  // Resort / Sunset
   resort: ['resort', 'pet_resort'],
   pet_resort: ['resort', 'pet_resort'],
   sunset: ['sunset', 'pet_sunset_services'],
   pet_sunset_services: ['sunset', 'pet_sunset_services'],
-  nutritionist: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
-  nutritionist_center: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
-  pet_nutritionist: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
-  pet_nutritionist_center: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
-  pet_nutritionist_solo: ['nutritionist', 'pet_nutritionist', 'nutritionist_center'],
+
+  // Nutritionist — every customer alias must resolve to the same expansion set
+  nutritionist: ['nutritionist', 'nutritionist_solo', 'nutritionist_center', 'pet_nutritionist'],
+  nutritionist_solo: ['nutritionist', 'nutritionist_solo', 'nutritionist_center', 'pet_nutritionist'],
+  nutritionist_center: ['nutritionist', 'nutritionist_solo', 'nutritionist_center', 'pet_nutritionist'],
+  pet_nutritionist: ['nutritionist', 'nutritionist_solo', 'nutritionist_center', 'pet_nutritionist'],
+  pet_nutritionist_center: ['nutritionist', 'nutritionist_solo', 'nutritionist_center', 'pet_nutritionist'],
+  pet_nutritionist_solo: ['nutritionist', 'nutritionist_solo', 'nutritionist_center', 'pet_nutritionist'],
+
   // Diagnostics / lab (match vet and diagnostic specs)
   diagnostics_center: ['diagnostics_center', 'diagnostic_center', 'vet_clinic', 'veterinarian', 'vet_solo'],
   diagnostic_center: ['diagnostics_center', 'diagnostic_center', 'vet_clinic', 'veterinarian'],
   diagnostics_provider: ['diagnostics_center', 'diagnostic_center', 'vet_clinic', 'veterinarian'],
   diagnostics_solo: ['diagnostics_center', 'diagnostic_center', 'vet_clinic', 'veterinarian', 'vet_solo'],
-  // Behavioral
-  behaviorist_center: ['behaviorist_center', 'behaviorist_solo', 'pet_behaviorist', 'behavioral'],
-  behaviorist_solo: ['behaviorist_solo', 'behaviorist_center', 'pet_behaviorist', 'behavioral'],
-  pet_behaviorist: ['pet_behaviorist', 'behaviorist_center', 'behaviorist_solo', 'behavioral'],
+
+  // Behavioral — both spellings, plus base alias
+  behaviorist: ['behaviorist', 'behaviourist', 'behaviorist_solo', 'behaviorist_center', 'behaviourist_solo', 'pet_behaviorist', 'behavioral'],
+  behaviourist: ['behaviorist', 'behaviourist', 'behaviorist_solo', 'behaviorist_center', 'behaviourist_solo', 'pet_behaviorist', 'behavioral'],
+  behaviorist_center: ['behaviorist', 'behaviourist', 'behaviorist_solo', 'behaviorist_center', 'behaviourist_solo', 'pet_behaviorist', 'behavioral'],
+  behaviorist_solo: ['behaviorist', 'behaviourist', 'behaviorist_solo', 'behaviorist_center', 'behaviourist_solo', 'pet_behaviorist', 'behavioral'],
+  behaviourist_solo: ['behaviorist', 'behaviourist', 'behaviorist_solo', 'behaviorist_center', 'behaviourist_solo', 'pet_behaviorist', 'behavioral'],
+  pet_behaviorist: ['behaviorist', 'behaviourist', 'behaviorist_solo', 'behaviorist_center', 'behaviourist_solo', 'pet_behaviorist', 'behavioral'],
+  behavioral: ['behaviorist', 'behaviourist', 'behaviorist_solo', 'behaviorist_center', 'pet_behaviorist', 'behavioral'],
+
   // E‑commerce, events, adoption, etc.
   ecommerce_seller: ['ecommerce_seller', 'seller', 'shop'],
   seller: ['seller', 'ecommerce_seller', 'shop'],
@@ -215,6 +261,94 @@ function expandRoleIdsForOverlap(roleIds: string[]): string[] {
     if (expanded) expanded.forEach((x) => seen.add(x));
   }
   return Array.from(seen);
+}
+
+const STYLE_ALIAS_TO_CANONICAL: Record<string, 'at_home' | 'at_center' | 'tele'> = {
+  at_home: 'at_home',
+  home_visit: 'at_home',
+  home: 'at_home',
+  at_center: 'at_center',
+  at_clinic: 'at_center',
+  at_vendor: 'at_center',
+  center: 'at_center',
+  clinic: 'at_center',
+  tele: 'tele',
+  online: 'tele',
+  video: 'tele',
+  video_consultation: 'tele',
+  tele_consultation: 'tele',
+  remote: 'tele',
+};
+
+function normalizeStylesForCustomer(raw: unknown): Array<'at_home' | 'at_center' | 'tele'> {
+  const out: Array<'at_home' | 'at_center' | 'tele'> = [];
+  const seen = new Set<string>();
+  const push = (value: unknown) => {
+    const key = String(value || '').toLowerCase().trim().replace(/\s+/g, '_');
+    const normalized = STYLE_ALIAS_TO_CANONICAL[key];
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    out.push(normalized);
+  };
+
+  if (Array.isArray(raw)) {
+    raw.forEach(push);
+    return out;
+  }
+
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach(push);
+      } else {
+        push(raw);
+      }
+    } catch {
+      push(raw);
+    }
+  }
+
+  return out;
+}
+
+async function getRoleAllowedStylesForProblemGrid(roleIdRaw: string): Promise<Array<'at_home' | 'at_center' | 'tele'>> {
+  const roleCandidates = expandRoleIdsForOverlap([roleIdRaw]);
+  if (roleCandidates.length === 0) {
+    return ['at_home', 'at_center', 'tele'];
+  }
+
+  try {
+    const roleConfigResult = await query(
+      `SELECT config
+       FROM roles
+       WHERE (is_active = true OR is_active IS NULL)
+         AND (
+           lower(name) = ANY($1::text[])
+           OR lower(name) = ANY($2::text[])
+         )
+       ORDER BY updated_at DESC NULLS LAST
+       LIMIT 1`,
+      [roleCandidates, roleCandidates.map((r) => r.replace(/_/g, ' '))]
+    );
+
+    const configRaw = roleConfigResult.rows?.[0]?.config;
+    if (!configRaw) return ['at_home', 'at_center', 'tele'];
+
+    const config = typeof configRaw === 'string' ? JSON.parse(configRaw) : configRaw;
+    const serviceStyles = config?.serviceStyles ?? config?.service_styles;
+    const selected = Array.isArray(serviceStyles)
+      ? serviceStyles
+      : Array.isArray(serviceStyles?.selected)
+        ? serviceStyles.selected
+        : [];
+
+    const normalized = normalizeStylesForCustomer(selected);
+    return normalized.length > 0 ? normalized : ['at_home', 'at_center', 'tele'];
+  } catch (error: any) {
+    console.warn('[SPEC-MASTER] Could not resolve role config styles for problem-grid:', error?.message || error);
+    return ['at_home', 'at_center', 'tele'];
+  }
 }
 
 // ============================================================================
@@ -851,6 +985,8 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
   app.get('/public/problem-grid/:roleId', async (c) => {
     try {
       const roleId = c.req.param('roleId');
+      const expandedRoles = expandRoleIdsForOverlap([roleId]);
+      const roleAllowedStyles = await getRoleAllowedStylesForProblemGrid(roleId);
       
       const result = await query(`
         SELECT sm.*, 
@@ -864,9 +1000,14 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
         FROM specialization_master sm
         WHERE sm.is_active = true 
           AND (sm.show_in_problem_grid = true OR sm.show_in_services_dashboard = true)
-          AND $1 = ANY(sm.applicable_roles)
+          AND (
+            sm.applicable_roles = '{}'
+            OR sm.applicable_roles IS NULL
+            OR array_length(sm.applicable_roles, 1) IS NULL
+            OR sm.applicable_roles && $1::text[]
+          )
         ORDER BY sm.display_order, sm.name
-      `, [roleId]);
+      `, [expandedRoles]);
       
       return c.json({
         success: true,
@@ -878,7 +1019,15 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
           description: row.description,
           iconName: row.icon_name,
           iconColor: row.icon_color,
-          allowedServiceStyles: row.allowed_service_styles || ['at_home', 'at_center', 'tele'],
+          displayOrder: row.display_order,
+          allowedServiceStyles: (() => {
+            const specializationStyles = normalizeStylesForCustomer(row.allowed_service_styles);
+            const base = specializationStyles.length > 0
+              ? specializationStyles
+              : (['at_home', 'at_center', 'tele'] as Array<'at_home' | 'at_center' | 'tele'>);
+            const intersected = base.filter((style) => roleAllowedStyles.includes(style));
+            return intersected.length > 0 ? intersected : roleAllowedStyles;
+          })(),
           symptoms: row.symptoms || [],
           categoryId: row.category_id,
         })),
@@ -1079,6 +1228,58 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
   }
 
   /**
+   * GET /vendor/specializations/by-category?categoryId=<uuid|slug>
+   * Lists specialization_master rows for one catalogue category (custom service / package creation).
+   */
+  app.get('/vendor/specializations/by-category', async (c) => {
+    try {
+      const categoryId = (c.req.query('categoryId') || '').trim();
+      if (!categoryId) {
+        return c.json({ success: false, error: 'categoryId is required', specializations: [] }, 400);
+      }
+      const catResult = await query(
+        `SELECT id::text, category_id FROM service_categories
+         WHERE (id::text = $1 OR LOWER(TRIM(category_id)) = LOWER(TRIM($1)))
+           AND COALESCE(is_active, true) = true
+         LIMIT 1`,
+        [categoryId]
+      );
+      const catRow = catResult.rows?.[0];
+      if (!catRow?.category_id) {
+        return c.json({ success: true, specializations: [], categorySlug: null });
+      }
+      const slug = String(catRow.category_id).trim();
+      const smResult = await query(
+        `SELECT sm.*
+         FROM specialization_master sm
+         WHERE sm.is_active = true
+           AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
+           AND LOWER(TRIM(COALESCE(sm.category_id, ''))) = LOWER(TRIM($1))
+         ORDER BY sm.display_order, sm.name`,
+        [slug]
+      );
+      const rows = smResult.rows || [];
+      return c.json({
+        success: true,
+        categorySlug: slug,
+        specializations: rows.map((row: any) => ({
+          id: row.specialization_id,
+          name: row.name,
+          displayName: row.display_name || row.name,
+          description: row.description,
+          iconName: row.icon_name,
+          iconColor: row.icon_color,
+          categoryId: row.category_id,
+          shortDescription: row.short_description || row.description,
+        })),
+      });
+    } catch (error: any) {
+      console.error('[SPEC-MASTER] by-category error:', error.message);
+      return c.json({ success: false, error: error.message, specializations: [] }, 500);
+    }
+  });
+
+  /**
    * GET /vendor/specializations/:roleId
    * 360° dynamic: Role → services (service_catalog) → categories (service masters) → specializations.
    * Vendor has role ID; role has services (service_catalog.applicable_roles). Categories are service masters
@@ -1214,13 +1415,17 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
           sc.icon_color,
           sc.is_active,
           sc.display_order,
+          COALESCE(sc.customer_visibility_type::text, 'GLOBAL') as customer_visibility_type,
+          sc.customer_visibility_state::text as customer_visibility_state,
+          sc.customer_visibility_city::text as customer_visibility_city,
+          COALESCE(sc.customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active,
           COUNT(DISTINCT sm.id) as specialization_count,
           COUNT(DISTINCT ss.id) as symptom_count
         FROM service_categories sc
         LEFT JOIN specialization_master sm ON sm.category_id = sc.category_id AND sm.is_active = true
         LEFT JOIN specialization_symptoms ss ON ss.specialization_id = sm.specialization_id AND ss.is_active = true
-        WHERE sc.is_active = true
-        GROUP BY sc.id, sc.category_id, sc.name, sc.description, sc.icon, sc.icon_color, sc.is_active, sc.display_order
+        WHERE sc.is_active = true OR sc.is_active IS NULL
+        GROUP BY sc.id
         ORDER BY sc.display_order NULLS LAST, sc.name
       `);
       
@@ -1234,6 +1439,10 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
           icon: row.icon,
           iconColor: row.icon_color,
           isActive: row.is_active,
+          customerVisibilityType: String(row.customer_visibility_type || 'GLOBAL'),
+          customerVisibilityState: row.customer_visibility_state != null ? String(row.customer_visibility_state) : '',
+          customerVisibilityCity: row.customer_visibility_city != null ? String(row.customer_visibility_city) : '',
+          customerDashboardCardActive: row.customer_dashboard_card_active !== false,
           specializationCount: parseInt(row.specialization_count) || 0,
           symptomCount: parseInt(row.symptom_count) || 0,
         })),

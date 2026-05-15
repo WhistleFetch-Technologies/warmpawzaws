@@ -66,6 +66,23 @@
   --radius-2xl: 24px;
   --radius-3xl: 32px;
   --radius-full: 9999px;
+
+  /**
+   * BottomNavigation + CustomerScreenWrapper tabbed shell: reserved height above fixed tab bar
+   * (py-3 row + home indicator + safe-area). Fixed UI (e.g. TeleTracker) must use the same value.
+   */
+  --customer-tabbed-nav-offset: calc(6rem + env(safe-area-inset-bottom, 0px));
+  /**
+   * StandardizedFooter: tab row (py-3 + icon + label) + safe-area. Sticky CTAs use this as `bottom`
+   * so they sit fully above the tab bar (must stay in sync with StandardizedFooter padding).
+   */
+  --customer-footer-offset: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  /** Scroll content when a fixed CTA strip sits above the tab bar */
+  --customer-sticky-cta-scroll-padding: calc(var(--customer-footer-offset) + 5.75rem);
+  /** Scroll content cleared only past the tab bar (no extra fixed CTA) */
+  --customer-tabbar-content-pad: calc(var(--customer-footer-offset) + 1.25rem);
+  /** Floaters (FAB, trackers): sit above tab shell + small gap — use instead of raw bottom-24 on home */
+  --customer-floater-bottom: calc(var(--customer-tabbed-nav-offset) + 0.75rem);
 }
 
 /* Base Styles */
@@ -81,14 +98,17 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  overflow-x: clip;
 }
 
 body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
+  min-height: 100dvh;
   background-color: var(--color-white);
   color: var(--color-black);
+  overflow-x: clip;
 }
 
 /* Focus Visible - Accessibility */
@@ -143,15 +163,50 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Customer-specific utility classes */
+/* Customer-specific utility classes — safe-area helpers live in @layer utilities so Tailwind build order cannot drop their precedence. */
+
+/**
+ * Mobile headers: env(safe-area-inset-top) is often 0 in embedded WebViews / some browsers.
+ * Use a generous minimum (~64px) so back/title clear the system status bar; add inset when available.
+ */
+@layer utilities {
+  .cw-header-safe-top {
+    padding-top: max(3rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+  }
+
+  @media (min-width: 768px) {
+    .cw-header-safe-top {
+      padding-top: max(3rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+    }
+  }
+
+  .cw-header-safe-x {
+    padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+  }
+
+  @media (min-width: 640px) {
+    .cw-header-safe-x {
+      padding-left: max(1rem, env(safe-area-inset-left, 0px));
+      padding-right: max(1rem, env(safe-area-inset-right, 0px));
+    }
+  }
+}
+
 .pet-card-gradient {
   background: linear-gradient(135deg, #FFF5EE 0%, #FFFFFF 100%);
 }
 
 .service-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(140px, 100%), 1fr));
+  gap: 0.75rem;
+}
+
+@media (min-width: 380px) {
+  .service-grid {
+    gap: 1rem;
+  }
 }
 
 /* ============================================================================
@@ -265,4 +320,39 @@ body {
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* Sonner (sonner@2.x): global safe-area offsets for all toasts — requires viewport-fit=cover in layout */
+@layer utilities {
+  /**
+   * iOS: legacy WebKit needs constant() before env() for safe-area; tab bar uses both insets.
+   * translateZ(0) promotes a compositor layer — reduces fixed bar flicker/disappear during scroll.
+   */
+  .cw-customer-tabbar-fixed {
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+    padding-bottom: constant(safe-area-inset-bottom);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .cw-fixed-above-customer-tabbar {
+    bottom: var(--customer-footer-offset);
+  }
+  .cw-scroll-pad-tabbar {
+    padding-bottom: var(--customer-tabbar-content-pad);
+  }
+  .cw-scroll-pad-tabbar-sticky-cta {
+    padding-bottom: var(--customer-sticky-cta-scroll-padding);
+  }
+}
+
+[data-sonner-toaster] {
+  --offset-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+  --offset-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+  --offset-right: calc(env(safe-area-inset-right, 0px) + 16px) !important;
+  --offset-left: calc(env(safe-area-inset-left, 0px) + 16px) !important;
+  --mobile-offset-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
+  --mobile-offset-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;
+  --mobile-offset-right: max(0.5rem, env(safe-area-inset-right, 0px)) !important;
+  --mobile-offset-left: max(0.5rem, env(safe-area-inset-left, 0px)) !important;
 }

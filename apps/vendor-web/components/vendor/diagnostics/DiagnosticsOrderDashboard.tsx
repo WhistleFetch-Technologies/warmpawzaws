@@ -394,14 +394,16 @@ export function DiagnosticsOrderDashboard({
               <p className="text-sm text-gray-500">Manage lab test bookings and reports</p>
             </div>
           </div>
-          <Button 
-            onClick={loadBookings}
-            variant="outline"
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button 
+              onClick={loadBookings}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh
+            </Button>
+          </div>
         </div>
       </div>
 

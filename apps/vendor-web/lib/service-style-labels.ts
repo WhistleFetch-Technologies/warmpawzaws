@@ -60,12 +60,10 @@ const ROLE_STYLE_LABELS: Record<string, Partial<Record<ServiceStyle, ServiceStyl
   },
   behaviorist_solo: {
     at_home: { label: 'Home Behavior Session', icon: '🏠', description: 'Behavior sessions at customer\'s home' },
-    tele: { label: 'Online Behavior Consultation', icon: '📱', description: 'Virtual behavior sessions' },
   },
   behaviorist_center: {
     at_home: { label: 'Home Behavior Session', icon: '🏠', description: 'Behavior at customer\'s home' },
     at_center: { label: 'Center Services', icon: '🏟️', description: 'Services at your behavior center' },
-    tele: { label: 'Online Behavior Consultation', icon: '📱', description: 'Virtual behavior sessions' },
   },
   // Grooming
   pet_groomer: {

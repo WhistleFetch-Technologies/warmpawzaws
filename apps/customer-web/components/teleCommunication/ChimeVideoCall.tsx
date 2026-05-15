@@ -10,8 +10,7 @@
  * Features:
  * - HD video calling with echo cancellation
  * - Real-time chat during call using Chime Data Messages
- * - Screen sharing support
- * - Call duration tracking
+ * - Call slot countdown (15:00) with auto-end at 0
  * - Waiting room with status updates
  * - Responsive design matching Warmpawz theme
  * - Typing indicators
@@ -28,11 +27,15 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Video, VideoOff, Phone, PhoneOff, Mic, MicOff,
   MessageSquare, Settings, Maximize2, Minimize2,
-  RotateCcw, User, Clock, Send, X, AlertCircle,
-  Monitor, MonitorOff, Loader2, Users, Check, Circle,
-  Paperclip, FileText
+  RotateCcw, User, Send, X, AlertCircle,
+  Loader2, Users, Check, Circle,
+  Paperclip, FileText, SwitchCamera,
 } from 'lucide-react';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import {
+  requestCameraMicrophonePermission,
+  requiresUserGestureForMediaPrompt,
+} from '@/lib/runtime-permissions';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
@@ -40,6 +43,13 @@ import { toast } from 'sonner';
 const CHAT_TOPIC = 'chat-message';
 const TYPING_TOPIC = 'typing-indicator';
 const CALL_ENDED_TOPIC = 'call-ended';
+/** Remote mute / camera-off overlays (both sides must publish + subscribe). */
+const MEDIA_STATE_TOPIC = 'call-media-state';
+/**
+ * Consultation slot length shown as countdown (MM:SS from 15:00).
+ * When it reaches 0 we toast and auto-end the call (server still records actual duration).
+ */
+const CALL_SLOT_SECONDS = 15 * 60;
 
 // Message lifetime in milliseconds (messages expire after this time in Chime)
 const MESSAGE_LIFETIME_MS = 300000; // 5 minutes
@@ -129,13 +139,19 @@ export function ChimeVideoCall({
   // Call state
   const [status, setStatus] = useState<CallStatus>('loading');
   const [error, setError] = useState<string | null>(null);
-  const [callDuration, setCallDuration] = useState(0);
+  /** Seconds remaining in the 15-minute consultation slot (countdown in UI). */
+  const [callRemainingSeconds, setCallRemainingSeconds] = useState(CALL_SLOT_SECONDS);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  /** CSS fallback when browser fullscreen API is unavailable (WebView / iOS). */
+  const [pseudoFullScreen, setPseudoFullScreen] = useState(false);
 
   // Media controls
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  /** Other participant's mic/cam state (via data channel). */
+  const [remoteMediaState, setRemoteMediaState] = useState({ muted: false, videoOff: false });
+  /** Local PiP offset from default bottom-right (px). */
+  const [pipOffset, setPipOffset] = useState({ x: 0, y: 0 });
   const [showSettings, setShowSettings] = useState(false);
   const [availableDevices, setAvailableDevices] = useState<{
     audioInputs: MediaDeviceInfo[];
@@ -167,7 +183,19 @@ export function ChimeVideoCall({
   const lastTypingSentRef = useRef<number>(0);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraCaptureInputRef = useRef<HTMLInputElement>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const callRootRef = useRef<HTMLDivElement>(null);
+  const videoStageRef = useRef<HTMLDivElement>(null);
+  const callRemainingRef = useRef(CALL_SLOT_SECONDS);
+  const pipDragRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  }>({ active: false, startX: 0, startY: 0, originX: 0, originY: 0 });
+  const endingCallRef = useRef(false);
 
   // Attendee status
   const [attendeeStatus, setAttendeeStatus] = useState<AttendeeStatus>({
@@ -220,7 +248,13 @@ export function ChimeVideoCall({
 
   // Auto-join when SDK is ready (e.g. customer accepted call or opened video from booking)
   useEffect(() => {
-    if (status !== 'ready' || !bookingId || !participantId || hasAutoJoinedRef.current) return;
+    if (
+      status !== 'ready' ||
+      !bookingId ||
+      !participantId ||
+      hasAutoJoinedRef.current ||
+      requiresUserGestureForMediaPrompt()
+    ) return;
     hasAutoJoinedRef.current = true;
     joinMeeting();
   }, [status, bookingId, participantId]);
@@ -318,6 +352,20 @@ export function ChimeVideoCall({
       }
     }
   }, [status]);
+
+  useEffect(() => {
+    callRemainingRef.current = callRemainingSeconds;
+  }, [callRemainingSeconds]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const onFs = () => {
+      setIsFullScreen(!!document.fullscreenElement);
+      if (!document.fullscreenElement) setPseudoFullScreen(false);
+    };
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
 
   const loadChimeSDK = async (retryCount = 0) => {
     const MAX_RETRIES = 2;
@@ -426,6 +474,8 @@ export function ChimeVideoCall({
 
       setMeetingData(response.meeting);
       setAttendeeData(response.attendee);
+      setCallRemainingSeconds(CALL_SLOT_SECONDS);
+      callRemainingRef.current = CALL_SLOT_SECONDS;
       disconnectingRef.current = false;
       endedByOtherRef.current = false;
       setEndedByOther(false);
@@ -579,21 +629,7 @@ export function ChimeVideoCall({
   }, [showSettings, refreshDeviceLists]);
 
   const primeDevicePermissions = async () => {
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
-    const stopTracks = (stream: MediaStream) => stream.getTracks().forEach(track => track.stop());
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-      stopTracks(stream);
-    } catch {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stopTracks(stream);
-      } catch { }
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        stopTracks(stream);
-      } catch { }
-    }
+    await requestCameraMicrophonePermission();
   };
 
   const setupMediaDevices = async (meetingSession: any) => {
@@ -776,6 +812,13 @@ export function ChimeVideoCall({
             setEndedByOther(true);
             endCall(false);
           }
+        } else if (topic === MEDIA_STATE_TOPIC) {
+          const m = data as { sender?: string; muted?: boolean; videoOff?: boolean };
+          if (m.sender === participantType) return;
+          setRemoteMediaState({
+            muted: !!m.muted,
+            videoOff: !!m.videoOff,
+          });
         }
       } catch (err) {
         console.error('Error processing data message:', err);
@@ -784,6 +827,7 @@ export function ChimeVideoCall({
     audioVideo.realtimeSubscribeToReceiveDataMessage(CHAT_TOPIC, handleDataMessage);
     audioVideo.realtimeSubscribeToReceiveDataMessage(TYPING_TOPIC, handleDataMessage);
     audioVideo.realtimeSubscribeToReceiveDataMessage(CALL_ENDED_TOPIC, handleDataMessage);
+    audioVideo.realtimeSubscribeToReceiveDataMessage(MEDIA_STATE_TOPIC, handleDataMessage);
   };
 
   // Handle received chat message from other participant
@@ -904,7 +948,20 @@ export function ChimeVideoCall({
     if (callTimerRef.current) return;
 
     callTimerRef.current = setInterval(() => {
-      setCallDuration(prev => prev + 1);
+      setCallRemainingSeconds((prev) => {
+        if (prev <= 1) {
+          if (callTimerRef.current) {
+            clearInterval(callTimerRef.current);
+            callTimerRef.current = null;
+          }
+          queueMicrotask(() => {
+            toast.info('Consultation time limit reached. Ending call.');
+            void endCall(true);
+          });
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
   };
 
@@ -915,6 +972,12 @@ export function ChimeVideoCall({
   };
 
   const endCall = async (initiatedByUs = true) => {
+    if (endingCallRef.current) return;
+    endingCallRef.current = true;
+    const elapsedSeconds = Math.min(
+      CALL_SLOT_SECONDS,
+      Math.max(0, CALL_SLOT_SECONDS - callRemainingRef.current)
+    );
     try {
       const session = meetingSessionRef.current;
 
@@ -942,20 +1005,22 @@ export function ChimeVideoCall({
         statusPollerRef.current = null;
       }
 
-      // Notify backend
+      // Notify backend (server also computes duration from session timestamps)
       await apiClient.post(`/video-call/${bookingId}/end`, {
-        duration: callDuration,
+        duration: elapsedSeconds,
         participantType,
       });
 
       setStatus('ended');
 
       if (onEndCall) {
-        onEndCall(callDuration);
+        onEndCall(elapsedSeconds);
       }
     } catch (err) {
       console.error('Error ending call:', err);
       setStatus('ended');
+    } finally {
+      endingCallRef.current = false;
     }
   };
 
@@ -963,44 +1028,86 @@ export function ChimeVideoCall({
   // MEDIA CONTROLS
   // ============================================================================
 
+  const broadcastMediaState = useCallback(
+    (muted: boolean, videoOff: boolean) => {
+      const session = meetingSessionRef.current;
+      if (!session?.audioVideo) return;
+      try {
+        const payload = new TextEncoder().encode(
+          JSON.stringify({
+            sender: participantType,
+            muted,
+            videoOff,
+          })
+        );
+        session.audioVideo.realtimeSendDataMessage(MEDIA_STATE_TOPIC, payload, MESSAGE_LIFETIME_MS);
+      } catch {
+        // ignore
+      }
+    },
+    [participantType]
+  );
+
+  const prevCallStatusRef = useRef<CallStatus | ''>('');
+  useEffect(() => {
+    if (status === 'active' && prevCallStatusRef.current !== 'active') {
+      broadcastMediaState(isMuted, isVideoOff);
+    }
+    prevCallStatusRef.current = status;
+  }, [status, isMuted, isVideoOff, broadcastMediaState]);
+
   const toggleMute = () => {
+    const next = !isMuted;
     if (meetingSessionRef.current) {
       const audioVideo = meetingSessionRef.current.audioVideo;
-      if (isMuted) {
-        audioVideo.realtimeUnmuteLocalAudio();
-      } else {
+      if (next) {
         audioVideo.realtimeMuteLocalAudio();
+      } else {
+        audioVideo.realtimeUnmuteLocalAudio();
       }
-      setIsMuted(!isMuted);
     }
+    setIsMuted(next);
+    broadcastMediaState(next, isVideoOff);
   };
 
   const toggleVideo = () => {
+    const next = !isVideoOff;
     if (meetingSessionRef.current) {
       const audioVideo = meetingSessionRef.current.audioVideo;
-      if (isVideoOff) {
-        audioVideo.startLocalVideoTile();
-      } else {
+      if (next) {
         audioVideo.stopLocalVideoTile();
+      } else {
+        audioVideo.startLocalVideoTile();
       }
-      setIsVideoOff(!isVideoOff);
     }
+    setIsVideoOff(next);
+    broadcastMediaState(isMuted, next);
   };
 
-  const toggleScreenShare = async () => {
-    if (meetingSessionRef.current) {
-      const audioVideo = meetingSessionRef.current.audioVideo;
-      try {
-        if (isScreenSharing) {
-          await audioVideo.stopContentShare();
-        } else {
-          await audioVideo.startContentShareFromScreenCapture();
-        }
-        setIsScreenSharing(!isScreenSharing);
-      } catch (err) {
-        console.error('Screen share error:', err);
-        toast.error('Failed to share screen');
+  const cycleCamera = async () => {
+    const session = meetingSessionRef.current;
+    if (!session) return;
+    try {
+      const devices = await session.audioVideo.listVideoInputDevices();
+      if (devices.length < 2) {
+        toast.message('Only one camera is available on this device.');
+        return;
       }
+      const current = selectedDevices.videoInput;
+      const idx = Math.max(
+        0,
+        devices.findIndex((d: MediaDeviceInfo) => d.deviceId === current)
+      );
+      const nextDevice = devices[(idx + 1) % devices.length];
+      await session.audioVideo.startVideoInput(nextDevice.deviceId);
+      setSelectedDevices((prev) => ({ ...prev, videoInput: nextDevice.deviceId }));
+      if (!isVideoOff) {
+        session.audioVideo.startLocalVideoTile();
+      }
+      toast.success('Switched camera');
+    } catch (err) {
+      console.error('cycleCamera:', err);
+      toast.error('Could not switch camera');
     }
   };
 
@@ -1155,13 +1262,47 @@ export function ChimeVideoCall({
     }
   };
 
+  const distributeChatFileAfterUpload = useCallback(
+    (fileUrl: string, displayName: string, messageType: 'image' | 'file', messageId: string) => {
+      if (!meetingSessionRef.current) return;
+      const senderName = participantType === 'customer' ? customerName : vendorName;
+      addChatMessage(
+        participantType as 'customer' | 'vendor',
+        senderName,
+        displayName,
+        messageId,
+        messageType,
+        displayName,
+        fileUrl
+      );
+      const audioVideo = meetingSessionRef.current.audioVideo;
+      const chatData: ChatDataMessage = {
+        type: 'file',
+        id: messageId,
+        sender: participantType as 'customer' | 'vendor',
+        senderName,
+        message: displayName,
+        messageType,
+        fileName: displayName,
+        fileUrl,
+        timestamp: new Date().toISOString(),
+      };
+      const payload = new TextEncoder().encode(JSON.stringify(chatData));
+      audioVideo.realtimeSendDataMessage(CHAT_TOPIC, payload, MESSAGE_LIFETIME_MS);
+    },
+    [participantType, customerName, vendorName]
+  );
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!meetingSessionRef.current) return;
 
-    if (fileInputRef.current) {
+    if (e.target === fileInputRef.current && fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+    if (e.target === cameraCaptureInputRef.current && cameraCaptureInputRef.current) {
+      cameraCaptureInputRef.current.value = '';
     }
 
     const senderName = participantType === 'customer' ? customerName : vendorName;
@@ -1175,7 +1316,6 @@ export function ChimeVideoCall({
       formData.append('senderName', senderName);
       formData.append('senderType', participantType);
 
-      // ✅ FIX: Use getApiBaseUrl() instead of process.env.NEXT_PUBLIC_API_URL to ensure correct API Gateway URL
       const apiBaseUrl = getApiBaseUrl();
       if (!apiBaseUrl) {
         throw new Error('API base URL is not configured');
@@ -1198,32 +1338,7 @@ export function ChimeVideoCall({
       const messageId = result.message?.id || `file-${Date.now()}`;
       const messageType = file.type.startsWith('image/') ? 'image' : 'file';
 
-      addChatMessage(
-        participantType as 'customer' | 'vendor',
-        senderName,
-        file.name,
-        messageId,
-        messageType,
-        file.name,
-        fileUrl
-      );
-
-      // Send file message via Chime data channel for real-time delivery
-      const audioVideo = meetingSessionRef.current.audioVideo;
-      const chatData: ChatDataMessage = {
-        type: 'file',
-        id: messageId,
-        sender: participantType as 'customer' | 'vendor',
-        senderName,
-        message: file.name,
-        messageType,
-        fileName: file.name,
-        fileUrl,
-        timestamp: new Date().toISOString(),
-      };
-
-      const payload = new TextEncoder().encode(JSON.stringify(chatData));
-      audioVideo.realtimeSendDataMessage(CHAT_TOPIC, payload, MESSAGE_LIFETIME_MS);
+      distributeChatFileAfterUpload(fileUrl, file.name, messageType, messageId);
     } catch (err) {
       console.error('Error uploading file:', err);
       toast.error('Failed to send file');
@@ -1231,6 +1346,27 @@ export function ChimeVideoCall({
       setUploadingFile(false);
     }
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const w = window as unknown as {
+      __warmpawzDeliverChatUpload?: (payload: {
+        fileUrl: string;
+        fileName: string;
+        messageType?: 'image' | 'file';
+        messageId?: string;
+      }) => void;
+    };
+    w.__warmpawzDeliverChatUpload = (payload) => {
+      if (!payload?.fileUrl) return;
+      const messageId = payload.messageId || `file-${Date.now()}`;
+      const messageType = payload.messageType || 'image';
+      distributeChatFileAfterUpload(payload.fileUrl, payload.fileName || 'Photo', messageType, messageId);
+    };
+    return () => {
+      delete w.__warmpawzDeliverChatUpload;
+    };
+  }, [distributeChatFileAfterUpload]);
 
   // Send typing indicator
   const sendTypingIndicator = (isTyping: boolean) => {
@@ -1294,17 +1430,94 @@ export function ChimeVideoCall({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const toggleFullScreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
-      setIsFullScreen(true);
-    } else {
-      document.exitFullscreen();
+  const toggleFullScreen = async () => {
+    if (typeof document === 'undefined') return;
+    if (pseudoFullScreen) {
+      setPseudoFullScreen(false);
       setIsFullScreen(false);
+      return;
+    }
+    if (document.fullscreenElement) {
+      await document.exitFullscreen().catch(() => {});
+      return;
+    }
+    const el = callRootRef.current || document.documentElement;
+    try {
+      await el.requestFullscreen();
+    } catch {
+      setPseudoFullScreen(true);
+      setIsFullScreen(true);
     }
   };
 
+  const clampPipOffset = useCallback((x: number, y: number) => {
+    const stage = videoStageRef.current;
+    if (!stage) return { x, y };
+    const rect = stage.getBoundingClientRect();
+    const pipW = 112;
+    const pipH = 144;
+    const margin = 12;
+    const maxShiftX = Math.max(margin, rect.width - pipW - margin);
+    const maxShiftY = Math.max(margin, rect.height - pipH - margin);
+    return {
+      x: Math.max(-maxShiftX, Math.min(maxShiftX, x)),
+      y: Math.max(-maxShiftY, Math.min(maxShiftY, y)),
+    };
+  }, []);
+
+  const onPipPointerDown = (e: React.PointerEvent) => {
+    pipDragRef.current = {
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: pipOffset.x,
+      originY: pipOffset.y,
+    };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const onPipPointerMove = (e: React.PointerEvent) => {
+    if (!pipDragRef.current.active) return;
+    const dx = pipDragRef.current.startX - e.clientX;
+    const dy = pipDragRef.current.startY - e.clientY;
+    const next = clampPipOffset(pipDragRef.current.originX + dx, pipDragRef.current.originY + dy);
+    setPipOffset(next);
+  };
+
+  const onPipPointerUp = (e: React.PointerEvent) => {
+    pipDragRef.current.active = false;
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const openChatAttachment = () => {
+    if (typeof window !== 'undefined' && (window as unknown as { ReactNativeWebView?: { postMessage: (s: string) => void } }).ReactNativeWebView) {
+      (window as unknown as { ReactNativeWebView: { postMessage: (s: string) => void } }).ReactNativeWebView.postMessage(
+        JSON.stringify({ type: 'WARMPAWZ_PICK_CHAT_FILE', bookingId })
+      );
+      return;
+    }
+    const narrow =
+      typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+    if (narrow && cameraCaptureInputRef.current) {
+      cameraCaptureInputRef.current.click();
+      return;
+    }
+    fileInputRef.current?.click();
+  };
+
   const otherParticipantName = participantType === 'customer' ? vendorName : customerName;
+  const handleJoinTap = async () => {
+    const perm = await requestCameraMicrophonePermission();
+    if (perm === 'denied') {
+      toast.error('Camera/Microphone permission denied. Please allow access and try again.');
+      return;
+    }
+    void joinMeeting();
+  };
 
   // ============================================================================
   // RENDER
@@ -1363,7 +1576,7 @@ export function ChimeVideoCall({
           <p className="text-slate-400 mb-6">{serviceName} with {otherParticipantName}</p>
 
           <Button
-            onClick={() => joinMeeting()}
+            onClick={handleJoinTap}
             className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-8 py-6 rounded-xl font-semibold text-lg shadow-lg shadow-green-500/30"
           >
             <Phone className="w-5 h-5 mr-2" />
@@ -1475,7 +1688,12 @@ export function ChimeVideoCall({
           <h2 className="text-xl font-bold text-gray-900 mb-2">
             {endedByOther ? `${otherParticipantName} left the call` : 'Call ended'}
           </h2>
-          <p className="text-gray-600 mb-1">Duration: {formatDuration(callDuration)}</p>
+          <p className="text-gray-600 mb-1">
+            Duration:{' '}
+            {formatDuration(
+              Math.min(CALL_SLOT_SECONDS, Math.max(0, CALL_SLOT_SECONDS - callRemainingSeconds))
+            )}
+          </p>
           <p className="text-gray-500 text-sm mb-6">
             {endedByOther ? 'The other participant has disconnected.' : 'Thank you for using Warmpawz'}
           </p>
@@ -1491,7 +1709,11 @@ export function ChimeVideoCall({
               </Button>
             )}
             <Button
-              onClick={() => onEndCall?.(callDuration)}
+              onClick={() =>
+                onEndCall?.(
+                  Math.min(CALL_SLOT_SECONDS, Math.max(0, CALL_SLOT_SECONDS - callRemainingSeconds))
+                )
+              }
               className="bg-[#FF8C42] hover:bg-[#FF7A2E] px-6 py-3 rounded-xl"
             >
               Done
@@ -1504,9 +1726,16 @@ export function ChimeVideoCall({
 
   // Active call
   return (
-    <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-xl relative">
+    <div
+      ref={callRootRef}
+      className={`flex flex-col bg-slate-900 overflow-hidden shadow-xl relative ${
+        pseudoFullScreen || isFullScreen
+          ? 'fixed inset-0 z-[9998] rounded-none h-[100dvh] max-h-[100dvh]'
+          : 'rounded-2xl h-[100dvh] max-h-[100dvh] min-h-[100dvh] sm:h-[min(100dvh,920px)] sm:max-h-[min(100dvh,920px)] sm:min-h-0'
+      }`}
+    >
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-slate-900/90 to-transparent p-4">
+      <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-slate-900/90 to-transparent p-4 pt-[max(1rem,env(safe-area-inset-top))]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
@@ -1519,22 +1748,28 @@ export function ChimeVideoCall({
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Duration */}
+            {/* Countdown (15:00 → 0) */}
             <div className="bg-slate-800/80 backdrop-blur px-3 py-1.5 rounded-full flex items-center gap-2">
               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-              <span className="text-white text-sm font-mono">{formatDuration(callDuration)}</span>
+              <span className="text-white text-sm font-mono">{formatDuration(callRemainingSeconds)}</span>
             </div>
 
             {/* Fullscreen */}
             <button
-              onClick={toggleFullScreen}
+              type="button"
+              onClick={() => void toggleFullScreen()}
               className="p-2 bg-slate-800/80 backdrop-blur rounded-full hover:bg-slate-700 transition-colors"
             >
-              {isFullScreen ? <Minimize2 className="w-4 h-4 text-white" /> : <Maximize2 className="w-4 h-4 text-white" />}
+              {isFullScreen || pseudoFullScreen ? (
+                <Minimize2 className="w-4 h-4 text-white" />
+              ) : (
+                <Maximize2 className="w-4 h-4 text-white" />
+              )}
             </button>
 
             {/* Chat with unread badge */}
             <button
+              type="button"
               onClick={() => setShowChat(!showChat)}
               className={`p-2 rounded-full transition-colors relative ${showChat ? 'bg-[#FF8C42]' : 'bg-slate-800/80 backdrop-blur hover:bg-slate-700'
                 }`}
@@ -1550,19 +1785,46 @@ export function ChimeVideoCall({
         </div>
       </div>
 
-      {/* Video Container */}
-      <div className="aspect-[4/3] bg-slate-800 relative">
+      {/* Video stage: fills space between header and controls */}
+      <div
+        ref={videoStageRef}
+        className="flex-1 min-h-0 bg-slate-800 relative mt-16 mb-0"
+      >
         {/* Remote Video */}
         <video
           ref={remoteVideoRef}
           autoPlay
           playsInline
-          className="w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover z-0"
         />
+
+        {/* Remote muted / camera-off (from data channel) */}
+        {remoteMediaState.muted && (
+          <div className="absolute top-16 left-4 z-10 flex items-center gap-2 rounded-full bg-black/55 px-3 py-1.5 text-white text-xs">
+            <MicOff className="w-4 h-4" />
+            <span>Mic off</span>
+          </div>
+        )}
+        {remoteMediaState.videoOff && (
+          <div className="absolute inset-0 z-[5] flex flex-col items-center justify-center bg-slate-900/75 text-white pointer-events-none">
+            <VideoOff className="w-14 h-14 opacity-80 mb-2" />
+            <p className="text-sm font-medium">Camera off</p>
+          </div>
+        )}
 
         {/* Remote Placeholder */}
         {!attendeeStatus.vendorJoined && participantType === 'customer' && (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-800">
+          <div className="absolute inset-0 z-[4] flex items-center justify-center bg-slate-800">
+            <div className="text-center">
+              <div className="w-20 h-20 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-3">
+                <User className="w-10 h-10 text-slate-500" />
+              </div>
+              <p className="text-slate-400 text-sm">Waiting for {otherParticipantName}...</p>
+            </div>
+          </div>
+        )}
+        {!attendeeStatus.customerJoined && participantType === 'vendor' && (
+          <div className="absolute inset-0 z-[4] flex items-center justify-center bg-slate-800">
             <div className="text-center">
               <div className="w-20 h-20 bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-3">
                 <User className="w-10 h-10 text-slate-500" />
@@ -1572,17 +1834,27 @@ export function ChimeVideoCall({
           </div>
         )}
 
-        {/* Local Video PIP */}
-        <div className="absolute bottom-20 right-4 w-28 h-36 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-600 bg-slate-800">
+        {/* Local Video PiP (draggable) */}
+        <div
+          className="absolute z-10 w-28 h-36 rounded-xl overflow-hidden shadow-2xl border-2 border-slate-600 bg-slate-800 cursor-grab active:cursor-grabbing touch-pan-y"
+          style={{
+            bottom: `calc(5rem + ${pipOffset.y}px)`,
+            right: `calc(1rem + ${pipOffset.x}px)`,
+          }}
+          onPointerDown={onPipPointerDown}
+          onPointerMove={onPipPointerMove}
+          onPointerUp={onPipPointerUp}
+          onPointerCancel={onPipPointerUp}
+        >
           <video
             ref={localVideoRef}
             autoPlay
             playsInline
             muted
-            className="w-full h-full object-cover scale-x-[-1]"
+            className="w-full h-full object-cover scale-x-[-1] pointer-events-none"
           />
           {isVideoOff && (
-            <div className="absolute inset-0 bg-slate-800 flex items-center justify-center">
+            <div className="absolute inset-0 bg-slate-800 flex items-center justify-center pointer-events-none">
               <VideoOff className="w-6 h-6 text-slate-500" />
             </div>
           )}
@@ -1593,7 +1865,7 @@ export function ChimeVideoCall({
           <button
             type="button"
             onClick={retryRemoteAudio}
-            className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-amber-500/90 hover:bg-amber-500 text-white px-4 py-2 rounded-full text-sm font-medium z-10"
+            className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-amber-500/90 hover:bg-amber-500 text-white px-4 py-2 rounded-full text-sm font-medium z-20"
           >
             Tap to enable sound
           </button>
@@ -1601,7 +1873,7 @@ export function ChimeVideoCall({
 
         {/* Reconnecting Overlay */}
         {status === 'reconnecting' && (
-          <div className="absolute inset-0 bg-slate-900/80 flex flex-col items-center justify-center">
+          <div className="absolute inset-0 bg-slate-900/80 flex flex-col items-center justify-center z-30">
             <RotateCcw className="w-10 h-10 text-yellow-400 animate-spin mb-3" />
             <p className="text-white">Reconnecting...</p>
           </div>
@@ -1609,9 +1881,10 @@ export function ChimeVideoCall({
       </div>
 
       {/* Controls */}
-      <div className="p-4 bg-slate-800/90 backdrop-blur-lg border-t border-slate-700">
-        <div className="flex justify-center items-center gap-4">
+      <div className="shrink-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] bg-slate-800/90 backdrop-blur-lg border-t border-slate-700">
+        <div className="flex justify-center items-center gap-3 flex-wrap">
           <button
+            type="button"
             onClick={toggleVideo}
             className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${isVideoOff ? 'bg-red-500 text-white' : 'bg-slate-700 text-white hover:bg-slate-600'
               }`}
@@ -1620,6 +1893,7 @@ export function ChimeVideoCall({
           </button>
 
           <button
+            type="button"
             onClick={toggleMute}
             className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${isMuted ? 'bg-red-500 text-white' : 'bg-slate-700 text-white hover:bg-slate-600'
               }`}
@@ -1628,14 +1902,16 @@ export function ChimeVideoCall({
           </button>
 
           <button
-            onClick={toggleScreenShare}
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${isScreenSharing ? 'bg-blue-500 text-white' : 'bg-slate-700 text-white hover:bg-slate-600'
-              }`}
+            type="button"
+            onClick={() => void cycleCamera()}
+            className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-700 text-white hover:bg-slate-600"
+            title="Flip camera"
           >
-            {isScreenSharing ? <MonitorOff className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
+            <SwitchCamera className="w-5 h-5" />
           </button>
 
           <button
+            type="button"
             onClick={handleEndCallClick}
             className="w-14 h-14 rounded-2xl bg-red-500 hover:bg-red-600 text-white flex items-center justify-center transition-all shadow-lg shadow-red-500/30"
           >
@@ -1643,6 +1919,7 @@ export function ChimeVideoCall({
           </button>
 
           <button
+            type="button"
             onClick={() => setShowSettings(true)}
             className="w-12 h-12 rounded-2xl bg-slate-700 text-white hover:bg-slate-600 flex items-center justify-center"
           >
@@ -1778,8 +2055,18 @@ export function ChimeVideoCall({
                 accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
                 disabled={uploadingFile}
               />
+              <input
+                ref={cameraCaptureInputRef}
+                type="file"
+                className="hidden"
+                onChange={handleFileUpload}
+                accept="image/*"
+                capture="environment"
+                disabled={uploadingFile}
+              />
               <button
-                onClick={() => fileInputRef.current?.click()}
+                type="button"
+                onClick={openChatAttachment}
                 disabled={uploadingFile}
                 className="w-12 h-12 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl flex items-center justify-center transition-colors"
               >

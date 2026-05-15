@@ -4,29 +4,14 @@ const { CloudFrontClient, CreateInvalidationCommand } = require('@aws-sdk/client
 const fs = require('fs');
 const path = require('path');
 
-const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID || 'AKIAQ2X6RFZI3MGZH35D';
-const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY || '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';
 const REGION = process.env.AWS_REGION || 'ap-south-1';
 const S3_BUCKET = 'warmpawz-dev-vendor-frontend-ap-south-1';
 const CLOUDFRONT_DIST_ID = 'E95171GX1I6HN';
 const CLOUDFRONT_URL = 'https://d1s6ykkj381k58.cloudfront.net';
 const API_ENDPOINT = 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com';
 
-const s3Client = new S3Client({
-  region: REGION,
-  credentials: {
-    accessKeyId: AWS_ACCESS_KEY_ID,
-    secretAccessKey: AWS_SECRET_ACCESS_KEY,
-  },
-});
-
-const cloudFrontClient = new CloudFrontClient({
-  region: REGION,
-  credentials: {
-    accessKeyId: AWS_ACCESS_KEY_ID,
-    secretAccessKey: AWS_SECRET_ACCESS_KEY,
-  },
-});
+const s3Client = new S3Client({ region: REGION });
+const cloudFrontClient = new CloudFrontClient({ region: REGION });
 
 function getAllFiles(dirPath, arrayOfFiles = []) {
   if (!Array.isArray(arrayOfFiles)) {
@@ -133,16 +118,30 @@ async function deploy() {
   console.log('🔧 Injecting runtime-config.js...');
   const runtimeConfigPath = path.join(distPath, 'runtime-config.js');
   const runtimeConfigContent = `// Runtime Configuration for Warmpawz vendor-web
-// Injected at deployment time with actual API Gateway endpoint
+// Injected at deployment time with dev API Gateway (${API_ENDPOINT})
 (function() {
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: "${API_ENDPOINT}",
-    uatMode: true
+    uatMode: true,
+    environment: "development"
   };
-  console.log('Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();`;
   fs.writeFileSync(runtimeConfigPath, runtimeConfigContent, 'utf8');
-  console.log('✅ runtime-config.js injected\n');
+  const htmlFiles = getAllFiles(distPath).filter((f) => f.endsWith('.html'));
+  const inlineConfig = `window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: "${API_ENDPOINT}", uatMode: true, environment: "development" };`;
+  for (const htmlFile of htmlFiles) {
+    let htmlContent = fs.readFileSync(htmlFile, 'utf8');
+    if (htmlContent.includes('runtime-config-inline')) {
+      htmlContent = htmlContent.replace(
+        /<script\s+id=["']runtime-config-inline["'][^>]*>[\s\S]*?<\/script>/gi,
+        `<script id="runtime-config-inline">${inlineConfig}</script>`
+      );
+    } else {
+      htmlContent = htmlContent.replace('</body>', `<script id="runtime-config-inline">${inlineConfig}</script></body>`);
+    }
+    fs.writeFileSync(htmlFile, htmlContent, 'utf8');
+  }
+  console.log(`✅ runtime-config.js injected (inline in ${htmlFiles.length} HTML files)\n`);
 
   // Step 2: Clean S3 bucket
   await deleteAllObjects();

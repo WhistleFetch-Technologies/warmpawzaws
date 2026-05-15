@@ -16,8 +16,128 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../../../database/rds-connection';
+import { findCustomerByPhone } from '../../../utils/customer-phone-lookup';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+
+/**
+ * Geocode an address using Google Maps Geocoding API
+ * param addressLine1 - Primary address line
+ * param addressLine2 - Secondary address line (optional)
+ * param city - City name
+ * param state - State name
+ * param pincode - PIN code
+ * returns Coordinates as JSON string or null if geocoding fails
+ */
+async function geocodeAddress(
+  addressLine1: string,
+  city: string,
+  state: string,
+  pincode: string,
+  addressLine2?: string | null
+): Promise<string | null> {
+  try {
+    const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY || 'AIzaSyC6iwRfS_r1zRtjiGyLjgueZ_rDV_l7yo0';
+
+    // Build full address string for geocoding
+    const fullAddress = [
+      addressLine1,
+      addressLine2,
+      city,
+      state,
+      pincode,
+      'India'
+    ].filter(Boolean).join(', ');
+
+    const geocodeResponse = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(fullAddress)}&key=${googleMapsApiKey}`
+    );
+    const geocodeData: any = await geocodeResponse.json();
+
+    if (geocodeData.status === 'OK' && geocodeData.results?.[0]?.geometry?.location) {
+      const location = geocodeData.results[0].geometry.location;
+      const coordinates = JSON.stringify({ lat: location.lat, lng: location.lng });
+      console.log('📍 [addresses] Geocoded address:', { lat: location.lat, lng: location.lng });
+      return coordinates;
+    } else {
+      console.warn('⚠️ [addresses] Geocoding failed:', geocodeData.status);
+      return null;
+    }
+  } catch (error) {
+    console.error('❌ [addresses] Error geocoding address:', error);
+    return null;
+  }
+}
+
+/**
+ * Normalize coordinates to JSON string format
+ *  Coordinates as string, object, or null
+ * Normalized coordinates as JSON string or null
+ */
+function normalizeCoordinates(coordinates: any): string | null {
+  if (!coordinates) return null;
+
+  if (typeof coordinates === 'string') {
+    // Already a string, validate it's valid JSON
+    try {
+      JSON.parse(coordinates);
+      return coordinates;
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof coordinates === 'object') {
+    // Object format, stringify it
+    return JSON.stringify(coordinates);
+  }
+
+  return null;
+}
+
+/** Prefer explicit lat/lng from the client; fall back to JSON coordinates (Google Places). */
+function resolveLatLngForRow(
+  finalCoordinates: string | null,
+  explicitLat?: unknown,
+  explicitLng?: unknown
+): { latitude: number | null; longitude: number | null } {
+  let latitude: number | null = null;
+  let longitude: number | null = null;
+  if (finalCoordinates) {
+    try {
+      const o = JSON.parse(finalCoordinates) as Record<string, unknown>;
+      const la =
+        typeof o.lat === 'number'
+          ? o.lat
+          : typeof o.latitude === 'number'
+            ? (o.latitude as number)
+            : null;
+      const lo =
+        typeof o.lng === 'number'
+          ? o.lng
+          : typeof o.longitude === 'number'
+            ? (o.longitude as number)
+            : typeof o.lon === 'number'
+              ? (o.lon as number)
+              : null;
+      if (la != null && Number.isFinite(la)) latitude = la;
+      if (lo != null && Number.isFinite(lo)) longitude = lo;
+    } catch {
+      /* ignore */
+    }
+  }
+  const nl =
+    explicitLat !== undefined && explicitLat !== null && explicitLat !== ''
+      ? Number(explicitLat as number | string)
+      : NaN;
+  const ng =
+    explicitLng !== undefined && explicitLng !== null && explicitLng !== ''
+      ? Number(explicitLng as number | string)
+      : NaN;
+  if (Number.isFinite(nl)) latitude = nl;
+  if (Number.isFinite(ng)) longitude = ng;
+  return { latitude, longitude };
+}
 
 export function registerAddressEndpoints(app: Hono) {
   /**
@@ -28,14 +148,14 @@ export function registerAddressEndpoints(app: Hono) {
   app.get("/customer/addresses", async (c) => {
     try {
       const phone = c.req.query('phone');
-      
+
       if (!phone) {
         return c.json({ error: 'phone parameter is required' }, 400);
       }
 
-      // Resolve customer ID from phone
-      let customer = await select('customers', { phone: phone });
-      if (customer.length === 0) {
+      // Resolve customer ID from phone (+91/plain/normalized supported)
+      const customer = await findCustomerByPhone(phone);
+      if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
@@ -43,7 +163,7 @@ export function registerAddressEndpoints(app: Hono) {
         `SELECT * FROM customer_addresses
          WHERE customer_id = $1
          ORDER BY is_default DESC, created_at DESC`,
-        [customer[0].id]
+        [customer.id]
       ).catch(() => ({ rows: [] }));
 
       const mapAddr = (addr: any) => ({
@@ -59,6 +179,8 @@ export function registerAddressEndpoints(app: Hono) {
         pincode: addr.pincode,
         landmark: addr.landmark,
         coordinates: addr.coordinates || null,
+        latitude: addr.latitude != null ? Number(addr.latitude) : undefined,
+        longitude: addr.longitude != null ? Number(addr.longitude) : undefined,
         flatNo: addr.flat_no ?? undefined,
         houseNo: addr.house_no ?? undefined,
         floor: addr.floor ?? undefined,
@@ -68,11 +190,17 @@ export function registerAddressEndpoints(app: Hono) {
         createdAt: addr.created_at,
         updatedAt: addr.updated_at,
       });
-      let list = addresses.rows.map(mapAddr);
+      let list:any = addresses.rows.map(mapAddr);
 
       // When no saved addresses exist, use profile address/pincode so checkout doesn't block
-      const cust = customer[0] as any;
+      const cust = customer as any;
       if (list.length === 0 && (cust?.address || cust?.pincode)) {
+        const plat = cust?.latitude != null ? Number(cust.latitude) : NaN;
+        const plng = cust?.longitude != null ? Number(cust.longitude) : NaN;
+        const profileCoords =
+          Number.isFinite(plat) && Number.isFinite(plng)
+            ? { lat: plat, lng: plng }
+            : null;
         list = [{
           id: 'profile',
           customerId: cust.id,
@@ -85,7 +213,11 @@ export function registerAddressEndpoints(app: Hono) {
           state: cust.state || '',
           pincode: cust.pincode || '',
           landmark: null,
-          coordinates: null,
+          houseNo: cust.house_no ?? undefined,
+          floor: cust.floor ?? undefined,
+          coordinates: profileCoords,
+          latitude: Number.isFinite(plat) ? plat : undefined,
+          longitude: Number.isFinite(plng) ? plng : undefined,
           isDefault: true,
           createdAt: null,
           updatedAt: null,
@@ -162,19 +294,19 @@ export function registerAddressEndpoints(app: Hono) {
   app.post("/customer/addresses", async (c) => {
     try {
       const body = await c.req.json();
-      
+
       // Support legacy format where body contains { phone, addresses: [...] }
       // Also support new format where body contains individual address fields + phone
       let customerPhone: string | undefined;
       let addressData: any;
-      
+
       if (body.phone && body.addresses && Array.isArray(body.addresses)) {
         // Legacy format: { phone, addresses: [...] }
         // Take the last address from the array (most recent)
         customerPhone = body.phone;
         const addressesArray = body.addresses;
         const lastAddress = addressesArray[addressesArray.length - 1];
-        
+
         // Extract individual fields from address object
         addressData = {
           label: lastAddress.label || lastAddress.addressType || 'home',
@@ -187,6 +319,8 @@ export function registerAddressEndpoints(app: Hono) {
           pincode: lastAddress.pincode || lastAddress.pincode,
           landmark: lastAddress.landmark || null,
           coordinates: lastAddress.coordinates || null,
+          latitude: lastAddress.latitude,
+          longitude: lastAddress.longitude,
           isDefault: lastAddress.isDefault !== undefined ? lastAddress.isDefault : (addressesArray.length === 1),
         };
       } else {
@@ -203,6 +337,8 @@ export function registerAddressEndpoints(app: Hono) {
           pincode: body.pincode,
           landmark: body.landmark || null,
           coordinates: body.coordinates || null,
+          latitude: body.latitude,
+          longitude: body.longitude,
           flatNo: body.flatNo ?? body.flat_no ?? null,
           houseNo: body.houseNo ?? body.house_no ?? null,
           floor: body.floor ?? null,
@@ -218,15 +354,15 @@ export function registerAddressEndpoints(app: Hono) {
 
       // ✅ FIX B5: More flexible validation - name optional (default 'Customer'), addressLine1/city/state/pincode required
       const name = (addressData.name || addressData.fullName || body.name || body.fullName || '').trim() || 'Customer';
-      
+
       // ✅ FIX B5: Handle address field variations - addressLine1, address_line1, or address
       let addressLine1 = addressData.addressLine1 || addressData.address_line1 || body.addressLine1 || body.address_line1;
       if (!addressLine1 && body.address) {
         addressLine1 = typeof body.address === 'string' ? body.address.split(',')[0].trim() : body.address;
       }
-      
+
       const phone = addressData.phone || body.phone || customerPhone;
-      
+
       if (!phone || !addressLine1 || !addressData.city || !addressData.state || !addressData.pincode) {
         const missingFields = [];
         if (!phone) missingFields.push('phone');
@@ -234,28 +370,28 @@ export function registerAddressEndpoints(app: Hono) {
         if (!addressData.city) missingFields.push('city');
         if (!addressData.state) missingFields.push('state');
         if (!addressData.pincode) missingFields.push('pincode');
-        
+
         console.error('Address validation failed. Missing fields:', missingFields);
-        return c.json({ 
+        return c.json({
           error: `Missing required fields: ${missingFields.join(', ')}`,
           missingFields,
         }, 400);
       }
-      
+
       addressData.name = name;
       addressData.phone = phone;
       addressData.addressLine1 = addressLine1;
 
-      // Resolve customer ID from phone
-      let customer = await select('customers', { phone: customerPhone });
-      if (customer.length === 0) {
+      // Resolve customer ID from phone (+91/plain/normalized supported)
+      const customer = await findCustomerByPhone(customerPhone);
+      if (!customer) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
       // Check if first address (auto-default)
       const existingAddresses = await query(
         'SELECT COUNT(*) as count FROM customer_addresses WHERE customer_id = $1',
-        [customer[0].id]
+        [customer.id]
       ).catch(() => ({ rows: [{ count: '0' }] }));
 
       const shouldBeDefault = addressData.isDefault || parseInt(existingAddresses.rows[0]?.count || '0', 10) === 0;
@@ -264,15 +400,35 @@ export function registerAddressEndpoints(app: Hono) {
       if (shouldBeDefault) {
         await query(
           'UPDATE customer_addresses SET is_default = false WHERE customer_id = $1',
-          [customer[0].id]
-        ).catch(() => {});
+          [customer.id]
+        ).catch(() => { });
       }
+
+      // ✅ FIX: Process coordinates - normalize format and geocode if missing
+      let finalCoordinates = normalizeCoordinates(addressData.coordinates);
+
+      // If coordinates are missing, geocode the address
+      if (!finalCoordinates && addressData.addressLine1 && addressData.city && addressData.state && addressData.pincode) {
+        finalCoordinates = await geocodeAddress(
+          addressData.addressLine1,
+          addressData.city,
+          addressData.state,
+          addressData.pincode,
+          addressData.addressLine2
+        );
+      }
+
+      const { latitude: rowLat, longitude: rowLng } = resolveLatLngForRow(
+        finalCoordinates,
+        (addressData as any).latitude ?? body.latitude,
+        (addressData as any).longitude ?? body.longitude
+      );
 
       // ✅ FIX: Create address with better error handling
       let address;
       try {
         address = await insert('customer_addresses', {
-          customer_id: customer[0].id,
+          customer_id: customer.id,
           address_type: addressData.label || 'home',
           full_name: addressData.name,
           phone: addressData.phone,
@@ -282,7 +438,9 @@ export function registerAddressEndpoints(app: Hono) {
           state: addressData.state,
           pincode: addressData.pincode,
           landmark: addressData.landmark || null,
-          coordinates: addressData.coordinates ? (typeof addressData.coordinates === 'string' ? addressData.coordinates : JSON.stringify(addressData.coordinates)) : null,
+          coordinates: finalCoordinates,
+          latitude: rowLat,
+          longitude: rowLng,
           flat_no: addressData.flatNo || null,
           house_no: addressData.houseNo || null,
           floor: addressData.floor || null,
@@ -293,7 +451,7 @@ export function registerAddressEndpoints(app: Hono) {
       } catch (insertError: any) {
         console.error('Error inserting address:', insertError);
         console.error('Address data:', JSON.stringify({
-          customer_id: customer[0].id,
+          customer_id: customer.id,
           address_type: addressData.label || 'home',
           full_name: addressData.name,
           phone: addressData.phone,
@@ -306,7 +464,7 @@ export function registerAddressEndpoints(app: Hono) {
           coordinates: addressData.coordinates,
           is_default: shouldBeDefault,
         }, null, 2));
-        return c.json({ 
+        return c.json({
           error: `Error saving address: ${insertError.message || 'Database error'}`,
           details: insertError.message
         }, 500);
@@ -315,7 +473,7 @@ export function registerAddressEndpoints(app: Hono) {
       // Get all addresses
       const allAddresses = await query(
         'SELECT * FROM customer_addresses WHERE customer_id = $1 ORDER BY is_default DESC, created_at DESC',
-        [customer[0].id]
+        [customer.id]
       ).catch(() => ({ rows: [] }));
 
       const mapRow = (addr: any) => ({
@@ -331,6 +489,8 @@ export function registerAddressEndpoints(app: Hono) {
         pincode: addr.pincode,
         landmark: addr.landmark,
         coordinates: addr.coordinates || null,
+        latitude: addr.latitude != null ? Number(addr.latitude) : undefined,
+        longitude: addr.longitude != null ? Number(addr.longitude) : undefined,
         flatNo: addr.flat_no ?? undefined,
         houseNo: addr.house_no ?? undefined,
         floor: addr.floor ?? undefined,
@@ -390,6 +550,8 @@ export function registerAddressEndpoints(app: Hono) {
         pincode: addr.pincode,
         landmark: addr.landmark,
         coordinates: addr.coordinates || null,
+        latitude: addr.latitude != null ? Number(addr.latitude) : undefined,
+        longitude: addr.longitude != null ? Number(addr.longitude) : undefined,
         flatNo: addr.flat_no ?? undefined,
         houseNo: addr.house_no ?? undefined,
         floor: addr.floor ?? undefined,
@@ -426,8 +588,9 @@ export function registerAddressEndpoints(app: Hono) {
         city,
         state,
         pincode,
-        landmark,
         coordinates,
+        latitude: bodyLat,
+        longitude: bodyLng,
         isDefault = false,
       } = body;
       const flatNo = body.flatNo ?? body.flat_no ?? null;
@@ -438,6 +601,10 @@ export function registerAddressEndpoints(app: Hono) {
 
       if (!name || !phone || !addressLine1 || !city || !state || !pincode) {
         return c.json({ error: 'name, phone, addressLine1, city, state, and pincode are required' }, 400);
+      }
+
+      if (!String(houseNo || '').trim()) {
+        return c.json({ error: 'House / flat number is required' }, 400);
       }
 
       // Resolve customer ID
@@ -462,8 +629,28 @@ export function registerAddressEndpoints(app: Hono) {
         await query(
           'UPDATE customer_addresses SET is_default = false WHERE customer_id = $1',
           [customer[0].id]
-        ).catch(() => {});
+        ).catch(() => { });
       }
+
+      // ✅ FIX: Process coordinates - normalize format and geocode if missing
+      let finalCoordinates = normalizeCoordinates(coordinates);
+
+      // If coordinates are missing, geocode the address
+      if (!finalCoordinates && addressLine1 && city && state && pincode) {
+        finalCoordinates = await geocodeAddress(
+          addressLine1,
+          city,
+          state,
+          pincode,
+          addressLine2
+        );
+      }
+
+      const { latitude: rowLat2, longitude: rowLng2 } = resolveLatLngForRow(
+        finalCoordinates,
+        bodyLat,
+        bodyLng
+      );
 
       // Create address
       const address = await insert('customer_addresses', {
@@ -476,10 +663,12 @@ export function registerAddressEndpoints(app: Hono) {
         city: city,
         state: state,
         pincode: pincode,
-        landmark: landmark || null,
-        coordinates: coordinates || null,
+        landmark: null,
+        coordinates: finalCoordinates,
+        latitude: rowLat2,
+        longitude: rowLng2,
         flat_no: flatNo,
-        house_no: houseNo,
+        house_no: String(houseNo).trim(),
         floor: floor,
         street_name: streetName,
         apartment_name: apartmentName,
@@ -521,13 +710,53 @@ export function registerAddressEndpoints(app: Hono) {
         return c.json({ error: 'Customer not found' }, 404);
       }
 
+      const nextLine1 = updates.addressLine1 ?? updates.address_line1;
+      if (nextLine1 !== undefined && String(nextLine1).trim()) {
+        const hn = updates.houseNo ?? updates.house_no;
+        if (!String(hn || '').trim()) {
+          return c.json({ error: 'House / flat number is required' }, 400);
+        }
+      }
+
       // If setting as default, unset all others
       if (updates.isDefault) {
         await query(
           'UPDATE customer_addresses SET is_default = false WHERE customer_id = $1',
           [customer[0].id]
-        ).catch(() => {});
+        ).catch(() => { });
       }
+
+      // ✅ FIX: Process coordinates - normalize format and geocode if missing
+      let finalCoordinates = normalizeCoordinates(updates.coordinates);
+
+      // If coordinates are missing, geocode the address
+      if (!finalCoordinates) {
+        const addressLine1 = updates.addressLine1 || updates.address_line1;
+        const city = updates.city;
+        const state = updates.state;
+        const pincode = updates.pincode;
+        const addressLine2 = updates.addressLine2 || updates.address_line2;
+
+        if (addressLine1 && city && state && pincode) {
+          finalCoordinates = await geocodeAddress(
+            addressLine1,
+            city,
+            state,
+            pincode,
+            addressLine2
+          );
+        }
+      }
+
+      const { latitude: putLat, longitude: putLng } = resolveLatLngForRow(
+        finalCoordinates,
+        updates.latitude,
+        updates.longitude
+      );
+
+      const explicitGeo =
+        'coordinates' in updates || 'latitude' in updates || 'longitude' in updates;
+      const shouldUpdateGeoColumns = explicitGeo || finalCoordinates != null;
 
       const updatePayload: Record<string, any> = {
         address_type: updates.label || updates.address_type,
@@ -539,9 +768,13 @@ export function registerAddressEndpoints(app: Hono) {
         state: updates.state,
         pincode: updates.pincode,
         landmark: updates.landmark,
-        coordinates: updates.coordinates,
+        coordinates: finalCoordinates !== undefined ? finalCoordinates : null,
         is_default: updates.isDefault !== undefined ? updates.isDefault : updates.is_default,
       };
+      if (shouldUpdateGeoColumns) {
+        updatePayload.latitude = putLat;
+        updatePayload.longitude = putLng;
+      }
       if (updates.flatNo !== undefined || updates.flat_no !== undefined) updatePayload.flat_no = updates.flatNo ?? updates.flat_no;
       if (updates.houseNo !== undefined || updates.house_no !== undefined) updatePayload.house_no = updates.houseNo ?? updates.house_no;
       if (updates.floor !== undefined) updatePayload.floor = updates.floor;

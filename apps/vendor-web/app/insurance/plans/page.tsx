@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Plus, Edit2, Trash2, Shield } from 'lucide-react';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { Plus, Edit2, Trash2, Shield } from 'lucide-react';
 
 interface InsurancePlan {
   id: string;
@@ -18,6 +19,176 @@ interface InsurancePlan {
   age_max?: number;
   is_active: boolean;
   created_at: string;
+}
+
+function toMaybeNum(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Legacy rows often have monthly_premium set but premium_monthly still 0 */
+function pickPremium(row: Record<string, unknown>): number {
+  const candidates = [
+    toMaybeNum(row.premium_monthly),
+    toMaybeNum(row.monthly_premium),
+    toMaybeNum(row.premium),
+    toMaybeNum(row.premiumMonthly),
+    toMaybeNum(row.monthlyPremium),
+  ];
+  for (const n of candidates) {
+    if (n != null && n > 0) return n;
+  }
+  for (const n of candidates) {
+    if (n != null) return n;
+  }
+  return 0;
+}
+
+function parseCoverageDetails(row: Record<string, unknown>): {
+  pet_types?: string[];
+  age_min?: number;
+  age_max?: number;
+} {
+  const raw = row.coverage_details;
+  let o: Record<string, unknown> = {};
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    o = raw as Record<string, unknown>;
+  } else if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw);
+      if (p && typeof p === 'object' && !Array.isArray(p)) o = p as Record<string, unknown>;
+    } catch {
+      /* ignore */
+    }
+  }
+  const petRaw = o.pet_types ?? o.petTypes;
+  const pet_types = Array.isArray(petRaw) ? (petRaw as string[]) : undefined;
+  const age_min = toMaybeNum(o.age_min ?? o.ageMin) ?? undefined;
+  const age_max = toMaybeNum(o.age_max ?? o.ageMax) ?? undefined;
+  return { pet_types, age_min, age_max };
+}
+
+/** API returns RDS rows (plan_name, premium_monthly, …) — map to UI shape */
+function normalizeInsurancePlanRow(row: Record<string, unknown>): InsurancePlan {
+  const cd = parseCoverageDetails(row);
+  const petTypesRaw = row.pet_types ?? row.petTypes ?? cd.pet_types;
+  const pet_types = Array.isArray(petTypesRaw) ? (petTypesRaw as string[]) : [];
+
+  const rawType = String(row.plan_type ?? row.planType ?? 'comprehensive').toLowerCase();
+  let plan_type: InsurancePlan['plan_type'] = 'comprehensive';
+  if (['comprehensive', 'accident_only', 'illness_only', 'wellness', 'custom'].includes(rawType)) {
+    plan_type = rawType as InsurancePlan['plan_type'];
+  } else if (rawType === 'lifetime' || rawType === 'maximum_benefit' || rawType === 'time_limited') {
+    plan_type = rawType === 'accident_only' ? 'accident_only' : 'comprehensive';
+  }
+
+  return {
+    id: String(row.id ?? ''),
+    name: String(row.name ?? row.plan_name ?? 'Plan'),
+    description: String(row.description ?? ''),
+    plan_type,
+    coverage_amount:
+      toMaybeNum(row.coverage_amount) ??
+      toMaybeNum(row.coverageAmount) ??
+      toMaybeNum(row.coverage) ??
+      0,
+    premium: pickPremium(row),
+    deductible: toMaybeNum(row.deductible) ?? 0,
+    pet_types,
+    age_min:
+      row.age_min != null
+        ? Number(row.age_min)
+        : row.min_age != null
+          ? Number(row.min_age)
+          : cd.age_min,
+    age_max:
+      row.age_max != null
+        ? Number(row.age_max)
+        : row.max_age != null
+          ? Number(row.max_age)
+          : cd.age_max,
+    is_active: row.is_active !== false && row.isActive !== false,
+    created_at: String(row.created_at ?? row.createdAt ?? ''),
+  };
+}
+
+/** When API Gateway runs an older Lambda, DB rows miss premium/pets/ages — cache last save per plan */
+type PlanFieldPatch = {
+  premium: number;
+  deductible: number;
+  pet_types: string[];
+  age_min?: number;
+  age_max?: number;
+};
+
+function patchesKey(vendorId: string) {
+  return `warmpawz_ins_plan_fields_v1_${vendorId}`;
+}
+
+function readPlanPatches(vendorId: string): Record<string, PlanFieldPatch> {
+  if (typeof window === 'undefined') return {};
+  try {
+    return JSON.parse(sessionStorage.getItem(patchesKey(vendorId)) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function writePlanPatches(vendorId: string, patches: Record<string, PlanFieldPatch>) {
+  sessionStorage.setItem(patchesKey(vendorId), JSON.stringify(patches));
+}
+
+function recordPlanPatch(vendorId: string, planId: string, patch: PlanFieldPatch) {
+  const all = readPlanPatches(vendorId);
+  all[planId] = patch;
+  writePlanPatches(vendorId, all);
+}
+
+function removePlanPatch(vendorId: string, planId: string) {
+  const all = readPlanPatches(vendorId);
+  delete all[planId];
+  writePlanPatches(vendorId, all);
+}
+
+function applyPlanFieldPatches(vendorId: string, plans: InsurancePlan[]): InsurancePlan[] {
+  const patches = readPlanPatches(vendorId);
+  const next: Record<string, PlanFieldPatch> = { ...patches };
+
+  const merged = plans.map((plan) => {
+    const patch = next[plan.id];
+    if (!patch) return plan;
+
+    const petsEqual =
+      JSON.stringify([...(plan.pet_types ?? [])].sort()) ===
+      JSON.stringify([...(patch.pet_types ?? [])].sort());
+    const premiumOk = plan.premium > 0 && Math.abs(plan.premium - patch.premium) < 0.01;
+    const dedOk = Math.abs(plan.deductible - patch.deductible) < 0.01;
+    const ageOk =
+      plan.age_min === patch.age_min &&
+      plan.age_max === patch.age_max;
+
+    if (premiumOk && dedOk && petsEqual && ageOk) {
+      delete next[plan.id];
+      return plan;
+    }
+
+    return {
+      ...plan,
+      premium: !premiumOk && patch.premium > 0 ? patch.premium : plan.premium,
+      deductible:
+        plan.deductible === 0 && patch.deductible > 0 ? patch.deductible : plan.deductible,
+      pet_types:
+        (!plan.pet_types || plan.pet_types.length === 0) && (patch.pet_types?.length ?? 0) > 0
+          ? patch.pet_types
+          : plan.pet_types,
+      age_min: plan.age_min == null && patch.age_min != null ? patch.age_min : plan.age_min,
+      age_max: plan.age_max == null && patch.age_max != null ? patch.age_max : plan.age_max,
+    };
+  });
+
+  writePlanPatches(vendorId, next);
+  return merged;
 }
 
 export default function InsurancePlansPage() {
@@ -51,8 +222,13 @@ export default function InsurancePlansPage() {
         return;
       }
       const response = await apiClient.get<any>(`/vendor/${vendorId}/insurance/plans`);
-      if (response.success || response.plans) {
-        setPlans(response.plans || []);
+      const raw = response.plans ?? response.services ?? [];
+      const list = Array.isArray(raw) ? raw : [];
+      if (response.success || response.plans || list.length) {
+        const normalized = list.map((r: Record<string, unknown>) => normalizeInsurancePlanRow(r));
+        setPlans(applyPlanFieldPatches(vendorId, normalized));
+      } else {
+        setPlans([]);
       }
     } catch (error: any) {
       console.error('Error loading insurance plans:', error);
@@ -68,17 +244,30 @@ export default function InsurancePlansPage() {
 
       const payload = {
         ...formData,
-        coverage_amount: parseFloat(formData.coverage_amount),
-        premium: parseFloat(formData.premium),
-        deductible: parseFloat(formData.deductible),
-        age_min: formData.age_min ? parseInt(formData.age_min) : undefined,
-        age_max: formData.age_max ? parseInt(formData.age_max) : undefined,
+        coverage_amount: parseFloat(formData.coverage_amount) || 0,
+        premium: parseFloat(formData.premium) || 0,
+        deductible: parseFloat(formData.deductible) || 0,
+        age_min: formData.age_min ? parseInt(formData.age_min, 10) : undefined,
+        age_max: formData.age_max ? parseInt(formData.age_max, 10) : undefined,
+      };
+
+      const patch: PlanFieldPatch = {
+        premium: payload.premium,
+        deductible: payload.deductible,
+        pet_types: Array.isArray(payload.pet_types) ? payload.pet_types : [],
+        age_min: payload.age_min,
+        age_max: payload.age_max,
       };
 
       if (editingPlan) {
         await apiClient.put(`/vendor/${vendorId}/insurance/plans/${editingPlan.id}`, payload);
+        recordPlanPatch(vendorId, editingPlan.id, patch);
       } else {
-        await apiClient.post(`/vendor/${vendorId}/insurance/plans`, payload);
+        const res = (await apiClient.post(`/vendor/${vendorId}/insurance/plans`, payload)) as {
+          plan?: { id?: string };
+        };
+        const newId = res?.plan?.id != null ? String(res.plan.id) : '';
+        if (newId) recordPlanPatch(vendorId, newId, patch);
       }
       setShowAddModal(false);
       setEditingPlan(null);
@@ -95,6 +284,7 @@ export default function InsurancePlansPage() {
       const vendorId = localStorage.getItem('vendorId');
       if (!vendorId) return;
       await apiClient.delete(`/vendor/${vendorId}/insurance/plans/${planId}`);
+      removePlanPatch(vendorId, planId);
       loadPlans();
     } catch (error: any) {
       alert(error.message || 'Failed to delete insurance plan');
@@ -158,40 +348,30 @@ export default function InsurancePlansPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => router.back()}
-                className="p-2 hover:bg-gray-100 rounded-lg transition"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">📋 Insurance Plans</h1>
-                <p className="text-sm text-gray-500">Create and manage pet insurance plans</p>
-              </div>
-            </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="📋 Insurance Plans"
+          subtitle="Create and manage pet insurance plans"
+          onBack={() => router.back()}
+          actions={[
             <button
+              key="create-plan"
+              type="button"
               onClick={() => {
                 resetForm();
                 setEditingPlan(null);
                 setShowAddModal(true);
               }}
-              className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition"
+              className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg bg-orange-500 px-3 py-2 text-sm font-medium text-white hover:bg-orange-600 transition"
             >
-              <Plus className="w-5 h-5" />
+              <Plus className="h-5 w-5 shrink-0" />
               Create Plan
-            </button>
-          </div>
-        </div>
-      </header>
+            </button>,
+          ]}
+        />
 
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 py-6">
+        <main className="w-full px-4 py-6 sm:px-6">
         {plans.length === 0 ? (
           <div className="bg-white rounded-xl p-12 text-center shadow-sm">
             <div className="text-5xl mb-4">📋</div>
@@ -219,7 +399,7 @@ export default function InsurancePlansPage() {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h3 className="text-xl font-bold text-gray-900">{plan.name}</h3>
-                    <p className="text-sm text-gray-500 mt-1 capitalize">{plan.plan_type.replace('_', ' ')}</p>
+                    <p className="text-sm text-gray-500 mt-1 capitalize">{(plan.plan_type || 'plan').replace(/_/g, ' ')}</p>
                   </div>
                   <span
                     className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -245,17 +425,30 @@ export default function InsurancePlansPage() {
                   </div>
                 </div>
 
+                {(plan.age_min != null || plan.age_max != null) && (
+                  <div className="flex items-center justify-between text-sm mb-2">
+                    <span className="text-gray-600">Age range:</span>
+                    <span className="font-medium text-gray-900">
+                      {plan.age_min ?? '—'} – {plan.age_max ?? '—'} mo
+                    </span>
+                  </div>
+                )}
+
                 <div className="mb-4">
-                  <p className="text-xs text-gray-500 mb-2">Pet Types:</p>
+                    <p className="text-xs text-gray-500 mb-2">Pet Types:</p>
                   <div className="flex flex-wrap gap-1">
-                    {plan.pet_types.map((type) => (
+                    {(plan.pet_types ?? []).length === 0 ? (
+                      <span className="text-xs text-gray-400">None selected</span>
+                    ) : (
+                      (plan.pet_types ?? []).map((type) => (
                       <span
                         key={type}
                         className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs"
                       >
                         {type}
                       </span>
-                    ))}
+                    ))
+                    )}
                   </div>
                 </div>
 
@@ -440,6 +633,7 @@ export default function InsurancePlansPage() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

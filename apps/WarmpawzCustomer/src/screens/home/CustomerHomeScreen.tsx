@@ -4,7 +4,7 @@
  * Updated with react-native-vector-icons for 100% design compliance
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import {
   View,
   Text,
@@ -14,16 +14,89 @@ import {
   Image,
   Dimensions,
   ActivityIndicator,
+  PanResponder,
+  useWindowDimensions,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { colors, spacing, borderRadius, typography } from '../../theme/colors';
+import {
+  colors,
+  spacing,
+  borderRadius,
+  typography,
+  BRAND_ORANGE_HEADER_BODY_CURVE_RADIUS,
+} from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
+import { CustomerMessagesModal } from '../chat/CustomerMessagesModal';
+import { useScreenTopInset } from '../../components/layout/ScreenShell';
 
 const { width } = Dimensions.get('window');
 
+const FAB_SIZE = 56;
+const FAB_MARGIN = 12;
+const DRAG_THRESHOLD = 4;
+
+/**
+ * Option A while dragging: left edge ≥ contentW/2 - FAB_MARGIN.
+ * On release (and storage restore / size change), X snaps to extreme right (`maxX`); Y is preserved (clamped).
+ */
+function getCustomerChatFabBounds(
+  contentW: number,
+  contentH: number,
+  rightOffset: number,
+  bottomOffset: number,
+) {
+  const minXKeepOnScreen = FAB_MARGIN - contentW + rightOffset + FAB_SIZE;
+  const minXRightHalf = contentW / 2 - FAB_MARGIN - contentW + rightOffset + FAB_SIZE;
+  const minX = Math.max(minXKeepOnScreen, minXRightHalf);
+  const maxX = rightOffset - FAB_MARGIN;
+  const minY = FAB_MARGIN - contentH + bottomOffset + FAB_SIZE;
+  const maxY = bottomOffset - FAB_MARGIN;
+  return { minX, maxX, minY, maxY };
+}
+
+function clampCustomerChatFabOffset(
+  nx: number,
+  ny: number,
+  contentW: number,
+  contentH: number,
+  rightOffset: number,
+  bottomOffset: number,
+): { x: number; y: number } {
+  const { minX, maxX, minY, maxY } = getCustomerChatFabBounds(contentW, contentH, rightOffset, bottomOffset);
+  let x: number;
+  if (minX > maxX) {
+    x = minX;
+  } else {
+    x = Math.max(minX, Math.min(maxX, nx));
+  }
+  return {
+    x,
+    y: Math.max(minY, Math.min(maxY, ny)),
+  };
+}
+
+function snapCustomerChatFabToRight(
+  ny: number,
+  contentW: number,
+  contentH: number,
+  rightOffset: number,
+  bottomOffset: number,
+): { x: number; y: number } {
+  const { minX, maxX, minY, maxY } = getCustomerChatFabBounds(contentW, contentH, rightOffset, bottomOffset);
+  const snapX = minX > maxX ? minX : maxX;
+  return {
+    x: snapX,
+    y: Math.max(minY, Math.min(maxY, ny)),
+  };
+}
+
 interface CustomerHomeScreenProps {
   phone: string;
-  onNavigate: (screen: string) => void;
+  customerId?: string;
+  onNavigate: (screen: string, data?: any) => void;
   onProfileClick?: () => void;
   onPetClick?: (petId: string) => void;
   onAddPet?: () => void;
@@ -47,6 +120,7 @@ interface UserData {
 
 export function CustomerHomeScreen({
   phone,
+  customerId,
   onNavigate,
   onProfileClick,
   onPetClick,
@@ -60,6 +134,87 @@ export function CustomerHomeScreen({
   const [loading, setLoading] = useState(true);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [currentBanner, setCurrentBanner] = useState(0);
+  const [messagesModalOpen, setMessagesModalOpen] = useState(false);
+  const [chatFabOffset, setChatFabOffset] = useState({ x: 0, y: 0 });
+  const chatFabOffsetRef = useRef(chatFabOffset);
+  const dragMovedRef = useRef(false);
+  const grantFabRef = useRef({ x: 0, y: 0 });
+
+  const { width: winW, height: winH } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const screenTopInset = useScreenTopInset();
+  const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 60;
+
+  const fabStorageKey = useMemo(
+    () =>
+      `warmpawz_customer_home_chat_fab_${(customerId || phone || 'guest').replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+    [customerId, phone],
+  );
+
+  const rightFab = spacing.lg;
+  const bottomFab = spacing.xl + 8;
+
+  const getContentSize = useCallback(() => {
+    const contentH = winH - insets.top - tabBarHeight;
+    return { contentW: winW, contentH };
+  }, [winW, winH, insets.top, tabBarHeight]);
+
+  const clampFab = useCallback(
+    (nx: number, ny: number) => {
+      const { contentW, contentH } = getContentSize();
+      return clampCustomerChatFabOffset(nx, ny, contentW, contentH, rightFab, bottomFab);
+    },
+    [getContentSize, rightFab, bottomFab],
+  );
+
+  const snapFabToRight = useCallback(
+    (ny: number) => {
+      const { contentW, contentH } = getContentSize();
+      return snapCustomerChatFabToRight(ny, contentW, contentH, rightFab, bottomFab);
+    },
+    [getContentSize, rightFab, bottomFab],
+  );
+
+  useEffect(() => {
+    chatFabOffsetRef.current = chatFabOffset;
+  }, [chatFabOffset]);
+
+  useEffect(() => {
+    setChatFabOffset((prev) => snapFabToRight(prev.y));
+  }, [snapFabToRight]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(fabStorageKey);
+        if (cancelled || !raw) return;
+        const parsed = JSON.parse(raw) as { x?: number; y?: number };
+        if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+          const contentH = winH - insets.top - tabBarHeight;
+          setChatFabOffset(snapCustomerChatFabToRight(parsed.y, winW, contentH, rightFab, bottomFab));
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Only re-load persisted position when the storage key (customer) changes; rotation is handled by snapFabToRight.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- winW/winH/insets intentionally omitted
+  }, [fabStorageKey]);
+
+  const persistFabOffset = useCallback(
+    async (o: { x: number; y: number }) => {
+      try {
+        await AsyncStorage.setItem(fabStorageKey, JSON.stringify(o));
+      } catch {
+        /* ignore */
+      }
+    },
+    [fabStorageKey],
+  );
 
   // Cleanup
   useEffect(() => {
@@ -130,10 +285,61 @@ export function CustomerHomeScreen({
     );
   }
 
+  const openMessages = () => setMessagesModalOpen(true);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          dragMovedRef.current = false;
+          grantFabRef.current = { ...chatFabOffsetRef.current };
+        },
+        onPanResponderMove: (_, gestureState) => {
+          if (Math.abs(gestureState.dx) > DRAG_THRESHOLD || Math.abs(gestureState.dy) > DRAG_THRESHOLD) {
+            dragMovedRef.current = true;
+          }
+          const nx = grantFabRef.current.x + gestureState.dx;
+          const ny = grantFabRef.current.y + gestureState.dy;
+          if (dragMovedRef.current) {
+            setChatFabOffset(clampFab(nx, ny));
+          }
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (dragMovedRef.current) {
+            const dragged = clampFab(
+              grantFabRef.current.x + gestureState.dx,
+              grantFabRef.current.y + gestureState.dy,
+            );
+            const next = snapFabToRight(dragged.y);
+            setChatFabOffset(next);
+            void persistFabOffset(next);
+          } else {
+            openMessages();
+          }
+          dragMovedRef.current = false;
+        },
+        onPanResponderTerminate: () => {
+          dragMovedRef.current = false;
+        },
+      }),
+    [clampFab, snapFabToRight, persistFabOffset],
+  );
+
   return (
+    <View style={styles.homeRoot}>
+    <CustomerMessagesModal
+      visible={messagesModalOpen}
+      onClose={() => setMessagesModalOpen(false)}
+      phone={phone}
+      customerId={customerId}
+      customerDisplayName={userData.name || 'Customer'}
+      senderId={customerId || phone}
+      onNavigate={onNavigate}
+    />
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Header Section */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: screenTopInset + spacing.lg }]}>
         <View style={styles.headerTop}>
           <TouchableOpacity
             onPress={onProfileClick}
@@ -150,15 +356,28 @@ export function CustomerHomeScreen({
             )}
           </TouchableOpacity>
           <View style={styles.headerText}>
-            <Text style={styles.greeting}>Hi, {userData.name}!</Text>
+            <Text style={styles.greeting} numberOfLines={1}>
+              Hi, {userData.name}!
+            </Text>
             {selectedPet && (
-              <Text style={styles.subtitle}>How's {selectedPet.name} today?</Text>
+              <Text style={styles.subtitle} numberOfLines={1}>
+                How's {selectedPet.name} today?
+              </Text>
             )}
             {!selectedPet && (
-              <Text style={styles.subtitle}>Explore WarmPawz Services</Text>
+              <Text style={styles.subtitle} numberOfLines={1}>
+                Explore Warmpawz Services
+              </Text>
             )}
           </View>
           <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={openMessages}
+              style={styles.actionButton}
+              accessibilityLabel="Messages"
+            >
+              <Icon name="message-text-outline" size={20} color={colors.white} />
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => onNavigate('ServiceSearch')}
               style={styles.actionButton}
@@ -214,6 +433,7 @@ export function CustomerHomeScreen({
         )}
       </View>
 
+      <View style={styles.homeBodySheet}>
       {/* Pet Dashboard */}
       {selectedPet && (
         <View style={styles.dashboardContainer}>
@@ -298,27 +518,27 @@ export function CustomerHomeScreen({
         </ScrollView>
       </View>
 
-      {/* Emergency SOS Button */}
+      {/* Emergency ambulance — not live yet */}
       <View style={styles.emergencyContainer}>
-        <TouchableOpacity
-          style={styles.emergencyButton}
-          onPress={() => onNavigate('EmergencyBooking')}
-          activeOpacity={0.8}
-        >
+        <View style={styles.emergencyCardComingSoon}>
           <View style={styles.emergencyContent}>
-            <View style={styles.emergencyIconContainer}>
-              <Icon name="alert" size={32} color={colors.white} />
+            <View style={styles.emergencyIconContainerMuted}>
+              <Icon name="clock-outline" size={32} color={colors.white} />
             </View>
             <View style={styles.emergencyText}>
-              <View style={styles.emergencyBadge}>
-                <Text style={styles.emergencyBadgeText}>SOS</Text>
+              <View style={styles.emergencyBadgeSoon}>
+                <Text style={styles.emergencyBadgeText}>SOON</Text>
               </View>
               <Text style={styles.emergencyTitle}>Emergency Ambulance</Text>
-              <Text style={styles.emergencySubtitle}>Instant location-based dispatch</Text>
+              <Text style={styles.emergencySubtitle}>
+                Coming soon — instant location-based dispatch when we launch
+              </Text>
             </View>
-            <Text style={styles.emergencyButtonText}>SOS ALERT</Text>
+            <View style={styles.emergencyPillSoon}>
+              <Text style={styles.emergencyPillSoonText}>COMING SOON</Text>
+            </View>
           </View>
-        </TouchableOpacity>
+        </View>
       </View>
 
       {/* Quick Services Grid */}
@@ -345,11 +565,46 @@ export function CustomerHomeScreen({
           ))}
         </View>
       </View>
+      </View>
     </ScrollView>
+    <View
+      style={[
+        styles.chatFab,
+        {
+          transform: [{ translateX: chatFabOffset.x }, { translateY: chatFabOffset.y }],
+        },
+      ]}
+      {...panResponder.panHandlers}
+      accessibilityLabel="Open messages"
+      accessibilityRole="button"
+    >
+      <Icon name="message-text" size={26} color={colors.white} />
+    </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  homeRoot: {
+    flex: 1,
+    backgroundColor: colors.backgroundSecondary,
+  },
+  chatFab: {
+    position: 'absolute',
+    right: spacing.lg,
+    bottom: spacing.xl + 8,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
   container: {
     flex: 1,
     backgroundColor: colors.backgroundSecondary,
@@ -366,9 +621,15 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: colors.primary,
-    paddingTop: spacing.xl,
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.lg,
+  },
+  homeBodySheet: {
+    backgroundColor: colors.backgroundSecondary,
+    borderTopLeftRadius: BRAND_ORANGE_HEADER_BODY_CURVE_RADIUS,
+    borderTopRightRadius: BRAND_ORANGE_HEADER_BODY_CURVE_RADIUS,
+    overflow: 'hidden',
+    paddingTop: spacing.sm,
   },
   headerTop: {
     flexDirection: 'row',
@@ -400,6 +661,7 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
+    minWidth: 0,
   },
   greeting: {
     fontSize: typography.fontSizes.lg,
@@ -700,22 +962,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.md,
   },
-  emergencyButton: {
-    backgroundColor: colors.error + 20% opacity,
+  emergencyCardComingSoon: {
+    backgroundColor: '#fff7ed',
     borderRadius: borderRadius.xl,
     padding: spacing.md,
-    borderWidth: 2,
-    borderColor: '#ef4444',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    opacity: 0.98,
   },
   emergencyContent: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  emergencyIconContainer: {
+  emergencyIconContainerMuted: {
     width: 64,
     height: 64,
     borderRadius: borderRadius.lg,
-    backgroundColor: colors.error,
+    backgroundColor: '#fb923c',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: spacing.md,
@@ -723,9 +986,9 @@ const styles = StyleSheet.create({
   emergencyText: {
     flex: 1,
   },
-  emergencyBadge: {
+  emergencyBadgeSoon: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.error,
+    backgroundColor: colors.warning,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs / 2,
     borderRadius: borderRadius.full,
@@ -746,12 +1009,14 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.xs,
     color: colors.textSecondary,
   },
-  emergencyButtonText: {
-    backgroundColor: colors.error,
-    color: colors.white,
+  emergencyPillSoon: {
+    backgroundColor: '#9ca3af',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
+  },
+  emergencyPillSoonText: {
+    color: colors.white,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
   },

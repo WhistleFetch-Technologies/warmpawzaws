@@ -143,6 +143,7 @@ async function testBookingCancelledNotification(ctx: TestContext): Promise<void>
     },
     body: JSON.stringify({
       reason: 'Customer request',
+      vendorCancellationReason: 'operational',
     }),
   });
 

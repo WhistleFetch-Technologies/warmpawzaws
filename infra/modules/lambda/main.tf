@@ -1,6 +1,8 @@
 # Lambda Module - Serverless compute for all functions
 # Includes VPC integration, IAM roles, and environment variables
 
+data "aws_caller_identity" "current" {}
+
 # Security Group for Lambda
 resource "aws_security_group" "lambda" {
   name_prefix = "warmpawz-${var.environment}-lambda-"
@@ -147,6 +149,14 @@ resource "aws_iam_role_policy" "lambda_custom" {
           "es:ESHttpDelete"
         ]
         Resource = var.opensearch_arns
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "events:PutRule",
+          "events:DescribeRule"
+        ]
+        Resource = "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:rule/warmpawz-${var.environment}-settlement-calculate-daily"
       }
     ]
   })

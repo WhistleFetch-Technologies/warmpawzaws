@@ -27,9 +27,14 @@ export function EditCategoryModal({
     name: '',
     description: '',
     icon: '📦',
+    iconColor: 'text-gray-500',
     status: 'active' as 'active' | 'inactive',
     vendorType: '',
-    serviceStyle: ''
+    serviceStyle: '',
+    customerVisibilityType: 'GLOBAL' as 'GLOBAL' | 'STATE' | 'CITY',
+    customerVisibilityState: '',
+    customerVisibilityCity: '',
+    customerDashboardCardActive: true,
   });
 
   useEffect(() => {
@@ -38,9 +43,14 @@ export function EditCategoryModal({
         name: initialData.name || '',
         description: initialData.description || '',
         icon: initialData.icon || '📦',
+        iconColor: initialData.iconColor || initialData.icon_color || 'text-gray-500',
         status: initialData.status || 'active',
         vendorType: initialData.vendorType || '',
-        serviceStyle: initialData.serviceStyle || ''
+        serviceStyle: initialData.serviceStyle || '',
+        customerVisibilityType: (initialData.customerVisibilityType as 'GLOBAL' | 'STATE' | 'CITY') || 'GLOBAL',
+        customerVisibilityState: initialData.customerVisibilityState || '',
+        customerVisibilityCity: initialData.customerVisibilityCity || '',
+        customerDashboardCardActive: initialData.customerDashboardCardActive !== false,
       });
     } else if (isOpen && categoryId) {
       loadCategory();
@@ -51,13 +61,19 @@ export function EditCategoryModal({
     try {
       const data = await apiClient.get<any>(`/admin/catalog/categories/${categoryId}`);
       if (data.category) {
+        const c = data.category;
         setFormData({
-          name: data.category.name || '',
-          description: data.category.description || '',
-          icon: data.category.icon || '📦',
-          status: data.category.status || 'active',
-          vendorType: data.category.vendorType || '',
-          serviceStyle: data.category.serviceStyle || ''
+          name: c.name || '',
+          description: c.description || '',
+          icon: c.icon || '📦',
+          iconColor: c.iconColor || c.icon_color || 'text-gray-500',
+          status: (c.status as 'active' | 'inactive') || (c.is_active === false ? 'inactive' : 'active'),
+          vendorType: c.vendorType || '',
+          serviceStyle: c.serviceStyle || '',
+          customerVisibilityType: (c.customerVisibilityType as 'GLOBAL' | 'STATE' | 'CITY') || 'GLOBAL',
+          customerVisibilityState: c.customerVisibilityState || '',
+          customerVisibilityCity: c.customerVisibilityCity || '',
+          customerDashboardCardActive: c.customerDashboardCardActive !== false,
         });
       }
     } catch (error) {
@@ -77,7 +93,17 @@ export function EditCategoryModal({
 
     try {
       setLoading(true);
-      await apiClient.put(`/admin/catalog/categories/${categoryId}`, formData);
+      await apiClient.put(`/admin/catalog/categories/${categoryId}`, {
+        name: formData.name,
+        description: formData.description,
+        icon: formData.icon,
+        iconColor: formData.iconColor || 'text-gray-500',
+        status: formData.status,
+        customerVisibilityType: formData.customerVisibilityType,
+        customerVisibilityState: formData.customerVisibilityState,
+        customerVisibilityCity: formData.customerVisibilityCity,
+        customerDashboardCardActive: formData.customerDashboardCardActive,
+      });
       alert('Category updated successfully!');
       onSuccess?.();
       onClose();
@@ -174,6 +200,13 @@ export function EditCategoryModal({
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="space-y-2 border-t pt-4">
+            <p className="text-sm font-medium text-gray-800">Customer home tiles</p>
+            <p className="text-xs text-gray-700 rounded-lg border border-blue-100 bg-blue-50 p-3">
+              Visibility by location is set in <strong>Marketing &amp; Promotions → Dashboard UI</strong> (Geographic Scope and Service Launch Status), not here. The customer still sees this category name on the tile when the service is launched for their area.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

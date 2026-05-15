@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star, Navigation } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star, Navigation, Upload, Key, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { customerBookingStatusShowsCheckInOtp } from '@/lib/booking-display-utils';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import { PrescriptionModal } from './PrescriptionModal';
 import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
@@ -20,6 +22,48 @@ interface BookingDetailModalProps {
   onClose: () => void;
   onReorderMedicine?: (medications: any[], prescriptionId?: string, bookingId?: string) => void;
   onNavigate?: (screen: string, data?: any) => void; // ✅ FIX: Add navigation handler for video calls
+}
+
+/** Prefer business/display fields over raw `name` (often a slug or internal label). */
+function pickDisplayName(...candidates: (string | undefined | null)[]): string {
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim();
+  }
+  return '';
+}
+
+function resolveVendorDisplayName(raw: Record<string, any>): string {
+  const v = raw.vendor;
+  return (
+    pickDisplayName(
+      v?.business_name,
+      v?.businessName,
+      v?.display_name,
+      v?.displayName,
+      v?.trade_name,
+      v?.tradeName,
+      raw.vendorDisplayName,
+      raw.vendor_display_name,
+      raw.vendorName,
+      raw.vendor_name,
+      v?.name
+    ) || 'Vendor'
+  );
+}
+
+function resolveDoctorDisplayName(raw: Record<string, any>): string {
+  const d = raw.doctor;
+  return pickDisplayName(
+    d?.display_name,
+    d?.displayName,
+    d?.full_name,
+    d?.fullName,
+    d?.business_name,
+    d?.businessName,
+    raw.doctorName,
+    raw.doctor_name,
+    d?.name
+  );
 }
 
 // ✅ FIX: Helper function to format service style labels
@@ -40,10 +84,49 @@ function getServiceStyleLabel(serviceStyle: string | null | undefined): string {
 // Wireframe: Prescription and medical records only for vet, diagnostics, nutritionist (tele). Not for grooming, training, walker, behaviourist, sitter.
 const SERVICE_TYPES_WITH_PRESCRIPTION = ['vet', 'veterinarian', 'diagnostics', 'nutritionist', 'pet_nutritionist'];
 
-function showPrescriptionAndMedicalRecords(serviceType: string | undefined): boolean {
-  if (!serviceType) return false;
-  const normalized = (serviceType || '').toLowerCase().replace(/\s/g, '_');
-  return SERVICE_TYPES_WITH_PRESCRIPTION.some(t => normalized.includes(t) || t.includes(normalized));
+/**
+ * Check if booking should show prescription/medical records options
+ * Checks serviceType, serviceCategory, and notes for diagnostic tests
+ */
+function showPrescriptionAndMedicalRecords(
+  serviceType: string | undefined,
+  serviceCategory?: string | undefined,
+  booking?: any
+): boolean {
+  // Check serviceType
+  if (serviceType) {
+    const normalizedType = (serviceType || '').toLowerCase().replace(/\s/g, '_');
+    if (SERVICE_TYPES_WITH_PRESCRIPTION.some(t => normalizedType.includes(t) || t.includes(normalizedType))) {
+      return true;
+    }
+  }
+
+  // Check serviceCategory
+  if (serviceCategory) {
+    const normalizedCategory = (serviceCategory || '').toLowerCase().replace(/\s/g, '_');
+    if (SERVICE_TYPES_WITH_PRESCRIPTION.some(t => normalizedCategory.includes(t) || t.includes(normalizedCategory))) {
+      return true;
+    }
+  }
+
+  // Check if booking has diagnostic tests in notes (for diagnostics bookings where serviceType might be "at_home")
+  if (booking?.notes) {
+    try {
+      const notesData = typeof booking.notes === 'string' ? JSON.parse(booking.notes) : booking.notes;
+      if (Array.isArray(notesData?.tests) && notesData.tests.length > 0) {
+        return true; // Has diagnostic tests
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
+  }
+
+  // Check if booking has isDiagnostic flag or hasDiagnosticTests
+  if (booking?.isDiagnostic || booking?.hasDiagnosticTests) {
+    return true;
+  }
+
+  return false;
 }
 
 interface Prescription {
@@ -63,6 +146,7 @@ interface Prescription {
 }
 
 export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorderMedicine, onNavigate }: BookingDetailModalProps) {
+  const router = useRouter();
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [copiedOtp, setCopiedOtp] = useState(false);
@@ -77,10 +161,55 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
   const [loadingMedicalRecords, setLoadingMedicalRecords] = useState(false);
   const [hasTracking, setHasTracking] = useState(false);
   const [showPrescriptionHistory, setShowPrescriptionHistory] = useState(false);
+  const [packageSessions, setPackageSessions] = useState<Record<string, unknown>[]>([]);
+  const [packageSessionsLoading, setPackageSessionsLoading] = useState(false);
+  const [showOtpSessionKey, setShowOtpSessionKey] = useState<string | null>(null);
 
   useEffect(() => {
     loadBookingDetails();
   }, [bookingId]);
+
+  useEffect(() => {
+    const pid =
+      booking?.packagePurchaseId ||
+      booking?.package_purchase_id ||
+      (booking?.packageDetails as { packagePurchaseId?: string } | undefined)?.packagePurchaseId;
+    if (!pid) {
+      setPackageSessions([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setPackageSessionsLoading(true);
+      try {
+        const res = (await apiClient.get(
+          `/packages/${encodeURIComponent(String(pid))}/sessions`
+        )) as { sessions?: Record<string, unknown>[] };
+        if (!cancelled) setPackageSessions(Array.isArray(res?.sessions) ? res.sessions : []);
+      } catch {
+        if (!cancelled) setPackageSessions([]);
+      } finally {
+        if (!cancelled) setPackageSessionsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [booking?.id, booking?.packagePurchaseId, booking?.package_purchase_id]);
+
+  /** Package progress (canonical): `/packages/:packagePurchaseId`. */
+  const openPackageTrackingFromBooking = () => {
+    if (!booking) return;
+    const pid = String(
+      booking.packagePurchaseId ||
+        booking.package_purchase_id ||
+        (booking.packageDetails as { packagePurchaseId?: string } | undefined)?.packagePurchaseId ||
+        ''
+    ).trim();
+    if (!pid) return;
+    onClose();
+    router.push('/my-packages');
+  };
 
   // ✅ FIX: Listen for prescription view events from chat
   useEffect(() => {
@@ -196,12 +325,16 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           : (rawBooking.serviceName || rawBooking.service?.name || rawBooking.service_name || 'Service'),
         serviceType: rawBooking.serviceType || rawBooking.service?.category || rawBooking.service_type,
         serviceCategory: rawBooking.serviceCategory || rawBooking.service?.category || rawBooking.service_category,
+        // ✅ Store diagnostics flags for prescription/medical records detection
+        isDiagnostic: isDiagnostic,
+        hasDiagnosticTests: diagnosticTests.length > 0,
         // ✅ FIX: Map service_type to serviceStyle, but don't default to 'at_center' for tele consultations
         serviceStyle: rawBooking.serviceStyle || rawBooking.service_style || rawBooking.service_type || null,
         duration: rawBooking.duration || rawBooking.service?.duration || rawBooking.duration_minutes || 60,
         price: parseFloat(rawBooking.amount || rawBooking.total_amount || rawBooking.base_price || 0),
-        // Vendor fields
-        vendorName: rawBooking.vendorName || rawBooking.vendor?.businessName || rawBooking.vendor_name || 'Vendor',
+        // Vendor / doctor — map display names (avoid internal slug in `name` / `vendorName`)
+        vendorName: resolveVendorDisplayName(rawBooking),
+        doctorName: resolveDoctorDisplayName(rawBooking) || undefined,
         vendorPhone: rawBooking.vendorPhone || rawBooking.vendor?.phone || rawBooking.vendor_phone,
         vendorEmail: rawBooking.vendorEmail || rawBooking.vendor?.email || rawBooking.vendor_email,
         vendorAddress: rawBooking.vendorAddress || rawBooking.vendor?.address || rawBooking.vendor_address,
@@ -240,6 +373,11 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         totalAmount: rawBooking.totalAmount ?? rawBooking.total_amount ?? rawBooking.amount,
         // Video call - map snake_case for tele consultations
         meetingId: rawBooking.meetingId || rawBooking.video_call_meeting_id,
+        packagePurchaseId: rawBooking.packagePurchaseId || rawBooking.package_purchase_id,
+        package_purchase_id: rawBooking.package_purchase_id || rawBooking.packagePurchaseId,
+        isPackageSession: rawBooking.isPackageSession ?? rawBooking.is_package_session,
+        packageSessionNumber: rawBooking.packageSessionNumber ?? rawBooking.package_session_number,
+        packageTotalSessions: rawBooking.packageTotalSessions ?? rawBooking.pkg_total_sessions,
       };
       console.log('✅ [BOOKING-DETAIL] Transformed booking:', bookingData);
       setBooking(bookingData);
@@ -375,9 +513,24 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         return 'bg-gray-100 text-gray-700 border-gray-200';
       case 'cancelled':
         return 'bg-red-100 text-red-700 border-red-200';
+      case 'pending_payment':
+        return 'bg-amber-100 text-amber-800 border-amber-200';
       default:
         return 'bg-gray-100 text-gray-700 border-gray-200';
     }
+  };
+
+  /** Map raw DB status to a short customer-facing label; handle payment vs status lag. */
+  const getBookingStatusDisplayLabel = (raw: Record<string, any>): string => {
+    const st = String(raw?.status || '');
+    const ps = String(raw?.payment_status || raw?.paymentStatus || '').toLowerCase();
+    if ((ps === 'paid' || ps === 'completed') && (st === 'pending_payment' || st === 'pending')) {
+      return 'Confirmed';
+    }
+    if (st === 'pending_payment') return 'Payment pending';
+    if (st === 'in_progress') return 'In progress';
+    if (!st) return 'Unknown';
+    return st.charAt(0).toUpperCase() + st.slice(1).replace(/_/g, ' ');
   };
 
   const formatDate = (dateString: string) => {
@@ -406,13 +559,16 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-      <div 
-        className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto"
+    <div
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 sm:items-center"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+    >
+      <div
+        className="max-h-[min(90dvh,90vh)] w-full max-w-customer overflow-y-auto rounded-t-[32px] bg-white sm:rounded-[32px]"
         style={{ animation: 'slideUp 0.3s ease-out' }}
       >
         {/* Header */}
-        <div className="sticky top-0 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10 shadow-md">
+        <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-[32px] bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] px-6 py-4 text-white shadow-md">
           <h2 className="font-bold text-white">Booking Details</h2>
           <button
             onClick={onClose}
@@ -432,12 +588,17 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
             <p className="text-gray-600">Booking not found</p>
           </div>
         ) : (
-          <div className="p-6 space-y-6 pb-24">
+          <div
+            className="space-y-6 p-6"
+            style={{
+              /* Tab bar + safe area (see globals.css --customer-footer-offset) + small breathing room */
+              paddingBottom: 'max(1.5rem, var(--customer-tabbar-content-pad))',
+            }}
+          >
             {/* Status Badge */}
             <div className="flex items-center justify-between">
               <span className={`px-4 py-2 rounded-full font-semibold border ${getStatusColor(booking.status)}`}>
-                {booking.status === 'in_progress' ? 'In Progress' : 
-                 booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                {getBookingStatusDisplayLabel(booking)}
               </span>
               <span className="text-sm text-gray-600">
                 Booking #{booking.id.slice(0, 8)}
@@ -480,9 +641,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
             )}
 
             {/* Main Booking OTP Section - Show for confirmed bookings with OTP (at_home, at_center) */}
-            {booking.otpCode && 
-             (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'arrived') && 
-             !booking.otpVerified && 
+            {booking.otpCode &&
+             customerBookingStatusShowsCheckInOtp(booking.status) &&
+             !booking.otpVerified &&
              (booking.serviceStyle === 'at_home' || booking.serviceStyle === 'at_center' || booking.serviceType === 'at_home' || booking.serviceType === 'at_center') && (
               <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-2xl p-6 mb-6">
                 <div className="flex items-center justify-between mb-3">
@@ -810,53 +971,142 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               )}
             </div>
 
-            {/* Schedule Information */}
-            <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-3">
-              <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-[#FF8C42]" />
-                Schedule
-              </h3>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gray-50 rounded-xl p-3">
-                  <p className="text-xs text-gray-600 mb-1">Start Date</p>
-                  <p className="font-semibold text-gray-800">
-                    {formatDate(booking.scheduledDate || booking.startDate)}
-                  </p>
-                </div>
-                <div className="bg-gray-50 rounded-xl p-3">
-                  <p className="text-xs text-gray-600 mb-1">Time Slot</p>
-                  <p className="font-semibold text-gray-800">
-                    {booking.scheduledTime || booking.schedule || 'Not set'}
-                  </p>
-                </div>
-                {(booking.totalSessions || booking.completedSessions !== undefined) && (
-                  <div className="bg-gray-50 rounded-xl p-3 col-span-2">
-                    <p className="text-xs text-gray-600 mb-1">Sessions</p>
-                    <p className="font-semibold text-gray-800">
-                      {booking.completedSessions || 0} / {booking.totalSessions || 1}
-                    </p>
+            {/* Package: track sessions + OTPs (replaces generic Schedule card) */}
+            {(booking.packagePurchaseId ||
+              booking.package_purchase_id ||
+              (booking.packageDetails as { packagePurchaseId?: string } | undefined)?.packagePurchaseId) && (
+              <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-3">
+                <h3 className="font-bold text-gray-800 flex flex-wrap items-center gap-2">
+                  <Package className="w-5 h-5 text-purple-600 shrink-0" aria-hidden />
+                  <button
+                    type="button"
+                    onClick={openPackageTrackingFromBooking}
+                    className="font-bold text-purple-700 hover:text-purple-900 underline decoration-purple-300 decoration-2 underline-offset-2 hover:decoration-purple-600 text-left bg-transparent border-0 p-0 cursor-pointer"
+                  >
+                    Track your packages
+                  </button>
+                </h3>
+                <p className="text-xs text-gray-600">
+                  Sessions for this purchase. When a visit is scheduled and an OTP is available, it appears below
+                  that session (tap the eye to reveal).
+                </p>
+                {packageSessionsLoading ? (
+                  <div className="flex justify-center py-6">
+                    <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-orange-500" />
                   </div>
+                ) : packageSessions.length === 0 ? (
+                  <p className="text-sm text-gray-500">No session rows yet.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {packageSessions.map((s, idx) => {
+                      const n =
+                        Number(s.session_number ?? s.sessionNumber ?? idx + 1) || idx + 1;
+                      const st = String(
+                        s.display_status ||
+                          s.displayStatus ||
+                          s.status ||
+                          s.booking_status ||
+                          ''
+                      ).toLowerCase();
+                      const dateRaw = String(
+                        s.scheduled_date || s.scheduledDate || s.booking_date || ''
+                      );
+                      const dateLabel =
+                        dateRaw && dateRaw.includes('T')
+                          ? new Date(dateRaw).toLocaleDateString(undefined, {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                            })
+                          : dateRaw || '—';
+                      const tr = String(s.scheduled_time || s.scheduledTime || s.booking_time || '');
+                      const timeLabel = tr.length >= 8 ? tr.slice(0, 5) : tr || '—';
+                      const rowKey = String(s.id || s.bookingId || s.booking_id || `${n}-${idx}`);
+                      const bookingRowId = String(s.bookingId || s.booking_id || '').trim();
+                      const visitStatus = String(
+                        s.booking_status ||
+                          s.display_status ||
+                          s.displayStatus ||
+                          s.status ||
+                          ''
+                      ).toLowerCase();
+                      const otpCode = String(s.otpCode || s.otp_code || '').trim();
+                      const startOTP = String(s.startOTP || s.start_otp || '').trim();
+                      const completionOTP = String(s.completionOTP || s.completion_otp || '').trim();
+                      const primaryOtp = (otpCode || startOTP || completionOTP).trim();
+                      const otpVerified = Boolean(s.otpVerified ?? s.otp_verified);
+                      const showOtp =
+                        !!bookingRowId &&
+                        !!primaryOtp &&
+                        customerBookingStatusShowsCheckInOtp(visitStatus) &&
+                        !otpVerified;
+                      return (
+                        <li
+                          key={rowKey}
+                          className="rounded-xl border border-gray-100 bg-gray-50/80 p-3 text-sm"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p className="font-semibold text-gray-900">
+                                Session {n}
+                                {st ? (
+                                  <span className="ml-2 text-xs font-normal capitalize text-gray-500">
+                                    · {st}
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="mt-1 text-xs text-gray-600">
+                                {dateLabel} · {timeLabel}
+                              </p>
+                            </div>
+                          </div>
+                          {showOtp ? (
+                            <div className="mt-2 rounded-lg border border-orange-200 bg-orange-50/90 p-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="inline-flex items-center gap-1 text-xs font-medium text-orange-900">
+                                  <Key className="h-3.5 w-3.5" />
+                                  Visit OTP
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <span className="font-mono text-sm font-bold tracking-wider text-orange-700">
+                                    {showOtpSessionKey === rowKey ? primaryOtp : '••••'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="rounded p-1 hover:bg-orange-100"
+                                    aria-label={showOtpSessionKey === rowKey ? 'Hide OTP' : 'Show OTP'}
+                                    onClick={() =>
+                                      setShowOtpSessionKey(showOtpSessionKey === rowKey ? null : rowKey)
+                                    }
+                                  >
+                                    {showOtpSessionKey === rowKey ? (
+                                      <EyeOff className="h-4 w-4 text-orange-700" />
+                                    ) : (
+                                      <Eye className="h-4 w-4 text-orange-700" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="rounded p-1 hover:bg-orange-100"
+                                    onClick={() => {
+                                      copyTextToClipboard(primaryOtp);
+                                      toast.success('OTP copied');
+                                    }}
+                                    aria-label="Copy OTP"
+                                  >
+                                    <Copy className="h-4 w-4 text-orange-700" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
                 )}
               </div>
-
-              {/* Progress Bar for active bookings */}
-              {(booking.status === 'active' || booking.status === 'in_progress') && 
-               booking.totalSessions > 0 && (
-                <div className="mt-3">
-                  <div className="flex items-center justify-between text-xs text-gray-600 mb-2">
-                    <span>Progress</span>
-                    <span>{Math.round(((booking.completedSessions || 0) / booking.totalSessions) * 100)}%</span>
-                  </div>
-                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B35]"
-                      style={{ width: `${((booking.completedSessions || 0) / booking.totalSessions) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
+            )}
 
             {/* Booking Timestamps */}
             <div className="bg-gray-50 rounded-2xl p-4 space-y-2">
@@ -959,7 +1209,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
               )}
 
               {/* Prescription History - Only for vet, diagnostics, nutritionist (not grooming/training/walker/behaviourist/sitter) */}
-              {showPrescriptionAndMedicalRecords(booking.serviceType) && (
+              {showPrescriptionAndMedicalRecords(booking.serviceType, booking.serviceCategory, booking) && (
                 <Button
                   onClick={() => setShowPrescriptionHistory(true)}
                   className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
@@ -971,8 +1221,22 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 </Button>
               )}
 
+              {/* Upload Documents - Always visible */}
+              <Button
+                onClick={() => setShowPrescriptionHistory(true)}
+                className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+              >
+                <Upload className="w-5 h-5" />
+                Upload Documents
+                {(prescription || medicalRecords.length > 0) && (
+                  <span className="ml-auto bg-indigo-700 px-2 py-0.5 rounded-full text-xs">
+                    {medicalRecords.length + (prescription ? 1 : 0)} uploaded
+                  </span>
+                )}
+              </Button>
+
               {/* Medical Records & Lab Reports - Only for vet/diagnostics/nutritionist */}
-              {showPrescriptionAndMedicalRecords(booking.serviceType) && medicalRecords.length > 0 && (
+              {showPrescriptionAndMedicalRecords(booking.serviceType, booking.serviceCategory, booking) && medicalRecords.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-gray-700 px-1">Medical records & reports</p>
                   {medicalRecords.map((rec: any) => (
@@ -1016,15 +1280,12 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
 
               {/* Diagnostics: View Reports Button - For diagnostics bookings with ready reports */}
               {(() => {
-                // ✅ FIX: More robust detection of diagnostic bookings
-                const isDiagnostic = 
-                  booking.serviceId === 'diagnostics' || 
-                  booking.serviceType === 'diagnostics' ||
-                  booking.serviceCategory === 'diagnostics' ||
-                  booking.service_category === 'diagnostics' ||
-                  (booking.serviceName && booking.serviceName.toLowerCase().includes('diagnostic')) ||
-                  (booking.service?.category && booking.service.category.toLowerCase().includes('diagnostic')) ||
-                  (booking.service?.name && booking.service.name.toLowerCase().includes('diagnostic'));
+                // ✅ Use the same detection logic as prescription history for consistency
+                const isDiagnosticBooking = showPrescriptionAndMedicalRecords(
+                  booking.serviceType, 
+                  booking.serviceCategory, 
+                  booking
+                );
                 
                 // ✅ FIX: Case-insensitive status check - handle multiple formats
                 const statusStr = (booking.status || '').toString();
@@ -1038,9 +1299,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                   (statusLower.includes('report') && statusLower.includes('ready')) ||
                   statusLower === 'ready';
                 
-                const shouldShow = isDiagnostic && hasReportsReady;
+                const shouldShow = isDiagnosticBooking && hasReportsReady;
                 console.log('🔍 [BOOKING-DETAIL] View Reports Button Check:', {
-                  isDiagnostic,
+                  isDiagnosticBooking,
                   status: booking.status,
                   statusLower,
                   hasReportsReady,
@@ -1048,6 +1309,8 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                   serviceId: booking.serviceId,
                   serviceType: booking.serviceType,
                   serviceCategory: booking.serviceCategory,
+                  isDiagnostic: booking.isDiagnostic,
+                  hasDiagnosticTests: booking.hasDiagnosticTests,
                 });
                 
                 return shouldShow;
@@ -1132,9 +1395,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           </div>
         )}
 
-        {/* Home Indicator */}
-        <div className="sticky bottom-0 bg-white px-6 py-4 flex justify-center">
-          <div className="w-32 h-1 bg-gray-300 rounded-full"></div>
+        {/* Home indicator — pad with safe area so it sits above gesture bar when sheet is short */}
+        <div className="sticky bottom-0 z-[1] flex justify-center border-t border-gray-100 bg-white px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+          <div className="h-1 w-32 rounded-full bg-gray-300" aria-hidden />
         </div>
       </div>
 

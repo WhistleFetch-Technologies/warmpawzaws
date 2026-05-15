@@ -35,12 +35,31 @@ import { validateServiceAvailability } from '../../../utils/service-availability
 import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../../../utils/entity-extractor';
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
-import { getRefundTierForCancellation, computeRefundFromTier } from '../../../lib/services/cancellation-policy-service';
+import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
+import { computeHoursUntilBookingStart } from '../../../lib/utils/booking-start-wall-time';
+import { hasCustomerPaidCapture } from '../../../lib/services/refundable-base';
+import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
+import {
+  seedPackageScheduledSessionsIfMissing,
+  pickNextPendingSessionNumber,
+  pickNextUnlimitedPackageSessionNumber,
+  linkPackageScheduledSessionToBooking,
+  type SqlClient,
+} from '../../../utils/package-session-sync';
+import { sqlPackagePurchaseHasBookableSlot } from '../../../utils/package-session-eligibility';
+import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
+import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
 import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
+import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import {
   CreateBookingRequestSchema,
   UpdateBookingStatusRequestSchema,
 } from '@warmpawz/api-contracts/bookings';
+import {
+  boardingBilled24hUnits,
+  computeBoardingStayPriceRupeesPublic,
+  computeStayBilledMinutes,
+} from '../../../lib/booking-stay-wall-time';
 
 // ============================================================================
 // CONFIGURATION
@@ -70,6 +89,30 @@ interface ApiGatewayEventLike {
   rawPath?: string;
   rawQueryString?: string;
   isBase64Encoded: boolean;
+}
+
+function toJsonResponsePayload(result: unknown): { body: unknown; statusCode: number } {
+  if (typeof result === 'string') {
+    try {
+      return { body: JSON.parse(result), statusCode: 200 };
+    } catch {
+      return { body: result, statusCode: 200 };
+    }
+  }
+
+  const responseObj = (result || {}) as { body?: unknown; statusCode?: number };
+  const statusCode = responseObj.statusCode ?? 200;
+  const rawBody = responseObj.body;
+
+  if (typeof rawBody === 'string') {
+    try {
+      return { body: JSON.parse(rawBody), statusCode };
+    } catch {
+      return { body: rawBody, statusCode };
+    }
+  }
+
+  return { body: rawBody ?? {}, statusCode };
 }
 
 // ============================================================================
@@ -109,6 +152,57 @@ function validateBookingDate(bookingDate: string, bookingTime: string, minNotice
   return { valid: true };
 }
 
+/**
+ * Multi-night boarding / pet sitting: check-in time is informational for the stay window.
+ * Strict "min notice from now" on check-in clock time breaks for same-day check-in (esp. Lambda UTC vs user local).
+ */
+function validateMultiDayStayCheckInDates(
+  bookingDate: string,
+  bookingTime: string,
+  checkOutDate: string,
+  maxAdvanceDays: number
+): { valid: boolean; error?: string } {
+  const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
+  if (!timeRegex.test(bookingTime)) {
+    return { valid: false, error: 'Invalid time format. Use HH:MM format' };
+  }
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  if (bookingDate < todayUtc) {
+    return { valid: false, error: 'Check-in date cannot be in the past' };
+  }
+  if (checkOutDate < bookingDate) {
+    return { valid: false, error: 'Check-out must be on or after check-in' };
+  }
+  const now = new Date();
+  const maxEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + maxAdvanceDays));
+  const maxStr = maxEnd.toISOString().slice(0, 10);
+  if (bookingDate > maxStr) {
+    return { valid: false, error: `Cannot book more than ${maxAdvanceDays} days in advance` };
+  }
+  return { valid: true };
+}
+
+/** Pet sitting: bill in 30-minute increments; list price applies to `baseMinutes` from vendor service. */
+const PET_SITTING_BILLING_SLOT_MINUTES = 30;
+
+function computePetSittingPriceRupees(
+  unitPrice: number,
+  baseMinutes: number,
+  billedMinutes: number
+): number {
+  const up = Number.isFinite(unitPrice) ? Math.max(0, unitPrice) : 0;
+  let bm = Number.isFinite(baseMinutes) ? baseMinutes : 60;
+  if (bm < 15) bm = 60;
+  const mins = Math.max(0, billedMinutes);
+  if (mins < 1) return up;
+  const slots = Math.max(1, Math.ceil(mins / PET_SITTING_BILLING_SLOT_MINUTES));
+  const pricePerSlot = (up * PET_SITTING_BILLING_SLOT_MINUTES) / bm;
+  const proportional = Math.round(slots * pricePerSlot);
+  const floor = Math.min(up, Math.max(49, Math.round(up * 0.3)));
+  return Math.max(proportional, floor);
+}
+
+/** Boarding list price uses computeBoardingStayPriceRupeesPublic (ceil stay / 24h in Asia/Kolkata wall time). */
 function generateEventMetadata(requestId?: string) {
   return {
     eventTimestamp: new Date().toISOString(),
@@ -124,10 +218,20 @@ function generateEventMetadata(requestId?: string) {
 
 class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    const body = this.parseBody(context.event);
+    const body = this.parseBody(context.event) || {};
     const requestId = context.requestId;
 
-    // ✅ FORENSIC FIX: Resolve customerId from customerPhone when missing (CreateBookingRequestSchema requires customerId)
+    // Strip sub-second fragments from time strings (some clients send HH:MM:SS.mmm — Zod allows SS but not .mmm)
+    if (body && typeof body === 'object') {
+      for (const key of ['bookingTime', 'booking_time', 'checkOutTime', 'check_out_time'] as const) {
+        const v = (body as Record<string, unknown>)[key];
+        if (typeof v === 'string' && v.includes('.')) {
+          (body as Record<string, unknown>)[key] = v.replace(/\.\d+Z?$/, '').replace(/Z$/, '');
+        }
+      }
+    }
+
+    //Resolve customerId from customerPhone when missing (CreateBookingRequestSchema requires customerId)
     if (!body.customerId && body.customerPhone) {
       try {
         const custResult = await query(
@@ -145,6 +249,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     }
     if (!body.customerId) {
       return this.error('customerId or customerPhone (to resolve customer) is required', 400, 'VALIDATION_ERROR', undefined, requestId);
+    }
+
+    // Accept snake_case Razorpay field from older clients
+    if (typeof (body as any).razorpay_order_id === 'string' && (body as any).razorpay_order_id.trim() && !(body as any).razorpayOrderId) {
+      (body as any).razorpayOrderId = String((body as any).razorpay_order_id).trim();
     }
 
     // Validate request with Zod schema
@@ -179,7 +288,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       petName,
       notes: notesFromSchema,
       packagePurchaseId,
+      checkOutDate: reqCheckOutDate,
+      checkOutTime: reqCheckOutTime,
+      flowVariant,
     } = validationResult.data;
+
+    const razorpayOrderIdFromSchema = (validationResult.data as { razorpayOrderId?: string }).razorpayOrderId;
 
     const amount = amountFromSchema ?? totalAmount;
     // ✅ Map legacy 'online' to 'tele' for backward compatibility
@@ -224,9 +338,69 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     // Validate booking date/time (rule engine: booking_min_notice_hours)
     const bookingRules = await getDiscoveryRules('all', 'booking');
     const minNoticeHours = bookingRules.booking_min_notice_hours ?? 1;
-    const dateValidation = validateBookingDate(bookingDate, bookingTime, minNoticeHours);
+    const checkOutRaw = body.checkOutDate || body.check_out_date;
+    const clientTotalDurationMins = validationResult.data.totalDurationMinutes;
+    const hasTimedAtHomeVisit =
+      clientTotalDurationMins != null && Number(clientTotalDurationMins) > 0;
+    const flowVariantNorm = String(
+      flowVariant || (body as Record<string, unknown>).flow_variant || ''
+    )
+      .toLowerCase()
+      .replace(/-/g, '_');
+
+    const isMultiDayStay =
+      typeof checkOutRaw === 'string' &&
+      /^\d{4}-\d{2}-\d{2}$/.test(String(checkOutRaw)) &&
+      String(checkOutRaw) > String(bookingDate);
+    /**
+     * Pet sitting / timed at_home visits must NOT use validateBookingDate: Lambda parses
+     * `new Date(`${date}T${time}`)` as UTC while the customer chose local wall time → false "past" errors.
+     * Use date-window validation only (same as multi-night boarding).
+     *
+     * Trigger relaxed rules when: multi-night stay, OR at_home pet sitting (flowVariant / flow_variant),
+     * OR at_home with client totalDurationMinutes (customer app only sends this for pet sitting today).
+     */
+    const useRelaxedAtHomeTimedBooking =
+      serviceType === 'at_home' &&
+      (flowVariantNorm === 'pet_sitting' || hasTimedAtHomeVisit);
+
+    const useMultiDayStayRules =
+      (isMultiDayStay && (serviceType === 'at_home' || serviceType === 'at_center')) ||
+      useRelaxedAtHomeTimedBooking;
+
+    const checkoutDateForRule =
+      typeof checkOutRaw === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(String(checkOutRaw))
+        ? String(checkOutRaw)
+        : bookingDate;
+
+    const dateValidation = useMultiDayStayRules
+      ? validateMultiDayStayCheckInDates(
+          bookingDate,
+          bookingTime,
+          checkoutDateForRule,
+          MAX_ADVANCE_BOOKING_DAYS
+        )
+      : validateBookingDate(bookingDate, bookingTime, minNoticeHours);
     if (!dateValidation.valid) {
       return this.error(dateValidation.error!, 400, 'VALIDATION_ERROR', undefined, requestId);
+    }
+
+    const isBoardingFlow = flowVariantNorm === 'boarding';
+    if (isBoardingFlow && isMultiDayStay && reqCheckOutDate) {
+      const cot =
+        reqCheckOutTime != null && String(reqCheckOutTime).trim() !== ''
+          ? String(reqCheckOutTime).trim()
+          : '';
+      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
+      if (!cot || !timeRegex.test(cot)) {
+        return this.error(
+          'Check-out time is required for boarding stays (use HH:MM).',
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
     }
 
     // Validate service exists and belongs to vendor
@@ -284,10 +458,54 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     
     let service: any = null; // Initialize service variable
     
-    // PRIMARY LOOKUP: Check vendor_services by service_id first (most common case)
-    // Match the same criteria as customer clinic services endpoint:
-    // - is_enabled = true (or NULL)
-    // - publish_status = 'published'
+    // ✅ CRITICAL FIX: PRIMARY LOOKUP - Check vendor_services.id FIRST (bookings.service_id FK references vendor_services.id)
+    // Frontend now sends vendor_services.id, not services.id, so we must check id column first
+    console.log(`[BOOKING] PRIMARY: Checking if ${lookupServiceId} is a vendor_services.id (primary key)`);
+    let vendorServiceByIdResult = await query(
+      `SELECT * FROM vendor_services 
+       WHERE id = $1::uuid 
+       AND vendor_id = $2::uuid 
+       AND (is_enabled = true OR is_enabled IS NULL)
+       AND publish_status = 'published'
+       LIMIT 1`,
+      [lookupServiceId, vendorId]
+    );
+    
+    if (vendorServiceByIdResult.rows.length > 0) {
+      console.log(`[BOOKING] Found vendor_service by id (primary lookup - vendor_services.id)`);
+      service = vendorServiceByIdResult.rows[0];
+    } else {
+      // FALLBACK 1: Try vendor_services.id without publish_status check
+      console.log(`[BOOKING] Service not found with publish_status='published', trying vendor_services.id without it`);
+      vendorServiceByIdResult = await query(
+        `SELECT * FROM vendor_services 
+         WHERE id = $1::uuid 
+         AND vendor_id = $2::uuid 
+         AND (is_enabled = true OR is_enabled IS NULL)
+         LIMIT 1`,
+        [lookupServiceId, vendorId]
+      );
+      
+      if (vendorServiceByIdResult.rows.length > 0) {
+        console.log(`[BOOKING] Found vendor_service by id (without publish_status check)`);
+        service = vendorServiceByIdResult.rows[0];
+      } else {
+        // FALLBACK 2: Try vendor_services.id without any status checks
+        console.log(`[BOOKING] Service not found with status checks, trying vendor_services.id without any checks`);
+        vendorServiceByIdResult = await query(
+          `SELECT * FROM vendor_services 
+           WHERE id = $1::uuid 
+           AND vendor_id = $2::uuid 
+           LIMIT 1`,
+          [lookupServiceId, vendorId]
+        );
+        
+        if (vendorServiceByIdResult.rows.length > 0) {
+          console.log(`[BOOKING] Found vendor_service by id (no status checks)`);
+          service = vendorServiceByIdResult.rows[0];
+        } else {
+          // FALLBACK 3: Check vendor_services by service_id (legacy support for services.id)
+          console.log(`[BOOKING] Service not found by vendor_services.id, checking if it's a vendor_services.service_id (services.id reference)`);
     let vendorServicesResult = await query(
       `SELECT * FROM vendor_services 
        WHERE service_id = $1::uuid 
@@ -299,11 +517,11 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
     );
     
     if (vendorServicesResult.rows.length > 0) {
-      console.log(`[BOOKING] Found vendor_service by service_id (primary lookup)`);
+            console.log(`[BOOKING] Found vendor_service by service_id (legacy lookup)`);
       service = vendorServicesResult.rows[0];
     } else {
-      // FALLBACK 1: Try without publish_status check
-      console.log(`[BOOKING] Service not found with publish_status='published', trying without it`);
+            // FALLBACK 4: Try service_id without publish_status
+            console.log(`[BOOKING] Service not found by service_id with publish_status, trying without it`);
       vendorServicesResult = await query(
         `SELECT * FROM vendor_services 
          WHERE service_id = $1::uuid 
@@ -317,8 +535,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         console.log(`[BOOKING] Found vendor_service by service_id (without publish_status check)`);
         service = vendorServicesResult.rows[0];
       } else {
-        // FALLBACK 2: Try without any status checks
-        console.log(`[BOOKING] Service not found with status checks, trying without any checks`);
+              // FALLBACK 5: Try service_id without any checks
+              console.log(`[BOOKING] Service not found by service_id with status checks, trying without any checks`);
         vendorServicesResult = await query(
           `SELECT * FROM vendor_services 
            WHERE service_id = $1::uuid 
@@ -331,21 +549,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           console.log(`[BOOKING] Found vendor_service by service_id (no status checks)`);
           service = vendorServicesResult.rows[0];
         } else {
-          // FALLBACK 3: Check if it's a vendor_services.id (direct lookup)
-          console.log(`[BOOKING] Service not found by service_id, checking if it's a vendor_services.id`);
-          let vendorServiceByIdResult = await query(
-            `SELECT * FROM vendor_services 
-             WHERE id = $1::uuid 
-             AND vendor_id = $2::uuid 
-             LIMIT 1`,
-            [lookupServiceId, vendorId]
-          );
-          
-          if (vendorServiceByIdResult.rows.length > 0) {
-            console.log(`[BOOKING] Found vendor_service by id (direct lookup)`);
-            service = vendorServiceByIdResult.rows[0];
-          } else {
-            // FALLBACK 4: Check base services table
+                // FALLBACK 6: Check base services table
             const services = await select('services', { id: lookupServiceId });
             console.log(`[BOOKING] Found ${services.length} services in services table`);
             let baseService = services.length > 0 ? services[0] : null;
@@ -359,6 +563,8 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
               // Service doesn't exist in base services table either
               console.error(`[BOOKING] Service ${serviceId} not found in services table or vendor_services table`);
               return this.error('Service not found', 404, 'NOT_FOUND', undefined, requestId);
+                }
+              }
             }
           }
         }
@@ -392,14 +598,24 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       console.log(`[BOOKING] Service object keys: ${Object.keys(service).join(', ')}`);
       console.log(`[BOOKING] Will use service.id=${service.id} for booking insert (instead of serviceId=${serviceId})`);
       
-      // Check if service is active/live (if state/status fields exist)
-      if (service.state && service.state !== 'active' && service.state !== 'live') {
-        console.error(`[BOOKING] Service ${serviceId} state is ${service.state}, not active/live`);
-        return this.error(`Service is not available (state: ${service.state})`, 400, 'VALIDATION_ERROR', undefined, requestId);
+      // vendor_services uses publish_status for go-live; some rows also set status/state to published/enabled.
+      // Only reject known inactive values — do not treat "published" as invalid.
+      const bookableLifecycle = new Set(
+        ['active', 'live', 'published', 'auto_published', 'enabled', 'true', '1'].map((s) => s.toLowerCase())
+      );
+      if (service.state) {
+        const st = String(service.state).toLowerCase();
+        if (!bookableLifecycle.has(st)) {
+          console.error(`[BOOKING] Service ${serviceId} state is ${service.state}, not bookable`);
+          return this.error(`Service is not available (state: ${service.state})`, 400, 'VALIDATION_ERROR', undefined, requestId);
+        }
       }
-      if (service.status && service.status !== 'active' && service.status !== 'live') {
-        console.error(`[BOOKING] Service ${serviceId} status is ${service.status}, not active/live`);
-        return this.error(`Service is not available (status: ${service.status})`, 400, 'VALIDATION_ERROR', undefined, requestId);
+      if (service.status) {
+        const st = String(service.status).toLowerCase();
+        if (!bookableLifecycle.has(st)) {
+          console.error(`[BOOKING] Service ${serviceId} status is ${service.status}, not bookable`);
+          return this.error(`Service is not available (status: ${service.status})`, 400, 'VALIDATION_ERROR', undefined, requestId);
+        }
       }
       if (service.is_active === false || service.is_live === false) {
         console.error(`[BOOKING] Service ${serviceId} is not active/live`);
@@ -407,11 +623,92 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       }
     }
 
+    let petSittingServerBilledMinutes: number | null = null;
+    let petSittingServerTotalRupee: number | null = null;
+    let boardingServerBilledMinutes: number | null = null;
+    let boardingServerTotalRupee: number | null = null;
+
+    if (
+      service &&
+      serviceType === 'at_home' &&
+      (!selectedServices || selectedServices.length === 0) &&
+      reqCheckOutDate &&
+      reqCheckOutTime &&
+      (flowVariantNorm === 'pet_sitting' || hasTimedAtHomeVisit)
+    ) {
+      const billed = computeStayBilledMinutes(
+        bookingDate,
+        bookingTime,
+        reqCheckOutDate,
+        reqCheckOutTime
+      );
+      if (billed < 15) {
+        return this.error(
+          'Pet sitting visit must be at least 15 minutes. Adjust your start and end time.',
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
+      const unitPrice = Number(service.custom_price != null ? service.custom_price : service.price ?? 0);
+      let baseMins = Number(
+        service.custom_duration != null ? service.custom_duration : service.duration_minutes ?? 60
+      );
+      if (!Number.isFinite(baseMins) || baseMins < 15) {
+        baseMins = 60;
+      }
+      petSittingServerBilledMinutes = billed;
+      petSittingServerTotalRupee = computePetSittingPriceRupees(unitPrice, baseMins, billed);
+      console.log(
+        `[BOOKING] Pet sitting priced on server: ${billed} min → ₹${petSittingServerTotalRupee} (list ₹${unitPrice} per ${baseMins} min, ${PET_SITTING_BILLING_SLOT_MINUTES}-min slots)`
+      );
+    } else if (
+      service &&
+      isBoardingFlow &&
+      (!selectedServices || selectedServices.length === 0) &&
+      reqCheckOutDate &&
+      reqCheckOutTime
+    ) {
+      /**
+       * Stay-based boarding list price: only when `selectedServices` is empty.
+       * Multi-service payloads use `totalSelectedServicesAmount` instead (additive SKUs, not night count).
+       */
+      const billed = computeStayBilledMinutes(
+        bookingDate,
+        bookingTime,
+        reqCheckOutDate,
+        reqCheckOutTime
+      );
+      if (billed < 1) {
+        return this.error(
+          'Boarding stay length is invalid. Adjust check-in and check-out date and time.',
+          400,
+          'VALIDATION_ERROR',
+          undefined,
+          requestId
+        );
+      }
+      const unitPrice = Number(
+        service.custom_price != null && String(service.custom_price).trim() !== ''
+          ? service.custom_price
+          : service.price ?? 0
+      );
+      boardingServerBilledMinutes = billed;
+      boardingServerTotalRupee = computeBoardingStayPriceRupeesPublic(unitPrice, billed);
+      const units24 = boardingBilled24hUnits(billed);
+      console.log(
+        `[BOOKING] Boarding priced on server (Asia/Kolkata wall time): ${billed} min, ${units24}×24h → ₹${boardingServerTotalRupee} (list ₹${unitPrice} / 24h)`
+      );
+    }
+
     // Get vendor's role to validate service availability
     let roleId: string | null = null;
+    let vendorTypeForLoyalty: string | null = null;
     try {
       const vendors = await select('vendors', { id: vendorId });
       if (vendors.length > 0) {
+        vendorTypeForLoyalty = vendors[0].vendor_type ?? null;
         roleId = vendors[0].role_id || vendors[0].roleId || null;
         
         // If no role_id, try to get from vendor_roles table
@@ -455,6 +752,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       const availabilityResult = await validateServiceAvailability(
         lookupServiceId,
         roleId,
+        vendorId,
         customerId
       );
 
@@ -520,10 +818,31 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           return existingBookingFull.rows[0];
         }
 
+        // Diagnostics pay-first: if this Razorpay order already linked a booking, return it before overlap
+        // (avoids SLOT_CONFLICT against the same customer's confirmed slot on client retry).
+        const diagnosticsSlugEarly = /^diagnostics?$/i.test(String(serviceId));
+        const rzOrderEarly = String(razorpayOrderIdFromSchema || (body as any).razorpay_order_id || '').trim();
+        if (diagnosticsSlugEarly && rzOrderEarly) {
+          const payEarly = await client.query(
+            `SELECT booking_id FROM payments WHERE razorpay_order_id = $1 AND customer_id = $2::uuid AND vendor_id = $3::uuid FOR UPDATE`,
+            [rzOrderEarly, customerId, vendorId]
+          );
+          if (payEarly.rows.length > 0 && payEarly.rows[0].booking_id) {
+            const exB = await client.query(`SELECT * FROM bookings WHERE id = $1::uuid`, [payEarly.rows[0].booking_id]);
+            if (exB.rows[0]) {
+              console.log(`[BOOKING] Diagnostics prepaid idempotent replay → booking ${exB.rows[0].id}`);
+              return exB.rows[0];
+            }
+          }
+        }
+
         // ✅ FIX: Check overlap using ONLY service duration (no buffer blocking)
         // Buffer is informational (travel/prep/setup) and should NOT block adjacent slots
-        // Get booking duration
-        const bookingDuration = totalDurationMinutes || service?.duration_minutes || service?.custom_duration || 30;
+        // Get booking duration (pet sitting: exact visit length from check-in → check-out)
+        const bookingDuration =
+          petSittingServerBilledMinutes != null
+            ? petSittingServerBilledMinutes
+            : totalDurationMinutes || service?.duration_minutes || service?.custom_duration || 30;
         
         // Convert booking time to minutes
         const [bookingHour, bookingMin] = bookingTime.split(':').map(Number);
@@ -615,34 +934,26 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           // Ignore - buffer is informational only
         }
 
-        // ✅ ATOMIC SLOT OVERLAP CHECK
-        // Each slot is atomic (30 min). A booking blocks ONLY the slot it starts at.
-        // Booking at 09:00 blocks ONLY 09:00. New booking at 09:30 is allowed.
-        // This applies to ALL service types (tele, at_center, at_home) and ALL roles.
-        // Buffer time is informational only and does NOT block adjacent slots.
-        const SLOT_SIZE = 30; // Atomic slot size in minutes
-        
-        console.log(`[BOOKING] Checking overlap (ATOMIC): newBooking=${bookingTime} (${newBookingStartMinutes}min), slotSize=${SLOT_SIZE}min, serviceType=${serviceType}`);
+        console.log(
+          `[BOOKING] Checking overlap (duration-based): newBooking=${bookingTime} (${newBookingStartMinutes}-${newBookingEndMinutes}min), serviceType=${serviceType}`
+        );
         console.log(`[BOOKING] Existing bookings: ${existingBookings.length}`);
-        
+
         const hasOverlap = existingBookings.some((existing: any) => {
           const [existingHour, existingMin] = existing.booking_time.split(':').map(Number);
           const existingStartMinutes = existingHour * 60 + existingMin;
-          
-          // ✅ ATOMIC: Use SLOT_SIZE (30 min) for BOTH existing and new booking
-          // NOT the stored duration_minutes, which may be longer than one slot
-          const existingEndMinutes = existingStartMinutes + SLOT_SIZE;
-          const newBookingEndMinutes = newBookingStartMinutes + SLOT_SIZE;
-          
-          // ATOMIC OVERLAP: (newStart < existingEnd) AND (newEnd > existingStart)
-          // Example: Existing 09:00 (end=09:30), New 09:30 (end=10:00)
-          //   570 < 570 && 600 > 540 = false && true = false → NO overlap ✅
-          const overlaps = newBookingStartMinutes < existingEndMinutes && newBookingEndMinutes > existingStartMinutes;
-          
+          const existingDuration = Math.max(15, Number(existing.duration_minutes) || 30);
+          const existingEndMinutes = existingStartMinutes + existingDuration;
+
+          const overlaps =
+            newBookingStartMinutes < existingEndMinutes && newBookingEndMinutes > existingStartMinutes;
+
           if (overlaps) {
-            console.log(`[BOOKING] OVERLAP (atomic): newBooking ${bookingTime} blocked by existing ${existing.booking_time}`);
+            console.log(
+              `[BOOKING] OVERLAP: newBooking ${bookingTime} blocked by existing ${existing.booking_time} (${existingStartMinutes}-${existingEndMinutes}min)`
+            );
           }
-          
+
           return overlaps;
         });
 
@@ -651,77 +962,35 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
 
         // Create booking
-        // ✅ CRITICAL FIX: Foreign key constraint expects services.id (base service UUID)
-        // If service doesn't exist in services table, we need to handle custom services
+        // ✅ CRITICAL FIX: Foreign key constraint bookings_service_id_vendor_services_fkey expects vendor_services.id
+        // NOT services.id. We must use service.id (vendor_services.id) for the booking insert.
         if (!service) {
           console.error(`[BOOKING] Service object is missing. serviceId=${serviceId}`);
           throw new Error('Service object is invalid');
         }
         
-        // Check if base service exists in services table (required for foreign key)
-        const baseServiceId = service.service_id || serviceId;
-        console.log(`[BOOKING] Checking if base service ${baseServiceId} exists in services table for foreign key constraint`);
-        // ✅ CRITICAL FIX: Use client.query() instead of select() to stay within transaction
-        const baseServicesResult = await client.query(
-          `SELECT * FROM services WHERE id = $1::uuid`,
-          [baseServiceId]
-        );
-        const baseServices = baseServicesResult.rows;
+        // ✅ FIX: Use service.id (vendor_services.id) directly for the foreign key constraint
+        // The bookings.service_id FK references vendor_services.id, not services.id
+        const finalServiceId = service.id;
+        console.log(`[BOOKING] Using service.id=${finalServiceId} (vendor_services.id) for booking insert`);
+        console.log(`[BOOKING] This matches the foreign key constraint bookings_service_id_vendor_services_fkey`);
         
-        let finalServiceId: string;
-        if (baseServices.length === 0) {
-          // Custom service - doesn't exist in services table
-          // Create service in services table for custom services to satisfy foreign key
-          console.warn(`[BOOKING] Base service ${baseServiceId} not found in services table. Creating service entry for custom service.`);
-          
-          try {
-            // ✅ CRITICAL FIX: Use SAVEPOINT to prevent transaction abort if INSERT fails
-            // In PostgreSQL, a failed query inside a transaction aborts the ENTIRE transaction
-            // even if JavaScript catches the error. SAVEPOINTs allow recovery from errors.
-            await client.query('SAVEPOINT sp_create_service');
-            await client.query(
-              `INSERT INTO services (id, name, description, category, price, duration_minutes, vendor_id, is_active, created_at, updated_at)
-               VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::uuid, $8, $9, $10)
-               ON CONFLICT (id) DO NOTHING`,
-              [
-                baseServiceId,
-                service.service_name || service.name || 'Custom Service',
-                service.custom_description || service.description || '',
-                service.category || 'custom',
-                service.price || service.custom_price || 0,
-                service.duration_minutes || service.custom_duration || 30,
-                vendorId,
-                true,
-                new Date().toISOString(),
-                new Date().toISOString(),
-              ]
-            );
-            await client.query('RELEASE SAVEPOINT sp_create_service');
-            console.log(`[BOOKING] Created service entry in services table: ${baseServiceId}`);
-          } catch (insertError: any) {
-            // ✅ CRITICAL: Rollback to savepoint to keep transaction alive
-            await client.query('ROLLBACK TO SAVEPOINT sp_create_service').catch(() => {});
-            console.warn(`[BOOKING] Failed to create service entry (may already exist): ${insertError.message}`);
-          }
-          
-          finalServiceId = baseServiceId;
-        } else {
-          // Base service exists - use it for foreign key
-          console.log(`[BOOKING] Base service ${baseServiceId} found in services table. Using it for foreign key.`);
-          finalServiceId = baseServiceId;
-        }
-        
-        console.log(`[BOOKING] Inserting booking with service_id=${finalServiceId} (for foreign key constraint)`);
+        console.log(`[BOOKING] Inserting booking with service_id=${finalServiceId} (vendor_services.id for FK constraint)`);
         
         // ✅ FIX GAP PM-1: Check for active unlimited subscription
         let subscriptionId: string | null = null;
         let isSubscriptionBooking = false;
-        let finalAmount = amount || 0;
+        let finalAmount =
+          boardingServerTotalRupee != null
+            ? boardingServerTotalRupee
+            : petSittingServerTotalRupee != null
+              ? petSittingServerTotalRupee
+              : (amount || 0);
         // ✅ Package booking: when packagePurchaseId provided, use package credit (0 payment)
         let isPackageBooking = false;
         let packagePurchaseIdToUse: string | null = null;
         let packageSessionNumberToUse: number | null = null;
-        let pkgForDeduction: { remaining_sessions: number; unlimited_usage: boolean } | null = null;
+        let packageMeta: { unlimited: boolean } | null = null;
 
         // ✅ CRITICAL FIX: Use SAVEPOINT so that if package_purchases table or columns don't exist,
         // the PostgreSQL transaction is not aborted.
@@ -739,21 +1008,32 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             if (!tableCheck.rows[0]?.exists) {
               console.warn('[BOOKING] package_purchases table not found, skipping package booking');
             } else {
+              await seedPackageScheduledSessionsIfMissing(client as SqlClient, packagePurchaseId);
               const packageResult = await client.query(
                 `SELECT id, remaining_sessions, unlimited_usage, total_sessions
                  FROM package_purchases
                  WHERE id = $1 AND customer_id = $2 AND vendor_id = $3
                    AND status = 'active'
                    AND (expires_at IS NULL OR expires_at > NOW())
-                   AND (remaining_sessions > 0 OR unlimited_usage = true)`,
+                   AND (${sqlPackagePurchaseHasBookableSlot('package_purchases')})`,
                 [packagePurchaseId, customerId, vendorId]
               );
               if (packageResult.rows?.length > 0) {
                 const pkg = packageResult.rows[0];
-                const sessionsUsed = (pkg.total_sessions || 0) - (pkg.remaining_sessions || 0);
                 packagePurchaseIdToUse = pkg.id;
-                packageSessionNumberToUse = sessionsUsed + 1;
-                pkgForDeduction = { remaining_sessions: pkg.remaining_sessions, unlimited_usage: pkg.unlimited_usage };
+                packageMeta = { unlimited: !!pkg.unlimited_usage };
+                if (pkg.unlimited_usage) {
+                  packageSessionNumberToUse = await pickNextUnlimitedPackageSessionNumber(
+                    client as SqlClient,
+                    pkg.id
+                  );
+                } else {
+                  const nextSlot = await pickNextPendingSessionNumber(client as SqlClient, pkg.id);
+                  if (nextSlot == null) {
+                    throw new Error('NO_PACKAGE_SESSION_SLOTS');
+                  }
+                  packageSessionNumberToUse = nextSlot;
+                }
                 isPackageBooking = true;
                 finalAmount = 0;
                 console.log(`[BOOKING] Using package ${packagePurchaseId}. Session #${packageSessionNumberToUse}. Amount 0.`);
@@ -762,6 +1042,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             await client.query('RELEASE SAVEPOINT sp_package_check');
           } catch (error: any) {
             await client.query('ROLLBACK TO SAVEPOINT sp_package_check').catch(() => {});
+            if (error?.message === 'NO_PACKAGE_SESSION_SLOTS') {
+              throw error;
+            }
             console.warn('[BOOKING] Package check failed (table/column may not exist), skipping:', (error as any)?.message);
           }
         }
@@ -773,7 +1056,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           // Skip subscription check when already using package
           if (!isPackageBooking) {
           // Get service category for subscription matching
-          const serviceCategory = service.category || baseServices[0]?.category || null;
+          const serviceCategory = service.category || null;
           
           await client.query('SAVEPOINT sp_subscription_check');
           const activeSubscriptions = await client.query(
@@ -819,10 +1102,99 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
         
         // ✅ Calculate final amounts considering multiple services
-        // Priority: 1. Package (free), 2. Subscription (free), 3. Selected services total, 4. Single service amount
-        const calculatedBasePrice = totalSelectedServicesAmount > 0 ? totalSelectedServicesAmount : (amount || 0);
-        const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : calculatedBasePrice;
-        const paymentStatus = isPackageBooking ? 'completed' : (isSubscriptionBooking ? 'paid' : 'pending');
+        // Priority: 1. Package (free), 2. Subscription (free), 3. Selected services total, 4. Pet sitting (server), 5. Client amount
+        const calculatedBasePrice =
+          totalSelectedServicesAmount > 0
+            ? totalSelectedServicesAmount
+            : boardingServerTotalRupee != null
+              ? boardingServerTotalRupee
+              : petSittingServerTotalRupee != null
+                ? petSittingServerTotalRupee
+                : (amount || 0);
+        const listedServerPrice =
+          (!selectedServices || selectedServices.length === 0) &&
+          petSittingServerTotalRupee == null &&
+          boardingServerTotalRupee == null
+            ? Number((service as any)?.custom_price ?? (service as any)?.price ?? 0) || 0
+            : 0;
+        const grossPayableBeforeWallet =
+          isPackageBooking || isSubscriptionBooking
+            ? 0
+            : listedServerPrice > 0
+              ? Math.max(calculatedBasePrice, listedServerPrice)
+              : calculatedBasePrice;
+        const calculatedFinalAmount = isPackageBooking || isSubscriptionBooking ? 0 : grossPayableBeforeWallet;
+        let diagnosticsPrepaidPaymentId: string | null = null;
+        let paymentStatus = isPackageBooking ? 'completed' : isSubscriptionBooking ? 'paid' : 'pending';
+        /** Hold slot but hide from vendor lists until Razorpay succeeds (vendor APIs filter pending_payment). */
+        let bookingRowStatus =
+          paymentStatus === 'pending' && calculatedFinalAmount > 0 ? 'pending_payment' : 'confirmed';
+
+        const isDiagnosticsSlug = /^diagnostics?$/i.test(String(serviceId));
+        if (
+          isDiagnosticsSlug &&
+          calculatedFinalAmount > 0.009 &&
+          !isPackageBooking &&
+          !isSubscriptionBooking
+        ) {
+          const rzOrder = String(razorpayOrderIdFromSchema || (body as any).razorpay_order_id || '').trim();
+          if (!rzOrder) {
+            throw new Error('DIAGNOSTICS_PAYMENT_ORDER_REQUIRED');
+          }
+          const { rows: payRows } = await client.query(
+            `SELECT * FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
+            [rzOrder]
+          );
+          if (payRows.length === 0) {
+            throw new Error('DIAGNOSTICS_PAYMENT_NOT_FOUND');
+          }
+          const pr = payRows[0];
+          if (String(pr.customer_id) !== String(customerId) || String(pr.vendor_id) !== String(vendorId)) {
+            throw new Error('DIAGNOSTICS_PAYMENT_MISMATCH');
+          }
+          let effectiveCompleted = String(pr.payment_status || '').toLowerCase() === 'completed';
+          if (!effectiveCompleted && String(pr.payment_status || '').toLowerCase() === 'pending') {
+            try {
+              const { razorpayRequest } = await import('../../../utils/payments/razorpay-client');
+              const ord = (await razorpayRequest(`/orders/${rzOrder}`, 'GET', undefined, 12000)) as {
+                amount_paid?: number;
+              };
+              const paidPaise = Number(ord?.amount_paid ?? 0);
+              const expectedPaise = Math.round(calculatedFinalAmount * 100);
+              if (paidPaise >= expectedPaise - 1) {
+                await client.query(
+                  `UPDATE payments SET payment_status = 'completed', completed_at = COALESCE(completed_at, NOW()), updated_at = NOW()
+                   WHERE id = $1::uuid AND payment_status = 'pending'`,
+                  [pr.id]
+                );
+                effectiveCompleted = true;
+              }
+            } catch (syncErr: any) {
+              console.warn('[BOOKING] Diagnostics Razorpay order sync failed:', syncErr?.message || syncErr);
+            }
+          }
+          if (!effectiveCompleted) {
+            throw new Error('DIAGNOSTICS_PAYMENT_NOT_COMPLETED');
+          }
+          const payAmt = Math.round((Number(pr.amount) || 0) * 100) / 100;
+          const bookAmt = Math.round(calculatedFinalAmount * 100) / 100;
+          if (Math.abs(payAmt - bookAmt) > 0.05) {
+            throw new Error('DIAGNOSTICS_PAYMENT_AMOUNT_MISMATCH');
+          }
+          if (pr.booking_id != null) {
+            const { rows: linkedB } = await client.query(`SELECT * FROM bookings WHERE id = $1::uuid`, [
+              pr.booking_id,
+            ]);
+            if (linkedB.length > 0) {
+              console.log('[BOOKING] Diagnostics payment already linked; returning existing booking');
+              return linkedB[0];
+            }
+            throw new Error('DIAGNOSTICS_PAYMENT_ALREADY_USED');
+          }
+          diagnosticsPrepaidPaymentId = pr.id;
+          paymentStatus = 'paid';
+          bookingRowStatus = 'confirmed';
+        }
         
         // ✅ CRITICAL FIX: Extract coordinates from address_id or address field for GPS tracking
         let bookingLatitude: number | null = null;
@@ -998,7 +1370,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           address: fullAddressText,
           base_price: calculatedBasePrice,
           total_amount: calculatedFinalAmount, // ✅ 0 for package or subscription
-          status: isPackageBooking ? 'confirmed' : 'pending',
+          // Slot validated in-tx: confirmed once paid (or immediately if no online payment due).
+          // Note: omit confirmed_at / confirmed_by here — many RDS schemas lack these columns; INSERT retry budget is limited.
+          status: bookingRowStatus,
           notes: notesFromSchema || (petName ? `Pet: ${petName}` : null),
           // Coordinates from base schema
           latitude: bookingLatitude,
@@ -1008,21 +1382,41 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         // ✅ FIX: Optional columns that may or may not exist in prod DB
         // These are added to a separate list and attempted; if INSERT fails due to
         // missing column, we retry without them
+        const persistedServiceLabel = String(
+          service?.service_name || service?.name || serviceName || ''
+        ).trim();
         const optionalColumns: Record<string, any> = {
           payment_status: paymentStatus,
           subscription_id: subscriptionId,
           subscription_booking: isSubscriptionBooking,
           pet_id: petId || null,
+          ...(persistedServiceLabel ? { service_name: persistedServiceLabel } : {}),
           selected_services: selectedServices && selectedServices.length > 0 
             ? JSON.stringify(selectedServices) 
             : null,
-          total_duration_minutes: totalDurationMinutes || null,
+          total_duration_minutes:
+            boardingServerBilledMinutes != null
+              ? boardingServerBilledMinutes
+              : petSittingServerBilledMinutes != null
+                ? petSittingServerBilledMinutes
+                : totalDurationMinutes || null,
           duration_minutes: bookingDuration,
           customer_phone: customerPhone || null,
           // address_id, delivery_latitude, delivery_longitude may not exist in prod
           address_id: addressIdToStore,
           delivery_latitude: bookingLatitude,
           delivery_longitude: bookingLongitude,
+          // Multi-day boarding / pet sitting / resort: stay window (migration 621+)
+          ...(reqCheckOutDate && /^\d{4}-\d{2}-\d{2}$/.test(String(reqCheckOutDate))
+            ? {
+                check_in_date: bookingDate,
+                check_out_date: String(reqCheckOutDate),
+                ...(reqCheckOutTime &&
+                /^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/.test(String(reqCheckOutTime))
+                  ? { check_out_time: String(reqCheckOutTime) }
+                  : {}),
+              }
+            : {}),
         };
         
         // Add optional columns to bookingData
@@ -1030,14 +1424,27 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           bookingData[key] = value;
         }
 
-        // ✅ Phase 2.3: Add roomId if provided (for boarding/resort bookings)
-        if (roomId) {
+        // ✅ Phase 2.3: room_id is UUID in DB — UI placeholders like "standard"/"deluxe" must not be inserted
+        if (roomId && isValidUUID(String(roomId))) {
           bookingData.room_id = roomId;
+        } else if (roomId) {
+          const hint = `Room preference: ${roomId}`;
+          bookingData.notes = bookingData.notes ? `${bookingData.notes} | ${hint}` : hint;
+          console.log(`[BOOKING] Non-UUID roomId kept in notes only: ${roomId}`);
         }
 
-        // ✅ Phase 2.3: Add promotionId if provided (for applied promotions)
-        if (promotionId) {
+        if (promotionId && isValidUUID(String(promotionId))) {
           bookingData.promotion_id = promotionId;
+        }
+
+        const couponDiscountRaw = body.couponDiscount ?? body.discountAmount ?? body.discount_amount;
+        const couponCodeRaw = body.couponCode ?? body.coupon_code;
+        const couponDisc = parseFloat(String(couponDiscountRaw ?? ''));
+        if (Number.isFinite(couponDisc) && couponDisc > 0) {
+          bookingData.discount_amount = Math.round(couponDisc * 100) / 100;
+        }
+        if (couponCodeRaw && typeof couponCodeRaw === 'string' && couponCodeRaw.trim()) {
+          bookingData.coupon_code = couponCodeRaw.trim().slice(0, 80);
         }
 
         if (packagePurchaseIdToUse != null && packageSessionNumberToUse != null) {
@@ -1090,8 +1497,10 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         let insertedBooking: any = null;
         let insertAttempt = 0;
         let currentBookingData = { ...bookingData };
-        
-        while (insertAttempt < 5) {
+        let lastInsertErrMsg = '';
+        const maxInsertAttempts = 40;
+
+        while (insertAttempt < maxInsertAttempts) {
           insertAttempt++;
           try {
             await client.query('SAVEPOINT sp_booking_insert');
@@ -1107,66 +1516,209 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             );
             await client.query('RELEASE SAVEPOINT sp_booking_insert');
             insertedBooking = insertResult.rows[0];
+            if (diagnosticsPrepaidPaymentId && insertedBooking?.id) {
+              const up = await client.query(
+                `UPDATE payments SET booking_id = $1::uuid, updated_at = NOW()
+                 WHERE id = $2::uuid AND booking_id IS NULL
+                 RETURNING id`,
+                [insertedBooking.id, diagnosticsPrepaidPaymentId]
+              );
+              if (up.rows.length === 0) {
+                console.warn('[BOOKING] Diagnostics prepaid: payment not linked to booking (already linked?)', {
+                  bookingId: insertedBooking.id,
+                  paymentId: diagnosticsPrepaidPaymentId,
+                });
+              }
+            }
             break; // Success!
           } catch (insertError: any) {
             await client.query('ROLLBACK TO SAVEPOINT sp_booking_insert').catch(() => {});
             const errMsg = insertError?.message || '';
-            
-            // Check if error is about a missing column
-            const colMatch = errMsg.match(/column "(\w+)" of relation "bookings" does not exist/);
-            if (colMatch && colMatch[1]) {
-              const missingCol = colMatch[1];
-              console.warn(`[BOOKING] Column "${missingCol}" does not exist in bookings table, removing and retrying (attempt ${insertAttempt})`);
-              delete currentBookingData[missingCol];
-              continue; // Retry without this column
+            lastInsertErrMsg = errMsg || String(insertError);
+
+            // PostgreSQL undefined_column / missing column on bookings
+            let missingCol: string | null = null;
+            const m1 = errMsg.match(/column "(\w+)" of relation "bookings" does not exist/i);
+            if (m1) missingCol = m1[1];
+            else if (insertError?.code === '42703') {
+              const m2 = errMsg.match(/column "(\w+)"/i);
+              if (m2 && errMsg.toLowerCase().includes('bookings')) missingCol = m2[1];
             }
-            
-            // Not a missing column error, re-throw
+            if (missingCol) {
+              console.warn(
+                `[BOOKING] Column "${missingCol}" does not exist on bookings, removing and retrying (attempt ${insertAttempt}/${maxInsertAttempts})`
+              );
+              delete currentBookingData[missingCol];
+              continue;
+            }
+
             throw insertError;
           }
         }
         
         if (!insertedBooking) {
-          throw new Error('Failed to insert booking after removing missing columns');
+          throw new Error(
+            lastInsertErrMsg
+              ? `Failed to insert booking after removing missing columns: ${lastInsertErrMsg}`
+              : 'Failed to insert booking after removing missing columns'
+          );
         }
 
-        // ✅ Package booking: deduct session and log usage inside same transaction
-        if (packagePurchaseIdToUse && pkgForDeduction && insertedBooking?.id) {
-          // ✅ FIX: package_purchases table may not exist - gracefully skip package update
-          // ✅ CRITICAL: Use SAVEPOINT to prevent transaction abort if table doesn't exist
+        // ✅ Wallet at booking time: debit inside same transaction (Razorpay path does not debit wallet).
+        const rawBookingBody = body as Record<string, unknown>;
+        const useWalletAtCreate =
+          rawBookingBody.useWallet === true ||
+          rawBookingBody.useWallet === 'true' ||
+          String(rawBookingBody.useWallet || '').toLowerCase() === 'true';
+        const reqWalletAmt = Math.max(
+          0,
+          parseFloat(String(rawBookingBody.walletAmount ?? rawBookingBody.wallet_amount ?? '0')) || 0
+        );
+        if (
+          !isPackageBooking &&
+          !isSubscriptionBooking &&
+          useWalletAtCreate &&
+          insertedBooking?.id &&
+          customerId
+        ) {
+          // Ensure a wallet row exists so balance SELECT + debit are not fooled by a missing row.
+          await client.query('SAVEPOINT sp_ensure_customer_wallet');
           try {
-            await client.query('SAVEPOINT sp_package_purchases');
-            if (!pkgForDeduction.unlimited_usage) {
-              await client.query(
-                `UPDATE package_purchases SET remaining_sessions = remaining_sessions - 1, updated_at = NOW() WHERE id = $1`,
-                [packagePurchaseIdToUse]
-              );
-            }
-            await client.query('RELEASE SAVEPOINT sp_package_purchases');
-          } catch (error: any) {
-            await client.query('ROLLBACK TO SAVEPOINT sp_package_purchases').catch(() => {});
-            console.warn('[BOOKING] package_purchases table not found or update failed, skipping package deduction:', error.message);
-          }
-          
-          // ✅ FIX: package_usage_log table may not exist - gracefully skip logging
-          // ✅ CRITICAL: Use SAVEPOINT to prevent transaction abort if table doesn't exist
-          try {
-            await client.query('SAVEPOINT sp_package_usage_log');
             await client.query(
-              `INSERT INTO package_usage_log (package_purchase_id, booking_id, session_number, action, sessions_before, sessions_after, created_at)
-               VALUES ($1, $2, $3, 'session_used', $4, $5, NOW())`,
-              [
-                packagePurchaseIdToUse,
-                insertedBooking.id,
-                packageSessionNumberToUse,
-                pkgForDeduction.remaining_sessions,
-                pkgForDeduction.unlimited_usage ? pkgForDeduction.remaining_sessions : pkgForDeduction.remaining_sessions - 1,
-              ]
+              `INSERT INTO customer_wallets (customer_id, balance, currency) VALUES ($1::uuid, 0, 'INR') ON CONFLICT (customer_id) DO NOTHING`,
+              [customerId]
             );
-            await client.query('RELEASE SAVEPOINT sp_package_usage_log');
+            await client.query('RELEASE SAVEPOINT sp_ensure_customer_wallet');
+          } catch {
+            await client.query('ROLLBACK TO SAVEPOINT sp_ensure_customer_wallet').catch(() => {});
+            try {
+              await client.query(
+                `INSERT INTO customer_wallets (customer_id, balance) VALUES ($1::uuid, 0) ON CONFLICT (customer_id) DO NOTHING`,
+                [customerId]
+              );
+            } catch {
+              /* non-fatal — debit path may still upsert */
+            }
+          }
+
+          let gross = Math.round((parseFloat(String(insertedBooking.total_amount ?? 0)) || 0) * 100) / 100;
+          // Legacy clients sent net-after-wallet as amount → total_amount 0 but useWallet + walletAmount set.
+          if (gross <= 0) {
+            const fromBody = Math.round(
+              (parseFloat(String(rawBookingBody.amount ?? rawBookingBody.totalAmount ?? 0)) || 0) * 100
+            ) / 100;
+            const candidate = Math.max(fromBody, Math.round(reqWalletAmt * 100) / 100);
+            if (candidate > 0) {
+              await client.query('SAVEPOINT sp_wallet_sync_total');
+              try {
+                await client.query(
+                  `UPDATE bookings SET total_amount = $1::numeric, updated_at = NOW() WHERE id = $2::uuid`,
+                  [candidate, insertedBooking.id]
+                );
+                await client.query('RELEASE SAVEPOINT sp_wallet_sync_total');
+                gross = candidate;
+                (insertedBooking as any).total_amount = candidate;
+              } catch (syncErr) {
+                await client.query('ROLLBACK TO SAVEPOINT sp_wallet_sync_total').catch(() => {});
+                console.warn('[BOOKING] wallet: could not sync total_amount from client amount:', (syncErr as any)?.message);
+              }
+            }
+          }
+
+          if (gross > 0) {
+            const cap = reqWalletAmt > 0 ? Math.min(reqWalletAmt, gross) : gross;
+            try {
+              const balRes = await client.query(
+                `SELECT COALESCE(balance, 0)::text AS b FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`,
+                [customerId]
+              );
+              const bal = parseFloat(String(balRes.rows[0]?.b ?? '0')) || 0;
+              const chunk = Math.round(Math.min(cap, bal, gross) * 100) / 100;
+              let debitedActual = 0;
+              if (chunk > 0) {
+                const d = await debitCustomerWalletForBookingInTransaction(client, {
+                  customerId,
+                  bookingId: String(insertedBooking.id),
+                  amount: chunk,
+                  idempotencyKey: `booking-create-${insertedBooking.id}`,
+                });
+                debitedActual = Math.round((d?.debited ?? chunk) * 100) / 100;
+              }
+              // Tolerate tiny float drift so PAID + confirmed is set whenever wallet covers list total.
+              if (debitedActual + 0.02 >= gross) {
+                await client.query(
+                  `UPDATE bookings SET payment_status = 'paid', status = 'confirmed', updated_at = NOW() WHERE id = $1::uuid`,
+                  [insertedBooking.id]
+                );
+                await client.query('SAVEPOINT sp_booking_wallet_payment');
+                try {
+                  const pc = await client.query<{ column_name: string }>(
+                    `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'payments'`
+                  );
+                  const ec = new Set(pc.rows.map((r) => r.column_name));
+                  const pdata: Record<string, unknown> = {
+                    booking_id: insertedBooking.id,
+                    customer_id: customerId,
+                    vendor_id: insertedBooking.vendor_id,
+                    amount: debitedActual > 0 ? debitedActual : chunk,
+                    currency: 'INR',
+                    payment_method: 'wallet',
+                    payment_status: 'completed',
+                  };
+                  const cols = Object.keys(pdata).filter((k) => ec.has(k));
+                  const vals = cols.map((k) => pdata[k]);
+                  const ph = cols.map((_, i) => `$${i + 1}`).join(', ');
+                  if (cols.length >= 5) {
+                    await client.query(
+                      `INSERT INTO payments (${cols.join(', ')}) VALUES (${ph})`,
+                      vals
+                    );
+                  }
+                  await client.query('RELEASE SAVEPOINT sp_booking_wallet_payment');
+                } catch (wp: any) {
+                  await client.query('ROLLBACK TO SAVEPOINT sp_booking_wallet_payment').catch(() => {});
+                  console.warn('[BOOKING] wallet payment row insert skipped:', wp?.message || wp);
+                }
+              }
+              const refreshed = await client.query(`SELECT * FROM bookings WHERE id = $1::uuid`, [
+                insertedBooking.id,
+              ]);
+              if (refreshed.rows[0]) {
+                Object.assign(insertedBooking, refreshed.rows[0]);
+              }
+            } catch (wErr: any) {
+              console.error('[BOOKING] wallet debit at create failed:', wErr?.message || wErr);
+              throw wErr;
+            }
+          }
+        }
+
+        // ✅ Package booking: link discrete session row (remaining decremented on visit completion only)
+        if (
+          packagePurchaseIdToUse &&
+          packageSessionNumberToUse != null &&
+          insertedBooking?.id &&
+          packageMeta &&
+          !packageMeta.unlimited
+        ) {
+          try {
+            await client.query('SAVEPOINT sp_package_link');
+            await seedPackageScheduledSessionsIfMissing(client as SqlClient, packagePurchaseIdToUse);
+            const linked = await linkPackageScheduledSessionToBooking(client as SqlClient, {
+              packagePurchaseId: packagePurchaseIdToUse,
+              sessionNumber: packageSessionNumberToUse,
+              bookingId: insertedBooking.id,
+              bookingDate: String(insertedBooking.booking_date),
+              bookingTime: String(insertedBooking.booking_time),
+            });
+            if (!linked) {
+              throw new Error('PACKAGE_SESSION_LINK_FAILED');
+            }
+            await client.query('RELEASE SAVEPOINT sp_package_link');
           } catch (error: any) {
-            await client.query('ROLLBACK TO SAVEPOINT sp_package_usage_log').catch(() => {});
-            console.warn('[BOOKING] package_usage_log table not found or insert failed, skipping usage log:', error.message);
+            await client.query('ROLLBACK TO SAVEPOINT sp_package_link').catch(() => {});
+            console.warn('[BOOKING] package_scheduled_sessions link failed:', error?.message);
+            throw error;
           }
         }
 
@@ -1193,62 +1745,77 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         requestId,
       });
 
-      // Log initial status
+      // Log initial status (matches persisted row — auto-confirmed when slot is available)
       await logBookingStatusChange(
         booking.id,
         null,
-        'pending',
+        booking.status,
         customerId,
         'customer',
-        'Booking created'
+        booking.status === 'confirmed' ? 'Booking created (confirmed)' : 'Booking created'
       );
 
-      // Publish event
-      try {
-        const { publishBookingCreated } = await import('../../../utils/sns-client');
-        await publishBookingCreated({
-          bookingId: booking.id,
-          customerId: booking.customer_id,
-          vendorId: booking.vendor_id,
-          serviceType: booking.service_type,
-          status: booking.status,
-          bookingDate: booking.booking_date,
-          bookingTime: booking.booking_time,
-          ...generateEventMetadata(requestId),
-        });
-      } catch (error) {
-        console.error('Failed to publish booking created event:', error);
-      }
-
-      // Rule 4: Notify vendor with in-app notification (large on-screen alert on vendor side)
-      try {
-        const customers = await select('customers', { id: booking.customer_id });
-        const customerName = (customers[0] as any)?.name || (customers[0] as any)?.full_name || 'Customer';
-        const serviceName = service?.service_name || service?.name || 'Service';
-        const serviceTypeLabel = booking.service_type === 'at_home' ? 'Home visit' : booking.service_type === 'tele' ? 'Tele consultation' : 'At center';
-        // ✅ FIX: Use notification_type instead of type (schema column name)
-        await insert('notifications', {
-          recipient_id: booking.vendor_id,
-          recipient_type: 'vendor',
-          notification_type: 'new_booking', // ✅ FIX: Changed from 'type' to 'notification_type'
-          title: 'New appointment',
-          message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
-          channels: { email: false, sms: false, inApp: true, push: false }, // ✅ FIX: Added required channels field
-          data: JSON.stringify({
+      // Publish booking-created only after customer-visible confirmation.
+      if (booking.status !== 'pending_payment') {
+        try {
+          const { publishBookingCreated } = await import('../../../utils/sns-client');
+          await publishBookingCreated({
             bookingId: booking.id,
             customerId: booking.customer_id,
-            customerName,
-            serviceName,
+            vendorId: booking.vendor_id,
             serviceType: booking.service_type,
+            status: booking.status,
             bookingDate: booking.booking_date,
             bookingTime: booking.booking_time,
-            address: booking.address,
-          }),
-          is_read: false,
-          created_at: new Date(),
-        });
-      } catch (notifErr) {
-        console.warn('Failed to create vendor notification for new booking:', notifErr);
+            ...generateEventMetadata(requestId),
+          });
+        } catch (error) {
+          console.error('Failed to publish booking created event:', error);
+        }
+      }
+
+      if (booking.status === 'confirmed') {
+        try {
+          const { publishVendorReferralBookingConfirmedAction } = await import(
+            '../../../lib/services/loyalty-action-publisher'
+          );
+          await publishVendorReferralBookingConfirmedAction(booking.id);
+        } catch (loyaltyPubErr) {
+          console.warn('[BOOKING-CREATE] vendor referral loyalty publish failed:', loyaltyPubErr);
+        }
+      }
+
+      // Rule 4: Notify vendor after payment (pending_payment → notifyBookingCreated on verify/webhook).
+      if (booking.status !== 'pending_payment') {
+        try {
+          const customers = await select('customers', { id: booking.customer_id });
+          const customerName = (customers[0] as any)?.name || (customers[0] as any)?.full_name || 'Customer';
+          const serviceName = service?.service_name || service?.name || 'Service';
+          const serviceTypeLabel = booking.service_type === 'at_home' ? 'Home visit' : booking.service_type === 'tele' ? 'Tele consultation' : 'At center';
+          // ✅ FIX: Use notification_type instead of type (schema column name)
+          await insert('notifications', {
+            recipient_id: booking.vendor_id,
+            recipient_type: 'vendor',
+            notification_type: 'new_booking', // ✅ FIX: Changed from 'type' to 'notification_type'
+            title: 'New appointment',
+            message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
+            channels: { email: false, sms: false, inApp: true, push: false }, // ✅ FIX: Added required channels field
+            data: JSON.stringify({
+              bookingId: booking.id,
+              customerId: booking.customer_id,
+              customerName,
+              serviceName,
+              serviceType: booking.service_type,
+              bookingDate: booking.booking_date,
+              bookingTime: booking.booking_time,
+              address: booking.address,
+            }),
+            is_read: false,
+            created_at: new Date(),
+          });
+        } catch (notifErr) {
+          console.warn('Failed to create vendor notification for new booking:', notifErr);
+        }
       }
 
       // ✅ FIX: Auto-generate OTP for confirmed bookings (package bookings, etc.) that don't require payment
@@ -1309,11 +1876,53 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
       }
 
+      const loyaltyServiceKind = resolveLoyaltyBookingKind({
+        bookingServiceType: booking.service_type || serviceType,
+        serviceCategory: service?.category ?? null,
+        serviceName: (service?.service_name ?? service?.name) as string | null,
+        vendorType: vendorTypeForLoyalty,
+      });
+
+      const ps = String((booking as any).payment_status || '').toLowerCase();
+      const awardBookVetLoyaltyOnCreate =
+        loyaltyServiceKind === 'vet_consultation' &&
+        (ps === 'paid' || ps === 'completed' || Number(booking.total_amount ?? 0) === 0);
+      const awardBookNutritionLoyaltyOnCreate =
+        loyaltyServiceKind === 'nutrition_consultation' &&
+        (ps === 'paid' || ps === 'completed' || Number(booking.total_amount ?? 0) === 0);
+
+      const summaryDurationMinutes =
+        service?.custom_duration != null &&
+        String(service.custom_duration).trim() !== '' &&
+        Number(service.custom_duration) > 0
+          ? Number(service.custom_duration)
+          : service?.duration_minutes != null
+            ? Number(service.duration_minutes)
+            : null;
+      const summaryServiceName = (service?.service_name ?? service?.name ?? serviceName) as string | null | undefined;
+      const summaryDescription = (service?.custom_description as string | null | undefined) ?? null;
+      const summaryCatalogServiceId = (service?.service_id as string | undefined) || lookupServiceId;
+
       const response = {
         bookingId: booking.id,
+        customerId,
+        totalAmount: Number(booking.total_amount ?? 0),
+        loyaltyServiceKind,
+        awardBookVetLoyaltyOnCreate,
+        awardBookNutritionLoyaltyOnCreate,
         status: booking.status,
         message: 'Booking created successfully',
         isNew: true,
+        serviceId: booking.service_id,
+        serviceName: summaryServiceName ?? null,
+        service: {
+          catalogServiceId: summaryCatalogServiceId,
+          vendorServiceId: service?.id ?? booking.service_id,
+          name: summaryServiceName ?? null,
+          description: summaryDescription,
+          durationMinutes: summaryDurationMinutes,
+          category: (service?.category as string | null | undefined) ?? null,
+        },
         ...(otpCode && { otp: otpCode }), // Include OTP in response if generated
       };
 
@@ -1352,12 +1961,51 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             const existingBookingFull = await select('bookings', { id: existingBooking.id });
             if (existingBookingFull.length > 0) {
               const booking = existingBookingFull[0];
+              const loyaltyServiceKindDup = resolveLoyaltyBookingKind({
+                bookingServiceType: booking.service_type || serviceType,
+                serviceCategory: service?.category ?? null,
+                serviceName: (service?.service_name ?? service?.name) as string | null,
+                vendorType: vendorTypeForLoyalty,
+              });
+              const psDup = String((booking as any).payment_status || '').toLowerCase();
+              const awardBookVetLoyaltyOnCreateDup =
+                loyaltyServiceKindDup === 'vet_consultation' &&
+                (psDup === 'paid' || psDup === 'completed' || Number(booking.total_amount ?? 0) === 0);
+              const awardBookNutritionLoyaltyOnCreateDup =
+                loyaltyServiceKindDup === 'nutrition_consultation' &&
+                (psDup === 'paid' || psDup === 'completed' || Number(booking.total_amount ?? 0) === 0);
+              const dupSummaryDuration =
+                service?.custom_duration != null &&
+                String(service.custom_duration).trim() !== '' &&
+                Number(service.custom_duration) > 0
+                  ? Number(service.custom_duration)
+                  : service?.duration_minutes != null
+                    ? Number(service.duration_minutes)
+                    : null;
+              const dupSummaryName = (service?.service_name ?? service?.name ?? serviceName) as string | null | undefined;
+              const dupSummaryDesc = (service?.custom_description as string | null | undefined) ?? null;
+              const dupCatalogId = (service?.service_id as string | undefined) || lookupServiceId;
               return this.success({
                 bookingId: booking.id,
+                customerId,
+                totalAmount: Number(booking.total_amount ?? 0),
+                loyaltyServiceKind: loyaltyServiceKindDup,
+                awardBookVetLoyaltyOnCreate: awardBookVetLoyaltyOnCreateDup,
+                awardBookNutritionLoyaltyOnCreate: awardBookNutritionLoyaltyOnCreateDup,
                 status: booking.status,
                 message: 'Booking already exists (duplicate request detected)',
                 isNew: false,
                 duplicate: true,
+                serviceId: booking.service_id,
+                serviceName: dupSummaryName ?? null,
+                service: {
+                  catalogServiceId: dupCatalogId,
+                  vendorServiceId: service?.id ?? booking.service_id,
+                  name: dupSummaryName ?? null,
+                  description: dupSummaryDesc,
+                  durationMinutes: dupSummaryDuration,
+                  category: (service?.category as string | null | undefined) ?? null,
+                },
               }, requestId);
             }
           }
@@ -1374,14 +2022,91 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           requestId
         );
       }
+
+      if (errorMessage === 'NO_PACKAGE_SESSION_SLOTS' || errorMessage === 'PACKAGE_SESSION_LINK_FAILED') {
+        return this.error(
+          'No package session slots are available for this purchase. Complete or reschedule an existing visit first.',
+          409,
+          'PACKAGE_SESSIONS_EXHAUSTED',
+          undefined,
+          requestId
+        );
+      }
+
+      if (errorMessage === 'DIAGNOSTICS_PAYMENT_ORDER_REQUIRED') {
+        return this.error(
+          'Complete payment first, then create the booking with razorpay_order_id (same value as checkout order_id).',
+          400,
+          'DIAGNOSTICS_PAYMENT_REQUIRED',
+          undefined,
+          requestId
+        );
+      }
+      if (errorMessage === 'DIAGNOSTICS_PAYMENT_NOT_FOUND') {
+        return this.error(
+          'No payment record found for this order. Start checkout again from the lab booking screen.',
+          404,
+          'DIAGNOSTICS_PAYMENT_NOT_FOUND',
+          undefined,
+          requestId
+        );
+      }
+      if (errorMessage === 'DIAGNOSTICS_PAYMENT_MISMATCH') {
+        return this.error(
+          'This payment order does not match your customer or lab account.',
+          403,
+          'DIAGNOSTICS_PAYMENT_MISMATCH',
+          undefined,
+          requestId
+        );
+      }
+      if (errorMessage === 'DIAGNOSTICS_PAYMENT_NOT_COMPLETED') {
+        return this.error(
+          'Payment is not completed yet. Wait a moment after payment, or open Pay again if the app closed before confirmation.',
+          400,
+          'DIAGNOSTICS_PAYMENT_NOT_COMPLETED',
+          undefined,
+          requestId
+        );
+      }
+      if (errorMessage === 'DIAGNOSTICS_PAYMENT_AMOUNT_MISMATCH') {
+        return this.error(
+          'The paid amount does not match this booking total. Go back, refresh tests or fees, and pay the updated total.',
+          400,
+          'DIAGNOSTICS_PAYMENT_AMOUNT_MISMATCH',
+          undefined,
+          requestId
+        );
+      }
+      if (errorMessage === 'DIAGNOSTICS_PAYMENT_ALREADY_USED') {
+        return this.error(
+          'This payment is already linked to another booking. Contact support if you need help.',
+          409,
+          'DIAGNOSTICS_PAYMENT_ALREADY_USED',
+          undefined,
+          requestId
+        );
+      }
       
       // Service not found / invalid
       if (errorMessage.includes('Service') || errorMessage.includes('service')) {
         return this.error(errorMessage, 404, 'SERVICE_NOT_FOUND', undefined, requestId);
       }
       
+      // CHECK constraint (e.g. bookings_status_check) — do not confuse with missing FK rows
+      if (err?.code === '23514') {
+        console.error('[BOOKING] Check constraint violation:', errorMessage);
+        return this.error(
+          'A database rule rejected this booking (for example an invalid status value).',
+          400,
+          'CHECK_CONSTRAINT_VIOLATION',
+          { originalError: errorMessage },
+          requestId
+        );
+      }
+
       // Foreign key constraint violation (missing required data)
-      if (err?.code === '23503' || errorMessage.includes('foreign key') || errorMessage.includes('constraint')) {
+      if (err?.code === '23503' || errorMessage.includes('foreign key')) {
         console.error('[BOOKING] Foreign key constraint error:', errorMessage);
         return this.error(
           'Required data missing. Please ensure customer, vendor, and service exist.',
@@ -1441,11 +2166,20 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
     // ✅ SECURITY FIX: Get enriched booking data with service, vendor, customer, and pet info
     const bookingResult = await query(
       `SELECT b.*,
-              COALESCE(s.name, sc.service_name) as service_name,
-              COALESCE(s.category, sc.category_id::text) as service_category,
-              COALESCE(s.description, sc.description) as service_description,
-              COALESCE(s.duration_minutes, sc.duration_minutes) as service_duration,
+              COALESCE(s.name, sc.service_name, vs_row.vs_service_name) as service_name,
+              COALESCE(vs_row.vs_category, sc.category_name, sc.category_id::text, s.category::text) as service_category,
+              COALESCE(s.description, sc.description, vs_row.vs_custom_description) as service_description,
+              COALESCE(s.duration_minutes, sc.duration_minutes, vs_row.vs_custom_duration, vs_row.vs_duration_minutes, b.duration_minutes) as service_duration,
               sc.specialization_ids as service_specialization_ids,
+              sc.display_name as catalog_display_name,
+              sc.base_price as catalog_base_price,
+              sc.category_name as catalog_category_name,
+              sc.sub_category_name as catalog_sub_category_name,
+              sc.service_style as catalog_service_style,
+              vs_row.vs_service_style as vs_service_style,
+              vs_row.vs_price as vs_price,
+              vs_row.vs_custom_price as vs_custom_price,
+              vs_row.vs_sub_category as vs_sub_category,
               v.business_name as vendor_name,
               v.owner_name as vendor_owner_name,
               v.phone as vendor_phone,
@@ -1470,6 +2204,25 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
        FROM bookings b
        LEFT JOIN services s ON b.service_id = s.id
        LEFT JOIN service_catalog sc ON b.service_id = sc.id
+       LEFT JOIN LATERAL (
+         SELECT
+           vs.service_name as vs_service_name,
+           vs.service_style as vs_service_style,
+           vs.custom_description as vs_custom_description,
+           vs.price as vs_price,
+           vs.custom_price as vs_custom_price,
+           vs.duration_minutes as vs_duration_minutes,
+           vs.custom_duration as vs_custom_duration,
+           vs.category as vs_category,
+           vs.sub_category as vs_sub_category
+         FROM vendor_services vs
+         WHERE vs.vendor_id = b.vendor_id
+           AND (vs.service_id = b.service_id OR vs.id = b.service_id)
+         ORDER BY
+           CASE WHEN vs.service_id = b.service_id THEN 0 WHEN vs.id = b.service_id THEN 1 ELSE 2 END,
+           vs.updated_at DESC NULLS LAST
+         LIMIT 1
+       ) vs_row ON true
        LEFT JOIN vendors v ON b.vendor_id = v.id
        LEFT JOIN customers c ON b.customer_id = c.id
        LEFT JOIN LATERAL (
@@ -1577,6 +2330,8 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
       }
     }
 
+    await reconcileBookingPayments([booking]);
+
     // Build enriched response
     const enrichedBooking = {
       ...booking,
@@ -1600,16 +2355,63 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
       scheduledTime: booking.booking_time, // Alias for frontend compatibility
       schedule: booking.booking_time, // Alias for frontend compatibility
       startDate: booking.booking_date, // Alias for frontend compatibility
-      // Service info (specialization from catalog when available)
-      service: booking.service_name ? {
-        id: booking.service_id,
-        name: booking.service_name,
-        category: booking.service_category,
-        description: booking.service_description,
-        duration: booking.service_duration || booking.duration_minutes,
-        specializationIds: Array.isArray(booking.service_specialization_ids) ? booking.service_specialization_ids : (booking.service_specialization_ids ? [].concat(booking.service_specialization_ids) : []),
-        specialization_ids: Array.isArray(booking.service_specialization_ids) ? booking.service_specialization_ids : (booking.service_specialization_ids ? [].concat(booking.service_specialization_ids) : []),
-      } : null,
+      serviceType: booking.service_type,
+      // Service info (vendor_services + catalog + legacy services — matches customer catalog shape)
+      service: booking.service_name
+        ? (() => {
+            const durationNum =
+              Number(booking.service_duration ?? booking.duration_minutes ?? 30) || 30;
+            const style =
+              booking.vs_service_style ||
+              booking.catalog_service_style ||
+              booking.service_type ||
+              null;
+            const displayName =
+              (booking.catalog_display_name && String(booking.catalog_display_name).trim()) ||
+              booking.service_name;
+            const basePrice =
+              parseFloat(String(booking.catalog_base_price ?? booking.vs_price ?? 0)) || 0;
+            const price =
+              parseFloat(
+                String(
+                  booking.vs_custom_price ??
+                    booking.vs_price ??
+                    booking.catalog_base_price ??
+                    booking.total_amount ??
+                    0
+                )
+              ) || basePrice;
+            const spec = booking.service_specialization_ids;
+            const specArr: any[] = Array.isArray(spec)
+              ? spec
+              : spec != null
+                ? [spec as any]
+                : [];
+            return {
+              serviceId: booking.service_id,
+              id: booking.service_id,
+              serviceName: booking.service_name,
+              name: booking.service_name,
+              displayName: displayName || booking.service_name,
+              description: booking.service_description ?? null,
+              service_style: style,
+              serviceStyle: style,
+              basePrice,
+              price,
+              duration: durationNum,
+              durationMinutes: durationNum,
+              category: booking.service_category ?? null,
+              sub_category:
+                booking.catalog_sub_category_name != null
+                  ? String(booking.catalog_sub_category_name)
+                  : booking.vs_sub_category != null
+                    ? String(booking.vs_sub_category)
+                    : null,
+              specializationIds: specArr,
+              specialization_ids: specArr,
+            };
+          })()
+        : null,
       // Vendor info
       vendor: booking.vendor_name ? {
         id: booking.vendor_id,
@@ -1651,6 +2453,7 @@ class GetBookingHandlerEnhanced extends BaseHandlerEnhanced {
       petType: petInfo?.species || null,
       petAge: petInfo?.age || null,
       petPhoto: petInfo?.photo_url || null,
+      basePrice: parseFloat(String(booking.base_price ?? booking.basePrice ?? '0')) || 0,
       amount: parseFloat(booking.total_amount || '0'),
       price: parseFloat(booking.total_amount || '0'),
       totalAmount: parseFloat(booking.total_amount || '0'),
@@ -2112,11 +2915,11 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
             try {
               const { publishNotification } = await import('../../../utils/sns-client');
               await publishNotification({
-                userId: currentBooking.customer_id,
-                userType: 'customer',
+                recipientId: currentBooking.customer_id,
+                recipientType: 'customer',
                 type: 'booking_tracking_started',
                 title: 'Service Provider is on the way!',
-                message: `Your ${currentBooking.service_name || 'service'} provider has started and GPS tracking is now active.`,
+                body: `Your ${currentBooking.service_name || 'service'} provider has started and GPS tracking is now active.`,
                 data: {
                   bookingId,
                   trackingSessionId: newSessions[0].id,
@@ -2177,13 +2980,17 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
       console.error('Failed to publish booking status updated event:', error);
     }
 
-    return this.success({ 
-      bookingId,
-      oldStatus,
-      newStatus: status,
-      message: 'Booking status updated successfully',
-      isNew: true,
-    }, requestId);
+    return this.success(
+      {
+        bookingId,
+        customerId: currentBooking.customer_id,
+        oldStatus,
+        newStatus: status,
+        message: 'Booking status updated successfully',
+        isNew: true,
+      },
+      requestId
+    );
   }
 }
 
@@ -2205,127 +3012,36 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
       }
 
       const booking = bookings[0];
+      const preview = await previewCustomerCancellationRefund({
+        id: bookingId,
+        vendor_id: booking.vendor_id,
+        service_id: booking.service_id,
+        service_type: booking.service_type,
+        booking_datetime: booking.booking_datetime || null,
+        scheduled_at: booking.scheduled_at || null,
+        booking_date: booking.booking_date,
+        booking_time: booking.booking_time,
+        vendor_timezone: (booking as any).vendor_timezone ?? null,
+        total_amount: booking.total_amount,
+        discount_amount: booking.discount_amount,
+      });
 
-      // Calculate hours until booking
-      let hoursUntilBooking = 0;
-      if (booking.booking_datetime) {
-        const bookingDateTime = new Date(booking.booking_datetime);
-        hoursUntilBooking = Math.max(0, (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60));
-      } else if (booking.booking_date && booking.booking_time) {
-        const bookingDateTime = new Date(`${booking.booking_date}T${booking.booking_time}`);
-        hoursUntilBooking = Math.max(0, (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60));
-      }
-
-      // Get refund rules from database
-      let rule = null;
-      try {
-        const rulesResult = await query(
-          `SELECT * FROM booking_cancellation_rules
-           WHERE (vendor_id = $1 OR vendor_id IS NULL)
-             AND (service_id = $2 OR service_id IS NULL)
-           ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
-           LIMIT 1`,
-          [booking.vendor_id || null, booking.service_id || null]
-        );
-        rule = rulesResult.rows.length > 0 ? rulesResult.rows[0] : null;
-      } catch (error: any) {
-        // ✅ FIX: booking_cancellation_rules table may not exist - gracefully skip
-        console.warn('[BOOKING] booking_cancellation_rules table not found or query failed, using default refund rules:', error.message);
-      }
-      const fullRefundHours = rule?.full_refund_before_hours || 48;
-      const partialRefundHours = rule?.partial_refund_before_hours || 24;
-      const partialRefundPercentage = parseFloat(rule?.partial_refund_percentage || '50');
-      const cutoffHours = rule?.cancellation_cutoff_hours || 12;
-      
-      // Parse cancellation windows from admin-configured policy (stored as JSONB)
-      let cancellationWindows: Array<{
-        hoursBefore: number;
-        refundPercentage: number;
-        cancellationFee: number;
-        penaltyPercentage: number;
-      }> = [];
-      
-      if (rule?.cancellation_windows) {
-        try {
-          cancellationWindows = typeof rule.cancellation_windows === 'string' 
-            ? JSON.parse(rule.cancellation_windows) 
-            : rule.cancellation_windows;
-        } catch (e) {
-          console.warn('[RefundPreview] Error parsing cancellation_windows:', e);
-        }
-      }
-
-      // Calculate refund percentage and fees using admin-configured windows
-      let refundPercentage = 0;
-      let cancellationFee = 0;
-      let penaltyPercentage = 0;
-      
-      // First, try to find matching window from admin-configured cancellation windows
-      if (cancellationWindows.length > 0) {
-        // Sort windows by hoursBefore descending to find the most applicable window
-        const sortedWindows = [...cancellationWindows].sort((a, b) => b.hoursBefore - a.hoursBefore);
-        
-        for (const window of sortedWindows) {
-          if (hoursUntilBooking >= window.hoursBefore) {
-            refundPercentage = window.refundPercentage;
-            cancellationFee = window.cancellationFee || 0;
-            penaltyPercentage = window.penaltyPercentage || 0;
-            break;
-          }
-        }
-        
-        // If no window matched (booking is too close), use the lowest window or no refund
-        if (refundPercentage === 0 && hoursUntilBooking > 0) {
-          const lowestWindow = sortedWindows[sortedWindows.length - 1];
-          if (lowestWindow && hoursUntilBooking < lowestWindow.hoursBefore) {
-            refundPercentage = 0;
-            cancellationFee = lowestWindow.cancellationFee || 0;
-            penaltyPercentage = lowestWindow.penaltyPercentage || 0;
-          }
-        }
-      } else {
-        // Fallback to legacy rule-based calculation if no cancellation windows configured
-        if (hoursUntilBooking >= fullRefundHours) {
-          refundPercentage = 100;
-        } else if (hoursUntilBooking >= partialRefundHours) {
-          refundPercentage = partialRefundPercentage;
-        } else if (hoursUntilBooking >= cutoffHours) {
-          refundPercentage = partialRefundPercentage;
-        } else {
-          refundPercentage = 0;
-          // Apply default 10% cancellation fee when no admin config exists
-          cancellationFee = parseFloat(booking.total_amount || '0') * 0.1;
-        }
-      }
-
-      const totalAmount = parseFloat(booking.total_amount || '0');
-      
-      // Calculate penalty amount if penalty percentage is configured
-      const penaltyAmount = penaltyPercentage > 0 ? (totalAmount * penaltyPercentage) / 100 : 0;
-      
-      // Calculate final refund: base refund minus cancellation fee and penalty
-      const baseRefund = (totalAmount * refundPercentage) / 100;
-      const refundAmount = Math.max(0, baseRefund - cancellationFee - penaltyAmount);
-
+      const platformFeeNonRefundable = Math.round(preview.platformFeeNonRefundable * 100) / 100;
       return this.success({
         refund: {
-          eligible: refundPercentage > 0 || refundAmount > 0,
-          refundAmount: Math.round(refundAmount * 100) / 100,
-          refundPercentage: Math.round(refundPercentage),
-          hoursUntil: Math.round(hoursUntilBooking),
-          cancellationFee: Math.round(cancellationFee * 100) / 100,
-          penaltyPercentage: Math.round(penaltyPercentage),
-          penaltyAmount: Math.round(penaltyAmount * 100) / 100,
-          message: refundAmount > 0
-            ? `₹${Math.round(refundAmount * 100) / 100} will be refunded to your original payment method${cancellationFee > 0 ? ` (₹${cancellationFee} cancellation fee applied)` : ''}`
+          eligible: preview.refundPercentage > 0 || preview.refundAmount > 0,
+          refundAmount: Math.round(preview.refundAmount * 100) / 100,
+          refundPercentage: Math.round(preview.refundPercentage),
+          cancellationFee: Math.round(preview.cancellationFee * 100) / 100,
+          source: preview.source,
+          policyApplied: preview.policyApplied,
+          refundableCustomerPaidBase: Math.round(preview.refundableCustomerPaidBase * 100) / 100,
+          platformFeeNonRefundable,
+          platformFeeApplies: platformFeeNonRefundable > 0,
+          hoursUntilBooking: Math.round((preview.hoursUntilBooking ?? 0) * 100) / 100,
+          message: preview.refundAmount > 0
+            ? `₹${Math.round(preview.refundAmount * 100) / 100} will be refunded to your original payment method`
             : 'No refund available for this booking',
-          policy: {
-            fullRefundBeforeHours: fullRefundHours,
-            partialRefundBeforeHours: partialRefundHours,
-            partialRefundPercentage: partialRefundPercentage,
-            cancellationCutoffHours: cutoffHours,
-            configuredWindows: cancellationWindows.length > 0 ? cancellationWindows : null,
-          },
         },
       }, requestId);
     } catch (error: unknown) {
@@ -2355,7 +3071,8 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const reason = body.reason || body.cancellationReason || 'Customer cancellation';
     const actorId = context.userId || body.customerId || body.actorId;
     const actorType = context.userRole || body.actorType || 'customer';
-    const refundMethod = body.refundMethod || 'wallet'; // 'wallet' or 'original'
+    const refundMethod =
+      String(body.refundMethod || 'wallet').toLowerCase() === 'original' ? 'original' : 'wallet';
 
     // Get current booking
     const existingBookings = await select('bookings', { id: bookingId });
@@ -2366,8 +3083,8 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const currentBooking = existingBookings[0];
     const oldStatus = currentBooking.status;
 
-    // Validate that booking can be cancelled
-    const cancellableStatuses = ['pending', 'confirmed'];
+    // Validate that booking can be cancelled (includes pending_payment: slot held until Razorpay completes)
+    const cancellableStatuses = ['pending', 'pending_payment', 'confirmed'];
     if (!cancellableStatuses.includes(oldStatus)) {
       return this.error(
         `Booking cannot be cancelled. Current status: ${oldStatus}`,
@@ -2378,10 +3095,15 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       );
     }
 
-    // Check if booking is in the past
-    const bookingDateTime = new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
-    const now = new Date();
-    if (bookingDateTime < now) {
+    // Check if booking is in the past (vendor-local wall clock, not Lambda UTC naive parse)
+    const hoursUntilStart = computeHoursUntilBookingStart({
+      booking_date: currentBooking.booking_date,
+      booking_time: currentBooking.booking_time,
+      vendor_timezone: (currentBooking as any).vendor_timezone ?? null,
+      booking_datetime: currentBooking.booking_datetime ?? null,
+      scheduled_at: currentBooking.scheduled_at ?? null,
+    });
+    if (Number.isFinite(hoursUntilStart) && hoursUntilStart < 0) {
       return this.error(
         'Cannot cancel past bookings',
         400,
@@ -2392,6 +3114,100 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
     }
 
     try {
+      // Unpaid checkout abandoned: remove the draft booking so it never appears as "cancelled" in My bookings.
+      const reasonStr = String(reason ?? '').trim();
+      const isPaymentAbandonReason = /^payment abandoned$/i.test(reasonStr);
+      let suppressVendorFacingCancelSignals = false;
+
+      if (isPaymentAbandonReason) {
+        const queryParams = context.event.queryStringParameters || {};
+        const bookingCustomerId = String(
+          (currentBooking as any).customer_id ?? (currentBooking as any).customerId ?? ''
+        ).trim();
+
+        let requestCustomerId = '';
+        if (String(context.userRole || '').toLowerCase() === 'customer' && context.userId) {
+          requestCustomerId = String(context.userId).trim();
+        }
+        if (!requestCustomerId) {
+          requestCustomerId = String(body.customerId || body.customer_id || '').trim();
+        }
+
+        if (!requestCustomerId && (queryParams.phone || body.phone)) {
+          try {
+            const phone = String(queryParams.phone || body.phone || '');
+            const cleanPhone = phone.replace(/[^0-9]/g, '');
+            if (cleanPhone.length >= 10) {
+              const customers = await select('customers', { phone: cleanPhone });
+              if (customers.length > 0) {
+                requestCustomerId = String(customers[0].id);
+              }
+            }
+          } catch (e) {
+            console.warn('[CancelBooking] Abandon: phone → customer resolve failed', e);
+          }
+        }
+
+        const digits = (p: string) => p.replace(/\D/g, '');
+        const bookingPhoneDigits = digits(String((currentBooking as any).customer_phone || ''));
+        const requestPhoneDigits = digits(String(queryParams.phone || body.phone || ''));
+        const phoneMatchesBooking =
+          bookingPhoneDigits.length >= 10 &&
+          requestPhoneDigits.length >= 10 &&
+          bookingPhoneDigits.slice(-10) === requestPhoneDigits.slice(-10);
+
+        const customerIdMatchesBooking =
+          Boolean(bookingCustomerId && requestCustomerId && bookingCustomerId === requestCustomerId);
+
+        const isVendorActor = String(actorType || '').toLowerCase() === 'vendor';
+
+        if (!isVendorActor && (customerIdMatchesBooking || phoneMatchesBooking)) {
+          const bookingPaidForAbandon = await hasCustomerPaidCapture(bookingId, {
+            total_amount: currentBooking.total_amount,
+            discount_amount: currentBooking.discount_amount,
+            payment_status:
+              (currentBooking as any).payment_status ?? (currentBooking as any).paymentStatus,
+          });
+
+          if (!bookingPaidForAbandon) {
+            try {
+              await withTransaction(async (client) => {
+                await client.query(`DELETE FROM payments WHERE booking_id = $1::uuid`, [bookingId]);
+                await client.query(`DELETE FROM bookings WHERE id = $1::uuid`, [bookingId]);
+              });
+
+              await logAuditEntry({
+                entityType: 'booking',
+                entityId: bookingId,
+                action: 'delete',
+                oldValues: { status: oldStatus, reason: reasonStr },
+                newValues: { checkoutAbandoned: true },
+                changedFields: ['row_deleted'],
+                actorId: requestCustomerId || actorId,
+                actorType: 'customer',
+                requestId,
+              });
+
+              return this.success(
+                {
+                  bookingId,
+                  message: 'Checkout abandoned; booking removed',
+                  deleted: true,
+                  refund: null,
+                },
+                requestId
+              );
+            } catch (hardDelErr: unknown) {
+              suppressVendorFacingCancelSignals = true;
+              console.error(
+                '[CancelBooking] Abandon hard-delete failed; falling back to soft cancel:',
+                hardDelErr
+              );
+            }
+          }
+        }
+      }
+
       // Update booking status to cancelled
       await withTransaction(async (client) => {
         await client.query(
@@ -2403,6 +3219,39 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
            WHERE id = $2`,
           [reason, bookingId]
         );
+
+        const packagePurchaseId = String((currentBooking as any).package_purchase_id || '').trim();
+        const isPackageParent = Boolean((currentBooking as any).is_package) && !Boolean((currentBooking as any).is_package_session);
+        if (packagePurchaseId && isPackageParent) {
+          // Cancelling the package parent booking should deactivate the whole package.
+          await client.query(
+            `UPDATE package_purchases
+             SET status = 'cancelled',
+                 expires_at = NOW(),
+                 updated_at = NOW()
+             WHERE id = $1::uuid`,
+            [packagePurchaseId]
+          );
+          await client.query(
+            `UPDATE package_scheduled_sessions
+             SET status = 'cancelled',
+                 updated_at = NOW()
+             WHERE package_purchase_id = $1::uuid
+               AND status IN ('pending', 'scheduled')`,
+            [packagePurchaseId]
+          );
+          await client.query(
+            `UPDATE bookings
+             SET status = 'cancelled',
+                 cancelled_at = COALESCE(cancelled_at, NOW()),
+                 cancellation_reason = COALESCE(cancellation_reason, $2),
+                 updated_at = NOW()
+             WHERE package_purchase_id = $1::uuid
+               AND COALESCE(is_package_session, false) = true
+               AND status IN ('pending', 'confirmed')`,
+            [packagePurchaseId, reason]
+          );
+        }
       });
 
       // Log status change
@@ -2428,135 +3277,126 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         requestId,
       });
 
-      // Process refund if payment was made — use REFUND POLICY only (vendor_refund_tiers).
-      // Payment policy is for how much to pay at booking (100%/partial); never use it for cancellation refunds.
+      // Process refund when the customer actually paid (booking paid/completed, completed payment,
+      // or wallet debited for this booking — not only bookings.payment_status, so split-pay /
+      // wallet-first before Razorpay confirm still gets a wallet credit on cancel).
+      const bookingPaidForRefund = await hasCustomerPaidCapture(bookingId, {
+        total_amount: currentBooking.total_amount,
+        discount_amount: currentBooking.discount_amount,
+        payment_status: (currentBooking as any).payment_status ?? (currentBooking as any).paymentStatus,
+      });
+
+      const customerIdForRefund =
+        (currentBooking as any).customer_id ??
+        (currentBooking as any).customerId ??
+        body.customerId ??
+        body.customer_id ??
+        actorId;
+
       let refundInfo = null;
-      if (currentBooking.payment_status === 'paid' && currentBooking.total_amount > 0) {
+      if (bookingPaidForRefund) {
         try {
-          const totalAmount = parseFloat(String(currentBooking.total_amount));
-          const bookingDateTime = new Date(`${currentBooking.booking_date}T${currentBooking.booking_time}`);
-          const hoursUntilBooking = (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
-
-          // Refund policy: vendor_refund_tiers (who cancels = pet_parent for customer-initiated cancel)
-          const tier = await getRefundTierForCancellation(
-            {
-              id: bookingId,
-              vendor_id: currentBooking.vendor_id,
-              service_id: currentBooking.service_id,
-              service_type: currentBooking.service_type,
-              booking_date: currentBooking.booking_date,
-              booking_time: currentBooking.booking_time,
-              total_amount: totalAmount,
-            },
-            'pet_parent',
-            { hoursUntilBooking }
-          );
-          const computed = tier
-            ? computeRefundFromTier(totalAmount, tier, 100, 0)
-            : { refundAmount: totalAmount, refundPercentage: 100, cancellationFee: 0 };
-
-          // Fallback: if no vendor_refund_tiers, use booking_cancellation_rules (legacy refund rules)
-          let refundAmount = computed.refundAmount;
-          let refundPercentage = computed.refundPercentage;
-          if (!tier) {
-            const rulesResult = await query(
-              `SELECT * FROM booking_cancellation_rules
-               WHERE (vendor_id = $1 OR vendor_id IS NULL)
-                 AND (service_id = $2 OR service_id IS NULL)
-               ORDER BY vendor_id DESC NULLS LAST, service_id DESC NULLS LAST
-               LIMIT 1`,
-              [currentBooking.vendor_id || null, currentBooking.service_id || null]
-            ).catch(() => ({ rows: [] }));
-            const rule = (rulesResult as any).rows?.[0];
-            if (rule) {
-              if (hoursUntilBooking >= (rule.full_refund_before_hours || 24)) refundPercentage = 100;
-              else if (hoursUntilBooking >= (rule.partial_refund_before_hours || 12)) refundPercentage = rule.partial_refund_percentage || 50;
-              else if (hoursUntilBooking >= (rule.no_refund_before_hours || 0)) refundPercentage = 25;
-              else refundPercentage = 0;
-              refundAmount = (totalAmount * refundPercentage) / 100;
-            }
-          }
+          const preview = await previewCustomerCancellationRefund({
+            id: bookingId,
+            vendor_id: currentBooking.vendor_id,
+            service_id: currentBooking.service_id,
+            service_type: currentBooking.service_type,
+            booking_datetime: currentBooking.booking_datetime || null,
+            scheduled_at: currentBooking.scheduled_at || null,
+            booking_date: currentBooking.booking_date,
+            booking_time: currentBooking.booking_time,
+            vendor_timezone: (currentBooking as any).vendor_timezone ?? null,
+            total_amount: currentBooking.total_amount,
+            discount_amount: currentBooking.discount_amount,
+          });
+          const refundAmount = Math.round(preview.refundAmount * 100) / 100;
+          const refundPercentage = preview.refundPercentage;
           
           if (refundAmount > 0) {
-            // Get payment for refund
-            const payments = await query(
-              `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
-              [bookingId]
-            );
-
-            if (payments.rows.length > 0) {
-              const paymentId = payments.rows[0].id;
-              
-              if (refundMethod === 'wallet') {
-                // Credit to wallet
-                try {
-                  await query(
-                    `INSERT INTO wallet_transactions (
-                      customer_id, 
-                      type, 
-                      amount, 
-                      description, 
-                      reference_type,
-                      reference_id,
-                      status
-                    ) VALUES ($1, 'credit', $2, $3, 'booking_refund', $4, 'completed')`,
-                    [
-                      currentBooking.customer_id,
-                      refundAmount,
-                      `Refund for cancelled booking (${refundPercentage}%)`,
-                      bookingId
-                    ]
-                  ).catch(() => null);
-                  
-                  // Update wallet balance
-                  await query(
-                    `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
-                    [refundAmount, currentBooking.customer_id]
-                  ).catch(() => null);
-                  
-                  refundInfo = {
-                    amount: refundAmount,
-                    percentage: refundPercentage,
-                    method: 'wallet',
-                    status: 'completed',
-                    message: `₹${refundAmount.toFixed(2)} credited to your wallet`
-                  };
-                } catch (walletError) {
-                  console.error('Error crediting wallet:', walletError);
-                }
-              } else {
-                // Create refund request for original payment method
+            if (refundMethod === 'wallet' && customerIdForRefund) {
+              try {
+                await creditCustomerWalletForBookingRefund({
+                  customerId: String(customerIdForRefund),
+                  bookingId,
+                  refundAmount,
+                  refundPercentage,
+                  label: 'booking',
+                });
+                refundInfo = {
+                  amount: refundAmount,
+                  percentage: refundPercentage,
+                  method: 'wallet',
+                  status: 'completed',
+                  message: `₹${refundAmount.toFixed(2)} credited to your wallet`,
+                };
+              } catch (walletError) {
+                console.error('[CancelBooking] Wallet credit failed:', walletError);
+                refundInfo = {
+                  amount: refundAmount,
+                  percentage: refundPercentage,
+                  method: 'wallet',
+                  status: 'failed',
+                  message:
+                    'Cancellation succeeded but wallet refund failed. Please contact support with your booking ID.',
+                };
+              }
+            } else if (refundMethod === 'wallet' && !customerIdForRefund) {
+              console.error('[CancelBooking] Wallet refund skipped: booking has no customer_id', { bookingId });
+              refundInfo = {
+                amount: refundAmount,
+                percentage: refundPercentage,
+                method: 'wallet',
+                status: 'failed',
+                message:
+                  'Cancellation succeeded but wallet refund could not run (missing customer on booking). Please contact support with your booking ID.',
+              };
+            } else if (refundMethod === 'original') {
+              const payments = await query(
+                `SELECT id FROM payments
+                 WHERE booking_id = $1::uuid
+                   AND payment_status IN ('completed', 'partially_refunded')
+                 ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END
+                 LIMIT 1`,
+                [bookingId]
+              );
+              if (payments.rows.length > 0) {
+                const paymentId = payments.rows[0].id;
                 const refundRequests = await query(
                   `INSERT INTO refunds (
                     payment_id,
-                    booking_id, 
-                    customer_id, 
+                    booking_id,
+                    customer_id,
                     vendor_id,
                     refund_amount,
-                    refund_reason, 
+                    refund_reason,
                     refund_status,
                     refund_method,
                     requested_at
-                  ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW()) 
+                  ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW())
                   RETURNING *`,
                   [
                     paymentId,
                     bookingId,
-                    currentBooking.customer_id,
+                    customerIdForRefund ?? currentBooking.customer_id,
                     currentBooking.vendor_id || null,
                     refundAmount,
-                    `Booking cancellation: ${reason} (${refundPercentage}% refund)`
+                    `Booking cancellation: ${reason} (${refundPercentage}% refund)`,
                   ]
                 ).catch(() => ({ rows: [] }));
-                
+
                 refundInfo = {
                   refundId: refundRequests.rows[0]?.id,
                   amount: refundAmount,
                   percentage: refundPercentage,
                   method: 'original',
                   status: 'pending',
-                  message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method in 3-7 business days`
+                  message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method in 3-7 business days`,
                 };
+              } else {
+                console.warn(
+                  '[CancelBooking] Original-method refund skipped: no completed payment for booking',
+                  bookingId
+                );
               }
             }
           } else {
@@ -2574,20 +3414,70 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
       }
 
-      // Publish event
-      try {
-        const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
-        await publishBookingStatusUpdated({
-          bookingId,
-          customerId: currentBooking.customer_id,
-          vendorId: currentBooking.vendor_id,
-          oldStatus,
-          newStatus: 'cancelled',
-          reason,
-          ...generateEventMetadata(requestId),
-        });
-      } catch (error) {
-        console.error('Failed to publish booking cancelled event:', error);
+      // Suppress vendor-facing cancel signals for unpaid abandoned checkout fallbacks.
+      if (!suppressVendorFacingCancelSignals) {
+        try {
+          const { publishBookingStatusUpdated } = await import('../../../utils/sns-client');
+          await publishBookingStatusUpdated({
+            bookingId,
+            customerId: currentBooking.customer_id,
+            vendorId: currentBooking.vendor_id,
+            oldStatus,
+            newStatus: 'cancelled',
+            reason,
+            ...generateEventMetadata(requestId),
+          });
+        } catch (error) {
+          console.error('Failed to publish booking cancelled event:', error);
+        }
+      }
+
+      // ✅ Send in-app notification to vendor about cancellation
+      if (currentBooking.vendor_id && !suppressVendorFacingCancelSignals) {
+        try {
+          // Resolve customer name for the notification
+          let customerName = 'Customer';
+          if (currentBooking.customer_id) {
+            const customers = await select('customers', { id: currentBooking.customer_id });
+            if (customers.length > 0) {
+              customerName = customers[0].name || customers[0].full_name || customers[0].fullName || 'Customer';
+            }
+          }
+
+          const bookingDateDisplay = currentBooking.booking_date
+            ? new Date(currentBooking.booking_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+            : '';
+          const bookingTimeDisplay = currentBooking.booking_time || '';
+          const serviceTypeLabel = currentBooking.service_type === 'at_home' ? 'Home visit'
+            : currentBooking.service_type === 'tele' ? 'Tele consultation'
+            : currentBooking.service_type === 'at_center' ? 'At center'
+            : 'Appointment';
+
+          await insert('notifications', {
+            recipient_id: currentBooking.vendor_id,
+            recipient_type: 'vendor',
+            notification_type: 'booking_cancelled',
+            title: 'Booking Cancelled',
+            message: `${customerName} cancelled their ${serviceTypeLabel} booking${bookingDateDisplay ? ` on ${bookingDateDisplay}` : ''}${bookingTimeDisplay ? ` at ${bookingTimeDisplay}` : ''}. Reason: ${reason}`,
+            data: JSON.stringify({
+              bookingId,
+              customerId: currentBooking.customer_id,
+              customerName,
+              serviceType: currentBooking.service_type,
+              bookingDate: currentBooking.booking_date,
+              bookingTime: currentBooking.booking_time,
+              cancellationReason: reason,
+              refundInfo,
+            }),
+            channels: { email: false, sms: false, inApp: true, push: true },
+            is_read: false,
+            created_at: new Date(),
+          });
+          console.log(`[CANCEL] ✅ Vendor notification sent for booking ${bookingId} to vendor ${currentBooking.vendor_id}`);
+        } catch (notifErr) {
+          console.warn('[CANCEL] Failed to send vendor cancellation notification:', notifErr);
+          // Non-critical — don't fail the cancellation
+        }
       }
 
       return this.success({
@@ -2657,7 +3547,7 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
     const oldTime = currentBooking.booking_time;
 
     // Validate that booking can be rescheduled
-    const reschedulableStatuses = ['pending', 'confirmed'];
+    const reschedulableStatuses = ['pending', 'pending_payment', 'confirmed'];
     if (!reschedulableStatuses.includes(oldStatus)) {
       return this.error(
         `Booking cannot be rescheduled. Current status: ${oldStatus}`,
@@ -2923,8 +3813,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
       };
       
       const context = createLambdaContext();
-      const result: any = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result = await createHandler.execute(event as any, context as any);
+      const normalized = toJsonResponsePayload(result);
+      return c.json(normalized.body, normalized.statusCode as any);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in bookings/create:', error);
@@ -2967,8 +3858,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         isBase64Encoded: false,
       };
       const context = createLambdaContext();
-      const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result = await createHandler.execute(event as any, context as any);
+      const normalized = toJsonResponsePayload(result);
+      return c.json(normalized.body, normalized.statusCode as any);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in booking/create:', error);
@@ -3010,8 +3902,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         isBase64Encoded: false,
       };
       const context = createLambdaContext();
-      const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result = await createHandler.execute(event as any, context as any);
+      const normalized = toJsonResponsePayload(result);
+      return c.json(normalized.body, normalized.statusCode as any);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in customer/booking/create:', error);
@@ -3054,8 +3947,9 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
         isBase64Encoded: false,
       };
       const context = createLambdaContext();
-      const result = await createHandler.execute(event, context);
-      return c.json(JSON.parse(result.body), result.statusCode);
+      const result = await createHandler.execute(event as any, context as any);
+      const normalized = toJsonResponsePayload(result);
+      return c.json(normalized.body, normalized.statusCode as any);
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error in customer/bookings/create:', error);
@@ -3116,10 +4010,7 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
   app.post('/bookings/:bookingId/calculate-refund', async (c) => {
     try {
       const bookingId = c.req.param('bookingId');
-      const body = await c.req.json().catch(() => ({}));
-      const cancellationReason = body.cancellationReason || 'customer_request';
 
-      // Get booking
       const bookings = await select('bookings', { id: bookingId });
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
@@ -3127,95 +4018,53 @@ export function registerBookingEndpointsEnhanced(app: Hono) {
 
       const booking = bookings[0];
 
-      // Check if booking can be cancelled
       if (booking.status === 'cancelled' || booking.status === 'completed') {
-        return c.json({ 
+        return c.json({
           error: `Booking is already ${booking.status}`,
           refundAmount: 0,
           refundPercentage: 0,
         }, 400);
       }
 
-      // Get cancellation policy
-      let policy = null;
-      try {
-        const policyQuery = `
-          SELECT * FROM booking_policies
-          WHERE vendor_id = $1
-            AND service_type = $2
-            AND policy_type = 'cancellation'
-            AND is_active = true
-          ORDER BY created_at DESC
-          LIMIT 1
-        `;
-        const policyResult = await query(policyQuery, [booking.vendor_id, booking.service_type || 'general']);
-        policy = (policyResult as any).rows[0];
-      } catch (error: any) {
-        // ✅ FIX: booking_policies table may not exist - gracefully skip
-        console.warn('[BOOKING] booking_policies table not found or query failed, using default refund policy:', error.message);
-      }
+      const preview = await previewCustomerCancellationRefund({
+        id: bookingId,
+        vendor_id: booking.vendor_id,
+        service_id: booking.service_id,
+        service_type: booking.service_type,
+        booking_datetime: booking.booking_datetime || null,
+        scheduled_at: booking.scheduled_at || null,
+        booking_date: booking.booking_date,
+        booking_time: booking.booking_time,
+        vendor_timezone: (booking as any).vendor_timezone ?? null,
+        total_amount: booking.total_amount,
+        discount_amount: booking.discount_amount ?? null,
+      });
 
-      // Calculate time until booking
-      const bookingDate = new Date(booking.booking_date || booking.scheduled_at || booking.created_at);
-      const now = new Date();
-      const hoursUntilBooking = (bookingDate.getTime() - now.getTime()) / (1000 * 60 * 60);
-
-      // Determine refund percentage based on policy
-      let refundPercentage = 100; // Default: full refund
-      let cancellationFee = 0;
-
-      if (policy) {
-        const policyRules = typeof policy.rules === 'string' 
-          ? JSON.parse(policy.rules) 
-          : policy.rules || {};
-
-        // Check time-based refund rules
-        if (policyRules.timeBased) {
-          for (const rule of policyRules.timeBased) {
-            const hoursThreshold = parseFloat(rule.hoursBefore || '0');
-            if (hoursUntilBooking >= hoursThreshold) {
-              refundPercentage = parseFloat(rule.refundPercentage || '100');
-              cancellationFee = parseFloat(rule.cancellationFee || '0');
-              break;
-            }
-          }
-        }
-
-        // Check reason-based rules
-        if (policyRules.reasonBased && policyRules.reasonBased[cancellationReason]) {
-          const reasonRule = policyRules.reasonBased[cancellationReason];
-          refundPercentage = parseFloat(reasonRule.refundPercentage || refundPercentage.toString());
-          cancellationFee = parseFloat(reasonRule.cancellationFee || cancellationFee.toString());
-        }
-      } else {
-        // Default policy: 100% refund if > 24h, 50% if < 24h
-        if (hoursUntilBooking < 24) {
-          refundPercentage = 50;
-        }
-      }
-
-      // Calculate refund amount
-      const totalAmount = parseFloat(booking.total_amount || booking.amount || '0');
-      const refundAmount = Math.max(0, (totalAmount * refundPercentage) / 100 - cancellationFee);
-      const platformFeeRefund = booking.platform_fee ? parseFloat(booking.platform_fee) * (refundPercentage / 100) : 0;
-      const convenienceFeeRefund = booking.convenience_fee ? parseFloat(booking.convenience_fee) * (refundPercentage / 100) : 0;
+      const refundAmount = Math.round(preview.refundAmount * 100) / 100;
+      const hoursUntilBooking = preview.hoursUntilBooking ?? 0;
+      const refundableBase = Math.round(preview.refundableCustomerPaidBase * 100) / 100;
+      const platformFeeNonRefundable = Math.round(preview.platformFeeNonRefundable * 100) / 100;
 
       return c.json({
         success: true,
         refund: {
-          refundAmount: Math.round(refundAmount * 100) / 100,
-          refundPercentage,
-          cancellationFee,
-          platformFeeRefund: Math.round(platformFeeRefund * 100) / 100,
-          convenienceFeeRefund: Math.round(convenienceFeeRefund * 100) / 100,
-          totalRefund: Math.round((refundAmount + platformFeeRefund + convenienceFeeRefund) * 100) / 100,
+          refundAmount,
+          refundPercentage: preview.refundPercentage,
+          cancellationFee: preview.cancellationFee,
+          platformFeeRefund: 0,
+          convenienceFeeRefund: 0,
+          totalRefund: refundAmount,
           hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
-          policyApplied: !!policy,
+          policyApplied: preview.policyApplied,
+          refundableCustomerPaidBase: refundableBase,
+          platformFeeNonRefundable,
+          platformFeeApplies: platformFeeNonRefundable > 0,
+          refundSource: preview.source,
         },
         booking: {
           id: booking.id,
           status: booking.status,
-          totalAmount,
+          totalAmount: refundableBase,
           bookingDate: booking.booking_date || booking.scheduled_at,
         },
       });
@@ -3281,9 +4130,11 @@ async function createApiGatewayEventWithBody(c: any): Promise<any> {
   }
 
   const url = new URL(c.req.url, 'http://localhost');
+  const queryStringParameters = Object.fromEntries(url.searchParams.entries());
   return {
     rawPath: url.pathname,
     rawQueryString: url.search.substring(1),
+    queryStringParameters,
     requestContext: {
       http: {
         method: c.req.method || 'POST',
@@ -3439,6 +4290,15 @@ export function registerBookingOTPEndpoint(app: Hono) {
       }
 
       const booking = bookings[0];
+
+      // ✅ Block service start if booking is cancelled or completed
+      const nonStartableStatuses = ['cancelled', 'completed', 'no_show', 'expired'];
+      if (nonStartableStatuses.includes(booking.status)) {
+        return c.json({
+          success: false,
+          error: `Cannot verify OTP — booking is ${booking.status}. Service cannot be started for a ${booking.status} booking.`,
+        }, 400);
+      }
 
       // Verify vendor ownership
       if (vendorId && booking.vendor_id !== vendorId) {

@@ -2,6 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import {
+  PlatformLegalPolicyDialog,
+  type PlatformPolicyType,
+} from '@/components/legal/PlatformLegalPolicyDialog';
 
 interface NotificationSettings {
   push_enabled: boolean;
@@ -28,6 +32,8 @@ export function CustomerSettings({ customerPhone, onBack, onNavigate }: Customer
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [fcmToken, setFcmToken] = useState<string | null>(null);
+  const [legalOpen, setLegalOpen] = useState(false);
+  const [legalType, setLegalType] = useState<PlatformPolicyType | null>(null);
 
   useEffect(() => {
     loadSettings();
@@ -257,14 +263,26 @@ export function CustomerSettings({ customerPhone, onBack, onNavigate }: Customer
               <span className="text-gray-400">→</span>
             </button>
             <button 
-              onClick={() => onNavigate?.('privacy')} 
+              onClick={() => {
+                if (onNavigate) onNavigate('privacy');
+                else {
+                  setLegalType('privacy_policy');
+                  setLegalOpen(true);
+                }
+              }} 
               className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
             >
               <span>Privacy Policy</span>
               <span className="text-gray-400">→</span>
             </button>
             <button 
-              onClick={() => onNavigate?.('terms')} 
+              onClick={() => {
+                if (onNavigate) onNavigate('terms');
+                else {
+                  setLegalType('customer_terms_of_service');
+                  setLegalOpen(true);
+                }
+              }} 
               className="w-full flex items-center justify-between p-4 hover:bg-gray-50 text-left"
             >
               <span>Terms of Service</span>
@@ -281,6 +299,15 @@ export function CustomerSettings({ customerPhone, onBack, onNavigate }: Customer
           Log Out
         </button>
       </main>
+
+      <PlatformLegalPolicyDialog
+        open={legalOpen}
+        onOpenChange={(o) => {
+          setLegalOpen(o);
+          if (!o) setLegalType(null);
+        }}
+        policyType={legalType}
+      />
     </>
   );
 }

@@ -1,15 +1,31 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
 import * as LucideIcons from 'lucide-react';
 import { Scissors, Building2, Home as HomeIcon, Star, MapPin, Sparkles, ChevronRight, RefreshCw, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { toast } from 'sonner';
 import { GROOMING_NEEDS } from './ProblemGridSection';
-import { PromotionBanner } from './shared/PromotionBanner';
+import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
+import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
+import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { HUB_DISCOVERY_GROOMING } from '@/lib/service-hub-discovery-config';
+import { minPriceForVendor } from '@/lib/boarding-vendor-booking-utils';
+import {
+  type BoardingListVendor,
+  type BoardingPlanRow,
+  findBoardingListVendorByProfileKey,
+} from '@/lib/boarding-vendor-discovery-map';
+import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
+import { problemIconTextColorToBgClass } from '@/lib/problem-grid-icon-bg';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 
 function DynamicProblemIcon({ iconName, iconColor }: { iconName?: string; iconColor?: string }) {
   if (!iconName || !(LucideIcons as any)[iconName]) {
@@ -28,18 +44,58 @@ interface GroomingServiceRouterProps {
 
 const GROOMING_ROLE_IDS = ['groomer', 'groomer_solo', 'groomer_center', 'pet_groomer'];
 
+const HUB_SLUG: BoardingServiceSlug = 'all';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function firstGroomingServiceUuid(services: any[]): string | undefined {
+  for (const s of services) {
+    const raw = s?.id ?? s?.service_id ?? s?.serviceId;
+    if (typeof raw === 'string' && UUID_RE.test(raw)) return raw;
+  }
+  return undefined;
+}
+
 export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: GroomingServiceRouterProps) {
-  const [loading, setLoading] = useState(true);
-  const [featuredGroomers, setFeaturedGroomers] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const {
+    loading: vendorsLoading,
+    vendors,
+    relaxedFilter,
+    selectedVendorId,
+    setSelectedVendorId,
+    toggleVendor,
+    fetchingPlansFor,
+  } = useHubVendorDiscovery(phone, HUB_DISCOVERY_GROOMING);
+
+  const {
+    data: groomingCenterCount = 0,
+    isLoading: groomingCenterLoading,
+    isFetching: groomingCenterFetching,
+    isError: groomingCenterError,
+  } = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_center',
+    category: 'grooming',
+  });
+
+  const groomingCenterBadgeText = useMemo(() => {
+    const st =
+      groomingCenterLoading || groomingCenterFetching
+        ? 'loading'
+        : groomingCenterError
+          ? 'error'
+          : 'success';
+    const n = formatDiscoveryCountStat(groomingCenterCount, st);
+    return `${n} Centres`;
+  }, [groomingCenterLoading, groomingCenterFetching, groomingCenterError, groomingCenterCount]);
+
   const [previousGroomer, setPreviousGroomer] = useState<any>(null);
   const [groomingNeeds, setGroomingNeeds] = useState<any[]>([]);
 
   useEffect(() => {
-    loadGroomingData();
     loadPreviousGroomer();
     loadGroomingNeeds();
-  }, []);
+  }, [phone]);
 
   const loadGroomingNeeds = async () => {
     try {
@@ -47,11 +103,15 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         const res = await apiClient.get<{ success?: boolean; problems?: any[] }>(`/public/problem-grid/${roleId}`);
         if (res?.success && Array.isArray(res.problems) && res.problems.length > 0) {
           const withViewAll = [
-            ...res.problems.map((p: any) => ({
-              id: p.id || p.problemId,
-              name: p.displayName || p.name,
-              icon: <DynamicProblemIcon iconName={p.iconName} iconColor={p.iconColor} />,
-            })),
+            ...res.problems.map((p: any) => {
+              const iconColor = p.iconColor ?? p.icon_color;
+              return {
+                id: p.id || p.problemId,
+                name: p.displayName || p.name,
+                icon: <DynamicProblemIcon iconName={p.iconName} iconColor={iconColor} />,
+                iconBg: problemIconTextColorToBgClass(iconColor),
+              };
+            }),
             { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6 text-orange-600" /> },
           ];
           setGroomingNeeds(withViewAll);
@@ -63,167 +123,125 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     }
   };
 
-  const loadGroomingData = async () => {
-    try {
-      setLoading(true);
-
-      // Get customer location for distance/radius (same as VetServiceRouter)
-      let latitude: string | undefined;
-      let longitude: string | undefined;
-      try {
-        const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
-        const profile = profileRes?.profile || profileRes;
-        if (profile?.latitude != null && profile?.longitude != null) {
-          latitude = String(profile.latitude);
-          longitude = String(profile.longitude);
-        }
-      } catch (_) { /* ignore */ }
-      if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
-          });
-          latitude = String(pos.coords.latitude);
-          longitude = String(pos.coords.longitude);
-        } catch (_) { /* ignore */ }
-      }
-      const locationParams = latitude && longitude ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}` : '';
-
-      // ✅ Align with Vet: discover by category (service discovery respects category/role from dashboard tiles)
-      let groomerServices: any[] = [];
-      
-      // Try 1: discover-services by category (same pattern as VetServiceRouter)
-      try {
-        const endpoint = `/customer/discover-services?category=grooming${locationParams}`;
-        const data = await apiClient.get<any>(endpoint);
-        console.log('🔵 [GroomingServiceRouter] discover-services response:', data);
-        
-        if (Array.isArray(data)) {
-          groomerServices = data;
-        } else if (data?.vendors && Array.isArray(data.vendors)) {
-          groomerServices = data.vendors;
-        } else if (data?.providers && Array.isArray(data.providers)) {
-          groomerServices = data.providers;
-        } else if (data?.services && Array.isArray(data.services)) {
-          groomerServices = data.services;
-        } else if (data?.results && Array.isArray(data.results)) {
-          groomerServices = data.results;
-        } else if (data?.data && Array.isArray(data.data)) {
-          groomerServices = data.data;
-        }
-      } catch (err) {
-        console.warn('⚠️ [GroomingServiceRouter] discover-services failed, trying alternatives:', err);
-      }
-      
-      // Try 2: services/by-style (at_center = grooming centre)
-      if (groomerServices.length === 0) {
-        try {
-          const altRes = await apiClient.get<any>(`/customer/services/by-style?style=at_center&category=grooming${locationParams}`);
-          const altData = (altRes as any)?.providers ?? (altRes as any)?.vendors ?? altRes;
-          if (Array.isArray(altData)) groomerServices = altData;
-          else if (altData?.services) groomerServices = altData.services;
-        } catch (err) {
-          console.warn('⚠️ [GroomingServiceRouter] services/by-style failed:', err);
-        }
-      }
-      
-      // Try 3: Fallback to /customer/vendors/search (GET /customer/vendors does not exist)
-      if (groomerServices.length === 0) {
-        try {
-          const vendorsData = await apiClient.get<any>(`/customer/vendors/search?roleId=pet_groomer&limit=50${locationParams}`);
-          if (Array.isArray(vendorsData)) groomerServices = vendorsData;
-          else if (vendorsData?.vendors) groomerServices = vendorsData.vendors;
-          else if (vendorsData?.results) groomerServices = vendorsData.results;
-        } catch (err) {
-          console.warn('⚠️ [GroomingServiceRouter] vendors/search fallback failed:', err);
-        }
-      }
-      
-      console.log('🔵 [GroomingServiceRouter] Final groomerServices length:', groomerServices.length);
-      
-      const vendorMap = new Map();
-      groomerServices.forEach((service: any) => {
-        const vendorId = service.vendorId || service.vendor_id || service.id || service.providerId;
-        if (!vendorId) return;
-        if (!vendorMap.has(vendorId)) {
-          vendorMap.set(vendorId, {
-            id: vendorId,
-            businessName: service.vendorName || service.vendor_name || service.businessName || service.business_name || service.name,
-            rating: service.vendorRating || service.vendor_rating || service.rating || 4.5,
-            completedBookings: service.vendorReviewCount || service.vendor_review_count || service.reviewsCount || service.reviews_count || 0,
-            distance: service.distance ?? Math.random() * 5 + 0.5,
-            basePrice: service.price || service.base_price || 999
-          });
-        }
+  const handleBookPlan = useCallback(
+    (v: BoardingListVendor, plan: BoardingPlanRow) => {
+      const vid =
+        pickCustomerVendorAccountId((v.raw ?? {}) as Record<string, unknown>) || v.id;
+      onNavigate?.('create-booking', {
+        vendorId: vid,
+        serviceType: 'grooming',
+        serviceId: plan.rowId,
+        serviceName: plan.name,
+        price: plan.price,
+        duration: plan.duration,
+        serviceStyle: plan.serviceStyle || 'at_center',
       });
-      
-      const allGroomers = Array.from(vendorMap.values());
-      console.log('🔵 [GroomingServiceRouter] Found vendors:', allGroomers.length);
-      setFeaturedGroomers(allGroomers.slice(0, 5));
-      
-      setStats({
-        activeGroomers: allGroomers.length,
-        sessions: allGroomers.length > 0 ? `${Math.max(allGroomers.length * 25, 100)}+` : '0',
-        rating: allGroomers.length > 0 
-          ? Number(allGroomers.reduce((acc: number, g: any) => acc + Number(g.rating || 4.5), 0) / allGroomers.length).toFixed(1) 
-          : '-'
+    },
+    [onNavigate]
+  );
+
+  const openVendorDetails = useCallback(
+    (e: MouseEvent, profileKey: string) => {
+      e.stopPropagation();
+      const v = findBoardingListVendorByProfileKey(vendors, profileKey);
+      if (!v) {
+        toast.error('Could not open this profile. Try View Services or refresh.');
+        return;
+      }
+      const rawObj = v.raw && typeof v.raw === 'object' ? (v.raw as Record<string, unknown>) : {};
+      const row: Record<string, unknown> = {
+        ...rawObj,
+        id: profileKey,
+        vendorId: (rawObj as { vendorId?: string }).vendorId,
+        type: 'vendor',
+      };
+      const accountId = pickCustomerVendorAccountId(row) || v.id;
+      onNavigate?.('grooming-vendor-profile', {
+        vendorId: accountId,
+        vendorType: 'vendor' as const,
+        serviceStyle: 'at_center',
+        category: 'grooming',
+        vendorName: v.name,
+        vendorData: v.raw,
       });
-    } catch (error) {
-      console.error('❌ [GroomingServiceRouter] Error loading grooming data:', error);
-      // Show zeros on error - no fake data
-      setStats({ activeGroomers: 0, sessions: '0', rating: '-' });
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [onNavigate, vendors]
+  );
 
   const loadPreviousGroomer = async () => {
     try {
-      // Try to get previous groomer from booking history or packages
       const response = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=grooming`).catch(() => null);
-      
-      if (response?.provider) {
-        setPreviousGroomer({
-          id: response.provider.id,
-          name: response.provider.businessName || response.provider.name,
-          photo: response.provider.photo || null,
-          rating: response.provider.rating || 4.9,
-          lastVisit: response.provider.lastVisit,
-          sessionsCount: response.provider.sessionsCount || 5
-        });
-      } else {
-        // Try getting from active packages
-        const packagesResponse = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=grooming`).catch(() => null);
-        if (packagesResponse?.packages && packagesResponse.packages.length > 0) {
-          const pkg = packagesResponse.packages[0];
-          if (pkg.vendorId && pkg.vendorName) {
-            setPreviousGroomer({
-              id: pkg.vendorId,
-              name: pkg.vendorName,
-              photo: null,
-              rating: 4.9,
-              lastVisit: pkg.lastUsed || '3 weeks ago',
-              sessionsCount: pkg.sessionsUsed || 5
-            });
-          }
+      const p = response?.providers?.[0] ?? response?.provider;
+
+      if (p) {
+        const vid = p.vendor_id ?? p.vendorId ?? p.id;
+        if (vid) {
+          const rc = Number(p.review_count ?? p.reviewCount ?? 0) || 0;
+          const r = Number(p.vendor_rating ?? p.rating);
+          setPreviousGroomer({
+            id: vid,
+            name: p.vendor_name || p.vendorName || p.business_name || p.businessName || p.name,
+            photo: p.profile_image_url || p.photo || null,
+            rating: rc > 0 && Number.isFinite(r) && r > 0 ? r : null,
+            lastVisit: p.last_booking_date || p.lastVisit,
+            sessionsCount: p.sessionsCount || 5,
+            lastServiceId: p.last_service_id || p.service_id || p.serviceId,
+          });
+          return;
+        }
+      }
+
+      const packagesResponse = await apiClient.get<any>(`/customer/${phone}/packages?serviceType=grooming`).catch(() => null);
+      if (packagesResponse?.packages && packagesResponse.packages.length > 0) {
+        const pkg = packagesResponse.packages[0];
+        if (pkg.vendorId && pkg.vendorName) {
+          setPreviousGroomer({
+            id: pkg.vendorId,
+            name: pkg.vendorName,
+            photo: null,
+            rating: null,
+            lastVisit: pkg.lastUsed || '3 weeks ago',
+            sessionsCount: pkg.sessionsUsed || 5,
+            lastServiceId: pkg.serviceId || pkg.service_id || pkg.defaultServiceId,
+          });
         }
       }
     } catch (error) {
-      // Silently fail - not having a previous groomer is not an error
       console.log('No previous groomer found:', error);
     }
   };
 
-  const serviceTypes = [
-    {
-      id: 'grooming_center',
-      name: 'Grooming Centre',
-      description: 'Visit our salons',
-      icon: Building2,
-      color: 'text-orange-600',
-      bg: 'bg-orange-50',
-      badge: '50+ Centres'
-    },
+  const handleBookAgain = useCallback(async () => {
+    if (!previousGroomer?.id) return;
+    const vid = previousGroomer.id;
+    let serviceId: string | undefined = previousGroomer.lastServiceId;
+    if (!serviceId) {
+      try {
+        const res = await apiClient.get<any>(`/customer/vendor/${vid}/services?category=grooming`);
+        const list = mergeCustomerVendorServicesPayload(res);
+        serviceId = firstGroomingServiceUuid(list);
+      } catch {
+        /* CreateBookingPage will resolve via vendor/available + catalog */
+      }
+    }
+    onNavigate?.('create-booking', {
+      vendorId: vid,
+      serviceType: 'grooming',
+      serviceId,
+    });
+  }, [previousGroomer, onNavigate]);
+
+  const serviceTypes = useMemo(
+    () => [
+      {
+        id: 'grooming_center',
+        name: 'Grooming Centre',
+        description: 'Visit our salons',
+        icon: Building2,
+        color: 'text-orange-600',
+        bg: 'bg-orange-50',
+        badge: groomingCenterBadgeText,
+      },
     {
       id: 'grooming_home',
       name: 'At Home Grooming',
@@ -233,26 +251,44 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       bg: 'bg-green-50',
       badge: 'Track Live'
     }
-  ];
+  ],
+    [groomingCenterBadgeText]
+  );
 
-  if (loading) {
+  const dashboardStats = useMemo(() => {
+    const n = vendors.length;
+    const withReviews = vendors.filter((v: { rating?: number; reviewCount?: number; review_count?: number }) => {
+      const c = Number(v.reviewCount ?? v.review_count ?? 0) || 0;
+      const r = Number(v.rating);
+      return c > 0 && Number.isFinite(r) && r > 0;
+    });
+    const rating =
+      withReviews.length > 0
+        ? (
+            withReviews.reduce((a, v) => a + Number(v.rating), 0) / withReviews.length
+          ).toFixed(1)
+        : '—';
+    const sessions = n > 0 ? `${Math.max(n * 25, 100)}+` : '0';
+    return [
+      { value: `${n}+`, label: 'Pros', icon: <Scissors className="w-4 h-4" /> },
+      { value: sessions, label: 'Sessions' },
+      { value: rating, label: 'Avg rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ];
+  }, [
+    vendors,
+    groomingCenterCount,
+    groomingCenterLoading,
+    groomingCenterFetching,
+    groomingCenterError,
+  ]);
+
+  if (vendorsLoading) {
     return (
       <div className="flex items-center justify-center min-h-[200px]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
       </div>
     );
   }
-
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = stats ? [
-    { value: `${stats.activeGroomers || 0}+`, label: 'Pros', icon: <Scissors className="w-4 h-4" /> },
-    { value: `${stats.sessions || 0}+`, label: 'Sessions' },
-    { value: `${stats.rating || '-'}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ] : [
-    { value: '0+', label: 'Pros', icon: <Scissors className="w-4 h-4" /> },
-    { value: '0+', label: 'Sessions' },
-    { value: '-', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -266,10 +302,11 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-white"
       />
 
       {/* Main Content */}
-      <div className="max-w-md mx-auto px-4 pt-4 bg-white">
+      <div className="max-w-md mx-auto -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 sm:rounded-t-[2rem]">
         <div className="space-y-8">
           
           {/* YOUR GROOMER Section - As per Master Plan */}
@@ -295,12 +332,19 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   )}
                   <div className="flex-1">
                     <h3 className="font-bold text-slate-900 text-lg">{previousGroomer.name}</h3>
-                    <div className="flex items-center gap-2 text-sm text-slate-600 mt-1">
-                      <div className="flex items-center gap-1 text-orange-600 font-bold">
-                        <Star className="w-4 h-4 fill-orange-500" />
-                        {previousGroomer.rating}
-                      </div>
-                      <span>•</span>
+                    <div className="flex items-center gap-2 text-sm text-slate-600 mt-1 flex-wrap">
+                      {previousGroomer.rating != null &&
+                      Number(previousGroomer.rating) > 0 ? (
+                        <>
+                          <div className="flex items-center gap-1 text-orange-600 font-bold">
+                            <Star className="w-4 h-4 fill-orange-500" />
+                            {Number(previousGroomer.rating).toFixed(1)}
+                          </div>
+                          <span>•</span>
+                        </>
+                      ) : (
+                        <span className="text-slate-500">No reviews yet</span>
+                      )}
                       <span>Last visit: {previousGroomer.lastVisit || '3 weeks ago'}</span>
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
@@ -310,10 +354,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                   <Button 
                     size="sm"
                     className="bg-orange-600 text-white hover:bg-orange-700 whitespace-nowrap"
-                    onClick={() => onNavigate?.('create-booking', { 
-                      vendorId: previousGroomer.id,
-                      serviceType: 'grooming'
-                    })}
+                    onClick={() => void handleBookAgain()}
                   >
                     Book Again
                   </Button>
@@ -322,15 +363,13 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </div>
           )}
 
-          {/* PHASE 1.2: Promotion Banners (from Admin Marketing) */}
+          {/* PHASE 1.2: Vendor spotlights + promotion banners (from Admin Marketing) */}
           <div className="space-y-3">
+            <FeaturedVendorSpotlights service="grooming" onNavigate={onNavigate} className="mb-1" />
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-orange-500" />
               <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
             </div>
-            <PromotionBanner 
-              service="grooming"
-            />
           </div>
 
           {/* Grooming Needs Grid */}
@@ -351,6 +390,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             <div className="grid grid-cols-4 gap-3" style={{ position: 'relative', zIndex: 1 }}>
               {(groomingNeeds.length > 0 ? groomingNeeds : GROOMING_NEEDS).map((need) => {
                 const isViewAll = need.id === 'view_all';
+                const hasAdminTint = Boolean((need as { iconBg?: string }).iconBg) && !isViewAll;
                 return (
                   <button
                     key={need.id}
@@ -382,6 +422,12 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     `}>
                       {typeof need.icon === 'string' ? (
                         <span className="text-2xl">{need.icon}</span>
+                      ) : hasAdminTint ? (
+                        <div
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 ${(need as { iconBg?: string }).iconBg} group-hover:opacity-90`}
+                        >
+                          {need.icon}
+                        </div>
                       ) : (
                         <div className="text-slate-600 group-hover:text-orange-600">
                           {need.icon}
@@ -421,7 +467,14 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                     <service.icon className={`w-5 h-5 ${service.color}`} />
                   </div>
                   <h3 className="font-semibold text-slate-900 text-sm mb-0.5">{service.name}</h3>
-                  <p className="text-xs text-slate-500">{service.description}</p>
+                  <div onClick={(e) => e.stopPropagation()} className="relative z-20">
+                    <ServiceDescriptionInline
+                      description={service.description}
+                      title={service.name}
+                      className="m-0 text-xs leading-snug text-slate-500"
+                      linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-orange-600 hover:underline"
+                    />
+                  </div>
                   {service.badge && (
                     <span className="absolute top-3 right-3 px-2 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-bold rounded-full uppercase tracking-wide">
                       {service.badge}
@@ -432,7 +485,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             </div>
           </div>
 
-          {/* Featured Groomers */}
+          {/* Top Groomers — same expandable cards as View All (grooming_center) */}
           <div>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-slate-900">Top Groomers</h2>
@@ -443,34 +496,43 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                 View All <ChevronRight className="w-4 h-4" />
               </button>
             </div>
-            
-            <div className="space-y-3">
-              {(featuredGroomers.length > 0 ? featuredGroomers : [1, 2, 3]).map((groomer: any, index) => (
-                <div 
-                  key={index}
-                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4 cursor-pointer hover:border-orange-200 transition-colors"
-                  onClick={() => onNavigate?.('grooming_center')}
-                >
-                  <div className="w-14 h-14 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xl shrink-0">
-                     {groomer.businessName ? groomer.businessName.charAt(0) : 'P'}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-slate-900 truncate">{groomer.businessName || `Pawfect Grooming ${index}`}</h3>
-                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                      <span className="flex items-center gap-1 text-orange-500 font-bold">
-                        <Star className="w-3 h-3 fill-current" />
-                        {groomer.rating || 4.8}
-                      </span>
-                      <span>•</span>
-                      <span>{groomer.distance ? `${Number(groomer.distance).toFixed(1)} km` : '2.5 km'}</span>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                     <div className="font-bold text-slate-900">₹{groomer.basePrice || 799}</div>
-                     <div className="text-[10px] text-slate-400">starts at</div>
-                  </div>
-                </div>
-              ))}
+            {relaxedFilter && (
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-3">
+                Showing all grooming providers we could match — expand a card for services and prices.
+              </p>
+            )}
+            <div className="space-y-4">
+              {vendors.length === 0 ? (
+                <Card className="p-8 text-center">
+                  <div className="text-4xl mb-3">✂️</div>
+                  <p className="text-gray-600 mb-2">No groomers available in your area yet</p>
+                  <p className="text-gray-500 text-sm">Check back soon for grooming options!</p>
+                </Card>
+              ) : (
+                vendors.map((v) => {
+                  const expanded = selectedVendorId === v.id;
+                  const minP = minPriceForVendor(v);
+                  return (
+                    <BoardingVendorExpandableCard
+                      key={v.id}
+                      v={v}
+                      serviceSlug={HUB_SLUG}
+                      planBadgeLabel="Grooming"
+                      expanded={expanded}
+                      fetchingPlansFor={fetchingPlansFor}
+                      minPrice={minP}
+                      onToggleHeader={() => toggleVendor(v.id)}
+                      onViewServices={(e) => {
+                        e.stopPropagation();
+                        setSelectedVendorId(v.id);
+                      }}
+                      onDetails={openVendorDetails}
+                      onBookPlan={handleBookPlan}
+                      onOpenCenterDetails={openVendorDetails}
+                    />
+                  );
+                })
+              )}
             </div>
           </div>
         </div>

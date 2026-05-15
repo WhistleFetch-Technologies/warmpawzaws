@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -8,8 +8,13 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { getRoleConfig, RoleId } from './roleConfig';
 import { ServiceDashboardHeader, StepInfo } from './ServiceDashboardHeader';
-import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
+import { formatPriceWithSymbol, catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { safeNumber } from '@/lib/validation';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 interface UniversalBookingRouterProps {
   roleId: RoleId; // ✅ NEW: Role ID for universal component
@@ -87,6 +92,32 @@ export function UniversalBookingRouter({
   // ✅ FIX: Map 'clinic' to 'at_center', use serviceStyle if provided, otherwise fall back to serviceType
   const normalizedServiceType = (serviceStyle || serviceType) === 'clinic' ? 'at_center' : (serviceStyle || serviceType || 'tele');
   const [selectedServiceType, setSelectedServiceType] = useState(normalizedServiceType);
+
+  const providerDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: selectedServiceType,
+    category: config.category,
+    roleId: config.roleId,
+  });
+
+  const providerStatValue = useMemo(() => {
+    const st =
+      providerDiscovery.isLoading || providerDiscovery.isFetching
+        ? 'loading'
+        : providerDiscovery.isError
+          ? 'error'
+          : 'success';
+    return formatDiscoveryCountStat(providerDiscovery.data, st);
+  }, [
+    providerDiscovery.data,
+    providerDiscovery.isLoading,
+    providerDiscovery.isFetching,
+    providerDiscovery.isError,
+  ]);
+
+  const providerStatLabel =
+    config.roleName === 'Veterinarian' ? 'Vets' : config.roleName === 'Groomer' ? 'Pros' : 'Providers';
+
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedTime, setSelectedTime] = useState('');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
@@ -259,7 +290,7 @@ export function UniversalBookingRouter({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         dayNum: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),
@@ -432,10 +463,12 @@ export function UniversalBookingRouter({
       setLoading(true);
       const vid = vendorId || doctorId;
       // Prefer customer endpoint so only published services with vendor price show (CRUD reflects immediately)
+      // ✅ FIX: Include serviceStyle parameter to filter services correctly
+      const serviceStyleParam = serviceStyle ? `?serviceStyle=${encodeURIComponent(serviceStyle)}` : '';
       let servicesResponse: any = null;
       const endpoints = [
-        `/customer/vendor/${vid}/services`,
-        `/customer/clinic/${vid}/services`,
+        `/customer/vendor/${vid}/services${serviceStyleParam}`,
+        `/customer/clinic/${vid}/services${serviceStyleParam}`,
         `/vendor/${vid}/services`,
         `/vendor/services/${vid}`,
       ];
@@ -464,7 +497,7 @@ export function UniversalBookingRouter({
               ...(servicesResponse.services.tele?.services || []),
             ];
           } else if (Array.isArray(servicesResponse.services)) {
-            services = servicesResponse.services;
+            services = mergeCustomerVendorServicesPayload(servicesResponse);
           }
         } else if (servicesResponse.allServices) {
           services = servicesResponse.allServices;
@@ -844,15 +877,18 @@ export function UniversalBookingRouter({
   const HeaderIcon = headerInfo.icon;
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: '50+', label: config.roleName === 'Veterinarian' ? 'Vets' : config.roleName === 'Groomer' ? 'Pros' : 'Providers' },
-    { value: '1K+', label: 'Bookings' },
-    { value: '*4.8', label: 'Rating' }
-  ];
+  const dashboardStats = useMemo(
+    () => [
+      { value: providerStatValue, label: providerStatLabel },
+      { value: '1K+', label: 'Bookings' },
+      { value: '—', label: 'Rating' }
+    ],
+    [providerStatValue, providerStatLabel]
+  );
 
   // Phase 1: Step indicators include summary (staff skipped)
   const getStepIndicators = (): StepInfo[] | undefined => {
-    if (showPaymentPage || step === 'confirmation') return undefined;
+    if (showPaymentPage || step === 'confirmation' || step === 'payment') return undefined;
     
     const stepLabels = ['Service', 'Details', 'Summary', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = {
@@ -872,10 +908,148 @@ export function UniversalBookingRouter({
     }));
   };
 
+  const reviewUniversalPrePayment = step === 'payment' && !showPaymentPage;
+
+  const handleUniversalPrePaymentContinue = () => {
+    if (!selectedVendorService && selectedServiceOption) {
+      const actualVendorService = vendorServices.find((s) => {
+        const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
+        return (
+          (s.serviceId || s.service_id) === optionServiceId || (s.serviceId || s.service_id) === selectedServiceOption.id
+        );
+      });
+
+      const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
+      setSelectedVendorService({
+        id: actualVendorService?.id,
+        serviceId: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
+        service_id: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId,
+        name: selectedServiceOption.name,
+        price: selectedServiceOption.price,
+        duration: selectedServiceOption.duration,
+        serviceStyle: selectedServiceType,
+      });
+    }
+    setShowPaymentPage(true);
+  };
+
+  const universalPrePaymentTotalDisplay = (() => {
+    const servicesToCalculate =
+      allSelectedServices && allSelectedServices.length > 0
+        ? allSelectedServices
+        : selectedServices && selectedServices.length > 0
+          ? selectedServices
+          : [];
+    if (servicesToCalculate.length > 0) {
+      const total = servicesToCalculate.reduce((sum, s) => sum + safeNumber(s.price, 0), 0);
+      return formatPriceWithSymbol(isNaN(total) ? 0 : total);
+    }
+    return formatPriceWithSymbol(safeNumber(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0, 0));
+  })();
+
+  const universalPrePaymentSummary = (
+    <>
+      {(() => {
+        const servicesToDisplay =
+          allSelectedServices && allSelectedServices.length > 0
+            ? allSelectedServices
+            : selectedServices && selectedServices.length > 0
+              ? selectedServices
+              : [];
+        if (servicesToDisplay.length > 0) {
+          return (
+            <div className="space-y-3 pb-3 sm:pb-4 border-b">
+              {servicesToDisplay.map((service, index) => {
+                const serviceIdValue = service.id || service.serviceId || '';
+                const serviceNameValue = service.name || service.serviceName || 'Service';
+                const servicePrice = safeNumber(service.price, 0);
+                const serviceDuration = service.duration || 0;
+                const serviceStyleValue = service.serviceStyle || service.service_style || selectedServiceType;
+                return (
+                  <div key={serviceIdValue || index} className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3 bg-gray-50 rounded-xl">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600">
+                      {serviceStyleValue === 'tele' ? (
+                        <Video className="w-5 h-5 sm:w-6 sm:h-6" />
+                      ) : serviceStyleValue === 'at_home' ? (
+                        <Home className="w-5 h-5 sm:w-6 sm:h-6" />
+                      ) : (
+                        <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-sm sm:text-base text-gray-900">{serviceNameValue}</h3>
+                      {serviceDuration > 0 && <p className="text-xs sm:text-sm text-gray-500">{serviceDuration} mins</p>}
+                    </div>
+                    <p className="font-bold text-sm sm:text-base text-orange-600 flex-shrink-0">
+                      {formatPriceWithSymbol(servicePrice)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        }
+        const svcName = selectedServiceOption?.name || selectedVendorService?.name || serviceName || 'Service';
+        const svcDuration = selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration ?? 0;
+        const svcPrice = safeNumber(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0, 0);
+        return (
+          <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600">
+              {selectedServiceType === 'tele' ? (
+                <Video className="w-5 h-5 sm:w-6 sm:h-6" />
+              ) : selectedServiceType === 'at_home' ? (
+                <Home className="w-5 h-5 sm:w-6 sm:h-6" />
+              ) : (
+                <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-sm sm:text-base">{svcName}</h3>
+              {svcDuration > 0 && <p className="text-xs sm:text-sm text-gray-500">{svcDuration} mins</p>}
+            </div>
+            <p className="font-bold text-sm sm:text-base flex-shrink-0">{formatPriceWithSymbol(svcPrice)}</p>
+          </div>
+        );
+      })()}
+
+      <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
+        <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs sm:text-sm text-gray-500">Date & Time</p>
+          <p className="font-medium text-sm sm:text-base">
+            {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at{' '}
+            {selectedTime}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
+        <User className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs sm:text-sm text-gray-500">Pet</p>
+          <p className="font-medium text-sm sm:text-base">
+            {selectedPet?.name} ({selectedPet?.breed})
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">Additional Notes (Optional)</label>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Any symptoms or concerns..."
+          className="w-full p-2 sm:p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm sm:text-base"
+          rows={3}
+        />
+      </div>
+    </>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50 relative overflow-hidden">
+    <div className="relative flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden bg-gray-50">
       {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame - Hide when on payment step */}
-      {!showPaymentPage && (
+      {!showPaymentPage && step !== 'payment' && (
         <ServiceDashboardHeader
           serviceName={headerInfo.title}
           serviceSubtitle={headerInfo.subtitle}
@@ -971,11 +1145,19 @@ export function UniversalBookingRouter({
                 : (allSelectedServices && allSelectedServices.length > 0 
                   ? allSelectedServices.reduce((sum, s) => sum + (s.price || 0), 0)
                   : (selectedVendorService.price || selectedServiceOption?.price || 0))}
+              priceIncludesTax={
+                catalogPriceIncludesTax(selectedVendorService) ||
+                catalogPriceIncludesTax(selectedServiceOption) ||
+                (!!(allSelectedServices?.length) && catalogPriceIncludesTax(allSelectedServices![0]))
+              }
               duration={selectedVendorService.duration || selectedServiceOption?.duration || 15}
               selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
               customerPhone={phone}
               customerId={customerId || undefined}
               onBack={() => setShowPaymentPage(false)}
+              onPaymentAbandoned={() => {
+                if (selectedDate) void loadTimeSlots(selectedDate);
+              }}
               onSuccess={(bookingId) => {
                 setBookingId(bookingId);
                 setShowPaymentPage(false);
@@ -986,8 +1168,29 @@ export function UniversalBookingRouter({
         );
       })()}
 
-      {/* Main Content */}
-      <div className={`bg-white max-w-md mx-auto px-4 pt-6 min-h-[calc(82vh)] pb-24 relative z-10`}>
+      {/* Main Content: flex-1 + min-h-0 so tall steps scroll; CTA stays in document flow */}
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        {reviewUniversalPrePayment && (
+          <PrePaymentBookingReview
+            title="Booking Summary"
+            subtitle="Review before payment"
+            headerIcon={Package}
+            stats={dashboardStats}
+            onBack={handleBack}
+            headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+            summaryBody={universalPrePaymentSummary}
+            total={{ label: 'Total', amountFormatted: universalPrePaymentTotalDisplay }}
+            totalTextClassName="text-orange-600"
+            primaryButton={{
+              label: 'Continue to Payment',
+              onClick: handleUniversalPrePaymentContinue,
+              disabled: processing,
+              loading: processing,
+            }}
+          />
+        )}
+        {!reviewUniversalPrePayment && (
+      <div className="relative z-10 mx-auto max-w-md bg-white px-4 pb-24 pt-6 sm:px-6">
 
         {/* Service Selection - Skip if service context exists */}
         {step === 'service' && !hasServiceContext && (
@@ -1069,13 +1272,15 @@ export function UniversalBookingRouter({
                 );
               })}
             </div>
+            <div className="mx-auto mt-4 w-full max-w-xs sm:max-w-sm">
             <Button 
               onClick={handleNext} 
-              className="w-full bg-orange-500 hover:bg-orange-600 mt-4 text-sm sm:text-base py-2.5 sm:py-3"
+              className="w-full whitespace-normal text-center rounded-full bg-orange-500 hover:bg-orange-600 text-sm sm:text-base min-h-12 px-4 py-2.5 shadow-md sm:h-12 sm:py-0"
               disabled={!selectedServiceType}
             >
               Continue
             </Button>
+            </div>
           </div>
         )}
 
@@ -1083,143 +1288,162 @@ export function UniversalBookingRouter({
 
         {/* Combined Details Selection: Schedule, Pet, and Address */}
         {step === 'details' && (
-          <div className="space-y-6 pb-24">
-            {/* Date & Time Selection */}
-            <div>
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-3">Select Date & Time</h2>
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Date</h3>
-                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide -mx-1 px-1">
-                {dates.map((d) => (
-                  <button
-                    key={d.date}
-                    onClick={() => setSelectedDate(d.date)}
-                      className={`flex-shrink-0 w-14 sm:w-16 p-2 sm:p-3 rounded-xl text-center transition-all ${
-                      selectedDate === d.date 
-                        ? 'bg-orange-500 text-white' 
-                        : 'bg-white border border-gray-200 hover:border-orange-300'
-                    }`}
-                  >
-                    <p className="text-xs opacity-75">{d.day}</p>
-                      <p className="text-lg sm:text-xl font-bold">{d.dayNum}</p>
-                    <p className="text-xs opacity-75">{d.month}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {selectedDate && (
+          <div className="space-y-4 cw-scroll-pad-tabbar">
+            <div className="space-y-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
               <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">Time</h3>
-                {loadingSlots ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="text-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto mb-2"></div>
-                      <p className="text-sm text-gray-500">Loading available slots...</p>
-                    </div>
-                  </div>
-                ) : timeSlots.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                      <p className="text-sm">No slots available for this date</p>
-                      <p className="text-xs mt-2">Please select another date</p>
-                  </div>
-                ) : (
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {timeSlots.map((slot) => {
-                      // Format time to 12-hour format for display
-                      const [h, m] = slot.time.split(':').map(Number);
-                      const ampm = h >= 12 ? 'PM' : 'AM';
-                      const hour12 = h % 12 || 12;
-                      const displayTime = `${hour12}:${String(m).padStart(2, '0')} ${ampm}`;
-                      return (
+                <h2 className="mb-3 text-lg font-bold text-gray-900 sm:text-xl">Select Date & Time</h2>
+                <div className="mb-4">
+                  <h3 className="mb-2 text-sm font-medium text-gray-700">Date</h3>
+                  <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-2 scrollbar-hide">
+                    {dates.map((d) => (
                       <button
-                        key={slot.time}
-                        onClick={() => slot.available && setSelectedTime(slot.time)}
-                        disabled={!slot.available}
-                          className={`p-2.5 sm:p-3 rounded-xl text-center transition-all text-sm ${
-                          selectedTime === slot.time 
-                            ? 'bg-orange-500 text-white' 
-                            : slot.available
-                              ? 'bg-white border border-gray-200 hover:border-orange-300'
-                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        key={d.date}
+                        onClick={() => setSelectedDate(d.date)}
+                        className={`w-14 flex-shrink-0 rounded-xl p-2 text-center transition-all sm:w-16 sm:p-3 ${
+                          selectedDate === d.date
+                            ? 'bg-orange-500 text-white'
+                            : 'border border-gray-200 bg-gray-50 hover:border-orange-300'
                         }`}
                       >
-                        {displayTime}
+                        <p className="text-xs opacity-75">{d.day}</p>
+                        <p className="text-lg font-bold sm:text-xl">{d.dayNum}</p>
+                        <p className="text-xs opacity-75">{d.month}</p>
                       </button>
-                      );
-                    })}
+                    ))}
+                  </div>
+                </div>
+
+                {selectedDate && (
+                  <div>
+                    <h3 className="mb-2 text-sm font-medium text-gray-700">Time</h3>
+                    {loadingSlots ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="text-center">
+                          <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-b-2 border-orange-500"></div>
+                          <p className="text-sm text-gray-500">Loading available slots...</p>
+                        </div>
+                      </div>
+                    ) : timeSlots.length === 0 ? (
+                      <div className="py-8 text-center text-gray-500">
+                        <p className="text-sm">No slots available for this date</p>
+                        <p className="mt-2 text-xs">Please select another date</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                        {timeSlots.map((slot) => {
+                          const [h, m] = slot.time.split(':').map(Number);
+                          const ampm = h >= 12 ? 'PM' : 'AM';
+                          const hour12 = h % 12 || 12;
+                          const displayTime = `${hour12}:${String(m).padStart(2, '0')} ${ampm}`;
+                          return (
+                            <button
+                              key={slot.time}
+                              onClick={() => slot.available && setSelectedTime(slot.time)}
+                              disabled={!slot.available}
+                              className={`rounded-xl p-2.5 text-center text-sm transition-all sm:p-3 ${
+                                selectedTime === slot.time
+                                  ? 'bg-orange-500 text-white'
+                                  : slot.available
+                                    ? 'border border-gray-200 bg-gray-50 hover:border-orange-300'
+                                    : 'cursor-not-allowed bg-gray-100 text-gray-400'
+                              }`}
+                            >
+                              {displayTime}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
 
-        {/* Pet Selection */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg sm:text-xl font-bold text-gray-900">Select Your Pet</h2>
-              <button
-                onClick={() => setShowAddPetModal(true)}
-                  className="flex items-center gap-1 px-2 sm:px-3 py-1.5 bg-orange-100 text-orange-600 rounded-lg text-xs sm:text-sm font-medium hover:bg-orange-200 transition"
-              >
-                  <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
-                  <span className="hidden sm:inline">Add Pet</span>
-                  <span className="sm:hidden">Add</span>
-              </button>
-            </div>
-            
-            <div className="space-y-3">
-              {pets.length > 0 ? (
-                pets.map((pet) => (
-                  <button
-                    key={pet.id}
-                    onClick={() => {
-                      setSelectedPet(pet);
-                      try { sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id)); } catch { /* ignore */ }
-                    }}
-                      className={`w-full p-3 sm:p-4 rounded-xl border-2 transition-all flex items-center gap-3 sm:gap-4 ${
-                      selectedPet?.id === pet.id 
-                        ? 'border-orange-500 bg-orange-50' 
-                        : 'border-gray-200 bg-white hover:border-orange-200'
-                    }`}
-                  >
-                      <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-orange-100 flex items-center justify-center text-xl sm:text-2xl flex-shrink-0">
-                      {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog') ? '🐕' : 
-                       pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat') ? '🐈' : '🐾'}
-                    </div>
-                      <div className="flex-1 text-left min-w-0">
-                        <h3 className="font-semibold text-gray-900 text-sm sm:text-base">{pet.name}</h3>
-                        <p className="text-xs sm:text-sm text-gray-500 capitalize">{pet.breed}</p>
-                    </div>
-                    {selectedPet?.id === pet.id && (
-                        <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-orange-500 flex-shrink-0" />
-                    )}
-                  </button>
-                ))
-              ) : (
-                  <div className="text-center py-8 sm:py-12 border-2 border-dashed border-gray-200 rounded-xl">
-                    <div className="text-4xl sm:text-5xl mb-3">🐾</div>
-                    <p className="text-gray-600 font-medium mb-2 text-sm sm:text-base">No pets added yet</p>
-                    <p className="text-xs sm:text-sm text-gray-500 mb-4">Add your pet to continue with the booking</p>
+              <div className="border-t border-gray-100 pt-6">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-gray-900 sm:text-xl">Select Your Pet</h2>
                   <button
                     onClick={() => setShowAddPetModal(true)}
-                      className="px-4 sm:px-6 py-2 sm:py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition text-sm sm:text-base"
+                    className="flex items-center gap-1 rounded-lg bg-orange-100 px-2 py-1.5 text-xs font-medium text-orange-600 transition hover:bg-orange-200 sm:px-3 sm:text-sm"
                   >
-                    + Add Your First Pet
+                    <Plus className="h-3 w-3 sm:h-4 sm:w-4" />
+                    <span className="hidden sm:inline">Add Pet</span>
+                    <span className="sm:hidden">Add</span>
                   </button>
                 </div>
-              )}
+
+                <div className="space-y-3">
+                  {pets.length > 0 ? (
+                    pets.map((pet) => (
+                      <button
+                        key={pet.id}
+                        onClick={() => {
+                          setSelectedPet(pet);
+                          try {
+                            sessionStorage.setItem(`warmpawz_last_pet_${phone}`, String(pet.id));
+                          } catch {
+                            /* ignore */
+                          }
+                        }}
+                        className={`flex w-full items-center gap-3 rounded-xl border-2 p-3 transition-all sm:gap-4 sm:p-4 ${
+                          selectedPet?.id === pet.id
+                            ? 'border-orange-500 bg-orange-50'
+                            : 'border-gray-200 bg-gray-50 hover:border-orange-200'
+                        }`}
+                      >
+                        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 text-xl sm:h-14 sm:w-14 sm:text-2xl">
+                          {pet.species === 'dog' || (pet.species || '').toLowerCase().includes('dog')
+                            ? '🐕'
+                            : pet.species === 'cat' || (pet.species || '').toLowerCase().includes('cat')
+                              ? '🐈'
+                              : '🐾'}
+                        </div>
+                        <div className="min-w-0 flex-1 text-left">
+                          <h3 className="text-sm font-semibold text-gray-900 sm:text-base">{pet.name}</h3>
+                          <p className="text-xs capitalize text-gray-500 sm:text-sm">{pet.breed}</p>
+                        </div>
+                        {selectedPet?.id === pet.id && (
+                          <CheckCircle2 className="h-5 w-5 flex-shrink-0 text-orange-500 sm:h-6 sm:w-6" />
+                        )}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="rounded-xl border-2 border-dashed border-gray-200 py-8 text-center sm:py-12">
+                      <div className="mb-3 text-4xl sm:text-5xl">🐾</div>
+                      <p className="mb-2 text-sm font-medium text-gray-600 sm:text-base">No pets added yet</p>
+                      <p className="mb-4 text-xs text-gray-500 sm:text-sm">Add your pet to continue with the booking</p>
+                      <button
+                        onClick={() => setShowAddPetModal(true)}
+                        className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-orange-600 sm:px-6 sm:py-3 sm:text-base"
+                      >
+                        + Add Your First Pet
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mx-auto w-full max-w-xs sm:max-w-sm">
+              <Button
+                onClick={() => {
+                  handleNext();
+                }}
+                className="min-h-12 w-full rounded-full bg-orange-500 px-4 py-2.5 text-center text-sm shadow-md hover:bg-orange-600 sm:h-12 sm:text-base sm:py-0"
+                disabled={!selectedDate || !selectedTime || !selectedPet}
+              >
+                {!selectedDate || !selectedTime
+                  ? 'Select Date & Time'
+                  : !selectedPet
+                    ? 'Select a Pet'
+                    : 'Continue'}
+              </Button>
             </div>
           </div>
-
-            {/* Address is already part of vendor profile - removed per user request */}
-
-              </div>
-            )}
+        )}
             
         {/* Phase 1: Summary step with package advice */}
         {step === 'summary' && (
-          <div className="space-y-4 pb-24">
+          <div className="space-y-4 cw-scroll-pad-tabbar">
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
             <div className="bg-white rounded-xl p-4 space-y-3 shadow-sm border border-gray-200">
               {(allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : selectedServices && selectedServices.length > 0 ? selectedServices : [selectedServiceOption]).map((s: any, idx: number) => {
@@ -1295,200 +1519,14 @@ export function UniversalBookingRouter({
               </div>
             ) : null}
 
-            <div className="flex flex-col gap-2">
-              <Button onClick={handleNext} className="w-full bg-orange-500 hover:bg-orange-600 py-3">
+            <div className="mx-auto flex w-full max-w-xs flex-col gap-2 sm:max-w-sm">
+              <Button onClick={handleNext} className="w-full whitespace-normal text-center rounded-full bg-orange-500 hover:bg-orange-600 min-h-12 px-4 py-2.5 text-sm shadow-md sm:h-12 sm:py-0">
                 Continue to Payment
               </Button>
             </div>
           </div>
         )}
 
-        {/* Fixed Continue Button - Above Footer */}
-        {step === 'details' && (
-          <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-30">
-            <div className="max-w-[430px] mx-auto">
-            <Button 
-              onClick={() => {
-                handleNext();
-              }} 
-                className="w-full bg-orange-500 hover:bg-orange-600 text-base py-3"
-                disabled={!selectedDate || !selectedTime || !selectedPet}
-              >
-                {!selectedDate || !selectedTime 
-                  ? 'Select Date & Time' 
-                  : !selectedPet 
-                    ? 'Select a Pet' 
-                    : 'Continue'}
-            </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Payment Summary - Using UniversalPaymentPage */}
-        {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4 pb-32">
-            <h2 className="text-lg sm:text-xl font-bold text-gray-900">Booking Summary</h2>
-            
-            <div className="bg-white rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4 shadow-sm">
-              {/* ✅ Updated: Show all selected services */}
-              {(() => {
-                // Debug: Log services to help identify issues
-                console.log('📋 Booking Summary - allSelectedServices:', allSelectedServices);
-                console.log('📋 Booking Summary - selectedServices prop:', selectedServices);
-                
-                // Use allSelectedServices if available, otherwise fallback to selectedServices prop
-                const servicesToDisplay = (allSelectedServices && allSelectedServices.length > 0) 
-                  ? allSelectedServices 
-                  : (selectedServices && selectedServices.length > 0 ? selectedServices : []);
-                
-                if (servicesToDisplay.length > 0) {
-                  return (
-                    <div className="space-y-3 pb-3 sm:pb-4 border-b">
-                      {servicesToDisplay.map((service, index) => {
-                        const serviceIdValue = service.id || service.serviceId || '';
-                        const serviceNameValue = service.name || service.serviceName || 'Service';
-                        const servicePrice = safeNumber(service.price, 0);
-                        const serviceDuration = service.duration || 0;
-                        const serviceStyleValue = service.serviceStyle || service.service_style || selectedServiceType;
-                        
-                        return (
-                          <div key={serviceIdValue || index} className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3 bg-gray-50 rounded-xl">
-                            <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600`}>
-                              {serviceStyleValue === 'tele' ? <Video className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                               serviceStyleValue === 'at_home' ? <Home className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                               <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h3 className="font-semibold text-sm sm:text-base text-gray-900">{serviceNameValue}</h3>
-                              {serviceDuration > 0 && (
-                                <p className="text-xs sm:text-sm text-gray-500">{serviceDuration} mins</p>
-                              )}
-                            </div>
-                            <p className="font-bold text-sm sm:text-base text-orange-600 flex-shrink-0">{formatPriceWithSymbol(servicePrice)}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                }
-                // Fallback to single service display - with fallbacks for missing data
-                const svcName = selectedServiceOption?.name || selectedVendorService?.name || serviceName || 'Service';
-                const svcDuration = selectedServiceOption?.duration ?? selectedVendorService?.duration ?? duration ?? 0;
-                const svcPrice = safeNumber(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0, 0);
-                return (
-                  <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-                    <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100 text-orange-600`}>
-                      {selectedServiceType === 'tele' ? <Video className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                       selectedServiceType === 'at_home' ? <Home className="w-5 h-5 sm:w-6 sm:h-6" /> :
-                       <Building2 className="w-5 h-5 sm:w-6 sm:h-6" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-sm sm:text-base">{svcName}</h3>
-                      {svcDuration > 0 && (
-                        <p className="text-xs sm:text-sm text-gray-500">{svcDuration} mins</p>
-                      )}
-                    </div>
-                    <p className="font-bold text-sm sm:text-base flex-shrink-0">{formatPriceWithSymbol(svcPrice)}</p>
-                  </div>
-                );
-              })()}
-
-              {/* Date & Time */}
-              <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-                <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm text-gray-500">Date & Time</p>
-                  <p className="font-medium text-sm sm:text-base">
-                    {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {selectedTime}
-                  </p>
-                </div>
-              </div>
-
-              {/* Pet */}
-              <div className="flex items-center gap-2 sm:gap-3 pb-3 sm:pb-4 border-b">
-                <User className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs sm:text-sm text-gray-500">Pet</p>
-                  <p className="font-medium text-sm sm:text-base">{selectedPet?.name} ({selectedPet?.breed})</p>
-                </div>
-              </div>
-
-              {/* Address is part of vendor profile - not shown here */}
-
-              {/* Notes */}
-              <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
-                  Additional Notes (Optional)
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Any symptoms or concerns..."
-                  className="w-full p-2 sm:p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm sm:text-base"
-                  rows={3}
-                />
-              </div>
-            </div>
-
-            {/* Price Breakdown */}
-            <div className="bg-white rounded-xl p-3 sm:p-4 shadow-sm">
-              <div className="flex justify-between items-center text-base sm:text-lg">
-                <span className="font-bold">Total</span>
-                <span className="font-bold text-orange-600">
-                  {(() => {
-                    const servicesToCalculate = (allSelectedServices && allSelectedServices.length > 0) 
-                      ? allSelectedServices 
-                      : (selectedServices && selectedServices.length > 0 ? selectedServices : []);
-                    
-                    if (servicesToCalculate.length > 0) {
-                      const total = servicesToCalculate.reduce((sum, s) => sum + safeNumber(s.price, 0), 0);
-                      return formatPriceWithSymbol(isNaN(total) ? 0 : total);
-                    }
-                    const fallbackPrice = safeNumber(selectedServiceOption?.price ?? selectedVendorService?.price ?? price ?? 0, 0);
-                    return formatPriceWithSymbol(fallbackPrice);
-                  })()}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Fixed Continue Button for Payment Summary - Above Footer */}
-        {step === 'payment' && !showPaymentPage && (
-          <div className="fixed bottom-16 left-0 right-0 bg-white border-t p-4 z-30 shadow-lg">
-            <div className="max-w-[430px] mx-auto">
-              <Button 
-                onClick={() => {
-                  // Ensure we have selectedVendorService before showing payment
-                  if (!selectedVendorService && selectedServiceOption) {
-                    // ✅ CRITICAL: Find the actual vendor service from API to get real service_id (UUID)
-                    const actualVendorService = vendorServices.find(s => {
-                      const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
-                      return (s.serviceId || s.service_id) === optionServiceId || (s.serviceId || s.service_id) === selectedServiceOption.id;
-                    });
-                    
-                    const optionServiceId = (selectedServiceOption as any).serviceId || selectedServiceOption.id;
-                    setSelectedVendorService({
-                      id: actualVendorService?.id, // Numeric vendor_services.id (for reference)
-                      serviceId: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId, // ✅ UUID from services table
-                      service_id: actualVendorService?.serviceId || actualVendorService?.service_id || optionServiceId, // ✅ Explicit UUID field
-                      name: selectedServiceOption.name,
-                      price: selectedServiceOption.price,
-                      duration: selectedServiceOption.duration,
-                      serviceStyle: selectedServiceType,
-                    });
-                  }
-                  setShowPaymentPage(true);
-                }} 
-                className="w-full bg-orange-500 hover:bg-orange-600 text-base py-3"
-                disabled={processing}
-              >
-                Continue to Payment
-              </Button>
-            </div>
-          </div>
-        )}
-        
         {/* ✅ FIX: Payment page is now rendered as full-screen overlay above, not here */}
 
         {/* Confirmation */}
@@ -1699,6 +1737,8 @@ export function UniversalBookingRouter({
               setShowAddPetModal(false);
             }}
           />
+        )}
+      </div>
         )}
       </div>
     </div>

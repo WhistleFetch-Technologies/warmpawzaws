@@ -7,6 +7,8 @@ import { Calendar } from '@/components/ui/calendar';
 import { LoadingState } from '@/components/ui/states';
 import { Calendar as CalendarIcon, Clock } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { pickBookingApiMessage } from '@/lib/booking-response-message';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { toast } from 'sonner';
 
 interface RescheduleBookingModalProps {
@@ -33,7 +35,7 @@ export function RescheduleBookingModal({
 
   useEffect(() => {
     if (selectedDate) {
-      loadAvailableSlots(selectedDate.toISOString().split('T')[0]);
+      loadAvailableSlots(formatLocalDateYYYYMMDD(selectedDate));
     }
   }, [selectedDate]);
 
@@ -84,13 +86,21 @@ export function RescheduleBookingModal({
       setLoading(true);
 
       const result = await apiClient.post(`/bookings/${bookingId}/reschedule`, {
-        newDate: selectedDate.toISOString().split('T')[0],
+        newDate: formatLocalDateYYYYMMDD(selectedDate),
         newTime: selectedSlot,
         reason,
         actorType: 'customer'
       }) as any;
 
-      toast.success(result.message || 'Booking rescheduled successfully');
+      if (result && result.success === false) {
+        const err = result.error;
+        const errText =
+          typeof err === 'string' ? err : err && typeof err === 'object' && typeof err.message === 'string' ? err.message : null;
+        toast.error(errText || 'Failed to reschedule');
+        return;
+      }
+
+      toast.success(pickBookingApiMessage(result, 'Booking rescheduled successfully'));
       onSuccess();
     } catch (error: any) {
       console.error('Error rescheduling:', error);
@@ -134,10 +144,11 @@ export function RescheduleBookingModal({
           {/* Time Slots */}
           {selectedDate && (
             <div>
-              <label className="block text-sm font-medium mb-2 flex items-center gap-2">
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
                 <Clock className="w-4 h-4" />
                 Select Time Slot
               </label>
+              <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
               
               {loadingSlots ? (
                 <div className="py-8">

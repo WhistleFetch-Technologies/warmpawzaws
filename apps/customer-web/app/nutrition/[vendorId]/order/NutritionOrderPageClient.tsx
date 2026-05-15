@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import NutritionOrderFlow from '../../../../components/customer/nutrition/NutritionOrderFlow';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 export default function NutritionOrderPageClient() {
   const params = useParams();
@@ -17,7 +19,7 @@ export default function NutritionOrderPageClient() {
   useEffect(() => {
     const fetchData = async () => {
       // Get customer info from localStorage
-      const storedCustomerId = localStorage.getItem('customerId');
+      const storedCustomerId = getResolvedCustomerId();
       if (storedCustomerId) {
         setCustomerId(storedCustomerId);
       }
@@ -38,7 +40,7 @@ export default function NutritionOrderPageClient() {
   }, [vendorId]);
 
   const handleBack = () => {
-    router.back();
+    goBackOrHome(router);
   };
 
   const handleSuccess = (orderId: string) => {

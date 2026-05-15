@@ -11,12 +11,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   Share,
-  Clipboard,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
+import { ScreenShell } from '../../components/layout/ScreenShell';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, ReferralApi } from '../../services/api';
 
@@ -66,20 +67,44 @@ export function ReferralSystemScreen({
     if (activeTab === 'history') {
       loadReferralHistory();
     }
-  }, [customerId, activeTab]);
+  }, [customerId, phone, activeTab]);
+
+  const resolveCustomerId = async (): Promise<string> => {
+    const fromProps = customerId?.trim() || '';
+    if (fromProps) return fromProps;
+    const digits = phone.replace(/\D/g, '');
+    if (!digits) return '';
+    try {
+      const cust = await CustomerApi.getCustomerByPhone(digits);
+      const id = cust?.id ?? cust?.customer_id ?? cust?.customerId;
+      return id != null ? String(id).trim() : '';
+    } catch {
+      return '';
+    }
+  };
+
+  const phoneFallbackReferralCode = () => {
+    const digits = phone.replace(/\D/g, '');
+    return (digits.slice(-6) || 'REF123').toUpperCase();
+  };
 
   const loadReferralProfile = async () => {
     try {
       setLoading(true);
-      if (customerId) {
+      const resolvedId = await resolveCustomerId();
+
+      if (resolvedId) {
         const [codeResponse, statsResponse] = await Promise.all([
-          ReferralApi.getReferralCode(customerId).catch(() => ({ referralCode: 'WARM' + customerId.slice(-4).toUpperCase() })),
-          ReferralApi.getReferralStats(customerId).catch(() => ({})),
+          ReferralApi.getReferralCode(resolvedId).catch(() => ({
+            referralCode: 'WARM' + resolvedId.slice(-4).toUpperCase(),
+          })),
+          ReferralApi.getReferralStats(resolvedId).catch(() => ({})),
         ]);
-        
+
         setProfile({
-          customerId: customerId,
-          referralCode: codeResponse.referralCode || 'WARM' + customerId.slice(-4).toUpperCase(),
+          customerId: resolvedId,
+          referralCode:
+            codeResponse.referralCode || 'WARM' + resolvedId.slice(-4).toUpperCase(),
           totalReferrals: statsResponse.totalReferrals || 0,
           completedReferrals: statsResponse.completedReferrals || 0,
           pendingReferrals: statsResponse.pendingReferrals || 0,
@@ -87,13 +112,25 @@ export function ReferralSystemScreen({
           monthlyReferrals: statsResponse.monthlyReferrals || 0,
           monthlyEarnings: statsResponse.monthlyEarnings || 0,
         });
+      } else {
+        setProfile({
+          customerId: '',
+          referralCode: phoneFallbackReferralCode(),
+          totalReferrals: 0,
+          completedReferrals: 0,
+          pendingReferrals: 0,
+          totalEarnings: 0,
+          monthlyReferrals: 0,
+          monthlyEarnings: 0,
+        });
       }
     } catch (error: any) {
       console.error('Error loading referral profile:', error);
-      // Set fallback profile
       setProfile({
-        customerId: customerId || '',
-        referralCode: 'WARM' + (customerId || '').slice(-4).toUpperCase(),
+        customerId: customerId?.trim() || '',
+        referralCode: customerId
+          ? 'WARM' + customerId.slice(-4).toUpperCase()
+          : phoneFallbackReferralCode(),
         totalReferrals: 0,
         completedReferrals: 0,
         pendingReferrals: 0,
@@ -108,8 +145,9 @@ export function ReferralSystemScreen({
 
   const loadReferralHistory = async () => {
     try {
-      if (customerId) {
-        const response = await ReferralApi.getReferralHistory(customerId, 50);
+      const resolvedId = await resolveCustomerId();
+      if (resolvedId) {
+        const response = await ReferralApi.getReferralHistory(resolvedId, 50);
         const history = response.history || response || [];
         
         const referralHistory: ReferralHistory[] = history.map((h: any) => ({
@@ -124,6 +162,8 @@ export function ReferralSystemScreen({
         }));
         
         setReferralHistory(referralHistory);
+      } else {
+        setReferralHistory([]);
       }
     } catch (error: any) {
       console.error('Error loading referral history:', error);
@@ -141,7 +181,7 @@ export function ReferralSystemScreen({
   };
 
   const shareReferral = async () => {
-    if (!profile || !customerId) return;
+    if (!profile) return;
 
     const shareMessage = `Join Warmpawz! Use my code ${profile.referralCode} to join and get a welcome bonus!`;
 
@@ -150,27 +190,16 @@ export function ReferralSystemScreen({
         message: shareMessage,
         title: 'Join Warmpawz!',
       });
-      
-      // Track share event
-      if (result.action === Share.sharedAction) {
-        // Optionally track share event via API
-        try {
-          await ReferralApi.sendInvite({
-            customerId,
-            message: shareMessage,
-          });
-        } catch (error) {
-          // Silent fail for tracking
-          console.log('Share tracking failed:', error);
-        }
-      }
 
       if (result.action === Share.sharedAction) {
+        // /referral/invite requires an email or phone (it actually sends an
+        // invite). Generic OS-share has no recipient, so we don't call it
+        // here. If we ever add per-channel share telemetry it should go
+        // through a dedicated tracking endpoint.
         Alert.alert('Shared!', 'Your referral code has been shared');
       }
     } catch (error) {
       console.error('Error sharing:', error);
-      // Fallback to copy
       copyToClipboard();
     }
   };
@@ -203,35 +232,28 @@ export function ReferralSystemScreen({
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   if (!profile) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.emptyState}>
           <Text style={styles.emptyStateIcon}>👥</Text>
           <Text style={styles.emptyStateText}>No referral profile found</Text>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Referral Program</Text>
-        <View style={styles.headerSpacer} />
-      </View>
-
+    <OrangeBrandedScreenLayout title="Referral Program" onBack={onBack} bodyBackgroundColor={colors.white}>
+      <View style={styles.stackFill}>
       {/* Tabs */}
       <View style={styles.tabs}>
         <TouchableOpacity
@@ -262,7 +284,7 @@ export function ReferralSystemScreen({
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content}>
+      <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
         {/* Overview Tab */}
         {activeTab === 'overview' && (
           <View>
@@ -502,7 +524,8 @@ export function ReferralSystemScreen({
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+      </View>
+    </OrangeBrandedScreenLayout>
   );
 }
 
@@ -511,28 +534,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    fontSize: typography.fontSizes.md,
-    color: colors.white,
-  },
-  headerTitle: {
-    fontSize: typography.fontSizes['2xl'],
-    fontWeight: 'bold',
-    color: colors.white,
+  stackFill: {
     flex: 1,
-    textAlign: 'center',
   },
-  headerSpacer: {
-    width: 60,
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: spacing.lg,
   },
   loadingContainer: {
     flex: 1,

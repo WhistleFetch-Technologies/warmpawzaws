@@ -17,26 +17,24 @@ import { cors } from 'hono/cors';
 import { initializeErrorTracking, captureException, setUserContext, getErrorTrackingConfig } from '../utils/error-tracking';
 import { validateEnvironmentOrThrow, getValidationReport, validateEnvironment } from '../utils/env-validation';
 import { checkDbHealth } from '../database/rds-connection';
-import { requireAuth, requireAdmin, authAuditLog } from '../middleware/auth-middleware';
+import { requireAuth, requireAdmin, authAuditLog, requireAiChatbotAuth } from '../middleware/auth-middleware';
 import { rateLimit, rateLimitAuth, rateLimitOtp, slidingWindowRateLimit } from '../middleware/rate-limit-middleware';
 // Enhanced handlers (Phase 2-5)
-import { registerVendorOnboardingEndpointsEnhanced } from '../endpoints/vendor-onboarding-enhanced';
-import { registerVendorOnboardingFixes } from '../endpoints/vendor-onboarding-fixes';
+import { registerVendorOnboardingEndpointsEnhanced } from '../endpoints/vendor/endpoints/vendor-onboarding-enhanced';
+import { registerVendorOnboardingFixes } from '../endpoints/vendor/endpoints/vendor-onboarding-fixes';
 import { registerBookingEndpointsEnhanced, registerBookingOTPEndpoint } from '../endpoints/booking/endpoints/bookings-enhanced.booking';
 import { registerPaymentEndpointsEnhanced } from '../endpoints/payments-enhanced';
 import { registerTrackingEndpoints } from '../endpoints/tracking';
 
 // Legacy handlers (to be migrated gradually)
-import { registerAuthEndpoints } from '../endpoints/auth';
-import { registerVendorOnboardingEndpoints } from '../endpoints/vendor-onboarding';
 // import { registerBookingEndpoints } from '../endpoints/bookings'; // DEPRECATED - use registerBookingEndpointsEnhanced instead
 import { registerPaymentEndpoints } from '../endpoints/payments';
 import { registerRoleEndpoints } from '../endpoints/roles';
 import { registerRoleSeedingEndpoints } from '../endpoints/role-seeding';
 import { registerOnboardingFormManagementEndpoints } from '../endpoints/onboarding-form-management';
-import { registerVendorDashboardEndpoints } from '../endpoints/vendor-dashboard';
-import { registerGpsTrackingEndpoints } from '../endpoints/gps-tracking';
+import { registerVendorDashboardEndpoints } from '../endpoints/vendor/endpoints/vendor-dashboard';
 import { registerAdminEndpoints } from '../endpoints/admin/endpoints/admin.controller';
+import { registerAdminAiCopilotEndpoints } from '../endpoints/admin/endpoints/admin-ai-copilot';
 import { registerVideoCallEndpoints } from '../endpoints/teleCommunication/endpoints/video-call.teleCommunication';
 import { registerPackageSessionEndpoints } from '../endpoints/package-sessions';
 import { registerSearchEndpoints } from '../endpoints/search';
@@ -44,37 +42,40 @@ import { registerRazorpayEndpoints } from '../endpoints/razorpay/endpoints/razor
 import { registerWalletEndpoints } from '../endpoints/wallet';
 import { registerWalletDiagnosticEndpoints } from '../endpoints/wallet-diagnostic';
 import { registerSpecializedServicesEndpoints } from '../endpoints/specialized-services';
-import { registerSpecializedServiceFlows } from '../endpoints/specialized-service-flows';
+import { registerSpecializedServiceFlows } from '../endpoints/customer/customerEndpoint/specialized-service-flows.customer';
 // Staff decommissioned: solo providers discovered via discover-services for at_home/tele
 // import { registerStaffEndpoints } from '../endpoints/staff';
 import { registerReviewEndpoints } from '../endpoints/reviews';
 import { registerNotificationEndpoints } from '../endpoints/notification/endpoitns/notifications.notification';
 import { registerFollowupRescheduleEndpoints } from '../endpoints/followup-reschedule';
 import { registerBehaviorJournalEndpoints } from '../endpoints/behavior-journal';
-import { registerVendorScheduleEndpoints } from '../endpoints/vendor-schedule';
-import { registerPrescriptionEndpoints } from '../endpoints/prescriptions';
+import { registerVendorScheduleEndpoints } from '../endpoints/vendor/endpoints/vendor-schedule';
+import { registerPrescriptionEndpoints } from '../endpoints/prescription/endpoints/prescriptions';
 import { registerMedicalRecordsEndpoints } from '../endpoints/medical-records';
-import { registerEcommerceEndpoints } from '../endpoints/ecommerce';
-import { registerAnalyticsEndpoints } from '../endpoints/analytics';
-import { registerLoyaltyEndpoints } from '../endpoints/loyalty';
+import { registerEcommerceEndpoints } from '../endpoints/ecommerce/endpoints/ecommerce';
+import { registerAnalyticsEndpoints } from '../endpoints/admin/endpoints/analytics.admin';
+import { registerProductAnalyticsEndpoints } from '../endpoints/product-analytics';
+import { registerLoyaltyEndpoints } from '../endpoints/loyalty&reward/endpoints/loyalty';
 import { registerPackageEndpoints } from '../endpoints/packages';
 import { registerPetEndpoints } from '../endpoints/pets';
-import { registerVendorServicesEndpoints } from '../endpoints/vendor-services';
-import { registerVendorPricingEndpoints } from '../endpoints/vendor-pricing';
-import { registerVendorProductsEndpoints } from '../endpoints/vendor-products';
-import { registerVendorOrdersEndpoints } from '../endpoints/vendor-orders';
+import { registerVendorServicesEndpoints } from '../endpoints/vendor/endpoints/vendorServices.vendor';
+import { registerVendorPricingEndpoints } from '../endpoints/vendor/endpoints/vendor-pricing';
+import { registerVendorProductsEndpoints } from '../endpoints/vendor/endpoints/vendor-products';
+import { registerVendorOrdersEndpoints } from '../endpoints/vendor/endpoints/vendor-orders';
 import { registerServiceCatalogEndpoints } from '../endpoints/service-catalog';
 import { registerSettlementEndpoints } from '../endpoints/settlement&payouts/endpoints/settlements';
 import { registerRegionEndpoints } from '../endpoints/regions';
 import { registerChatEndpoints } from '../endpoints/chat';
 import { registerFileUploadEndpoints } from '../endpoints/file-upload';
 import { registerSubscriptionEndpoints } from '../endpoints/subscriptions';
+import { registerSubscriptionBookingEndpoints } from '../endpoints/subscription-booking';
 import { registerInsuranceEndpoints } from '../endpoints/insurance';
 import { registerTrainingProgressEndpoints } from '../endpoints/training-progress';
 import { registerPackageBookingEndpoints } from '../endpoints/package-booking';
 import { registerWalkerGPSEndpoints } from '../endpoints/walker-gps';
 import { registerPromotionEndpoints } from '../endpoints/promotions';
-import { registerVendorPromotionsEndpoints } from '../endpoints/vendor-promotions';
+import { registerVendorPromotionsEndpoints } from '../endpoints/vendor/endpoints/vendor-promotions';
+import { registerVendorBannersEndpoints } from '../endpoints/vendor/endpoints/vendor-banners';
 import { registerAdsRecommendationEndpoints } from '../endpoints/ads-recommendations';
 import { registerEventEndpoints } from '../endpoints/events';
 import { registerHealthEndpoints } from '../endpoints/health';
@@ -87,14 +88,14 @@ import { registerReturnsEndpoints } from '../endpoints/returns';
 import { registerOrderManagementEndpoints } from '../endpoints/order-management';
 import { registerEnhancedOtpEndpoints } from '../endpoints/otp-enhanced';
 import { registerSmsNotificationEndpoints } from '../endpoints/sms-notifications';
-import { registerVendorProfileEndpoints } from '../endpoints/vendor/endpoints/vendor-profile.vendor';
+import { registerVendorProfileEndpoints } from '../endpoints/vendor/endpoints/vendorProfile.vendor';
+import { registerVendorProfilePasswordLiterals } from '../endpoints/vendor/vendor-auth-password';
 import { registerSystemHealthEndpoints } from '../endpoints/system-health';
-import { registerVendorSettingsEndpoints } from '../endpoints/vendor-settings';
-import { registerVendorPoliciesEndpoints } from '../endpoints/vendor-policies';
-import { registerVendorBookingsEndpoints } from '../endpoints/vendor-bookings';
-import { registerVendorDashboardEnhancedEndpoints } from '../endpoints/vendor-dashboard-enhanced';
+import { registerVendorSettingsEndpoints } from '../endpoints/vendor/endpoints/vendor-settings';
+import { registerVendorPoliciesEndpoints } from '../endpoints/vendor/endpoints/vendor-policies';
+import { registerVendorBookingsEndpoints } from '../endpoints/vendor/endpoints/vendor-bookings';
+import { registerVendorDashboardEnhancedEndpoints } from '../endpoints/vendor/endpoints/vendor-dashboard-enhanced';
 import { registerAppointmentReminderEndpoints } from '../endpoints/appointment-reminders';
-import { registerVendorBookingActionsEndpoints } from '../endpoints/vendor-booking-actions';
 import { registerNotificationSystemEndpoints } from '../endpoints/notification-system';
 import { registerTierSystemEndpoints } from '../endpoints/tier-system';
 import { registerTransactionMonitoringEndpoints } from '../endpoints/transaction-monitoring';
@@ -102,51 +103,52 @@ import { registerTimeWindowSubscriptionEndpoints } from '../endpoints/time-windo
 import { registerStorageEndpoints } from '../endpoints/storage';
 import { registerPushNotificationEndpoints } from '../endpoints/push-notifications';
 import { registerCommuteTimeEndpoints } from '../endpoints/commute-time';
-import { registerBookingDetailsEnhancedEndpoints } from '../endpoints/booking-details-enhanced';
 import { registerRazorpaySettlementEndpoints } from '../endpoints/razorpay-settlements';
 import { registerRefundPolicyEngineEndpoints } from '../endpoints/refund-policy-engine';
 import { registerAdminAdvancedEndpoints } from '../endpoints/admin/endpoints/admin-advanced';
+import { registerAdminVendorDailyAccrualEndpoints } from '../endpoints/admin/endpoints/admin-vendor-daily-accrual';
 import { registerDiscoveryRulesAdminEndpoints } from '../endpoints/discovery-rules-admin';
-import { registerVendorSetupEndpoints } from '../endpoints/vendor-setup';
+import { registerVendorSetupEndpoints } from '../endpoints/vendor/endpoints/vendor-setup';
 import { registerConfigPoliciesEndpoints } from '../endpoints/config-policies';
 import { registerPetCafeEndpoints } from '../endpoints/pet-cafe';
-import { registerVendorRadarEndpoints } from '../endpoints/vendor-radar';
+import { registerVendorRadarEndpoints } from '../endpoints/vendor/endpoints/vendor-radar';
 import { registerPetResortEndpoints } from '../endpoints/pet-resort';
 import { registerPetHolidaysEndpoints } from '../endpoints/pet-holidays';
 import { registerTaxManagementEndpoints } from '../endpoints/tax-management';
 import { registerLogisticsManagementEndpoints } from '../endpoints/logistics-management';
 import { registerPaymentGatewayManagementEndpoints } from '../endpoints/payment-gateway-management';
-import { registerLoyaltyActionRulesManagementEndpoints } from '../endpoints/loyalty-action-rules-management';
-import { registerLoyaltySegmentsManagementEndpoints } from '../endpoints/loyalty-segments-management';
+
 import { registerCommunityEndpoints } from '../endpoints/community';
 import { registerReferralEndpoints } from '../endpoints/referrals';
 import { registerRewardsEndpoints } from '../endpoints/rewards';
-import { registerAIChatbotEndpoints } from '../endpoints/ai-chatbot';
-import { registerSupportCrmEndpoints } from '../endpoints/support-crm';
+import { registerAIChatbotEndpoints } from '../endpoints/aiChatbot/ai-chatbot';
+import { registerAIBookingWizardSessionEndpoints } from '../endpoints/aiChatbot/ai-booking-wizard-session';
+import { registerSupportCrmEndpoints } from '../endpoints/supportCrm/endpoint/support-crm';
 import { registerLocationSharingEndpoints } from '../endpoints/location-sharing';
-import { registerVendorSecurityEndpoints } from '../endpoints/vendor-security';
-import { registerVendorDistancePricingEndpoints } from '../endpoints/vendor-distance-pricing';
+import { registerVendorSecurityEndpoints } from '../endpoints/vendor/endpoints/vendor-security';
+import { registerVendorDistancePricingEndpoints } from '../endpoints/vendor/endpoints/vendor-distance-pricing';
 import { registerSchedulingPolicyEndpoints } from '../endpoints/scheduling-policies';
 import { registerAdminComprehensiveEndpoints } from '../endpoints/admin/endpoints/admin-comprehensive';
+import { registerAdminCustomerEndpoints } from '../endpoints/admin/endpoints/admin-customer-endpoints';
 import { registerProblemGridEndpoints } from '../endpoints/problem-grid';
-import { registerVendorDashboardMissingEndpoints } from '../endpoints/vendor-dashboard-missing';
+import { registerVendorDashboardMissingEndpoints } from '../endpoints/vendor/endpoints/vendor-dashboard-missing';
 import { registerUIDashboardConfigEndpoints } from '../endpoints/ui-dashboard-config';
 import { registerServiceLaunchConfigEndpoints } from '../endpoints/service-launch-config';
 import { registerCarePlansEndpoints } from '../endpoints/care-plans';
-import { registerVendorSupportEndpoints } from '../endpoints/vendor-support';
-import { registerPharmacyOrderEndpoints, registerAdditionalPharmacyEndpoints } from '../endpoints/pharmacy-orders';
+import { registerVendorSupportEndpoints } from '../endpoints/vendor/endpoints/vendor-support';
+import { registerPharmacyOrderEndpoints, registerAdditionalPharmacyEndpoints } from '../endpoints/orders/endpoint/pharmacy-orders';
 import { registerPharmacyInventoryEndpoints } from '../endpoints/pharmacy-inventory';
 import { registerDeliveryPartnerAutomationEndpoints } from '../endpoints/delivery-partner-automation';
 import { registerMealPlanEndpoints } from '../endpoints/meal-plans';
 import { registerNutritionOrderEndpoints } from '../endpoints/nutrition-orders';
-import { registerVendorBankAccountEndpoints } from '../endpoints/vendor-bank-accounts';
+import { registerVendorBankAccountEndpoints } from '../endpoints/vendor/endpoints/vendor-bank-accounts';
 import { registerDeliveryTrackingEndpoints } from '../endpoints/delivery-tracking';
 import { registerDeliveryOtpEndpoints } from '../endpoints/delivery-otp';
 import { registerInstantTeleQueueEndpoints } from '../endpoints/teleCommunication/endpoints/instant-tele-queue.teleconsultation';
 import { registerInstantTeleV2Endpoints } from '../endpoints/teleCommunication/endpoints/instant-tele-v2.teleconsultation';
 import { registerInstantTeleV3Endpoints } from '../endpoints/teleCommunication/endpoints/instant-tele-v3.teleconsultation';
 import { registerRoomsEndpoints } from '../endpoints/rooms';
-import { registerVendorLiveStatusEndpoints } from '../endpoints/vendor-live-status';
+import { registerVendorLiveStatusEndpoints } from '../endpoints/vendor/endpoints/vendor-live-status';
 import { registerDiagnosticsReportEndpoints } from '../endpoints/diagnostics-reports';
 import { registerMealSubscriptionEndpoints } from '../endpoints/meal-subscriptions';
 import { registerDocumentExpiryEndpoints } from '../endpoints/document-expiry';
@@ -168,29 +170,66 @@ import platformPoliciesApp from '../endpoints/platform-policies';
 import { registerAuthEndpointsEnhanced } from 'src/endpoints/Auth/auth-enhanced';
 import { registerServiceDiscoveryEndpoints } from 'src/endpoints/customer/customerEndpoint/service-discovery.customer';
 import { registerCustomerProfileEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-profile.customer';
-import { registerVendorAnalyticsEndpoints } from 'src/endpoints/vendor-analytics';
+import { registerCustomerPasswordEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-password';
+import { registerVendorAnalyticsEndpoints } from 'src/endpoints/vendor/endpoints/vendorAnalytics.vendor';
 import { registerCustomerEndpointsEnhanced } from 'src/endpoints/customer/customerEndpoint/customer-enhanced';
 import { registerAdminSellersEndpoints } from 'src/endpoints/admin/endpoints/admin-sellers';
 import { registerCustomerContentEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-content';
 import { registerCustomerPhoneConvenienceEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-phone-convenience';
 import { registerCustomerBookingHistoryEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-booking-history';
 import { registerAdminGovernanceEndpoints } from 'src/endpoints/admin/endpoints/admin-governance';
-import { registerCustomerPasswordEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-password';
 import { registerAdminIntegrationEndpoints } from 'src/endpoints/admin/endpoints/admin-integrations';
 import { registerAdminGovernanceEnhancedEndpoints } from 'src/endpoints/admin/endpoints/admin-governance-enhanced';
 import { registerCustomerAppointmentsEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-appointments';
 import { registerCustomerOrdersEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-orders';
 import { registerAdminCustomServicesEndpoints } from 'src/endpoints/admin/endpoints/admin-custom-services';
+import { registerGpsTrackingEndpoints } from 'src/endpoints/gpsTracking/endpoints/gps-tracking';
+import { registerVendorBookingActionsEndpoints } from 'src/endpoints/gpsTracking/endpoints/vendor.gpstracking';
+import { registerBookingDetailsEnhancedEndpoints } from 'src/endpoints/booking/endpoints/booking-details-enhanced';
+import { registerLoyaltySegmentsManagementEndpoints } from 'src/endpoints/loyalty&reward/endpoints/loyalty-segments-management';
+import { registerLoyaltyActionRulesManagementEndpoints } from 'src/endpoints/loyalty&reward/endpoints/loyalty-action-rules-management';
+import { registerLoyaltyActionSourcesManagementEndpoints } from 'src/endpoints/loyalty&reward/endpoints/loyalty-action-sources-management';
+import { registerWalletCheckoutRulesEndpoints } from 'src/endpoints/wallet-checkout-rules-endpoints';
+import { actionSourceMiddleware } from '../middleware/action-source-middleware';
 
 // Create Hono app
 const app = new Hono();
 
-// CORS: allowed origins from env only (set by CDK/deploy from config/urls.json or ALLOWED_ORIGINS). No hardcoded URLs.
+/** Local browser dev servers (merged only when not prod/stage — see getAllowedOriginsList).
+ * Include 127.0.0.1 — browsers treat it as distinct from localhost for CORS. */
+const LOCAL_DEV_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3002',
+  'http://localhost:3003',
+  'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+  'http://127.0.0.1:3002',
+  'http://127.0.0.1:3003',
+  'http://127.0.0.1:5173',
+];
+
+/** Must stay aligned with API Gateway AllowHeaders (infra/modules/api-gateway/main.tf). */
+const CORS_ALLOW_HEADERS_BASE =
+  'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,x-customer-phone,X-Requested-With';
+
+const isStrictCorsOriginPolicy = (): boolean => {
+  const e = (process.env.ENVIRONMENT || '').toLowerCase();
+  return e === 'prod' || e === 'production' || e === 'stage';
+};
+
+/** Env-scoped allowlist: prod/stage use only ALLOWED_ORIGINS; dev merges localhost + ALLOWED_ORIGINS (Terraform). */
 const getAllowedOriginsList = (): string[] => {
-  const fromEnv = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (fromEnv.length > 0) return fromEnv;
-  // Local dev only when ALLOWED_ORIGINS not set
-  return ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:3003', 'http://localhost:5173'];
+  const fromEnv = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (isStrictCorsOriginPolicy()) {
+    return fromEnv.length > 0 ? [...new Set(fromEnv)] : [];
+  }
+  const merged = [...new Set([...LOCAL_DEV_ORIGINS, ...fromEnv])];
+  return merged.length > 0 ? merged : LOCAL_DEV_ORIGINS;
 };
 
 const getDefaultCorsOrigin = (): string => {
@@ -198,17 +237,61 @@ const getDefaultCorsOrigin = (): string => {
   return list[0] || '';
 };
 
-// Helper function to get allowed origin for a request
+/**
+ * Exact allowlist match only (no wildcard). Missing Origin → first allowed origin (non-browser parity).
+ * Present but disallowed Origin → '' (omit ACAO on that response).
+ */
 const getAllowedOrigin = (origin: string | null | undefined): string => {
-  const allowedOrigins = getAllowedOriginsList();
-  const defaultOrigin = getDefaultCorsOrigin();
-  if (!origin) return defaultOrigin;
+  const list = getAllowedOriginsList();
+  if (!origin || !String(origin).trim()) {
+    return getDefaultCorsOrigin();
+  }
   const normalizedOrigin = origin.toLowerCase();
-  const normalizedAllowed = allowedOrigins.map(o => o.toLowerCase());
-  if (normalizedAllowed.includes(normalizedOrigin)) return origin;
-  if (normalizedOrigin.includes('cloudfront.net')) return origin;
-  return defaultOrigin;
+  if (list.map((o) => o.toLowerCase()).includes(normalizedOrigin)) {
+    return origin;
+  }
+  return '';
 };
+
+function mergeAccessControlRequestHeaders(requestedHeaderLine: string): string {
+  const extra = (requestedHeaderLine || '')
+    .split(',')
+    .map((h) => h.trim())
+    .filter(Boolean)
+    .join(',');
+  return extra ? `${CORS_ALLOW_HEADERS_BASE},${extra}` : CORS_ALLOW_HEADERS_BASE;
+}
+
+function corsPreflightResponseHeaders(
+  allowedOrigin: string,
+  requestedHeaderLine: string
+): Record<string, string> {
+  const h: Record<string, string> = {
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+    'access-control-allow-headers': mergeAccessControlRequestHeaders(requestedHeaderLine),
+    'access-control-max-age': '86400',
+    'content-length': '0',
+  };
+  if (allowedOrigin) {
+    h['access-control-allow-origin'] = allowedOrigin;
+    h['access-control-allow-credentials'] = 'true';
+  }
+  return h;
+}
+
+/** Non-preflight API Gateway responses (errors / header merge): omit ACAO when origin not allowed. */
+function apiGwCorsHeadersForResponse(origin: string | undefined): Record<string, string> {
+  const allowedOrigin = getAllowedOrigin(origin);
+  const h: Record<string, string> = {
+    'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
+    'access-control-allow-headers': CORS_ALLOW_HEADERS_BASE,
+  };
+  if (allowedOrigin) {
+    h['access-control-allow-origin'] = allowedOrigin;
+    h['access-control-allow-credentials'] = 'true';
+  }
+  return h;
+}
 
 // Explicit OPTIONS handler for all routes - must be before CORS middleware
 // This ensures OPTIONS requests return 200 OK immediately
@@ -220,48 +303,29 @@ app.options('*', async (c) => {
       origin: origin || 'none',
       rawPath: (c.req as any).rawPath || c.req.path,
     });
-    
+
     const allowedOrigin = getAllowedOrigin(origin);
-    
-    const requestedHeaders = c.req.header('access-control-request-headers') || 
-                            c.req.header('Access-Control-Request-Headers') || '';
-    const baseAllowedHeaders = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
-    const allowedHeaders = requestedHeaders 
-      ? `${baseAllowedHeaders},${requestedHeaders.split(',').map(h => h.trim()).join(',')}`
-      : baseAllowedHeaders;
-    
+    const requestedHeaders =
+      c.req.header('access-control-request-headers') ||
+      c.req.header('Access-Control-Request-Headers') ||
+      '';
+
     console.log('[Hono OPTIONS] Returning 200 OK with CORS headers:', {
       allowedOrigin,
-      allowedHeaders: allowedHeaders.substring(0, 100), // Log first 100 chars
+      allowedHeaders: mergeAccessControlRequestHeaders(requestedHeaders).substring(0, 100),
     });
-    
-    // Return empty body with 200 status and CORS headers
+
     return new Response(null, {
       status: 200,
-      headers: {
-        'access-control-allow-origin': allowedOrigin,
-        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'access-control-allow-headers': allowedHeaders,
-        'access-control-allow-credentials': 'true',
-        'access-control-max-age': '86400',
-        'content-length': '0',
-      },
+      headers: corsPreflightResponseHeaders(allowedOrigin, requestedHeaders),
     });
   } catch (error) {
     console.error('[Hono OPTIONS] Error in OPTIONS handler:', error);
-    // Even on error, return 200 OK for CORS
     const origin = c.req.header('origin') || c.req.header('Origin') || '';
     const allowedOrigin = getAllowedOrigin(origin);
     return new Response(null, {
       status: 200,
-      headers: {
-        'access-control-allow-origin': allowedOrigin,
-        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-        'access-control-allow-credentials': 'true',
-        'access-control-max-age': '86400',
-        'content-length': '0',
-      },
+      headers: corsPreflightResponseHeaders(allowedOrigin, ''),
     });
   }
 });
@@ -269,15 +333,21 @@ app.options('*', async (c) => {
 app.use('*', cors({
   origin: (origin) => {
     const allowed = getAllowedOriginsList();
-    const defaultOrigin = getDefaultCorsOrigin();
-    if (!origin) return defaultOrigin;
+    if (!origin) return getDefaultCorsOrigin() || undefined;
     const normalized = origin.toLowerCase();
-    if (allowed.map(o => o.toLowerCase()).includes(normalized)) return origin;
-    if (normalized.includes('cloudfront.net')) return origin;
-    return defaultOrigin;
+    if (allowed.map((o) => o.toLowerCase()).includes(normalized)) return origin;
+    return null;
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
-  allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'x-api-key', 'X-UAT-Mode', 'X-UAT-Token'],
+  allowHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'x-api-key',
+    'X-UAT-Mode',
+    'X-UAT-Token',
+    'X-Customer-Phone',
+  ],
   credentials: true,
   maxAge: 86400,
 }));
@@ -285,6 +355,9 @@ app.use('*', cors({
 app.use('*', async (c, next) => {
   await next();
 });
+
+// Action Sources middleware - emits ActionOccurred based on DB-configured triggers
+app.use('*', actionSourceMiddleware());
 
 // Authentication audit logging (for security monitoring)
 app.use('*', authAuditLog());
@@ -318,6 +391,42 @@ app.post('/system/run-pending-migrations', async (c) => {
       await dbQuery(`CREATE INDEX IF NOT EXISTS idx_vendors_approved_not_availability ON vendors(status, availability_configured) WHERE status = 'approved' AND availability_configured = false`);
       results.push({ migration: '605_availability_configured', status: 'completed', message: 'Columns and indexes created/verified' });
     } catch (err: any) { results.push({ migration: '605_availability_configured', status: 'error', message: err.message }); }
+
+    // Migration 620: customer_referrals — vendor-as-referrer for customer signups
+    try {
+      await dbQuery(`
+        DO $$ BEGIN
+          IF EXISTS (
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'customer_referrals'
+          ) THEN
+            IF NOT EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = 'customer_referrals' AND column_name = 'referrer_vendor_id'
+            ) THEN
+              ALTER TABLE customer_referrals
+                ADD COLUMN referrer_vendor_id UUID REFERENCES vendors(id) ON DELETE SET NULL;
+            END IF;
+            ALTER TABLE customer_referrals ALTER COLUMN referrer_customer_id DROP NOT NULL;
+            IF NOT EXISTS (
+              SELECT 1 FROM pg_constraint WHERE conname = 'customer_referrals_referrer_chk'
+            ) THEN
+              ALTER TABLE customer_referrals
+                ADD CONSTRAINT customer_referrals_referrer_chk CHECK (
+                  (referrer_customer_id IS NOT NULL AND referrer_vendor_id IS NULL)
+                  OR (referrer_customer_id IS NULL AND referrer_vendor_id IS NOT NULL)
+                );
+            END IF;
+          END IF;
+        END $$;
+      `);
+      await dbQuery(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_referrals_vendor_referred_phone
+        ON customer_referrals (referrer_vendor_id, referred_phone)
+        WHERE referrer_vendor_id IS NOT NULL;
+      `);
+      results.push({ migration: '620_customer_referrals_vendor_referrer', status: 'completed', message: 'referrer_vendor_id + constraints' });
+    } catch (err: any) { results.push({ migration: '620_customer_referrals_vendor_referrer', status: 'error', message: err.message }); }
 
     // Migration 071: vendor settings columns
     try {
@@ -362,11 +471,32 @@ app.post('/system/run-pending-migrations', async (c) => {
 // Require authentication for admin endpoints
 app.use('/admin/*', requireAdmin());
 
+const adminAiCopilotRlMaxRaw = parseInt(process.env.ADMIN_AI_COPILOT_RL_MAX || '20', 10);
+const adminAiCopilotRlMax = Number.isFinite(adminAiCopilotRlMaxRaw) ? Math.max(5, adminAiCopilotRlMaxRaw) : 20;
+app.use(
+  '/admin/ai-copilot/*',
+  slidingWindowRateLimit({
+    windowMs: 60_000,
+    maxRequests: adminAiCopilotRlMax,
+    keyPrefix: 'admin-ai-copilot',
+  })
+);
+
 // Rate limiting for sensitive endpoints
 app.use('/auth/*', rateLimitAuth());
 app.use('/otp/*', slidingWindowRateLimit({ windowMs: 60000, maxRequests: 5, keyPrefix: 'otp' }));
 app.use('/bookings/generate-otp', slidingWindowRateLimit({ windowMs: 60000, maxRequests: 5, keyPrefix: 'booking-otp' }));
 app.use('/payments/*', rateLimit({ windowMs: 60000, maxRequests: 30, keyPrefix: 'payments' }));
+
+const aiChatbotRlMaxRaw = parseInt(process.env.AI_CHATBOT_RL_MAX || '30', 10);
+const aiChatbotRlMax = Number.isFinite(aiChatbotRlMaxRaw) ? Math.max(5, aiChatbotRlMaxRaw) : 30;
+app.use(
+  '/ai-chatbot/*',
+  slidingWindowRateLimit({ windowMs: 60_000, maxRequests: aiChatbotRlMax, keyPrefix: 'ai-chatbot' })
+);
+if (process.env.AI_CHATBOT_REQUIRE_AUTH === 'true') {
+  app.use('/ai-chatbot/*', requireAiChatbotAuth());
+}
 
 // Initialize CloudWatch error tracking (India data residency compliant)
 const environment = process.env.NODE_ENV || process.env.ENVIRONMENT || 'development';
@@ -473,14 +603,24 @@ registerCustomerContentEndpoints(app); // /customer/banners, /customer/articles,
 // /customer/bookings/active is registered in registerCustomerPhoneConvenienceEndpoints
 // This ensures "active" is not interpreted as a UUID in /customer/:customerId route
 registerCustomerPhoneConvenienceEndpoints(app); // /customer/bookings/active, /customer/bookings?phone=, /customer/cart/:phone, /customer/wallet?phone=, etc. - before /customer/:customerId
-registerCustomerProfileEndpoints(app); // /customer/profile, /customer/profile/unified/:id, /customer/profile/:id - before /customer/:customerId
+registerCustomerPasswordEndpoints(app); // POST /customer/change-password (legacy); literals live in profile module
+registerCustomerProfileEndpoints(app); // password-status, set-password, account/* first — then /customer/profile/* — before /customer/:customerId
 registerCustomerBookingHistoryEndpoints(app); // /customer/bookings/:bookingId, /customer/:customerId/bookings - before /customer/:customerId
 registerAddressEndpoints(app); // /customer/addresses - MUST be before /customer/:customerId to avoid route conflicts
 registerRefundPolicyEngineEndpoints(app); // /customer/refund-policy - MUST be before /customer/:customerId
+// GET/POST /customer/orders MUST register before /customer/:customerId or "orders" is treated as a customer id → HTTP 404.
+registerCustomerOrdersEndpoints(app);
+// /customer/appointments MUST register before /customer/:customerId or "appointments" is captured as :customerId → list API never runs.
+registerCustomerAppointmentsEndpoints(app);
+// Specialized flows under /customer/* (pet-matching, holiday-packages) MUST register before /customer/:customerId
+// or paths like /customer/pet-matching are captured as customerId="pet-matching" and return 4xx.
+registerSpecializedServiceFlows(app);
 // Now register parameterized routes
 registerCustomerEndpointsEnhanced(app); // /customer/:customerId (parameterized - must be last)
 registerGpsTrackingEndpoints(app);
 registerAdminEndpoints(app);
+registerAdminAiCopilotEndpoints(app);
+registerAdminCustomerEndpoints(app);
 registerVideoCallEndpoints(app);
 registerPackageSessionEndpoints(app);
 registerSearchEndpoints(app);
@@ -488,7 +628,6 @@ registerRazorpayEndpoints(app);
 registerWalletEndpoints(app);
 registerWalletDiagnosticEndpoints(app);
 registerSpecializedServicesEndpoints(app);
-registerSpecializedServiceFlows(app);
 registerAdminGovernanceEndpoints(app);
 // registerStaffEndpoints(app); // Staff decommissioned – solo discovery for at_home/tele
 registerInstantTeleQueueEndpoints(app); // Instant tele consultation queue (legacy queue/staff)
@@ -511,6 +650,7 @@ registerDeliveryOtpEndpoints(app); // Delivery OTP verification for pharmacy and
 registerMedicalRecordsEndpoints(app);
 registerEcommerceEndpoints(app);
 registerAnalyticsEndpoints(app);
+registerProductAnalyticsEndpoints(app);
 registerLoyaltyEndpoints(app);
 registerPackageEndpoints(app);
 registerPetEndpoints(app);
@@ -528,30 +668,37 @@ registerRegionEndpoints(app);
 registerChatEndpoints(app);
 registerFileUploadEndpoints(app);
 registerSubscriptionEndpoints(app);
+registerSubscriptionBookingEndpoints(app); // POST /subscriptions/check-coverage, /subscriptions/create-booking
 registerInsuranceEndpoints(app);
 registerTrainingProgressEndpoints(app);
 registerPackageBookingEndpoints(app);
 registerWalkerGPSEndpoints(app);
 registerPromotionEndpoints(app);
 registerVendorPromotionsEndpoints(app);
+registerVendorBannersEndpoints(app);
 registerAdsRecommendationEndpoints(app);
 registerEventEndpoints(app);
 registerHealthEndpoints(app);
 registerDonationEndpoints(app);
 registerReportEndpoints(app);
+registerAdminVendorDailyAccrualEndpoints(app);
 // registerAddressEndpoints already registered above before parameterized routes
-registerCustomerPasswordEndpoints(app);
 registerAdminIntegrationEndpoints(app);
 registerLogisticsEndpoints(app);
-registerLogisticsWebhookEndpoints(app); // Webhooks: /webhooks/shiprocket, /webhooks/delhivery, /webhooks/dunzo, /logistics/auto-create-shipment, /logistics/calculate-rates, /customer/tracking/:orderId
+registerLogisticsWebhookEndpoints(app); // Webhooks: /webhooks/shiprocket, /webhooks/delhivery, /webhooks/dunzo, /webhooks/pidge, /logistics/auto-create-shipment, /logistics/calculate-rates, /customer/tracking/:orderId
 registerReturnsEndpoints(app);
 registerOrderManagementEndpoints(app);
 registerEnhancedOtpEndpoints(app);
 registerSmsNotificationEndpoints(app);
+// Platform legal policies: GET /vendor/policies, /public/policies, admin CRUD.
+// Must register BEFORE registerVendorProfileEndpoints — that module ends with GET /vendor/:vendorId,
+// which otherwise matches /vendor/policies (vendorId = "policies") and returns no policies[].
+app.route('/', platformPoliciesApp);
+registerVendorProfilePasswordLiterals(app);
 registerVendorProfileEndpoints(app);
 // registerCustomerProfileEndpoints already registered above before parameterized routes
 registerSystemHealthEndpoints(app);
-registerConfigPoliciesEndpoints(app); // /config/policies, /config/fees, /config/logistics-rules
+registerConfigPoliciesEndpoints(app); // /config/policies, /config/logistics-rules (GET /config/fees → fee-config.ts)
 registerVendorSettingsEndpoints(app);
 registerVendorPoliciesEndpoints(app);
 registerVendorBookingsEndpoints(app);
@@ -573,8 +720,7 @@ registerAdminGovernanceEnhancedEndpoints(app);
 registerAdminAdvancedEndpoints(app);
 registerDiscoveryRulesAdminEndpoints(app);
 // registerVendorSetupEndpoints moved above (before vendor-services) to fix route ordering
-registerCustomerAppointmentsEndpoints(app);
-registerCustomerOrdersEndpoints(app);
+// registerCustomerAppointmentsEndpoints registered before /customer/:customerId (see block after registerCustomerOrdersEndpoints)
 registerVendorAnalyticsEndpoints(app);
 registerPetCafeEndpoints(app);
 registerVendorRadarEndpoints(app);
@@ -585,11 +731,14 @@ registerLogisticsManagementEndpoints(app);
 registerPaymentGatewayManagementEndpoints(app);
 registerLoyaltyActionRulesManagementEndpoints(app);
 registerLoyaltySegmentsManagementEndpoints(app);
+registerLoyaltyActionSourcesManagementEndpoints(app);
+registerWalletCheckoutRulesEndpoints(app);
 registerCommunityEndpoints(app);
 registerReferralEndpoints(app);
 registerRewardsEndpoints(app);
 registerAdminSellersEndpoints(app);
 registerAIChatbotEndpoints(app);
+registerAIBookingWizardSessionEndpoints(app);
 registerSupportCrmEndpoints(app);
 registerLocationSharingEndpoints(app);
 registerVendorSecurityEndpoints(app);
@@ -622,19 +771,19 @@ registerFeeConfigEndpoints(app); // Platform and convenience fee configuration
 registerKYCVerificationEndpoints(app); // KYC verification (Aadhaar OTP, PAN, GST)
 registerSpecializationMasterEndpoints(app); // Specialization master (problem grid, vendor specializations)
 
-// Platform policies (Legal agreements, T&C)
-app.route('/', platformPoliciesApp);
-
 // 404 handler - CRITICAL: Must include CORS headers
 app.notFound((c) => {
   const origin = c.req.header('origin') || c.req.header('Origin') || '';
   const allowedOrigin = getAllowedOrigin(origin);
-  return c.json({ error: 'Not Found' }, 404, {
-    'access-control-allow-origin': allowedOrigin,
+  const headers: Record<string, string> = {
     'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-    'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-    'access-control-allow-credentials': 'true',
-  });
+    'access-control-allow-headers': CORS_ALLOW_HEADERS_BASE,
+  };
+  if (allowedOrigin) {
+    headers['access-control-allow-origin'] = allowedOrigin;
+    headers['access-control-allow-credentials'] = 'true';
+  }
+  return c.json({ error: 'Not Found' }, 404, headers);
 });
 
 // Error handler with CloudWatch tracking
@@ -664,12 +813,14 @@ app.onError((err, c) => {
   // Get origin for CORS headers (used in all error responses)
   const origin = c.req.header('origin') || c.req.header('Origin') || '';
   const allowedOrigin = getAllowedOrigin(origin);
-  const corsHeaders = {
-    'access-control-allow-origin': allowedOrigin,
+  const corsHeaders: Record<string, string> = {
     'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-    'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-    'access-control-allow-credentials': 'true',
+    'access-control-allow-headers': CORS_ALLOW_HEADERS_BASE,
   };
+  if (allowedOrigin) {
+    corsHeaders['access-control-allow-origin'] = allowedOrigin;
+    corsHeaders['access-control-allow-credentials'] = 'true';
+  }
   
   // CRITICAL: Check path FIRST - this is the most reliable way to match
   // Check for service-catalog/categories errors by PATH (most reliable)
@@ -807,6 +958,24 @@ app.onError((err, c) => {
     }
     return c.json({ success: true, suggestions: [], count: 0 }, 200, corsHeaders);
   }
+
+  // Universal /search must never hard-fail the home page. If the underlying SQL
+  // throws (schema drift, missing column, etc.) return an empty result envelope
+  // shaped like the success response so the EnhancedSearchBar shows "no results"
+  // rather than a broken UI. Match the canonical /search route only — avoid
+  // accidentally swallowing /customer/search-* (already handled above).
+  if (requestPath === '/search' || requestPath.endsWith('/search')) {
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED /search - Returning 200 empty');
+    }
+    let qParam = '';
+    try { qParam = (c.req as any).query('q') || ''; } catch (_) { qParam = ''; }
+    return c.json(
+      { query: qParam, vendors: [], services: [], total: 0, searchMethod: 'sql-fallback' },
+      200,
+      corsHeaders
+    );
+  }
   
   // Check for customer orders/meals/active - return empty on error (non-critical)
   if (requestPath.includes('orders/meals/active')) {
@@ -871,6 +1040,65 @@ app.onError((err, c) => {
     }
     return c.json({ success: true, reviews: [], pending: [] }, 200, corsHeaders);
   }
+
+  // Mobile: GET /customer/appointments?customerId= (list) and GET /customer/appointments/:id (detail)
+  if (requestPath.includes('customer/appointments')) {
+    const idSegment = requestPath.match(/\/customer\/appointments\/([^/?#]+)/);
+    if (idSegment?.[1]) {
+      if (process.env.DEBUG === 'true') {
+        console.log('[Hono Error Handler] MATCHED customer/appointments/:id - Returning 404 degraded');
+      }
+      return c.json(
+        { error: 'Appointment not found', _degraded: true, message: errorMessage },
+        404,
+        corsHeaders
+      );
+    }
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED customer/appointments list - Returning 200 empty');
+    }
+    return c.json(
+      {
+        appointments: [],
+        count: 0,
+        message: 'No booking',
+        _degraded: true,
+        error: errorMessage,
+      },
+      200,
+      corsHeaders
+    );
+  }
+
+  // Customer appointments list (web + mobile compatibility path)
+  if (requestPath.includes('/appointment/customer')) {
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED appointment/customer list - Returning 200 empty');
+    }
+    return c.json(
+      {
+        appointments: [],
+        count: 0,
+        message: 'No booking',
+        _degraded: true,
+        error: errorMessage,
+      },
+      200,
+      corsHeaders
+    );
+  }
+
+  // GET /appointment/:id (detail), cancel, reschedule — avoid raw 500 for customer bookings UI
+  if (requestPath.includes('/appointment/')) {
+    if (process.env.DEBUG === 'true') {
+      console.log('[Hono Error Handler] MATCHED /appointment/* detail - Returning 404 degraded');
+    }
+    return c.json(
+      { error: 'Appointment not found', _degraded: true, message: errorMessage },
+      404,
+      corsHeaders
+    );
+  }
   
   // Default error response - CRITICAL: Must include CORS headers
   if (process.env.DEBUG === 'true') {
@@ -888,12 +1116,82 @@ const CORS_PREFLIGHT_200 = (origin: string): APIGatewayProxyResultV2 => ({
   headers: {
     'access-control-allow-origin': origin,
     'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-    'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
+    'access-control-allow-headers': CORS_ALLOW_HEADERS_BASE,
     'access-control-allow-credentials': 'true',
     'access-control-max-age': '86400',
     'content-length': '0',
   },
 });
+
+/**
+ * When API Gateway / CloudFront maps `/prefix/*` to this Lambda, `rawPath` still includes the prefix.
+ * Hono routes are registered without that prefix — set `API_HTTP_PATH_PREFIX` (e.g. `/uat` or `/api`) to strip it.
+ */
+/**
+ * Returns true when the Lambda response payload should be **base64-encoded** in
+ * the API Gateway response (set `isBase64Encoded: true`). Stringifying these
+ * bytes via `response.text()` corrupts the file (e.g. XLSX → "File could not
+ * open" in Google Sheets, mangled PDFs, broken images).
+ *
+ * Detection is conservative — anything with a binary-leaning content type *or*
+ * a `Content-Disposition: attachment` header is treated as binary.
+ */
+function isBinaryHttpContentType(
+  contentTypeLower: string,
+  contentDispositionLower: string
+): boolean {
+  if (contentDispositionLower.includes('attachment')) return true;
+  if (!contentTypeLower) return false;
+  // Fast path: explicit text/JSON/XML/form types are never binary.
+  if (
+    contentTypeLower.startsWith('text/') ||
+    contentTypeLower.startsWith('application/json') ||
+    contentTypeLower.startsWith('application/xml') ||
+    contentTypeLower.startsWith('application/javascript') ||
+    contentTypeLower.startsWith('application/x-www-form-urlencoded') ||
+    contentTypeLower.startsWith('application/ld+json') ||
+    contentTypeLower.endsWith('+json') ||
+    contentTypeLower.endsWith('+xml')
+  ) {
+    return false;
+  }
+  // Common binary families.
+  if (
+    contentTypeLower.startsWith('image/') ||
+    contentTypeLower.startsWith('video/') ||
+    contentTypeLower.startsWith('audio/') ||
+    contentTypeLower.startsWith('font/') ||
+    contentTypeLower.startsWith('multipart/') ||
+    contentTypeLower.startsWith('application/octet-stream') ||
+    contentTypeLower.startsWith('application/pdf') ||
+    contentTypeLower.startsWith('application/zip') ||
+    contentTypeLower.startsWith('application/x-zip') ||
+    contentTypeLower.startsWith('application/gzip') ||
+    contentTypeLower.startsWith('application/x-gzip') ||
+    contentTypeLower.startsWith('application/x-tar') ||
+    contentTypeLower.startsWith('application/x-7z-compressed') ||
+    contentTypeLower.startsWith('application/vnd.ms-') ||
+    contentTypeLower.startsWith('application/vnd.openxmlformats-') ||
+    contentTypeLower.startsWith('application/vnd.oasis.opendocument.') ||
+    contentTypeLower.startsWith('application/msword')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function applyHttpPathPrefixMapping(path: string): string {
+  const p0 = path && path.startsWith('/') ? path : `/${path || ''}`;
+  const prefix = (process.env.API_HTTP_PATH_PREFIX || '').trim();
+  if (!prefix) return p0;
+  const norm = prefix.startsWith('/') ? prefix : `/${prefix}`;
+  if (p0 === norm) return '/';
+  if (p0.startsWith(`${norm}/`)) {
+    const rest = p0.slice(norm.length) || '/';
+    return rest.startsWith('/') ? rest : `/${rest}`;
+  }
+  return p0;
+}
 
 export const handler = async (
   event: APIGatewayProxyEventV2,
@@ -927,45 +1225,23 @@ export const handler = async (
   
   if (isOptions) {
     try {
-      const origin = event?.headers?.origin || 
-                     event?.headers?.Origin || 
-                     event?.headers?.['origin'] ||
-                     event?.headers?.['Origin'] ||
-                     '';
-      
-      const allowedOrigins = getAllowedOriginsList();
-      let allowedOrigin = getDefaultCorsOrigin();
-      if (origin) {
-        const normalizedOrigin = origin.toLowerCase();
-        const normalizedAllowedOrigins = allowedOrigins.map(o => o.toLowerCase());
-        if (normalizedAllowedOrigins.includes(normalizedOrigin)) {
-          allowedOrigin = origin;
-        } else if (normalizedOrigin.includes('cloudfront.net')) {
-          // Allow any CloudFront origin (for flexibility)
-          allowedOrigin = origin;
-        }
-      }
-      
-      // Get requested headers from preflight request
-      const requestedHeaders = event?.headers?.['access-control-request-headers'] || 
-                               event?.headers?.['Access-Control-Request-Headers'] ||
-                               '';
-      const baseAllowedHeaders = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
-      const allowedHeaders = requestedHeaders 
-        ? `${baseAllowedHeaders},${requestedHeaders.split(',').map((h: string) => h.trim()).join(',')}`
-        : baseAllowedHeaders;
-      
+      const origin =
+        event?.headers?.origin ||
+        event?.headers?.Origin ||
+        event?.headers?.['origin'] ||
+        event?.headers?.['Origin'] ||
+        '';
+
+      const allowedOrigin = getAllowedOrigin(origin);
+      const requestedHeaders =
+        event?.headers?.['access-control-request-headers'] ||
+        event?.headers?.['Access-Control-Request-Headers'] ||
+        '';
+
       return {
         statusCode: 200,
         body: '',
-        headers: {
-          'access-control-allow-origin': allowedOrigin,
-          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'access-control-allow-headers': allowedHeaders,
-          'access-control-allow-credentials': 'true',
-          'access-control-max-age': '86400',
-          'content-length': '0',
-        },
+        headers: corsPreflightResponseHeaders(allowedOrigin, requestedHeaders),
       };
     } catch (optionsError) {
       // CRITICAL: Even on ANY error, return 200 OK for CORS preflight
@@ -974,14 +1250,7 @@ export const handler = async (
       return {
         statusCode: 200,
         body: '',
-        headers: {
-          'access-control-allow-origin': getDefaultCorsOrigin(),
-          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-          'access-control-allow-credentials': 'true',
-          'access-control-max-age': '86400',
-          'content-length': '0',
-        },
+        headers: corsPreflightResponseHeaders(getDefaultCorsOrigin(), ''),
       };
     }
   }
@@ -991,14 +1260,7 @@ export const handler = async (
     return {
       statusCode: 200,
       body: '',
-      headers: {
-        'access-control-allow-origin': getDefaultCorsOrigin(),
-        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-        'access-control-allow-credentials': 'true',
-        'access-control-max-age': '86400',
-        'content-length': '0',
-      },
+      headers: corsPreflightResponseHeaders(getDefaultCorsOrigin(), ''),
     };
   }
   
@@ -1040,7 +1302,9 @@ export const handler = async (
     // Convert API Gateway HTTP API (v2) event to Request
     // domainName is only present when using custom domains
     // For default endpoints, construct from apiId or use relative URL
-    const rawPath = event.rawPath || event.requestContext?.http?.path || '/';
+    const rawPath = applyHttpPathPrefixMapping(
+      event.rawPath || event.requestContext?.http?.path || '/'
+    );
     const queryString = event.rawQueryString ? `?${event.rawQueryString}` : '';
     
     // Try to get domainName from requestContext (custom domain) or construct from apiId
@@ -1080,7 +1344,9 @@ export const handler = async (
     // Handle body based on content type
     const contentType = headers.get('content-type') || '';
     const isMultipartFormData = contentType.includes('multipart/form-data');
-    const isJson = contentType.includes('application/json');
+    const isJson =
+      contentType.includes('application/json') ||
+      contentType.includes('+json');
     
     // For multipart/form-data, we need to preserve binary data
     // For JSON, we can parse it
@@ -1124,6 +1390,26 @@ export const handler = async (
         }
       }
     }
+
+    // Clients / proxies sometimes omit or vary Content-Type; still parse JSON object bodies for `c.env.parsedBody`.
+    if (
+      !isMultipartFormData &&
+      parsedBody === null &&
+      typeof requestBody === 'string' &&
+      ['POST', 'PUT', 'PATCH', 'DELETE'].includes(httpMethod)
+    ) {
+      const lead = requestBody.trim().charAt(0);
+      if (lead === '{') {
+        try {
+          const obj = JSON.parse(requestBody) as unknown;
+          if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+            parsedBody = obj as Record<string, unknown>;
+          }
+        } catch {
+          /* leave null */
+        }
+      }
+    }
     
     // Only set default Content-Type for JSON if not already set
     if (requestBody && !headers.has('content-type') && !isMultipartFormData) {
@@ -1158,21 +1444,37 @@ export const handler = async (
       throw error;
     }
 
-    // Convert Response to API Gateway format
-    const responseBody = await response.text();
+    // Convert Response to API Gateway format.
+    //
+    // CRITICAL: API Gateway HTTP API requires binary responses (xlsx, pdf, zip,
+    // images, octet-stream …) to be **base64-encoded** with `isBase64Encoded: true`.
+    // Returning the body as a plain UTF-8 string corrupts non-text bytes, which
+    // is exactly why the bulk-product XLSX failed to open in Google Sheets even
+    // after the file-format fixes — the wire-level payload was mangled.
     const responseHeaders: Record<string, string> = {};
     response.headers.forEach((value: string, key: string) => {
       responseHeaders[key] = value;
     });
+
+    const respContentType = (responseHeaders['content-type'] || '').toLowerCase();
+    const respDisposition = (responseHeaders['content-disposition'] || '').toLowerCase();
+    const isBinaryResponse = isBinaryHttpContentType(respContentType, respDisposition);
+
+    let responseBody: string;
+    let isBase64Encoded = false;
+    if (isBinaryResponse) {
+      const ab = await response.arrayBuffer();
+      responseBody = Buffer.from(ab).toString('base64');
+      isBase64Encoded = true;
+    } else {
+      responseBody = await response.text();
+    }
 
     // Ensure CORS headers are present in all responses
     const origin = event.headers?.origin || 
                    event.headers?.Origin ||
                    event.headers?.['origin'] ||
                    event.headers?.['Origin'];
-    
-    // Get allowed origin using helper (reads from ALLOWED_ORIGINS env)
-    const allowedOrigin = getAllowedOrigin(origin);
     
     // Check if Hono CORS middleware already set CORS headers
     const hasCorsHeaders = responseHeaders['access-control-allow-origin'] || responseHeaders['access-control-allow-origin'];
@@ -1182,17 +1484,14 @@ export const handler = async (
     const finalHeaders: Record<string, string> = { ...responseHeaders };
     
     if (!hasCorsHeaders) {
-      // Only set CORS headers if they weren't already set by Hono middleware
-      finalHeaders['access-control-allow-origin'] = allowedOrigin;
-      finalHeaders['access-control-allow-credentials'] = 'true';
-      finalHeaders['access-control-allow-methods'] = 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD';
-      finalHeaders['access-control-allow-headers'] = 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With';
+      Object.assign(finalHeaders, apiGwCorsHeadersForResponse(origin));
     }
     
-    const finalResponse = {
+    const finalResponse: APIGatewayProxyResultV2 = {
       statusCode: response.status,
       body: responseBody,
       headers: finalHeaders,
+      ...(isBase64Encoded ? { isBase64Encoded: true } : {}),
     };
     return finalResponse;
   } catch (error) {
@@ -1211,19 +1510,11 @@ export const handler = async (
                      event.headers?.['origin'] ||
                      event.headers?.['Origin'] ||
                      '';
-      const allowedOrigin = getAllowedOrigin(origin);
       
       return {
         statusCode: 200,
         body: '',
-        headers: {
-          'access-control-allow-origin': allowedOrigin,
-          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-          'access-control-allow-credentials': 'true',
-          'access-control-max-age': '86400',
-          'content-length': '0',
-        },
+        headers: corsPreflightResponseHeaders(getAllowedOrigin(origin), ''),
       };
     }
     
@@ -1250,10 +1541,7 @@ export const handler = async (
       body: JSON.stringify({ error: 'Internal Server Error' }),
       headers: {
         'Content-Type': 'application/json',
-        'access-control-allow-origin': allowedOrigin,
-        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-        'access-control-allow-credentials': 'true',
+        ...apiGwCorsHeadersForResponse(origin),
       },
     };
   }
@@ -1271,14 +1559,7 @@ export const handler = async (
         return {
           statusCode: 200,
           body: '',
-          headers: {
-            'access-control-allow-origin': getDefaultCorsOrigin(),
-            'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-            'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-            'access-control-allow-credentials': 'true',
-            'access-control-max-age': '86400',
-            'content-length': '0',
-          },
+          headers: corsPreflightResponseHeaders(getDefaultCorsOrigin(), ''),
         };
       }
     } catch {
@@ -1286,14 +1567,7 @@ export const handler = async (
       return {
         statusCode: 200,
         body: '',
-        headers: {
-          'access-control-allow-origin': getDefaultCorsOrigin(),
-          'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-          'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-          'access-control-allow-credentials': 'true',
-          'access-control-max-age': '86400',
-          'content-length': '0',
-        },
+        headers: corsPreflightResponseHeaders(getDefaultCorsOrigin(), ''),
       };
     }
     
@@ -1304,10 +1578,7 @@ export const handler = async (
       body: JSON.stringify({ error: 'Internal Server Error' }),
       headers: {
         'Content-Type': 'application/json',
-        'access-control-allow-origin': getDefaultCorsOrigin(),
-        'access-control-allow-methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD',
-        'access-control-allow-headers': 'authorization,content-type,x-api-key,x-uat-mode,x-uat-token,X-Requested-With',
-        'access-control-allow-credentials': 'true',
+        ...apiGwCorsHeadersForResponse(undefined),
       },
     };
   }

@@ -1,32 +1,36 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, Save, Clock, Building2, MapPin, Image as ImageIcon, Calendar, Sparkles, Check, Search } from 'lucide-react';
+import { Save, Clock, Building2, MapPin, Camera, Calendar, Sparkles, Check, Search, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
-import { isSoloVendor, isCenterRole, getVendorRoleName } from '@/lib/vendor-utils';
+import { isSoloVendor, isCenterRole, getVendorRoleName, hasVendorRole, canVendorUseServiceStyle, isVendorType } from '@/lib/vendor-utils';
 import { SpecializationSelector } from '../SpecializationSelector';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager';
 import { CenterProfile, DAYS, ProfileManagerProps } from './constants/interface';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 // ✅ RENAMED: CenterProfileManager -> ProfileManager (generic naming)
 // Export both names for backward compatibility
 
 // ✅ Main export with generic name
-export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerProps) {
+export function ProfileManager({ vendorId, vendorData, onBack, onNavigateToGallery }: ProfileManagerProps) {
+  const router = useRouter();
   // ✅ FIX: Show Amenities and Specialty tabs for center roles even when vendorData says solo.
   // Use centralized isSoloVendor and override with isCenterRole so center profiles always get the tabs.
   // ⚠️ Do NOT use roleId state here - it is declared later; use vendorData only to avoid "Cannot access before initialization".
   const soloByData = isSoloVendor(vendorData);
   const roleNameOrId = vendorData?.roleName || vendorData?.roleId || getVendorRoleName(vendorData) || '';
   const isCenterRoleType = isCenterRole(roleNameOrId);
-  const showAmenitiesAndSpecialtyTabs = !soloByData || isCenterRoleType;
+  const isPetInsuranceVendor = hasVendorRole(vendorData, ['pet_insurance', 'insurance']);
+  const showAmenitiesAndSpecialtyTabs = !isPetInsuranceVendor && (!soloByData || isCenterRoleType);
 
   // ✅ FIX: If tabs are hidden and user had amenities/specialty selected, redirect to basic
   const [activeTab, setActiveTab] = useState<'basic' | 'availability' | 'amenities' | 'specialization'>('basic');
@@ -38,7 +42,6 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
   }, [showAmenitiesAndSpecialtyTabs, activeTab]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
   
   // ✅ FIX: Track roleId separately with fallback loading
   // IMPORTANT: Prefer roleName over roleId (roleId is UUID, roleName is actual name like 'veterinary_clinic')
@@ -50,10 +53,14 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
   const [profile, setProfile] = useState<CenterProfile>({
     centerName: vendorData?.businessName || '',
     description: '',
+    disclaimer: '',
+    disclaimerPoints: [],
     address: vendorData?.address || '',
     city: vendorData?.city || '',
     state: vendorData?.state || '',
     pincode: (vendorData?.pincode && vendorData?.pincode !== '000000') ? vendorData.pincode : '',
+    latitude: vendorData?.latitude ?? undefined,
+    longitude: vendorData?.longitude ?? undefined,
     operatingHours: DAYS.reduce((acc, day) => ({
       ...acc,
       [day]: { isOpen: true, open: '09:00', close: '18:00' }
@@ -70,13 +77,70 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
     }
   });
 
-  const [newPhotos, setNewPhotos] = useState<File[]>([]);
   const [customAmenityInput, setCustomAmenityInput] = useState('');
   const [availableForInstantTele, setAvailableForInstantTele] = useState<boolean>(false);
+  const isBoardingVendor =
+    isVendorType(vendorData, 'boarding') ||
+    hasVendorRole(vendorData, ['pet_boarding', 'boarding', 'pet_resort', 'resort']);
+  const DEFAULT_BOARDING_DISCLAIMER = `Boarding will be confirmed once the payment is done.
+Check-in time is between 11 AM to 6 PM (early check-in is subject to availability).
+Check-out time is by 12 o'clock noon. Late check-out will be charged for the full day.
+Every day one video will be shared with the parents.
+Only pet parents will be allowed to visit the pet during boarding period, that too on prior notice and at a given time-slot.
+Extension of the boarding period will depend on availability and should be paid for in advance.
+Complimentary bath will be provided when the stay is of 7 or more days.
+Management will not be responsible if the pet has any issues due to internal problems (like heart attack, heart failure, cardiac arrest, organ failure, gastric dilatation-volvulus, etc.).
+Management will not be responsible for the items left behind for the pet (e.g. bed, bowls, etc.).
+Management will decide whether the pet will be provided play time with other pets or not (depends on behavior).
+In rare scenarios of any injury or medical issue with the pet, it will be dealt with immediately by management (take to the vet) and parents will be informed. In such incidents, parents will be required to take care of the medical bills.`;
+  const DEFAULT_BOARDING_DISCLAIMER_POINTS = [
+    'Boarding will be confirmed once the payment is done.',
+    'Check-in time is between 11 AM to 6 PM (early check-in is subject to availability).',
+    'Check-out time is by 12 o\'clock noon. Late check-out will be charged for the full day.',
+    'Every day one video will be shared with the parents.',
+    'Only pet parents will be allowed to visit the pet during boarding period, that too on prior notice and at a given time-slot.',
+    'Extension of the boarding period will depend on availability and should be paid for in advance.',
+    'Complimentary bath will be provided when the stay is of 7 or more days.',
+    'Management will not be responsible if the pet has any issues due to internal problems (like heart attack, heart failure, cardiac arrest, organ failure, gastric dilatation-volvulus, etc.).',
+    'Management will not be responsible for the items left behind for the pet (e.g. bed, bowls, etc.).',
+    'Management will decide whether the pet will be provided play time with other pets or not (depends on behavior).',
+    'In rare scenarios of any injury or medical issue with the pet, it will be dealt with immediately by management (take to the vet) and parents will be informed. In such incidents, parents will be required to take care of the medical bills.',
+  ];
 
+  const parseDisclaimerPoints = (disclaimerValue: unknown): string[] => {
+    if (Array.isArray(disclaimerValue)) {
+      return disclaimerValue
+        .map((point) => (typeof point === 'string' ? point.trim() : ''))
+        .filter(Boolean);
+    }
+    if (typeof disclaimerValue === 'string') {
+      return disclaimerValue
+        .split(/\n+/)
+        .map((line) => line.replace(/^[\s\-*•\d.)]+/, '').trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  const serializeDisclaimerPoints = (points: string[]): string =>
+    points.map((point) => point.trim()).filter(Boolean).join('\n');
+  /** Merged vendor + /vendor/profile so allowedServiceStyles reflects Admin role (instant tele gate). */
+  const [vendorStyleSource, setVendorStyleSource] = useState<any>(vendorData);
   // Using apiClient instead of API_BASE - use local roleId state
   const availableAmenities = getAmenitiesForVendorType(roleId);
-  const MAX_PHOTOS = 10;
+
+  const openGalleryFromProfile = () => {
+    if (onNavigateToGallery) {
+      onNavigateToGallery();
+      return;
+    }
+    try {
+      sessionStorage.setItem('warmpawz_vendor_open_gallery', '1');
+    } catch {
+      /* ignore */
+    }
+    router.push('/');
+  };
 
   // ✅ FIX: Update roleId when vendorData changes - prefer roleName over roleId
   // ⚠️ CRITICAL: DO NOT use vendorType as fallback - it's 'business'/'solo'/'center' which are NOT role names
@@ -91,13 +155,29 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
   }, [vendorData?.roleName, vendorData?.roleId]);
 
   useEffect(() => {
+    setVendorStyleSource(vendorData);
+  }, [vendorData]);
+
+  useEffect(() => {
+    if (!isBoardingVendor) return;
+    setProfile((prev) => {
+      if (prev.disclaimerPoints.length > 0) return prev;
+      return {
+        ...prev,
+        disclaimerPoints: DEFAULT_BOARDING_DISCLAIMER_POINTS,
+        disclaimer: DEFAULT_BOARDING_DISCLAIMER,
+      };
+    });
+  }, [isBoardingVendor]);
+
+  useEffect(() => {
     loadCenterProfile();
   }, [vendorId]);
 
   const loadCenterProfile = async () => {
     try {
       setLoading(true);
-      
+
       // ✅ FIX: If roleId is not available, fetch it from vendor profile
       // IMPORTANT: Use roleName (the actual role name like 'veterinary_clinic') not roleId (which is a UUID)
       let fetchedRoleId: string | undefined = undefined;
@@ -139,13 +219,29 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
         }
       }
 
-      // ✅ Load availableForInstantTele from vendor profile
+      // ✅ Load availableForInstantTele and coordinates from vendor profile
       if (vendorProfileData?.vendor) {
-        const instantTeleValue = vendorProfileData.vendor.availableForInstantTele ?? 
-                                 vendorProfileData.vendor.available_for_instant_tele ?? 
+        const v = vendorProfileData.vendor;
+        setVendorStyleSource((prev: any) => ({
+          ...prev,
+          ...v,
+          allowedServiceStyles: v.allowedServiceStyles ?? v.allowed_service_styles ?? prev?.allowedServiceStyles,
+          serviceStyles: v.serviceStyles ?? v.service_styles ?? prev?.serviceStyles,
+        }));
+        const instantTeleValue = v.availableForInstantTele ??
+                                 v.available_for_instant_tele ??
                                  false;
         setAvailableForInstantTele(instantTeleValue);
         console.log('[CENTER-PROFILE] Loaded availableForInstantTele:', instantTeleValue);
+        
+        // Load latitude/longitude from vendor profile if available
+        if (vendorProfileData.vendor.latitude != null || vendorProfileData.vendor.longitude != null) {
+          setProfile(prev => ({
+            ...prev,
+            latitude: vendorProfileData.vendor.latitude ?? prev.latitude,
+            longitude: vendorProfileData.vendor.longitude ?? prev.longitude,
+          }));
+        }
       }
       
       // ✅ FIX: Load facility data using correct endpoint
@@ -166,10 +262,26 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
           ...prev,
           centerName: facilityData.facility.centerName || prev.centerName,
           description: facilityData.facility.description || prev.description || '',
+          disclaimerPoints: (() => {
+            const fromApi = parseDisclaimerPoints(
+              facilityData.facility.disclaimerPoints ?? facilityData.facility.disclaimer
+            );
+            if (fromApi.length > 0) return fromApi;
+            return isBoardingVendor ? DEFAULT_BOARDING_DISCLAIMER_POINTS : prev.disclaimerPoints;
+          })(),
+          disclaimer: (() => {
+            const points = parseDisclaimerPoints(
+              facilityData.facility.disclaimerPoints ?? facilityData.facility.disclaimer
+            );
+            if (points.length > 0) return serializeDisclaimerPoints(points);
+            return isBoardingVendor ? DEFAULT_BOARDING_DISCLAIMER : prev.disclaimer;
+          })(),
           address: facilityData.facility.address || prev.address,
           city: facilityData.facility.city || prev.city,
           state: facilityData.facility.state || prev.state,
           pincode: (facilityData.facility.pincode && facilityData.facility.pincode !== '000000') ? facilityData.facility.pincode : ((prev.pincode && prev.pincode !== '000000') ? prev.pincode : ''),
+          latitude: facilityData.vendor?.latitude ?? prev.latitude,
+          longitude: facilityData.vendor?.longitude ?? prev.longitude,
           amenities: facilityData.facility.amenities || [],
           customAmenities: facilityData.facility.customAmenities || [],
           photos: loadedPhotos,
@@ -241,37 +353,16 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
     try {
       setSaving(true);
       console.log('💾 Saving center profile for vendor:', vendorId);
-      
-      // 1. Upload new photos if any
-      let uploadedPhotoUrls: string[] = [];
-      if (newPhotos.length > 0) {
-        setUploading(true);
-        try {
-          const formData = new FormData();
-          newPhotos.forEach(photo => formData.append('photos', photo));
 
-          // Upload photos using apiClient
-          const uploadData = await apiClient.post(`/vendor/facility/${vendorId}/upload-photos`, formData) as any;
-          if (uploadData && uploadData.success) {
-            uploadedPhotoUrls = uploadData.photoUrls || [];
-            console.log('✅ Photos uploaded:', uploadedPhotoUrls.length);
-          } else {
-            console.warn('⚠️ Photo upload returned no success, continuing without photos');
-          }
-        } catch (photoError) {
-          console.error('⚠️ Photo upload failed, continuing without photos:', photoError);
-          // Continue without photos - not critical
-        } finally {
-          setUploading(false);
-        }
-      }
+      // Center listing photos are managed in Dashboard → Additional Features → Gallery (not here).
+      const allPhotos = profile.photos;
 
-      const allPhotos = [...profile.photos, ...uploadedPhotoUrls];
-
-      // 2. Save facility data - ✅ FIX: Include centerName, operatingHours (both text and JSON), and better error handling
+      // 1. Save facility data - ✅ FIX: Include centerName, operatingHours (both text and JSON), and better error handling
       const facilityData = {
         centerName: profile.centerName.trim(),
         description: profile.description.trim(),
+        disclaimerPoints: profile.disclaimerPoints.map((point) => point.trim()).filter(Boolean),
+        disclaimer: serializeDisclaimerPoints(profile.disclaimerPoints),
         address: profile.address.trim(),
         city: profile.city.trim(),
         state: profile.state.trim(),
@@ -312,26 +403,43 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
         // Continue - we already saved in facility data above
       }
 
-      // 4. Save availableForInstantTele to vendor profile
+      // 4. Save address coordinates, business name, and availableForInstantTele to vendor profile
       try {
-        const vendorProfileRes = await apiClient.put(`/vendor/${vendorId}/profile`, {
-          availableForInstantTele: availableForInstantTele
-        }) as any;
+        const vendorProfileUpdate: any = {
+          businessName: profile.centerName.trim() // ✅ FIX: Update business_name when centerName changes
+        };
+        if (canVendorUseServiceStyle(vendorStyleSource, 'tele')) {
+          vendorProfileUpdate.availableForInstantTele = availableForInstantTele;
+        }
+        
+        // Include latitude/longitude if they exist in profile state
+        if (profile.latitude != null) {
+          vendorProfileUpdate.latitude = profile.latitude;
+        }
+        if (profile.longitude != null) {
+          vendorProfileUpdate.longitude = profile.longitude;
+        }
+        
+        const vendorProfileRes = await apiClient.put(`/vendor/${vendorId}/profile`, vendorProfileUpdate) as any;
 
         if (vendorProfileRes && vendorProfileRes.error) {
-          console.warn('⚠️ Failed to save availableForInstantTele:', vendorProfileRes.error);
+          console.warn('⚠️ Failed to save vendor profile updates:', vendorProfileRes.error);
           // Non-critical, but log it
         } else {
-          console.log('✅ availableForInstantTele saved:', availableForInstantTele);
+          console.log('✅ Vendor profile updated:', { 
+            businessName: profile.centerName.trim(),
+            availableForInstantTele, 
+            hasLatitude: profile.latitude != null,
+            hasLongitude: profile.longitude != null
+          });
         }
       } catch (vendorProfileError) {
-        console.warn('⚠️ Failed to save availableForInstantTele - continuing:', vendorProfileError);
+        console.warn('⚠️ Failed to save vendor profile updates - continuing:', vendorProfileError);
         // Continue - not critical for facility save
       }
 
       toast.success('✅ Center profile saved successfully!');
-      setNewPhotos([]);
-      
+
       // Reload profile to get updated data
       await loadCenterProfile();
     } catch (error: any) {
@@ -340,7 +448,6 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
       toast.error(errorMessage);
     } finally {
       setSaving(false);
-      setUploading(false);
     }
   };
 
@@ -384,44 +491,39 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    const validFiles = files.filter(file => {
-      if (!file.type.startsWith('image/')) {
-        toast.error(`${file.name} is not an image`);
-        return false;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error(`${file.name} is too large (max 5MB)`);
-        return false;
-      }
-      return true;
-    });
-
-    const totalPhotos = newPhotos.length + profile.photos.length + validFiles.length;
-    if (totalPhotos > MAX_PHOTOS) {
-      toast.error(`Maximum ${MAX_PHOTOS} photos allowed`);
-      return;
-    }
-
-    setNewPhotos(prev => [...prev, ...validFiles]);
-  };
-
-  const removeExistingPhoto = (index: number) => {
+  const updateDisclaimerPoint = (index: number, value: string) => {
     setProfile(prev => ({
       ...prev,
-      photos: prev.photos.filter((_, i) => i !== index)
+      disclaimerPoints: prev.disclaimerPoints.map((point, idx) => (idx === index ? value : point)),
+      disclaimer: serializeDisclaimerPoints(
+        prev.disclaimerPoints.map((point, idx) => (idx === index ? value : point))
+      ),
     }));
   };
 
-  const removeNewPhoto = (index: number) => {
-    setNewPhotos(prev => prev.filter((_, i) => i !== index));
+  const addDisclaimerPoint = () => {
+    setProfile(prev => ({
+      ...prev,
+      disclaimerPoints: [...prev.disclaimerPoints, ''],
+      disclaimer: serializeDisclaimerPoints([...prev.disclaimerPoints, '']),
+    }));
+  };
+
+  const removeDisclaimerPoint = (index: number) => {
+    setProfile(prev => {
+      const nextPoints = prev.disclaimerPoints.filter((_, idx) => idx !== index);
+      return {
+        ...prev,
+        disclaimerPoints: nextPoints,
+        disclaimer: serializeDisclaimerPoints(nextPoints),
+      };
+    });
   };
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="w-full max-w-[430px] mx-auto bg-white py-12 text-center">
+        <div className="vendor-app-column bg-white py-12 text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
           <p className="text-gray-600">Loading center profile...</p>
         </div>
@@ -430,31 +532,25 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
-        {/* Header - Mobile optimized */}
-        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF7A2E] text-white sticky top-0 z-10">
-          <div className="px-4 py-3">
-            <div className="flex items-center gap-3">
-              <button onClick={onBack} className="p-1.5 hover:bg-white/20 rounded-lg -ml-1">
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <div className="flex-1 min-w-0">
-                <h1 className="font-bold text-lg truncate">Profile & Availability</h1>
-                <p className="text-xs text-white/80 truncate">{profile.centerName}</p>
-              </div>
-              <Button
-                onClick={handleSave}
-                disabled={saving || uploading}
-                size="sm"
-                className="bg-white text-[#FF8C42] hover:bg-white/90 text-xs"
-              >
-                <Save className="w-3.5 h-3.5 mr-1" />
-                {saving ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          </div>
-        </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="Profile & Availability"
+          subtitle={profile.centerName}
+          onBack={onBack}
+          actions={[
+            <Button
+              key="save"
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="h-9 shrink-0 bg-orange-500 px-3 text-xs text-white hover:bg-orange-600"
+            >
+              <Save className="mr-1 inline h-3.5 w-3.5" />
+              {saving ? 'Saving...' : 'Save'}
+            </Button>,
+          ]}
+        />
 
         {/* Tab Navigation - Mobile scrollable */}
         <div className="bg-white border-b overflow-x-auto">
@@ -525,13 +621,19 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
                   <EnhancedAddressAutocomplete
                     value={profile.address || ''}
                     onChange={(address: string, components?: AddressComponents) => {
-                      // Single state update: address + city, state, pincode from search (like customer profile)
+                      // Update address + city, state, pincode, and coordinates from Places
                       setProfile(prev => ({
                         ...prev,
                         address,
                         ...(components?.city != null && { city: components.city }),
                         ...(components?.state != null && { state: components.state }),
                         ...(components?.pincode != null && { pincode: components.pincode }),
+                        // Extract latitude and longitude from coordinates
+                        ...(components?.coordinates?.lat != null && { latitude: components.coordinates.lat }),
+                        ...(components?.coordinates?.lng != null && { longitude: components.coordinates.lng }),
+                        // Support direct lat/lng for backward compatibility
+                        ...(components?.lat != null && !components?.coordinates?.lat && { latitude: components.lat }),
+                        ...(components?.lng != null && !components?.coordinates?.lng && { longitude: components.lng }),
                       }));
                     }}
                     placeholder="Search address, landmark, city..."
@@ -567,138 +669,76 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
               </div>
             </div>
 
-            {/* Photos */}
-            <div className="bg-white rounded-xl border p-6">
-              <h2 className="font-bold text-gray-900 mb-4">Center Photos</h2>
-              
-              {profile.photos.length === 0 && newPhotos.length === 0 && (
-                <div className="text-center py-8 text-gray-500 text-sm mb-4">
-                  No photos uploaded yet. Upload photos to showcase your center.
+            {/* Listing photos: use Dashboard → Additional Features → Gallery (not facility upload here) */}
+            <div className="rounded-xl border border-pink-100 bg-gradient-to-br from-pink-50/80 to-white p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-pink-100">
+                    <Camera className="h-5 w-5 text-pink-600" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-gray-900">Photo gallery</h2>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Add and manage photos customers see for your center. From the main dashboard, open{' '}
+                      <span className="font-medium text-gray-800">Additional Features</span> →{' '}
+                      <span className="font-medium text-gray-800">Gallery</span> (look for{' '}
+                      <span className="font-medium text-gray-800">Get started</span> on that tile). You can also use the
+                      button here to jump straight to gallery.
+                    </p>
+                  </div>
                 </div>
-              )}
-              
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-                {profile.photos.map((photo, idx) => (
-                  <div key={idx} className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
-                    <img 
-                      src={photo} 
-                      alt={`Photo ${idx + 1}`} 
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                      onError={async (e) => {
-                        const target = e.target as HTMLImageElement;
-                        const originalSrc = photo;
-                        
-                        console.error(`[CENTER-PHOTOS] Image failed to load for photo ${idx + 1}:`, {
-                          src: originalSrc?.substring(0, 100),
-                          error: e,
-                          naturalWidth: target.naturalWidth,
-                          naturalHeight: target.naturalHeight,
-                          complete: target.complete
-                        });
-                        
-                        // Check if this is a retry (to avoid infinite loops)
-                        const retryCount = parseInt(target.getAttribute('data-retry-count') || '0');
-                        if (retryCount >= 2) {
-                          console.warn(`[CENTER-PHOTOS] Max retries reached for photo ${idx + 1}, showing error`);
-                          target.style.display = 'none';
-                          const parent = target.parentElement;
-                          if (parent && !parent.querySelector('.photo-error-message')) {
-                            const errorDiv = document.createElement('div');
-                            errorDiv.className = 'photo-error-message w-full h-full flex items-center justify-center text-xs text-gray-400';
-                            errorDiv.textContent = 'Failed to load';
-                            parent.appendChild(errorDiv);
-                          }
-                          return;
-                        }
-                        
-                        // Try to refresh the presigned URL by reloading facility data
-                        try {
-                          console.log(`[CENTER-PHOTOS] Attempting to refresh presigned URL for photo ${idx + 1} (retry ${retryCount + 1})`);
-                          const facilityData = await apiClient.get(`/vendor/${vendorId}/facility`) as any;
-                          
-                          if (facilityData && facilityData.success && facilityData.facility && facilityData.facility.photos) {
-                            const refreshedPhotos = facilityData.facility.photos;
-                            if (refreshedPhotos[idx] && refreshedPhotos[idx] !== originalSrc) {
-                              console.log(`[CENTER-PHOTOS] Got fresh URL for photo ${idx + 1}, retrying...`);
-                              // Update the photo in state
-                              setProfile(prev => {
-                                const updatedPhotos = [...prev.photos];
-                                updatedPhotos[idx] = refreshedPhotos[idx];
-                                return { ...prev, photos: updatedPhotos };
-                              });
-                              // Retry with new URL
-                              target.setAttribute('data-retry-count', String(retryCount + 1));
-                              target.src = refreshedPhotos[idx];
-                              return;
-                            } else if (refreshedPhotos[idx] === originalSrc) {
-                              console.warn(`[CENTER-PHOTOS] Refreshed URL is same as original for photo ${idx + 1}`);
-                            }
-                          }
-                        } catch (refreshError) {
-                          console.error(`[CENTER-PHOTOS] Failed to refresh presigned URL for photo ${idx + 1}:`, refreshError);
-                        }
-                        
-                        // If refresh failed or no new URL, show error message
-                        target.style.display = 'none';
-                        const parent = target.parentElement;
-                        if (parent && !parent.querySelector('.photo-error-message')) {
-                          const errorDiv = document.createElement('div');
-                          errorDiv.className = 'photo-error-message w-full h-full flex items-center justify-center text-xs text-gray-400';
-                          errorDiv.textContent = 'Failed to load';
-                          parent.appendChild(errorDiv);
-                        }
-                      }}
-                      onLoad={(e) => {
-                        // Remove any error messages on successful load
-                        const parent = (e.target as HTMLImageElement).parentElement;
-                        if (parent) {
-                          const errorMsg = parent.querySelector('.photo-error-message');
-                          if (errorMsg) {
-                            errorMsg.remove();
-                          }
-                        }
-                      }}
-                    />
-                    <button
-                      onClick={() => removeExistingPhoto(idx)}
-                      className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 z-10"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-                
-                {newPhotos.map((photo, idx) => (
-                  <div key={`new-${idx}`} className="relative aspect-video rounded-lg overflow-hidden bg-gray-100">
-                    <img src={URL.createObjectURL(photo)} alt={`New ${idx + 1}`} className="w-full h-full object-cover" />
-                    <button
-                      onClick={() => removeNewPhoto(idx)}
-                      className="absolute top-2 right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs"
-                    >
-                      ×
-                    </button>
-                    <Badge className="absolute bottom-2 left-2 bg-blue-500">New</Badge>
-                  </div>
-                ))}
+                <Button
+                  type="button"
+                  onClick={openGalleryFromProfile}
+                  className="h-10 shrink-0 bg-pink-600 px-4 text-sm text-white hover:bg-pink-700 sm:self-center"
+                >
+                  Get started
+                </Button>
               </div>
-
-              {(profile.photos.length + newPhotos.length) < MAX_PHOTOS && (
-                <label className="flex items-center justify-center gap-2 p-4 border-2 border-dashed rounded-lg hover:bg-gray-50 cursor-pointer">
-                  <ImageIcon className="w-5 h-5 text-gray-400" />
-                  <span className="text-sm text-gray-600">Add Photos ({profile.photos.length + newPhotos.length}/{MAX_PHOTOS})</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                </label>
-              )}
             </div>
 
-            {/* Instant Tele Availability Toggle */}
+            {isBoardingVendor && (
+              <div className="bg-white rounded-xl border p-6">
+                <h2 className="font-bold text-gray-900 mb-4">Disclaimer</h2>
+                <div className="space-y-2">
+                  {profile.disclaimerPoints.map((point, index) => (
+                    <div key={`disclaimer-${index}`} className="flex items-start gap-2">
+                      <span className="mt-2 text-xs text-gray-400">{index + 1}.</span>
+                      <Textarea
+                        value={point}
+                        onChange={(e) => updateDisclaimerPoint(index, e.target.value)}
+                        placeholder="Add boarding terms, policies, and instructions"
+                        rows={2}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="mt-1 h-8 w-8 p-0"
+                        onClick={() => removeDisclaimerPoint(index)}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={addDisclaimerPoint}
+                    className="h-8 border-dashed"
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Add point
+                  </Button>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  This general instruction is shown for your boarding profile and can be edited anytime.
+                </p>
+              </div>
+            )}
+
+            {/* Instant Tele — only when Admin role includes tele (same source as customer discovery) */}
+            {canVendorUseServiceStyle(vendorStyleSource, 'tele') && (
             <div className="bg-white rounded-2xl border shadow-sm p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
@@ -733,6 +773,7 @@ export function ProfileManager({ vendorId, vendorData, onBack }: ProfileManagerP
                 </label>
               </div>
             </div>
+            )}
 
             {/* Emergency Services - for vet centers */}
             {(vendorData?.roleId?.includes('vet') || vendorData?.roleId?.includes('clinic')) && (

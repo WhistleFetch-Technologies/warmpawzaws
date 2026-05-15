@@ -12,6 +12,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
 
 // Razorpay type declaration
 declare global {
@@ -70,6 +71,7 @@ interface EnhancedPaymentPageProps {
   
   // Customer
   customerPhone: string;
+  customerEmail?: string;
   customerId?: string;
   
   // Navigation
@@ -126,6 +128,7 @@ export function EnhancedPaymentPage({
   address,
   showAddressSelection = false,
   customerPhone,
+  customerEmail,
   customerId,
   onBack,
   onSuccess,
@@ -469,24 +472,46 @@ export function EnhancedPaymentPage({
         throw new Error('Failed to create payment order');
       }
       
-      // Step 4: Open Razorpay checkout with mobile-optimized config
-      const options = {
-        key: orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: amountToCharge * 100,
+      // Step 4: Open Razorpay Standard Checkout (shared UPI-friendly options; desktop may still show QR per Razorpay)
+      const rawOfferId = selectedBankOffer?.id;
+      const razorpayOfferIds =
+        typeof rawOfferId === 'string' &&
+        rawOfferId.trim() &&
+        rawOfferId.trim() !== 'undefined' &&
+        rawOfferId.trim() !== 'null'
+          ? [rawOfferId.trim()]
+          : [];
+
+      const options = buildSanitizedStandardRazorpayCheckoutOptions({
+        key: (orderRes.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+        amountPaise: Math.max(1, Math.round(Number(amountToCharge) * 100)),
         currency: 'INR',
         name: 'Warmpawz',
-        description: items.length === 1 
-          ? items[0].name 
-          : `${items.length} items`,
+        description:
+          items.length === 1 ? items[0].name : `${items.length} items`,
         order_id: orderRes.orderId,
+        customerPhone,
+        customerEmail,
+        offers: razorpayOfferIds.length > 0 ? razorpayOfferIds : undefined,
+        includeInstrumentBlocks: true,
         handler: async (response: any) => {
           try {
-            // Verify payment
-            await apiClient.post('/razorpay/verify-payment', {
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-            });
+            // Verify payment with retry
+            const MAX_RETRIES = 3;
+            for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                await apiClient.post('/razorpay/verify-payment', {
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature,
+                }, undefined, 30000);
+                break; // success
+              } catch (verifyErr: any) {
+                console.error(`[VERIFY] Attempt ${attempt}/${MAX_RETRIES} failed:`, verifyErr?.message);
+                if (attempt === MAX_RETRIES) throw verifyErr;
+                await new Promise((r) => setTimeout(r, attempt * 1000));
+              }
+            }
 
             // If booking creation was deferred, create booking now with payment info
             if (type === 'booking' && bookingCreationDeferred && deferredBookingPayload) {
@@ -535,32 +560,9 @@ export function EnhancedPaymentPage({
             setProcessing(false);
           }
         },
-        prefill: {
-          contact: customerPhone,
-        },
         theme: {
           color: '#FF8C42',
           backdrop_color: 'rgba(0,0,0,0.7)',
-        },
-        // Mobile optimizations
-        config: {
-          display: {
-            blocks: {
-              banks: {
-                name: 'Pay using UPI/Cards',
-                instruments: [
-                  { method: 'upi' },
-                  { method: 'card' },
-                  { method: 'netbanking' },
-                  { method: 'wallet' },
-                ],
-              },
-            },
-            sequence: ['block.banks'],
-            preferences: {
-              show_default_blocks: true,
-            },
-          },
         },
         modal: {
           ondismiss: () => {
@@ -575,7 +577,7 @@ export function EnhancedPaymentPage({
           enabled: true,
           max_count: 3,
         },
-      };
+      });
       
       if (window.Razorpay) {
         const razorpay = new window.Razorpay(options);
@@ -624,8 +626,8 @@ export function EnhancedPaymentPage({
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 via-white to-orange-50/30 pb-48">
       {/* Header - Sleek & Modern */}
-      <header className="bg-gradient-to-r from-orange-500 via-orange-400 to-amber-500 text-white sticky top-0 z-50 shadow-lg">
-        <div className="max-w-lg mx-auto px-4 py-4 flex items-center gap-4">
+      <header className="bg-gradient-to-r from-orange-500 via-orange-400 to-amber-500 text-white sticky top-0 z-50 shadow-lg cw-header-safe-x pt-[max(4rem,calc(env(safe-area-inset-top,0px)+0.75rem))] md:pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.35rem))]">
+        <div className="max-w-lg mx-auto px-4 pb-4 pt-0 flex items-center gap-4">
           <button 
             onClick={onBack} 
             className="w-10 h-10 rounded-full bg-white/20 backdrop-blur flex items-center justify-center hover:bg-white/30 transition"

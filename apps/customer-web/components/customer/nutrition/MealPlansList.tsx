@@ -5,6 +5,8 @@ import { ArrowLeft, Star, MapPin, UtensilsCrossed, Calendar, Clock } from 'lucid
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { MEAL_PLANS_COMING_SOON } from './constants';
+import { MealPlansComingSoon } from './MealPlansComingSoon';
 
 const MAX_RADIUS_KM = 10;
 
@@ -35,11 +37,16 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
   }, []);
 
   useEffect(() => {
+    if (MEAL_PLANS_COMING_SOON) {
+      setLoading(false);
+      return;
+    }
     fetchPets();
     fetchFilters();
   }, [phone]);
 
   useEffect(() => {
+    if (MEAL_PLANS_COMING_SOON) return;
     fetchMealPlans();
   }, [phone, selectedPurpose, selectedMealType]);
 
@@ -68,18 +75,29 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
   const fetchMealPlans = async () => {
     try {
       setLoading(true);
-      const loc = getLocation();
-      const params = new URLSearchParams();
-      if (loc) {
-        params.set('lat', String(loc.lat));
-        params.set('lng', String(loc.lng));
-        params.set('maxRadius', String(MAX_RADIUS_KM));
+      const buildParams = (withLocalRadius: boolean) => {
+        const params = new URLSearchParams();
+        const loc = withLocalRadius ? getLocation() : null;
+        if (loc) {
+          params.set('lat', String(loc.lat));
+          params.set('lng', String(loc.lng));
+          params.set('maxRadius', String(MAX_RADIUS_KM));
+        }
+        if (selectedPurpose) params.set('purpose', selectedPurpose);
+        if (selectedMealType) params.set('mealType', selectedMealType);
+        return params;
+      };
+      const load = async (params: URLSearchParams) => {
+        const data = (await apiClient.get<{ mealPlans?: any[]; meal_plans?: any[] }>(
+          `/meal-plans/search${params.toString() ? `?${params.toString()}` : ''}`
+        )) as any;
+        return (data.mealPlans || data.meal_plans || []) as any[];
+      };
+      let plans = await load(buildParams(true));
+      // Hyperlocal 10km can hide valid catalog when vendors lack geocodes or sit outside radius; show all next.
+      if (plans.length === 0) {
+        plans = await load(buildParams(false));
       }
-      if (selectedPurpose) params.set('purpose', selectedPurpose);
-      if (selectedMealType) params.set('mealType', selectedMealType);
-      const url = `/meal-plans/search${params.toString() ? `?${params.toString()}` : ''}`;
-      const data = await apiClient.get<{ success?: boolean; mealPlans?: any[] }>(url) as any;
-      const plans = data.mealPlans || data.meal_plans || [];
       setMealPlans(plans);
     } catch (error: any) {
       console.error('Error loading meal plans:', error);
@@ -110,11 +128,32 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
     }
   };
 
+  if (MEAL_PLANS_COMING_SOON) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-md flex-col bg-gray-50 pb-24">
+        <div className="shrink-0 bg-[#FF8C42] px-6 pt-12 pb-10">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={onBack}
+              className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5 text-white" />
+            </button>
+            <h1 className="text-2xl font-bold text-white">Meal Plans</h1>
+          </div>
+        </div>
+        <div className="relative z-10 -mt-6 flex flex-1 flex-col rounded-t-[32px] bg-white px-6 pt-8 pb-12 shadow-[0_-8px_30px_rgba(0,0,0,0.06)]">
+          <MealPlansComingSoon />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
-      {/* Header - Orange Background */}
-      <div className="px-6 pt-12 pb-6">
-        <div className="flex items-center gap-4 mb-6">
+    <div className="mx-auto flex min-h-screen max-w-md flex-col bg-gray-50 pb-24">
+      <div className="shrink-0 bg-[#FF8C42] px-6 pt-12 pb-10">
+        <div className="flex items-center gap-4">
           <button 
             onClick={onBack}
             className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
@@ -125,8 +164,7 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
         </div>
       </div>
 
-      {/* Main Content - White Card with Top Radius */}
-      <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+      <div className="relative z-10 -mt-6 flex flex-1 flex-col rounded-t-[32px] bg-white px-6 pt-8 shadow-[0_-8px_30px_rgba(0,0,0,0.06)]">
         <div className="space-y-4">
           <div className="mb-4">
             <h2 className="text-lg font-bold text-slate-900 mb-2">Available Meal Plans</h2>
@@ -189,6 +227,12 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
                 const pricePerMonth = mealPlan.price_per_month ?? mealPlan.pricePerMonth ?? mealPlan.monthly_price ?? 0;
                 const duration = mealPlan.duration_days ?? mealPlan.duration ?? 30;
                 const vendorRating = mealPlan.vendor_rating ?? mealPlan.vendorRating ?? mealPlan.avg_rating;
+                const mealImageUrl =
+                  mealPlan.mealImageUrl ||
+                  (mealPlan.dietary_requirements &&
+                    typeof mealPlan.dietary_requirements === 'object' &&
+                    mealPlan.dietary_requirements.mealImageUrl) ||
+                  null;
 
                 return (
                   <Card
@@ -197,10 +241,16 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
                     onClick={() => handleMealPlanClick(mealPlan)}
                   >
                     <div className="flex items-start gap-4">
-                      {/* Meal Plan Icon */}
+                      {mealImageUrl ? (
+                        <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0 border border-slate-100 bg-slate-50">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={mealImageUrl} alt="" className="w-full h-full object-cover" />
+                        </div>
+                      ) : (
                       <div className="w-14 h-14 bg-yellow-100 rounded-xl flex items-center justify-center text-yellow-600 shrink-0">
                         <UtensilsCrossed className="w-6 h-6" />
                       </div>
+                      )}
 
                       {/* Meal Plan Info */}
                       <div className="flex-1 min-w-0">

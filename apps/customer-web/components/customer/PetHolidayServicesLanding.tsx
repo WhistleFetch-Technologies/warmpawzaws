@@ -5,6 +5,7 @@ import { ArrowLeft, Palmtree, Star, Sparkles, ChevronRight, Hotel, Camera, Utens
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { averageStarDisplayFromNumbers, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 
 interface PetHolidayServicesLandingProps {
@@ -25,22 +26,28 @@ export function PetHolidayServicesLanding({ phone, onBack, onNavigate }: PetHoli
   const loadHolidayPackages = async () => {
     try {
       setLoading(true);
-      const endpoint = `/customer/discover-services?category=holiday&roleId=pet_holiday`;
+      const endpoint = `/customer/discover-services?category=holiday&roleId=pet_holiday&serviceStyle=at_center`;
       const data = await apiClient.get<{ vendors?: any[]; services?: any[]; packages?: any[] }>(endpoint);
       const packageList = data.vendors || data.services || data.packages || [];
       setHolidayPackages(packageList);
       
+      const rated = packageList.filter((p: any) => {
+        const rc = Number(p.reviewCount ?? p.reviews_count ?? p.totalReviews ?? 0) || 0;
+        const raw = p.rating != null ? Number(p.rating) : NaN;
+        return rc > 0 && Number.isFinite(raw) && raw > 0;
+      });
       setStats({
         activePackages: packageList.length || 30,
         bookings: '800+',
-        rating: packageList.length > 0 
-          ? Number(packageList.reduce((acc: number, p: any) => acc + Number(p.rating || 4.8), 0) / packageList.length).toFixed(1) 
-          : '4.8'
+        rating:
+          rated.length > 0
+            ? (rated.reduce((acc: number, p: any) => acc + Number(p.rating), 0) / rated.length).toFixed(1)
+            : '—',
       });
     } catch (error) {
       console.error('Error loading holiday packages:', error);
       setHolidayPackages([]);
-      setStats({ activePackages: 30, bookings: '800+', rating: '4.8' });
+      setStats({ activePackages: 30, bookings: '800+', rating: '—' });
     } finally {
       setLoading(false);
     }
@@ -187,11 +194,20 @@ export function PetHolidayServicesLanding({ phone, onBack, onNavigate }: PetHoli
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 truncate">{pkg.vendorName || pkg.packageName || pkg.businessName || `Holiday Package ${index}`}</h3>
-                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                      <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 flex-wrap">
+                        {(() => {
+                          const rc = Number(pkg.reviewCount ?? pkg.reviews_count ?? pkg.totalReviews ?? 0) || 0;
+                          const raw = pkg.rating != null ? Number(pkg.rating) : NaN;
+                          const ok = rc > 0 && Number.isFinite(raw) && raw > 0;
+                          return ok ? (
                         <span className="flex items-center gap-1 text-orange-500 font-bold">
                           <Star className="w-3 h-3 fill-current" />
-                          {pkg.rating || 4.8}
+                          {raw.toFixed(1)}
                         </span>
+                          ) : (
+                        <span className="text-slate-400">No reviews yet</span>
+                          );
+                        })()}
                         {pkg.price && (
                           <>
                             <span>•</span>

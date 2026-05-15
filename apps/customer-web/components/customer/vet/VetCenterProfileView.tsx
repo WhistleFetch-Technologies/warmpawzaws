@@ -3,9 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Star, Heart, Share2, MapPin, Phone, Clock, Navigation, Award, CheckCircle2, Stethoscope, Calendar, TrendingUp, Sparkles } from 'lucide-react';
 import { AmenitiesSection } from '../shared/AmenitiesSection';
-import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
+import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
+import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { formatOperatingHours } from '@/lib/format-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
+import { StarRating } from '../shared/StarRating';
 
 interface VetCenterProfileViewProps {
   phone: string;
@@ -42,7 +46,6 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
   const [services, setServices] = useState<ServiceData[]>([]);
   const [reviews, setReviews] = useState<ReviewData[]>([]);
   const [rating, setRating] = useState<any>(null);
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'amenities' | 'services' | 'reviews'>('overview');
 
@@ -111,7 +114,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center max-w-customer mx-auto">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">Loading clinic...</p>
@@ -122,7 +125,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
 
   if (!center || !facility) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-[430px] mx-auto">
+      <div className="min-h-screen bg-white flex items-center justify-center max-w-customer mx-auto">
         <div className="text-center">
           <p className="text-gray-600">Vet clinic not found</p>
           <button onClick={onBack} className="mt-4 px-4 py-0 bg-primary text-white rounded-lg">
@@ -133,48 +136,59 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
     );
   }
 
-  const centerName = center.businessName || center.fullName;
-  const photos = facility.photos || [];
-  const hasPhotos = photos.length > 0;
+  const centerName = center.businessName || center.business_name || center.fullName;
+  const heroPhotos = resolveVendorProfileHeroGallery({
+    facility,
+    vendor: center,
+    profileProvider: null,
+  });
+  const hasPhotos = heroPhotos.length > 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-20">
-        {/* Photo Gallery */}
+      <div className="w-full max-w-customer mx-auto bg-white min-h-screen pb-20">
+        {/* Photo Gallery — same hero pipeline as other services (deduped, single image = no swipe) */}
         <div className="relative">
           {hasPhotos ? (
-            <div className="relative h-64 bg-gray-200">
-              <img src={photos[selectedPhotoIndex]} alt={centerName} className="w-full h-full object-cover" />
-              <div className="absolute bottom-0 right-3 bg-black/70 backdrop-blur-sm text-white px-0 py-0 rounded-full text-sm">
-                {selectedPhotoIndex + 1} / {photos.length}
-              </div>
-            </div>
+            <VendorHeroPhotoCarousel
+              photos={heroPhotos}
+              name={String(centerName)}
+              frameClassName="relative h-64 w-full overflow-hidden bg-gray-200"
+            />
           ) : (
             <div className="h-64 bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center">
               <Stethoscope className="w-20 h-20 text-white/30" />
             </div>
           )}
 
-          <button
-            onClick={onBack}
-            className="absolute top-4 left-4 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg"
-          >
-            <ArrowLeft className="w-5 h-5 text-gray-700" />
-          </button>
+          <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 cw-header-safe-top cw-header-safe-x pointer-events-none">
+            <button
+              type="button"
+              onClick={onBack}
+              className="pointer-events-auto flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full bg-white/90 shadow-lg backdrop-blur-sm"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-5 w-5 text-gray-700" />
+            </button>
 
-          <div className="absolute top-4 right-4 flex gap-3">
-            <button
-              onClick={() => setIsFavorite(!isFavorite)}
-              className="w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg"
-            >
-              <Heart className={`w-5 h-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
-            </button>
-            <button
-              onClick={handleShare}
-              className="w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg"
-            >
-              <Share2 className="w-5 h-5 text-gray-700" />
-            </button>
+            <div className="flex shrink-0 gap-3 pointer-events-auto">
+              <button
+                type="button"
+                onClick={() => setIsFavorite(!isFavorite)}
+                className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white/90 shadow-lg backdrop-blur-sm"
+                aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                <Heart className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+              </button>
+              <button
+                type="button"
+                onClick={handleShare}
+                className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white/90 shadow-lg backdrop-blur-sm"
+                aria-label="Share"
+              >
+                <Share2 className="h-5 w-5 text-gray-700" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -186,11 +200,12 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               <p className="text-sm text-gray-600 mb-0">{facility.address || center.address}</p>
               
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-3">
-                  <Star className="w-5 h-5 fill-amber-500 text-amber-500" />
-                  <span className="font-semibold text-lg">{rating?.averageRating?.toFixed(1) || '4.5'}</span>
-                  <span className="text-sm text-gray-500">({rating?.totalReviews || 0} reviews)</span>
-                </div>
+                <StarRating
+                  rating={rating?.averageRating}
+                  reviewCount={rating?.totalReviews}
+                  starsClassName="w-5 h-5"
+                  textClassName="text-sm text-gray-600"
+                />
                 {facility.isPremium && (
                   <span className="px-0 py-0 bg-amber-100 text-amber-700 rounded-full text-xs flex items-center gap-3">
                     <Award className="w-3 h-3" />
@@ -343,8 +358,12 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                             </span>
                           )}
                         </div>
-                        {service.description && (
-                          <p className="text-sm text-gray-600 mb-0">{service.description}</p>
+                        {service.description?.trim() && (
+                          <ServiceDescriptionInline
+                            description={service.description}
+                            title={service.name}
+                            className="m-0 text-sm leading-5 text-gray-600 mb-0"
+                          />
                         )}
                         <div className="flex items-center gap-3 text-xs text-gray-500">
                           <span className="flex items-center gap-3">
@@ -353,7 +372,10 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
                           </span>
                         </div>
                       </div>
-                      <div className="text-lg font-bold text-primary">₹{service.price}</div>
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-primary">₹{service.price}</div>
+                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -402,7 +424,7 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
         </div>
 
         {/* Fixed Bottom CTA */}
-        <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-white border-t border-gray-200 p-4">
+        <div className="fixed bottom-0 left-0 right-0 max-w-customer mx-auto bg-white border-t border-gray-200 p-4">
           <button
             onClick={() => onNavigate('select_service', { centerId })}
             className="w-full py-1 bg-primary text-white rounded-xl font-semibold hover:bg-primary-dark transition-colors flex items-center justify-center gap-3"

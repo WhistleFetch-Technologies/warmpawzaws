@@ -1,6 +1,37 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!--
+      Android 11+ (targetSdk 30+) restricts package visibility. Without this <queries> block,
+      Razorpay's Standard Checkout cannot enumerate installed UPI PSP apps via
+      PackageManager.queryIntentActivities, so the UPI block silently disappears on Android even
+      though it works on iOS. Listing the canonical PSP packages plus the generic upi:// VIEW
+      intent matches Razorpay's own documented manifest snippet and restores Google Pay / PhonePe
+      / Paytm / BHIM / Amazon Pay UPI / CRED + the generic UPI ID (collect) flow inside checkout.
+      See https://razorpay.com/docs/payments/payment-gateway/android-integration/standard/payment-methods/
+    -->
+    <queries>
+      <intent>
+        <action android:name="android.intent.action.VIEW" />
+        <data android:scheme="upi" />
+      </intent>
+      <intent>
+        <action android:name="android.intent.action.SEND" />
+        <data android:mimeType="*/*" />
+      </intent>
+      <package android:name="com.google.android.apps.nbu.paisa.user" />
+      <package android:name="com.phonepe.app" />
+      <package android:name="net.one97.paytm" />
+      <package android:name="in.org.npci.upiapp" />
+      <package android:name="in.amazon.mShop.android.shopping" />
+      <package android:name="com.dreamplug.androidapp" />
+    </queries>
 
     <application
       android:name=".MainApplication"
@@ -9,6 +40,12 @@
       android:roundIcon="@mipmap/ic_launcher_round"
       android:allowBackup="false"
       android:theme="@style/AppTheme">
+      <!-- Razorpay standard checkout: toolbar must sit below status bar (edge-to-edge on API 35+). -->
+      <activity
+          android:name="com.razorpay.CheckoutActivity"
+          android:configChanges="keyboard|keyboardHidden|orientation|screenSize"
+          android:theme="@style/AppTheme.RazorpayCheckout"
+          tools:replace="android:theme" />
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"

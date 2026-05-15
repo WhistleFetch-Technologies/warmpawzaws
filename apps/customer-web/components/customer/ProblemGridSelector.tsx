@@ -11,7 +11,7 @@
  * - Uses consistent lucide-react icons instead of emojis
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { ArrowLeft, Search, ChevronRight, Check, Loader2, AlertCircle, 
   Stethoscope, Syringe, Bone, Heart, Activity, AlertTriangle, 
   Scissors, Droplets, Sparkles, Hand, Wind, Brush,
@@ -77,7 +77,90 @@ const getProblemIcon = (problemId: string, roleId: string): React.ReactNode => {
   const IconComponent = iconMap[problemId] || PawPrint;
   return <IconComponent className="w-6 h-6 text-[#FF8C42]" />;
 };
+
 import { apiClient } from '@/lib/api-client';
+import { defaultAllowedServiceStylesForRole } from '@/lib/default-allowed-service-styles';
+import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
+import { PROBLEM_GRID_CATEGORY_TO_ROLE } from '@/lib/problem-grid-catalog-fallback';
+import { problemGridAliasesForApi } from '@/lib/problem-grid-role-aliases';
+import { DynamicProblemIcon } from '@/lib/problem-grid-dynamic-icon';
+import { problemIconTextColorToBgClass } from '@/lib/problem-grid-icon-bg';
+import {
+  GROOMING_NEEDS,
+  WALKING_NEEDS,
+  NUTRITIONIST_NEEDS,
+  TRAINING_GOALS,
+  BOARDING_NEEDS,
+  BEHAVIORAL_ISSUES,
+  VET_PROBLEMS,
+} from './ProblemGridSection';
+import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
+
+function normalizeStyles(raw: unknown, roleIdForFallback?: string): string[] {
+  if (Array.isArray(raw) && raw.length > 0) return raw as string[];
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw);
+      return Array.isArray(p) && p.length > 0 ? p : defaultAllowedServiceStylesForRole(roleIdForFallback);
+    } catch {
+      return defaultAllowedServiceStylesForRole(roleIdForFallback);
+    }
+  }
+  return defaultAllowedServiceStylesForRole(roleIdForFallback);
+}
+
+function mapFromProblemGridRow(p: any, roleIdForFlow: string): any {
+  const label = p.displayName || p.name;
+  return {
+    id: p.id ?? p.problemId,
+    name: p.name,
+    displayName: label,
+    description:
+      typeof p.description === 'string' && p.description.trim()
+        ? p.description
+        : `Find ${label} specialists`,
+    roleId: roleIdForFlow,
+    allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(
+      normalizeStyles(p.allowedServiceStyles ?? p.allowed_service_styles, roleIdForFlow),
+      {
+        roleId: roleIdForFlow,
+        specializationId: String(p.id ?? p.problemId ?? ''),
+      }
+    ),
+    keywords: [String(p.name || '').toLowerCase(), String(p.id || '').toLowerCase()],
+    iconName: p.iconName ?? p.icon_name,
+    iconColor: p.iconColor ?? p.icon_color,
+    displayOrder: p.displayOrder ?? p.display_order ?? 100,
+  };
+}
+
+/** Same catalog as home when APIs return nothing or legacy single "General Service". */
+function buildLocalAllProblemsFallback(): any[] {
+  const rows = (items: { id: string; name: string }[], roleId: string) =>
+    items
+      .filter((p) => p.id !== 'view_all')
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        displayName: p.name,
+        description: 'Select to find specialists',
+        roleId,
+        allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(null, {
+          roleId,
+          specializationId: p.id,
+        }),
+        keywords: [p.name.toLowerCase(), p.id.toLowerCase()],
+      }));
+  return [
+    ...rows(GROOMING_NEEDS, 'groomer'),
+    ...rows(WALKING_NEEDS, 'walker'),
+    ...rows(NUTRITIONIST_NEEDS, 'nutritionist'),
+    ...rows(TRAINING_GOALS, 'trainer'),
+    ...rows(BOARDING_NEEDS, 'boarding'),
+    ...rows(BEHAVIORAL_ISSUES, 'behaviorist'),
+    ...rows(VET_PROBLEMS, 'veterinarian'),
+  ];
+}
 
 interface ProblemGridSelectorProps {
   roleId: string;
@@ -86,6 +169,8 @@ interface ProblemGridSelectorProps {
   onProblemSelect: (problem: any) => void;
   customerId: string;
   phone: string;
+  /** e.g. category placement banners on Find All Services */
+  topSlot?: ReactNode;
 }
 
 export function ProblemGridSelector({
@@ -94,7 +179,8 @@ export function ProblemGridSelector({
   onBack,
   onProblemSelect,
   customerId,
-  phone
+  phone,
+  topSlot,
 }: ProblemGridSelectorProps) {
   const [problems, setProblems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,24 +196,93 @@ export function ProblemGridSelector({
   const loadProblemGrid = async () => {
     try {
       setLoading(true);
-      // Use public endpoint since problem grid is shown to all users (no auth required)
-      const data = await apiClient.get<{ problems?: any[] }>(`/public/problems?roleId=${roleId}`);
-      setProblems(data.problems || []);
+      const isAll = String(roleId || '').toLowerCase() === 'all';
+      let list: any[] = [];
+
+      if (isAll) {
+        try {
+          const pg = await apiClient.get<{ success?: boolean; problems?: any[] }>('/public/problem-grid');
+          if (pg?.success && Array.isArray(pg.problems) && pg.problems.length > 0) {
+            list = pg.problems
+              .filter((p: any) => p?.id && p?.name)
+              .map((p: any) => {
+                const cat = String(p.categoryId || '').toLowerCase();
+                const roleForRow = PROBLEM_GRID_CATEGORY_TO_ROLE[cat] || 'veterinarian';
+                return mapFromProblemGridRow(p, roleForRow);
+              });
+          }
+        } catch {
+          /* fall through */
+        }
+        if (list.length === 0) {
+          list = buildLocalAllProblemsFallback();
+        }
+      } else {
+        const aliases = problemGridAliasesForApi(roleId);
+        for (const rid of aliases) {
+          try {
+            const res = await apiClient.get<{ success?: boolean; problems?: any[] }>(
+              `/public/problem-grid/${encodeURIComponent(rid)}`
+            );
+            if (
+              res?.success !== false &&
+              Array.isArray(res.problems) &&
+              res.problems.length > 0
+            ) {
+              list = res.problems
+                .filter((p: any) => p?.id && (p.name || p.displayName))
+                .map((p: any) => mapFromProblemGridRow(p, roleId));
+              break;
+            }
+          } catch {
+            continue;
+          }
+        }
+        if (list.length === 0) {
+          try {
+            const data = await apiClient.get<{ problems?: any[] }>(
+              `/public/problems?roleId=${encodeURIComponent(roleId)}`
+            );
+            list = Array.isArray(data.problems) ? data.problems : [];
+          } catch {
+            list = [];
+          }
+        }
+      }
+
+      list.sort((a, b) => {
+        const ao = a.displayOrder ?? 100;
+        const bo = b.displayOrder ?? 100;
+        if (ao !== bo) return Number(ao) - Number(bo);
+        const an = (a.displayName || a.name || '').toString();
+        const bn = (b.displayName || b.name || '').toString();
+        return an.localeCompare(bn);
+      });
+
+      setProblems(list);
     } catch (error) {
       console.error('Error loading problem grid:', error);
+      if (String(roleId || '').toLowerCase() === 'all') {
+        setProblems(buildLocalAllProblemsFallback());
+      } else {
+        setProblems([]);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredProblems = problems.filter(problem => {
+  const filteredProblems = problems.filter((problem) => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
+    const name = (problem.name || problem.displayName || '').toLowerCase();
+    const display = (problem.displayName || '').toLowerCase();
     return (
-      problem.name.toLowerCase().includes(query) ||
-      (problem.displayName && problem.displayName.toLowerCase().includes(query)) ||
-      (problem.description && problem.description.toLowerCase().includes(query)) ||
-      (problem.keywords && problem.keywords.some((keyword: string) => keyword.toLowerCase().includes(query)))
+      name.includes(query) ||
+      display.includes(query) ||
+      (problem.description && String(problem.description).toLowerCase().includes(query)) ||
+      (problem.keywords &&
+        problem.keywords.some((keyword: string) => String(keyword).toLowerCase().includes(query)))
     );
   });
 
@@ -155,7 +310,9 @@ export function ProblemGridSelector({
                Find {roleName}
              </h1>
              <p className="text-white/80 text-sm">
-               Select your pet's health concern
+               {roleId === 'all'
+                 ? 'Browse grooming, walks, vet care, and more'
+                 : "Select your pet's health concern"}
              </p>
           </div>
         </div>
@@ -163,7 +320,8 @@ export function ProblemGridSelector({
 
       {/* Main Content - White Card with Top Radius */}
       <div className="bg-white rounded-t-[32px] px-6 pt-6 min-h-[calc(100vh-140px)] pb-12">
-        
+        {topSlot ? <div className="mb-4">{topSlot}</div> : null}
+
         {/* Search Bar */}
         <div className="mb-6">
           <div className="relative">
@@ -188,14 +346,30 @@ export function ProblemGridSelector({
         ) : (
           <div className="grid grid-cols-2 gap-3">
             {filteredProblems.map((problem) => {
+              const locked = isEmergencyProblemTileLocked({
+                id: String(problem.id),
+                name: problem.name,
+                displayName: problem.displayName,
+              });
               const isSelected = selectedProblemId === problem.id;
               const isProcessing = isSelected && processingSelection;
               const isSuccess = isSelected && selectionSuccess;
-              
+              const specIconName = problem.iconName ?? problem.icon_name;
+              const specIconColor = problem.iconColor ?? problem.icon_color;
+              const hasAdminIcon = Boolean(specIconName);
+              const adminIconBg = problemIconTextColorToBgClass(specIconColor);
+              const iconChipClass = hasAdminIcon
+                ? `${adminIconBg || (isSelected ? 'bg-white' : 'bg-slate-50 group-hover:bg-orange-50')} ${isSelected && adminIconBg ? 'ring-2 ring-orange-200' : ''}`
+                : isSelected
+                  ? 'bg-white'
+                  : 'bg-slate-50 group-hover:bg-orange-50';
+
               return (
               <button
                 key={problem.id}
+                type="button"
                 onClick={() => {
+                  if (locked) return;
                   if (navigator.vibrate) navigator.vibrate(10);
                   setSelectedProblemId(problem.id);
                   setProcessingSelection(true);
@@ -209,16 +383,23 @@ export function ProblemGridSelector({
                     }, 300);
                   }, 500);
                 }}
-                disabled={processingSelection}
-                className="relative group text-left h-full"
+                disabled={processingSelection || locked}
+                className={`relative group text-left h-full ${locked ? 'cursor-not-allowed' : ''}`}
               >
                 <div className={`
                   relative overflow-hidden rounded-2xl p-4 h-full flex flex-col justify-between transition-all duration-200
-                  ${isSelected 
+                  ${locked
+                    ? 'bg-slate-50 border border-slate-100 text-slate-400 opacity-90'
+                    : isSelected 
                     ? 'bg-orange-50 border-2 border-orange-500 shadow-md scale-[0.98]' 
                     : 'bg-white border border-slate-100 shadow-sm hover:border-orange-200 hover:shadow-md hover:-translate-y-0.5'
                   }
                 `}>
+                  {locked && (
+                    <span className="absolute top-2 right-2 z-10 text-[8px] font-semibold uppercase tracking-wide text-slate-500 bg-white/95 border border-slate-200 px-1.5 py-0.5 rounded-md">
+                      Soon
+                    </span>
+                  )}
                   
                   {/* Success Overlay */}
                   {isSuccess && (
@@ -236,11 +417,20 @@ export function ProblemGridSelector({
                   
                   <div className="relative z-10">
                     {/* Icon - Using lucide-react for consistency */}
-                    <div className={`
+                    <div
+                      className={`
                       w-12 h-12 rounded-xl flex items-center justify-center mb-3 transition-colors
-                      ${isSelected ? 'bg-white' : 'bg-slate-50 group-hover:bg-orange-50'}
-                    `}>
-                      {getProblemIcon(problem.id, roleId)}
+                      ${iconChipClass}
+                    `}
+                    >
+                      {hasAdminIcon ? (
+                        <DynamicProblemIcon
+                          iconName={specIconName}
+                          iconColor={specIconColor}
+                        />
+                      ) : (
+                        getProblemIcon(problem.id, roleId)
+                      )}
                     </div>
                     
                     {/* Text */}

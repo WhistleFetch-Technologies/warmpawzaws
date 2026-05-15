@@ -26,19 +26,28 @@ import {
   NetworkState,
   QueuedRequest,
 } from './network-resilience';
+import { API_BASE_URL as CANONICAL_API_BASE_URL } from '../config/aws';
+import {
+  clearCustomerSession,
+  getValidCustomerAccessToken,
+  refreshCustomerTokens,
+  CustomerSessionStorageKeys,
+} from '../services/auth-session';
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
-// ✅ FIXED: Use dev.api.warmpawz.com for DEV builds
-const API_BASE_URL = __DEV__ 
-  ? 'https://dev.api.warmpawz.com' 
-  : 'https://api.warmpawz.com';
+// Single source of truth: src/config/aws.ts. That module honours the env vars
+// AWS_API_GATEWAY_URL / EXPO_PUBLIC_API_GATEWAY_URL and falls back to the real
+// dev/prod API Gateway URLs (NOT broken vanity DNS). Importing here keeps both
+// API clients aligned so referral / prescription / share calls resolve correctly
+// in production release builds.
+const API_BASE_URL = CANONICAL_API_BASE_URL;
 
-const AUTH_TOKEN_KEY = '@warmpawz_auth_token';
-const CUSTOMER_PHONE_KEY = '@warmpawz_customer_phone';
-const CUSTOMER_ID_KEY = '@warmpawz_customer_id';
+const AUTH_TOKEN_KEY = CustomerSessionStorageKeys.legacyAuthToken;
+const CUSTOMER_PHONE_KEY = CustomerSessionStorageKeys.legacyCustomerPhone;
+const CUSTOMER_ID_KEY = CustomerSessionStorageKeys.legacyCustomerId;
 
 // Operations that should be queued when offline
 const OFFLINE_QUEUEABLE_METHODS = ['POST', 'PUT', 'DELETE'];
@@ -106,7 +115,11 @@ class ApiClient {
 
   private async loadAuthToken(): Promise<void> {
     try {
-      this.authToken = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+      // Prefer the structured session bundle so a freshly-refreshed token is
+      // used after cold start. Fall back to the legacy single key when older
+      // login flows wrote only that.
+      const fresh = await getValidCustomerAccessToken();
+      this.authToken = fresh || (await AsyncStorage.getItem(AUTH_TOKEN_KEY));
     } catch (error) {
       console.error('Error loading auth token:', error);
     }
@@ -117,9 +130,10 @@ class ApiClient {
     await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
   }
 
+  /** Explicit logout — only call from user-initiated "Log out". */
   async clearAuthToken(): Promise<void> {
     this.authToken = null;
-    await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+    await clearCustomerSession();
   }
 
   getAuthToken(): string | null {
@@ -140,11 +154,22 @@ class ApiClient {
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
-    queueIfOffline = true
+    queueIfOffline = true,
+    retried401 = false
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const method = options.method || 'GET';
-    
+
+    // Always pull the freshest access token from the session manager so
+    // silent refreshes are honoured even when this.authToken is stale.
+    let bearer: string | null = null;
+    try {
+      bearer = await getValidCustomerAccessToken();
+    } catch {
+      /* fall through to cached value */
+    }
+    if (bearer) this.authToken = bearer;
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -202,9 +227,24 @@ class ApiClient {
         );
       }
 
-      // Handle auth errors
+      // Handle auth errors: try a one-shot refresh first so a short-lived
+      // access token never forces the user back to the auth screen while the
+      // 90-day refresh window is still open.
       if (error instanceof NetworkError && error.statusCode === 401) {
-        await this.clearAuthToken();
+        if (!retried401) {
+          try {
+            const renewed = await refreshCustomerTokens();
+            if (renewed?.accessToken) {
+              this.authToken = renewed.accessToken;
+              return this.request<T>(endpoint, options, queueIfOffline, true);
+            }
+          } catch {
+            /* fall through */
+          }
+        }
+        // Refresh failed — but refresh token may already be cleared by
+        // refreshCustomerTokens on a conclusive 401. We surface the error
+        // without forcing a session wipe so transient failures don't log out.
         throw new ApiError('Session expired. Please log in again.', 401, { sessionExpired: true });
       }
 
@@ -285,9 +325,9 @@ class ApiClient {
     return result;
   }
 
+  /** Explicit user-initiated logout (settings → log out). */
   async logout(): Promise<void> {
     await this.clearAuthToken();
-    await AsyncStorage.multiRemove([CUSTOMER_PHONE_KEY, CUSTOMER_ID_KEY]);
   }
 
   // ============================================================================

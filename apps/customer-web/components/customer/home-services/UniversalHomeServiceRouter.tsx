@@ -23,12 +23,16 @@ import { AddressSelector } from '../grooming/AddressSelector';
 import { TimeSlotSelector } from '../grooming/TimeSlotSelector';
 import { ServicePackageSelector } from '../grooming/ServicePackageSelector';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { HomeServiceProviderListView } from './HomeServiceProviderListView';
 import { HomeServiceProviderProfile } from './HomeServiceProviderProfile';
 import { HomeServiceLanding } from './HomeServiceLanding';
 import { apiClient } from '@/lib/api-client';
+import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
+import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 
 // Service type definitions
 export type HomeServiceType = 
@@ -62,8 +66,8 @@ export const SERVICE_CONFIGS: Record<HomeServiceType, ServiceConfig> = {
     roleId: 'dog_walker',
     displayName: 'Dog Walking',
     icon: '🚶',
-    primaryColor: '#22C55E',
-    bgGradient: 'from-green-500 to-emerald-600',
+    primaryColor: '#FF8C42',
+    bgGradient: 'from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]',
     problems: [
       { id: '30-min', name: '30 Min Walk', icon: '🚶' },
       { id: '60-min', name: '60 Min Walk', icon: '🏃' },
@@ -332,13 +336,14 @@ export function UniversalHomeServiceRouter({
     try {
       const data = await apiClient.get<{ vendor?: any }>(`/vendor/${vendorId}`);
       const vendor = data.vendor || data;
+      const raw = vendor as Record<string, unknown>;
       setBookingFlow(prev => ({
         ...prev,
         vendorId: vendor.id,
-        vendorName: vendor.businessName || vendor.fullName,
+        vendorName: vendor.business_name || vendor.businessName || vendor.fullName,
         vendorAddress: vendor.address,
         vendorPhone: vendor.phone,
-        vendorPhoto: vendor.photo || vendor.logo,
+        vendorPhoto: resolveVendorProfilePhotoUrl(raw) || (vendor.photo as string) || (vendor.logo as string) || null,
       }));
     } catch (error) {
       console.error('Error loading vendor details:', error);
@@ -416,6 +421,17 @@ export function UniversalHomeServiceRouter({
     if (action === 'browse_providers') {
       setCurrentStep('provider_list');
     } else if (action === 'problem_selected') {
+      if (
+        isEmergencyProblemTileLocked({
+          id: data?.problemId,
+          problemId: data?.problemId,
+          name: data?.problemTitle ?? data?.name,
+          displayName: data?.displayName ?? data?.problemTitle,
+        })
+      ) {
+        toast.info('Emergency care is coming soon on the app.');
+        return;
+      }
       setBookingFlow(prev => ({ ...prev, selectedProblem: data?.problemId }));
       setCurrentStep('provider_list');
     } else if (action === 'quick_book') {
@@ -433,13 +449,15 @@ export function UniversalHomeServiceRouter({
 
   const handleProviderSelect = (provider: any) => {
     console.log('✅ [HOME-SERVICE-ROUTER] Provider selected:', provider);
+    const raw = provider as Record<string, unknown>;
+    const vendorId = pickCustomerVendorAccountId(raw) || String(provider.vendorId || provider.id || '');
     setBookingFlow(prev => ({
       ...prev,
-      vendorId: provider.id || provider.vendorId,
+      vendorId,
       vendorName: provider.businessName || provider.name || provider.fullName,
       vendorAddress: provider.address,
       vendorPhone: provider.phone,
-      vendorPhoto: provider.photo || provider.logo,
+      vendorPhoto: resolveVendorProfilePhotoUrl(raw) || provider.photo || provider.logo || null,
     }));
     setCurrentStep('provider_profile');
   };
@@ -536,6 +554,10 @@ export function UniversalHomeServiceRouter({
         selectedProblem={bookingFlow.selectedProblem}
         onBack={handleBack}
         onSelectProvider={handleProviderSelect}
+        onViewProviderServices={(provider) => {
+          handleProviderSelect(provider);
+          setCurrentStep('select_service');
+        }}
         onNavigate={onNavigate}
       />
     );
@@ -632,6 +654,7 @@ export function UniversalHomeServiceRouter({
         addressId={bookingFlow.address?.id}
         address={bookingFlow.address}
         baseAmount={totalAmount}
+        priceIncludesTax={catalogPriceIncludesTax(primaryService)}
         duration={primaryService?.duration || 60}
         customerPhone={phone}
         customerId={customerId}

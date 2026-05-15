@@ -26,8 +26,11 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { PromotionBanner } from '../shared/PromotionBanner';
+import { FeaturedVendorSpotlights } from '../shared/FeaturedVendorSpotlights';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { AddAddressModal } from '../shared/AddAddressModal';
 import { trackBookingStep, trackPageView, useBookingAnalytics, ServiceCategory } from '@/lib/analytics';
@@ -123,6 +126,8 @@ interface ServiceProvider {
   vendorId: string;
   name: string;
   businessName?: string;
+  /** Service area / business address when API provides it (shown at payment) */
+  businessAddress?: string;
   photo?: string;
   description?: string;
   rating: number;
@@ -174,6 +179,20 @@ interface ActivePackage {
   expiresAt: string | null;
   servicesIncluded: string[];
   usageType: string;
+}
+
+function feeCategoryForHomeService(t: HomeServiceType): string {
+  const map: Record<HomeServiceType, string> = {
+    walking: 'walking',
+    grooming: 'grooming',
+    training: 'training',
+    veterinary: 'veterinary',
+    sitting: 'boarding',
+    nutrition: 'nutritionist',
+    behaviourist: 'training',
+    diagnostics: 'veterinary',
+  };
+  return map[t] || '';
 }
 
 export function HomeServiceRouter({
@@ -272,6 +291,12 @@ export function HomeServiceRouter({
   const [showAddPetModal, setShowAddPetModal] = useState(false);
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
 
+  useEffect(() => {
+    if (step === 'datetime' && pets.length === 1 && !selectedPet) {
+      setSelectedPet(pets[0]);
+    }
+  }, [step, pets, selectedPet]);
+
   // Color schemes based on service type
   const colorSchemes: Record<string, { gradient: string; primary: string; light: string; text: string }> = {
     green: {
@@ -310,7 +335,7 @@ export function HomeServiceRouter({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         dayNum: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),
@@ -383,7 +408,14 @@ export function HomeServiceRouter({
       const response = await apiClient.get<any>(`/customer/home-service-providers?${params}`);
 
       if (response.success && response.providers) {
-        setProviders(response.providers);
+        const normalized = response.providers.map((p: Record<string, unknown>) => ({
+          ...p,
+          businessAddress:
+            (p as { businessAddress?: string }).businessAddress ||
+            (p as { address?: string }).address ||
+            (p as { serviceArea?: string }).serviceArea,
+        }));
+        setProviders(normalized as ServiceProvider[]);
       } else {
         // Fallback - try alternative endpoint
         const altResponse = await apiClient.get<any>(
@@ -392,15 +424,20 @@ export function HomeServiceRouter({
         
         if (altResponse.vendors) {
           // Transform to provider format
-          const transformedProviders = altResponse.vendors.map((v: any) => ({
+          const transformedProviders = altResponse.vendors.map((v: any) => {
+            const tr = Number(v.totalReviews ?? v.review_count ?? 0) || 0;
+            const rawR = v.rating != null ? Number(v.rating) : NaN;
+            const rating =
+              tr > 0 && Number.isFinite(rawR) && rawR > 0 ? rawR : 0;
+            return {
             id: v.id,
             vendorId: v.id,
             name: v.fullName || v.ownerName || v.businessName,
             businessName: v.businessName,
             photo: v.photo || v.profilePhoto,
             description: v.description || v.bio,
-            rating: v.rating || 4.5,
-            totalReviews: v.totalReviews || 0,
+            rating,
+            totalReviews: tr,
             completedServices: v.completedServices || v.bookingsCompleted || 0,
             distance: v.distance || calculateDistance(customerLocation, v.latitude, v.longitude),
             nextAvailability: v.nextAvailability,
@@ -410,8 +447,11 @@ export function HomeServiceRouter({
             services: v.services || [],
             specializations: v.specializations || [],
             yearsExperience: v.yearsExperience,
-            responseTime: v.responseTime
-          }));
+            responseTime: v.responseTime,
+            businessAddress:
+              v.businessAddress || v.address || v.serviceArea || v.service_area || v.clinicAddress,
+          };
+          });
           setProviders(transformedProviders);
         } else {
           setProviders([]);
@@ -572,12 +612,6 @@ export function HomeServiceRouter({
       }
     } else if (step === 'services') {
       setStep('datetime');
-    } else if (step === 'datetime') {
-      setStep('pet');
-    } else if (step === 'pet') {
-      setStep('address');
-    } else if (step === 'address') {
-      handleCreateBooking();
     }
   };
 
@@ -595,12 +629,8 @@ export function HomeServiceRouter({
       } else {
         setStep('services');
       }
-    } else if (step === 'pet') {
-      setStep('datetime');
-    } else if (step === 'address') {
-      setStep('pet');
     } else if (step === 'payment') {
-      setStep('address');
+      setStep('datetime');
     }
   };
 
@@ -610,6 +640,20 @@ export function HomeServiceRouter({
       toast.error('Please complete all required fields');
       return;
     }
+
+    trackBookingStep({
+      step: 'address_selection',
+      serviceCategory: serviceType as ServiceCategory,
+      serviceStyle: 'at_home',
+      vendorId: selectedProvider?.vendorId,
+      petId: selectedPet?.id,
+      phone,
+      metadata: {
+        source: 'home_service_consolidated_submit',
+        selectedDate,
+        selectedTime,
+      },
+    });
 
     setProcessing(true);
 
@@ -675,16 +719,16 @@ export function HomeServiceRouter({
 
   // Render step indicator
   const renderStepIndicator = () => {
-    const steps = ['Provider', 'Service', 'Schedule', 'Pet', 'Address', 'Payment'];
+    const steps = ['Provider', 'Service', 'Details', 'Payment'];
     const stepMap: Record<RouterStep, number> = {
       'discovery': -1,
       'provider-profile': 0,
       'services': 1,
       'datetime': 2,
-      'pet': 3,
-      'address': 4,
-      'payment': 5,
-      'confirmation': 6
+      'pet': 2,
+      'address': 2,
+      'payment': 3,
+      'confirmation': 4
     };
     const currentIdx = stepMap[step];
 
@@ -764,7 +808,11 @@ export function HomeServiceRouter({
           <div className="flex items-center gap-3 mt-2 text-xs text-gray-600">
             <span className="flex items-center gap-1">
               <MapPin className="w-3.5 h-3.5" />
-              {Number(provider.distance || 0).toFixed(1)} km
+              {provider.distance != null
+                ? (Number(provider.distance) < 1
+                  ? `${Math.round(Number(provider.distance) * 1000)} m`
+                  : `${Math.round(Number(provider.distance))} km`)
+                : '—'}
             </span>
             <span className="flex items-center gap-1">
               <Briefcase className="w-3.5 h-3.5" />
@@ -776,8 +824,15 @@ export function HomeServiceRouter({
           </div>
 
           {/* Description */}
-          {provider.description && (
-            <p className="text-sm text-gray-600 mt-2 line-clamp-2">{provider.description}</p>
+          {provider.description?.trim() && (
+            <div onClick={(e) => e.stopPropagation()} className="mt-2">
+              <ServiceDescriptionInline
+                description={provider.description}
+                title={provider.name}
+                className="m-0 text-sm leading-5 text-gray-600"
+                dialogHint="About this provider"
+              />
+            </div>
           )}
 
           {/* Specializations */}
@@ -835,13 +890,7 @@ export function HomeServiceRouter({
       return { title: serviceName, subtitle: 'Select service' };
     }
     if (step === 'datetime') {
-      return { title: serviceName, subtitle: 'Pick date & time' };
-    }
-    if (step === 'pet') {
-      return { title: serviceName, subtitle: 'Select your pet' };
-    }
-    if (step === 'address') {
-      return { title: serviceName, subtitle: 'Confirm address' };
+      return { title: serviceName, subtitle: 'Schedule, pet & address' };
     }
     if (step === 'payment') {
       return { title: serviceName, subtitle: 'Complete payment' };
@@ -1021,8 +1070,10 @@ export function HomeServiceRouter({
               </Card>
             )}
 
-            {/* Promotions */}
-            <PromotionBanner service={serviceType} />
+            {/* Promotions + vendor spotlights (same service context) */}
+            <div className="space-y-4">
+              <FeaturedVendorSpotlights service={serviceType} onNavigate={onNavigate} />
+            </div>
 
             {/* Last Booked Providers */}
             {lastBookedProviders.length > 0 && (
@@ -1234,8 +1285,14 @@ export function HomeServiceRouter({
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
                           <h4 className="font-semibold text-gray-900">{service.name}</h4>
-                          {service.description && (
-                            <p className="text-sm text-gray-500 mt-1">{service.description}</p>
+                          {service.description?.trim() && (
+                            <div onClick={(e) => e.stopPropagation()} className="mt-1">
+                              <ServiceDescriptionInline
+                                description={service.description}
+                                title={service.name}
+                                className="m-0 text-sm leading-5 text-gray-500"
+                              />
+                            </div>
                           )}
                           <div className="flex items-center gap-3 mt-2 text-sm text-gray-600">
                             <span className="flex items-center gap-1">
@@ -1261,12 +1318,11 @@ export function HomeServiceRouter({
           </div>
         )}
 
-        {/* ============ DATE/TIME STEP ============ */}
+        {/* ============ SCHEDULE, PET & ADDRESS (single page) ============ */}
         {step === 'datetime' && (
-          <div className="p-4 space-y-6">
-            {/* Selected Service Summary */}
+          <div className="space-y-8 p-4">
             {selectedService && (
-              <Card className={`p-3 ${colors.light} border`}>
+              <Card className={`border p-3 ${colors.light}`}>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-semibold">{selectedService.name}</p>
@@ -1277,18 +1333,18 @@ export function HomeServiceRouter({
               </Card>
             )}
 
-            {/* Date Selection */}
             <div>
-              <h3 className="font-semibold text-gray-900 mb-3">Select Date</h3>
+              <h3 className="mb-3 font-semibold text-gray-900">Select Date</h3>
               <div className="flex gap-2 overflow-x-auto pb-2">
                 {dates.map((d) => (
                   <button
                     key={d.date}
+                    type="button"
                     onClick={() => setSelectedDate(d.date)}
-                    className={`flex-shrink-0 w-16 p-3 rounded-xl text-center transition-all ${
-                      selectedDate === d.date 
-                        ? `${colors.primary} text-white` 
-                        : 'bg-white border border-gray-200 hover:border-gray-300'
+                    className={`w-16 flex-shrink-0 rounded-xl p-3 text-center transition-all ${
+                      selectedDate === d.date
+                        ? `${colors.primary} text-white`
+                        : 'border border-gray-200 bg-white hover:border-gray-300'
                     }`}
                   >
                     <p className="text-xs opacity-75">{d.day}</p>
@@ -1299,27 +1355,28 @@ export function HomeServiceRouter({
               </div>
             </div>
 
-            {/* Time Selection */}
             {selectedDate && (
               <div>
-                <h3 className="font-semibold text-gray-900 mb-3">Select Time</h3>
+                <h3 className="mb-1 font-semibold text-gray-900">Select Time</h3>
+                <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
                 {loadingSlots ? (
                   <div className="flex items-center justify-center py-8">
-                    <RefreshCw className={`w-6 h-6 ${colors.text} animate-spin`} />
+                    <RefreshCw className={`h-6 w-6 ${colors.text} animate-spin`} />
                   </div>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
                     {timeSlots.map((slot) => (
                       <button
                         key={slot.time}
+                        type="button"
                         onClick={() => slot.available && setSelectedTime(slot.time)}
                         disabled={!slot.available}
-                        className={`p-3 rounded-xl text-center transition-all ${
-                          selectedTime === slot.time 
-                            ? `${colors.primary} text-white` 
+                        className={`rounded-xl p-3 text-center transition-all ${
+                          selectedTime === slot.time
+                            ? `${colors.primary} text-white`
                             : slot.available
-                              ? 'bg-white border border-gray-200 hover:border-gray-300'
-                              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                              ? 'border border-gray-200 bg-white hover:border-gray-300'
+                              : 'cursor-not-allowed bg-gray-100 text-gray-400'
                         }`}
                       >
                         {slot.time}
@@ -1330,179 +1387,168 @@ export function HomeServiceRouter({
               </div>
             )}
 
-            <Button
-              onClick={handleNext}
-              disabled={!selectedDate || !selectedTime}
-              className={`w-full ${colors.primary} hover:opacity-90`}
-            >
-              Continue
-            </Button>
-          </div>
-        )}
-
-        {/* ============ PET SELECTION STEP ============ */}
-        {step === 'pet' && (
-          <div className="p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Select Your Pet</h2>
-              <button
-                onClick={() => setShowAddPetModal(true)}
-                className={`flex items-center gap-1 px-3 py-1.5 ${colors.light} rounded-lg text-sm font-medium`}
-              >
-                <Plus className="w-4 h-4" />
-                Add Pet
-              </button>
-            </div>
-
-            <div className={`p-3 ${colors.light} rounded-lg`}>
-              <p className="text-sm">
-                🐾 A pet profile is required for {serviceName.toLowerCase()} services.
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              {pets.length > 0 ? (
-                pets.map((pet) => (
-                  <button
-                    key={pet.id}
-                    onClick={() => setSelectedPet(pet)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all flex items-center gap-4 ${
-                      selectedPet?.id === pet.id 
-                        ? `${colors.light.includes('border') ? colors.light.split(' ')[1] : 'border-green-500'} ${colors.light.includes('bg') ? colors.light.split(' ')[0] : 'bg-green-50'}` 
-                        : 'border-gray-200 bg-white hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="w-14 h-14 rounded-full bg-orange-100 overflow-hidden flex items-center justify-center text-2xl">
-                      {pet.photo ? (
-                        <img src={pet.photo} alt={pet.name} className="w-full h-full object-cover" />
-                      ) : (
-                        pet.species?.toLowerCase().includes('dog') ? '🐕' : 
-                        pet.species?.toLowerCase().includes('cat') ? '🐈' : '🐾'
-                      )}
-                    </div>
-                    <div className="flex-1 text-left">
-                      <h3 className="font-semibold text-gray-900">{pet.name}</h3>
-                      <p className="text-sm text-gray-500 capitalize">{pet.breed}</p>
-                    </div>
-                    {selectedPet?.id === pet.id && (
-                      <CheckCircle2 className={`w-6 h-6 ${colors.text}`} />
+            <div className={`space-y-4 border-t border-gray-100 pt-6`}>
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">Your pet</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowAddPetModal(true)}
+                  className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium ${colors.light}`}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Pet
+                </button>
+              </div>
+              <div className={`rounded-lg p-3 ${colors.light}`}>
+                <p className="text-sm">
+                  🐾 A pet profile is required for {serviceName.toLowerCase()} services.
+                </p>
+              </div>
+              {pets.length > 1 ? (
+                <select
+                  className="h-12 w-full rounded-xl border border-gray-200 bg-white px-3 text-sm font-medium text-gray-900 outline-none focus:ring-2 focus:ring-[#FF8C42]"
+                  value={selectedPet?.id || ''}
+                  onChange={(e) => {
+                    const pet = pets.find((p) => p.id === e.target.value);
+                    if (pet) setSelectedPet(pet);
+                  }}
+                  aria-label="Select pet"
+                >
+                  <option value="">Select a pet</option>
+                  {pets.map((pet) => (
+                    <option key={pet.id} value={pet.id}>
+                      {pet.name}
+                      {pet.breed ? ` · ${pet.breed}` : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : pets.length === 1 ? (
+                <div
+                  className={`flex items-center gap-4 rounded-xl border-2 p-4 ${
+                    colors.light.includes('border') ? colors.light.split(' ')[1] : 'border-green-500'
+                  } ${colors.light.includes('bg') ? colors.light.split(' ')[0] : 'bg-green-50'}`}
+                >
+                  <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-orange-100 text-2xl">
+                    {pets[0].photo ? (
+                      <img src={pets[0].photo} alt={pets[0].name} className="h-full w-full object-cover" />
+                    ) : pets[0].species?.toLowerCase().includes('dog') ? (
+                      '🐕'
+                    ) : pets[0].species?.toLowerCase().includes('cat') ? (
+                      '🐈'
+                    ) : (
+                      '🐾'
                     )}
-                  </button>
-                ))
+                  </div>
+                  <div className="min-w-0 flex-1 text-left">
+                    <h3 className="font-semibold text-gray-900">{pets[0].name}</h3>
+                    <p className="text-sm capitalize text-gray-500">{pets[0].breed}</p>
+                  </div>
+                  <CheckCircle2 className={`h-6 w-6 flex-shrink-0 ${colors.text}`} />
+                </div>
               ) : (
-                <Card className="p-8 text-center border-2 border-dashed">
-                  <div className="text-5xl mb-3">🐾</div>
-                  <p className="font-medium text-gray-900 mb-2">No pets added yet</p>
-                  <p className="text-sm text-gray-500 mb-4">Add your pet to continue</p>
-                  <Button
-                    onClick={() => setShowAddPetModal(true)}
-                    className={colors.primary}
-                  >
+                <Card className="border-2 border-dashed p-8 text-center">
+                  <div className="mb-3 text-5xl">🐾</div>
+                  <p className="mb-2 font-medium text-gray-900">No pets added yet</p>
+                  <p className="mb-4 text-sm text-gray-500">Add your pet to continue</p>
+                  <Button onClick={() => setShowAddPetModal(true)} className={colors.primary}>
                     + Add Your First Pet
                   </Button>
                 </Card>
               )}
             </div>
 
-            <Button
-              onClick={handleNext}
-              disabled={!selectedPet}
-              className={`w-full ${colors.primary} hover:opacity-90`}
-            >
-              {selectedPet ? 'Continue' : 'Select a Pet to Continue'}
-            </Button>
-          </div>
-        )}
-
-        {/* ============ ADDRESS STEP ============ */}
-        {step === 'address' && (
-          <div className="p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">Service Location</h2>
-              <button
-                onClick={() => setShowAddAddressModal(true)}
-                className="flex items-center gap-1 px-3 py-1.5 bg-blue-100 text-blue-600 rounded-lg text-sm font-medium"
-              >
-                <Plus className="w-4 h-4" />
-                Add Address
-              </button>
-            </div>
-
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-sm text-blue-800">
-                📍 Where should the service provider come?
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              {addresses.length > 0 ? (
-                addresses.map((addr) => (
-                  <button
-                    key={addr.id}
-                    onClick={() => setSelectedAddress(addr)}
-                    className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
-                      selectedAddress?.id === addr.id 
-                        ? 'border-green-500 bg-green-50' 
-                        : 'border-gray-200 bg-white hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="text-lg">
-                        {(addr.label || '').toLowerCase() === 'home' ? '🏠' : 
-                         (addr.label || '').toLowerCase() === 'work' ? '🏢' : '📍'}
-                      </span>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-gray-900">{addr.label || 'Address'}</h3>
-                          {addr.isDefault && (
-                            <Badge variant="secondary" className="text-xs">Default</Badge>
-                          )}
+            <div className="space-y-4 border-t border-gray-100 pt-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">Service location</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowAddAddressModal(true)}
+                  className="flex items-center gap-1 rounded-lg bg-blue-100 px-3 py-1.5 text-sm font-medium text-blue-600"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add Address
+                </button>
+              </div>
+              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                <p className="text-sm text-blue-800">📍 Where should the service provider come?</p>
+              </div>
+              <div className="space-y-3">
+                {addresses.length > 0 ? (
+                  addresses.map((addr) => (
+                    <button
+                      key={addr.id}
+                      type="button"
+                      onClick={() => setSelectedAddress(addr)}
+                      className={`w-full rounded-xl border-2 p-4 text-left transition-all ${
+                        selectedAddress?.id === addr.id
+                          ? 'border-green-500 bg-green-50'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="text-lg">
+                          {(addr.label || '').toLowerCase() === 'home'
+                            ? '🏠'
+                            : (addr.label || '').toLowerCase() === 'work'
+                              ? '🏢'
+                              : '📍'}
+                        </span>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-gray-900">{addr.label || 'Address'}</h3>
+                            {addr.isDefault && (
+                              <Badge variant="secondary" className="text-xs">
+                                Default
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-600">{addr.addressLine1 || addr.address}</p>
+                          <p className="text-sm text-gray-500">
+                            {addr.city} - {addr.pincode}
+                          </p>
                         </div>
-                        <p className="text-sm text-gray-600">{addr.addressLine1 || addr.address}</p>
-                        <p className="text-sm text-gray-500">{addr.city} - {addr.pincode}</p>
+                        {selectedAddress?.id === addr.id && (
+                          <CheckCircle2 className="h-6 w-6 flex-shrink-0 text-green-600" />
+                        )}
                       </div>
-                      {selectedAddress?.id === addr.id && (
-                        <CheckCircle2 className="w-6 h-6 text-green-600" />
-                      )}
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <Card className="p-8 text-center border-2 border-dashed">
-                  <div className="text-5xl mb-3">📍</div>
-                  <p className="font-medium text-gray-900 mb-2">No addresses saved</p>
-                  <p className="text-sm text-gray-500 mb-4">Add an address for service delivery</p>
-                  <Button
-                    onClick={() => setShowAddAddressModal(true)}
-                    className="bg-blue-500 hover:bg-blue-600"
-                  >
-                    + Add Your Address
-                  </Button>
-                </Card>
-              )}
+                    </button>
+                  ))
+                ) : (
+                  <Card className="border-2 border-dashed p-8 text-center">
+                    <div className="mb-3 text-5xl">📍</div>
+                    <p className="mb-2 font-medium text-gray-900">No addresses saved</p>
+                    <p className="mb-4 text-sm text-gray-500">Add an address for service delivery</p>
+                    <Button onClick={() => setShowAddAddressModal(true)} className="bg-blue-500 hover:bg-blue-600">
+                      + Add Your Address
+                    </Button>
+                  </Card>
+                )}
+              </div>
             </div>
 
-            {/* Notes */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Special Instructions (Optional)
+            <div className="border-t border-gray-100 pt-6">
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                Special instructions (optional)
               </label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Any special instructions for the service provider..."
-                className="w-full p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full resize-none rounded-xl border border-gray-200 p-3 focus:border-transparent focus:ring-2 focus:ring-green-500"
                 rows={3}
               />
             </div>
 
             <Button
-              onClick={handleNext}
-              disabled={!selectedAddress || processing}
+              type="button"
+              onClick={handleCreateBooking}
+              disabled={!selectedDate || !selectedTime || !selectedPet || !selectedAddress || processing}
               className={`w-full ${colors.primary} hover:opacity-90`}
             >
               {processing ? (
-                <><RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Creating Booking...</>
+                <>
+                  <RefreshCw className="mr-2 inline h-4 w-4 animate-spin" /> Creating booking…
+                </>
               ) : (
                 `Proceed to ${usePackageSession ? 'Confirm' : 'Payment'}`
               )}
@@ -1516,15 +1562,28 @@ export function HomeServiceRouter({
           <div className="fixed inset-0 z-50 bg-white">
             <UniversalPaymentPage
               type="booking"
+              category={feeCategoryForHomeService(serviceType)}
               bookingId={bookingId}
+              serviceId={selectedService?.serviceId}
               vendorId={selectedProvider?.vendorId || ''}
               vendorName={selectedProvider?.name || selectedProvider?.businessName || 'Provider'}
+              vendorAddress={selectedProvider?.businessAddress}
+              staffName={selectedProvider?.name}
+              staffPhoto={selectedProvider?.photo}
               serviceStyle="at_home"
               serviceName={selectedService?.name || serviceName}
+              bookingDate={selectedDate}
+              bookingTime={selectedTime}
+              petId={selectedPet?.id}
+              petName={selectedPet?.name}
+              petBreed={selectedPet?.breed}
+              address={selectedAddress}
               baseAmount={selectedService?.price || 0}
+              priceIncludesTax={catalogPriceIncludesTax(selectedService)}
               customerPhone={phone}
+              customerId={customerId ?? undefined}
               onSuccess={handlePaymentSuccess}
-              onBack={() => setStep('address')}
+              onBack={() => setStep('datetime')}
             />
           </div>
         )}

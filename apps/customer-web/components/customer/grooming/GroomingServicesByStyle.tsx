@@ -1,13 +1,24 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, type MouseEvent } from 'react';
 import { ArrowLeft, Star, MapPin, Clock, Building2, Home, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Scissors, Sparkles, Check, Search, X, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
+import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
+import { getWebGroomingTrainingEmbedVendorId } from '@/lib/customer-vendor-profile-navigation';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
+import { StarRating } from '@/components/customer/shared/StarRating';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -15,6 +26,7 @@ interface GroomingServicesByStyleProps {
   serviceTypeName?: string;
   category?: string;
   vendorId?: string; // Optional: filter to show only this vendor's services (vendor profile mode)
+  specialization?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
 }
@@ -63,6 +75,7 @@ export function GroomingServicesByStyle({
   serviceTypeName,
   category = 'grooming',
   vendorId,
+  specialization,
   onBack, 
   onNavigate 
 }: GroomingServicesByStyleProps) {
@@ -75,7 +88,6 @@ export function GroomingServicesByStyle({
   const [facility, setFacility] = useState<any>(null);
   const [rating, setRating] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'services' | 'reviews'>('services');
   const [searchQuery, setSearchQuery] = useState('');
@@ -94,6 +106,65 @@ export function GroomingServicesByStyle({
     amenities?: string[];
   }>({});
 
+  const salonCenterDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_center',
+    category: 'grooming',
+    specialization: specialization,
+    enabled: serviceStyle === 'at_center',
+  });
+  const salonHomeDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: 'at_home',
+    category: 'grooming',
+    specialization: specialization,
+    enabled: serviceStyle === 'at_home',
+  });
+
+  const groomingSalonStatValue = useMemo(() => {
+    const q = serviceStyle === 'at_center' ? salonCenterDiscovery : salonHomeDiscovery;
+    const st =
+      q.isLoading || q.isFetching ? 'loading' : q.isError ? 'error' : 'success';
+    return formatDiscoveryCountStat(q.data, st);
+  }, [
+    serviceStyle,
+    salonCenterDiscovery.data,
+    salonCenterDiscovery.isLoading,
+    salonCenterDiscovery.isFetching,
+    salonCenterDiscovery.isError,
+    salonHomeDiscovery.data,
+    salonHomeDiscovery.isLoading,
+    salonHomeDiscovery.isFetching,
+    salonHomeDiscovery.isError,
+  ]);
+
+  const groomingSalonStatLabel = serviceStyle === 'at_center' ? 'Salons' : 'Pros';
+
+  const dashboardStats = useMemo(
+    () => [
+      {
+        value: groomingSalonStatValue,
+        label: groomingSalonStatLabel,
+        icon: <Scissors className="w-4 h-4" />,
+      },
+      { value: '1K+', label: 'Bookings' },
+      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ],
+    [groomingSalonStatValue, groomingSalonStatLabel]
+  );
+
+  const getServiceTitle = () => {
+    if (serviceStyle === 'at_center') return 'Grooming Center';
+    if (serviceStyle === 'at_home') return 'At Home Grooming';
+    return 'Grooming Services';
+  };
+
+  const getServiceSubtitle = () => {
+    if (serviceStyle === 'at_center') return 'Visit our premium grooming salons';
+    if (serviceStyle === 'at_home') return 'Professional groomer comes to you';
+    return 'Premium pet grooming services';
+  };
+
   // Check if we're in profile view mode (vendorId provided and single provider)
   const isProfileView = vendorId && providers.length === 1;
   const profileProvider = isProfileView ? providers[0] : null;
@@ -104,7 +175,7 @@ export function GroomingServicesByStyle({
     if (vendorId) {
       loadVendorProfile();
     }
-  }, [serviceStyle, vendorId]);
+  }, [serviceStyle, vendorId, specialization]);
 
   // ✅ NEW: Load active promotions for discount display
   useEffect(() => {
@@ -141,102 +212,20 @@ export function GroomingServicesByStyle({
       setLoading(true);
       console.log(`🔵 [Grooming] Discovering providers: category=${category}, serviceStyle=${serviceStyle}`);
 
-      // ✅ RULE: Same as vet center/home – call discover-services first (standard service provider discovery).
-      let providerData: any[] = [];
-      try {
-        const discoverUrl = `/customer/discover-services?category=${category}&serviceStyle=${serviceStyle}${locationParams}`;
-        console.log(`🔵 [Grooming] API: GET ${discoverUrl}`);
-        const discoverResponse = await apiClient.get(discoverUrl) as any;
-        const rawVendors = discoverResponse?.vendors || discoverResponse?.providers || [];
-        if (rawVendors.length > 0) {
-          // Map discover-services response (vendors with featuredOfferings) to provider shape with services array
-          providerData = rawVendors.map((v: any) => {
-            const offerings = v.featuredOfferings || v.services || [];
-            const services = offerings.map((s: any) => ({
-              id: s.id || s.serviceId,
-              serviceId: s.id || s.serviceId,
-              name: s.name || s.serviceName || 'Grooming',
-              price: Number(s.price ?? s.custom_price ?? 0),
-              duration: Number(s.duration ?? s.duration_minutes ?? 30),
-              description: s.description || s.custom_description,
-              category: s.category_name || s.category,
-              isPackage: !!(s.isPackage ?? (s.metadata && (s.metadata as any).isPackage)),
-            }));
-            return {
-              providerId: v.id || v.vendorId,
-              providerType: 'vendor',
-              vendorId: v.id || v.vendorId,
-              name: v.businessName || v.name || v.owner_name || 'Grooming',
-              phone: v.phone,
-              address: v.address,
-              city: v.city,
-              role: v.role || v.role_display_name,
-              rating: String(v.rating ?? v.avgRating ?? '0'),
-              reviewCount: Number(v.reviewCount ?? v.review_count ?? 0),
-              distance: v.distance != null ? Number(v.distance) : null,
-              isVerified: v.isVerified !== false,
-              services,
-              specialisation: v.specialisation || v.specialization,
-              amenities: Array.isArray(v.amenities) ? v.amenities : [],
-            };
-          });
-          console.log(`✅ [Grooming] discover-services returned ${providerData.length} provider(s)`);
-        }
-      } catch (discoverErr) {
-        console.warn('⚠️ [Grooming] discover-services failed, trying by-style:', discoverErr);
-      }
-
-      // When discover-services returned providers, apply promotions and set
-      if (providerData.length > 0) {
-        const enrichedProviders = await Promise.all(
-          providerData.map(async (p: any) => {
-            if (p.services && Array.isArray(p.services) && p.services.length > 0 && promotions.length > 0) {
-              const enrichedServices = await Promise.all(
-                p.services.map((s: any) => {
-                  const basePrice = s.price || 0;
-                  const applicablePromo = promotions.find((promo: any) => {
-                    const appliesToService = !promo.applicable_services?.length || promo.applicable_services.includes(s.id || s.serviceId);
-                    const appliesToCategory = !promo.applicable_roles?.length || promo.applicable_roles.includes(category);
-                    const now = new Date();
-                    const startDate = new Date(promo.start_date);
-                    const endDate = promo.end_date ? new Date(promo.end_date) : null;
-                    return appliesToService && appliesToCategory && now >= startDate && (!endDate || now <= endDate) && promo.is_active;
-                  });
-                  if (!applicablePromo) return s;
-                  let finalPrice = basePrice;
-                  let discountAmount: number | undefined;
-                  if (applicablePromo.discount_type === 'percentage') {
-                    discountAmount = (basePrice * parseFloat(applicablePromo.discount_value || '0')) / 100;
-                    if (applicablePromo.max_discount_amount) discountAmount = Math.min(discountAmount, parseFloat(applicablePromo.max_discount_amount));
-                    finalPrice = Math.max(0, basePrice - discountAmount);
-                  } else {
-                    discountAmount = parseFloat(applicablePromo.discount_value || '0');
-                    finalPrice = Math.max(0, basePrice - discountAmount);
-                  }
-                  return { ...s, price: finalPrice, originalPrice: basePrice, discountAmount, promotionId: applicablePromo.id };
-                })
-              );
-              return { ...p, services: enrichedServices };
-            }
-            return p;
-          })
-        );
-        setProviders(enrichedProviders);
-      } else {
-        // Fallback: by-style (same as vet center / UniversalServicesByStyle)
-        const response = await apiClient.get(
-          `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}`
-        ) as any;
-        console.log(`🔵 [Grooming] API: GET by-style?style=${serviceStyle}&category=${category}`);
+      // Use by-style endpoint (primary)
+      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+      const specializationParam = specialization
+        ? `&specialization=${encodeURIComponent(specialization)}`
+        : '';
+      const byStyleUrl = `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`;
+      console.log(`🔵 [Grooming] specialization prop="${specialization}" url=${byStyleUrl}`);
+        const response = await apiClient.get(byStyleUrl) as any;
+        console.log(`🔵 [Grooming] by-style response: specializationApplied=${(response as any).specializationApplied ?? 'n/a'} total=${(response as any).total}`);
 
       if (response.success) {
         let byStyleProviders = response.providers || response.vendors || [];
-        
-        // ✅ FIX: Filter out business vendors when serviceStyle is at_home
-        if (serviceStyle === 'at_home') {
-          byStyleProviders = byStyleProviders.filter((p: any) => p.vendorType !== 'business');
-        }
-        
+        // at_home / tele / at_center: backend + Admin role_config gate vendors; do not strip business here
+
         // ✅ FIX: Enhance provider data with specialisation and amenities
         byStyleProviders = byStyleProviders.map((p: any) => ({
           ...p,
@@ -327,76 +316,9 @@ export function GroomingServicesByStyle({
         console.warn('⚠️ [Grooming] by-style API returned success=false');
         setProviders([]);
       }
-      }
     } catch (error) {
       console.error('❌ [Grooming] Error loading services by style:', error);
-      // Try fallback endpoint
-      try {
-        const fallbackResponse = await apiClient.get(
-          `/customer/discover-services?category=${category}&roleId=pet_groomer&serviceStyle=${serviceStyle}${locationParams}`
-        ) as any;
-        
-        const servicesData = fallbackResponse.vendors || fallbackResponse.services || [];
-        const vendorMap = new Map();
-        
-        servicesData.forEach((service: any) => {
-          const vendorId = service.vendorId || service.id;
-          if (!vendorMap.has(vendorId)) {
-            // ✅ ENHANCED: Properly map specialisation and amenities from various API response formats
-            const specialisation = service.specialisation || service.vendorSpecialisation || 
-                                 service.vendor?.specialisation || service.specialization || 
-                                 service.category || service.role;
-            const amenities = Array.isArray(service.amenities) ? service.amenities :
-                            (Array.isArray(service.vendorAmenities) ? service.vendorAmenities :
-                            (service.vendor?.amenities ? (Array.isArray(service.vendor.amenities) ? service.vendor.amenities : [service.vendor.amenities]) :
-                            (service.facility?.amenities ? (Array.isArray(service.facility.amenities) ? service.facility.amenities : [service.facility.amenities]) : [])));
-            
-            vendorMap.set(vendorId, {
-              providerId: vendorId,
-              providerType: 'vendor',
-              vendorId: vendorId,
-              name: service.vendorName || service.businessName || service.name || 'Grooming Service',
-              rating: Number(service.vendorRating || service.rating || 4.5),
-              reviewCount: service.vendorReviewCount || service.reviewsCount || service.reviewCount || 0,
-              distance: service.distance || null,
-              specialisation: specialisation, // ✅ FIX: Map specialisation from multiple sources
-              amenities: amenities, // ✅ FIX: Map amenities from multiple sources
-              services: []
-            });
-          }
-          
-          const provider = vendorMap.get(vendorId);
-          if (service.serviceId || service.id) {
-            provider.services.push({
-              id: service.serviceId || service.id,
-              serviceId: service.serviceId || service.id,
-              name: service.serviceName || service.name || 'Grooming Service',
-              price: service.price || 999,
-              duration: service.duration || 60,
-              description: service.description,
-              category: service.category,
-              isPackage: !!(service.isPackage ?? (service.metadata && (service.metadata as any).isPackage)),
-            });
-          }
-        });
-        
-        let providersList = Array.from(vendorMap.values());
-        
-        // Filter to specific vendor if vendorId is provided (vendor profile mode)
-        if (vendorId) {
-          providersList = providersList.filter(p => 
-            p.providerId === vendorId || 
-            p.vendorId === vendorId || 
-            p.staffId === vendorId
-          );
-        }
-        
-        setProviders(providersList);
-        console.log(`✅ [Grooming] Loaded ${providersList.length} provider${vendorId ? ' (filtered)' : 's'} from fallback endpoint`);
-      } catch (fallbackError) {
-        console.error('❌ [Grooming] Fallback endpoint also failed:', fallbackError);
         setProviders([]);
-      }
     } finally {
       setLoading(false);
     }
@@ -485,6 +407,24 @@ export function GroomingServicesByStyle({
     return provider.role || 'Grooming Salon';
   };
 
+  const getProviderAddress = (provider: Provider) => {
+    const rawAddress = [
+      provider.address,
+      (provider as any)?.location?.address,
+      (provider as any)?.vendorLocation?.address,
+      (provider as any)?.vendor?.address,
+      (provider as any)?.facility?.address,
+    ].find((value) => typeof value === 'string' && value.trim().length > 0) as string | undefined;
+
+    return rawAddress?.trim() || '';
+  };
+
+  const openGroomingProviderProfile = (e: MouseEvent, provider: Provider) => {
+    e.stopPropagation();
+    const vid = getWebGroomingTrainingEmbedVendorId(provider as unknown as Record<string, unknown>);
+    onNavigate('grooming_embed_vendor_profile', { vendorId: vid, serviceStyle });
+  };
+
   const handleSelectService = (provider: Provider, service: any) => {
     // For staff/individual providers, include staffId in booking data
     const bookingData: any = {
@@ -495,6 +435,24 @@ export function GroomingServicesByStyle({
       duration: service.duration,
       providerName: provider.name,
     };
+
+    const vendorIdForPkg =
+      provider.providerType === 'vendor'
+        ? String(provider.providerId || provider.vendorId || '')
+        : String(provider.vendorId || provider.providerId || '');
+    if (isVendorServicePackageRow(service as any) && vendorIdForPkg) {
+      const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: vendorIdForPkg,
+        vendorName: provider.vendorName || provider.name,
+        serviceRow: service as Record<string, unknown>,
+        serviceTypeCategory: 'grooming',
+        serviceStyle,
+      });
+      if (pkgNav) {
+        onNavigate('purchase-package', pkgNav);
+        return;
+      }
+    }
 
     if (provider.providerType === 'vendor') {
       bookingData.vendorId = provider.providerId;
@@ -595,6 +553,27 @@ export function GroomingServicesByStyle({
     ).filter(Boolean);
 
     if (selectedServicesData.length > 0) {
+      const pkgRow = selectedServicesData.find((s) => isVendorServicePackageRow(s as any));
+      if (pkgRow && profileProvider) {
+        const vid =
+          profileProvider.providerType === 'vendor'
+            ? String(profileProvider.providerId || profileProvider.vendorId || '')
+            : String(profileProvider.vendorId || profileProvider.providerId || '');
+        if (vid) {
+          const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+            vendorId: vid,
+            vendorName: profileProvider.vendorName || profileProvider.name,
+            serviceRow: pkgRow as Record<string, unknown>,
+            serviceTypeCategory: 'grooming',
+            serviceStyle,
+          });
+          if (pkgNav) {
+            onNavigate('purchase-package', pkgNav);
+            return;
+          }
+        }
+      }
+
       // ✅ FIX: Pass all selected services, not just the first one
       // Build booking data similar to VetCenterProfileView
       const firstService = selectedServicesData[0];
@@ -659,7 +638,7 @@ export function GroomingServicesByStyle({
   // Profile View Mode - Zomato-style for grooming salon
   if (isProfileView && profileProvider) {
     const salonName = vendor?.business_name || vendor?.name || profileProvider.name;
-    const photos = facility?.photos || vendor?.photos || (profileProvider.photo ? [profileProvider.photo] : []);
+    const photos = resolveVendorProfileHeroGallery({ facility, vendor, profileProvider });
     const hasPhotos = photos.length > 0;
     const amenities = facility?.amenities || vendor?.amenities || [];
     const address = vendor?.address || facility?.address || profileProvider.address || '';
@@ -667,10 +646,10 @@ export function GroomingServicesByStyle({
     const description = vendor?.description || facility?.description || `${salonName} is a professional pet grooming salon offering premium grooming services.`;
 
     // ✅ FIX: Prepare stats for ServiceDashboardHeader
-    const dashboardStats = [
-      { value: '50+', label: 'Salons', icon: <Scissors className="w-4 h-4" /> },
+    const profileDashboardStats = [
+      { value: groomingSalonStatValue, label: groomingSalonStatLabel, icon: <Scissors className="w-4 h-4" /> },
       { value: '1K+', label: 'Bookings' },
-      { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
     ];
     
     const getServiceTitle = () => {
@@ -686,103 +665,58 @@ export function GroomingServicesByStyle({
     };
 
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50 relative overflow-hidden">
         {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
         <ServiceDashboardHeader
+          className="!z-0 isolation-auto"
           serviceName={getServiceTitle()}
           serviceSubtitle={getServiceSubtitle()}
           serviceIcon={Scissors}
           iconColor="text-white"
-          stats={dashboardStats}
+          stats={profileDashboardStats}
           onBack={onBack}
           showBackButton={true}
           headerColor="bg-[#FF8C42]"
+          bottomEdge="flat"
         />
-        <div>
-
-        {/* Large Hero Photo Gallery - Grooming Salon Style */}
+        <div className="relative z-0 mx-auto max-w-md">
         {hasPhotos ? (
-          <div className="relative w-full bg-gray-200">
-            <div className="relative h-[280px] sm:h-[320px] overflow-hidden">
-              <img 
-                src={photos[selectedPhotoIndex]} 
-                alt={salonName} 
-                className="w-full h-full object-cover" 
+          <div className="relative w-full -mt-3 sm:-mt-3">
+            <div className="overflow-hidden rounded-t-[24px] bg-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] sm:rounded-t-[28px]">
+              <VendorHeroPhotoCarousel
+                photos={photos}
+                name={salonName}
+                frameClassName="relative h-[280px] overflow-hidden sm:h-[320px]"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-              
-              {photos.length > 1 && (
-                <>
-                  <button
-                    onClick={() => setSelectedPhotoIndex(Math.max(0, selectedPhotoIndex - 1))}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-800 shadow-lg hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={selectedPhotoIndex === 0}
-                  >
-                    <ArrowLeft className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => setSelectedPhotoIndex(Math.min(photos.length - 1, selectedPhotoIndex + 1))}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center text-gray-800 shadow-lg hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={selectedPhotoIndex === photos.length - 1}
-                  >
-                    <ArrowLeft className="w-5 h-5 rotate-180" />
-                  </button>
-                  <div className="absolute bottom-3 right-3 bg-black/70 backdrop-blur-md text-white px-3 py-1.5 rounded-full text-sm font-medium">
-                    {selectedPhotoIndex + 1} / {photos.length}
-                  </div>
-                </>
-              )}
             </div>
-            
-            {/* Photo thumbnails strip */}
-            {photos.length > 1 && photos.length <= 5 && (
-              <div className="flex gap-2 p-3 bg-white overflow-x-auto scrollbar-hide">
-                {photos.map((photo: string, idx: number) => (
-                  <button
-                    key={idx}
-                    onClick={() => setSelectedPhotoIndex(idx)}
-                    className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
-                      selectedPhotoIndex === idx 
-                        ? 'border-[#FF8C42] ring-2 ring-[#FF8C42]/30' 
-                        : 'border-gray-200 opacity-60 hover:opacity-100'
-                    }`}
-                  >
-                    <img 
-                      src={photo} 
-                      alt={`${salonName} photo ${idx + 1}`} 
-                      className="w-full h-full object-cover" 
-                    />
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         ) : (
-          <div className="relative w-full h-[280px] bg-gradient-to-br from-[#FF8C42] to-[#FF7029] flex items-center justify-center">
+          <div className="relative w-full -mt-3 sm:-mt-3">
+            <div className="overflow-hidden rounded-t-[24px] sm:rounded-t-[28px]">
+          <div className="relative flex h-[280px] w-full items-center justify-center bg-gradient-to-br from-[#FF8C42] to-[#FF7029]">
             <div className="text-center text-white">
               <Scissors className="w-20 h-20 mx-auto mb-3 opacity-50" />
               <p className="text-sm opacity-75">No photos available</p>
             </div>
           </div>
+            </div>
+          </div>
         )}
 
-        <div className="px-4 pb-32">
+        <div className="max-w-md mx-auto px-4 cw-scroll-pad-tabbar-sticky-cta">
           {/* Salon Header Info - Grooming-Focused */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4 -mt-6 relative z-10">
             <div className="mb-4">
               <h1 className="text-2xl font-bold text-gray-900 mb-2">{salonName}</h1>
               
               {/* Rating and Reviews */}
-              <div className="flex items-center gap-3 mb-3">
-                <div className="flex items-center gap-1.5 bg-orange-50 px-3 py-1.5 rounded-lg">
-                  <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
-                  <span className="font-bold text-lg text-gray-900">
-                    {Number(rating?.averageRating || profileProvider.rating || 4.5).toFixed(1)}
-                  </span>
-                  <span className="text-gray-600 text-sm">
-                    ({rating?.totalReviews || profileProvider.reviewCount || 0} reviews)
-                  </span>
-                </div>
+              <div className="flex items-center gap-3 mb-3 flex-wrap">
+                <StarRating
+                  rating={rating?.averageRating ?? profileProvider.rating}
+                  reviewCount={rating?.totalReviews ?? profileProvider.reviewCount}
+                  starsClassName="h-5 w-5"
+                  textClassName="text-sm text-gray-700"
+                />
                 
                 {facility?.isPremium && (
                   <span className="px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold flex items-center gap-1">
@@ -1032,8 +966,12 @@ export function GroomingServicesByStyle({
                                   </span>
                                 )}
                               </div>
-                              {service.description && (
-                                <p className="text-sm text-gray-600 mb-3 line-clamp-2">{service.description}</p>
+                              {service.description?.trim() && (
+                                <ServiceDescriptionInline
+                                  description={service.description}
+                                  title={service.name}
+                                  className="m-0 text-sm leading-5 text-gray-600 mb-3"
+                                />
                               )}
                               <div className="flex items-center gap-4 text-xs text-gray-500">
                                 <span className="flex items-center gap-1.5 bg-gray-100 px-2.5 py-1 rounded-lg">
@@ -1080,7 +1018,7 @@ export function GroomingServicesByStyle({
                         <div className="flex items-center gap-2 mb-1">
                           <Star className="w-6 h-6 text-amber-500 fill-amber-500" />
                           <span className="text-3xl font-bold text-gray-900">
-                            {Number(rating?.averageRating || profileProvider.rating || 4.5).toFixed(1)}
+                            {Number(rating?.averageRating || profileProvider.rating || 0).toFixed(1)}
                           </span>
                         </div>
                         <p className="text-sm text-gray-600">
@@ -1138,8 +1076,8 @@ export function GroomingServicesByStyle({
           </div>
         </div>
 
-        {/* Fixed Bottom Service Selection Summary & Book Button */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg max-w-md mx-auto">
+        {/* Fixed bottom CTA — above app tab bar (globals --customer-footer-offset); do not use bottom-0 or it hides behind BottomNavigation z-50 */}
+        <div className="cw-fixed-above-customer-tabbar fixed left-0 right-0 z-40 mx-auto w-full max-w-customer border-t border-gray-200 bg-white shadow-lg">
           {selectedServices.size > 0 && (
             <div className="px-4 py-3 bg-orange-50 border-b border-orange-100">
               <div className="flex items-center justify-between">
@@ -1169,31 +1107,12 @@ export function GroomingServicesByStyle({
                 : `Book ${selectedServices.size} Service${selectedServices.size > 1 ? 's' : ''} (${formatPriceWithSymbol(totalPrice)})`
               }
             </Button>
+          </div>
+        </div>
         </div>
       </div>
-        </div>
-    </div>
   );
-}
-
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: '50+', label: 'Salons', icon: <Scissors className="w-4 h-4" /> },
-    { value: '1K+', label: 'Bookings' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
-  
-  const getServiceTitle = () => {
-    if (serviceStyle === 'at_center') return 'Grooming Center';
-    if (serviceStyle === 'at_home') return 'At Home Grooming';
-    return 'Grooming Services';
-  };
-  
-  const getServiceSubtitle = () => {
-    if (serviceStyle === 'at_center') return 'Visit our premium grooming salons';
-    if (serviceStyle === 'at_home') return 'Professional groomer comes to you';
-    return 'Premium pet grooming services';
-  };
+  }
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   return (
@@ -1236,7 +1155,7 @@ export function GroomingServicesByStyle({
       </div>
 
       {/* Content */}
-      <div className="max-w-md mx-auto px-4 pb-24">
+      <div className="max-w-md mx-auto px-4 cw-scroll-pad-tabbar">
         {providers.length === 0 ? (
           <Card className="p-8 text-center bg-white">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1322,14 +1241,36 @@ export function GroomingServicesByStyle({
               </div>
             </Card>
             
-            {filteredAndSortedProviders.map((provider) => (
+            {filteredAndSortedProviders.map((provider) => {
+              const expanded = selectedProvider === provider.providerId;
+              const headerInteractive = expanded;
+              const providerAddress = getProviderAddress(provider);
+              return (
               <Card key={provider.providerId} className="bg-white overflow-hidden">
-                {/* Provider Header */}
-                <div 
-                  className="p-4 border-b cursor-pointer hover:bg-gray-50"
-                  onClick={() => setSelectedProvider(
-                    selectedProvider === provider.providerId ? null : provider.providerId
-                  )}
+                <div
+                  role={headerInteractive ? 'button' : undefined}
+                  tabIndex={headerInteractive ? 0 : undefined}
+                  className={`p-4 border-b text-left w-full ${headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+                  onClick={
+                    headerInteractive
+                      ? () =>
+                          setSelectedProvider(
+                            selectedProvider === provider.providerId ? null : provider.providerId
+                          )
+                      : undefined
+                  }
+                  onKeyDown={
+                    headerInteractive
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedProvider(
+                              selectedProvider === provider.providerId ? null : provider.providerId
+                            );
+                          }
+                        }
+                      : undefined
+                  }
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
@@ -1369,12 +1310,20 @@ export function GroomingServicesByStyle({
                               {provider.city}
                             </div>
                           )}
-                          {serviceStyle === 'at_center' && provider.distance != null && (
+                          {provider.distance != null && (
                             <span className="text-xs text-blue-600 font-medium">
-                              {Number(provider.distance).toFixed(1)} km away
+                              {Number(provider.distance) < 1
+                                ? `${Math.round(Number(provider.distance) * 1000)} m away`
+                                : `${Math.round(Number(provider.distance))} km away`}
                             </span>
                           )}
                         </div>
+                        {providerAddress && (
+                          <div className="flex items-start gap-1 text-gray-500 text-xs mt-1 max-w-[240px]">
+                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                            <span className="line-clamp-1">{providerAddress}</span>
+                          </div>
+                        )}
                         {/* ✅ NEW: Amenities display */}
                         {provider.amenities && provider.amenities.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-2">
@@ -1398,14 +1347,22 @@ export function GroomingServicesByStyle({
                         )}
                       </div>
                     </div>
-                    <ChevronRight className={`w-5 h-5 text-gray-400 transition-transform ${
-                      selectedProvider === provider.providerId ? 'rotate-90' : ''
-                    }`} />
+                    <button
+                      type="button"
+                      aria-label={`View profile: ${provider.name}`}
+                      className="-m-1.5 p-1.5 rounded-full text-gray-400 hover:text-[#FF8C42] hover:bg-orange-50 flex-shrink-0 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42] focus-visible:ring-offset-2"
+                      onClick={(e) => openGroomingProviderProfile(e, provider)}
+                    >
+                      <ChevronRight
+                        className={`w-5 h-5 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                        aria-hidden
+                      />
+                    </button>
                   </div>
                 </div>
 
                 {/* Services List - Expanded */}
-                {selectedProvider === provider.providerId && (
+                {expanded && (
                   <div className="bg-gray-50 p-4 space-y-3">
                     {/* Provider details for staff/individual */}
                     {provider.qualifications && (
@@ -1419,82 +1376,73 @@ export function GroomingServicesByStyle({
                       Available Services ({provider.services.length})
                     </h4>
                     {provider.services.length > 0 ? (
-                      provider.services.map((service) => (
-                        <div 
-                          key={service.id}
-                          className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h5 className="font-medium text-gray-900">{service.name}</h5>
+                      provider.services.map((service) => {
+                        const descTrim = service.description?.trim() ?? '';
+                        return (
+                          <div
+                            key={service.id}
+                            className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 space-y-2"
+                          >
+                            {/* Row 1: name + package badge (left) | price (right) */}
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex min-w-0 flex-1 items-center gap-2">
+                                <h5 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
+                                  {service.name}
+                                </h5>
                                 {service.isPackage && (
-                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200">Package</span>
+                                  <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                                    Package
+                                  </span>
                                 )}
                               </div>
-                              {service.description && (
-                                <p className="text-gray-500 text-sm mt-1 line-clamp-2">
-                                  {service.description}
-                                </p>
-                              )}
-                              <div className="flex items-center gap-3 mt-2">
-                                {/* ✅ NEW: Price with discount display */}
-                                <div className="flex items-center gap-2">
-                                  {service.originalPrice && service.originalPrice > service.price ? (
-                                    <>
-                                      <span className="text-lg font-bold text-[#FF8C42]">
-                                        {formatPriceWithSymbol(service.price)}
-                                      </span>
-                                      <span className="text-sm text-gray-400 line-through">
-                                        {formatPriceWithSymbol(service.originalPrice)}
-                                      </span>
-                                      {service.discountPercentage && (
-                                        <Badge className="bg-green-500 text-white text-xs">
-                                          {service.discountPercentage}% OFF
-                                        </Badge>
-                                      )}
-                                    </>
-                                  ) : (
-                                    <span className="text-lg font-bold text-[#FF8C42]">
+                              <div className="shrink-0 text-right">
+                                {service.originalPrice && service.originalPrice > service.price ? (
+                                  <>
+                                    <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
                                       {formatPriceWithSymbol(service.price)}
-                                    </span>
-                                  )}
-                                </div>
-                                <Badge variant="outline" className="text-xs">
+                                    </div>
+                                    <div className="text-sm text-gray-400 line-through">
+                                      {formatPriceWithSymbol(service.originalPrice)}
+                                    </div>
+                                    {service.discountPercentage && (
+                                      <Badge className="bg-green-500 text-white text-xs mt-1">
+                                        {service.discountPercentage}% OFF
+                                      </Badge>
+                                    )}
+                                  </>
+                                ) : (
+                                  <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
+                                    {formatPriceWithSymbol(service.price)}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Row 2: description full width */}
+                            {descTrim && (
+                              <ServiceDescriptionInline
+                                description={descTrim}
+                                title={service.name}
+                                className="m-0 text-sm leading-5 text-gray-500"
+                              />
+                            )}
+
+                            {/* Row 3: badges (left) | Book Now (right) */}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="outline" className="text-xs shrink-0">
                                   <Clock className="w-3 h-3 mr-1" />
                                   {service.duration} mins
                                 </Badge>
                                 {service.category && (
-                                  <Badge variant="secondary" className="text-xs">
+                                  <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
                                     {service.category}
                                   </Badge>
                                 )}
                               </div>
-                            </div>
-                            <div className="text-right ml-4">
-                              {/* ✅ NEW: Price with discount display */}
-                              {service.originalPrice && service.originalPrice > service.price ? (
-                                <div className="mb-2">
-                                  <div className="text-lg font-bold text-[#FF8C42]">
-                                    {formatPriceWithSymbol(service.price)}
-                                  </div>
-                                  <div className="text-sm text-gray-400 line-through">
-                                    {formatPriceWithSymbol(service.originalPrice)}
-                                  </div>
-                                  {service.discountPercentage && (
-                                    <Badge className="bg-green-500 text-white text-xs mt-1">
-                                      {service.discountPercentage}% OFF
-                                    </Badge>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="text-lg font-bold text-gray-900 mb-2">
-                                  {formatPriceWithSymbol(service.price)}
-                                </div>
-                              )}
                               <Button
                                 size="sm"
-                                className="mt-2 bg-[#FF8C42] hover:bg-[#E67A35] text-white"
+                                className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleSelectService(provider, service);
@@ -1504,8 +1452,8 @@ export function GroomingServicesByStyle({
                               </Button>
                             </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     ) : (
                       <div className="bg-white rounded-lg p-4 text-center text-gray-500 text-sm">
                         No services available from this provider
@@ -1514,8 +1462,7 @@ export function GroomingServicesByStyle({
                   </div>
                 )}
 
-                {/* Quick Book - when not expanded */}
-                {selectedProvider !== provider.providerId && provider.services.length > 0 && (
+                {!expanded && provider.services.length > 0 && (
                   <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
                     <div className="text-sm text-gray-600">
                       {provider.services.length} service{provider.services.length !== 1 ? 's' : ''} available
@@ -1529,14 +1476,18 @@ export function GroomingServicesByStyle({
                       size="sm"
                       variant="outline"
                       className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
-                      onClick={() => setSelectedProvider(provider.providerId)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedProvider(provider.providerId);
+                      }}
                     >
                       View Services
                     </Button>
                   </div>
                 )}
               </Card>
-            ))}
+            );
+            })}
           </div>
         )}
       </div>

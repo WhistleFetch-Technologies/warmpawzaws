@@ -26,8 +26,11 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
+import { canonicalProductId } from '@/lib/product-id';
+import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
 import { toast } from 'sonner';
 
 interface ProductDetailPageProps {
@@ -54,17 +57,36 @@ export function ProductDetailPage({
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
   const { addToCart, cart } = useCart();
+  const router = useRouter();
 
   const loadProductDetails = async () => {
     try {
       setLoading(true);
-      const productId = initialProduct?.id || initialProduct?.productId;
-      const response = await apiClient.get<any>(`/ecommerce/products/${productId}`);
-      
+      const productId =
+        canonicalProductId(initialProduct) ||
+        (initialProduct?.productId as string | undefined) ||
+        (initialProduct?.id as string | undefined);
+      console.log('[ProductDetailPage] fetch', { productId });
+      let response: any;
+      try {
+        response = await apiClient.get<any>(`/ecommerce/products/${productId}`);
+      } catch (firstErr: any) {
+        const is404 =
+          firstErr?.status === 404 ||
+          firstErr?.statusCode === 404 ||
+          String(firstErr?.message || '').includes('404');
+        if (is404) {
+          response = await apiClient.get<any>(`/products/${productId}`);
+        } else {
+          throw firstErr;
+        }
+      }
+
       const productData = response.product || response;
       setProduct({
         ...initialProduct,
         ...productData,
+        id: canonicalProductId(productData) || productId,
         fullDetails: true
       });
     } catch (error) {
@@ -77,7 +99,10 @@ export function ProductDetailPage({
 
   const loadRelatedProducts = async () => {
     try {
-      const productId = initialProduct?.id || initialProduct?.productId;
+      const productId =
+        canonicalProductId(initialProduct) ||
+        (initialProduct?.productId as string | undefined) ||
+        (initialProduct?.id as string | undefined);
       const category = initialProduct?.category || initialProduct?.category_name;
       
       if (category) {
@@ -95,18 +120,28 @@ export function ProductDetailPage({
   };
 
   useEffect(() => {
-    if (initialProduct?.id && !initialProduct?.fullDetails) {
+    const pid =
+      canonicalProductId(initialProduct) ||
+      initialProduct?.productId ||
+      initialProduct?.id ||
+      initialProduct?.product_id;
+    if (pid && !initialProduct?.fullDetails) {
       loadProductDetails();
     }
-    if (initialProduct?.id) {
+    if (pid) {
       loadRelatedProducts();
     }
-  }, [initialProduct?.id]);
+  }, [
+    initialProduct?.id,
+    initialProduct?.productId,
+    initialProduct?.product_id,
+    initialProduct?._id,
+    initialProduct?.fullDetails,
+  ]);
 
-  const handleAddToCart = () => {
-    if (!product) return;
-
-    const cartItem = {
+  const buildCartItemForContext = () => {
+    if (!product) return null;
+    return {
       id: product.id || product.productId,
       name: product.name || product.product_name,
       price: parseFloat(product.price || product.unit_price || 0),
@@ -116,14 +151,69 @@ export function ProductDetailPage({
       vendorName: product.vendor?.name || product.vendor_name,
       ...product
     };
+  };
 
+  const handleAddToCart = () => {
+    const cartItem = buildCartItemForContext();
+    if (!cartItem) return;
     addToCart(cartItem);
     toast.success(`${quantity} ${product.name || 'item'} added to cart`);
   };
 
   const handleBuyNow = () => {
-    handleAddToCart();
-    onNavigate?.('cart');
+    const cartItem = buildCartItemForContext();
+    if (!cartItem || !product) return;
+
+    const lineId = String(
+      canonicalProductId(product) ||
+        product.id ||
+        product.productId ||
+        product.product_id ||
+        ''
+    );
+    if (!lineId) {
+      toast.error('Could not add this product to cart');
+      return;
+    }
+
+    const unitPrice = parseFloat(product.price || product.unit_price || 0);
+    let stockNum = 999;
+    if (typeof product.stock_quantity === 'number') stockNum = product.stock_quantity;
+    else if (typeof product.stock === 'number') stockNum = product.stock;
+
+    const rawOp = product.original_price ?? product.mrp ?? product.compare_at_price;
+    const parsedOp =
+      rawOp != null && String(rawOp) !== '' ? parseFloat(String(rawOp)) : NaN;
+    const original_price = Number.isFinite(parsedOp) ? parsedOp : undefined;
+
+    let images: string[] | undefined;
+    if (Array.isArray(product.images) && product.images.length > 0) images = product.images;
+    else if (product.image) images = [product.image];
+    else if (product.image_url) images = [product.image_url];
+    else if (product.primary_image) images = [product.primary_image];
+
+    const persisted = mergeLineIntoWarmpawzCartStorage({
+      lineId,
+      quantity,
+      product: {
+        id: String(product.id || product.productId || lineId),
+        name: product.name || product.product_name || 'Item',
+        price: unitPrice,
+        original_price,
+        emoji: product.emoji,
+        images,
+        vendor_name: product.vendor?.name || product.vendor_name,
+        stock: stockNum,
+      },
+    });
+
+    if (!persisted) {
+      toast.error('Could not update cart');
+      return;
+    }
+
+    addToCart(cartItem);
+    router.push('/cart?buynow=1');
   };
 
   const incrementQuantity = () => {
@@ -191,7 +281,15 @@ export function ProductDetailPage({
 
         {/* Image Gallery */}
         <div className="relative">
-          <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center overflow-hidden">
+          <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center overflow-hidden relative">
+            <button
+              type="button"
+              onClick={onBack}
+              className="absolute top-3 left-3 z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-gray-200/90 bg-white/95 text-gray-900 shadow-md backdrop-blur-sm touch-manipulation active:scale-[0.98] transition-transform hover:bg-white"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-5 w-5 shrink-0" aria-hidden />
+            </button>
             {typeof productImages[selectedImageIndex] === 'string' && productImages[selectedImageIndex].startsWith('http') ? (
               <img 
                 src={productImages[selectedImageIndex]} 
@@ -224,7 +322,7 @@ export function ProductDetailPage({
           )}
 
           {discount > 0 && (
-            <Badge className="absolute top-4 left-4 bg-red-500 text-white">
+            <Badge className="absolute top-3 left-14 z-20 bg-red-500 text-white">
               {discount}% OFF
             </Badge>
           )}

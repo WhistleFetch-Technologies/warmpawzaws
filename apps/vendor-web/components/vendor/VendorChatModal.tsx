@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, User, Phone, Calendar, MessageSquare, Headphones, Video, VideoOff, Package } from 'lucide-react';
+import { X, Send, Paperclip, Image, FileText, AlertCircle, Clock, CheckCheck, Phone, Calendar, MessageSquare, Headphones, Video, VideoOff, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 // ============================================================================
 // TYPES
@@ -155,7 +156,15 @@ export function VendorChatModal({
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isNativeWebView, setIsNativeWebView] = useState(false);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    setIsNativeWebView(
+      typeof window !== 'undefined' &&
+        !!(window as unknown as { ReactNativeWebView?: { postMessage: (s: string) => void } }).ReactNativeWebView
+    );
+  }, []);
 
   // ✅ CRITICAL FIX: Check chat availability with enhanced rules
   const [chatAvailableFromBackend, setChatAvailableFromBackend] = useState<boolean | undefined>(undefined);
@@ -495,61 +504,72 @@ export function VendorChatModal({
   // RENDER
   // ============================================================================
 
+  const bookingShortId =
+    bookingId && bookingId.length > 10 ? `${bookingId.slice(0, 8)}…` : bookingId || '';
+
   return (
-    <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-2xl h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 bg-black/60 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-2xl h-[min(85dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] max-h-[100dvh] flex flex-col shadow-2xl overflow-hidden min-h-0">
         
-        {/* Header */}
-        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3 flex-1">
-            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-              <User className="w-5 h-5 text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h2 className="text-lg font-bold text-white">{customerName || 'Customer'}</h2>
-              <div className="flex items-center gap-2 text-white/80 text-sm">
-                {serviceName && <span>{serviceName}</span>}
+        {/* Header — stack on very narrow widths; safe-area + 44px tap targets */}
+        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] py-3 sm:py-4 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-5 sm:pr-5 shrink-0">
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+                <MessageSquare className="w-5 h-5 text-white" aria-hidden />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-base sm:text-lg font-bold text-white truncate">
+                  {customerName || 'Customer'}
+                </h2>
+                {(bookingShortId || serviceName) && (
+                  <p className="text-white/90 text-xs sm:text-sm truncate">
+                    {bookingShortId ? `Booking #${bookingShortId}` : ''}
+                    {bookingShortId && serviceName ? ' · ' : ''}
+                    {serviceName || ''}
+                  </p>
+                )}
                 {customerPhone && (
-                  <>
-                    <span>•</span>
-                    <span className="flex items-center gap-1">
-                      <Phone className="w-3 h-3" />
-                      {customerPhone}
-                    </span>
-                  </>
+                  <p className="text-white/75 text-xs truncate flex items-center gap-1 mt-0.5">
+                    <Phone className="w-3 h-3 shrink-0" />
+                    {customerPhone}
+                  </p>
                 )}
               </div>
             </div>
-          </div>
-          
-          {/* ✅ CRITICAL FIX: Video Call Button in Header (WhatsApp-like) */}
-          {isTeleConsultation && chatActive && (
-            <button
-              onClick={handleStartVideoCall}
-              className="p-2 hover:bg-white/20 rounded-full transition-colors mr-2"
-              title="Start Video Call"
-            >
-              {isVideoCallActive ? (
-                <VideoOff className="w-5 h-5 text-white" />
-              ) : (
-                <Video className="w-5 h-5 text-white" />
+
+            <div className="flex items-center justify-end gap-1 shrink-0 sm:pl-2">
+              {isTeleConsultation && chatActive && (
+                <button
+                  type="button"
+                  onClick={handleStartVideoCall}
+                  className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-white/20 rounded-full transition-colors touch-manipulation"
+                  title="Start Video Call"
+                >
+                  {isVideoCallActive ? (
+                    <VideoOff className="w-5 h-5 text-white" />
+                  ) : (
+                    <Video className="w-5 h-5 text-white" />
+                  )}
+                </button>
               )}
-            </button>
-          )}
-          
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-white/20 rounded-full transition-colors"
-          >
-            <X className="w-5 h-5 text-white" />
-          </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-white/20 rounded-full transition-colors touch-manipulation"
+                aria-label="Close chat"
+              >
+                <X className="w-5 h-5 text-white" />
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Package utilization banner - show sessions left / validity for package bookings */}
         {packageUtilization && (packageUtilization.totalSessions != null || packageUtilization.isUnlimited) && (
-          <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100 flex items-center gap-2 text-sm text-purple-800">
-            <Package className="w-4 h-4 flex-shrink-0" />
-            <span>
+          <div className="px-3 sm:px-4 py-2.5 bg-purple-50 border-b border-purple-100 flex items-start sm:items-center gap-2 text-xs sm:text-sm text-purple-800 min-w-0">
+            <Package className="w-4 h-4 flex-shrink-0 mt-0.5 sm:mt-0" />
+            <span className="min-w-0 break-words">
               {packageUtilization.isUnlimited
                 ? `Unlimited${packageUtilization.expiresAt ? ` · Valid until ${new Date(packageUtilization.expiresAt).toLocaleDateString()}` : ''}`
                 : `${packageUtilization.remainingSessions ?? 0} of ${packageUtilization.totalSessions ?? 0} sessions left`}
@@ -560,12 +580,14 @@ export function VendorChatModal({
 
         {/* Chat Status Banner */}
         {!chatActive && (
-          <div className={`px-4 py-3 flex items-center justify-between ${
-            status === 'completed' ? 'bg-gray-100' : 'bg-red-50'
-          }`}>
-            <div className="flex items-center gap-2">
-              <AlertCircle className={`w-5 h-5 ${status === 'completed' ? 'text-gray-500' : 'text-red-500'}`} />
-              <span className={`text-sm ${status === 'completed' ? 'text-gray-600' : 'text-red-600'}`}>
+          <div
+            className={`px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 ${
+              status === 'completed' ? 'bg-gray-100' : 'bg-red-50'
+            }`}
+          >
+            <div className="flex items-start gap-2 min-w-0">
+              <AlertCircle className={`w-5 h-5 shrink-0 ${status === 'completed' ? 'text-gray-500' : 'text-red-500'}`} />
+              <span className={`text-xs sm:text-sm ${status === 'completed' ? 'text-gray-600' : 'text-red-600'}`}>
                 {getChatStatusMessage(status, chatAvailableFromBackend)}
               </span>
             </div>
@@ -574,7 +596,7 @@ export function VendorChatModal({
                 size="sm"
                 variant="outline"
                 onClick={handleSupportHandoff}
-                className="flex items-center gap-2"
+                className="flex items-center justify-center gap-2 w-full sm:w-auto shrink-0"
               >
                 <Headphones className="w-4 h-4" />
                 Contact Support
@@ -719,48 +741,66 @@ export function VendorChatModal({
         </div>
 
         {/* Input Area */}
-        <div className="p-4 bg-white border-t border-gray-200">
+        <div className="p-3 sm:p-4 bg-white border-t border-gray-200 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {chatActive ? (
-            <div className="flex items-end gap-3">
+            <div className="flex items-end gap-2 sm:gap-3 min-w-0">
               {/* File Upload Button */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                onChange={handleFileUpload}
-                accept="image/*,.pdf,.doc,.docx"
-                disabled={uploading}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="p-3 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition disabled:opacity-50"
-              >
-                {uploading ? (
-                  <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Paperclip className="w-5 h-5" />
-                )}
-              </button>
+              {isNativeWebView ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const w = window as unknown as {
+                      ReactNativeWebView?: { postMessage: (s: string) => void };
+                    };
+                    w.ReactNativeWebView?.postMessage(
+                      JSON.stringify({ type: 'WARMPAWZ_PICK_CHAT_FILE', bookingId })
+                    );
+                  }}
+                  disabled={uploading}
+                  className="shrink-0 touch-manipulation rounded-full p-2 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 sm:p-3"
+                >
+                  {uploading ? (
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                  ) : (
+                    <Paperclip className="h-5 w-5" />
+                  )}
+                </button>
+              ) : (
+                <TouchFilePicker
+                  ref={fileInputRef}
+                  onFileChange={handleFileUpload}
+                  accept="image/*,.pdf,.doc,.docx"
+                  disabled={uploading}
+                  className="flex h-9 w-9 shrink-0 touch-manipulation rounded-full text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 sm:h-11 sm:w-11"
+                  innerClassName="flex h-full w-full items-center justify-center"
+                >
+                  {uploading ? (
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
+                  ) : (
+                    <Paperclip className="h-5 w-5" />
+                  )}
+                </TouchFilePicker>
+              )}
 
               {/* Message Input */}
-              <div className="flex-1 relative">
+              <div className="flex-1 relative min-w-0">
                 <textarea
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyDown={handleKeyPress}
                   placeholder="Type a message..."
                   rows={1}
-                  className="w-full px-4 py-3 bg-gray-100 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-[#FF8C42] max-h-32"
+                  className="w-full min-w-0 px-3 sm:px-4 py-3 bg-gray-100 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-[#FF8C42] max-h-32 text-base sm:text-sm"
                   style={{ minHeight: '48px' }}
                 />
               </div>
 
               {/* Send Button */}
               <Button
+                type="button"
                 onClick={handleSendMessage}
                 disabled={!newMessage.trim() || sending}
-                className="p-3 bg-[#FF8C42] hover:bg-[#FF6B1A] text-white rounded-full disabled:opacity-50"
+                className="p-2.5 sm:p-3 shrink-0 bg-[#FF8C42] hover:bg-[#FF6B1A] text-white rounded-full disabled:opacity-50 touch-manipulation"
               >
                 {sending ? (
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />

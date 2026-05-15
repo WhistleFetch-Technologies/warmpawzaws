@@ -1,0 +1,18 @@
+{
+  "name": "@warmpawz/service-launch-mappings",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Canonical catalog slug → launch service id → customer home screen (Marketing + customer home)",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "node -e \"try{require('fs').rmSync('dist',{recursive:true,force:true})}catch(e){}\""
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "warmpawz-lambda-handlers": "file:../../backend/lambda"
+  }
+}

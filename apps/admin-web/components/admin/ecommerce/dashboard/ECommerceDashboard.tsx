@@ -7,6 +7,7 @@ import {
   CheckCircle, Clock, XCircle, RefreshCcw, BarChart3, Settings
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { ProductDetailsModal } from '../shared/ProductDetailsModal';
 
 interface ECommerceDashboardProps {
   onNavigateToSellers?: () => void;
@@ -30,36 +31,63 @@ export function ECommerceDashboard({
   const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
   const [topSellers, setTopSellers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [approvalProductId, setApprovalProductId] = useState<string | null>(null);
+  const [selectedApprovalProduct, setSelectedApprovalProduct] = useState<any | null>(null);
 
   useEffect(() => {
     loadDashboardData();
   }, []);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (opts?: { silent?: boolean }) => {
     try {
-      setLoading(true);
+      if (!opts?.silent) setLoading(true);
       
       // Load analytics
-      const analyticsData = await apiClient.get<any>('/admin/ecommerce/analytics/platform').catch(() => ({}));
-      setAnalytics(analyticsData || {});
+      const analyticsResponse = await apiClient.get<any>('/admin/ecommerce/analytics/platform').catch(() => ({ data: {} }));
+      setAnalytics(analyticsResponse?.data || {});
       
       // Load recent orders
       const ordersData = await apiClient.get<any>('/admin/orders?limit=5').catch(() => ({ orders: [] }));
       setRecentOrders((ordersData as any)?.orders || []);
       
-      // Load pending approvals
-      const approvalsData = await apiClient.get<any>('/admin/products?status=pending_approval&limit=5').catch(() => ({ products: [] }));
+      // Pending catalog items (matches vendor submit_for_approval / pending statuses)
+      const approvalsData = await apiClient
+        .get<any>('/admin/ecommerce/products?status=pending_approval&limit=5')
+        .catch(() => ({ products: [] as any[] }));
       setPendingApprovals((approvalsData as any)?.products || []);
       
-      // Load top sellers
-      const sellersData = await apiClient.get<any>('/admin/vendors/top-sellers?limit=5').catch(() => ({ sellers: [] }));
+      // Load top sellers - use e-commerce specific endpoint
+      const sellersData = await apiClient.get<any>('/admin/ecommerce/top-sellers?limit=5').catch(() => ({ sellers: [] }));
       setTopSellers((sellersData as any)?.sellers || []);
       
     } catch (error) {
       console.error('Error loading dashboard:', error);
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
+  };
+
+  const updateProductLifecycle = async (productId: string, status: 'approved' | 'rejected') => {
+    try {
+      setApprovalProductId(productId);
+      await apiClient.put(`/admin/ecommerce/product/${productId}`, { status });
+      await loadDashboardData({ silent: true });
+      setSelectedApprovalProduct(null);
+    } catch (e: any) {
+      console.error('Product approval action failed:', e);
+      window.alert(e?.message || 'Something went wrong. Please try again.');
+    } finally {
+      setApprovalProductId(null);
+    }
+  };
+
+  const handleApproveProduct = (productId: string) => {
+    void updateProductLifecycle(productId, 'approved');
+  };
+
+  const handleRejectProduct = (productId: string) => {
+    if (!window.confirm('Reject this product? It will not appear on the storefront.')) return;
+    void updateProductLifecycle(productId, 'rejected');
   };
 
   // Stats cards
@@ -251,15 +279,36 @@ export function ECommerceDashboard({
                     <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center text-2xl">
                       {product.emoji || '📦'}
                     </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-slate-900">{product.name}</p>
-                      <p className="text-sm text-slate-500">{product.vendor_name || 'Unknown Seller'}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-slate-900 truncate">{product.name}</p>
+                      <p className="text-sm text-slate-500 truncate">{product.vendor_name || 'Unknown Seller'}</p>
                     </div>
-                    <div className="flex gap-2">
-                      <button className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors">
-                        <CheckCircle className="w-5 h-5" />
+                    <div className="flex gap-2 shrink-0">
+                      <button
+                        type="button"
+                        aria-label="View product details"
+                        disabled={approvalProductId === product.id}
+                        onClick={() => setSelectedApprovalProduct(product)}
+                        className="p-2 hover:bg-blue-50 text-blue-600 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                      >
+                        <Eye className="w-5 h-5" />
                       </button>
-                      <button className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors">
+                      <button
+                        type="button"
+                        aria-label="Approve product"
+                        disabled={approvalProductId === product.id}
+                        onClick={() => handleApproveProduct(product.id)}
+                        className="p-2 hover:bg-emerald-50 text-emerald-600 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                      >
+                        <CheckCircle className={`w-5 h-5 ${approvalProductId === product.id ? 'animate-pulse' : ''}`} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Reject product"
+                        disabled={approvalProductId === product.id}
+                        onClick={() => handleRejectProduct(product.id)}
+                        className="p-2 hover:bg-red-50 text-red-600 rounded-lg transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                      >
                         <XCircle className="w-5 h-5" />
                       </button>
                     </div>
@@ -305,7 +354,7 @@ export function ECommerceDashboard({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {topSellers.map((seller, index) => (
-                  <tr key={seller.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={seller.id || index} className="hover:bg-slate-50 transition-colors">
                     <td className="p-4">
                       <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold ${
                         index === 0 ? 'bg-amber-100 text-amber-700' :
@@ -322,17 +371,27 @@ export function ECommerceDashboard({
                           <Store className="w-5 h-5 text-orange-600" />
                         </div>
                         <div>
-                          <p className="font-medium text-slate-900">{seller.business_name || seller.businessName}</p>
-                          <p className="text-sm text-slate-500">{seller.phone}</p>
+                          <p className="font-medium text-slate-900">
+                            {seller.name || seller.business_name || seller.businessName || 'Unknown Seller'}
+                          </p>
+                          <p className="text-sm text-slate-500">
+                            {seller.phone || seller.owner_name || seller.email || 'N/A'}
+                          </p>
                         </div>
                       </div>
                     </td>
-                    <td className="p-4 text-right font-bold text-slate-900">₹{(seller.total_revenue || 0).toLocaleString()}</td>
-                    <td className="p-4 text-center text-slate-600">{seller.order_count || 0}</td>
-                    <td className="p-4 text-center text-slate-600">{seller.product_count || 0}</td>
+                    <td className="p-4 text-right font-bold text-slate-900">
+                      ₹{(seller.total_revenue || 0).toLocaleString()}
+                    </td>
+                    <td className="p-4 text-center text-slate-600">
+                      {seller.total_bookings || seller.order_count || 0}
+                    </td>
+                    <td className="p-4 text-center text-slate-600">
+                      {seller.product_count || 'N/A'}
+                    </td>
                     <td className="p-4 text-center">
                       <span className="inline-flex items-center gap-1 text-amber-600">
-                        ⭐ {seller.rating || '4.5'}
+                        ⭐ {seller.avg_rating || seller.rating || '4.5'}
                       </span>
                     </td>
                   </tr>
@@ -369,6 +428,16 @@ export function ECommerceDashboard({
           </div>
         </div>
       </div>
+
+      {selectedApprovalProduct && (
+        <ProductDetailsModal
+          product={selectedApprovalProduct}
+          onClose={() => setSelectedApprovalProduct(null)}
+          onApprove={handleApproveProduct}
+          onReject={handleRejectProduct}
+          processing={approvalProductId === selectedApprovalProduct.id}
+        />
+      )}
     </div>
   );
 }

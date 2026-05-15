@@ -117,7 +117,7 @@ export function SampleCollectionTracker({
             name: collectorName,
             phone: collectorPhone,
             photo: a.staffPhoto,
-            rating: 4.8,
+            rating: 0,
             totalCollections: 0
           } : undefined,
           otp: a.otp,
@@ -136,7 +136,10 @@ export function SampleCollectionTracker({
             name: collection.staff.name,
             phone: collection.staff.phone,
             photo: collection.staff.photo,
-            rating: collection.staff.rating || 4.8,
+            rating: (() => {
+              const r = collection.staff.rating != null ? Number(collection.staff.rating) : NaN;
+              return Number.isFinite(r) && r > 0 ? r : 0;
+            })(),
             totalCollections: collection.staff.total_collections || 0
           } : undefined,
           otp: collection.collection_otp,
@@ -153,7 +156,7 @@ export function SampleCollectionTracker({
             id: 'collector-1',
             name: 'Rahul Kumar',
             phone: '+91 98765 43210',
-            rating: 4.9,
+            rating: 0,
             totalCollections: 156
           },
           otp: '4521',
@@ -173,7 +176,7 @@ export function SampleCollectionTracker({
           id: 'collector-1',
           name: 'Rahul Kumar',
           phone: '+91 98765 43210',
-          rating: 4.9,
+          rating: 0,
           totalCollections: 156
         },
         otp: '4521',

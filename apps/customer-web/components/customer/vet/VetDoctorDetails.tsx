@@ -4,6 +4,12 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Star, Clock, MapPin, Phone, Video, Home, Building2, Calendar, Award, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 
 interface VetDoctorDetailsProps {
   phone: string;
@@ -56,7 +62,7 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
       let services: any[] = [];
       const servicesData = servicesResponse as any;
       if (servicesData?.services && Array.isArray(servicesData.services)) {
-        services = servicesData.services;
+        services = mergeCustomerVendorServicesPayload(servicesData);
       } else if (servicesData?.services?.at_home || servicesData?.services?.at_center || servicesData?.services?.tele) {
         services = [
           ...(servicesData.services.at_home?.services || []),
@@ -71,14 +77,18 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
         services = servicesData;
       }
       
-      // ✅ CRITICAL: Map services to use service_id (UUID) as id, not numeric vendor_services.id
+      // id = vendor_services row (matches discovery API); serviceId = catalog/service UUID
       const mappedServices = services.map((s: any) => ({
-        id: s.serviceId || s.service_id, // ✅ UUID from services table
-        serviceId: s.serviceId || s.service_id, // ✅ UUID
+        id: s.id,
+        serviceId: s.serviceId || s.service_id,
+        vendorServiceId: s.id,
         name: s.serviceName || s.name || s.service_name,
         price: parseFloat(s.price || '0'),
         duration: s.duration || s.duration_minutes || 30,
         service_style: s.serviceStyle || s.service_style || 'at_center',
+        isPackage: !!(s.isPackage ?? s.metadata?.isPackage),
+        packageDetails: s.packageDetails,
+        metadata: s.metadata,
       }));
       
       console.log('✅ Loaded doctor details:', {
@@ -111,27 +121,37 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
   };
 
   const handleBookService = (serviceId: string, serviceStyle: string) => {
-    // ✅ CRITICAL: Find service and use service_id (UUID) not numeric id
-    const service = doctor?.services?.find((s: any) => 
-      s.id === serviceId || 
-      s.serviceId === serviceId ||
-      (s.serviceId || s.service_id) === serviceId
+    const service = doctor?.services?.find(
+      (s: any) =>
+        s.id === serviceId ||
+        s.serviceId === serviceId ||
+        s.vendorServiceId === serviceId ||
+        (s.serviceId || s.service_id) === serviceId
     );
-    
-    // ✅ CRITICAL: Use service_id (UUID) from service object
     const serviceObj = service as any;
+    if (!serviceObj || !doctor?.id) return;
+
+    if (isVendorServicePackageRow(serviceObj)) {
+      const nav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: String(doctor.id),
+        vendorName: doctor.name,
+        serviceRow: serviceObj as Record<string, unknown>,
+        serviceTypeCategory: 'vet',
+        serviceStyle,
+      });
+      if (nav) {
+        onNavigate('purchase-package', nav);
+        return;
+      }
+    }
+
     const finalServiceId = serviceObj?.serviceId || serviceObj?.service_id || serviceId;
-    
-    console.log('✅ Booking service with UUID:', {
-      inputServiceId: serviceId,
-      finalServiceId,
-      service
-    });
-    
+
     onNavigate('vet-booking', {
       doctorId: doctor?.id,
       doctor: doctor,
-      serviceId: finalServiceId, // ✅ UUID from services table
+      service: serviceObj,
+      serviceId: finalServiceId,
       serviceType: serviceStyle,
       serviceStyle: serviceStyle,
       serviceName: service?.name,
@@ -158,32 +178,104 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
     }
   };
 
+  const headerTopPad = 'pt-[max(0.75rem,env(safe-area-inset-top,0px))]';
+  const mainTopPad =
+    'pt-[calc(3.5rem+max(0.75rem,env(safe-area-inset-top,0px)))]';
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+      <div className="relative min-h-[100dvh] w-full max-w-customer mx-auto bg-gray-50">
+        <header
+          className={`fixed inset-x-0 top-0 z-50 border-b border-gray-200 bg-white/95 shadow-sm backdrop-blur-md ${headerTopPad}`}
+        >
+          <div className="mx-auto flex h-14 max-w-customer items-center gap-2 px-3 sm:px-4">
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-900 transition-colors hover:bg-gray-100 active:bg-gray-200"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-6 w-6" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-base font-semibold text-gray-900">
+                Veterinarian
+              </p>
+              <p className="truncate text-xs text-gray-500">Loading…</p>
+            </div>
+          </div>
+        </header>
+        <div
+          className={`flex min-h-[100dvh] items-center justify-center ${mainTopPad}`}
+        >
+          <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-orange-500" />
+        </div>
       </div>
     );
   }
 
   if (!doctor) {
     return (
-      <div className="min-h-screen bg-gray-50 p-4">
-        <div className="max-w-md mx-auto text-center py-12">
-          <p className="text-gray-600">Doctor not found</p>
-          <Button onClick={onBack} className="mt-4">Go Back</Button>
+      <div className="relative min-h-[100dvh] w-full max-w-customer mx-auto bg-gray-50">
+        <header
+          className={`fixed inset-x-0 top-0 z-50 border-b border-gray-200 bg-white/95 shadow-sm backdrop-blur-md ${headerTopPad}`}
+        >
+          <div className="mx-auto flex h-14 max-w-customer items-center gap-2 px-3 sm:px-4">
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-900 transition-colors hover:bg-gray-100 active:bg-gray-200"
+              aria-label="Go back"
+            >
+              <ArrowLeft className="h-6 w-6" />
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-base font-semibold text-gray-900">
+                Veterinarian
+              </p>
+              <p className="truncate text-xs text-gray-500">Profile</p>
+            </div>
+          </div>
+        </header>
+        <div className={`px-4 ${mainTopPad} pb-24`}>
+          <div className="py-12 text-center">
+            <p className="text-gray-600">Doctor not found</p>
+            <Button onClick={onBack} className="mt-4 bg-[#FF8C42] hover:bg-[#E67A35]">
+              Go back
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      
-      {/* Doctor Card */}
-      <div className="px-4 pb-24">
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+    <div className="relative min-h-[100dvh] w-full max-w-customer mx-auto bg-gray-50">
+      <header
+        className={`fixed inset-x-0 top-0 z-50 border-b border-gray-200 bg-white/95 shadow-sm backdrop-blur-md ${headerTopPad}`}
+      >
+        <div className="mx-auto flex h-14 max-w-customer items-center gap-2 px-3 sm:px-4">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-900 transition-colors hover:bg-gray-100 active:bg-gray-200"
+            aria-label="Go back"
+          >
+            <ArrowLeft className="h-6 w-6" />
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-base font-semibold text-gray-900">
+              {doctor.name}
+            </p>
+            <p className="truncate text-xs text-gray-500">
+              Book a consultation
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <main className={`px-4 pb-24 ${mainTopPad}`}>
+        <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-gray-100">
           {/* Profile Section */}
           <div className="p-6">
             <div className="flex gap-4">
@@ -261,32 +353,44 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
                 key={service.id}
                 className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-orange-200 transition-colors"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <div className={`w-12 h-12 shrink-0 rounded-xl flex items-center justify-center ${
                       service.service_style === 'tele' ? 'bg-blue-100 text-blue-600' :
                       service.service_style === 'at_home' ? 'bg-green-100 text-green-600' :
                       'bg-orange-100 text-orange-600'
                     }`}>
                       {getServiceIcon(service.service_style)}
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{service.name}</h3>
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>{service.duration} mins</span>
-                        <span className="text-[#FF8C42] text-xs px-2 py-0.5 bg-orange-50 rounded-full">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold text-gray-900 leading-snug flex flex-wrap items-center gap-2">
+                        {service.name}
+                        {(service as any).isPackage && (
+                          <span className="rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
+                            Package
+                          </span>
+                        )}
+                      </h3>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-gray-500">
+                        <span className="inline-flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5 shrink-0" />
+                          {service.duration} mins
+                        </span>
+                        <span className="text-[#FF8C42] text-xs px-2 py-0.5 bg-orange-50 rounded-full font-medium">
                           {getServiceLabel(service.service_style)}
                         </span>
                       </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
+                  <div className="flex shrink-0 items-center justify-between gap-3 border-t border-gray-100 pt-3 sm:border-t-0 sm:pt-0 sm:flex-col sm:items-end sm:justify-center">
+                    <div className="text-right">
+                      <p className="font-bold text-lg text-gray-900">₹{service.price}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                    </div>
                     <Button
                       size="sm"
                       onClick={() => handleBookService(service.id, service.service_style)}
-                      className="mt-1 bg-[#FF8C42] hover:bg-[#E67A35] text-white"
+                      className="bg-[#FF8C42] hover:bg-[#E67A35] text-white"
                     >
                       Book
                     </Button>
@@ -300,17 +404,23 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
         {/* Quick Actions */}
         <div className="mt-6 mb-8">
           <div className="grid grid-cols-2 gap-3">
-            <button className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm border border-gray-100 hover:border-orange-200">
+            <button
+              type="button"
+              className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm border border-gray-100 hover:border-orange-200"
+            >
               <Phone className="w-5 h-5 text-[#FF8C42]" />
-              <span className="font-medium text-gray-700">Call Clinic</span>
+              <span className="font-medium text-gray-700 text-sm">Call Clinic</span>
             </button>
-            <button className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm border border-gray-100 hover:border-orange-200">
+            <button
+              type="button"
+              className="flex items-center justify-center gap-2 p-4 bg-white rounded-xl shadow-sm border border-gray-100 hover:border-orange-200"
+            >
               <MapPin className="w-5 h-5 text-[#FF8C42]" />
-              <span className="font-medium text-gray-700">Directions</span>
+              <span className="font-medium text-gray-700 text-sm">Directions</span>
             </button>
           </div>
         </div>
-      </div>
-    </>
+      </main>
+    </div>
   );
 }

@@ -1,213 +1,520 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { Star, MapPin, Clock, Search, ChevronRight, Building2, Stethoscope } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, type MouseEvent } from 'react';
+import {
+  Star,
+  MapPin,
+  Clock,
+  Search,
+  ChevronRight,
+  Building2,
+  Stethoscope,
+  Shield,
+  Loader2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
+import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
+import { StarRating } from '../shared/StarRating';
 
 interface ClinicListViewProps {
   phone: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
+  /** Problem tile / specialization id for GET /customer/services/by-style */
+  specialization?: string;
+  /** `returnScreen` when opening vet-services-by-style from Details (default: vet-clinic-list). */
+  vetStyleProfileReturnScreen?: string;
 }
 
-interface Clinic {
+/** One bookable row — stable identity for keys + booking */
+export interface ClinicServiceRow {
+  stableKey: string;
+  name: string;
+  price: number;
+  duration: number;
+  description?: string;
+  /** Service category label (e.g. veterinary) for badge — mirrors grooming */
+  category?: string;
+  catalogServiceId: string | null;
+  vendorServiceId: string | number;
+  isPackage?: boolean;
+  packageDetails?: unknown;
+  metadata?: unknown;
+}
+
+export interface ClinicProvider {
   id: string;
   name: string;
   address: string;
   rating: number;
   review_count: number;
-  distance?: string;
+  distanceKm: number | null;
   timing: string;
-  services: string[];
-  price_range: string;
-  is_open?: boolean;
   photo?: string;
-  nextAvailableSlot?: string; // ✅ Next available slot display string
+  nextAvailableSlot?: string;
+  roleDisplayName?: string;
+  roleName?: string;
+  role?: string;
+  is_open?: boolean;
+  isVerified?: boolean;
+  services: ClinicServiceRow[];
+  /** When true, expand triggers GET vendor services */
+  needsServiceFetch?: boolean;
+  vendorType?: string;
 }
 
-export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProps) {
+/** Prefer the longest vendor-authored description (catalog vs custom vs short). */
+function pickBestVendorDescription(p: any): string {
+  const candidates: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === 'string' && v.trim()) candidates.push(v.trim());
+  };
+  push(p.longDescription);
+  push(p.long_description);
+  push(p.description);
+  push(p.custom_description);
+  push(p.customDescription);
+  push(p.shortDescription);
+  if (p.metadata && typeof p.metadata === 'object') {
+    const m = p.metadata as Record<string, unknown>;
+    push(m.description);
+    push(m.customDescription);
+    push(m.serviceDescription);
+  }
+  if (candidates.length === 0) return '';
+  return candidates.reduce((a, b) => (b.length > a.length ? b : a), '');
+}
+
+function isSoloVendor(p: any): boolean {
+  const vendorType = String(p.vendorType || p.vendor_type || p.providerType || '').toLowerCase();
+  const roleName = String(p.role || p.roleName || '').toLowerCase();
+  return (
+    vendorType === 'solo' ||
+    vendorType === 'individual' ||
+    p.isSoloProvider === true ||
+    p.isIndividualProvider === true ||
+    roleName.includes('solo')
+  );
+}
+
+function mapApiServiceToRow(p: any, vendorId: string, index: number): ClinicServiceRow {
+  const vendorServiceId = p.id ?? p.vendor_service_id ?? `idx-${index}`;
+  const catalogServiceId =
+    (p.serviceId != null && String(p.serviceId)) || (p.service_id != null && String(p.service_id)) || null;
+  const stableKey = catalogServiceId ? `cat-${catalogServiceId}` : `vs-${vendorId}-${vendorServiceId}`;
+  const desc = pickBestVendorDescription(p);
+  const priceRaw = p.price ?? p.custom_price ?? p.base_price ?? p.amount ?? 0;
+  const priceNum = typeof priceRaw === 'string' ? parseFloat(priceRaw) : Number(priceRaw);
+  const price = Number.isFinite(priceNum) && !Number.isNaN(priceNum) ? priceNum : 0;
+  const durRaw = p.duration ?? p.durationMinutes ?? p.duration_minutes ?? 30;
+  const durNum = typeof durRaw === 'string' ? parseInt(durRaw, 10) : Number(durRaw);
+  const duration = Number.isFinite(durNum) && durNum > 0 ? durNum : 30;
+  const category =
+    (p.category && String(p.category)) ||
+    (p.category_name && String(p.category_name)) ||
+    (p.categorySlug && String(p.categorySlug)) ||
+    undefined;
+  return {
+    stableKey,
+    name: String(p.name || p.service_name || p.serviceName || p.display_name || 'Service'),
+    price,
+    duration,
+    description: desc || undefined,
+    category,
+    catalogServiceId,
+    vendorServiceId,
+    isPackage: !!(p.isPackage ?? p.metadata?.isPackage),
+    packageDetails: p.packageDetails,
+    metadata: p.metadata,
+  };
+}
+
+function mapByStyleProvider(p: any): ClinicProvider | null {
+  if (isSoloVendor(p)) return null;
+  const id = String(p.providerId || p.vendorId || p.id || '');
+  if (!id) return null;
+  const rawServices = Array.isArray(p.services) ? p.services : [];
+  const services = rawServices.map((s: any, i: number) => mapApiServiceToRow(s, id, i));
+  const nextSlot = (() => {
+    if (typeof p.nextAvailableSlot === 'string') return p.nextAvailableSlot;
+    if (p.nextAvailableSlot && typeof p.nextAvailableSlot === 'object') {
+      return p.nextAvailableSlot.formattedDisplay || p.nextAvailableSlot.display;
+    }
+    if (typeof p.nextAvailability === 'string') return p.nextAvailability;
+    if (p.nextAvailable && typeof p.nextAvailable === 'object') {
+      return p.nextAvailable.display || p.nextAvailable.formattedDisplay;
+    }
+    return undefined;
+  })();
+  const address =
+    p.address ||
+    p.vendorLocation?.address ||
+    [p.city, p.pincode].filter(Boolean).join(', ') ||
+    'Location available on booking';
+  return {
+    id,
+    name: cleanProviderName(p.name || p.vendorName || p.businessName || 'Veterinary Clinic'),
+    address,
+    rating: Number(p.rating ?? 0) || 0,
+    review_count: Number(p.reviewCount ?? p.review_count ?? 0) || 0,
+    distanceKm: p.distance != null && p.distance !== '' ? Number(p.distance) : null,
+    timing: p.businessHours || p.timing || '9 AM - 8 PM',
+    photo: p.photo || p.vendorPhoto || p.photoUrl,
+    nextAvailableSlot: nextSlot,
+    roleDisplayName: p.roleDisplayName || p.roleName || p.role,
+    roleName: p.roleName || p.role,
+    role: p.role || p.roleDisplayName,
+    is_open: p.is_open ?? p.isAvailableToday,
+    isVerified: !!p.isVerified,
+    services,
+    needsServiceFetch: services.length === 0,
+    vendorType: p.vendorType,
+  };
+}
+
+function cleanProviderName(name: string): string {
+  return String(name || 'Clinic').replace(/\s*-\s*[a-f0-9-]{8,}\s*$/i, '').trim();
+}
+
+export function ClinicListView({
+  phone,
+  onBack,
+  onNavigate,
+  specialization,
+  vetStyleProfileReturnScreen = 'vet-clinic-list',
+}: ClinicListViewProps) {
   const [loading, setLoading] = useState(true);
-  const [clinics, setClinics] = useState<Clinic[]>([]);
+  const [clinics, setClinics] = useState<ClinicProvider[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'rating' | 'distance' | 'price'>('all');
-  
-  // User profile data for header
-  const [userName, setUserName] = useState('User');
-  const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
-  
-  useEffect(() => {
-    loadUserProfile();
-  }, [phone]);
-  
-  const loadUserProfile = async () => {
+  const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
+  const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
+
+  const getLocationParams = () => {
     try {
-      const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
-      if (profileResponse?.profile || profileResponse) {
-        const profile = profileResponse.profile || profileResponse;
-        setUserName(profile.name || profile.fullName || 'User');
-        setUserProfilePhoto(profile.profilePhoto || profile.profile_image_url || profile.photo);
+      const customerLat = localStorage.getItem('customer_latitude');
+      const customerLng = localStorage.getItem('customer_longitude');
+      if (customerLat && customerLng) {
+        return `&latitude=${encodeURIComponent(customerLat)}&longitude=${encodeURIComponent(customerLng)}`;
       }
-    } catch (error) {
-      console.error('Error loading user profile:', error);
+    } catch {
+      /* ignore */
     }
+    return '';
   };
+
+  const fetchVendorServicesForClinic = useCallback(
+    async (clinicId: string) => {
+      setFetchingServicesFor(clinicId);
+      try {
+        const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+        const res = (await apiClient.get(
+          `/customer/vendor/${clinicId}/services?serviceStyle=at_center${phoneParam}`
+        ).catch(() => apiClient.get(`/vendor/${clinicId}/services`))) as any;
+        let services: any[] = [];
+        const servicesData = res;
+        if (servicesData?.services && Array.isArray(servicesData.services)) {
+          services = mergeCustomerVendorServicesPayload(servicesData);
+        } else if (
+          servicesData?.services?.at_home ||
+          servicesData?.services?.at_center ||
+          servicesData?.services?.tele
+        ) {
+          services = [
+            ...(servicesData.services.at_center?.services || []),
+            ...(servicesData.services.at_home?.services || []),
+            ...(servicesData.services.tele?.services || []),
+          ];
+        } else if (Array.isArray(servicesData)) {
+          services = servicesData;
+        }
+        const rows = services.map((s: any, i: number) => mapApiServiceToRow(s, clinicId, i));
+        setClinics((prev) =>
+          prev.map((c) => (c.id === clinicId ? { ...c, services: rows, needsServiceFetch: false } : c))
+        );
+      } catch (e) {
+        console.error('[CLINIC-LIST] vendor services fetch failed', e);
+      } finally {
+        setFetchingServicesFor(null);
+      }
+    },
+    [phone]
+  );
 
   useEffect(() => {
     loadClinics();
-  }, []);
+  }, [specialization]);
+
+  const loadDiscoverFallback = async (locationParams: string) => {
+    const specParam = specialization
+      ? `&specialization=${encodeURIComponent(specialization)}`
+      : '';
+    const response = (await apiClient.get(
+      `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}${specParam}`
+    )) as any;
+    const servicesData = response.vendors || response.services || [];
+    if (servicesData.length === 0) return [];
+    const clinicsOnly = servicesData.filter((service: any) => !isSoloVendor(service));
+    const vendorMap = new Map<string, ClinicProvider>();
+    clinicsOnly.forEach((service: any) => {
+      const vendorId = String(service.vendorId || service.id || '');
+      if (!vendorId) return;
+      const nextSlot = (() => {
+        if (service.nextAvailability && typeof service.nextAvailability === 'string')
+          return service.nextAvailability;
+        if (
+          service.nextAvailableSlot &&
+          typeof service.nextAvailableSlot === 'object' &&
+          service.nextAvailableSlot.formattedDisplay
+        )
+          return service.nextAvailableSlot.formattedDisplay;
+        if (typeof service.nextAvailableSlot === 'string') return service.nextAvailableSlot;
+        if (service.nextAvailable && typeof service.nextAvailable === 'object')
+          return service.nextAvailable.display || service.nextAvailable.formattedDisplay;
+        if (typeof service.nextAvailable === 'string') return service.nextAvailable;
+        return undefined;
+      })();
+      const actualTiming = (() => {
+        if (service.operatingHours && typeof service.operatingHours === 'object') {
+          const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+          const today = days[new Date().getDay()];
+          const todayHours = service.operatingHours[today];
+          if (todayHours && todayHours.isOpen) {
+            return `${todayHours.open} - ${todayHours.close}`;
+          }
+        }
+        return service.businessHours || service.timing || '9 AM - 8 PM';
+      })();
+      if (!vendorMap.has(vendorId)) {
+        const raw = service.services;
+        let rows: ClinicServiceRow[] = [];
+        if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === 'object') {
+          rows = raw.map((s: any, i: number) => mapApiServiceToRow(s, vendorId, i));
+        }
+        vendorMap.set(vendorId, {
+          id: vendorId,
+          name: cleanProviderName(
+            service.vendorName || service.businessName || service.business_name || service.name || 'Clinic'
+          ),
+          address:
+            service.vendorLocation?.address ||
+            service.address ||
+            `${service.city || ''}${service.city ? ', ' : ''}${service.pincode || ''}`.trim() ||
+            'Location available on booking',
+          rating: parseFloat(service.vendorRating || service.rating || service.avgRating || '0') || 0,
+          review_count: parseInt(
+            String(service.vendorReviewCount || service.reviewsCount || service.review_count || '0'),
+            10
+          ),
+          distanceKm: service.distance != null ? Number(service.distance) : null,
+          timing: actualTiming,
+          photo: service.vendorPhoto || service.photo || service.photoUrl || service.vendorProfileImage,
+          nextAvailableSlot: nextSlot,
+          roleDisplayName: service.roleDisplayName || service.role_name || service.roleName,
+          roleName: service.roleName || service.role,
+          role: service.role,
+          is_open:
+            service.is_open !== undefined
+              ? service.is_open
+              : service.isAvailableToday !== undefined
+                ? service.isAvailableToday
+                : undefined,
+          isVerified: !!service.isVerified,
+          services: rows,
+          needsServiceFetch: rows.length === 0,
+          vendorType: service.vendorType,
+        });
+      }
+    });
+    return Array.from(vendorMap.values());
+  };
 
   const loadClinics = async () => {
     try {
       setLoading(true);
-      
-      // Get customer location from localStorage for distance-based sorting
-      let locationParams = '';
+      const locationParams = getLocationParams();
+      const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+
+      let mapped: ClinicProvider[] = [];
+      const loadByStyle = async (roleId: string) => {
+        const specParam = specialization
+          ? `&specialization=${encodeURIComponent(specialization)}`
+          : '';
+        const response = (await apiClient.get(
+          `/customer/services/by-style?style=at_center&category=vet&roleId=${encodeURIComponent(roleId)}${locationParams}${phoneParam}${specParam}`
+        )) as any;
+        if (!response.success) return [];
+        const providerData = response.providers || response.vendors || [];
+        return providerData.map((p: any) => mapByStyleProvider(p)).filter(Boolean) as ClinicProvider[];
+      };
       try {
-        const customerLat = localStorage.getItem('customer_latitude');
-        const customerLng = localStorage.getItem('customer_longitude');
-        if (customerLat && customerLng) {
-          locationParams = `&latitude=${customerLat}&longitude=${customerLng}`;
+        mapped = await loadByStyle('veterinarian');
+        if (mapped.length === 0) {
+          mapped = await loadByStyle('vet_clinic');
         }
       } catch (e) {
-        console.log('Could not get customer location');
+        console.warn('[CLINIC-LIST] by-style failed', e);
       }
-      
-      // Try primary endpoint
-      try {
-        const response = await apiClient.get(`/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}`) as any;
-        console.log('📋 [CLINIC-LIST] API Response:', response);
-        
-        const servicesData = response.vendors || response.services || [];
-        if (servicesData.length > 0) {
-          // ✅ FIX: Filter out solo vendors - only show clinics
-          const clinicsOnly = servicesData.filter((service: any) => {
-            const vendorType = service.vendorType || service.vendor_type || service.providerType || '';
-            const roleName = (service.role || service.roleName || '').toLowerCase();
-            const isSolo = vendorType === 'solo' || vendorType === 'individual' || 
-                          service.isSoloProvider === true || service.isIndividualProvider === true ||
-                          roleName.includes('solo');
-            return !isSolo; // Only include if NOT solo
-          });
-          
-          // Group by vendor to get unique clinics
-          const vendorMap = new Map();
-          clinicsOnly.forEach((service: any) => {
-            const vendorId = service.vendorId || service.id;
-            if (!vendorMap.has(vendorId)) {
-              // ✅ Extract next available slot from API response
-              const nextSlot = (() => {
-                if (service.nextAvailability && typeof service.nextAvailability === 'string') return service.nextAvailability;
-                if (service.nextAvailableSlot && typeof service.nextAvailableSlot === 'object' && service.nextAvailableSlot.formattedDisplay) return service.nextAvailableSlot.formattedDisplay;
-                if (service.nextAvailableSlot && typeof service.nextAvailableSlot === 'string') return service.nextAvailableSlot;
-                if (service.nextAvailable && typeof service.nextAvailable === 'object') return service.nextAvailable.display || service.nextAvailable.formattedDisplay;
-                if (service.nextAvailable && typeof service.nextAvailable === 'string') return service.nextAvailable;
-                return undefined;
-              })();
-              
-              // ✅ Extract actual operating hours from API response
-              const actualTiming = (() => {
-                if (service.operatingHours && typeof service.operatingHours === 'object') {
-                  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-                  const today = days[new Date().getDay()];
-                  const todayHours = service.operatingHours[today];
-                  if (todayHours && todayHours.isOpen) {
-                    return `${todayHours.open} - ${todayHours.close}`;
-                  }
-                }
-                return service.businessHours || service.timing || undefined;
-              })();
-              
-              vendorMap.set(vendorId, {
-                id: vendorId,
-                name: service.vendorName || service.businessName || service.business_name || service.name || 'Unnamed Clinic',
-                address: service.vendorLocation?.address || service.address || `${service.city || ''}${service.city ? ', ' : ''}${service.pincode || ''}`.trim() || 'Location available on booking',
-                rating: parseFloat(service.vendorRating || service.rating || service.avgRating || '4.5'),
-                review_count: parseInt(service.vendorReviewCount || service.reviewsCount || service.review_count || '0', 10),
-                distance: service.distance ? `${Number(service.distance).toFixed(1)} km` : null,
-                timing: actualTiming || '9 AM - 8 PM',
-                services: service.services?.map((s: any) => typeof s === 'string' ? s : s.name) || [service.serviceName || 'General Consultation'].filter(Boolean),
-                price_range: service.priceRange || service.price_range || (service.price ? `₹${service.price}` : (service.priceMin ? `₹${service.priceMin}` : '₹399 - ₹2999')),
-                is_open: service.is_open !== undefined ? service.is_open : (service.isAvailableToday !== undefined ? service.isAvailableToday : true),
-                photo: service.vendorPhoto || service.photo || service.photoUrl || service.vendorProfileImage || service.businessPhoto,
-                nextAvailableSlot: nextSlot,
-              });
-            } else {
-              // Add service to existing clinic
-              const clinic = vendorMap.get(vendorId);
-              if (service.serviceName && !clinic.services.includes(service.serviceName)) {
-                clinic.services.push(service.serviceName);
-              }
-            }
-          });
-          
-          const mappedClinics = Array.from(vendorMap.values());
-          setClinics(mappedClinics);
-          console.log(`✅ [CLINIC-LIST] Found ${mappedClinics.length} clinics from API`);
-          return;
-        } else {
-          console.warn('⚠️ [CLINIC-LIST] No vendors in response');
-        }
-      } catch (err: any) {
-        console.error('❌ [CLINIC-LIST] Primary API Error:', err);
-        
-        // Try fallback endpoint
+
+      if (mapped.length === 0) {
         try {
-          const fallbackResponse = await apiClient.get('/vendors?role=veterinarian') as any;
-          if (fallbackResponse && fallbackResponse.vendors && fallbackResponse.vendors.length > 0) {
-            const mappedClinics = fallbackResponse.vendors.map((v: any) => ({
-              id: v.id,
-              name: v.businessName || v.business_name || v.name || 'Unnamed Clinic',
-              address: v.address || `${v.city || ''}${v.city ? ', ' : ''}${v.pincode || ''}`.trim() || 'Location available on booking',
-              rating: parseFloat(v.rating || v.avgRating || '4.5'),
-              review_count: parseInt(v.reviewCount || v.review_count || '0', 10),
-              distance: v.distance || null,
-              timing: v.timing || v.businessHours || '9 AM - 8 PM',
-              services: v.services?.map((s: any) => typeof s === 'string' ? s : s.name) || ['General Consultation', 'Vaccination'],
-              price_range: v.price_range || v.priceRange || '₹399 - ₹2999',
-              is_open: v.is_open !== undefined ? v.is_open : true,
-              photo: v.photo || v.businessPhoto || v.vendorPhoto, // ✅ Added photo support
-            }));
-            setClinics(mappedClinics);
-            console.log(`✅ [CLINIC-LIST] Found ${mappedClinics.length} clinics from fallback endpoint`);
-            return;
-          }
-        } catch (fallbackErr) {
-          console.error('❌ [CLINIC-LIST] Fallback endpoint also failed:', fallbackErr);
+          mapped = await loadDiscoverFallback(locationParams);
+        } catch (e) {
+          console.error('[CLINIC-LIST] discover fallback failed', e);
         }
       }
 
-      // No clinics found - will show empty state
-      setClinics([]);
+      // Only use the unfiltered /vendors fallback when there is no specialization filter.
+      // If specialization is active, an empty list is correct — do not widen to all vets.
+      if (mapped.length === 0 && !specialization) {
+        try {
+          const fallbackResponse = (await apiClient.get('/vendors?role=veterinarian')) as any;
+          if (fallbackResponse?.vendors?.length > 0) {
+            mapped = fallbackResponse.vendors
+              .filter((v: any) => !isSoloVendor(v))
+              .map((v: any) => {
+                const id = String(v.id);
+                return {
+                  id,
+                  name: cleanProviderName(v.businessName || v.business_name || v.name || 'Clinic'),
+                  address:
+                    v.address ||
+                    `${v.city || ''}${v.city ? ', ' : ''}${v.pincode || ''}`.trim() ||
+                    'Location available on booking',
+                  rating: parseFloat(v.rating || v.avgRating || '0') || 0,
+                  review_count: parseInt(String(v.reviewCount || v.review_count || '0'), 10),
+                  distanceKm: null,
+                  timing: v.timing || v.businessHours || '9 AM - 8 PM',
+                  photo: v.photo || v.businessPhoto || v.vendorPhoto,
+                  services: [],
+                  needsServiceFetch: true,
+                } as ClinicProvider;
+              });
+          }
+        } catch (e) {
+          console.error('[CLINIC-LIST] vendors fallback failed', e);
+        }
+      }
+
+      setClinics(mapped);
     } catch (error) {
       console.error('Error loading clinics:', error);
+      setClinics([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleViewClinic = (clinicId: string) => {
-    onNavigate('clinic-profile', { clinicId });
+  const toggleClinic = (clinicId: string) => {
+    setSelectedClinicId((prev) => (prev === clinicId ? null : clinicId));
   };
 
-  const filteredClinics = clinics.filter(clinic =>
-    clinic.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    clinic.address.toLowerCase().includes(searchQuery.toLowerCase())
+  useEffect(() => {
+    if (!selectedClinicId) return;
+    const c = clinics.find((x) => x.id === selectedClinicId);
+    if (!c || !c.needsServiceFetch || c.services.length > 0) return;
+    if (fetchingServicesFor === selectedClinicId) return;
+    fetchVendorServicesForClinic(selectedClinicId);
+  }, [selectedClinicId, clinics, fetchingServicesFor, fetchVendorServicesForClinic]);
+
+  const handleBookService = (clinic: ClinicProvider, row: ClinicServiceRow) => {
+    const vendorId = clinic.id;
+    const serviceIdForBooking = row.catalogServiceId || String(row.vendorServiceId);
+    const serviceObj = {
+      id: String(row.vendorServiceId),
+      serviceId: row.catalogServiceId,
+      vendorServiceId: row.vendorServiceId,
+      name: row.name,
+      price: row.price,
+      duration: row.duration,
+      isPackage: row.isPackage,
+      packageDetails: row.packageDetails,
+      metadata: row.metadata,
+    };
+    if (isVendorServicePackageRow(serviceObj as Record<string, unknown>)) {
+      const nav = buildWalkerServiceDataForVendorPackagePurchase({
+        vendorId: String(vendorId),
+        vendorName: clinic.name,
+        serviceRow: serviceObj as Record<string, unknown>,
+        serviceTypeCategory: 'vet',
+        serviceStyle: 'at_center',
+      });
+      if (nav) {
+        onNavigate('purchase-package', nav);
+        return;
+      }
+    }
+    onNavigate('appointment', {
+      clinicId: vendorId,
+      vendorId,
+      vendorName: clinic.name,
+      service: serviceObj,
+      serviceId: serviceIdForBooking,
+      serviceName: row.name,
+      price: row.price,
+      duration: row.duration,
+      serviceStyle: 'at_center',
+      serviceType: 'at_center',
+      clinic: {
+        id: vendorId,
+        name: clinic.name,
+        address: clinic.address,
+        rating: clinic.rating,
+        review_count: clinic.review_count,
+        timing: clinic.timing,
+      },
+    });
+  };
+
+  const openClinicDetails = (e: MouseEvent, clinicId: string) => {
+    e.stopPropagation();
+    onNavigate('vet-services-by-style', {
+      vendorId: clinicId,
+      serviceStyle: 'at_center',
+      serviceTypeName: 'Vet Clinic',
+      category: 'vet',
+      returnScreen: vetStyleProfileReturnScreen,
+    });
+  };
+
+  const filteredClinics = useMemo(
+    () =>
+      clinics.filter(
+        (clinic) =>
+          clinic.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          clinic.address.toLowerCase().includes(searchQuery.toLowerCase())
+      ),
+    [clinics, searchQuery]
   );
 
-  const sortedClinics = [...filteredClinics].sort((a, b) => {
+  const sortedClinics = useMemo(() => {
+    const list = [...filteredClinics];
     switch (selectedFilter) {
       case 'rating':
-        return b.rating - a.rating;
+        return list.sort((a, b) => b.rating - a.rating);
       case 'distance':
-        return parseFloat(a.distance || '0') - parseFloat(b.distance || '0');
-      case 'price':
-        return parseInt(a.price_range.replace(/[^0-9]/g, '')) - parseInt(b.price_range.replace(/[^0-9]/g, ''));
+        return list.sort((a, b) => (a.distanceKm ?? 999) - (b.distanceKm ?? 999));
+      case 'price': {
+        const minP = (c: ClinicProvider) =>
+          c.services.length ? Math.min(...c.services.map((s) => s.price)) : 999999;
+        return list.sort((a, b) => minP(a) - minP(b));
+      }
       default:
-        return 0;
+        return list;
     }
-  });
+  }, [filteredClinics, selectedFilter]);
 
   const filters = [
     { id: 'all', label: 'All' },
@@ -216,18 +523,21 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
     { id: 'price', label: 'Price' },
   ];
 
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const minPriceForClinic = (c: ClinicProvider) => {
+    if (!c.services.length) return null;
+    return Math.min(...c.services.map((s) => s.price));
+  };
+
   const dashboardStats = [
-    { value: `${filteredClinics.length}+`, label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
+    { value: String(filteredClinics.length), label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
     { value: '1K+', label: 'Bookings' },
-    { value: '4.8', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
+    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
   ];
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ✅ FIX: Use ServiceDashboardHeader for consistent Frame UI */}
       <ServiceDashboardHeader
-        serviceName="Vet Clinics"
+        serviceName="Veterinary Clinic"
         serviceSubtitle="Find a veterinary clinic near you"
         serviceIcon={Stethoscope}
         iconColor="text-white"
@@ -236,10 +546,8 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
       />
-      
-      {/* Content */}
-      <div className="max-w-[430px] mx-auto px-4 pt-4 pb-28">
-        {/* Search - design system curves (rounded-2xl), soft bg */}
+
+      <div className="max-w-customer mx-auto px-4 pt-4 pb-36">
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
@@ -251,7 +559,6 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
           />
         </div>
 
-        {/* Filters - pills matching home, primary orange when active */}
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide mb-5">
           {filters.map((filter) => (
             <button
@@ -270,109 +577,288 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
 
         {loading ? (
           <div className="flex flex-col items-center justify-center py-16">
-            <div className="animate-spin rounded-full h-12 w-12 border-2 border-[#FF8C42]/30 border-t-[#FF8C42]"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-2 border-[#FF8C42]/30 border-t-[#FF8C42]" />
             <p className="text-gray-500 text-sm mt-4">Finding clinics...</p>
           </div>
         ) : sortedClinics.length === 0 ? (
           <div className="text-center py-16 px-4">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#FFF5EE] flex items-center justify-center text-3xl">🏥</div>
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-[#FFF5EE] flex items-center justify-center text-3xl">
+              🏥
+            </div>
             <p className="text-gray-800 font-semibold">No clinics found</p>
-            <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
+            <p className="text-sm text-gray-500 mt-1">
+              {specialization
+                ? 'No clinics offering this specialization are available in your area'
+                : 'Try adjusting your search or filters'}
+            </p>
           </div>
         ) : (
           <div className="space-y-4">
             <p className="text-sm font-medium text-gray-700">{sortedClinics.length} clinics found</p>
-            
-            {sortedClinics.map((clinic) => (
-              <button
-                key={clinic.id}
-                onClick={() => handleViewClinic(clinic.id)}
-                className="w-full card card-interactive rounded-2xl p-4 text-left border border-gray-100 hover:border-orange-100 hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-all duration-200"
-              >
-                <div className="flex gap-3">
-                  {/* Clinic Photo or Icon - rounded-2xl, soft orange tint */}
-                  {clinic.photo ? (
-                    <img 
-                      src={clinic.photo} 
-                      alt={clinic.name}
-                      className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center text-2xl flex-shrink-0 border border-orange-100/50">
-                      <Building2 className="w-7 h-7 text-[#FF8C42]" />
-                    </div>
-                  )}
-                  
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-bold text-gray-900 truncate">{clinic.name}</h3>
-                      <ChevronRight className="w-5 h-5 text-gray-300 flex-shrink-0" />
-                    </div>
-                    
-                    <div className="flex items-center gap-2 mt-1">
-                      <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-                      <span className="font-semibold text-sm text-gray-800">{clinic.rating}</span>
-                      <span className="text-gray-400 text-sm">({clinic.review_count})</span>
-                      {clinic.distance && (
-                        <>
-                          <span className="text-gray-300">•</span>
-                          <span className="text-sm text-gray-500">{clinic.distance}</span>
-                        </>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center gap-1.5 mt-1.5 text-sm text-gray-500">
-                      <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                      <span className="truncate">{clinic.address}</span>
-                    </div>
-                    
-                    {/* ✅ Next Available Slot */}
-                    {clinic.nextAvailableSlot && (
-                      <div className="flex items-center gap-1.5 mt-2">
-                        <Clock className="w-3.5 h-3.5 text-green-500" />
-                        <span className="text-sm font-medium text-green-600">Next: {clinic.nextAvailableSlot}</span>
-                      </div>
-                    )}
 
-                    <div className="flex items-center justify-between mt-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {!clinic.nextAvailableSlot && (
-                          <div className="flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 text-gray-400" />
-                            <span className="text-sm text-gray-500">{clinic.timing}</span>
+            {sortedClinics.map((clinic) => {
+              const expanded = selectedClinicId === clinic.id;
+              const minP = minPriceForClinic(clinic);
+              const headerActsAsCollapse = expanded;
+              const headerInteractive = headerActsAsCollapse;
+              return (
+                <Card key={clinic.id} className="bg-white rounded-xl border border-gray-100 shadow-sm">
+                  <div
+                    role={headerInteractive ? 'button' : undefined}
+                    tabIndex={headerInteractive ? 0 : undefined}
+                    onClick={headerInteractive ? () => toggleClinic(clinic.id) : undefined}
+                    onKeyDown={
+                      headerInteractive
+                        ? (e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              toggleClinic(clinic.id);
+                            }
+                          }
+                        : undefined
+                    }
+                    className={`p-4 border-b border-gray-100 text-left w-full ${
+                      headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''
+                    }`}
+                  >
+                    <div className="flex gap-3">
+                      {clinic.photo ? (
+                        <img
+                          src={clinic.photo}
+                          alt={clinic.name}
+                          className="w-16 h-16 rounded-2xl object-cover ring-2 ring-[#FF8C42]/20 flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#FFF5EE] to-[#FFE8D6] flex items-center justify-center flex-shrink-0 border border-orange-100/50">
+                          <Building2 className="w-7 h-7 text-[#FF8C42]" />
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <h3 className="font-bold text-gray-900 truncate">{clinic.name}</h3>
+                            {clinic.isVerified && (
+                              <Shield className="w-4 h-4 text-green-500 shrink-0" aria-hidden />
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => openClinicDetails(e, clinic.id)}
+                            onKeyDown={(e) => e.stopPropagation()}
+                            aria-label="View clinic profile"
+                            className="flex-shrink-0 p-1 -m-1 rounded-md text-gray-400 hover:text-[#FF8C42] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8C42]/40"
+                          >
+                            <ChevronRight className="w-5 h-5 pointer-events-none" aria-hidden />
+                          </button>
+                        </div>
+                        {(clinic.roleDisplayName || clinic.role || clinic.roleName) && (
+                          <div className="mt-0.5">
+                            <Badge variant="outline" className="text-[10px] px-2 py-0.5">
+                              {clinic.roleDisplayName || clinic.role || clinic.roleName}
+                            </Badge>
                           </div>
                         )}
-                        {clinic.is_open !== undefined && (
-                          <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-                            clinic.is_open ? 'bg-[#EDFFEE] text-[#00C30C]' : 'bg-red-50 text-red-600'
-                          }`}>
-                            {clinic.is_open ? 'Open' : 'Closed'}
-                          </span>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <StarRating
+                            rating={clinic.rating}
+                            reviewCount={clinic.review_count}
+                            textClassName="text-xs text-gray-500"
+                          />
+                          {clinic.distanceKm != null && (
+                            <>
+                              <span className="text-gray-300">•</span>
+                              <span className="text-sm text-gray-500">
+                                {clinic.distanceKm < 1
+                                  ? `${Math.round(clinic.distanceKm * 1000)} m`
+                                  : `${Math.round(clinic.distanceKm)} km`}
+                              </span>
+                            </>
+                          )}
+                          {minP != null && clinic.services.length > 0 && (
+                            <>
+                              <span className="text-gray-300">•</span>
+                              <span className="text-sm font-semibold text-[#FF8C42]">
+                                from {formatPriceWithSymbol(minP)}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1.5 text-sm text-gray-500">
+                          <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                          <span className="truncate">{clinic.address}</span>
+                        </div>
+                        {clinic.nextAvailableSlot && (
+                          <div className="flex items-center gap-1.5 mt-2">
+                            <Clock className="w-3.5 h-3.5 text-green-500" />
+                            <span className="text-sm font-medium text-green-600">
+                              Next: {clinic.nextAvailableSlot}
+                            </span>
+                          </div>
+                        )}
+                        {!clinic.nextAvailableSlot && (
+                          <div className="flex items-center gap-1 mt-1.5 text-sm text-gray-500">
+                            <Clock className="w-3.5 h-3.5 text-gray-400" />
+                            <span>{clinic.timing}</span>
+                          </div>
                         )}
                       </div>
-                      <span className="text-sm font-bold text-[#FF8C42]">{clinic.price_range}</span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {clinic.services.slice(0, 3).map((service, idx) => (
-                        <span key={idx} className="px-2.5 py-1 bg-gray-100 rounded-lg text-xs font-medium text-gray-600">
-                          {service}
-                        </span>
-                      ))}
-                      {clinic.services.length > 3 && (
-                        <span className="px-2.5 py-1 bg-gray-100 rounded-lg text-xs font-medium text-gray-500">
-                          +{clinic.services.length - 3}
-                        </span>
-                      )}
                     </div>
                   </div>
-                </div>
-              </button>
-            ))}
+
+                  {expanded && (
+                    <div className="bg-gray-50 p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <h4 className="text-sm font-semibold text-gray-700">
+                          Available Services ({clinic.services.length})
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={(e) => openClinicDetails(e, clinic.id)}
+                          className="text-xs font-medium text-[#FF8C42] hover:underline"
+                        >
+                          Clinic details
+                        </button>
+                      </div>
+
+                      {fetchingServicesFor === clinic.id && clinic.services.length === 0 ? (
+                        <div className="flex items-center justify-center py-8 text-gray-500 gap-2">
+                          <Loader2 className="w-5 h-5 animate-spin text-[#FF8C42]" />
+                          <span className="text-sm">Loading services…</span>
+                        </div>
+                      ) : clinic.services.length === 0 ? (
+                        <p className="text-sm text-gray-500 text-center py-4">No services listed for this clinic.</p>
+                      ) : (
+                        <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1 space-y-3">
+                          {clinic.services.map((service) => {
+                            const descTrim = service.description?.trim() ?? '';
+                            const isPackage = Boolean((service as any).isPackage);
+                            return (
+                              <div
+                                key={service.stableKey}
+                                className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 space-y-2"
+                              >
+                                {/* Row 1: name + package badge (left) | price (right) */}
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                                    <h5 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
+                                      {service.name}
+                                    </h5>
+                                    {isPackage && (
+                                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                                        Package
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="shrink-0 text-right">
+                                    <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
+                                      {formatPriceWithSymbol(service.price)}
+                                    </div>
+                                    <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                                  </div>
+                                </div>
+
+                                {/* Row 2: description full width */}
+                                {descTrim ? (
+                                  <div onClick={(e) => e.stopPropagation()}>
+                                    <ServiceDescriptionInline
+                                      description={descTrim}
+                                      title={service.name}
+                                      className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
+                                      dialogHint="Full description from the clinic (vendor-provided)"
+                                    />
+                                  </div>
+                                ) : (
+                                  <p className="text-gray-400 text-sm line-clamp-2 italic">
+                                    Professional in-clinic care — tap Book Now to continue.
+                                  </p>
+                                )}
+
+                                {/* Row 3: badges (left) | Book Now (right) */}
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="outline" className="text-xs shrink-0">
+                                      <Clock className="w-3 h-3 mr-1" />
+                                      {service.duration} mins
+                                    </Badge>
+                                    <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
+                                      {service.category || 'Veterinary'}
+                                    </Badge>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleBookService(clinic, service);
+                                    }}
+                                  >
+                                    Book Now
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {!expanded && (
+                    <div className="px-4 py-3 bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div className="text-sm text-gray-600">
+                        {clinic.services.length > 0 ? (
+                          <>
+                            {clinic.services.length} service{clinic.services.length !== 1 ? 's' : ''}{' '}
+                            available
+                            {minP != null && (
+                              <span className="text-gray-900 font-medium">
+                                {' '}
+                                from {formatPriceWithSymbol(minP)}
+                              </span>
+                            )}
+                          </>
+                        ) : clinic.needsServiceFetch ? (
+                          <span className="text-gray-500">Tap to load services & prices</span>
+                        ) : (
+                          <span className="text-gray-500">No services available</span>
+                        )}
+                        {minP != null && (
+                          <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedClinicId(clinic.id);
+                          }}
+                        >
+                          View Services
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="text-gray-600"
+                          onClick={(e) => openClinicDetails(e, clinic.id)}
+                        >
+                          Details
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
-      
+
       <StandardizedFooter
         currentTab="bookings"
         onTabChange={(tab) => {
@@ -381,8 +867,9 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
           else if (tab === 'cart') onNavigate('cart');
           else if (tab === 'profile') onNavigate('profile');
         }}
-        maxWidth="max-w-[430px]"
+        maxWidth="max-w-customer"
       />
+
     </div>
   );
 }

@@ -5,12 +5,13 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { ArrowLeft, FlaskConical, Plus, Edit2, Trash2, Search, Filter } from 'lucide-react';
+import { FlaskConical, Plus, Edit2, Trash2, Search, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 interface DiagnosticTest {
   id: string;
@@ -122,11 +123,10 @@ export default function TestCatalogPage() {
   };
 
   const handleDelete = async (testId: string) => {
-    if (!confirm('Are you sure you want to delete this test?')) return;
+    if (!confirm('Are you sure you want to delete this test? This cannot be undone.')) return;
     if (!vendorId) return;
     try {
-      // Note: DELETE endpoint may need to be added to backend
-      await apiClient.put(`/vendor/${vendorId}/diagnostics/tests/${testId}`, { is_available: false });
+      await apiClient.delete(`/vendor/${vendorId}/diagnostics/tests/${testId}`);
       toast.success('Test removed successfully');
       loadTests();
     } catch (err: any) {
@@ -166,87 +166,94 @@ export default function TestCatalogPage() {
     return true;
   });
 
+  const closeForm = () => {
+    setShowAddForm(false);
+    setEditingTest(null);
+    resetForm();
+  };
+
+  const navigateBackFromList = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/');
+    }
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
+      <div className="vendor-page-shell flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-orange-500" />
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
-      {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-orange-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  // ✅ FIX: Enhanced back navigation with fallback
-                  if (window.history.length > 1) {
-                    router.back();
-                  } else {
-                    // Fallback to dashboard if no history
-                    router.push('/');
-                  }
-                }}
-                className="rounded-full hover:bg-orange-100"
-                aria-label="Go back"
-              >
-                <ArrowLeft className="w-5 h-5 text-gray-700" />
-              </Button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-800">Test Catalog</h1>
-                <p className="text-sm text-gray-500 mt-1">Manage diagnostic tests and lab services</p>
-              </div>
-            </div>
-            <Button
-              onClick={() => {
-                resetForm();
-                setEditingTest(null);
-                setShowAddForm(true);
-              }}
-              className="bg-orange-500 hover:bg-orange-600 text-white"
-            >
-              <Plus className="w-4 h-4 mr-2" />
-              Add Test
-            </Button>
-          </div>
-        </div>
-      </div>
+  const inFormMode = showAddForm;
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
+  return (
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title={inFormMode ? (editingTest ? 'Edit Test' : 'Add Test') : 'Test Catalog'}
+          subtitle={
+            inFormMode ? 'Fill in test details below' : 'Manage your test catalog'
+          }
+          onBack={inFormMode ? closeForm : navigateBackFromList}
+          actions={
+            inFormMode
+              ? [
+                  <Button
+                    key="save-test"
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={!formData.test_name || !formData.category || !formData.price}
+                    className="h-9 shrink-0 bg-orange-500 text-sm text-white hover:bg-orange-600"
+                  >
+                    {editingTest ? 'Save' : 'Add'}
+                  </Button>,
+                ]
+              : [
+                  <Button
+                    key="add-test"
+                    type="button"
+                    onClick={() => {
+                      resetForm();
+                      setEditingTest(null);
+                      setShowAddForm(true);
+                    }}
+                    className="h-9 shrink-0 bg-orange-500 text-sm text-white hover:bg-orange-600"
+                  >
+                    <Plus className="mr-1 inline h-4 w-4" />
+                    Add Test
+                  </Button>,
+                ]
+          }
+        />
+
+        <div className="w-full space-y-4 px-4 py-4 sm:px-6">
         {/* Search and Filters */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 mb-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <Input
-                placeholder="Search by test name, code, or description..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            <div className="w-full md:w-64">
-              <select
-                value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500"
-              >
-                <option value="all">All Categories</option>
-                {categories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </div>
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Input
+              placeholder="Search tests..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 min-h-[44px]"
+            />
           </div>
+          <select
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+            className="w-full px-3 py-3 min-h-[44px] border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 bg-white"
+          >
+            <option value="all">All Categories</option>
+            {categories.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Tests List */}
@@ -261,11 +268,11 @@ export default function TestCatalogPage() {
             </p>
           </div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-3">
             {filteredTests.map((test) => (
               <div
                 key={test.id}
-                className="bg-white rounded-2xl shadow-sm p-6 hover:shadow-md transition"
+                className="bg-white rounded-2xl shadow-sm p-4 hover:shadow-md transition"
               >
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
@@ -344,13 +351,10 @@ export default function TestCatalogPage() {
 
         {/* Add/Edit Form Modal */}
         {showAddForm && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-              <h2 className="text-xl font-semibold mb-6">
-                {editingTest ? 'Edit Test' : 'Add New Test'}
-              </h2>
+          <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+            <div className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white p-5 safe-area-bottom sm:max-w-lg sm:rounded-2xl">
               <div className="space-y-4">
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="test_name">Test Name *</Label>
                     <Input
@@ -372,7 +376,7 @@ export default function TestCatalogPage() {
                     />
                   </div>
                 </div>
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="category">Category *</Label>
                     <Input
@@ -396,7 +400,7 @@ export default function TestCatalogPage() {
                     />
                   </div>
                 </div>
-                <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="duration_minutes">Duration (minutes)</Label>
                     <Input
@@ -454,29 +458,15 @@ export default function TestCatalogPage() {
                   </Label>
                 </div>
               </div>
-              <div className="flex gap-3 mt-6">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowAddForm(false);
-                    setEditingTest(null);
-                    resetForm();
-                  }}
-                  className="flex-1"
-                >
+              <div className="mt-6 flex gap-3">
+                <Button variant="outline" onClick={closeForm} className="w-full">
                   Cancel
-                </Button>
-                <Button
-                  onClick={handleSubmit}
-                  disabled={!formData.test_name || !formData.category || !formData.price}
-                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white"
-                >
-                  {editingTest ? 'Update Test' : 'Add Test'}
                 </Button>
               </div>
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

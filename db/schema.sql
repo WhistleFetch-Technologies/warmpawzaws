@@ -211,7 +211,7 @@ CREATE TABLE bookings (
     customer_id UUID NOT NULL REFERENCES customers(id),
     vendor_id UUID REFERENCES vendors(id),
     staff_id UUID REFERENCES staff(id),
-    service_id UUID NOT NULL REFERENCES services(id),
+    service_id UUID NOT NULL REFERENCES vendor_services(id),
     
     -- Booking Details
     booking_date DATE NOT NULL,
@@ -421,6 +421,8 @@ CREATE TABLE payouts (
     
     -- Razorpay Payout
     razorpay_payout_id TEXT,
+    payout_utr TEXT,
+    last_synced_at TIMESTAMPTZ,
     
     -- Settlement
     settlement_id UUID REFERENCES settlements(id),
@@ -428,6 +430,7 @@ CREATE TABLE payouts (
     -- Metadata
     payment_ids UUID[] NOT NULL, -- Array of payment IDs included in this payout
     created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
     processed_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     failure_reason TEXT

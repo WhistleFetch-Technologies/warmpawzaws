@@ -12,7 +12,6 @@ export type PolicyDocKey =
   | 'logistics-partners'
   | 'logistics-delivery-rules'
   | 'finance-gst-configuration'
-  | 'finance-flexible-tax-system'
   | 'finance-settlements'
   | 'finance-payout-management'
   | 'finance-tier-system'
@@ -440,7 +439,7 @@ Ecommerce policies define **order cancellation** (before/after dispatch), **retu
 
 ## What is GST Configuration?
 
-GST Configuration lets you manage **GST rates** and **HSN codes** used for invoicing and tax calculation. You can define **HSN codes** (with CGST, SGST, IGST rates) and **tax categories** that map services or products to default GST rates.
+GST Configuration lets you manage **GST rates** and **HSN codes** used for invoicing and tax calculation. Each **HSN code** stores a single **GST rate** (%); at checkout, the platform splits that into **CGST + SGST** (same state) or applies **IGST** (inter-state / missing locations) using the same percentage rules. **Tax categories** map services or products to default GST rates.
 
 ---
 
@@ -467,10 +466,20 @@ GST Configuration lets you manage **GST rates** and **HSN codes** used for invoi
 | Option | Impacts |
 |--------|---------|
 | **HSN Code** | Code (e.g. 9983) used on invoices and for tax classification. |
-| **GST Rate / CGST / SGST / IGST** | Rates for same-state (CGST+SGST) or inter-state (IGST). |
+| **GST rate (HSN)** | One combined % per HSN; checkout derives CGST/SGST or IGST from location. |
 | **Tax Category – Default GST Rate** | Default rate when a service/product is in this category. |
 | **Applicable Services** | Which services or products use this tax category. |
 | **Active** | Only active HSN codes and categories are used. |
+
+---
+
+## Tax resolution order (checkout)
+
+1. **Products:** HSN-linked rate → linked tax category rate → **18% default**.
+2. **Services:** Admin **GST Configuration** (catalogue category + vendor role) → **18% default**.
+3. **CGST + SGST vs IGST** is determined from customer vs vendor place of supply (not from legacy rules).
+
+The legacy **Flexible Tax** / \`gst_rules\` priority matching is **not** used in live calculation.
 
 ---
 
@@ -478,52 +487,6 @@ GST Configuration lets you manage **GST rates** and **HSN codes** used for invoi
 
 - Keep HSN codes aligned with your GST registration (e.g. 9983 for services).
 - Ensure CGST+SGST equals total GST for same-state; use IGST for inter-state.`,
-  },
-  'finance-flexible-tax-system': {
-    title: 'Flexible Tax System – Admin Guide',
-    markdown: `# Flexible Tax System – Admin Guide
-
-## What is the Flexible Tax System?
-
-The Flexible Tax System lets you define **tax rules** with conditions, exemptions, and multiple tax types (GST, CGST, SGST, IGST, cesses, custom). Rules are matched by **priority** (lower number = higher priority); the first matching rule is applied.
-
----
-
-## How to Create a Tax Rule
-
-1. Go to **Finance & Logistics** → **Flexible Tax System**.
-2. Click **Create Tax Rule**.
-3. Fill in: **Name**, **Tax Type**, **Rate**, **Calculation Method**, **Priority**, **Conditions**, **Exemptions**, **Active**.
-4. Click **Save**.
-
----
-
-## Where the Flexible Tax System Is Used
-
-| Where | How |
-|-------|-----|
-| **Checkout / booking** | System evaluates tax rules by priority and applies the first matching rule. |
-| **Invoicing** | Invoices show tax breakdown (CGST, SGST, IGST) from the applied rule. |
-| **Refunds** | Tax component of refunds uses the same rules. |
-
----
-
-## Option Impact Summary
-
-| Option | Impacts |
-|--------|---------|
-| **Tax Type** | Which tax is applied (GST, CGST, SGST, IGST, cess, custom). |
-| **Rate / Calculation Method** | Percentage or fixed amount. |
-| **Priority** | Lower number = higher priority; first match wins. |
-| **Conditions / Exemptions** | When this rule applies or is excluded. |
-| **Active** | Inactive rules are skipped. |
-
----
-
-## Tips
-
-- Put specific rules (e.g. export 0%) at lower priority; default GST at higher priority.
-- Use conditions to apply different rates by transaction type, category, or amount.`,
   },
   'finance-settlements': {
     title: 'Settlements – Admin Guide',

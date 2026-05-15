@@ -1,15 +1,29 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { FileText, Plus, Edit2, Trash2, Loader2, Save, X } from 'lucide-react';
+import { FileText, Plus, Edit2, Trash2, Loader2, Save, X, Eye, ExternalLink } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { ContentPagePreviewModal } from './ContentPagePreviewModal';
+
+type ContentCategory = 
+  | 'legal' 
+  | 'help' 
+  | 'marketing' 
+  | 'other'
+  | 'tips'
+  | 'article'
+  | 'nutrition'
+  | 'health'
+  | 'grooming'
+  | 'insurance'
+  | 'behavior';
 
 interface ContentPage {
   pageId: string;
   title: string;
   slug: string;
   content: string;
-  category: 'legal' | 'help' | 'marketing' | 'other';
+  category: ContentCategory;
   isPublished: boolean;
   updatedAt: string;
 }
@@ -18,6 +32,8 @@ export function ContentManagement() {
   const [loading, setLoading] = useState(true);
   const [pages, setPages] = useState<ContentPage[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewPage, setPreviewPage] = useState<ContentPage | null>(null);
   const [editingPage, setEditingPage] = useState<ContentPage | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -25,7 +41,7 @@ export function ContentManagement() {
     title: '',
     slug: '',
     content: '',
-    category: 'other' as ContentPage['category'],
+    category: 'other' as ContentCategory,
     isPublished: false,
   });
 
@@ -123,6 +139,22 @@ export function ContentManagement() {
     }
   };
 
+  const handlePreview = (page: ContentPage) => {
+    setPreviewPage(page);
+    setShowPreviewModal(true);
+  };
+
+  const handleClosePreview = () => {
+    setShowPreviewModal(false);
+    setPreviewPage(null);
+  };
+
+  const handleEditFromPreview = (page: ContentPage) => {
+    setShowPreviewModal(false);
+    setPreviewPage(null);
+    handleOpenModal(page);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -187,14 +219,23 @@ export function ContentManagement() {
                 <td className="px-0 py-4 text-right">
                   <div className="flex items-center justify-end gap-3">
                     <button
+                      onClick={() => handlePreview(page)}
+                      className="p-2 hover:bg-blue-100 rounded-lg transition-colors"
+                      title="Preview page"
+                    >
+                      <Eye className="w-4 h-4 text-blue-600" />
+                    </button>
+                    <button
                       onClick={() => handleOpenModal(page)}
                       className="p-0 hover:bg-gray-200 rounded-lg"
+                      title="Edit page"
                     >
                       <Edit2 className="w-4 h-4 text-gray-600" />
                     </button>
                     <button
                       onClick={() => handleDelete(page.pageId)}
                       className="p-0 hover:bg-red-100 rounded-lg"
+                      title="Delete page"
                     >
                       <Trash2 className="w-4 h-4 text-red-600" />
                     </button>
@@ -244,14 +285,28 @@ export function ContentManagement() {
                 <label className="block text-sm font-medium text-gray-700 mb-0">Category</label>
                 <select
                   value={formData.category}
-                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, category: e.target.value as any }))}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFormData(prev => ({ ...prev, category: e.target.value as ContentCategory }))}
                   className="w-full px-0 py-0 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500"
                 >
-                  <option value="legal">Legal</option>
-                  <option value="help">Help</option>
-                  <option value="marketing">Marketing</option>
-                  <option value="other">Other</option>
+                  <optgroup label="Admin Categories">
+                    <option value="legal">Legal</option>
+                    <option value="help">Help</option>
+                    <option value="marketing">Marketing</option>
+                    <option value="other">Other</option>
+                  </optgroup>
+                  <optgroup label="Customer-Facing Categories">
+                    <option value="tips">Tips</option>
+                    <option value="article">Article</option>
+                    <option value="nutrition">Nutrition</option>
+                    <option value="health">Health</option>
+                    <option value="grooming">Grooming</option>
+                    <option value="insurance">Insurance</option>
+                    <option value="behavior">Behavior</option>
+                  </optgroup>
                 </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  Customer-facing categories will appear on the home page articles section
+                </p>
               </div>
 
               <div>
@@ -305,6 +360,14 @@ export function ContentManagement() {
           </div>
         </div>
       )}
+
+      {/* Preview Modal */}
+      <ContentPagePreviewModal
+        page={previewPage}
+        isOpen={showPreviewModal}
+        onClose={handleClosePreview}
+        onEdit={handleEditFromPreview}
+      />
     </div>
   );
 }

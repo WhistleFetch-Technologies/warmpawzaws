@@ -9,13 +9,12 @@ import { CapabilityDebugOverlay } from '../../CapabilityDebugOverlay';
 import { CapabilityGate } from '../../CapabilityGate';
 import { useVendorCapabilities } from '../../hooks/useVendorCapabilities';
 // AWS Serverless: apiClient with Cognito auth
-import { getVendorIconTheme, getRoleIconComponent, getRoleColorScheme, renderRoleIcon } from '@/lib/vendor-icon-themes';
-import { getVendorRoleId, normalizeServiceStyle, hasVendorRole } from '@/lib/vendor-utils';
+import { getRoleColorScheme } from '@/lib/vendor-icon-themes';
+import { getVendorRoleId, normalizeServiceStyle, hasVendorRole, getVendorAllowedServiceStyles } from '@/lib/vendor-utils';
 import { getRoleLabels, getServiceStyleLabel } from '@/lib/role-labels';
 import CapabilityHelper from '@/lib/capability-helper';
 import PerformanceMonitor from '@/lib/performance-monitor';
 // Removed unused import: Analytics
-import { copyTextToClipboard } from '@/lib/shareUtils';
 import {
   Calendar,
   Clock,
@@ -47,6 +46,7 @@ import {
   Shield,
   Truck,
   MapPin,
+  Navigation,
   HelpCircle,
   CheckCircle2,
   User,
@@ -58,10 +58,19 @@ import {
 const IndianRupee = icons?.IndianRupee ?? icons?.DollarSign;
 import { Badge } from '../../../ui/badge';
 import { VendorNotificationModal } from '../../modals/VendorNotificationModal';
-import { Dashboardstats, DashboardWarnings, NotificationItem, ScheduleItem, VendorDashboardProps, WatchlistItem } from '../types';
-import { formatBookingTime } from '../helpers';
+import { VendorReviewsModal } from '../../modals/VendorReviewsModal';
+import { Dashboardstats, DashboardWarnings, ScheduleItem, VendorDashboardProps, WatchlistItem } from '../types';
+import {
+  formatBookingTime,
+  vendorNotificationUnreadCount,
+  SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS,
+  SHOW_VENDOR_FOOTER_REPORTING_TAB,
+  getVendorDashboardRatingPresentation,
+  mergeVendorDashboardStats,
+} from '../helpers';
 import { toast } from 'sonner';
 import { useActiveVideoCallForVendor } from '@/hooks/useActivevideocallTracker';
+import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayout';
 
 // Lazy-load heavy/cyclic components to avoid TDZ when dashboard chunk loads
 const SoloProviderDashboard = lazy(() =>
@@ -94,6 +103,9 @@ const VendorChatModal = lazy(() =>
 const TeleTracker = lazy(() =>
   import('../../teleCommunication/TeleTracker').then((m) => ({ default: m.TeleTracker }))
 );
+
+/** Dashboard Additional Features only. Routes, handlers, and capabilities stay wired; set true to show these tiles again. */
+const SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR = false;
 
 export function VendorDashboard({
   vendorId,
@@ -149,19 +161,34 @@ export function VendorDashboard({
     earnings: 0,
     pendingEarnings: 0,
     completedServices: 0,
-    rating: 4.8,
+    rating: null,
     totalReviews: 0,
     activeOrders: 0
   });
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [vendor, setVendor] = useState(vendorData);
+  /** Prefer parent vendorData + profile API for business name; local vendor state alone can stay stale after profile save */
+  const effectiveVendor = useMemo(() => {
+    const merged = { ...(vendorData || {}), ...(vendor || {}) };
+    const bn =
+      vendorData?.businessName ||
+      vendorData?.business_name ||
+      vendor?.businessName ||
+      vendor?.business_name;
+    if (bn) {
+      merged.businessName = bn;
+      merged.business_name = bn;
+    }
+    return merged;
+  }, [vendor, vendorData]);
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
+  const [reviewsModalOpen, setReviewsModalOpen] = useState(false);
   // ✅ NEW: Add state for formatted availability text
   const [availabilityText, setAvailabilityText] = useState<string>('Mon-Fri 9AM-6PM');
   const [chatConversationsOpen, setChatConversationsOpen] = useState(false);
@@ -234,15 +261,40 @@ export function VendorDashboard({
   });
 
   const vendorConfiguration = vendorData?.vendorConfiguration || vendorData?.vendorType || vendorData?.vendor_type || null;
-  const selectedServiceStyles = vendorData?.serviceStyles || vendorData?.selectedServiceStyles || [];
+  /** Never use vendorData.serviceStyles raw — it is often `{ selected, solo, business }`; `.includes` would throw. */
+  const allowedServiceStyles = useMemo(() => getVendorAllowedServiceStyles(vendorData), [vendorData]);
   const profileType = vendorData?.profileType || (vendorConfiguration === 'solo' ? 'professional' : 'center');
-  const allowedServiceStyles = vendorData?.allowedServiceStyles || [];
   const customerService = vendorData?.customer_service || null;
 
   const isVet = hasVendorRole(vendorData, ['veterinarian', 'veterinary_clinic', 'pet_clinic', 'vet']);
   const isPharmacy = hasVendorRole(vendorData, ['pharmacy', 'pet_pharmacy']);
+  const isWalkerVendor = hasVendorRole(vendorData, ['pet_walker', 'walker', 'dog_walker']);
+  const isNutritionistVendor = hasVendorRole(vendorData, [
+    'nutritionist',
+    'pet_nutritionist',
+    'nutritionist_center',
+  ]);
+  /** Groomer solo/center: hide Portfolio under Additional Features (UI only; capability/backend unchanged). */
+  const isGroomerVendorForPortfolioUi = hasVendorRole(vendorData, [
+    'groomer',
+    'groomer_solo',
+    'groomer_center',
+    'grooming_solo',
+    'pet_groomer',
+    'grooming_salon',
+    'pet_grooming',
+    'grooming',
+  ]);
+  const showPortfolioAdditionalFeature =
+    !isGroomerVendorForPortfolioUi && !!onNavigateToPortfolio && !!capabilities.portfolio;
 
   const isSoloProvider = vendorConfiguration === 'solo' || vendorData?.isSoloProvider || vendorData?.is_solo_provider || false;
+  const logoImage = '/warmpawz-logo.svg';
+
+  const ratingPresentation = useMemo(
+    () => getVendorDashboardRatingPresentation(stats.totalReviews, stats.rating),
+    [stats.totalReviews, stats.rating]
+  );
 
   // ✅ BIG LOGGING: Log vendorData when VendorDashboard loads
   useEffect(() => {
@@ -356,7 +408,14 @@ export function VendorDashboard({
       if (dashboardRes && dashboardRes.success) {
         criticalParsing.push(
           Promise.resolve().then(() => {
-            setStats(dashboardRes.stats || dashboardRes);
+            setStats((prev) =>
+              mergeVendorDashboardStats(
+                prev,
+                (dashboardRes.stats && typeof dashboardRes.stats === 'object'
+                  ? dashboardRes.stats
+                  : null) as Record<string, unknown> | null
+              )
+            );
             setVendor(dashboardRes.vendor || vendorData);
             // ✅ FIX: Use bookings from dashboard response (sorted by date/time, includes upcoming)
             if (dashboardRes.bookings && dashboardRes.bookings.length > 0) {
@@ -389,6 +448,22 @@ export function VendorDashboard({
                 // Check both camelCase (from enriched endpoint) and snake_case (from raw DB) formats
                 isRescheduled: Boolean(b.isRescheduled || b.rescheduledAt || b.rescheduled_at),
                 rescheduledAt: b.rescheduledAt || b.rescheduled_at || null,
+                packagePurchaseId: b.packagePurchaseId ?? b.package_purchase_id,
+                packageSessionNumber:
+                  b.packageSessionNumber != null
+                    ? Number(b.packageSessionNumber)
+                    : b.package_session_number != null
+                      ? Number(b.package_session_number)
+                      : undefined,
+                packageTotalSessions:
+                  b.packageTotalSessions != null
+                    ? Number(b.packageTotalSessions)
+                    : b.package_total_sessions != null
+                      ? Number(b.package_total_sessions)
+                      : b.total_sessions != null
+                        ? Number(b.total_sessions)
+                        : undefined,
+                isPackageSession: Boolean(b.isPackageSession ?? b.is_package_session),
               }));
               setTodaySchedule(transformedBookings);
             }
@@ -428,6 +503,22 @@ export function VendorDashboard({
               // Check both camelCase (from enriched endpoint) and snake_case (from raw DB) formats
               isRescheduled: Boolean(b.isRescheduled || b.rescheduledAt || b.rescheduled_at),
               rescheduledAt: b.rescheduledAt || b.rescheduled_at || null,
+              packagePurchaseId: b.packagePurchaseId ?? b.package_purchase_id,
+              packageSessionNumber:
+                b.packageSessionNumber != null
+                  ? Number(b.packageSessionNumber)
+                  : b.package_session_number != null
+                    ? Number(b.package_session_number)
+                    : undefined,
+              packageTotalSessions:
+                b.packageTotalSessions != null
+                  ? Number(b.packageTotalSessions)
+                  : b.package_total_sessions != null
+                    ? Number(b.package_total_sessions)
+                    : b.total_sessions != null
+                      ? Number(b.total_sessions)
+                      : undefined,
+              isPackageSession: Boolean(b.isPackageSession ?? b.is_package_session),
             }));
             setTodaySchedule((prev: ScheduleItem[]) => prev.length > 0 ? prev : mapped);
           })
@@ -453,10 +544,12 @@ export function VendorDashboard({
           setWatchlist(watchlistRes.watchlist || []);
         }
 
-        // Process notifications
-        if (notificationsRes && notificationsRes.success) {
-          setNotifications(notificationsRes.notifications || []);
-        }
+        // Process notifications (badge uses server unreadCount; list rows use is_read not isRead)
+        setNotificationUnreadCount(
+          notificationsRes && notificationsRes.success
+            ? vendorNotificationUnreadCount(notificationsRes)
+            : 0
+        );
 
         // Process services
         if (servicesRes && servicesRes.success) {
@@ -492,13 +585,26 @@ export function VendorDashboard({
           }));
         }
 
-        // Check profile completion
+        // Check profile completion + merge display name (fixes stale header after profile save)
         if (profileRes && profileRes.success) {
           const profile = profileRes.vendor || profileRes;
+          const biz =
+            profile.businessName ||
+            profile.business_name ||
+            profile.name;
+          if (biz) {
+            setVendor((prev: any) => ({
+              ...(prev || {}),
+              businessName: biz,
+              business_name: biz,
+            }));
+          }
           // FIX: Check all possible image field names (logo_url, profile_image_url, photo_url, photo)
           const hasLogo = !!(profile.logo_url || profile.profile_image_url || profile.photo_url || profile.photo);
+          const hasBusinessLabel =
+            !!(profile.business_name || profile.businessName || profile.name);
           const isProfileComplete = !!(
-            profile.business_name &&
+            hasBusinessLabel &&
             profile.phone &&
             profile.address &&
             (hasLogo || profileType === 'professional')
@@ -507,7 +613,7 @@ export function VendorDashboard({
             ...prev,
             profileIncomplete: !isProfileComplete,
             reasonProfileIncomplete: !isProfileComplete
-              ? `Missing: ${!profile.business_name ? 'Business Name, ' : ''}${!profile.phone ? 'Phone, ' : ''}${!profile.address ? 'Address, ' : ''}${!hasLogo && profileType !== 'professional' ? 'Logo' : ''}`.replace(/, $/, '')
+              ? `Missing: ${!hasBusinessLabel ? 'Business Name, ' : ''}${!profile.phone ? 'Phone, ' : ''}${!profile.address ? 'Address, ' : ''}${!hasLogo && profileType !== 'professional' ? 'Logo' : ''}`.replace(/, $/, '')
               : undefined,
           }));
         }
@@ -556,9 +662,13 @@ export function VendorDashboard({
     setOtpError(null);
 
     try {
+      const sessionNum = selectedAppointment.packageSessionNumber;
       const data = await apiClient.post(`/vendor/bookings/${selectedAppointment.bookingId}/otp/verify`, {
         otp,
-        action: 'complete'
+        action: 'complete',
+        ...(sessionNum != null && Number.isFinite(Number(sessionNum))
+          ? { sessionNumber: Number(sessionNum) }
+          : {}),
       }) as any;
 
       setShowOtpModal(false);
@@ -698,8 +808,7 @@ export function VendorDashboard({
     }
   };
 
-  // 🎨 GET DYNAMIC ICON THEME FOR THIS VENDOR
-  const RoleIcon = getRoleIconComponent(vendorData?.roleId);
+  // 🎨 Role-themed accents for quick actions (header always shows WarmPawz logo)
   const colorScheme = getRoleColorScheme(vendorData?.roleId);
 
   // 🏷️ GET ROLE-AWARE LABELS
@@ -717,44 +826,107 @@ export function VendorDashboard({
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen">
-        {/* Header */}
-        <div className="p-4 bg-white border-b border-gray-200">
+  const vendorDashboardChromeFooter = (
+    <div className="w-full border-t border-gray-200 bg-white pb-[env(safe-area-inset-bottom,0px)] shadow-[0_-2px_10px_rgba(0,0,0,0.06)] safe-area-bottom">
+      <div className="vendor-app-column mx-auto w-full">
+        <div className="flex items-center justify-around py-2">
+          <button
+            type="button"
+            onClick={() => setActiveBottomTab('home')}
+            className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
+              }`}
+          >
+            <Home className="h-5 w-5" />
+            <span className="text-[10px]">Home</span>
+          </button>
+
+          {isPharmacy ? (
+            <button
+              type="button"
+              onClick={() => router.push('/pharmacy/orders')}
+              className="flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 text-gray-400 active:text-[#FF8C42]"
+            >
+              <ClipboardList className="h-5 w-5" />
+              <span className="text-[10px]">Orders</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                onNavigateToBookingManagement?.();
+                setActiveBottomTab('bookings');
+              }}
+              className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
+                }`}
+            >
+              <Calendar className="h-5 w-5" />
+              <span className="text-[10px]">{labels.bookings}</span>
+            </button>
+          )}
+
+          {SHOW_VENDOR_FOOTER_REPORTING_TAB && (
+            <button
+              type="button"
+              onClick={() => setActiveBottomTab('reporting')}
+              className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
+                }`}
+            >
+              <BarChart3 className="h-5 w-5" />
+              <span className="text-[10px]">Reporting</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => router.push('/settings')}
+            className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
+              }`}
+          >
+            <Settings className="h-5 w-5" />
+            <span className="text-[10px]">Settings</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const vendorDashboardChromeHeader = (
+    <div className="safe-area-top w-full border-b border-gray-200 bg-white shadow-sm">
+      <div className="vendor-app-column mx-auto w-full">
+        <div className="p-4 bg-white">
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 ${colorScheme.secondary} rounded-lg flex items-center justify-center`}>
-                <RoleIcon className={`w-6 h-6 ${colorScheme.primary}`} />
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-11 h-11 flex-shrink-0 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center overflow-hidden">
+                <img src={logoImage} alt="Warmpawz" className="w-full h-full object-contain p-1" />
               </div>
-              <div>
-                <h1 className="font-semibold text-gray-900">
+              <div className="min-w-0 flex-1">
+                <h1 className="font-semibold text-gray-900 truncate">
                   {isSoloProvider
-                    ? (vendor?.ownerName || vendor?.owner_name || vendor?.fullName || 'Service Provider')
-                    : (vendor?.businessName || vendor?.business_name || vendor?.fullName || 'Vendor Dashboard')
+                    ? (effectiveVendor?.ownerName || effectiveVendor?.owner_name || effectiveVendor?.fullName || 'Service Provider')
+                    : (effectiveVendor?.businessName || effectiveVendor?.business_name || effectiveVendor?.fullName || 'Vendor Dashboard')
                   }
                 </h1>
-                <p className="text-xs text-gray-500">
-                  {isSoloProvider ? 'Solo Provider' : (vendorData?.address || vendor?.address || 'Business Center')} • {roleName || 'Service Provider'}
+                <p className="text-xs text-gray-500 truncate">
+                  {isSoloProvider ? 'Solo Provider' : (effectiveVendor?.address || vendorData?.address || 'Business Center')} {'\u00B7'} {roleName || 'Service Provider'}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => fetchDashboardData(true)} disabled={refreshing}>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <button onClick={() => fetchDashboardData(true)} disabled={refreshing} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors">
                 <RefreshCw className={`w-5 h-5 text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
               </button>
 
               {capabilities.chat && (
                 <button
                   type="button"
-                  className="relative p-1 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="relative w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors"
                   onClick={() => setChatConversationsOpen(true)}
                   title="Messages"
                   aria-label="Open messages"
                 >
-                  <MessageSquare className="w-5 h-5 text-gray-400 hover:text-[#FF8C42]" />
+                  <MessageSquare className="w-5 h-5 text-gray-400" />
                   {chatUnreadCount > 0 && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-xs font-medium">
+                    <span className="absolute top-0.5 right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-medium">
                       {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
                     </span>
                   )}
@@ -762,11 +934,11 @@ export function VendorDashboard({
               )}
 
               <button
-                className="relative"
+                className="relative w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 active:bg-gray-200 transition-colors"
                 onClick={() => setNotificationModalOpen(true)}
               >
-                <Bell className="w-5 h-5 text-gray-400 hover:text-[#FF8C42] transition-colors" />
-                {notifications.filter(n => !n.isRead).length > 0 && (
+                <Bell className="w-5 h-5 text-gray-400" />
+                {notificationUnreadCount > 0 && (
                   <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
                 )}
               </button>
@@ -789,11 +961,23 @@ export function VendorDashboard({
             <Badge className="bg-green-100 text-green-700 border-green-200">
               ONLINE
             </Badge>
-            <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setReviewsModalOpen(true)}
+              className="flex items-center gap-1 rounded-lg px-1 py-0.5 -mr-1 hover:bg-gray-100 active:bg-gray-200 transition-colors text-left"
+              title="View customer reviews"
+              aria-label={ratingPresentation.ariaLabel}
+            >
               <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-              <span className="text-sm font-semibold">{stats.rating.toFixed(1)}</span>
-              <span className="text-xs text-gray-500">({stats.totalReviews} reviews)</span>
-            </div>
+              <span
+                className={`text-sm font-semibold ${ratingPresentation.showNumeric ? '' : 'text-gray-500 font-normal text-xs max-w-[7rem] leading-tight'}`}
+              >
+                {ratingPresentation.label}
+              </span>
+              <span className="text-xs text-gray-500">
+                ({stats.totalReviews} {stats.totalReviews === 1 ? 'review' : 'reviews'})
+              </span>
+            </button>
           </div>
 
           {/* Service Summary - Hide for Pharmacy (they don't do appointments) */}
@@ -808,6 +992,18 @@ export function VendorDashboard({
             </div>
           )}
         </div>
+        </div>
+        </div>
+  );
+
+  return (
+    <>
+    <VendorChromeLayout
+      className="bg-gray-50"
+      header={vendorDashboardChromeHeader}
+      footer={vendorDashboardChromeFooter}
+    >
+      <div className="vendor-app-column mx-auto w-full min-h-full bg-white">
 
         {/* ✅ PHARMACY: Incoming Order Alerts for Pharmacy Vendors */}
         {isPharmacy && vendorId && (
@@ -815,7 +1011,7 @@ export function VendorDashboard({
             <Suspense fallback={null}>
               <PharmacyOrderAlerts
                 pharmacyId={vendorId}
-                pharmacyName={vendor?.businessName || vendor?.business_name || 'Pharmacy'}
+                pharmacyName={effectiveVendor?.businessName || effectiveVendor?.business_name || 'Pharmacy'}
               />
             </Suspense>
           </div>
@@ -840,7 +1036,7 @@ export function VendorDashboard({
             {isPharmacy && (
               <button
                 onClick={() => router.push('/pharmacy/orders')}
-                className="flex-1 min-w-[140px] bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
+                className="flex-1 min-w-[calc(50%-0.375rem)] sm:min-w-[140px] max-w-full bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
               >
                 <ClipboardList className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Orders</span>
@@ -851,7 +1047,7 @@ export function VendorDashboard({
             {!isPharmacy && (CapabilityHelper.hasCatalog(capabilities) || CapabilityHelper.hasBooking(capabilities) || CapabilityHelper.hasCapability(capabilities, 'services') || hasVendorRole(vendorData, ['pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance'])) && (
               <button
                 onClick={() => router.push('/services')}
-                className="flex-1 min-w-[140px] bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
+                className="flex-1 min-w-[calc(50%-0.375rem)] sm:min-w-[140px] max-w-full bg-white border-2 border-[#FF8C42] text-[#FF8C42] rounded-xl p-4 flex flex-col items-center justify-center hover:bg-[#FF8C42] hover:text-white transition-colors group text-center"
               >
                 <Activity className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Service Management</span>
@@ -862,7 +1058,7 @@ export function VendorDashboard({
             {onNavigateToProfile && (
               <button
                 onClick={onNavigateToProfile}
-                className="flex-1 min-w-[140px] bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
+                className="flex-1 min-w-[calc(50%-0.375rem)] sm:min-w-[140px] max-w-full bg-white border-2 border-purple-500 text-purple-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-purple-500 hover:text-white transition-colors group text-center"
               >
                 <Building2 className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Profile</span>
@@ -888,9 +1084,9 @@ export function VendorDashboard({
                 onClick={() => {
                   router.push(`/profile`);
                 }}
-                className="flex-1 min-w-[140px] bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
-              >
-                <User className="w-6 h-6 mb-2" />
+                className="flex-1 min-w-[calc(50%-0.375rem)] sm:min-w-[140px] max-w-full bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
+                >
+                  <User className="w-6 h-6 mb-2" />
                 <span className="font-semibold text-sm">Professional Profile</span>
               </button>
             )}
@@ -901,7 +1097,7 @@ export function VendorDashboard({
                 capabilities.inventory) && (
                 <button
                   onClick={onNavigateToBusinessHub}
-                  className="flex-1 min-w-[140px] bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
+                  className="flex-1 min-w-[calc(50%-0.375rem)] sm:min-w-[140px] max-w-full bg-white border-2 border-blue-500 text-blue-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-blue-500 hover:text-white transition-colors group text-center"
                 >
                   <Package className="w-6 h-6 mb-2" />
                   <span className="font-semibold text-sm">Inventory & Store</span>
@@ -921,7 +1117,7 @@ export function VendorDashboard({
         ) && (
             <div className="p-4 border-b border-gray-100">
               <h2 className="font-semibold text-gray-900 mb-3">Vet Center Services</h2>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 <button
                   onClick={() => onNavigateToSupport?.()}
                   className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
@@ -967,27 +1163,43 @@ export function VendorDashboard({
           )}
 
         {/* ✅ NEW: ADDITIONAL CAPABILITIES QUICK ACTIONS — hidden for pharmacy (flow is Orders + Profile only) */}
-        {!isPharmacy && ((capabilities.gallery || capabilities.portfolio || capabilities.cctv_access || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) ||
+        {!isPharmacy && ((capabilities.gallery || (capabilities.portfolio && !isGroomerVendorForPortfolioUi) || capabilities.diagnostic_results || capabilities.progress_tracking || capabilities.package_management || capabilities.custom_services || capabilities.diet_charts || capabilities.meal_plans || capabilities.counseling || capabilities.policy_management || capabilities.distance_pricing) ||
+          onNavigateToGallery ||
+          isNutritionistVendor ||
           capabilities.controlled_substances ||
-          capabilities.prescription ||
           capabilities.prescription_verification ||
-          capabilities.delivery) && (
+          capabilities.delivery ||
+          hasVendorRole(vendorData, ['pet_insurance', 'insurance'])) && (
             <div className="p-4 border-b border-gray-100">
               <h2 className="font-semibold text-gray-900 mb-3">Additional Features</h2>
-              <div className="grid grid-cols-3 gap-2">
-                {/* Gallery Management */}
-                {onNavigateToGallery && capabilities.gallery && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {hasVendorRole(vendorData, ['pet_insurance', 'insurance']) && (
                   <button
-                    onClick={onNavigateToGallery}
-                    className="bg-pink-50 border border-pink-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-pink-100 transition-colors"
+                    type="button"
+                    onClick={() => router.push('/insurance/policies')}
+                    className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
+                    title="Issued policies, plans, and claims"
                   >
-                    <Camera className="w-6 h-6 text-pink-600 mb-1" />
-                    <span className="text-xs font-medium text-gray-900">Gallery</span>
+                    <Shield className="w-6 h-6 text-indigo-600 mb-1" />
+                    <span className="text-xs font-medium text-gray-900">Pet policies</span>
                   </button>
                 )}
 
-                {/* Portfolio Management */}
-                {onNavigateToPortfolio && capabilities.portfolio && (
+                {/* Gallery — always for center/business dashboard when handler exists (role may omit gallery capability) */}
+                {onNavigateToGallery && !isPharmacy && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToGallery}
+                    className="bg-pink-50 border border-pink-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-pink-100 transition-colors gap-0.5"
+                  >
+                    <Camera className="w-6 h-6 text-pink-600 mb-0.5" />
+                    <span className="text-xs font-medium text-gray-900">Gallery</span>
+                    <span className="text-[10px] font-medium text-pink-700">Get started</span>
+                  </button>
+                )}
+
+                {/* Portfolio Management — hidden for groomer (solo/center); backend capability unchanged */}
+                {showPortfolioAdditionalFeature && (
                   <button
                     onClick={onNavigateToPortfolio}
                     className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-indigo-100 transition-colors"
@@ -997,8 +1209,8 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* CCTV Access */}
-                {onNavigateToCCTV && capabilities.cctv_access && (
+                {/* CCTV Access — hidden from dashboard grid when SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR is false */}
+                {SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR && onNavigateToCCTV && capabilities.cctv_access && (
                   <button
                     onClick={onNavigateToCCTV}
                     className="bg-gray-50 border border-gray-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-gray-100 transition-colors"
@@ -1019,9 +1231,9 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* Prescription Builder */}
+                {/* Prescription Builder — hidden from dashboard grid when SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR is false */}
                 <CapabilityGate capability="prescription_create">
-                  {onNavigateToPrescription && (
+                  {SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR && onNavigateToPrescription && (
                     <button
                       onClick={onNavigateToPrescription}
                       className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
@@ -1033,9 +1245,9 @@ export function VendorDashboard({
                   )}
                 </CapabilityGate>
 
-                {/* Prescription List */}
+                {/* Prescription List — hidden from dashboard grid when SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR is false */}
                 <CapabilityGate capability="prescription_create">
-                  {onNavigateToPrescriptionList && (
+                  {SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR && onNavigateToPrescriptionList && (
                     <button
                       onClick={onNavigateToPrescriptionList}
                       className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-blue-100 transition-colors"
@@ -1076,14 +1288,26 @@ export function VendorDashboard({
                   )}
                 </CapabilityGate> */}
 
-                {/* Progress Tracking */}
-                {onNavigateToProgressTracking && capabilities.progress_tracking && (
+                {/* Progress: training programs vs walk sessions (dog walkers use bookings / OTP / GPS) */}
+                {onNavigateToProgressTracking &&
+                  (capabilities.progress_tracking || isWalkerVendor) && (
                   <button
                     onClick={onNavigateToProgressTracking}
                     className="bg-green-50 border border-green-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-green-100 transition-colors"
+                    title={
+                      isWalkerVendor
+                        ? 'Opens your walk booking and Live tracker (start OTP, GPS, end OTP) when one is due'
+                        : 'Training and program progress'
+                    }
                   >
-                    <TrendingUp className="w-6 h-6 text-green-600 mb-1" />
-                    <span className="text-xs font-medium text-gray-900">Progress</span>
+                    {isWalkerVendor ? (
+                      <Navigation className="w-6 h-6 text-green-600 mb-1" />
+                    ) : (
+                      <TrendingUp className="w-6 h-6 text-green-600 mb-1" />
+                    )}
+                    <span className="text-xs font-medium text-gray-900">
+                      {isWalkerVendor ? 'Walk sessions' : 'Progress'}
+                    </span>
                   </button>
                 )}
 
@@ -1152,8 +1376,8 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* Patient Monitoring */}
-                {onNavigateToPatientMonitoring && capabilities.patient_monitoring && (
+                {/* Patient Monitoring — hidden from dashboard grid when SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR is false */}
+                {SHOW_ADDITIONAL_FEATURES_CCTV_RX_MONITOR && onNavigateToPatientMonitoring && capabilities.patient_monitoring && (
                   <button
                     onClick={onNavigateToPatientMonitoring}
                     className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-red-100 transition-colors"
@@ -1185,11 +1409,13 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* ✅ NEW: Diet Charts */}
-                {onNavigateToDietCharts && capabilities.diet_charts && (
+                {/* Diet / nutrition hub (meal products & orders live under /nutrition/dashboard) */}
+                {onNavigateToDietCharts &&
+                  (capabilities.diet_charts || capabilities.meal_plans || isNutritionistVendor) && (
                   <button
                     onClick={onNavigateToDietCharts}
                     className="bg-lime-50 border border-lime-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-lime-100 transition-colors"
+                    title="Diet, meal products, and orders"
                   >
                     <svg className="w-6 h-6 text-lime-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1211,16 +1437,19 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* ✅ NEW: Policy Management */}
-                {onNavigateToPolicyManagement && capabilities.policy_management && (
-                  <button
-                    onClick={onNavigateToPolicyManagement}
-                    className="bg-cyan-50 border border-cyan-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-cyan-100 transition-colors"
-                  >
-                    <Shield className="w-6 h-6 text-cyan-600 mb-1" />
-                    <span className="text-xs font-medium text-gray-900">Policies</span>
-                  </button>
-                )}
+                {/* Policy management — hidden for pet insurance (no platform policy wiring in vendor app) */}
+                {!hasVendorRole(vendorData, ['pet_insurance', 'insurance']) &&
+                  onNavigateToPolicyManagement &&
+                  capabilities.policy_management && (
+                    <button
+                      type="button"
+                      onClick={onNavigateToPolicyManagement}
+                      className="bg-cyan-50 border border-cyan-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-cyan-100 transition-colors"
+                    >
+                      <Shield className="w-6 h-6 text-cyan-600 mb-1" />
+                      <span className="text-xs font-medium text-gray-900">Policies</span>
+                    </button>
+                  )}
 
                 {/* ✅ NEW: Distance Pricing */}
                 {onNavigateToDistancePricing && capabilities.distance_pricing && (
@@ -1279,7 +1508,10 @@ export function VendorDashboard({
             >Month</button>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          {(isPharmacy ||
+            capabilities.orders ||
+            SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS) && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {/* ✅ PHARMACY FIX: Show Orders first for Pharmacy, Appointments for others */}
             {isPharmacy ? (
               <>
@@ -1298,8 +1530,8 @@ export function VendorDashboard({
               </>
             ) : (
               <>
-                {/* ✅ Stat card with role-aware labels - Always show for non-pharmacy (receive bookings) */}
-                {!isPharmacy && (
+                {/* ✅ Stat card with role-aware labels — gated by SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS */}
+                {!isPharmacy && SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS && (
                   <button
                     key="stat-appointments"
                     onClick={() => {
@@ -1324,8 +1556,10 @@ export function VendorDashboard({
                   </div>
                 )}
 
-                {/* ✅ Sessions/Consultations Stat with role-aware labels - Always show for non-pharmacy */}
-                {!isPharmacy && (capabilities.tele || CapabilityHelper.hasBooking(capabilities)) && (
+                {/* ✅ Sessions/Consultations Stat — gated by SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS */}
+                {!isPharmacy &&
+                  SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS &&
+                  (capabilities.tele || CapabilityHelper.hasBooking(capabilities)) && (
                   <button
                     key="stat-consultations"
                     onClick={() => {
@@ -1355,6 +1589,7 @@ export function VendorDashboard({
               <div className="text-xs text-gray-500">Earnings</div>
             </div> */}
           </div>
+          )}
         </div>
 
         {/* 🗓️ TODAY'S SCHEDULE - Open appointments on landing page (always for non-pharmacy) */}
@@ -1368,20 +1603,20 @@ export function VendorDashboard({
             <div className="flex gap-2 mb-3 overflow-x-auto pb-2">
               <button onClick={() => setAppointmentTypeFilter('all')} className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'all' ? 'bg-[#FF8C42] text-white' : 'bg-gray-100 text-gray-600'}`}>All Types</button>
 
-              {/* ✅ Filter service style tabs based on selectedServiceStyles from backend with role-aware labels */}
-              {selectedServiceStyles.includes('at_center') && (
+              {/* ✅ Filter tabs from effective allowed styles (canonical at_center | at_home | tele) */}
+              {allowedServiceStyles.includes('at_center') && (
                 <button onClick={() => setAppointmentTypeFilter('clinic')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'clinic' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
                   <Stethoscope className="w-3.5 h-3.5" /> {labels.atCenterLabel}
                 </button>
               )}
 
-              {selectedServiceStyles.includes('at_home') && (
+              {allowedServiceStyles.includes('at_home') && (
                 <button onClick={() => setAppointmentTypeFilter('home')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'home' ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
                   <Home className="w-3.5 h-3.5" /> {labels.atHomeLabel}
                 </button>
               )}
 
-              {selectedServiceStyles.includes('tele') && capabilities.tele && (
+              {allowedServiceStyles.includes('tele') && capabilities.tele && (
                 <button onClick={() => setAppointmentTypeFilter('tele')} className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${appointmentTypeFilter === 'tele' ? 'bg-purple-500 text-white' : 'bg-gray-100 text-gray-600'}`}>
                   <Monitor className="w-3.5 h-3.5" /> {labels.teleLabel}
                 </button>
@@ -1397,30 +1632,6 @@ export function VendorDashboard({
                 <p className="text-sm text-gray-500 mb-4 max-w-[250px] mx-auto">
                   Share your profile with {labels.customers.toLowerCase()} to start getting {labels.bookings.toLowerCase()}!
                 </p>
-                <button
-                  onClick={async () => {
-                    const shareData = {
-                      title: vendor?.businessName || 'My Pet Service',
-                      text: `Book your pet appointment with ${vendor?.businessName || 'us'} on Warmpawz!`,
-                      url: window.location.origin
-                    };
-
-                    if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
-                      try {
-                        await navigator.share(shareData);
-                      } catch (err) {
-                        console.error('Share failed:', err);
-                      }
-                    } else {
-                      copyTextToClipboard(window.location.origin);
-                      alert('Profile link copied to clipboard!');
-                    }
-                  }}
-                  className="px-4 py-2 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  Share Profile
-                </button>
               </div>
             ) : (
               <>
@@ -1513,8 +1724,15 @@ export function VendorDashboard({
                                 >
                                   <Phone className="w-3.5 h-3.5" /> Call
                                 </button>
-                                {/* ✅ NEW: Complete Service button with OTP */}
-                                {(appointment.status === 'confirmed' || appointment.status === 'in_progress' || appointment.status === 'arrived') && (
+                                {/* Complete with OTP — not on package purchase parent row (sessions complete individually). */}
+                                {(appointment.status === 'confirmed' || appointment.status === 'in_progress' || appointment.status === 'arrived') &&
+                                  !(
+                                    Boolean(appointment.packagePurchaseId) &&
+                                    !(
+                                      appointment.isPackageSession ||
+                                      (appointment.packageSessionNumber != null && appointment.packageSessionNumber >= 1)
+                                    )
+                                  ) && (
                                   <button
                                     onClick={() => {
                                       setSelectedAppointment(appointment);
@@ -1690,65 +1908,8 @@ export function VendorDashboard({
           </div>
         )}
 
-        {/* Bottom padding for fixed nav */}
-        <div className="pb-24"></div>
-
-        {/* Bottom Navigation */}
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-10">
-          <div className="max-w-[430px] mx-auto flex items-center justify-around py-3">
-            <button
-              onClick={() => setActiveBottomTab('home')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'home' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-            >
-              <Home className="w-6 h-6" />
-              <span className="text-xs">Home</span>
-            </button>
-
-            {/* ✅ PHARMACY: Orders tab goes to Pharmacy Orders page (accept orders, prescriptions, proforma) */}
-            {isPharmacy ? (
-              <button
-                onClick={() => router.push('/pharmacy/orders')}
-                className="flex flex-col items-center gap-1 text-gray-400 hover:text-[#FF8C42]"
-              >
-                <ClipboardList className="w-6 h-6" />
-                <span className="text-xs">Orders</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  onNavigateToBookingManagement?.();
-                  setActiveBottomTab('bookings');
-                }}
-                className={`flex flex-col items-center gap-1 ${activeBottomTab === 'bookings' ? 'text-[#FF8C42]' : 'text-gray-400'
-                  }`}
-              >
-                <Calendar className="w-6 h-6" />
-                <span className="text-xs">{labels.bookings}</span>
-              </button>
-            )}
-
-            <button
-              onClick={() => setActiveBottomTab('reporting')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'reporting' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-            >
-              <BarChart3 className="w-6 h-6" />
-              <span className="text-xs">Reporting</span>
-            </button>
-
-            <button
-              onClick={() => router.push('/settings')}
-              className={`flex flex-col items-center gap-1 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
-                }`}
-            >
-              <Settings className="w-6 h-6" />
-              <span className="text-xs">Settings</span>
-            </button>
-          </div>
-        </div>
-
       </div>
+    </VendorChromeLayout>
 
       {/* Modals */}
       <VendorNotificationModal
@@ -1757,6 +1918,11 @@ export function VendorDashboard({
         onClose={() => setNotificationModalOpen(false)}
         onNotificationsRead={() => fetchDashboardData(true)}
       />
+      <VendorReviewsModal
+        vendorId={vendorId}
+        open={reviewsModalOpen}
+        onClose={() => setReviewsModalOpen(false)}
+      />
 
       {/* Chat conversations list - wire message button */}
       {capabilities.chat && (
@@ -1764,7 +1930,7 @@ export function VendorDashboard({
           <VendorChatConversationsModal
             vendorId={vendorId}
             vendorPhone={vendorData?.phone || vendorData?.mobile}
-            vendorName={vendorData?.fullName || vendorData?.businessName}
+            vendorName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name}
             open={chatConversationsOpen}
             onClose={() => {
               setChatConversationsOpen(false);
@@ -1791,7 +1957,7 @@ export function VendorDashboard({
             bookingId={selectedChatConversation.bookingId}
             vendorId={vendorId}
             vendorPhone={vendorData?.phone || vendorData?.mobile}
-            vendorName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+            vendorName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Vendor'}
             customerPhone={selectedChatConversation.customerPhone}
             customerName={selectedChatConversation.customerName}
             bookingStatus={selectedChatConversation.bookingStatus}
@@ -1812,7 +1978,7 @@ export function VendorDashboard({
             mode={communicationMode}
             bookingId={selectedAppointment.bookingId}
             userId={vendorData?.phone || vendorData?.mobile || '+91'}
-            userName={vendorData?.fullName || vendorData?.businessName || 'Vendor'}
+            userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Vendor'}
             otherUserName={selectedAppointment.customerName}
             userType="vendor"
             onClose={() => {
@@ -1861,7 +2027,7 @@ export function VendorDashboard({
               </button>
             </div>
             <p className="text-sm text-gray-600 mb-4">
-              Ask the customer for the 6-digit OTP sent to their phone to complete the service.
+              Ask the customer for the 4-digit booking OTP sent to their phone to complete the service.
             </p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1870,10 +2036,10 @@ export function VendorDashboard({
               <input
                 type="text"
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="Enter 6-digit OTP"
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="Enter 4-digit OTP"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg text-lg text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                maxLength={6}
+                maxLength={4}
               />
               {otpError && (
                 <p className="text-sm text-red-600 mt-2">{otpError}</p>
@@ -1915,7 +2081,7 @@ export function VendorDashboard({
 
       {/* Vendor Analytics */}
       {activeBottomTab === 'reporting' && (
-        <div className="fixed inset-0 bg-gray-50 z-20 overflow-y-auto pb-24">
+        <div className="fixed inset-0 z-30 overflow-y-auto bg-gray-50 pb-[calc(6rem+env(safe-area-inset-bottom,0px))]">
           <Suspense fallback={<div className="p-8 text-center text-gray-500">Loading analytics...</div>}>
             <VendorAnalytics
               vendorId={vendorId}
@@ -1932,7 +2098,7 @@ export function VendorDashboard({
       <Suspense fallback={null}>
         <ChatWidget
           userId={vendorId}
-          userName={vendor?.fullName || vendor?.businessName || 'Vendor'}
+          userName={effectiveVendor?.fullName || effectiveVendor?.businessName || effectiveVendor?.business_name || 'Vendor'}
           userType="vendor"
         />
       </Suspense>
@@ -1967,6 +2133,6 @@ export function VendorDashboard({
         </Suspense>
       )}
 
-    </div>
+    </>
   );
 }

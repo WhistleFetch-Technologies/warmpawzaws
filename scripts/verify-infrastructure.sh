@@ -49,7 +49,7 @@ LAMBDA_FUNCTIONS=(
   "warmpawz-notification-processor${ENV_SUFFIX}"
   "warmpawz-email-processor${ENV_SUFFIX}"
   "warmpawz-sms-processor${ENV_SUFFIX}"
-  "warmpawz-analytics-processor${ENV_SUFFIX}"
+  "warmpawz-analytics-retention${ENV_SUFFIX}"
   "warmpawz-settlement-processor${ENV_SUFFIX}"
 )
 

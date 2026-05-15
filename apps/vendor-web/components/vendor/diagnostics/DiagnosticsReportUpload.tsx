@@ -23,6 +23,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 
@@ -280,21 +281,20 @@ export function DiagnosticsReportUpload({
         </label>
         
         {!reportFile ? (
-          <label className="block cursor-pointer">
-            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-[#FF8C42] transition">
+          <TouchFilePicker
+            onFileChange={handleFileSelect}
+            accept=".pdf,image/*"
+            className="block w-full min-h-[11rem] overflow-hidden rounded-xl"
+            innerClassName="flex w-full min-h-[11rem] flex-col items-center justify-center"
+          >
+            <div className="w-full border-2 border-dashed border-gray-300 rounded-xl p-8 text-center transition hover:border-[#FF8C42]">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Upload className="w-8 h-8 text-gray-400" />
               </div>
               <p className="text-gray-900 font-medium mb-1">Click to upload report</p>
               <p className="text-gray-500 text-sm">PDF or images up to 10MB</p>
             </div>
-            <input
-              type="file"
-              accept=".pdf,image/*"
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-          </label>
+          </TouchFilePicker>
         ) : (
           <div className="border border-gray-200 rounded-xl p-4">
             <div className="flex items-center gap-4">

@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { BusinessTypeSelector } from './BusinessTypeSelector';
-import { SoloProviderOnboarding } from './SoloProviderOnboarding';
-import { DynamicVendorOnboardingForm } from '../DynamicVendorOnboardingForm';
+import { DynamicVendorOnboardingForm } from '../orders/DynamicVendorOnboardingForm';
 import { apiClient } from '@/lib/api-client';
 
 interface EnhancedVendorOnboardingProps {
@@ -134,10 +133,8 @@ export function EnhancedVendorOnboarding({
     setStep(solo ? 'solo_onboarding' : 'multi_staff_onboarding');
   };
 
-  // ✅ REMOVED: handleSoloOnboardingSubmit - Not used, SoloProviderOnboarding handles submission directly
-
-  // ✅ FIX: handleMultiStaffOnboardingSubmit - Use correct endpoint
-  const handleMultiStaffOnboardingSubmit = async (submissionData: any) => {
+  /** Shared submit for dynamic form (solo + center); `isSolo` drives payload and onComplete. */
+  const submitDynamicOnboardingApplication = async (submissionData: any, isSolo: boolean) => {
     setSubmitting(true);
     try {
       // ✅ FIX: Get phone from localStorage or props
@@ -181,8 +178,10 @@ export function EnhancedVendorOnboarding({
         }
         // ✅ FIX: Normalize pincode field name - accept both 'pin' and 'pincode', but use 'pin' consistently
         if (key === 'pincode' || key === 'pinCode' || key === 'postalCode' || key === 'postal_code') {
-          sanitizedFormData['pin'] = value; // Normalize to 'pin' for backend
-          console.log(`📍 [EnhancedOnboarding] Normalized pincode field: ${key} -> pin, value: '${value}'`);
+          const pinStr = value != null && value !== '' ? String(value) : '';
+          sanitizedFormData['pin'] = pinStr;
+          sanitizedFormData['pincode'] = pinStr;
+          console.log(`📍 [EnhancedOnboarding] Normalized pincode field: ${key} -> pin/pincode, value: '${pinStr}'`);
           continue;
         }
         // ✅ FIX: Don't skip pin/pincode even if empty - let backend handle it
@@ -239,6 +238,7 @@ export function EnhancedVendorOnboarding({
         phone: vendorPhone,
         application_payload: {
           ...sanitizedFormData,
+          vendor_type: isSolo ? 'solo' : (sanitizedFormData.vendor_type || 'business'),
           roleId: submissionData.roleId || roleId,
           location: submissionData.location || submissionData.coordinates,
           coordinates: submissionData.coordinates || submissionData.location,
@@ -259,7 +259,7 @@ export function EnhancedVendorOnboarding({
           success: true,
           applicationId: response.applicationId,
           vendorId: response.vendorId,
-          isSoloProvider: false,
+          isSoloProvider: isSolo,
           status: 'submitted',
           roleId: roleId,
         });
@@ -277,7 +277,7 @@ export function EnhancedVendorOnboarding({
   // Show loading state while determining role configuration
   if (step === 'loading') {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 vendor-app-column flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
           <p className="text-gray-600">Loading...</p>
@@ -288,7 +288,7 @@ export function EnhancedVendorOnboarding({
 
   if (step === 'business_type') {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto p-0">
+      <div className="min-h-screen bg-gray-50 vendor-app-column p-0">
         <div className="mb-0">
           {onBack && (
             <button onClick={onBack} className="text-primary hover:underline text-sm mb-4">
@@ -336,7 +336,7 @@ export function EnhancedVendorOnboarding({
     );
   }
 
-  if (step === 'solo_onboarding' && roleId) {
+    if (step === 'solo_onboarding' && roleId) {
     // Determine if we can go back to business type selection
     // Only allow back if role supports solo option (not always solo roles like walker)
     const currentRoleName = roleName || fetchedRoleName;
@@ -344,17 +344,12 @@ export function EnhancedVendorOnboarding({
     const canGoBack = normalizedRoleName && ROLES_WITH_SOLO_OPTION.includes(normalizedRoleName);
     
     return (
-      <SoloProviderOnboarding
+      <DynamicVendorOnboardingForm
         roleId={roleId}
+        vendorType="solo"
+        onSubmit={(data) => submitDynamicOnboardingApplication(data, true)}
         onBack={canGoBack ? () => setStep('business_type') : onBack}
-        onSuccess={() => {
-          // SoloProviderOnboarding already handles submission internally
-          // Just notify parent that onboarding is complete
-          onComplete({
-            success: true,
-            isSoloProvider: true,
-          });
-        }}
+        initialData={initialData}
       />
     );
   }
@@ -369,7 +364,8 @@ export function EnhancedVendorOnboarding({
     return (
       <DynamicVendorOnboardingForm
         roleId={roleId}
-        onSubmit={handleMultiStaffOnboardingSubmit}
+        vendorType="business"
+        onSubmit={(data) => submitDynamicOnboardingApplication(data, false)}
         onBack={canGoBack ? () => setStep('business_type') : onBack}
         initialData={initialData}
       />

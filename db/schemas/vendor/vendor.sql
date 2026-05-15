@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS vendors (
     upi_id TEXT,
     upi_verified BOOLEAN DEFAULT false,
     upi_verified_at TIMESTAMPTZ,
+    upi_vpa_holder_name TEXT,
     
     -- Home Service Settings
     home_service_enabled BOOLEAN DEFAULT false,
@@ -97,6 +98,7 @@ CREATE TABLE IF NOT EXISTS vendors (
     emergency_contact JSONB,
     max_dogs_per_walk INTEGER,
     walk_durations TEXT[] DEFAULT ARRAY[]::TEXT[],
+    -- May include ai_chat: { systemPromptSuffix, temperature, maxTokens, topP } for vendor AI (see backend ai-chatbot.ts)
     other_config JSONB DEFAULT '{}'::jsonb,
     scheduling_policy JSONB DEFAULT '{}'::jsonb,
     

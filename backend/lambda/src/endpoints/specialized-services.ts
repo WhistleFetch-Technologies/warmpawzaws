@@ -19,13 +19,34 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, update, query } from '../database/rds-connection';
+import { select, insert, update, query, deleteRows } from '../database/rds-connection';
 import { checkVendorCapability } from '../middleware/capability-enforcement';
-import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendor/endpoints/vendor-profile.vendor';
+import { resolveVendorById, getVendorIdsForAvailabilityLookup } from './vendor/endpoints/vendorProfile.vendor';
 import { resolveVendorId } from '../utils/vendor-resolve';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
+import {
+  fetchVendorProgressRowsFromBookings,
+  mergeTrainingProgressWithBookingDerived,
+} from '../lib/vendor-progress-from-bookings';
+import {
+  presignMealImageUrlInRecord,
+  presignMealPlanRowDisplayFields,
+  stripS3PresignQueryFromUrl,
+} from '../utils/s3-media-presign';
+
+/** Lowercased column set for `public.<table>` — avoids 42703 when optional migrations (e.g. products.metadata) are not applied. */
+async function getPublicTableColumns(tableName: string): Promise<Set<string>> {
+  const r = await query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1`,
+    [tableName.toLowerCase()],
+  );
+  return new Set(
+    (r.rows || []).map((row: { column_name: string }) => String(row.column_name).toLowerCase()),
+  );
+}
 
 export function registerSpecializedServicesEndpoints(app: Hono) {
   // ============================================
@@ -66,11 +87,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       params.push(limit, offset);
 
       const mealPlans = await query(mealPlanQuery, params).catch(() => ({ rows: [] }));
+      const rawRows = mealPlans.rows || [];
+      const enriched = await Promise.all(
+        rawRows.map(async (mp: Record<string, unknown>) => {
+          const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(mp);
+          return { ...mp, dietary_requirements, photos, mealImageUrl };
+        }),
+      );
 
       return c.json({
         success: true,
-        mealPlans: mealPlans.rows,
-        total: mealPlans.rows.length,
+        mealPlans: enriched,
+        total: enriched.length,
       });
     } catch (error: any) {
       console.error('Error discovering meal plans:', error);
@@ -103,7 +131,17 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
                OR LOWER(COALESCE(sc.category_name, '')) IN ('blood tests', 'imaging', 'allergy', 'hormone', 'urine', 'stool', 'biopsy'))
         ORDER BY name
       `).catch(() => ({ rows: [] }));
-      const list = (rows.rows || []).map((r: any) => ({ id: (r.id || '').toLowerCase().replace(/\s+/g, '_'), name: r.name || r.id }));
+      // service_catalog sometimes has NULL category_name; COALESCE then surfaces category_id (UUID) as the label — drop those for customer UI.
+      const looksLikeUuid = (s: string) =>
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || '').trim());
+      const list = (rows.rows || [])
+        .map((r: any) => {
+          const idRaw = (r.id || '').toString();
+          const nameRaw = (r.name || r.id || '').toString();
+          if (looksLikeUuid(nameRaw) || looksLikeUuid(idRaw)) return null;
+          return { id: idRaw.toLowerCase().replace(/\s+/g, '_'), name: nameRaw || idRaw };
+        })
+        .filter((x: any) => x != null) as { id: string; name: string }[];
       const seen = new Set(list.map((x: any) => x.id));
       if (!seen.has('blood') && !seen.has('blood_test')) {
         list.unshift({ id: 'blood', name: 'Blood Test' });
@@ -529,6 +567,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    * Discovery: vendors with published diagnostic tests (diagnostics centers + vet clinics with lab tests enabled).
    * Includes: diagnostics_center, diagnostic_center, and vet_clinic/veterinary_clinic/vet with diagnostics capability.
    * Only vendors that have at least one published (is_available = true) test are returned.
+   * When lat/lng + maxDistance are sent: vendors within range are returned first; vendors missing latitude/longitude
+   * still appear (distance null) so labs can be discovered before they set coordinates on their profile.
    */
   app.get("/customer/diagnostics/vendors-with-tests", async (c) => {
     try {
@@ -538,16 +578,32 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const lng = c.req.query('lng') ? parseFloat(c.req.query('lng')!) : null;
       const maxDistance = c.req.query('maxDistance') ? parseFloat(c.req.query('maxDistance')!) : 50;
 
+      const testCategoryCol = await query(
+        `SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'diagnostic_tests' AND column_name = 'test_category' LIMIT 1`
+      );
+      const hasTestCategoryColumn = ((testCategoryCol as any).rows?.length || 0) > 0;
+      const categorySelectSql = hasTestCategoryColumn
+        ? 'COALESCE(category, test_category) AS category'
+        : 'category AS category';
+      const categoryFilterExpr = hasTestCategoryColumn
+        ? "COALESCE(category, test_category, '')"
+        : "COALESCE(category, '')";
+
       let vendorQuery = `
         SELECT v.id, v.business_name, v.city, v.state, v.address, v.latitude, v.longitude, v.rating
         FROM vendors v
         INNER JOIN roles r ON v.role_id = r.id
         WHERE v.status = 'approved' AND v.is_active = true
           AND (
-            (LOWER(r.name) IN ('diagnostics_center', 'diagnostic_center'))
+            /* Lab roles: canonical + legacy aliases (see db/migrations/522_consolidate_legacy_role_vendors.sql) + service_catalog roleMappings. Normalized spaces → underscores for "diagnostic center" style names. */
+            (LOWER(REPLACE(TRIM(r.name), ' ', '_')) IN (
+              'diagnostics_center', 'diagnostic_center', 'diagnostics', 'diagnostics_provider', 'diagnostics_solo',
+              'laboratory', 'lab_center'
+            ))
             OR (
               (
-                LOWER(r.name) IN ('vet_clinic', 'veterinary_clinic', 'vet')
+                LOWER(r.name) IN ('vet_clinic', 'veterinary_clinic', 'vet', 'veterinarian', 'vet_solo')
                 OR (LOWER(TRIM(r.name)) LIKE '%vet%' AND LOWER(TRIM(r.name)) LIKE '%clinic%')
                 OR LOWER(REPLACE(TRIM(r.name), ' ', '_')) IN ('vet_clinic', 'veterinary_clinic')
               )
@@ -570,13 +626,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       let pi = 1;
       if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) {
         vendorQuery += `
-          AND v.latitude IS NOT NULL AND v.longitude IS NOT NULL
-          AND (6371 * acos(cos(radians($${pi})) * cos(radians(CAST(v.latitude AS FLOAT))) * cos(radians(CAST(v.longitude AS FLOAT)) - radians($${pi + 1})) + sin(radians($${pi})) * sin(radians(CAST(v.latitude AS FLOAT))))) <= $${pi + 2}
+          AND (
+            (
+              v.latitude IS NOT NULL AND v.longitude IS NOT NULL
+              AND (6371 * acos(cos(radians($${pi})) * cos(radians(CAST(v.latitude AS FLOAT))) * cos(radians(CAST(v.longitude AS FLOAT)) - radians($${pi + 1})) + sin(radians($${pi})) * sin(radians(CAST(v.latitude AS FLOAT))))) <= $${pi + 2}
+            )
+            OR (v.latitude IS NULL OR v.longitude IS NULL)
+          )
         `;
         vendorParams.push(lat, lng, maxDistance);
         pi += 3;
       }
-      vendorQuery += ` ORDER BY v.business_name`;
+      vendorQuery += ` ORDER BY CASE WHEN v.latitude IS NULL OR v.longitude IS NULL THEN 1 ELSE 0 END, v.business_name`;
       const vendorsResult = await query(vendorQuery, vendorParams);
       const vendors = vendorsResult.rows || [];
 
@@ -584,7 +645,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       for (const v of vendors) {
         let testQuery = `
           SELECT id, test_name, price, duration_minutes,
-                 COALESCE(category, test_category) AS category,
+                 ${categorySelectSql},
                  COALESCE(service_style, 'at_center') AS service_style,
                  is_free_home_collection, home_collection_fee
           FROM diagnostic_tests
@@ -593,7 +654,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         const testParams: any[] = [v.id];
         let ti = 2;
         if (category) {
-          testQuery += ` AND (LOWER(COALESCE(category, test_category, '')) = LOWER($${ti}) OR COALESCE(category, test_category, '') ILIKE $${ti + 1})`;
+          testQuery += ` AND (LOWER(${categoryFilterExpr}) = LOWER($${ti}) OR ${categoryFilterExpr} ILIKE $${ti + 1})`;
           testParams.push(category, `%${category}%`);
           ti += 2;
         }
@@ -884,6 +945,37 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   });
 
   /**
+   * DELETE /vendor/:vendorId/diagnostics/tests/:testId
+   * Permanently remove a catalog row (vendor UI "delete" — not the same as unpublish/draft).
+   */
+  app.delete('/vendor/:vendorId/diagnostics/tests/:testId', async (c) => {
+    try {
+      const { vendorId, testId } = c.req.param();
+      const vendor = await resolveVendorById(vendorId);
+      if (!vendor) return c.json({ error: 'Vendor not found' }, 404);
+      const actualVendorId = vendor.id;
+
+      const hasDiagnosticsCapability = await checkVendorCapability(vendorId, 'diagnostic_results') ||
+        await checkVendorCapability(vendorId, 'diagnostics') ||
+        await checkVendorCapability(vendorId, 'test_catalog') ||
+        await checkVendorCapability(vendorId, 'diagnostic_lab') ||
+        await checkVendorCapability(vendorId, 'diagnostic lab');
+      if (!hasDiagnosticsCapability) {
+        return c.json({ error: 'Vendor does not have diagnostics capability' }, 403);
+      }
+
+      const removed = await deleteRows('diagnostic_tests', { id: testId, vendor_id: actualVendorId });
+      if (removed === 0) {
+        return c.json({ error: 'Test not found or access denied' }, 404);
+      }
+      return c.json({ success: true, message: 'Diagnostic test deleted' });
+    } catch (error: any) {
+      console.error('Error deleting diagnostic test:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
    * GET /vendor/:vendorId/diagnostics/bookings
    * Get all diagnostics bookings for a vendor
    * Requires 'diagnostics' or 'diagnostic_results' capability
@@ -1126,6 +1218,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const mealPlans = (rows || []).map((r: any) => ({
         ...r,
         name: r.plan_name || r.name,
+        price: r.price_per_meal ?? r.price,
         pet_types: (() => {
           try {
             const d = typeof r.dietary_requirements === 'string' ? JSON.parse(r.dietary_requirements) : r.dietary_requirements;
@@ -1174,7 +1267,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         plan_name: planName,
         description: mealPlanData.description || null,
         duration_days: durationDays,
-        price,
+        price_per_meal: price,
         meals_per_day: mealPlanData.meals_per_day ?? mealPlanData.mealsPerDay ?? 2,
         dietary_requirements: JSON.stringify({
           pet_types: mealPlanData.pet_types || mealPlanData.petTypes || ['Dog', 'Cat'],
@@ -1224,7 +1317,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       if (planName != null) { updates.push(`plan_name = $${idx}`); params.push(planName); idx++; }
       if (description != null) { updates.push(`description = $${idx}`); params.push(description); idx++; }
       if (durationDays != null) { updates.push(`duration_days = $${idx}`); params.push(durationDays); idx++; }
-      if (price != null) { updates.push(`price = $${idx}`); params.push(price); idx++; }
+      if (price != null) { updates.push(`price_per_meal = $${idx}`); params.push(price); idx++; }
       if (mealsPerDay != null) { updates.push(`meals_per_day = $${idx}`); params.push(mealsPerDay); idx++; }
       if (isActive !== undefined) { updates.push(`is_active = $${idx}`); params.push(isActive); idx++; }
       if (petTypes != null) {
@@ -1505,12 +1598,20 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       queryStr += ` ORDER BY mp.created_at DESC`;
       
       const result = await query(queryStr, params);
-      const mealPlans = result.rows || [];
-      
-      return c.json({ 
-        success: true, 
-        plans: mealPlans, 
-        mealPlans, 
+      const rawPlans = result.rows || [];
+      const mealPlans = await Promise.all(
+        rawPlans.map(async (mp: any) => {
+          const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(
+            mp as Record<string, unknown>,
+          );
+          return { ...mp, dietary_requirements, photos, mealImageUrl };
+        }),
+      );
+
+      return c.json({
+        success: true,
+        plans: mealPlans,
+        mealPlans,
         total: mealPlans.length,
         filters: filters,
         maxRadius: maxRadius,
@@ -1556,23 +1657,35 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         }
         const rows = productsResult?.rows || [];
         for (const p of rows) {
+          let specObj: any = {};
+          try {
+            specObj =
+              typeof p.specifications === 'string' ? JSON.parse(p.specifications) : (p.specifications || {});
+          } catch (_) {
+            specObj = {};
+          }
           let meta: any = {};
           try {
-            meta = typeof p.metadata === 'string' ? JSON.parse(p.metadata) : (p.metadata || {});
-          } catch (_) {}
+            const md =
+              typeof p.metadata === 'string' ? JSON.parse(p.metadata) : (p.metadata || {});
+            meta = { ...specObj, ...(md || {}) };
+          } catch (_) {
+            meta = specObj || {};
+          }
+          const metaForApi = await presignMealImageUrlInRecord(meta as Record<string, unknown>);
           list.push({
             id: p.id,
             name: p.name,
             description: p.description,
             price: p.price,
             category: p.category || 'meal_plan',
-            metadata: meta,
+            metadata: metaForApi,
             petTypes: meta.petTypes || [],
             dietType: meta.dietType,
             ingredients: meta.ingredients || [],
             nutritionalValue: meta.nutritionalValue || {},
             sku: p.sku,
-            stock_quantity: p.stock_quantity,
+            stock_quantity: p.stock ?? p.stock_quantity,
             is_active: p.is_active,
             created_at: p.created_at,
             updated_at: p.updated_at,
@@ -1597,14 +1710,15 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               ? JSON.parse(mp.dietary_requirements)
               : (mp.dietary_requirements || {});
           } catch (_) {}
+          const dietForApi = await presignMealImageUrlInRecord(dietaryReqs as Record<string, unknown>);
           list.push({
             id: mp.id,
             name: mp.plan_name,
             plan_name: mp.plan_name,
             description: mp.description,
-            price: mp.price,
+            price: mp.price_per_meal ?? mp.price,
             category: 'meal_plan',
-            metadata: dietaryReqs,
+            metadata: dietForApi,
             petTypes: dietaryReqs.petTypes || [],
             dietType: dietaryReqs.dietType,
             ingredients: dietaryReqs.ingredients || [],
@@ -1637,7 +1751,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * POST /vendor/:vendorId/meal-products
-   * Create a meal product for a nutritionist vendor (products or meal_plans; metadata optional)
+   * Create a meal product (products.metadata or products.specifications JSONB, else meal_plans)
    * Resolves vendorId (identity id → vendors id) to fix meal_plans_vendor_id_fkey FK violation
    */
   app.post("/vendor/:vendorId/meal-products", async (c) => {
@@ -1652,6 +1766,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         }, 404);
       }
       const data = await c.req.json();
+      const mealImageUrlRaw =
+        typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim() ? data.mealImageUrl.trim() : undefined;
+      const mealImageUrl = mealImageUrlRaw ? stripS3PresignQueryFromUrl(mealImageUrlRaw) : undefined;
       const dietaryPayload = {
         petTypes: data.petTypes || ['Dog', 'Cat'],
         dietType: data.dietType,
@@ -1662,12 +1779,13 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         storageInstructions: data.storageInstructions,
         shelfLife: data.shelfLife,
         packSize: data.packSize,
+        ...(mealImageUrl ? { mealImageUrl } : {}),
       };
 
-      // Try products table first (with metadata if column exists)
-      const hasMetadata = await query(
-        `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'metadata'`
-      ).then((r: any) => (r?.rows?.length ?? 0) > 0);
+      // Try products table first (metadata or specifications JSONB; see db/migrations/034_add_metadata_columns.sql)
+      const productCols = await getPublicTableColumns('products');
+      const hasMetadata = productCols.has('metadata');
+      const hasSpecifications = productCols.has('specifications');
 
       try {
         const productPayload: any = {
@@ -1677,10 +1795,14 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           price: data.price,
           category: 'meal_plan',
           sku: `MP-${Date.now()}`,
-          stock_quantity: data.stockQuantity || 100,
+          stock: data.stockQuantity || 100,
           is_active: true,
         };
-        if (hasMetadata) productPayload.metadata = JSON.stringify(dietaryPayload);
+        if (hasMetadata) {
+          productPayload.metadata = JSON.stringify(dietaryPayload);
+        } else if (hasSpecifications) {
+          productPayload.specifications = JSON.stringify(dietaryPayload);
+        }
         const product = await insert('products', productPayload);
         return c.json({ success: true, product: product[0] });
       } catch (productsErr: any) {
@@ -1694,7 +1816,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         vendor_id: vendorId,
         plan_name: data.name,
         description: data.description,
-        price: data.price,
+        price_per_meal: data.price,
         duration_days: data.durationDays || 7,
         meals_per_day: data.mealsPerDay || 2,
         dietary_requirements: JSON.stringify(dietaryPayload),
@@ -1715,7 +1837,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
   /**
    * PUT /vendor/:vendorId/meal-products/:productId
-   * Update a meal product (supports both products and meal_plans; products.metadata optional)
+   * Update a meal product (meal_plans.dietary_requirements, or products.metadata / products.specifications)
    */
   app.put("/vendor/:vendorId/meal-products/:productId", async (c) => {
     try {
@@ -1724,16 +1846,78 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const { productId } = c.req.param();
       const data = await c.req.json();
       const meta = data.metadata || {};
+      const productCols = await getPublicTableColumns('products');
+
+      let existingDiet: any = {};
+      const existingMp = await query(
+        `SELECT dietary_requirements FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
+        [productId, vendorId]
+      );
+      if (existingMp.rows?.[0]) {
+        try {
+          const dr = existingMp.rows[0].dietary_requirements;
+          existingDiet = typeof dr === 'string' ? JSON.parse(dr) : (dr || {});
+        } catch {
+          existingDiet = {};
+        }
+      }
+
+      let existingProdMeta: any = {};
+      try {
+        const sel: string[] = [];
+        if (productCols.has('metadata')) sel.push('metadata');
+        if (productCols.has('specifications')) sel.push('specifications');
+        if (sel.length > 0) {
+          const existingProductRow = await query(
+            `SELECT ${sel.join(', ')} FROM products WHERE id = $1 AND vendor_id = $2`,
+            [productId, vendorId]
+          );
+          const row = existingProductRow.rows?.[0];
+          let fromSpec: any = {};
+          let fromMeta: any = {};
+          if (productCols.has('specifications') && row?.specifications != null) {
+            try {
+              const s = row.specifications;
+              fromSpec = typeof s === 'string' ? JSON.parse(s) : (s || {});
+            } catch {
+              fromSpec = {};
+            }
+          }
+          if (productCols.has('metadata') && row?.metadata != null) {
+            try {
+              const m = row.metadata;
+              fromMeta = typeof m === 'string' ? JSON.parse(m) : (m || {});
+            } catch {
+              fromMeta = {};
+            }
+          }
+          existingProdMeta = { ...fromSpec, ...fromMeta };
+        }
+      } catch (prodMetaErr: any) {
+        console.warn('meal-products PUT: could not load products meal fields', prodMetaErr?.message);
+      }
+
+      const stripIfStr = (u: unknown): string | null =>
+        typeof u === 'string' && u.trim() ? stripS3PresignQueryFromUrl(u.trim()) : null;
+      const resolvedMealImageUrl = 'mealImageUrl' in data
+        ? typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim()
+          ? stripS3PresignQueryFromUrl(data.mealImageUrl.trim())
+          : null
+        : stripIfStr(existingDiet.mealImageUrl) ??
+          stripIfStr(existingProdMeta.mealImageUrl) ??
+          stripIfStr(meta.mealImageUrl);
+
       const dietaryPayload = {
-        petTypes: data.petTypes || meta.petTypes || ['Dog', 'Cat'],
-        dietType: data.dietType ?? meta.dietType,
-        suitableFor: data.suitableFor ?? meta.suitableFor ?? [],
-        ingredients: data.ingredients ?? meta.ingredients ?? [],
-        nutritionalValue: data.nutritionalValue ?? meta.nutritionalValue ?? {},
-        preparationLeadTime: data.preparationLeadTime ?? meta.preparationLeadTime,
-        storageInstructions: data.storageInstructions ?? meta.storageInstructions,
-        shelfLife: data.shelfLife ?? meta.shelfLife,
-        packSize: data.packSize ?? meta.packSize,
+        petTypes: data.petTypes || meta.petTypes || existingDiet.petTypes || ['Dog', 'Cat'],
+        dietType: data.dietType ?? meta.dietType ?? existingDiet.dietType,
+        suitableFor: data.suitableFor ?? meta.suitableFor ?? existingDiet.suitableFor ?? [],
+        ingredients: data.ingredients ?? meta.ingredients ?? existingDiet.ingredients ?? [],
+        nutritionalValue: data.nutritionalValue ?? meta.nutritionalValue ?? existingDiet.nutritionalValue ?? {},
+        preparationLeadTime: data.preparationLeadTime ?? meta.preparationLeadTime ?? existingDiet.preparationLeadTime,
+        storageInstructions: data.storageInstructions ?? meta.storageInstructions ?? existingDiet.storageInstructions,
+        shelfLife: data.shelfLife ?? meta.shelfLife ?? existingDiet.shelfLife,
+        packSize: data.packSize ?? meta.packSize ?? existingDiet.packSize,
+        ...(resolvedMealImageUrl ? { mealImageUrl: resolvedMealImageUrl } : {}),
       };
 
       // 1) Try updating meal_plans (id may be from meal_plans when products insert failed or wasn't used)
@@ -1746,8 +1930,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           `UPDATE meal_plans SET 
             plan_name = COALESCE($1, plan_name),
             description = COALESCE($2, description),
-            price = COALESCE($3, price),
-            dietary_requirements = COALESCE($4, dietary_requirements),
+            price_per_meal = COALESCE($3, price_per_meal),
+            dietary_requirements = COALESCE($4::jsonb, dietary_requirements),
             updated_at = NOW()
            WHERE id = $5 AND vendor_id = $6`,
           [
@@ -1762,10 +1946,14 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         return c.json({ success: true, message: 'Product updated' });
       }
 
-      // 2) Update products table (avoid metadata if column doesn't exist)
-      const hasMetadata = await query(
-        `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'metadata'`
-      ).then((r: any) => (r?.rows?.length ?? 0) > 0);
+      // 2) Update products table (prefer metadata JSONB; else specifications — base schema always has specifications)
+      const hasMetadata = productCols.has('metadata');
+      const hasSpecifications = productCols.has('specifications');
+
+      const mergedMealJson: any = { ...existingProdMeta, ...meta, ...dietaryPayload };
+      if ('mealImageUrl' in data && !(typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim())) {
+        delete mergedMealJson.mealImageUrl;
+      }
 
       if (hasMetadata) {
         await query(
@@ -1780,7 +1968,25 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             data.name,
             data.description,
             data.price,
-            JSON.stringify({ ...meta, ...dietaryPayload }),
+            JSON.stringify(mergedMealJson),
+            productId,
+            vendorId,
+          ]
+        );
+      } else if (hasSpecifications) {
+        await query(
+          `UPDATE products SET 
+            name = COALESCE($1, name),
+            description = COALESCE($2, description),
+            price = COALESCE($3, price),
+            specifications = COALESCE($4::jsonb, specifications),
+            updated_at = NOW()
+           WHERE id = $5 AND vendor_id = $6`,
+          [
+            data.name,
+            data.description,
+            data.price,
+            JSON.stringify(mergedMealJson),
             productId,
             vendorId,
           ]
@@ -1903,7 +2109,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         debug.directQueryCount = parseInt(directTest.rows[0]?.count || '0', 10);
 
         // Test 2: Get allVendorIds and test with array
-        const { getVendorIdsForAvailabilityLookup } = await import('./vendor/endpoints/vendor-profile.vendor');
+        const { getVendorIdsForAvailabilityLookup } = await import('./vendor/endpoints/vendorProfile.vendor');
         const allVendorIds = await getVendorIdsForAvailabilityLookup(vendor.id);
         // Ensure vendor.id is in the array
         const finalVendorIds = [vendor.id, ...allVendorIds.filter(id => id !== vendor.id)];
@@ -3541,24 +3747,43 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   app.get("/vendor/:vendorId/training/progress", async (c) => {
     try {
       const { vendorId } = c.req.param();
-      
-      // Check if vendor has progress tracking capability
+
       const hasProgressCapability = await checkVendorCapability(vendorId, 'progress_tracking');
-      if (!hasProgressCapability) {
+      const hasGpsCapability = await checkVendorCapability(vendorId, 'gps_tracking');
+      if (!hasProgressCapability && !hasGpsCapability) {
         return c.json({ error: 'Vendor does not have progress tracking capability' }, 403);
       }
-      
-      const progress = await query(`
-        SELECT tp.*, p.name as pet_name, c.full_name as customer_name, trp.name as program_name
+
+      let enrollmentRows: Record<string, unknown>[] = [];
+      if (hasProgressCapability) {
+        const progress = await query(
+          `
+        SELECT tp.*,
+          p.name as pet_name,
+          c.full_name as customer_name,
+          trp.name as program_name,
+          trp.category as program_category,
+          trp.duration_weeks,
+          trp.sessions_per_week,
+          (COALESCE(trp.duration_weeks, 4) * COALESCE(trp.sessions_per_week, 2))::int as estimated_total_sessions
         FROM training_progress tp
         LEFT JOIN pets p ON tp.pet_id = p.id
         LEFT JOIN customers c ON tp.customer_id = c.id
         LEFT JOIN training_programs trp ON tp.program_id = trp.id
         WHERE tp.vendor_id = $1
         ORDER BY tp.updated_at DESC
-      `, [vendorId]).catch(() => ({ rows: [] }));
-      
-      return c.json({ success: true, progress: progress.rows, total: progress.rows.length });
+      `,
+          [vendorId]
+        ).catch(() => ({ rows: [] as Record<string, unknown>[] }));
+        enrollmentRows = progress.rows || [];
+      }
+
+      const bookingDerived = await fetchVendorProgressRowsFromBookings(vendorId, {
+        includeWalkAggregates: hasGpsCapability,
+      });
+      const merged = mergeTrainingProgressWithBookingDerived(enrollmentRows, bookingDerived);
+
+      return c.json({ success: true, progress: merged, total: merged.length });
     } catch (error: any) {
       console.error('Error fetching training progress:', error);
       return c.json({ error: error.message }, 500);

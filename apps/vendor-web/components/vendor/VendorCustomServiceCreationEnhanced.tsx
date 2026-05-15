@@ -44,6 +44,20 @@ import { getServiceStyleLabelForRole } from '@/lib/service-style-labels';
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  normalizeSessionPackageDetails,
+  packagePeriodLabel,
+  sessionFrequencyLabel,
+  SESSION_PACKAGE_TYPE_LABEL,
+  type SessionPackageType,
+} from '@/lib/session-package-normalize';
 
 const SpecializationSelector = lazy(() =>
   import('@/components/vendor/SpecializationSelector').then((m) => ({ default: m.SpecializationSelector }))
@@ -67,7 +81,12 @@ interface CustomService {
     // Session-based (trainers/walkers)
     sessionsPerDay?: number;
     sessionDuration?: number;
-    packageDuration?: number; // days
+    packageDuration?: number; // days (validity)
+    sessionType?: SessionPackageType;
+    sessionFrequency?: number;
+    packagePeriodCount?: number;
+    validityDays?: number;
+    sessionIntervalDays?: number;
     totalSessions?: number;
     pricingBySize?: {
       small: number;
@@ -149,11 +168,16 @@ const DEFAULT_CATEGORIES: Record<VendorRoleCategory, string> = {
 };
 
 // Package types available per vendor category
+// NOTE: UI-level hide for Subscription / Membership / Unlimited Plan.
+// Backend types and APIs for those package types are preserved; only the
+// vendor "Manage custom service → Package/Plan" picker is restricted to
+// Session and Combo packages until the rest of the lifecycle is supported
+// end-to-end.
 const PACKAGE_TYPES_BY_ROLE: Record<VendorRoleCategory, PackageType[]> = {
-  'trainer_walker': ['session'], // Only session packages
-  'vet_clinic': ['session', 'combo', 'subscription', 'membership', 'unlimited'],
-  'grooming_center': ['session', 'combo', 'subscription', 'membership', 'unlimited'],
-  'diagnostics': ['session', 'combo', 'subscription', 'membership', 'unlimited'],
+  'trainer_walker': ['session'],
+  'vet_clinic': ['session', 'combo'],
+  'grooming_center': ['session', 'combo'],
+  'diagnostics': ['session', 'combo'],
   'other': ['session'],
 };
 
@@ -215,7 +239,7 @@ export function VendorCustomServiceCreationEnhanced({
   // ✅ FIX: Handle missing vendorId gracefully
   if (!vendorId) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto px-6 py-8">
+      <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white vendor-app-column px-6 py-8">
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-4">
             <button 
@@ -254,6 +278,8 @@ export function VendorCustomServiceCreationEnhanced({
   const [duration, setDuration] = useState(60);
   const [price, setPrice] = useState(0);
   const [categoryName, setCategoryName] = useState('');
+  /** When set, POST body sends this UUID so backend resolves `service_categories` by primary key (avoids slug mismatches in prod). */
+  const [platformCategoryId, setPlatformCategoryId] = useState<string | null>(null);
   const [subCategoryName, setSubCategoryName] = useState('');
   const [isPackage, setIsPackage] = useState(false);
   const [packageType, setPackageType] = useState<PackageType>('session');
@@ -262,9 +288,10 @@ export function VendorCustomServiceCreationEnhanced({
   );
   
   // Session package fields (trainers/walkers)
-  const [sessionsPerDay, setSessionsPerDay] = useState(1);
+  const [sessionPackageType, setSessionPackageType] = useState<SessionPackageType>('day');
+  const [packagePeriodCount, setPackagePeriodCount] = useState(1);
+  const [sessionFrequency, setSessionFrequency] = useState(1);
   const [sessionDuration, setSessionDuration] = useState(60);
-  const [packageDuration, setPackageDuration] = useState(7);
   const [smallPrice, setSmallPrice] = useState(0);
   const [mediumPrice, setMediumPrice] = useState(0);
   const [largePrice, setLargePrice] = useState(0);
@@ -301,6 +328,32 @@ export function VendorCustomServiceCreationEnhanced({
   // ============================================================================
   // COMPUTED VALUES
   // ============================================================================
+
+  const derivedSessionPackage = useMemo(
+    () =>
+      normalizeSessionPackageDetails({
+        sessionType: sessionPackageType,
+        sessionFrequency,
+        packagePeriodCount,
+      }),
+    [sessionPackageType, sessionFrequency, packagePeriodCount]
+  );
+
+  /** Catalogue category UUID for specialization_master filter (strict with selected category). */
+  const catalogCategoryIdForSpecs = useMemo(() => {
+    if (platformCategoryId?.trim()) return platformCategoryId.trim();
+    if (!categoryName || categoryName === 'other') return null;
+    const row = catalogCategories.find(
+      (c: { id?: string; name?: string }) =>
+        String(c.name || '').toLowerCase() === String(categoryName).toLowerCase()
+    );
+    const idStr = row?.id != null ? String(row.id).trim() : '';
+    return idStr || null;
+  }, [platformCategoryId, categoryName, catalogCategories]);
+
+  useEffect(() => {
+    setSelectedSpecializationIds([]);
+  }, [catalogCategoryIdForSpecs]);
 
   // Determine vendor role category (use role NAME e.g. trainer_solo, groomer_solo - not UUID)
   const vendorRoleCategory = useMemo((): VendorRoleCategory => {
@@ -377,9 +430,13 @@ export function VendorCustomServiceCreationEnhanced({
         const data = await apiClient.get('/service-catalog/categories') as any;
         if (data?.success && Array.isArray(data.categories)) {
           const list = data.categories.map((c: any) => ({
-            id: c.id || c.category_id || '',
-            name: c.name || c.categoryName || ''
-          })).filter((c: { id: string; name: string }) => c.id && c.name);
+            id: c.id || '',
+            category_id: (c.category_id != null && String(c.category_id).trim()) || '',
+            name: c.name || c.categoryName || '',
+          })).filter(
+            (c: { id: string; name: string; category_id?: string }) =>
+              c.id && (String(c.name || '').trim() || String(c.category_id || '').trim())
+          );
           setCatalogCategories(list);
         } else {
           // Fallback: build from micro-categories if no catalog
@@ -565,8 +622,16 @@ export function VendorCustomServiceCreationEnhanced({
           toast.error('Package price must be greater than 0');
           return false;
         }
-        if (packageDuration <= 0) {
-          toast.error('Package duration must be greater than 0');
+        if (derivedSessionPackage.totalSessions <= 0 || derivedSessionPackage.validityDays <= 0) {
+          toast.error('Invalid session package configuration');
+          return false;
+        }
+        if (sessionFrequency < 1) {
+          toast.error('Session frequency must be at least 1');
+          return false;
+        }
+        if (packagePeriodCount < 1) {
+          toast.error(`${packagePeriodLabel(sessionPackageType)} must be at least 1`);
           return false;
         }
       } else {
@@ -603,13 +668,15 @@ export function VendorCustomServiceCreationEnhanced({
       const effectiveCategoryName = categoryName === 'other' && subCategoryName.trim()
         ? subCategoryName.trim()
         : categoryName.trim();
-      
+      const categoryForApi = platformCategoryId ?? effectiveCategoryName;
+
       const customService: any = {
         serviceName: serviceName.trim(),
         description: description.trim(),
         duration: isPackage && packageType === 'session' ? sessionDuration : duration,
         price: isPackage ? 0 : price,
-        categoryName: effectiveCategoryName,
+        category: categoryForApi,
+        categoryName: categoryForApi,
         subCategoryName: categoryName === 'other' ? undefined : (subCategoryName.trim() || undefined),
         serviceStyle: selectedServiceStyle,
         isPackage,
@@ -647,15 +714,21 @@ export function VendorCustomServiceCreationEnhanced({
 
   const buildPackageDetails = () => {
     if (packageType === 'session') {
+      const d = derivedSessionPackage;
       return {
-        sessionsPerDay,
+        sessionType: d.sessionType,
+        sessionFrequency: d.sessionFrequency,
+        packagePeriodCount: d.packagePeriodCount,
+        validityDays: d.validityDays,
+        sessionsPerDay: d.sessionsPerDay,
         sessionDuration,
-        packageDuration,
-        totalSessions: sessionsPerDay * packageDuration,
-        price: packagePrice
+        packageDuration: d.packageDuration,
+        sessionIntervalDays: d.sessionIntervalDays,
+        totalSessions: d.totalSessions,
+        price: packagePrice,
       };
     }
-    
+
     return {
       includedServices: packageType === 'combo' ? includedServices : undefined,
       subscriptionBillingCycle: packageType === 'subscription' ? billingCycle : undefined,
@@ -666,7 +739,6 @@ export function VendorCustomServiceCreationEnhanced({
       usageInterval,
       packagePrice,
       sessionDuration: sessionDuration || undefined,
-      sessionsPerDay: sessionsPerDay || undefined,
     };
   };
 
@@ -753,12 +825,14 @@ export function VendorCustomServiceCreationEnhanced({
     setDuration(60);
     setPrice(0);
     setCategoryName(DEFAULT_CATEGORIES[vendorRoleCategory] || '');
+    setPlatformCategoryId(null);
     setSubCategoryName('');
     setIsPackage(false);
     setPackageType('session');
-    setSessionsPerDay(1);
+    setSessionPackageType('day');
+    setPackagePeriodCount(1);
+    setSessionFrequency(1);
     setSessionDuration(60);
-    setPackageDuration(7);
     setSmallPrice(0);
     setMediumPrice(0);
     setLargePrice(0);
@@ -814,7 +888,7 @@ export function VendorCustomServiceCreationEnhanced({
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto px-6 py-8">
+    <div className="vendor-root-scroll min-h-0 bg-gradient-to-b from-orange-50 to-white vendor-app-column overscroll-y-contain px-6 py-8 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-4">
@@ -918,13 +992,32 @@ export function VendorCustomServiceCreationEnhanced({
               {/* Package Details */}
               {service.isPackage && service.packageDetails && (
                 <div className="bg-orange-50 rounded-lg p-3 mb-3 text-sm">
-                  {service.packageType === 'session' && service.packageDetails.pricingBySize && (
+                  {service.packageType === 'session' && (
                     <>
                       <div className="text-gray-700">
-                        <div>Price: ₹{service.packageDetails.price ?? service.packageDetails.packagePrice ?? service.packageDetails.pricingBySize?.small ?? service.price ?? 0}</div>
+                        <div>
+                          Price: ₹
+                          {service.packageDetails.price ??
+                            service.packageDetails.packagePrice ??
+                            service.packageDetails.pricingBySize?.small ??
+                            service.price ??
+                            0}
+                        </div>
                       </div>
                       <p className="text-xs text-gray-600 mt-2">
-                        {service.packageDetails.totalSessions} sessions over {service.packageDetails.packageDuration} days
+                        {service.packageDetails.totalSessions != null && (
+                          <>{service.packageDetails.totalSessions} sessions</>
+                        )}
+                        {service.packageDetails.packageDuration != null && (
+                          <> · package duration {service.packageDetails.packageDuration} days</>
+                        )}
+                        {(() => {
+                          const st = service.packageDetails?.sessionType as
+                            | SessionPackageType
+                            | undefined;
+                          const label = st && SESSION_PACKAGE_TYPE_LABEL[st];
+                          return label ? <> · {label}</> : null;
+                        })()}
                       </p>
                     </>
                   )}
@@ -1087,9 +1180,19 @@ export function VendorCustomServiceCreationEnhanced({
                 id="categoryName"
                 value={categoryName}
                 onChange={(e) => {
-                  setCategoryName(e.target.value);
+                  const v = e.target.value;
+                  setCategoryName(v);
                   setSubCategoryName('');
                   setSelectedMicroCategory(null);
+                  const trimmedId = v.trim();
+                  const platformRow = catalogCategories.find(
+                    (c: { id?: string }) => c.id && String(c.id).trim() === trimmedId
+                  );
+                  if (platformRow?.id && String(platformRow.id).trim() === trimmedId) {
+                    setPlatformCategoryId(trimmedId);
+                  } else {
+                    setPlatformCategoryId(null);
+                  }
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
               >
@@ -1097,9 +1200,9 @@ export function VendorCustomServiceCreationEnhanced({
                 
                 {availableCategories.length > 0 && (
                   <optgroup label="📚 Suggested Categories">
-                    {availableCategories.map(cat => (
-                      <option key={cat.category} value={cat.category}>
-                        {cat.categoryLabel}
+                    {availableCategories.map((cat: MicroCategory) => (
+                      <option key={cat.id} value={cat.name}>
+                        {cat.name}
                       </option>
                     ))}
                   </optgroup>
@@ -1107,11 +1210,20 @@ export function VendorCustomServiceCreationEnhanced({
                 
                 {catalogCategories.length > 0 && (
                   <optgroup label="🗂️ All Platform Categories">
-                    {catalogCategories.map(cat => (
-                      <option key={cat.id} value={cat.name}>
-                        {cat.name}
-                      </option>
-                    ))}
+                    {catalogCategories.map((cat: { id?: string; category_id?: string; name?: string }) => {
+                      const idStr = cat.id && String(cat.id).trim();
+                      const optionValue = idStr
+                        ? idStr
+                        : (cat.category_id && String(cat.category_id).trim()) || cat.name || '';
+                      return (
+                        <option
+                          key={cat.id || cat.category_id || cat.name}
+                          value={optionValue}
+                        >
+                          {cat.name || cat.category_id || 'Category'}
+                        </option>
+                      );
+                    })}
                   </optgroup>
                 )}
                 
@@ -1143,6 +1255,7 @@ export function VendorCustomServiceCreationEnhanced({
               <Suspense fallback={<div className="py-4 text-sm text-gray-500">Loading specializations...</div>}>
                 <SpecializationSelector
                   roleId={getVendorRoleId(vendorData) || ''}
+                  categoryId={catalogCategoryIdForSpecs}
                   selected={selectedSpecializationIds}
                   onChange={setSelectedSpecializationIds}
                   refreshTrigger={specRefreshKey}
@@ -1164,7 +1277,7 @@ export function VendorCustomServiceCreationEnhanced({
                       ? 'Create a session package with duration, sessions & frequency'
                       : vendorRoleCategory === 'trainer_walker' 
                         ? 'Create a session package'
-                        : 'Create a package, subscription, or membership'
+                        : 'Create a session or combo package'
                     }
                   </p>
                 </div>
@@ -1271,28 +1384,69 @@ export function VendorCustomServiceCreationEnhanced({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="sessionsPerDay">Sessions/Day *</Label>
-                    <Input
-                      id="sessionsPerDay"
-                      type="number"
-                      value={sessionsPerDay}
-                      onChange={(e) => setSessionsPerDay(parseInt(e.target.value) || 0)}
-                      min="1"
-                    />
+                    <Label htmlFor="sessionPackageType">Session Type *</Label>
+                    <Select
+                      value={sessionPackageType}
+                      onValueChange={(v) => setSessionPackageType(v as SessionPackageType)}
+                    >
+                      <SelectTrigger id="sessionPackageType" className="w-full">
+                        <SelectValue placeholder="Select type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="day">{SESSION_PACKAGE_TYPE_LABEL.day}</SelectItem>
+                        <SelectItem value="weekly">{SESSION_PACKAGE_TYPE_LABEL.weekly}</SelectItem>
+                        <SelectItem value="monthly">{SESSION_PACKAGE_TYPE_LABEL.monthly}</SelectItem>
+                        <SelectItem value="yearly">{SESSION_PACKAGE_TYPE_LABEL.yearly}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="packageDuration">Package Duration (days) *</Label>
+                  <Label htmlFor="packagePeriodCount">{packagePeriodLabel(sessionPackageType)} *</Label>
                   <Input
-                    id="packageDuration"
+                    id="packagePeriodCount"
                     type="number"
-                    value={packageDuration}
-                    onChange={(e) => setPackageDuration(parseInt(e.target.value) || 0)}
-                    min="1"
+                    value={packagePeriodCount}
+                    onChange={(e) => {
+                      const raw = parseInt(e.target.value, 10);
+                      setPackagePeriodCount(Number.isFinite(raw) ? Math.max(1, raw) : 1);
+                    }}
+                    min={1}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="sessionFrequency">{sessionFrequencyLabel(sessionPackageType)} *</Label>
+                  <Input
+                    id="sessionFrequency"
+                    type="number"
+                    value={sessionFrequency}
+                    onChange={(e) => {
+                      const raw = parseInt(e.target.value, 10);
+                      const n = Number.isFinite(raw) ? Math.max(1, raw) : 1;
+                      setSessionFrequency(
+                        sessionPackageType === 'day' ? Math.min(24, n) : n
+                      );
+                    }}
+                    min={1}
+                    max={sessionPackageType === 'day' ? 24 : undefined}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="packageDurationPreview">Package Duration (days)</Label>
+                  <Input
+                    id="packageDurationPreview"
+                    type="number"
+                    readOnly
+                    disabled
+                    value={derivedSessionPackage.validityDays}
+                    className="bg-gray-50 text-gray-700"
                   />
                   <p className="text-xs text-gray-500">
-                    Total: {sessionsPerDay * packageDuration} sessions
+                    Total: {derivedSessionPackage.totalSessions} sessions · computed from session type, period, and
+                    frequency
                   </p>
                 </div>
 

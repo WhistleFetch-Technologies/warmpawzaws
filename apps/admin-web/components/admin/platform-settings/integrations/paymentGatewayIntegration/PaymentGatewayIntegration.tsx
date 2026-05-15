@@ -26,6 +26,8 @@ interface PaymentSettings {
 		key_id: string;
 		key_secret: string;
 		webhook_secret: string;
+		/** Razorpay Banking payout source — customer identifier (Dashboard → Banking); used for payouts and UPI VPA fallback validation */
+		razorpay_x_account_number: string;
 		auto_capture: boolean;
 		test_mode: boolean;
 	};
@@ -54,6 +56,7 @@ export function PaymentGatewayIntegration() {
 			key_id: "",
 			key_secret: "",
 			webhook_secret: "",
+			razorpay_x_account_number: "",
 			auto_capture: true,
 			test_mode: true,
 		},
@@ -107,6 +110,12 @@ export function PaymentGatewayIntegration() {
 							key_id: config.keyId || "",
 							key_secret: config.keySecret || "",
 							webhook_secret: config.webhookSecret || "",
+							razorpay_x_account_number:
+								config.payoutSourceAccountNumber ||
+								config.razorpayPayoutSourceAccountNumber ||
+								config.razorpayXAccountNumber ||
+								config.xAccountNumber ||
+								"",
 							auto_capture: config.auto_capture !== false,
 							test_mode: config.test_mode || false,
 						};
@@ -134,6 +143,7 @@ export function PaymentGatewayIntegration() {
 						key_id: "",
 						key_secret: "",
 						webhook_secret: "",
+						razorpay_x_account_number: "",
 						auto_capture: true,
 						test_mode: true,
 					},
@@ -392,6 +402,28 @@ export function PaymentGatewayIntegration() {
 								/>
 								<p className="mt-1 text-xs text-gray-500">
 									Webhook URL: Configure in your API Gateway settings
+								</p>
+							</div>
+
+							<div>
+								<Label className="block text-sm font-medium text-gray-700 mb-2">
+									Razorpay payout source (Banking customer identifier)
+								</Label>
+								<Input
+									type="text"
+									value={settings.razorpay.razorpay_x_account_number}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+										updateRazorpay("razorpay_x_account_number", e.target.value)
+									}
+									placeholder="Razorpay Dashboard → Banking → Customer identifier"
+									className="w-full"
+								/>
+								<p className="mt-1 text-xs text-gray-500">
+									Required for vendor bank payouts and for UPI VPA validation when the standard validate-VPA API is
+									not enabled. You can also set{" "}
+									<code className="rounded bg-gray-100 px-1">RAZORPAY_PAYOUT_SOURCE_ACCOUNT_NUMBER</code> on
+									Lambda or add <code className="rounded bg-gray-100 px-1">payoutSourceAccountNumber</code> to the
+									Razorpay JSON secret in AWS Secrets Manager.
 								</p>
 							</div>
 

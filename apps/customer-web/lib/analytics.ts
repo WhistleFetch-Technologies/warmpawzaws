@@ -1,5 +1,7 @@
 'use client';
 
+import { enqueueAllyticasEvent, mapLegacyTrackToAllyticas } from './allyticas-ingest';
+
 /**
  * Analytics Tracking Utility for Warmpawz Customer Web
  * 
@@ -143,7 +145,12 @@ export function setAnalyticsUser(phone: string) {
  */
 export function track(event: AnalyticsEvent) {
   if (!analyticsConfig.enabled) return;
-  
+
+  const allyPayload = mapLegacyTrackToAllyticas(event);
+  if (allyPayload) {
+    enqueueAllyticasEvent(allyPayload);
+  }
+
   const enrichedEvent = {
     ...event,
     timestamp: new Date().toISOString(),

@@ -3,8 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { toast } from 'sonner';
+import {
+  VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT,
+  VENDOR_MIN_PAYOUT_REQUEST_RS,
+} from '@/lib/vendor-payout';
 import { VendorDynamicNavigation } from './navigation/VendorDynamicNavigation';
 import { CAPABILITY_ROUTES, getCapabilitiesByCategory } from '@/lib/capability-routes';
+import { MealPlansComingSoonPanel } from './MealPlansComingSoonPanel';
 
 // ============================================================================
 // TYPES
@@ -201,7 +207,7 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <img 
-                src="/logo.png" 
+                src="/warmpawz-logo.svg" 
                 alt="Warmpawz" 
                 className="w-12 h-12 rounded-2xl object-contain bg-white/20 p-2"
               />
@@ -324,7 +330,7 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
       </div>
 
       {/* Bottom Navigation for Mobile */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg lg:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg lg:hidden z-30 safe-area-bottom">
         <div className="flex justify-around py-2">
           {['dashboard', 'bookings', 'services', 'earnings', 'profile'].map((section) => {
             const cap = ALL_CAPABILITIES.find(c => c.name === section);
@@ -333,12 +339,12 @@ export function VendorCapabilityDashboard({ vendorId }: { vendorId: string }) {
               <button
                 key={section}
                 onClick={() => setActiveSection(section)}
-                className={`flex flex-col items-center py-2 px-4 ${
+                className={`flex flex-col items-center justify-center min-h-[44px] min-w-[3rem] px-2 gap-0.5 ${
                   activeSection === section ? 'text-orange-500' : 'text-gray-500'
                 }`}
               >
-                <span className="text-2xl">{cap.icon}</span>
-                <span className="text-xs mt-1">{cap.display_name}</span>
+                <span className="text-lg">{cap.icon}</span>
+                <span className="text-[10px]">{cap.display_name}</span>
               </button>
             );
           })}
@@ -676,6 +682,7 @@ function BookingsSection({ vendorId }: { vendorId: string }) {
 function EarningsSection({ vendorId }: { vendorId: string }) {
   const router = useRouter();
   const [earnings, setEarnings] = useState<any>(null);
+  const [minPayoutRequestAmount, setMinPayoutRequestAmount] = useState(VENDOR_MIN_PAYOUT_REQUEST_RS);
   const [tierInfo, setTierInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [requestingPayout, setRequestingPayout] = useState(false);
@@ -686,19 +693,34 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
 
   const loadEarnings = async () => {
     try {
-      const [dayRes, monthRes, totalRes, tierRes] = await Promise.all([
+      const [dayRes, monthRes, totalRes, tierRes, settlementsRes] = await Promise.all([
         apiClient.get<any>(`/vendor/${vendorId}/earnings?period=day`).catch(() => ({})),
         apiClient.get<any>(`/vendor/${vendorId}/earnings?period=month`).catch(() => ({})),
         apiClient.get<any>(`/vendor/${vendorId}/earnings?period=lifetime`).catch(() => ({})),
-        apiClient.get<any>(`/vendor/${vendorId}/tier`).catch(() => null)
+        apiClient.get<any>(`/vendor/${vendorId}/tier`).catch(() => null),
+        apiClient.get<any>(`/vendor/${vendorId}/settlements?limit=5`).catch(() => null),
       ]);
       const e = (r: any) => r?.earnings;
+      const sum = settlementsRes?.summary;
+      setMinPayoutRequestAmount(
+        Number(sum?.minPayoutRequestAmount ?? sum?.min_payout_request_amount) ||
+          VENDOR_MIN_PAYOUT_REQUEST_RS,
+      );
+      const netPending =
+        Number(
+          sum?.availableForPayout ??
+            sum?.available_for_payout ??
+            sum?.pendingAmount ??
+            sum?.pending_amount ??
+            NaN
+        );
+      const fallbackPending = e(totalRes)?.pendingSettlement ?? 0;
       setEarnings({
         today: e(dayRes)?.thisPeriod ?? e(dayRes)?.totalEarnings ?? 0,
         thisWeek: 0,
         thisMonth: e(monthRes)?.thisPeriod ?? e(monthRes)?.totalEarnings ?? 0,
         total: e(totalRes)?.totalEarnings ?? 0,
-        pending: e(totalRes)?.pendingSettlement ?? 0,
+        pending: Number.isFinite(netPending) ? netPending : fallbackPending,
         transactions: e(totalRes)?.transactions ?? []
       });
       
@@ -714,18 +736,27 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
 
   const handleRequestPayout = async () => {
     if (!earnings?.pending || earnings.pending <= 0) return;
+    if (earnings.pending < minPayoutRequestAmount) {
+      toast.error(VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT);
+      return;
+    }
     if (!confirm(`Request payout of ₹${earnings.pending.toLocaleString()}?`)) return;
     
     setRequestingPayout(true);
     try {
       const response = await apiClient.post<any>('/settlements/request', { vendorId, amount: earnings.pending });
       if (response?.success) {
-        alert('✅ Payout request submitted!');
+        toast.success(
+          response?.message ||
+            'Payout request submitted. You will be notified when it is processed.'
+        );
         loadEarnings();
+      } else {
+        toast.error(response?.error || 'Failed to request payout');
       }
     } catch (err) {
       console.error('Error requesting payout:', err);
-      alert('Failed to request payout');
+      toast.error('Failed to request payout');
     } finally {
       setRequestingPayout(false);
     }
@@ -768,11 +799,14 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
         <div className="bg-blue-50 rounded-xl p-4">
           <p className="text-sm text-blue-600">Pending Payout</p>
           <p className="text-2xl font-bold text-blue-700">₹{(earnings?.pending || 0).toLocaleString()}</p>
+          <p className="text-xs text-amber-900/80 mt-1 leading-snug">{VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT}</p>
           {(earnings?.pending || 0) > 0 && (
             <button
               onClick={handleRequestPayout}
-              disabled={requestingPayout}
-              className="mt-2 text-blue-600 text-sm font-medium hover:underline"
+              disabled={
+                requestingPayout || (earnings?.pending || 0) < minPayoutRequestAmount
+              }
+              className="mt-2 text-blue-600 text-sm font-medium hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {requestingPayout ? 'Requesting...' : 'Request Payout →'}
             </button>
@@ -1397,55 +1431,10 @@ function AdoptionSection({ vendorId }: { vendorId: string }) {
   );
 }
 
-function MealPlansSection({ vendorId }: { vendorId: string }) {
-  const router = useRouter();
-  const [count, setCount] = useState<number>(0);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadMealPlansCount();
-  }, [vendorId]);
-
-  const loadMealPlansCount = async () => {
-    try {
-      // Try nutritionist meal plans endpoint
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/nutritionist/meal-plans`).catch(() => null);
-      if (response && (response.mealPlans || response.plans || response.count !== undefined)) {
-        setCount(response.count || response.mealPlans?.length || response.plans?.length || 0);
-      } else {
-        // Alternative: count services with meal plan type
-        const servicesRes = await apiClient.get<any>(`/vendor/${vendorId}/services`).catch(() => ({ services: [] }));
-        const list = Array.isArray(servicesRes.services) ? servicesRes.services : (servicesRes.allServices || []);
-        const mealPlanServices = list.filter((s: any) =>
-          s.service_type?.toLowerCase().includes('meal') ||
-          s.service_type?.toLowerCase().includes('diet') ||
-          s.category?.toLowerCase().includes('nutrition')
-        );
-        setCount(mealPlanServices.length);
-      }
-    } catch (err) {
-      console.error('Error loading meal plans count:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) return <div className="text-center py-8"><span className="animate-spin">⏳</span> Loading...</div>;
-
+function MealPlansSection({ vendorId: _vendorId }: { vendorId: string }) {
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div>
-          <p className="text-2xl font-bold text-gray-900">{count}</p>
-          <p className="text-sm text-gray-500">Meal plans available</p>
-        </div>
-      </div>
-      <button 
-        onClick={() => router.push('/nutrition/plans')}
-        className="w-full py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition"
-      >
-        Manage Meal Plans
-      </button>
+      <MealPlansComingSoonPanel />
     </div>
   );
 }

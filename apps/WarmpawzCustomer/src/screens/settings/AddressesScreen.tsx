@@ -11,12 +11,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
   Modal,
 } from 'react-native';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi } from '../../services/api';
 
@@ -268,17 +268,17 @@ export function AddressesScreen({
   ];
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack}>
-          <Text style={styles.backButton}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Saved Addresses</Text>
+    <>
+    <OrangeBrandedScreenLayout
+      title="Saved Addresses"
+      onBack={onBack}
+      bodyBackgroundColor={colors.white}
+      headerRight={
         <TouchableOpacity onPress={handleAddAddress}>
-          <Text style={styles.addButton}>+ Add</Text>
+          <Text style={styles.headerAddText}>+ Add</Text>
         </TouchableOpacity>
-      </View>
-
+      }
+    >
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -376,6 +376,7 @@ export function AddressesScreen({
           )}
         </ScrollView>
       )}
+    </OrangeBrandedScreenLayout>
 
       {/* Add/Edit Address Modal */}
       <Modal
@@ -617,7 +618,7 @@ export function AddressesScreen({
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </>
   );
 }
 
@@ -626,27 +627,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    fontSize: typography.body,
-    color: colors.white,
-  },
-  headerTitle: {
-    fontSize: typography.h1,
-    fontWeight: 'bold',
-    color: colors.white,
-    flex: 1,
-    textAlign: 'center',
-  },
-  addButton: {
+  headerAddText: {
     fontSize: typography.body,
     color: colors.white,
     fontWeight: '600',

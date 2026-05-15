@@ -1,7 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Utensils, Plus } from 'lucide-react';
+import { Utensils, Plus } from 'lucide-react';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 interface VendorDietChartsProps {
   vendorId: string;
@@ -17,21 +18,15 @@ export function VendorDietCharts({ vendorId, onBack }: VendorDietChartsProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
-      <div className="bg-[#FF8C42] text-white p-4 sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-          )}
-          <div>
-            <h1 className="text-xl font-bold">Diet Charts</h1>
-            <p className="text-sm text-white/80">Manage your meal plans</p>
-          </div>
-        </div>
-      </div>
-
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column min-h-screen bg-white">
+        <VendorHeader
+          tone="brand"
+          title="Diet Charts"
+          subtitle="Manage your meal plans"
+          showBack={Boolean(onBack)}
+          onBack={onBack}
+        />
       <div className="p-4">
         <div className="bg-white rounded-xl p-8 text-center border border-gray-200">
           <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -47,6 +42,7 @@ export function VendorDietCharts({ vendorId, onBack }: VendorDietChartsProps) {
             Create Diet Plan
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

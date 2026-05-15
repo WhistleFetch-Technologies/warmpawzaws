@@ -4,18 +4,18 @@
  * Diagnostics Management Page
  * Manages diagnostic tests catalog
  * Capability: diagnostics, test_catalog
- * Mobile-first UI (max-w-[430px])
+ * Mobile-first UI (vendor-app-column scales at sm/md/lg/xl)
  */
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { apiClient } from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { 
   Microscope, 
   Plus, 
@@ -25,7 +25,6 @@ import {
   TestTube,
   Beaker,
   FileText,
-  ArrowLeft,
   Truck,
   Edit2,
   Send,
@@ -79,6 +78,7 @@ export default function DiagnosticsPage() {
     serviceStyle: 'at_center' as 'at_center' | 'at_home',
     isFreeHomeCollection: true,
     homeCollectionFee: 0,
+    isAvailable: true,
   });
 
   useEffect(() => {
@@ -160,6 +160,7 @@ export default function DiagnosticsPage() {
       serviceStyle: 'at_center',
       isFreeHomeCollection: true,
       homeCollectionFee: 0,
+      isAvailable: true,
     });
   };
 
@@ -186,7 +187,7 @@ export default function DiagnosticsPage() {
           serviceStyle: newTest.serviceStyle,
           isFreeHomeCollection: newTest.isFreeHomeCollection,
           homeCollectionFee: newTest.isFreeHomeCollection ? 0 : newTest.homeCollectionFee,
-          isAvailable: editingTest.is_available,
+          isAvailable: newTest.isAvailable,
         });
         toast.success('Test updated successfully');
       } else {
@@ -197,9 +198,13 @@ export default function DiagnosticsPage() {
           serviceStyle: newTest.serviceStyle,
           isFreeHomeCollection: newTest.isFreeHomeCollection,
           homeCollectionFee: newTest.isFreeHomeCollection ? 0 : newTest.homeCollectionFee,
-          isAvailable: false, // Draft by default - must publish to go live
+          isAvailable: newTest.isAvailable,
         });
-        toast.success('Diagnostic test added (saved as Draft)');
+        toast.success(
+          newTest.isAvailable
+            ? 'Diagnostic test added and visible to customers'
+            : 'Diagnostic test saved as draft (use list actions to publish)'
+        );
       }
       setShowAddModal(false);
       resetForm();
@@ -241,15 +246,16 @@ export default function DiagnosticsPage() {
       serviceStyle: ((test as any).service_style === 'at_home' ? 'at_home' : 'at_center') as 'at_center' | 'at_home',
       isFreeHomeCollection: (test as any).is_free_home_collection !== false,
       homeCollectionFee: (test as any).home_collection_fee || 0,
+      isAvailable: test.is_available !== false,
     });
     setShowAddModal(true);
   };
 
   const handleDelete = async (test: DiagnosticTest) => {
-    if (!confirm('Remove this test? It will no longer be visible.')) return;
+    if (!confirm('Remove this test? This cannot be undone.')) return;
     if (!vendorId) return;
     try {
-      await apiClient.put(`/vendor/${vendorId}/diagnostics/tests/${test.id}`, { isAvailable: false });
+      await apiClient.delete(`/vendor/${vendorId}/diagnostics/tests/${test.id}`);
       toast.success('Test removed');
       await fetchTests();
     } catch (error: any) {
@@ -269,33 +275,64 @@ export default function DiagnosticsPage() {
     categories: [...new Set(tests.map(t => t.category))].length,
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto min-h-screen p-4 space-y-4">
-      {/* Header with Back Arrow */}
-      <div className="flex items-center gap-3 p-2 bg-white rounded-xl border-b sticky top-0 z-10 -mx-4 px-4 py-3">
-        <Link
-          href="/dashboard"
-          className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-          aria-label="Back to dashboard"
-        >
-          <ArrowLeft className="w-5 h-5 text-gray-700" />
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-lg font-bold flex items-center gap-2">
-            <Microscope className="h-6 w-6 text-purple-500" />
-            Diagnostic Tests
-          </h1>
-          <p className="text-xs text-muted-foreground">Manage your test catalog</p>
-        </div>
-        <Button size="sm" onClick={() => { resetForm(); setShowAddModal(true); }} className="shrink-0">
-          <Plus className="h-4 w-4 mr-1" />
-          Add
-        </Button>
-      </div>
+  const closeModal = () => {
+    setShowAddModal(false);
+    resetForm();
+  };
 
+  const inFormMode = showAddModal;
+
+  return (
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title={
+            inFormMode
+              ? editingTest
+                ? 'Edit Test'
+                : 'Add Diagnostic Test'
+              : 'Diagnostic Tests'
+          }
+          subtitle={
+            inFormMode
+              ? 'Fill in test details below'
+              : 'Manage your test catalog'
+          }
+          onBack={inFormMode ? closeModal : () => router.push('/dashboard')}
+          actions={
+            inFormMode
+              ? [
+                  <Button
+                    key="save-test"
+                    type="button"
+                    size="sm"
+                    className="h-9 shrink-0 bg-orange-500 text-white hover:bg-orange-600"
+                    onClick={addTest}
+                  >
+                    {editingTest ? 'Save' : 'Add Test'}
+                  </Button>,
+                ]
+              : [
+                  <Button
+                    key="add-test"
+                    type="button"
+                    size="sm"
+                    className="h-9 shrink-0 bg-orange-500 text-white hover:bg-orange-600"
+                    onClick={() => {
+                      resetForm();
+                      setShowAddModal(true);
+                    }}
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Add Test
+                  </Button>,
+                ]
+          }
+        />
+
+        <div className="w-full space-y-4 px-4 py-4 sm:px-6">
       {/* Stats - Compact for mobile */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <Card className="p-3">
           <CardContent className="p-0 flex items-center gap-2">
             <TestTube className="h-8 w-8 text-purple-500 shrink-0" />
@@ -348,8 +385,14 @@ export default function DiagnosticsPage() {
               {searchQuery ? 'Try a different search term' : 'Add your first diagnostic test to get started'}
             </p>
             {!searchQuery && (
-              <Button onClick={() => { resetForm(); setShowAddModal(true); }}>
-                <Plus className="h-4 w-4 mr-2" />
+              <Button
+                className="bg-orange-500 text-white hover:bg-orange-600"
+                onClick={() => {
+                  resetForm();
+                  setShowAddModal(true);
+                }}
+              >
+                <Plus className="mr-2 h-4 w-4" />
                 Add Test
               </Button>
             )}
@@ -416,23 +459,12 @@ export default function DiagnosticsPage() {
 
       {/* Add/Edit Test Modal - Mobile-sized */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-          <Card className="w-full max-w-[430px] max-h-[90vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => { setShowAddModal(false); resetForm(); }}
-                  className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100"
-                  aria-label="Back to list"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <CardTitle className="text-lg flex-1">
-                  {editingTest ? 'Edit Test' : 'Add Diagnostic Test'}
-                </CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4 pb-8">
+        <div 
+          className="fixed inset-0 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4"
+          style={{ backgroundColor: 'rgba(0, 0, 0, 0.75)' }}
+        >
+          <Card className="vendor-modal-sheet mx-auto w-full max-h-[90vh] overflow-y-auto rounded-t-2xl bg-white sm:rounded-2xl">
+            <CardContent className="space-y-4 px-4 pb-8 pt-4 sm:px-6">
               <div>
                 <label className="text-sm font-medium">Test Name *</label>
                 <Input
@@ -612,18 +644,29 @@ export default function DiagnosticsPage() {
                   placeholder="e.g., Fasting required for 12 hours"
                 />
               </div>
+              <div className="flex items-start gap-2">
+                <input
+                  id="diag-is-available"
+                  type="checkbox"
+                  checked={newTest.isAvailable}
+                  onChange={(e) => setNewTest(prev => ({ ...prev, isAvailable: e.target.checked }))}
+                  className="mt-1"
+                />
+                <label htmlFor="diag-is-available" className="text-sm text-gray-700">
+                  <span className="font-medium">Publish for customer booking</span>
+                  <span className="block text-xs text-gray-500">Draft tests stay hidden on the customer lab booking screen.</span>
+                </label>
+              </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => { setShowAddModal(false); resetForm(); }} className="flex-1">
+                <Button variant="outline" onClick={closeModal} className="w-full">
                   Cancel
-                </Button>
-                <Button onClick={addTest} className="flex-1">
-                  {editingTest ? 'Save Changes' : 'Add Test'}
                 </Button>
               </div>
             </CardContent>
           </Card>
         </div>
       )}
+        </div>
       </div>
     </div>
   );

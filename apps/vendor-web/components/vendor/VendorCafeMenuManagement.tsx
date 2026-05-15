@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { ArrowLeft, Coffee, Upload, Plus, Edit2, Trash2, Grid, Table, Download, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { cn } from '@/components/ui/utils';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface VendorCafeMenuManagementProps {
   vendorId: string;
@@ -58,6 +60,7 @@ export function VendorCafeMenuManagement({ vendorId, vendorData, onBack }: Vendo
   const [editingTable, setEditingTable] = useState<TableConfig | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [uploadingMenu, setUploadingMenu] = useState(false);
+  const bulkMenuFileRef = useRef<HTMLInputElement>(null);
 
   // Form state for menu item
   const [itemForm, setItemForm] = useState({
@@ -279,7 +282,7 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 vendor-app-column">
       {/* Header */}
       <div className="bg-white border-b sticky top-0 z-10">
         <div className="p-4 flex items-center gap-3">
@@ -350,24 +353,30 @@ Pet-Safe Pupcake,Pet Treats,Dog-friendly cupcake with carob frosting,80,Yes,Yes,
                   <Download className="w-4 h-4 mr-1" />
                   Template
                 </Button>
-                <label className="flex-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full text-xs"
-                    disabled={uploadingMenu}
-                  >
-                    <Upload className="w-4 h-4 mr-1" />
-                    {uploadingMenu ? 'Uploading...' : 'Upload'}
-                  </Button>
-                  <input
-                    type="file"
+                <div className="flex-1 min-h-[36px]">
+                  <TouchFilePicker
+                    ref={bulkMenuFileRef}
+                    onFileChange={(e) => {
+                      handleBulkUploadMenu(e);
+                      e.target.value = '';
+                    }}
                     accept=".csv,.xlsx"
-                    onChange={handleBulkUploadMenu}
-                    className="hidden"
                     disabled={uploadingMenu}
-                  />
-                </label>
+                    className="w-full min-h-[36px]"
+                    innerClassName="items-center justify-center"
+                  >
+                    <span
+                      className={cn(
+                        buttonVariants({ variant: 'outline', size: 'sm' }),
+                        'flex w-full text-xs',
+                        uploadingMenu && 'opacity-50'
+                      )}
+                    >
+                      <Upload className="mr-1 h-4 w-4" />
+                      {uploadingMenu ? 'Uploading...' : 'Upload'}
+                    </span>
+                  </TouchFilePicker>
+                </div>
                 <Button
                   onClick={() => {
                     setEditingItem(null);

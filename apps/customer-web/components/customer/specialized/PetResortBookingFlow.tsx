@@ -2,7 +2,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
-import { Home, Calendar, Users, Bed } from 'lucide-react';
+import {
+  buildSanitizedStandardRazorpayCheckoutOptions,
+  fetchCheckoutEmailForPrefill,
+} from '@/lib/razorpay/build-standard-checkout-options';
+import { Home, Calendar, Users, Bed, Star } from 'lucide-react';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 
 interface PetResortBookingFlowProps {
   vendorId: string;
@@ -34,6 +39,13 @@ export function PetResortBookingFlow({ vendorId, customerPhone, onSuccess, onCan
   const [petCount, setPetCount] = useState(1);
   const [petDetails, setPetDetails] = useState('');
   const [specialRequests, setSpecialRequests] = useState('');
+  const [showPreReview, setShowPreReview] = useState(false);
+
+  const resortPrePaymentStats = [
+    { value: '—', label: 'Stays', icon: <Star className="w-4 h-4 fill-white" /> },
+    { value: '5★', label: 'Rooms' },
+    { value: '24/7', label: 'Care' },
+  ];
 
   useEffect(() => {
     if (checkInDate && checkOutDate) {
@@ -79,29 +91,29 @@ export function PetResortBookingFlow({ vendorId, customerPhone, onSuccess, onCan
     return room.price_per_night * nights;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  const validate = (): boolean => {
     if (!selectedRoom) {
       setError('Please select a room');
-      return;
+      return false;
     }
-
     if (!checkInDate || !checkOutDate) {
       setError('Please select check-in and check-out dates');
-      return;
+      return false;
     }
-
-    const nights = calculateNights();
-    if (nights <= 0) {
+    if (calculateNights() <= 0) {
       setError('Check-out date must be after check-in date');
-      return;
+      return false;
     }
-
     if (petCount < 1) {
       setError('Number of pets must be at least 1');
-      return;
+      return false;
     }
+    setError(null);
+    return true;
+  };
+
+  const handleSubmit = async () => {
+    if (!validate()) return;
 
     setProcessing(true);
     setError(null);
@@ -171,14 +183,17 @@ export function PetResortBookingFlow({ vendorId, customerPhone, onSuccess, onCan
             });
           }
 
-          // Open Razorpay checkout
-          const options = {
-            key: orderRes.razorpay_key || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-            amount: totalAmount * 100,
+          const checkoutEmail = await fetchCheckoutEmailForPrefill(customerPhone);
+          const options = buildSanitizedStandardRazorpayCheckoutOptions({
+            key: (orderRes.razorpay_key || process.env.NEXT_PUBLIC_RAZORPAY_KEY) as string,
+            amountPaise: Math.max(1, Math.round(Number(totalAmount) * 100)),
             currency: 'INR',
             name: 'Warmpawz',
             description: `Pet Resort Booking - ${nights} night${nights > 1 ? 's' : ''} stay`,
             order_id: orderRes.order_id,
+            customerPhone,
+            customerEmail: checkoutEmail,
+            includeInstrumentBlocks: true,
             handler: async (response: any) => {
               try {
                 // Verify payment
@@ -197,9 +212,6 @@ export function PetResortBookingFlow({ vendorId, customerPhone, onSuccess, onCan
                 setError('Payment verification failed. Please contact support.');
               }
             },
-            prefill: {
-              contact: customerPhone,
-            },
             theme: {
               color: '#FF8C42',
             },
@@ -208,7 +220,7 @@ export function PetResortBookingFlow({ vendorId, customerPhone, onSuccess, onCan
                 setProcessing(false);
               },
             },
-          };
+          });
 
           const razorpay = new (window as any).Razorpay(options);
           razorpay.open();
@@ -232,6 +244,65 @@ export function PetResortBookingFlow({ vendorId, customerPhone, onSuccess, onCan
   };
 
   const nights = calculateNights();
+  const activeResortRoom = rooms.find((r) => r.id === selectedRoom);
+
+  if (showPreReview && activeResortRoom && nights > 0) {
+    return (
+      <div className="min-h-0">
+        {error && (
+          <div className="px-4 pt-2 max-w-md mx-auto">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-2">{error}</div>
+          </div>
+        )}
+        <PrePaymentBookingReview
+          title="Booking Summary"
+          subtitle="Review before payment"
+          headerIcon={Home}
+          stats={resortPrePaymentStats}
+          onBack={() => {
+            setShowPreReview(false);
+            setError(null);
+          }}
+          lead={{
+            icon: Bed,
+            iconContainerClassName: 'bg-blue-100 text-blue-600',
+            title: `Room ${activeResortRoom.room_number}`,
+            subtitle: `${activeResortRoom.room_type} · ${nights} night${nights > 1 ? 's' : ''}`,
+            trailing: <span>₹{calculatePrice()}</span>,
+          }}
+          rows={[
+            {
+              id: 'inout',
+              icon: Calendar,
+              label: 'Check-in / check-out',
+              primary: `${new Date(checkInDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${new Date(checkOutDate + 'T12:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`,
+            },
+            {
+              id: 'pets',
+              icon: Users,
+              label: 'Pets',
+              primary: `${petCount} pet${petCount > 1 ? 's' : ''}${petDetails.trim() ? ` · ${petDetails.trim()}` : ''}`,
+            },
+          ]}
+          notes={{
+            value: specialRequests,
+            onChange: setSpecialRequests,
+            placeholder: 'Dietary requirements, medication schedules, special care needs...',
+            showNotes: true,
+            label: 'Special requests (optional)',
+          }}
+          total={{ label: 'Total', amountFormatted: `₹${calculatePrice()}` }}
+          totalTextClassName="text-orange-600"
+          primaryButton={{
+            label: `Book stay – ₹${calculatePrice()}`,
+            onClick: handleSubmit,
+            disabled: processing,
+            loading: processing,
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto p-0">
@@ -240,7 +311,13 @@ export function PetResortBookingFlow({ vendorId, customerPhone, onSuccess, onCan
         Book Pet Resort Stay
       </h2>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (validate()) setShowPreReview(true);
+        }}
+        className="space-y-6"
+      >
         {/* Dates */}
         <div className="bg-white rounded-xl p-0 shadow-sm">
           <h3 className="font-semibold text-gray-900 mb-4">Stay Dates</h3>
@@ -398,21 +475,6 @@ export function PetResortBookingFlow({ vendorId, customerPhone, onSuccess, onCan
           />
         </div>
 
-        {/* Price Summary */}
-        {selectedRoom && nights > 0 && (
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-gray-900">Booking Summary</p>
-                <p className="text-sm text-gray-600 mt-0">
-                  {nights} night{nights > 1 ? 's' : ''} • {petCount} pet{petCount > 1 ? 's' : ''}
-                </p>
-              </div>
-              <p className="text-2xl font-bold text-orange-600">₹{calculatePrice()}</p>
-            </div>
-          </div>
-        )}
-
         {error && (
           <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
             {error}
@@ -435,7 +497,7 @@ export function PetResortBookingFlow({ vendorId, customerPhone, onSuccess, onCan
             disabled={processing || !selectedRoom || nights <= 0}
             className="flex-1 px-0 py-0 bg-orange-500 text-white rounded-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
-            {processing ? 'Booking...' : `Book Stay - ₹${calculatePrice()}`}
+            {processing ? 'Booking...' : `Review & book – ₹${calculatePrice()}`}
           </button>
         </div>
       </form>

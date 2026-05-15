@@ -12,11 +12,12 @@ import {
   StyleSheet,
   TextInput,
   FlatList,
-  SafeAreaView,
   ActivityIndicator,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius } from '../../theme/colors';
 import { CustomerApi, EnhancedSearchApi } from '../../services/api';
+import { customerFacingRating } from '../../utils/rating-display';
 
 interface ServiceSearchScreenProps {
   phone: string;
@@ -88,7 +89,12 @@ export function ServiceSearchScreen({
     performSearch();
   };
 
-  const renderServiceItem = ({ item }: { item: Service }) => (
+  const renderServiceItem = ({ item }: { item: Service }) => {
+    const face = customerFacingRating(
+      item.rating,
+      (item as any).reviewCount ?? (item as any).review_count
+    );
+    return (
     <TouchableOpacity
       style={styles.serviceCard}
       onPress={() => onNavigate && onNavigate('ServiceDetail', { serviceId: item.id, vendorId: item.vendorId })}
@@ -99,9 +105,9 @@ export function ServiceSearchScreen({
           {item.description}
         </Text>
         <Text style={styles.vendorName}>{item.vendorName}</Text>
-        {item.rating && (
+        {face != null && (
           <View style={styles.ratingContainer}>
-            <Text style={styles.rating}>⭐ {item.rating.toFixed(1)}</Text>
+            <Text style={styles.rating}>⭐ {face.toFixed(1)}</Text>
           </View>
         )}
       </View>
@@ -109,20 +115,24 @@ export function ServiceSearchScreen({
         <Text style={styles.priceText}>₹{item.price.toLocaleString()}</Text>
         <TouchableOpacity
           style={styles.bookButton}
-          onPress={() => onNavigate && onNavigate('BookingCreation', {
-            serviceId: item.id,
-            vendorId: item.vendorId,
-            serviceName: item.name,
-          })}
+          onPress={() =>
+            onNavigate &&
+            onNavigate('ServiceBookingFlow', {
+              serviceId: item.id,
+              vendorId: item.vendorId,
+              serviceName: item.name,
+            })
+          }
         >
           <Text style={styles.bookButtonText}>Book</Text>
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
-  );
+    );
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -220,7 +230,7 @@ export function ServiceSearchScreen({
           contentContainerStyle={styles.listContent}
         />
       )}
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 

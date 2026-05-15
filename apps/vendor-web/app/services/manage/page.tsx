@@ -18,7 +18,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { 
-  ArrowLeft, 
   Search, 
   Filter, 
   Check, 
@@ -40,6 +39,7 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 
 interface ServiceItem {
   id: string;
@@ -60,6 +60,8 @@ interface ServiceItem {
   publishStatus?: 'draft' | 'pending_approval' | 'published' | 'rejected';
   isCustomService?: boolean;
   isPlatformService?: boolean;
+  /** Stable index from last load — stable sort within enabled/disabled groups after publish */
+  _listOrder?: number;
 }
 
 interface CategoryGroup {
@@ -148,12 +150,25 @@ export default function SoloProviderServiceManagePage() {
     } else if (statusFilter === 'disabled') {
       filtered = filtered.filter(s => !s.isEnabled);
     }
+
+    // Pre-publish: keep merge order. Post-publish: enabled groups first (stable within groups).
+    const postPublishLayout = services.some(
+      s => s.isPublished || s.publishStatus === 'published'
+    );
+    const displayOrdered = postPublishLayout
+      ? [...filtered].sort((a, b) => {
+          const ae = !!a.isEnabled;
+          const be = !!b.isEnabled;
+          if (ae !== be) return ae ? -1 : 1;
+          return (a._listOrder ?? 0) - (b._listOrder ?? 0);
+        })
+      : filtered;
     
-    setFilteredServices(filtered);
+    setFilteredServices(displayOrdered);
     
-    // Group by category
+    // Group by category (same sequence as displayed)
     const groups: { [key: string]: ServiceItem[] } = {};
-    filtered.forEach(service => {
+    displayOrdered.forEach(service => {
       const category = service.category || 'Other';
       if (!groups[category]) {
         groups[category] = [];
@@ -161,9 +176,9 @@ export default function SoloProviderServiceManagePage() {
       groups[category].push(service);
     });
     
-    setCategoryGroups(Object.entries(groups).map(([name, services]) => ({
+    setCategoryGroups(Object.entries(groups).map(([name, svcs]) => ({
       name,
-      services,
+      services: svcs,
       expanded: true,
     })));
     
@@ -238,7 +253,12 @@ export default function SoloProviderServiceManagePage() {
         }
       });
       
-      setServices(mergedServices);
+      setServices(
+        mergedServices.map((s, index) => ({
+          ...s,
+          _listOrder: index,
+        }))
+      );
       
       // Calculate stats
       const enabledCount = mergedServices.filter(s => s.isEnabled).length;
@@ -372,43 +392,35 @@ export default function SoloProviderServiceManagePage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-blue-50">
-      {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-indigo-200 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => router.back()}
-                className="rounded-full"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </Button>
-              <div>
-                <h1 className="text-xl font-bold text-gray-800">Manage Services</h1>
-                <p className="text-sm text-gray-500">Enable and publish services for customers</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              {hasChanges && (
-                <Button
-                  onClick={handleSaveChanges}
-                  disabled={saving}
-                  className="bg-indigo-500 hover:bg-indigo-600 text-white"
-                >
-                  {saving ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                  Save Changes
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="vendor-page-shell bg-gray-50">
+      <div className="vendor-app-column bg-white min-h-screen">
+        <VendorHeader
+          title="Manage Services"
+          subtitle="Enable and publish services for customers"
+          onBack={() => router.back()}
+          actions={
+            hasChanges
+              ? [
+                  <Button
+                    key="save"
+                    type="button"
+                    onClick={handleSaveChanges}
+                    disabled={saving}
+                    className="h-9 whitespace-nowrap bg-indigo-500 px-3 text-sm text-white hover:bg-indigo-600"
+                  >
+                    {saving ? (
+                      <RefreshCw className="mr-1.5 inline h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="mr-1.5 inline h-4 w-4" />
+                    )}
+                    Save
+                  </Button>,
+                ]
+              : []
+          }
+        />
 
-      <div className="max-w-4xl mx-auto px-4 py-6">
+        <div className="w-full px-4 py-6 sm:px-6">
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
@@ -612,6 +624,7 @@ export default function SoloProviderServiceManagePage() {
             </div>
             <Plus className="w-8 h-8 opacity-50" />
           </div>
+        </div>
         </div>
       </div>
     </div>

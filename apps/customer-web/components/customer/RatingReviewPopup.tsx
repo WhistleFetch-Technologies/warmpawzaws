@@ -45,6 +45,39 @@ interface ReviewData {
   tags: string[];
 }
 
+const WARMPAWZ_REVIEW_SUBMITTED_BOOKING_IDS_KEY = 'warmpawz_review_submitted_booking_ids';
+const WARMPAWZ_REVIEW_SKIPPED_BOOKING_IDS_KEY = 'warmpawz_review_skipped_booking_ids';
+
+function persistSubmittedReviewBookingId(bookingId: string) {
+  if (typeof window === 'undefined' || !bookingId) return;
+  const id = String(bookingId);
+  try {
+    const raw = localStorage.getItem(WARMPAWZ_REVIEW_SUBMITTED_BOOKING_IDS_KEY);
+    const arr: string[] = raw ? JSON.parse(raw) : [];
+    if (!arr.includes(id)) {
+      arr.push(id);
+      localStorage.setItem(WARMPAWZ_REVIEW_SUBMITTED_BOOKING_IDS_KEY, JSON.stringify(arr));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function persistSkippedReviewBookingId(bookingId: string) {
+  if (typeof window === 'undefined' || !bookingId) return;
+  const id = String(bookingId);
+  try {
+    const raw = localStorage.getItem(WARMPAWZ_REVIEW_SKIPPED_BOOKING_IDS_KEY);
+    const arr: string[] = raw ? JSON.parse(raw) : [];
+    if (!arr.includes(id)) {
+      arr.push(id);
+      localStorage.setItem(WARMPAWZ_REVIEW_SKIPPED_BOOKING_IDS_KEY, JSON.stringify(arr));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 const QUICK_TAGS = {
   at_home: [
     { id: 'punctual', label: 'Punctual', icon: Clock },
@@ -93,6 +126,26 @@ export function RatingReviewPopup({
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const scrollY = window.scrollY;
+    const prevOverflow = document.body.style.overflow;
+    const prevPosition = document.body.style.position;
+    const prevTop = document.body.style.top;
+    const prevWidth = document.body.style.width;
+    document.body.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.position = prevPosition;
+      document.body.style.top = prevTop;
+      document.body.style.width = prevWidth;
+      window.scrollTo(0, scrollY);
+    };
+  }, [isOpen]);
+
   const tags = QUICK_TAGS[serviceStyle] || QUICK_TAGS.at_center;
 
   const toggleTag = (tagId: string) => {
@@ -136,6 +189,7 @@ export function RatingReviewPopup({
         serviceStyle,
       });
 
+      persistSubmittedReviewBookingId(bookingId);
       setSubmitted(true);
       
       if (onSubmit) {
@@ -157,14 +211,14 @@ export function RatingReviewPopup({
   };
 
   const handleSkip = () => {
-    // Track skip action
+    persistSkippedReviewBookingId(bookingId);
     apiClient.post('/reviews/skip', {
       bookingId,
       vendorId,
       customerId,
       customerPhone,
     }).catch(() => {});
-    
+
     onClose();
   };
 
@@ -173,8 +227,8 @@ export function RatingReviewPopup({
   // Success state
   if (submitted) {
     return (
-      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-3xl max-w-md w-full p-8 text-center animate-in fade-in zoom-in duration-300">
+      <div className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 overscroll-none touch-none">
+        <div className="bg-white rounded-3xl max-w-md w-full p-8 text-center animate-in fade-in zoom-in duration-300 touch-auto">
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
             <Check className="w-10 h-10 text-green-500" />
           </div>
@@ -186,10 +240,13 @@ export function RatingReviewPopup({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-      <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[90vh] overflow-y-auto animate-in slide-in-from-bottom duration-300">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 overscroll-none touch-auto">
+      <div
+        className="bg-white rounded-3xl max-w-md w-full max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-bottom,0px)))] flex flex-col min-h-0 overflow-hidden animate-in fade-in zoom-in duration-300 shadow-xl mx-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
-        <div className="sticky top-0 bg-white p-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="flex-shrink-0 bg-white p-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900">Rate Your Experience</h2>
           <button 
             onClick={handleSkip}
@@ -199,7 +256,7 @@ export function RatingReviewPopup({
           </button>
         </div>
 
-        <div className="p-6">
+        <div className="min-h-0 flex-1 basis-0 overflow-y-auto overscroll-y-contain p-6 [-webkit-overflow-scrolling:touch] touch-pan-y">
           {/* Service Info */}
           <div className="text-center mb-6">
             <div className="w-16 h-16 bg-gradient-to-br from-[#FF8C42] to-[#FF7029] rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -265,7 +322,7 @@ export function RatingReviewPopup({
           </div>
 
           {/* Written Review */}
-          <div className="mb-6">
+          <div className="mb-2">
             <label className="block text-sm text-gray-600 mb-2">
               Share your experience (Optional)
             </label>
@@ -281,34 +338,33 @@ export function RatingReviewPopup({
             </p>
           </div>
 
-          {/* Actions */}
-          <div className="flex gap-3">
-            <Button
-              onClick={handleSkip}
-              variant="outline"
-              className="flex-1"
-              disabled={submitting}
-            >
-              Skip
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={rating === 0 || submitting}
-              className="flex-1 bg-[#FF8C42] hover:bg-[#E67A35]"
-            >
-              {submitting ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              ) : (
-                <Send className="w-4 h-4 mr-2" />
-              )}
-              Submit
-            </Button>
-          </div>
-
           {/* Privacy note */}
-          <p className="text-center text-xs text-gray-400 mt-4">
+          <p className="text-center text-xs text-gray-400 mt-2 pb-1">
             Your review will be displayed publicly to help other pet parents
           </p>
+        </div>
+
+        <div className="flex-shrink-0 bg-white border-t border-gray-100 p-4 flex gap-3">
+          <Button
+            onClick={handleSkip}
+            variant="outline"
+            className="flex-1"
+            disabled={submitting}
+          >
+            Skip
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={rating === 0 || submitting}
+            className="flex-1 bg-[#FF8C42] hover:bg-[#E67A35]"
+          >
+            {submitting ? (
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            ) : (
+              <Send className="w-4 h-4 mr-2" />
+            )}
+            Submit
+          </Button>
         </div>
       </div>
     </div>

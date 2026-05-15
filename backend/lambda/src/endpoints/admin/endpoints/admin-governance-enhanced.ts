@@ -18,7 +18,7 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, select, insert, update, deleteRows } from '../../../database/rds-connection';
-import { publishToSNS } from '../../../utils/aws-clients';
+import { publishToSNS } from '../../../utils/aws/aws-clients';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 
@@ -379,6 +379,46 @@ class CalculateTaxHandler extends BaseHandler {
 // BANNER MANAGEMENT
 // ============================================================================
 
+const ALLOWED_BANNER_DB_TYPES = new Set([
+  'main',
+  'spotlight',
+  'category',
+  'service',
+  'home_top',
+  'home_middle',
+  'home_lower',
+  'checkout',
+]);
+
+function pickBannerStringField(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  const s = String(value).trim();
+  return s.length ? s : undefined;
+}
+
+function pickBannerNullableField(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const normalized = String(value).trim();
+  return normalized.length ? normalized : null;
+}
+
+function normalizeBannerTypeForDb(typeOrPosition: string): string {
+  const key = typeOrPosition.trim().toLowerCase();
+  return ALLOWED_BANNER_DB_TYPES.has(key) ? key : 'main';
+}
+
+function resolveBannerTypeFromBody(type: unknown, position: unknown): string {
+  const raw = pickBannerStringField(type) ?? pickBannerStringField(position) ?? 'main';
+  return normalizeBannerTypeForDb(raw);
+}
+
+function positionAliasForAdminBannerRow(type: string | null | undefined): string {
+  const t = (type || 'main').toString().toLowerCase();
+  if (t === 'main') return 'home_top';
+  return t;
+}
+
 class GetBannersHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const queryParams = context.event.queryStringParameters || {};
@@ -390,9 +430,14 @@ class GetBannersHandler extends BaseHandler {
       let paramIndex = 1;
 
       if (position) {
-        // Check if position is a valid banner type, otherwise use it as-is
-        queryStr += ` AND type = $${paramIndex}::text`;
-        params.push(position);
+        // UI "home top" = DB main OR home_top; filter by both
+        if (String(position).toLowerCase() === 'home_top') {
+          queryStr += ` AND type = ANY($${paramIndex}::text[])`;
+          params.push(['main', 'home_top']);
+        } else {
+          queryStr += ` AND type = $${paramIndex}::text`;
+          params.push(position);
+        }
         paramIndex++;
       }
 
@@ -406,8 +451,12 @@ class GetBannersHandler extends BaseHandler {
 
       const result = await query(queryStr, params);
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      const banners = rows.map((r: any) => ({
+        ...r,
+        position: positionAliasForAdminBannerRow(r.type),
+      }));
 
-      return this.success({ banners: rows, total: rows.length });
+      return this.success({ banners, total: banners.length });
     } catch (error: any) {
       console.error('Error fetching banners:', error);
       // If table doesn't exist, return empty array instead of error
@@ -446,9 +495,13 @@ class CreateBannerHandler extends BaseHandler {
       endDate,
       isActive = true,
       metadata,
+      targetState,
+      target_state,
+      targetCity,
+      target_city,
     } = body;
 
-    const bannerType = type || position || 'main';
+    const bannerType = resolveBannerTypeFromBody(type, position);
     this.validateRequired(body, ['title']);
 
     try {
@@ -464,6 +517,8 @@ class CreateBannerHandler extends BaseHandler {
         start_date: startDate ? new Date(startDate) : new Date(),
         end_date: endDate ? new Date(endDate) : null,
         is_active: isActive,
+        target_state: pickBannerNullableField(target_state ?? targetState) ?? null,
+        target_city: pickBannerNullableField(target_city ?? targetCity) ?? null,
       });
 
       // Publish banner change event
@@ -510,6 +565,10 @@ class UpdateBannerHandler extends BaseHandler {
       endDate,
       isActive,
       metadata,
+      targetState,
+      target_state,
+      targetCity,
+      target_city,
     } = body;
 
     try {
@@ -523,14 +582,23 @@ class UpdateBannerHandler extends BaseHandler {
       if (ctaText !== undefined) updateData.cta_text = ctaText;
       if (cta_link !== undefined) updateData.cta_link = cta_link;
       if (linkUrl !== undefined) updateData.cta_link = linkUrl;
-      if (type !== undefined) updateData.type = type;
-      if (position !== undefined) updateData.type = position;
+      if (type !== undefined || position !== undefined) {
+        updateData.type = resolveBannerTypeFromBody(type, position);
+      }
       if (display_order !== undefined) updateData.display_order = display_order;
       if (priority !== undefined) updateData.display_order = priority;
       if (startDate !== undefined) updateData.start_date = startDate ? new Date(startDate) : null;
       if (endDate !== undefined) updateData.end_date = endDate ? new Date(endDate) : null;
       if (isActive !== undefined) updateData.is_active = isActive;
       if (metadata !== undefined) updateData.metadata = metadata;
+      const normalizedTargetState = pickBannerNullableField(target_state ?? targetState);
+      const normalizedTargetCity = pickBannerNullableField(target_city ?? targetCity);
+      if (normalizedTargetState !== undefined) {
+        updateData.target_state = normalizedTargetState;
+      }
+      if (normalizedTargetCity !== undefined) {
+        updateData.target_city = normalizedTargetCity;
+      }
 
       await update('banners', { id: bannerId }, updateData);
 
@@ -538,7 +606,7 @@ class UpdateBannerHandler extends BaseHandler {
       await publishToSNS('banner-change', {
         action: 'update',
         bannerId,
-        position: type || position || undefined,
+        position: updateData.type !== undefined ? updateData.type : undefined,
       });
 
       // Use explicit UUID casting in query to avoid "uuid = text" errors
@@ -715,6 +783,59 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await deleteBannerHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.get('/admin/banners/locations/states', async (c) => {
+    try {
+      const result = await query(
+        `SELECT value
+         FROM (
+           SELECT DISTINCT TRIM(state) AS value
+           FROM customer_addresses
+           WHERE state IS NOT NULL
+             AND TRIM(state) <> ''
+           UNION
+           SELECT DISTINCT TRIM(state) AS value
+           FROM customers
+           WHERE state IS NOT NULL
+             AND TRIM(state) <> ''
+         ) states
+         ORDER BY LOWER(value) ASC`
+      ).catch(() => ({ rows: [] }));
+      return c.json({ success: true, states: result.rows || [] });
+    } catch (error: any) {
+      return c.json({ success: true, states: [], error: error.message });
+    }
+  });
+
+  app.get('/admin/banners/locations/cities', async (c) => {
+    try {
+      const state = c.req.query('state');
+      const normalizedState = pickBannerStringField(state);
+      const params: string[] = [];
+      let sql = `SELECT value
+         FROM (
+           SELECT DISTINCT TRIM(city) AS value, TRIM(state) AS state_name
+           FROM customer_addresses
+           WHERE city IS NOT NULL
+             AND TRIM(city) <> ''
+           UNION
+           SELECT DISTINCT TRIM(city) AS value, TRIM(state) AS state_name
+           FROM customers
+           WHERE city IS NOT NULL
+             AND TRIM(city) <> ''
+         ) cities
+         WHERE 1=1`;
+      if (normalizedState) {
+        sql += ` AND LOWER(state_name) = LOWER($1)`;
+        params.push(normalizedState);
+      }
+      sql += ` ORDER BY LOWER(value) ASC`;
+      const result = await query(sql, params).catch(() => ({ rows: [] }));
+      return c.json({ success: true, cities: result.rows || [] });
+    } catch (error: any) {
+      return c.json({ success: true, cities: [], error: error.message });
+    }
   });
 
   // ==========================================

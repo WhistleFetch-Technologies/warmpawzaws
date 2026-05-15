@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { normalizeAdminBannersList } from '@/lib/banner-admin';
 import { AdminVendorManagement } from './admin/AdminVendorManagement';
 import { UnifiedAdminSidebar } from './admin/layout/UnifiedAdminSidebar';
 import { TaxManagement } from './admin/finance/TaxManagement';
@@ -52,14 +53,6 @@ interface Tier {
   is_active: boolean;
 }
 
-interface TaxRule {
-  id: string;
-  name: string;
-  rate: number;
-  category: string;
-  is_active: boolean;
-}
-
 interface Promotion {
   id: string;
   code: string;
@@ -79,7 +72,7 @@ interface Banner {
   title: string;
   image_url: string;
   link_url: string;
-  position: 'home_top' | 'home_middle' | 'category' | 'checkout';
+  position: 'home_top' | 'home_middle' | 'home_lower' | 'category' | 'checkout';
   is_active: boolean;
   start_date: string;
   end_date: string;
@@ -204,7 +197,6 @@ export function AdminApp() {
   const [allVendors, setAllVendors] = useState<Vendor[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [tiers, setTiers] = useState<Tier[]>([]);
-  const [taxRules, setTaxRules] = useState<TaxRule[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [banners, setBanners] = useState<Banner[]>([]);
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
@@ -231,7 +223,6 @@ export function AdminApp() {
   useEffect(() => {
     if (activeTab === 'roles' && roles.length === 0) loadRoles();
     if (activeTab === 'tiers' && tiers.length === 0) loadTiers();
-    if (activeTab === 'taxes' && taxRules.length === 0) loadTaxRules();
     if (activeTab === 'promotions' && promotions.length === 0) loadPromotions();
     if (activeTab === 'banners' && banners.length === 0) loadBanners();
     if (activeTab === 'settings' && !settings) loadSettings();
@@ -243,9 +234,7 @@ export function AdminApp() {
       setLoading(true);
       setError(null);
 
-      // Check if API base URL is configured
-      const apiBaseUrl = (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl || 
-                         process.env.NEXT_PUBLIC_API_BASE_URL;
+      const apiBaseUrl = getApiBaseUrl();
       
       if (!apiBaseUrl) {
         setError('API_BASE_URL is not configured. Please check runtime-config.js or NEXT_PUBLIC_API_BASE_URL environment variable.');
@@ -324,15 +313,6 @@ export function AdminApp() {
     }
   };
 
-  const loadTaxRules = async () => {
-    try {
-      const response = await apiClient.get<any>('/admin/tax-rules');
-      setTaxRules(response.rules || []);
-    } catch (err) {
-      console.error('Error loading tax rules:', err);
-    }
-  };
-
   const loadPromotions = async () => {
     try {
       const response = await apiClient.get<any>('/admin/promotions');
@@ -345,7 +325,7 @@ export function AdminApp() {
   const loadBanners = async () => {
     try {
       const response = await apiClient.get<any>('/admin/banners');
-      setBanners(response.banners || []);
+      setBanners(normalizeAdminBannersList(response.banners || []) as unknown as Banner[]);
     } catch (err) {
       console.error('Error loading banners:', err);
     }

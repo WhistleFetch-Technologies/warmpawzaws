@@ -1,25 +1,26 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Package, AlertTriangle, TrendingDown, ArrowUp, ArrowDown, Search, Filter, RefreshCcw } from 'lucide-react';
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
+import { Package, AlertTriangle, TrendingDown, ArrowUp, ArrowDown, Search } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+
+export type InventoryManagementHandle = {
+  refresh: () => Promise<void>;
+};
 
 interface InventoryManagementProps {
   sellerId: string;
 }
 
-export function InventoryManagement({ sellerId }: InventoryManagementProps) {
+export const InventoryManagement = forwardRef<InventoryManagementHandle, InventoryManagementProps>(
+  function InventoryManagement({ sellerId }, ref) {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState('all');
   const [updating, setUpdating] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadInventory();
-  }, [sellerId]);
-
-  const loadInventory = async () => {
+  const loadInventory = useCallback(async () => {
     try {
       setLoading(true);
       const data = await apiClient.get<{ products?: any[] }>(`/vendor/${sellerId}/products`);
@@ -30,7 +31,13 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [sellerId]);
+
+  useImperativeHandle(ref, () => ({ refresh: () => loadInventory() }), [loadInventory]);
+
+  useEffect(() => {
+    void loadInventory();
+  }, [loadInventory]);
 
   const updateStock = async (productId: string, newStock: number) => {
     setUpdating(productId);
@@ -45,21 +52,28 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
     }
   };
 
+  const isLowStock = (p: any) => {
+    const threshold = p.min_stock || p.minStock || 10;
+    return (p.stock ?? p.stock_quantity ?? 0) <= threshold && (p.stock ?? p.stock_quantity ?? 0) > 0;
+  };
+  const isOutOfStock = (p: any) => (p.stock ?? p.stock_quantity ?? 0) === 0;
+  const isHealthy = (p: any) => (p.stock ?? p.stock_quantity ?? 0) > (p.min_stock || p.minStock || 10);
+
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = 
       filter === 'all' ? true :
-      filter === 'low' ? product.stock <= 10 && product.stock > 0 :
-      filter === 'out' ? product.stock === 0 :
-      filter === 'good' ? product.stock > 10 : true;
+      filter === 'low' ? isLowStock(product) :
+      filter === 'out' ? isOutOfStock(product) :
+      filter === 'good' ? isHealthy(product) : true;
     return matchesSearch && matchesFilter;
   });
 
   const stats = {
     total: products.length,
-    lowStock: products.filter(p => p.stock <= 10 && p.stock > 0).length,
-    outOfStock: products.filter(p => p.stock === 0).length,
-    healthy: products.filter(p => p.stock > 10).length
+    lowStock: products.filter(isLowStock).length,
+    outOfStock: products.filter(isOutOfStock).length,
+    healthy: products.filter(isHealthy).length
   };
 
   if (loading) {
@@ -74,22 +88,7 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
   }
 
   return (
-    <div className="p-8 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Inventory Management</h1>
-          <p className="text-slate-500 mt-1">Track and update your stock levels</p>
-        </div>
-        <button
-          onClick={loadInventory}
-          className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors"
-        >
-          <RefreshCcw className="w-4 h-4" />
-          Refresh
-        </button>
-      </div>
-
+    <div className="space-y-6">
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
@@ -246,4 +245,5 @@ export function InventoryManagement({ sellerId }: InventoryManagementProps) {
       </div>
     </div>
   );
-}
+  }
+);

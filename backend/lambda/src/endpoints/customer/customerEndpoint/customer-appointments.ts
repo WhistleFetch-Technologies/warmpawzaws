@@ -14,11 +14,13 @@
  */
 
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query } from '../../../database/rds-connection';
-import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
-import { isValidUUID } from '../../../types/entities';
-import { getRefundTierForCancellation, computeRefundFromTier } from '../../../lib/services/cancellation-policy-service';
+import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
+import { hasCustomerPaidCapture } from '../../../lib/services/refundable-base';
+import { computeHoursUntilBookingStart } from '../../../lib/utils/booking-start-wall-time';
+import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
 
 // ============================================================================
 // GET /customer/appointments - List all appointments for customer
@@ -31,46 +33,59 @@ class GetCustomerAppointmentsHandler extends BaseHandler {
       const customerId = context.event.pathParameters?.customerId || 
                         context.event.queryStringParameters?.customerId ||
                         context.userId;
+
+      console.log('[appointments] list customerId:', customerId ?? '(none)', 'appointmentId:', '(n/a)');
       
       if (!customerId) {
-        return this.error('Customer ID is required', 401);
+        return this.success({ appointments: [], count: 0, message: 'No booking' });
       }
 
-      // Get appointments with related data
-      const appointments = await query(`
+      // Bookings are the source of truth (RDS has no legacy `appointments` table in many envs).
+      // `bookings.service_id` references `vendor_services.id`; vendors use `business_name`, not `name`.
+      const appointments = await query(
+        `
         SELECT 
-          a.id,
-          a.booking_id,
-          a.appointment_date,
-          a.appointment_time,
-          a.status,
-          a.notes,
-          a.created_at,
-          a.updated_at,
+          b.id,
+          b.id AS booking_id,
+          b.booking_date AS appointment_date,
+          b.booking_time AS appointment_time,
+          b.status,
+          b.notes,
+          b.created_at,
+          b.updated_at,
           b.service_id,
           b.vendor_id,
           b.pet_id,
-          s.name as service_name,
-          s.service_style,
-          v.name as vendor_name,
-          v.address as vendor_address,
-          p.name as pet_name
-        FROM appointments a
-        INNER JOIN bookings b ON a.booking_id = b.id
-        LEFT JOIN services s ON b.service_id = s.id
+          b.total_amount,
+          COALESCE(vs.service_name, 'Service') AS service_name,
+          COALESCE(vs.service_style, b.service_type) AS service_style,
+          COALESCE(v.business_name, v.owner_name, '') AS vendor_name,
+          v.address AS vendor_address,
+          p.name AS pet_name
+        FROM bookings b
+        LEFT JOIN vendor_services vs ON b.service_id = vs.id
         LEFT JOIN vendors v ON b.vendor_id = v.id
         LEFT JOIN pets p ON b.pet_id = p.id
         WHERE b.customer_id = $1
-        ORDER BY a.appointment_date DESC, a.appointment_time DESC
-      `, [customerId]);
+        ORDER BY b.booking_date DESC, b.booking_time DESC
+      `,
+        [customerId]
+      ).catch((err) => {
+        console.warn('[appointments] list query failed:', err);
+        return { rows: [] as Record<string, unknown>[] };
+      });
 
+      const rows = appointments.rows;
+      if (rows.length === 0) {
+        return this.success({ appointments: [], count: 0, message: 'No booking' });
+      }
       return this.success({
-        appointments: appointments.rows,
-        count: appointments.rows.length
+        appointments: rows,
+        count: rows.length,
       });
     } catch (error: any) {
-      console.error('Error fetching customer appointments:', error);
-      return this.error(error.message || 'Failed to fetch appointments', 500);
+      console.warn('[appointments] list handler error (returning empty):', error);
+      return this.success({ appointments: [], count: 0, message: 'No booking' });
     }
   }
 }
@@ -82,72 +97,123 @@ class GetCustomerAppointmentsHandler extends BaseHandler {
 class GetAppointmentDetailsHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
-      const appointmentId = context.event.pathParameters?.id;
-      const customerId = context.event.pathParameters?.customerId || context.userId;
+      const rawAppointmentId = context.event.pathParameters?.id;
+      const rawCustomerId =
+        context.event.pathParameters?.customerId ||
+        (context.event.queryStringParameters as Record<string, string> | undefined)?.customerId ||
+        context.userId;
 
-      if (!appointmentId) {
-        return this.error('Appointment ID is required', 400);
+      const appointmentId =
+        typeof rawAppointmentId === 'string' ? rawAppointmentId.trim() : rawAppointmentId;
+      const customerId = typeof rawCustomerId === 'string' ? rawCustomerId.trim() : rawCustomerId;
+
+      console.log('[appointments] detail customerId:', customerId ?? '(none)', 'appointmentId:', appointmentId ?? '(none)');
+
+      if (
+        !appointmentId ||
+        !customerId ||
+        appointmentId === 'undefined' ||
+        customerId === 'undefined'
+      ) {
+        return this.error('Appointment not found', 404);
       }
 
-      if (!customerId) {
-        return this.error('Customer ID is required', 401);
-      }
-
-      // Get appointment with full details
-      const appointment = await query(`
+      // Treat :id as booking id (same id returned by the list endpoint above).
+      const appointment = await query(
+        `
         SELECT 
-          a.*,
-          b.id as booking_id,
+          b.id,
+          b.id AS booking_id,
+          b.booking_date AS appointment_date,
+          b.booking_time AS appointment_time,
+          b.status,
+          b.notes,
+          b.created_at,
+          b.updated_at,
           b.service_id,
           b.vendor_id,
           b.pet_id,
           b.customer_id,
-          b.amount,
+          b.total_amount,
           b.payment_status,
-          s.name as service_name,
-          s.description as service_description,
-          s.service_style,
-          s.duration,
-          v.name as vendor_name,
-          v.address as vendor_address,
-          v.phone as vendor_phone,
-          p.name as pet_name,
+          COALESCE(vs.service_name, 'Service') AS service_name,
+          vs.custom_description AS service_description,
+          COALESCE(vs.service_style, b.service_type) AS service_style,
+          vs.duration_minutes AS duration,
+          COALESCE(v.business_name, v.owner_name, '') AS vendor_name,
+          v.address AS vendor_address,
+          v.phone AS vendor_phone,
+          p.name AS pet_name,
           p.species,
           p.breed
-        FROM appointments a
-        INNER JOIN bookings b ON a.booking_id = b.id
-        LEFT JOIN services s ON b.service_id = s.id
+        FROM bookings b
+        LEFT JOIN vendor_services vs ON b.service_id = vs.id
         LEFT JOIN vendors v ON b.vendor_id = v.id
         LEFT JOIN pets p ON b.pet_id = p.id
-        WHERE a.id = $1 AND b.customer_id = $2
-      `, [appointmentId, customerId]);
+        WHERE b.id = $1 AND b.customer_id = $2
+      `,
+        [appointmentId, customerId]
+      ).catch((err) => {
+        console.warn('[appointments] detail main query failed:', (err as Error)?.message || err);
+        return { rows: [] as Record<string, unknown>[] };
+      });
 
       if (appointment.rows.length === 0) {
         return this.error('Appointment not found', 404);
       }
 
-      // Get prescriptions if exists
-      const prescriptions = await query(`
+      const bookingId = appointment.rows[0].booking_id ?? appointment.rows[0].id;
+
+      const prescriptions = await query(
+        `
         SELECT * FROM prescriptions
         WHERE booking_id = $1
         ORDER BY created_at DESC
-      `, [appointment.rows[0].booking_id]);
+      `,
+        [bookingId]
+      ).catch((err) => {
+        console.warn('[appointments] optional prescriptions query failed:', err);
+        return { rows: [] as unknown[] };
+      });
 
-      // Get medical records if exists
-      const medicalRecords = await query(`
+      const medicalRecords = await query(
+        `
         SELECT * FROM medical_records
         WHERE booking_id = $1
         ORDER BY created_at DESC
-      `, [appointment.rows[0].booking_id]);
-
-      return this.success({
-        appointment: appointment.rows[0],
-        prescriptions: prescriptions.rows,
-        medicalRecords: medicalRecords.rows
+      `,
+        [bookingId]
+      ).catch((err) => {
+        console.warn('[appointments] optional medical_records query failed:', err);
+        return { rows: [] as unknown[] };
       });
+
+      const appointmentHistory = await query(
+        `
+        SELECT * FROM appointment_history
+        WHERE appointment_id = $1
+        ORDER BY created_at DESC
+      `,
+        [bookingId]
+      ).catch((err) => {
+        console.warn('[appointments] optional appointment_history query failed:', err);
+        return { rows: [] as unknown[] };
+      });
+
+      try {
+        return this.success({
+          appointment: appointment.rows[0],
+          prescriptions: prescriptions.rows,
+          medicalRecords: medicalRecords.rows,
+          appointmentHistory: appointmentHistory.rows,
+        });
+      } catch (serializeErr: any) {
+        console.warn('[appointments] detail response build failed (treating as not found):', serializeErr);
+        return this.error('Appointment not found', 404);
+      }
     } catch (error: any) {
-      console.error('Error fetching appointment details:', error);
-      return this.error(error.message || 'Failed to fetch appointment details', 500);
+      console.warn('[appointments] detail handler error:', error);
+      return this.error('Appointment not found', 404);
     }
   }
 }
@@ -160,7 +226,10 @@ class RescheduleAppointmentHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const appointmentId = context.event.pathParameters?.id;
-      const customerId = context.event.pathParameters?.customerId || context.userId;
+      const customerId =
+        context.event.pathParameters?.customerId ||
+        (context.event.queryStringParameters as Record<string, string> | undefined)?.customerId ||
+        context.userId;
       const body = this.parseBody(context.event);
       const { appointment_date, appointment_time, reason } = body || {};
 
@@ -176,36 +245,57 @@ class RescheduleAppointmentHandler extends BaseHandler {
         return this.error('Customer ID is required', 401);
       }
 
-      // Verify appointment belongs to customer
-      const appointmentResult = await query(`
-        SELECT a.*, b.customer_id, b.status as booking_status
-        FROM appointments a
-        INNER JOIN bookings b ON a.booking_id = b.id
-        WHERE a.id = $1 AND b.customer_id = $2
-      `, [appointmentId, customerId]);
+      const appointmentResult = await query(
+        `
+        SELECT b.id, b.customer_id, b.status AS booking_status,
+               b.booking_date, b.booking_time
+        FROM bookings b
+        WHERE b.id = $1 AND b.customer_id = $2
+      `,
+        [appointmentId, customerId]
+      ).catch((err) => {
+        console.warn('[appointments] reschedule lookup failed:', err);
+        return { rows: [] as Record<string, unknown>[] };
+      });
 
       if (appointmentResult.rows.length === 0) {
         return this.error('Appointment not found', 404);
       }
 
-      if (appointmentResult.rows[0].booking_status !== 'confirmed' && appointmentResult.rows[0].booking_status !== 'scheduled') {
+      const bookingStatus = String(appointmentResult.rows[0].booking_status || '');
+      if (!['confirmed', 'pending'].includes(bookingStatus)) {
         return this.error('Appointment cannot be rescheduled in current status', 400);
       }
 
-      // Update appointment
-      const updated = await query(`
-        UPDATE appointments
+      const updated = await query(
+        `
+        UPDATE bookings
         SET 
-          appointment_date = $1,
-          appointment_time = $2,
+          booking_date = $1::date,
+          booking_time = $2::time,
           notes = COALESCE(notes || E'\n', '') || 'Rescheduled: ' || $3,
           updated_at = NOW()
-        WHERE id = $4
+        WHERE id = $4 AND customer_id = $5
         RETURNING *
-      `, [appointment_date, appointment_time, reason || 'No reason provided', appointmentId]);
+      `,
+        [
+          appointment_date,
+          appointment_time,
+          reason || 'No reason provided',
+          appointmentId,
+          customerId,
+        ]
+      ).catch((err) => {
+        console.warn('[appointments] reschedule update failed:', err);
+        return { rows: [] as Record<string, unknown>[] };
+      });
 
-      // Create reschedule history
-      await query(`
+      if (updated.rows.length === 0) {
+        return this.error('Appointment not found', 404);
+      }
+
+      await query(
+        `
         INSERT INTO appointment_history (
           appointment_id,
           action,
@@ -216,22 +306,29 @@ class RescheduleAppointmentHandler extends BaseHandler {
           reason,
           created_at
         ) VALUES ($1, 'rescheduled', $2, $3, $4, $5, $6, NOW())
-      `, [
-        appointmentId,
-        appointmentResult.rows[0].appointment_date,
-        appointmentResult.rows[0].appointment_time,
-        appointment_date,
-        appointment_time,
-        reason
-      ]);
+      `,
+        [
+          appointmentId,
+          appointmentResult.rows[0].booking_date,
+          appointmentResult.rows[0].booking_time,
+          appointment_date,
+          appointment_time,
+          reason,
+        ]
+      ).catch((histErr) => console.warn('[appointments] appointment_history insert skipped:', histErr));
 
+      const row = updated.rows[0];
       return this.success({
-        appointment: updated.rows[0],
-        message: 'Appointment rescheduled successfully'
+        appointment: {
+          ...row,
+          appointment_date: row.booking_date,
+          appointment_time: row.booking_time,
+        },
+        message: 'Appointment rescheduled successfully',
       });
     } catch (error: any) {
-      console.error('Error rescheduling appointment:', error);
-      return this.error(error.message || 'Failed to reschedule appointment', 500);
+      console.warn('[appointments] reschedule handler error:', error);
+      return this.error('Appointment not found', 404);
     }
   }
 }
@@ -244,7 +341,10 @@ class CancelAppointmentHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const appointmentId = context.event.pathParameters?.id;
-      const customerId = context.event.pathParameters?.customerId || context.userId;
+      const customerId =
+        context.event.pathParameters?.customerId ||
+        (context.event.queryStringParameters as Record<string, string> | undefined)?.customerId ||
+        context.userId;
       const body = this.parseBody(context.event);
       const { reason, refundMethod = 'wallet' } = body || {};
 
@@ -256,98 +356,137 @@ class CancelAppointmentHandler extends BaseHandler {
         return this.error('Customer ID is required', 401);
       }
 
-      // Verify appointment belongs to customer and get booking details for policy/refund
-      const appointment = await query(`
-        SELECT a.*, b.customer_id, b.status as booking_status, b.id as booking_id,
+      const appointment = await query(
+        `
+        SELECT b.*, b.status AS booking_status, b.id AS booking_id,
                b.booking_date, b.booking_time, b.vendor_id, b.service_id, b.service_type,
-               b.payment_status, b.total_amount
-        FROM appointments a
-        INNER JOIN bookings b ON a.booking_id = b.id
-        WHERE a.id = $1 AND b.customer_id = $2
-      `, [appointmentId, customerId]);
+               b.payment_status, b.total_amount, b.customer_id
+        FROM bookings b
+        WHERE b.id = $1 AND b.customer_id = $2
+      `,
+        [appointmentId, customerId]
+      ).catch((err) => {
+        console.warn('[appointments] cancel lookup failed:', err);
+        return { rows: [] as Record<string, unknown>[] };
+      });
 
       if (appointment.rows.length === 0) {
         return this.error('Appointment not found', 404);
       }
 
-      if (appointment.rows[0].status === 'cancelled') {
+      const bookingRow = appointment.rows[0];
+      if (String(bookingRow.status || '') === 'cancelled') {
         return this.error('Appointment is already cancelled', 400);
       }
 
-      // Update appointment status
-      const updated = await query(`
-        UPDATE appointments
+      const bookingId = bookingRow.booking_id ?? bookingRow.id;
+
+      // Same wall-clock semantics as booking cancel + refund preview (vendor_timezone + date + time).
+      const hoursUntilStart = computeHoursUntilBookingStart({
+        booking_date: bookingRow.booking_date,
+        booking_time: String(bookingRow.booking_time ?? ''),
+        vendor_timezone: (bookingRow as any).vendor_timezone ?? null,
+        booking_datetime: (bookingRow as any).booking_datetime ?? null,
+        scheduled_at: (bookingRow as any).scheduled_at ?? null,
+      });
+      if (Number.isFinite(hoursUntilStart) && hoursUntilStart < 0) {
+        return this.error('Cannot cancel past appointments', 400);
+      }
+
+      const updated = await query(
+        `
+        UPDATE bookings
         SET 
           status = 'cancelled',
           notes = COALESCE(notes || E'\n', '') || 'Cancelled: ' || $1,
+          cancelled_at = NOW(),
+          cancelled_by = 'pet_parent',
+          cancellation_reason = $1,
           updated_at = NOW()
         WHERE id = $2
         RETURNING *
-      `, [reason || 'No reason provided', appointmentId]);
+      `,
+        [reason || 'No reason provided', bookingId]
+      ).catch((err) => {
+        console.warn('[appointments] cancel update failed:', err);
+        return { rows: [] as Record<string, unknown>[] };
+      });
 
-      const bookingId = appointment.rows[0].booking_id;
-      const bookingRow = appointment.rows[0];
-
-      // Update booking status and who cancelled (pet_parent) for policy enforcement
-      await query(`
-        UPDATE bookings
-        SET status = 'cancelled', cancelled_at = NOW(), cancelled_by = 'pet_parent',
-            cancellation_reason = $1, updated_at = NOW()
-        WHERE id = $2
-      `, [reason || 'No reason provided', bookingId]);
+      if (updated.rows.length === 0) {
+        return this.error('Appointment not found', 404);
+      }
 
       // Apply refund per policy (vendor_refund_tiers by who cancels)
       let refundInfo: { amount: number; percentage: number; method: string; status: string; message: string } | null = null;
-      if (bookingRow.payment_status === 'paid' && bookingRow.total_amount > 0) {
+      const bookingPaidForRefund = await hasCustomerPaidCapture(String(bookingId), {
+        total_amount: bookingRow.total_amount as number | string | null,
+        discount_amount: (bookingRow as any).discount_amount ?? null,
+        payment_status: (bookingRow as any).payment_status ?? (bookingRow as any).paymentStatus,
+      });
+      const customerIdForRefund = String(
+        (bookingRow as any).customer_id ?? (bookingRow as any).customerId ?? customerId
+      );
+      if (bookingPaidForRefund) {
         try {
-          const totalAmount = parseFloat(String(bookingRow.total_amount));
-          const bookingDateTime = bookingRow.booking_date && bookingRow.booking_time
-            ? new Date(`${bookingRow.booking_date}T${bookingRow.booking_time}`)
-            : null;
-          const hoursUntilBooking = bookingDateTime && !isNaN(bookingDateTime.getTime())
-            ? (bookingDateTime.getTime() - Date.now()) / (1000 * 60 * 60)
-            : undefined;
-          const tier = await getRefundTierForCancellation(
-            {
-              id: bookingId,
-              vendor_id: bookingRow.vendor_id,
-              service_id: bookingRow.service_id,
-              service_type: bookingRow.service_type,
-              booking_date: bookingRow.booking_date,
-              booking_time: bookingRow.booking_time,
-              total_amount: totalAmount,
-            },
-            'pet_parent',
-            { hoursUntilBooking }
-          );
-          const computed = tier
-            ? computeRefundFromTier(totalAmount, tier, 100, 0)
-            : { refundAmount: totalAmount, refundPercentage: 100, cancellationFee: 0 };
-          const refundAmount = tier ? computed.refundAmount : Math.max(0, (totalAmount * computed.refundPercentage) / 100 - computed.cancellationFee);
+          const preview = await previewCustomerCancellationRefund({
+            id: bookingId,
+            vendor_id: bookingRow.vendor_id,
+            service_id: bookingRow.service_id,
+            service_type: bookingRow.service_type,
+            booking_datetime: (bookingRow as any).booking_datetime ?? null,
+            scheduled_at: (bookingRow as any).scheduled_at ?? null,
+            booking_date: String(bookingRow.booking_date),
+            booking_time: String(bookingRow.booking_time),
+            vendor_timezone: (bookingRow as any).vendor_timezone ?? null,
+            total_amount: bookingRow.total_amount,
+            discount_amount: (bookingRow as any).discount_amount ?? null,
+          });
+          const refundAmount = Math.round(preview.refundAmount * 100) / 100;
+          const refundPercentage = preview.refundPercentage;
           if (refundAmount > 0) {
             const payments = await query(
-              `SELECT id FROM payments WHERE booking_id = $1 AND payment_status = 'completed' LIMIT 1`,
+              `SELECT id FROM payments
+               WHERE booking_id = $1::uuid
+                 AND payment_status IN ('completed', 'partially_refunded')
+               ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END
+               LIMIT 1`,
               [bookingId]
             ).catch(() => ({ rows: [] }));
             const paymentId = (payments as any).rows?.[0]?.id;
             if (refundMethod === 'wallet') {
-              await query(
-                `INSERT INTO wallet_transactions (customer_id, type, amount, description, reference_type, reference_id, status)
-                 VALUES ($1, 'credit', $2, $3, 'booking_refund', $4, 'completed')`,
-                [bookingRow.customer_id, refundAmount, `Refund for cancelled appointment (${computed.refundPercentage}%)`, bookingId]
-              ).catch(() => null);
-              await query(
-                `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1 WHERE id = $2`,
-                [refundAmount, bookingRow.customer_id]
-              ).catch(() => null);
-              refundInfo = { amount: refundAmount, percentage: computed.refundPercentage, method: 'wallet', status: 'completed', message: `₹${refundAmount.toFixed(2)} credited to wallet` };
+              try {
+                await creditCustomerWalletForBookingRefund({
+                  customerId: customerIdForRefund,
+                  bookingId,
+                  refundAmount,
+                  refundPercentage,
+                  label: 'appointment',
+                });
+                refundInfo = {
+                  amount: refundAmount,
+                  percentage: refundPercentage,
+                  method: 'wallet',
+                  status: 'completed',
+                  message: `₹${refundAmount.toFixed(2)} credited to wallet`,
+                };
+              } catch (e) {
+                console.error('[appointments] wallet credit failed:', e);
+                refundInfo = {
+                  amount: refundAmount,
+                  percentage: refundPercentage,
+                  method: 'wallet',
+                  status: 'failed',
+                  message:
+                    'Cancellation succeeded but wallet refund failed. Please contact support with your appointment ID.',
+                };
+              }
             } else if (paymentId) {
               await query(
                 `INSERT INTO refunds (payment_id, booking_id, customer_id, vendor_id, refund_amount, refund_reason, refund_status, refund_method, requested_at)
                  VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW())`,
-                [paymentId, bookingId, bookingRow.customer_id, bookingRow.vendor_id || null, refundAmount, `Appointment cancellation: ${reason || 'No reason'} (${computed.refundPercentage}% refund)`]
+                [paymentId, bookingId, customerIdForRefund, bookingRow.vendor_id || null, refundAmount, `Appointment cancellation: ${reason || 'No reason'} (${refundPercentage}% refund)`]
               ).catch(() => null);
-              refundInfo = { amount: refundAmount, percentage: computed.refundPercentage, method: 'original', status: 'pending', message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method` };
+              refundInfo = { amount: refundAmount, percentage: refundPercentage, method: 'original', status: 'pending', message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method` };
             }
           }
         } catch (refundErr: any) {
@@ -355,24 +494,36 @@ class CancelAppointmentHandler extends BaseHandler {
         }
       }
 
-      // Create cancellation history
-      await query(`
+      await query(
+        `
         INSERT INTO appointment_history (
           appointment_id,
           action,
           reason,
           created_at
         ) VALUES ($1, 'cancelled', $2, NOW())
-      `, [appointmentId, reason]);
+      `,
+        [appointmentId, reason]
+      ).catch((histErr) => console.warn('[appointments] appointment_history insert skipped:', histErr));
 
+      const cancelledRow = updated.rows[0];
       return this.success({
-        appointment: updated.rows[0],
+        appointment: {
+          ...cancelledRow,
+          appointment_date: cancelledRow.booking_date,
+          appointment_time: cancelledRow.booking_time,
+        },
         message: 'Appointment cancelled successfully',
         refund: refundInfo ?? undefined,
       });
     } catch (error: any) {
-      console.error('Error cancelling appointment:', error);
-      return this.error(error.message || 'Failed to cancel appointment', 500);
+      console.warn('[appointments] cancel handler error:', error?.message || error);
+      return this.error(
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message.trim()
+          : 'Failed to cancel appointment',
+        500
+      );
     }
   }
 }
@@ -380,6 +531,57 @@ class CancelAppointmentHandler extends BaseHandler {
 // ============================================================================
 // REGISTER ENDPOINTS
 // ============================================================================
+
+const LIST_FALLBACK = {
+  appointments: [] as unknown[],
+  count: 0,
+  message: 'No booking',
+};
+const NOT_FOUND_FALLBACK = { error: 'Appointment not found' };
+
+const LIST_EMPTY_OK = { appointments: [] as unknown[], count: 0, message: 'No booking' };
+
+async function runAppointmentHandler(
+  c: { json: (b: object, s?: number) => Response },
+  exec: () => Promise<{ statusCode: number; body: string }>,
+  parseFallbackBody: object,
+  parseFallbackStatus: number,
+  options?: { coerceListErrorsToEmpty?: boolean }
+): Promise<Response> {
+  try {
+    const result = await exec();
+    const raw = result?.body;
+
+    // Legacy/stale handlers may return 5xx (e.g. SQL against missing `appointments` table). My Bookings must stay 200.
+    if (options?.coerceListErrorsToEmpty && result.statusCode >= 400) {
+      console.warn(
+        '[appointments] list coerced from error status:',
+        result.statusCode,
+        typeof raw === 'string' ? raw.slice(0, 400) : raw
+      );
+      return c.json(LIST_EMPTY_OK, 200);
+    }
+
+    if (raw == null || raw === '') {
+      console.warn('[appointments] empty handler body, using fallback');
+      return c.json(parseFallbackBody, parseFallbackStatus);
+    }
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (options?.coerceListErrorsToEmpty && parsed.error != null && !Array.isArray(parsed.appointments)) {
+        console.warn('[appointments] list coerced from error payload:', parsed.error);
+        return c.json(LIST_EMPTY_OK, 200);
+      }
+      return c.json(parsed, result.statusCode);
+    } catch {
+      console.warn('[appointments] invalid handler JSON body, using fallback');
+      return c.json(parseFallbackBody, parseFallbackStatus);
+    }
+  } catch (err) {
+    console.warn('[appointments] route execute threw:', err);
+    return c.json(parseFallbackBody, parseFallbackStatus);
+  }
+}
 
 export function registerCustomerAppointmentsEndpoints(app: Hono) {
   const getAppointmentsHandler = new GetCustomerAppointmentsHandler();
@@ -389,80 +591,273 @@ export function registerCustomerAppointmentsEndpoints(app: Hono) {
 
   app.get('/customer/appointments', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
     const context = createLambdaContext();
-    const result = await getAppointmentsHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return runAppointmentHandler(
+      c,
+      () => getAppointmentsHandler.execute(event, context),
+      LIST_FALLBACK,
+      200,
+      { coerceListErrorsToEmpty: true }
+    );
   });
 
   app.get('/customer/appointments/:id', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
+    event.pathParameters = {
+      ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
+      id: c.req.param('id'),
+    };
     const context = createLambdaContext();
-    const result = await getDetailsHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return runAppointmentHandler(
+      c,
+      () => getDetailsHandler.execute(event, context),
+      NOT_FOUND_FALLBACK,
+      404
+    );
   });
 
   app.post('/customer/appointments/:id/reschedule', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
+    await attachParsedJsonBody(c, event);
     const context = createLambdaContext();
-    const result = await rescheduleHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return runAppointmentHandler(
+      c,
+      () => rescheduleHandler.execute(event, context),
+      NOT_FOUND_FALLBACK,
+      404
+    );
   });
 
   app.post('/customer/appointments/:id/cancel', async (c) => {
     const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
+    await attachParsedJsonBody(c, event);
     const context = createLambdaContext();
-    const result = await cancelHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return runAppointmentHandler(
+      c,
+      () => cancelHandler.execute(event, context),
+      NOT_FOUND_FALLBACK,
+      404
+    );
   });
 
-  // Compatibility endpoints for frontend
+  // Compatibility routes: MUST register GET /appointment/customer/:customerId BEFORE GET /appointment/:appointmentId
+  // so the path segment "customer" is never bound to :appointmentId.
+  app.get('/appointment/customer/:customerId', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    mergeAllQueryFromHono(c, event);
+    event.pathParameters = {
+      ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
+      customerId: c.req.param('customerId'),
+    };
+    event.queryStringParameters = {
+      ...(event.queryStringParameters && typeof event.queryStringParameters === 'object'
+        ? event.queryStringParameters
+        : {}),
+      status: c.req.query('status') || 'all',
+    };
+    const context = createLambdaContext();
+    return runAppointmentHandler(
+      c,
+      () => getAppointmentsHandler.execute(event, context),
+      LIST_FALLBACK,
+      200,
+      { coerceListErrorsToEmpty: true }
+    );
+  });
+
   app.get('/appointment/:appointmentId', async (c) => {
     const event = createApiGatewayEvent(c.req);
-    event.pathParameters = { id: c.req.param('appointmentId') };
+    mergeAllQueryFromHono(c, event);
+    event.pathParameters = {
+      ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
+      id: c.req.param('appointmentId'),
+    };
     const context = createLambdaContext();
-    const result = await getDetailsHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return runAppointmentHandler(
+      c,
+      () => getDetailsHandler.execute(event, context),
+      NOT_FOUND_FALLBACK,
+      404
+    );
   });
 
   app.post('/appointment/:appointmentId/cancel', async (c) => {
     const event = createApiGatewayEvent(c.req);
-    event.pathParameters = { id: c.req.param('appointmentId') };
+    mergeAllQueryFromHono(c, event);
+    event.pathParameters = {
+      ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
+      id: c.req.param('appointmentId'),
+    };
+    await attachParsedJsonBody(c, event);
     const context = createLambdaContext();
-    const result = await cancelHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return runAppointmentHandler(
+      c,
+      () => cancelHandler.execute(event, context),
+      NOT_FOUND_FALLBACK,
+      404
+    );
   });
 
   app.post('/appointment/:appointmentId/reschedule', async (c) => {
     const event = createApiGatewayEvent(c.req);
-    event.pathParameters = { id: c.req.param('appointmentId') };
+    mergeAllQueryFromHono(c, event);
+    event.pathParameters = {
+      ...(event.pathParameters && typeof event.pathParameters === 'object' ? event.pathParameters : {}),
+      id: c.req.param('appointmentId'),
+    };
+    await attachParsedJsonBody(c, event);
     const context = createLambdaContext();
-    const result = await rescheduleHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
+    return runAppointmentHandler(
+      c,
+      () => rescheduleHandler.execute(event, context),
+      NOT_FOUND_FALLBACK,
+      404
+    );
   });
+}
 
-  app.get('/appointment/customer/:customerId', async (c) => {
-    const event = createApiGatewayEvent(c.req);
-    event.queryStringParameters = { status: c.req.query('status') || 'all' };
-    const context = createLambdaContext();
-    const result = await getAppointmentsHandler.execute(event, context);
-    return c.json(JSON.parse(result.body), result.statusCode);
-  });
+/**
+ * Copy query params from Hono into the synthetic API Gateway event.
+ * POST /appointment/:id/cancel?customerId=… must carry customerId — some adapters leave req.query() empty on POST.
+ */
+function mergeAllQueryFromHono(c: Context, event: Record<string, unknown>): void {
+  try {
+    const base =
+      event.queryStringParameters && typeof event.queryStringParameters === 'object'
+        ? { ...(event.queryStringParameters as Record<string, string>) }
+        : {};
+    const rq = c.req as { queries?: () => Record<string, string[]> };
+    if (typeof rq.queries === 'function') {
+      const qm = rq.queries();
+      if (qm && typeof qm === 'object' && !Array.isArray(qm)) {
+        for (const [k, arr] of Object.entries(qm)) {
+          const v = Array.isArray(arr) ? arr[0] : (arr as unknown as string);
+          if (v != null && String(v) !== '') base[k] = String(v);
+        }
+      }
+    }
+    const q = c.req.query();
+    if (q && typeof q === 'object' && !Array.isArray(q)) {
+      for (const [k, v] of Object.entries(q)) {
+        if (v != null && String(v) !== '') base[k] = String(v);
+      }
+    }
+    event.queryStringParameters = base;
+  } catch (e) {
+    console.warn('[appointments] mergeAllQueryFromHono failed:', e);
+  }
+}
+
+/** BaseHandler.parseBody expects `event.body` as JSON string; Hono only exposes payload via `c.req.json()`. */
+async function attachParsedJsonBody(c: Context, event: Record<string, unknown>): Promise<void> {
+  const method = c.req.method;
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return;
+  try {
+    const j = await c.req.json();
+    event.body = JSON.stringify(j != null && typeof j === 'object' && !Array.isArray(j) ? j : {});
+  } catch {
+    event.body = typeof event.body === 'string' && event.body.length > 0 ? event.body : '{}';
+  }
 }
 
 // Helper to convert Hono request to API Gateway event (for compatibility)
 function createApiGatewayEvent(req: any): any {
+  let pathParameters: Record<string, string> = {};
+  let queryStringParameters: Record<string, string> = {};
+  let headers: Record<string, string> = {};
+
+  try {
+    if (typeof req.param === 'function') {
+      const p = req.param();
+      if (p && typeof p === 'object' && !Array.isArray(p)) {
+        pathParameters = { ...p };
+      }
+    }
+  } catch (e) {
+    console.warn('[appointments] createApiGatewayEvent pathParameters failed:', e);
+  }
+
+  try {
+    if (typeof req.query === 'function') {
+      const q = req.query();
+      if (q && typeof q === 'object' && !Array.isArray(q)) {
+        queryStringParameters = Object.fromEntries(
+          Object.entries(q as Record<string, unknown>).map(([k, v]) => [
+            k,
+            v == null ? '' : String(v),
+          ])
+        );
+      }
+    }
+  } catch (e) {
+    console.warn('[appointments] createApiGatewayEvent queryStringParameters failed:', e);
+  }
+
+  // Fallback: some runtimes / adapters leave req.query() empty but the URL still has ?customerId=…
+  try {
+    const urlStr = typeof req.url === 'string' ? req.url : '';
+    if (urlStr.includes('?')) {
+      const u = urlStr.startsWith('http://') || urlStr.startsWith('https://')
+        ? new URL(urlStr)
+        : new URL(urlStr, 'http://127.0.0.1');
+      u.searchParams.forEach((value, key) => {
+        if (value == null || key == null) return;
+        if (!queryStringParameters[key] || queryStringParameters[key] === '') {
+          queryStringParameters[key] = value;
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('[appointments] createApiGatewayEvent URL query fallback failed:', e);
+  }
+
+  try {
+    if (typeof req.header === 'function') {
+      const h = req.header();
+      if (h && typeof h === 'object') {
+        headers = Object.fromEntries(
+          Object.entries(h as Record<string, unknown>).map(([k, v]) => [
+            k,
+            v == null ? '' : String(v),
+          ])
+        );
+      }
+    }
+  } catch (e) {
+    console.warn('[appointments] createApiGatewayEvent headers failed:', e);
+  }
+
+  let body: string | null = null;
+  try {
+    if (req.body != null && typeof req.body !== 'undefined') {
+      body = JSON.stringify(req.body);
+    }
+  } catch (e) {
+    console.warn('[appointments] createApiGatewayEvent body stringify skipped:', e);
+    body = null;
+  }
+
+  const sub =
+    typeof req.header === 'function'
+      ? req.header('x-user-id') || headers['x-user-id'] || 'test-user'
+      : 'test-user';
+
   return {
-    pathParameters: req.param ? Object.fromEntries(Object.entries(req.param())) : {},
-    queryStringParameters: req.query ? Object.fromEntries(Object.entries(req.query())) : {},
-    body: req.body ? JSON.stringify(req.body) : null,
-    headers: req.header ? Object.fromEntries(Object.entries(req.header())) : {},
+    pathParameters,
+    queryStringParameters,
+    body,
+    headers,
     requestContext: {
       authorizer: {
         claims: {
-          sub: req.header?.('x-user-id') || 'test-user'
-        }
-      }
-    }
+          sub,
+        },
+      },
+    },
   };
 }
 

@@ -72,12 +72,40 @@ function getCanonicalServiceStyles(config: any): string[] {
 // ROLE HANDLERS
 // ============================================================================
 
+const KNOWN_ADMIN_PORTAL_ROLE_NAMES = new Set(['admin', 'super_admin', 'support_admin', 'admin_master']);
+
+function hasAdminPortalPermission(permissionNames: string[]): boolean {
+  return permissionNames.some((p) => {
+    const s = String(p);
+    return s.startsWith('admin.') || s.startsWith('admin:');
+  });
+}
+
+/**
+ * Admin-portal RBAC roles only (not pure vendor-dashboard roles).
+ * - `role_type = admin` always counts.
+ * - `role_type = vendor` still counts if the row has admin-scoped permissions (e.g. vendor ops / "Vendor Manager" with `admin.vendors`).
+ * - Otherwise uses known system admin names or inferred admin permissions.
+ */
+function isAdminPortalRoleRow(role: Record<string, any>, permissionNames: string[]): boolean {
+  const rt = String(role.role_type ?? '').toLowerCase();
+  if (rt === 'admin') return true;
+  if (hasAdminPortalPermission(permissionNames)) return true;
+  if (rt === 'vendor') return false;
+  const nm = String(role.name ?? '').toLowerCase();
+  if (KNOWN_ADMIN_PORTAL_ROLE_NAMES.has(nm)) return true;
+  return false;
+}
+
 class GetRolesHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     // ✅ SQL: Get all roles (both active and inactive for admin view)
     const queryParams = context.event.queryStringParameters || {};
     const onlyActive = queryParams.active === 'true' || !queryParams.active;
-    
+    const roleTypeFilter = String(queryParams.role_type || queryParams.type || '')
+      .toLowerCase()
+      .trim();
+
     const roles = await select('roles', onlyActive ? { is_active: true } : {}, {
       orderBy: 'display_name',
       orderDirection: 'ASC',
@@ -122,8 +150,33 @@ class GetRolesHandler extends BaseHandler {
       });
     }
 
+    let rolesForResponse = roles;
+    if (roleTypeFilter === 'admin') {
+      rolesForResponse = roles.filter((r: any) =>
+        isAdminPortalRoleRow(r, permissionsByRole.get(r.id) || [])
+      );
+    } else if (roleTypeFilter === 'vendor') {
+      rolesForResponse = roles.filter((r: any) => {
+        const rt = String(r.role_type ?? '').toLowerCase();
+        const perms = permissionsByRole.get(r.id) || [];
+        if (rt === 'admin') return false;
+        if (rt === 'vendor') {
+          // Vendor-typed rows that only carry admin-portal permissions belong in admin RBAC, not vendor templates.
+          const onlyAdminPortalPerms =
+            perms.length > 0 &&
+            perms.every((p) => {
+              const s = String(p);
+              return s.startsWith('admin.') || s.startsWith('admin:');
+            });
+          if (onlyAdminPortalPerms) return false;
+          return true;
+        }
+        return !isAdminPortalRoleRow(r, perms);
+      });
+    }
+
     // Map roles with their permissions (no async operations needed now)
-    const rolesWithFullData = roles.map((role) => {
+    const rolesWithFullData = rolesForResponse.map((role) => {
       const capabilities = permissionsByRole.get(role.id) || [];
         
         // Extract config fields from JSONB config column
@@ -387,6 +440,18 @@ class CreateRoleHandler extends BaseHandler {
         is_active: is_active !== undefined ? is_active : (isActive !== undefined ? isActive : true),
         config: roleConfig,
       };
+
+      const capsArr = capabilities as unknown;
+      const inferredAdminPortal =
+        Array.isArray(capsArr) &&
+        capsArr.length > 0 &&
+        capsArr.every((c: unknown) => typeof c === 'string' && (c as string).startsWith('admin.'));
+      const rtBody = String((body as any).role_type || '').toLowerCase();
+      if (rtBody === 'admin' || rtBody === 'vendor') {
+        roleData.role_type = rtBody;
+      } else if (inferredAdminPortal) {
+        roleData.role_type = 'admin';
+      }
 
       const newRole = await insert('roles', roleData);
       const roleId = newRole[0].id;
@@ -668,6 +733,42 @@ class DeleteRoleHandler extends BaseHandler {
   }
 }
 
+/** Admin portal sections — stored in role_permissions.permission_name for admin RBAC roles. */
+class GetAdminCapabilitiesHandler extends BaseHandler {
+  async handle(_context: HandlerContext): Promise<HandlerResponse> {
+    const capabilities = [
+      { id: 'admin.dashboard', name: 'Dashboard', category: 'Admin Portal', description: 'Admin home / dashboard' },
+      { id: 'admin.analytics', name: 'Analytics', category: 'Admin Portal', description: 'Analytics and metrics' },
+      { id: 'admin.vendors', name: 'Vendor administration', category: 'Admin Portal', description: 'Vendors list, approval, vendor management' },
+      { id: 'admin.customers', name: 'Customer administration', category: 'Admin Portal', description: 'Customer accounts, lifecycle, insights' },
+      { id: 'admin.catalog', name: 'Service catalog', category: 'Admin Portal', description: 'Service catalog management' },
+      { id: 'admin.settlements', name: 'Settlements', category: 'Admin Portal', description: 'Settlements and finance payouts' },
+      { id: 'admin.reports', name: 'Reports', category: 'Admin Portal', description: 'Reports' },
+      { id: 'admin.integrations', name: 'Integrations', category: 'Admin Portal', description: 'Integrations settings' },
+      { id: 'admin.governance', name: 'Governance', category: 'Admin Portal', description: 'Governance' },
+      { id: 'admin.logistics', name: 'Logistics', category: 'Admin Portal', description: 'Logistics' },
+      { id: 'admin.refunds', name: 'Refunds', category: 'Admin Portal', description: 'Refunds management' },
+      { id: 'admin.support', name: 'Support & CRM', category: 'Admin Portal', description: 'Support and CRM' },
+      { id: 'admin.events', name: 'Events', category: 'Admin Portal', description: 'Events management' },
+      { id: 'admin.ecommerce', name: 'Ecommerce', category: 'Admin Portal', description: 'Ecommerce / seller setup' },
+      { id: 'admin.platform_settings', name: 'Platform settings', category: 'Admin Portal', description: 'Platform-wide settings' },
+      { id: 'admin.roles', name: 'RBAC management', category: 'Admin Portal', description: 'Create roles, create users, assign roles' },
+      {
+        id: 'admin.ai_copilot',
+        name: 'Admin AI copilot',
+        category: 'Admin Portal',
+        description: 'Bedrock assistant with read-only tools (assign with care)',
+      },
+      { id: 'admin.full_access', name: 'Full admin access', category: 'Admin Portal', description: 'All admin sections including RBAC' },
+    ];
+    return this.success({
+      success: true,
+      capabilities,
+      total: capabilities.length,
+    });
+  }
+}
+
 class GetCapabilitiesHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     // Return ALL 45 capabilities as defined in the platform
@@ -823,6 +924,7 @@ export function registerRoleEndpoints(app: Hono) {
   const updateRoleHandler = new UpdateRoleHandler();
   const deleteRoleHandler = new DeleteRoleHandler();
   const getCapabilitiesHandler = new GetCapabilitiesHandler();
+  const getAdminCapabilitiesHandler = new GetAdminCapabilitiesHandler();
 
   // GET endpoints
   app.get('/config/roles', async (c) => {
@@ -842,7 +944,7 @@ export function registerRoleEndpoints(app: Hono) {
     { id: 'walker', label: 'Walker', icon: '🚶', enabled: true, serviceId: 'walker', launchPhase: 'full', rolloutPercentage: 100 },
     { id: 'boarding', label: 'Boarding', icon: '🏠', enabled: true, serviceId: 'boarding', launchPhase: 'full', rolloutPercentage: 100 },
     { id: 'adoption', label: 'Adoption', icon: '❤️', enabled: true, serviceId: 'adoption', launchPhase: 'full', rolloutPercentage: 100 },
-    { id: 'mating', label: 'Mating & Dating', icon: '💕', enabled: true, serviceId: 'mating-dating-hub', launchPhase: 'full', rolloutPercentage: 100 },
+    { id: 'mating', label: 'Peer to Peer', icon: '💕', enabled: true, serviceId: 'mating-dating-hub', launchPhase: 'full', rolloutPercentage: 100 },
     { id: 'cafes', label: 'Pet Cafes', icon: '☕', enabled: true, serviceId: 'cafes', launchPhase: 'full', rolloutPercentage: 100 },
     { id: 'photography', label: 'Photography', icon: '📷', enabled: true, serviceId: 'photography', launchPhase: 'full', rolloutPercentage: 100 },
     { id: 'insurance', label: 'Insurance', icon: '🛡️', enabled: true, serviceId: 'insurance', launchPhase: 'full', rolloutPercentage: 100 },
@@ -1022,6 +1124,13 @@ export function registerRoleEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
+  app.get('/admin/admin-capabilities', async (c) => {
+    const event = createApiGatewayEvent(c.req);
+    const context = createLambdaContext();
+    const result = await getAdminCapabilitiesHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
   app.post('/admin/roles', async (c) => {
     const event = await createApiGatewayEventWithBody(c);
     const context = createLambdaContext();
@@ -1046,6 +1155,18 @@ export function registerRoleEndpoints(app: Hono) {
   });
 }
 
+/**
+ * Hono `req.url` may be a full URL or only `path?query`. Node's `new URL('/path?q=1')` throws;
+ * use URLSearchParams on the query slice so `active=false` and `role_type=admin` always parse.
+ */
+function queryStringParametersFromRequestUrl(rawUrl: string): Record<string, string> {
+  if (!rawUrl || typeof rawUrl !== 'string') return {};
+  const noHash = rawUrl.split('#')[0] ?? rawUrl;
+  const q = noHash.indexOf('?');
+  if (q === -1) return {};
+  return Object.fromEntries(new URLSearchParams(noHash.slice(q + 1)));
+}
+
 function createApiGatewayEvent(req: any): any {
   return {
     httpMethod: req.method,
@@ -1053,7 +1174,7 @@ function createApiGatewayEvent(req: any): any {
     headers: req.headers,
     body: JSON.stringify(req.body || {}),
     pathParameters: req.param() || {},
-    queryStringParameters: Object.fromEntries(new URL(req.url).searchParams),
+    queryStringParameters: queryStringParametersFromRequestUrl(String(req.url || '')),
     requestContext: {
       requestId: randomUUID(),
     },

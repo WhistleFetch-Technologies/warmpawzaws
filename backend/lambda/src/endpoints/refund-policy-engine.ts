@@ -19,6 +19,223 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select, insert, update } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { sqlRefundTierVendorTypesMatch } from '../lib/refund-tier-vendor-types-match';
+
+/** Map DB style string → vendor_refund_tiers.service_location bucket (home|clinic|tele). */
+function mapServiceStyleToLocationBucket(st: string): 'home' | 'clinic' | 'tele' | null {
+  const s = String(st || '').trim().toLowerCase();
+  if (!s) return null;
+  if (s.includes('home') || s === 'at_home') return 'home';
+  if (s.includes('tele') || s.includes('video')) return 'tele';
+  if (s.includes('center') || s.includes('clinic') || s.includes('vendor') || s.includes('centre')) return 'clinic';
+  return null;
+}
+
+/**
+ * Resolve service style for tier matching. Payment/booking flows may pass:
+ * - vendor_services.id (published row PK), or
+ * - service_catalog.id (template id) — then resolve via vendor_id + service_id on vendor_services.
+ * Do not reference non-existent columns (e.g. publish_style on vendor_services) or the query throws and tiers never match.
+ */
+async function serviceLocationForRefundTier(
+  vendorId: string | undefined,
+  serviceId: string | undefined
+): Promise<'home' | 'clinic' | 'tele' | null> {
+  if (!serviceId || !isValidUUID(serviceId)) return null;
+
+  const tryRow = (rows: any): 'home' | 'clinic' | 'tele' | null => {
+    const st = String(rows?.[0]?.st || '').trim();
+    return mapServiceStyleToLocationBucket(st);
+  };
+
+  // 1) vendor_services primary key (most bookings)
+  try {
+    const s = await query(
+      `SELECT LOWER(TRIM(COALESCE(service_style::text, ''))) AS st FROM vendor_services WHERE id = $1::uuid LIMIT 1`,
+      [serviceId]
+    );
+    const m = tryRow((s as any).rows);
+    if (m) return m;
+  } catch {
+    /* ignore */
+  }
+
+  // 2) service_catalog (client passed catalog template id)
+  try {
+    const c = await query(
+      `SELECT LOWER(TRIM(COALESCE(service_style::text, ''))) AS st FROM service_catalog WHERE id = $1::uuid LIMIT 1`,
+      [serviceId]
+    );
+    const m = tryRow((c as any).rows);
+    if (m) return m;
+  } catch {
+    /* ignore */
+  }
+
+  // 3) vendor_services by catalog service_id + vendor (common when serviceId is not the published row PK)
+  if (vendorId && isValidUUID(vendorId)) {
+    try {
+      const vs = await query(
+        `SELECT LOWER(TRIM(COALESCE(service_style::text, ''))) AS st
+         FROM vendor_services
+         WHERE vendor_id = $1::uuid AND service_id = $2::uuid
+         ORDER BY CASE WHEN LOWER(COALESCE(publish_status::text, '')) = 'published' THEN 0 ELSE 1 END,
+                  updated_at DESC NULLS LAST
+         LIMIT 1`,
+        [vendorId, serviceId]
+      );
+      const m = tryRow((vs as any).rows);
+      if (m) return m;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Customer-facing display policy from vendor_refund_tiers (single source of truth for services).
+ * Falls back to booking_cancellation_rules when no tiers match.
+ */
+async function buildCustomerRefundPolicyFromTiers(
+  vendorId: string | undefined,
+  serviceId: string | undefined
+): Promise<{
+  success: boolean;
+  policy: {
+    cancellationWindowHours: number;
+    refundPercentages: { withinHours: number; percentage: number; cancellationFee?: number }[];
+    defaultRefundMethod: string;
+  };
+  policyExtras?: {
+    rescheduleAllowed: boolean;
+    rescheduleCutoffHours?: number | null;
+    maxReschedulesPerBooking?: number | null;
+    noShowPolicy: {
+      enabled: boolean;
+      refundPercentage: number;
+      penaltyAmount: number;
+      gracePeriodMinutes?: number | null;
+    };
+    source: string;
+  };
+} | null> {
+  if (!vendorId || !isValidUUID(vendorId)) return null;
+
+  const loc = await serviceLocationForRefundTier(vendorId, serviceId);
+  const vr = await query(
+    `SELECT r.id::text AS role_id, r.name AS role_name
+     FROM vendors v
+     JOIN roles r ON r.id = v.role_id
+     WHERE v.id = $1
+     LIMIT 1`,
+    [vendorId]
+  ).catch(() => ({ rows: [] }));
+  const roleRow = (vr as any).rows?.[0];
+  const roleName = String(roleRow?.role_name || '').trim();
+  const roleId = String(roleRow?.role_id || '').trim();
+
+  const vendorMatch = sqlRefundTierVendorTypesMatch(2, 3);
+  const tiersRes = await query(
+    `SELECT hours_before_service, refund_percentage, hours_operator, hours_threshold, cancellation_fee, policy_extensions
+     FROM vendor_refund_tiers
+     WHERE is_active = true AND COALESCE(cancelled_by, 'pet_parent') = 'pet_parent'
+       AND (
+         service_location = 'all'
+         OR ($1::text IS NOT NULL AND service_location = $1)
+         OR (service_location = 'both' AND $1::text IN ('home', 'clinic'))
+       )
+       AND ${vendorMatch}
+     ORDER BY COALESCE(hours_threshold, hours_before_service) DESC NULLS LAST`,
+    [loc, roleName || null, roleId || null]
+  ).catch(() => ({ rows: [] }));
+
+  const tierRows = (tiersRes as any).rows || [];
+  if (tierRows.length === 0) return null;
+
+  const refundPercentages = tierRows.map((row: any) => ({
+    withinHours: Number(
+      row.hours_threshold != null && row.hours_operator != null
+        ? row.hours_threshold
+        : row.hours_before_service != null && Number.isFinite(Number(row.hours_before_service))
+          ? Number(row.hours_before_service)
+          : 24
+    ),
+    percentage: Math.min(100, Math.max(0, Number(row.refund_percentage ?? 0))),
+    cancellationFee: Number(row.cancellation_fee ?? 0) || 0,
+  }));
+
+  const hoursList = tierRows.map((r: any) => Number(r.hours_before_service ?? 0)).filter((n: number) => Number.isFinite(n));
+  const cancellationWindowHours = hoursList.length ? Math.min(...hoursList) : 0;
+
+  let rescheduleAllowed = false;
+  let rescheduleCutoffHours: number | undefined;
+  let maxReschedulesPerBooking: number | undefined;
+  const noShowPolicy = { enabled: false, refundPercentage: 0, penaltyAmount: 0 };
+  let noShowGraceMinutes: number | undefined;
+
+  const parseExt = (row: any): Record<string, unknown> | null => {
+    let ext = row.policy_extensions;
+    if (typeof ext === 'string') {
+      try {
+        ext = JSON.parse(ext);
+      } catch {
+        ext = null;
+      }
+    }
+    return ext && typeof ext === 'object' && !Array.isArray(ext) ? (ext as Record<string, unknown>) : null;
+  };
+
+  for (const row of tierRows) {
+    const ext = parseExt(row);
+    if (!ext) continue;
+    if (ext.rescheduleAllowed === true) {
+      rescheduleAllowed = true;
+      const rc = Number((ext as any).rescheduleCutoffHours);
+      if (Number.isFinite(rc) && rc > 0) {
+        rescheduleCutoffHours =
+          rescheduleCutoffHours === undefined ? rc : Math.min(rescheduleCutoffHours, rc);
+      }
+      const mr = Number((ext as any).maxReschedulesPerBooking);
+      if (Number.isFinite(mr) && mr >= 0) {
+        const mi = Math.floor(mr);
+        maxReschedulesPerBooking =
+          maxReschedulesPerBooking === undefined ? mi : Math.max(maxReschedulesPerBooking, mi);
+      }
+    }
+    const ns = (ext as any).noShowPolicy;
+    if (ns && ns.enabled) {
+      noShowPolicy.enabled = true;
+      noShowPolicy.refundPercentage = Math.max(noShowPolicy.refundPercentage, Number(ns.refundPercentage ?? 0));
+      noShowPolicy.penaltyAmount = Math.max(noShowPolicy.penaltyAmount, Number(ns.penaltyAmount ?? 0));
+      const g = Number(ns.gracePeriodMinutes);
+      if (Number.isFinite(g) && g >= 0) {
+        const gi = Math.floor(g);
+        noShowGraceMinutes = noShowGraceMinutes === undefined ? gi : Math.min(noShowGraceMinutes, gi);
+      }
+    }
+  }
+
+  return {
+    success: true,
+    policy: {
+      cancellationWindowHours,
+      refundPercentages,
+      defaultRefundMethod: 'wallet',
+    },
+    policyExtras: {
+      rescheduleAllowed,
+      ...(rescheduleCutoffHours !== undefined ? { rescheduleCutoffHours } : {}),
+      ...(maxReschedulesPerBooking !== undefined ? { maxReschedulesPerBooking } : {}),
+      noShowPolicy: {
+        ...noShowPolicy,
+        ...(noShowGraceMinutes !== undefined ? { gracePeriodMinutes: noShowGraceMinutes } : {}),
+      },
+      source: 'vendor_refund_tiers',
+    },
+  };
+}
 
 // ============================================================================
 // REFUND POLICY CALCULATION
@@ -351,11 +568,16 @@ export function registerRefundPolicyEngineEndpoints(app: Hono) {
     return c.json(JSON.parse(result.body), result.statusCode);
   });
 
-  // ✅ Customer-facing: refund policy for cancellation UI (no admin auth). Optional vendorId/serviceId for service-specific policy.
+  // ✅ Customer-facing: cancellation + refund display (vendor_refund_tiers first; legacy booking_cancellation_rules fallback).
   app.get('/customer/refund-policy', async (c) => {
     try {
       const vendorId = c.req.query('vendorId');
       const serviceId = c.req.query('serviceId');
+
+      const fromTiers = await buildCustomerRefundPolicyFromTiers(vendorId, serviceId);
+      if (fromTiers) {
+        return c.json(fromTiers);
+      }
 
       let rules: { rows: any[] } = { rows: [] };
       rules = await query(
@@ -381,6 +603,7 @@ export function registerRefundPolicyEngineEndpoints(app: Hono) {
             ],
             defaultRefundMethod: 'wallet',
           },
+          policyExtras: { source: 'booking_cancellation_rules', rescheduleAllowed: false, noShowPolicy: { enabled: false, refundPercentage: 0, penaltyAmount: 0 } },
         });
       }
       return c.json({
@@ -395,6 +618,7 @@ export function registerRefundPolicyEngineEndpoints(app: Hono) {
           ],
           defaultRefundMethod: 'wallet',
         },
+        policyExtras: { source: 'default', rescheduleAllowed: false, noShowPolicy: { enabled: false, refundPercentage: 0, penaltyAmount: 0 } },
       });
     } catch (error: any) {
       console.error('Error fetching refund policy:', error);
@@ -408,6 +632,7 @@ export function registerRefundPolicyEngineEndpoints(app: Hono) {
           ],
           defaultRefundMethod: 'wallet',
         },
+        policyExtras: { source: 'default', rescheduleAllowed: false, noShowPolicy: { enabled: false, refundPercentage: 0, penaltyAmount: 0 } },
       });
     }
   });

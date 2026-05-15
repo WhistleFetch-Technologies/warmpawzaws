@@ -11,7 +11,7 @@ const TeleTracker = ({ hasActiveCall, activeVideoCalls, joinCall }: TeleTrackerP
     const call = activeVideoCalls[0];
 
     return (
-        <div className="fixed bottom-[72px] left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-[430px]">
+        <div className="fixed bottom-[var(--customer-tabbed-nav-offset)] left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-customer">
             <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B35] rounded-2xl px-4 py-3 shadow-lg flex items-center gap-3">
                 <div className="relative flex-shrink-0">
                     <Phone className="w-5 h-5 text-white" />

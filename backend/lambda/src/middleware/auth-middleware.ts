@@ -24,9 +24,10 @@ const PUBLIC_ENDPOINTS = [
   '/auth/otp/verify',
   '/auth/login',
   '/auth/register',
-  '/admin/auth/login',  // ✅ FIX: Admin login should be public
-  '/admin/auth/signup', // ✅ FIX: Admin signup should be public
-  '/admin/test/ping',   // ✅ FIX: Test endpoint should be public
+  '/admin/auth/login',
+  '/admin/auth/refresh',
+  '/admin/auth/signup',
+  '/admin/test/ping',  
   '/vendor/onboarding/status',
   '/service-catalog/categories',
   '/service-catalog/services',
@@ -408,6 +409,32 @@ export function requireCustomer() {
     c.set('userGroups', auth.groups);
     c.set('isCustomer', true);
     
+    return next();
+  };
+}
+
+/**
+ * Strict Bearer (or UAT) auth for /ai-chatbot/* when registered with AI_CHATBOT_REQUIRE_AUTH=true.
+ */
+export function requireAiChatbotAuth() {
+  return async (c: Context, next: Next) => {
+    if (c.req.method === 'OPTIONS') {
+      return next();
+    }
+
+    const auth = await extractAuth(c);
+
+    if (!auth.valid) {
+      return c.json(
+        { success: false, error: 'Authentication required', code: 'AUTH_REQUIRED' },
+        401
+      );
+    }
+
+    c.set('userId', auth.userId);
+    c.set('userRole', auth.userRole);
+    c.set('userGroups', auth.groups);
+
     return next();
   };
 }

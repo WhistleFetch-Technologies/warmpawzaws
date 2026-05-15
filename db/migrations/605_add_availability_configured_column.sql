@@ -10,10 +10,10 @@ DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns 
-    WHERE table_name = 'vendors' AND column_name = 'availability_configured'
+    WHERE table_schema = 'public' AND table_name = 'vendors' AND column_name = 'availability_configured'
   ) THEN
-    ALTER TABLE vendors ADD COLUMN availability_configured BOOLEAN DEFAULT false;
-    COMMENT ON COLUMN vendors.availability_configured IS 'Tracks whether vendor has completed availability/schedule setup';
+    ALTER TABLE public.vendors ADD COLUMN availability_configured BOOLEAN DEFAULT false;
+    COMMENT ON COLUMN public.vendors.availability_configured IS 'Tracks whether vendor has completed availability/schedule setup';
   END IF;
 END $$;
 
@@ -22,19 +22,19 @@ DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns 
-    WHERE table_name = 'vendors' AND column_name = 'services_configured'
+    WHERE table_schema = 'public' AND table_name = 'vendors' AND column_name = 'services_configured'
   ) THEN
-    ALTER TABLE vendors ADD COLUMN services_configured BOOLEAN DEFAULT false;
-    COMMENT ON COLUMN vendors.services_configured IS 'Tracks whether vendor has completed services setup';
+    ALTER TABLE public.vendors ADD COLUMN services_configured BOOLEAN DEFAULT false;
+    COMMENT ON COLUMN public.vendors.services_configured IS 'Tracks whether vendor has completed services setup';
   END IF;
 END $$;
 
 -- Create index on availability_configured for faster queries
-CREATE INDEX IF NOT EXISTS idx_vendors_availability_configured ON vendors(availability_configured) 
+CREATE INDEX IF NOT EXISTS idx_vendors_availability_configured ON public.vendors(availability_configured) 
   WHERE availability_configured = false;
 
 -- Create composite index for common query pattern: approved but availability not configured
-CREATE INDEX IF NOT EXISTS idx_vendors_approved_not_availability ON vendors(status, availability_configured) 
+CREATE INDEX IF NOT EXISTS idx_vendors_approved_not_availability ON public.vendors(status, availability_configured) 
   WHERE status = 'approved' AND availability_configured = false;
 
-COMMENT ON TABLE vendors IS 'Vendor profiles - includes availability_configured flag for tracking availability setup completion';
+COMMENT ON TABLE public.vendors IS 'Vendor profiles - includes availability_configured flag for tracking availability setup completion';

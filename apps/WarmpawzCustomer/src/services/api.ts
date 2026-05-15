@@ -9,13 +9,20 @@ import { API_BASE_URL } from '../config/aws';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { resilientFetch, NetworkMonitor, NetworkError, OfflineQueue } from '../lib/network-resilience';
 import NetInfo from '@react-native-community/netinfo';
+import {
+  CustomerSessionStorageKeys,
+  clearCustomerSession,
+  getValidCustomerAccessToken,
+  refreshCustomerTokens,
+} from './auth-session';
 
-// Validate API Base URL is configured
-if (!API_BASE_URL || API_BASE_URL.includes('api.warmpawz.com')) {
-  console.warn('⚠️ API_BASE_URL is not properly configured. Please set AWS_API_GATEWAY_URL environment variable.');
+// Validate API Base URL is configured. Warn only on truly broken values
+// (empty, or vanity DNS that does not resolve in production).
+if (!API_BASE_URL || /(\.|^)(dev\.)?api\.warmpawz\.com/i.test(API_BASE_URL)) {
+  console.warn('⚠️ API_BASE_URL is not properly configured. Set AWS_API_GATEWAY_URL or EXPO_PUBLIC_API_GATEWAY_URL to the resolvable HTTP API URL (e.g. https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com).');
 }
 
-const SESSION_TOKEN_KEY = 'warmpawz_session_token';
+const SESSION_TOKEN_KEY = CustomerSessionStorageKeys.legacySessionToken;
 
 // Retry configuration
 const RETRY_CONFIG = {
@@ -44,17 +51,46 @@ export class ApiService {
   }
 
   private static async getAuthHeaders(): Promise<Record<string, string>> {
-    const token = await AsyncStorage.getItem(SESSION_TOKEN_KEY);
+    // Prefer the session manager so calls get a freshly-refreshed access
+    // token whenever the previous one is close to expiry. Falls back to the
+    // legacy single-key slot (kept in sync by saveCustomerLoginResponse) so
+    // partial logins / legacy flows continue working.
+    let token: string | null = null;
+    try {
+      token = await getValidCustomerAccessToken();
+    } catch {
+      /* swallow — fall through to legacy slot */
+    }
+    if (!token) {
+      token = await AsyncStorage.getItem(SESSION_TOKEN_KEY);
+    }
     return {
       'Content-Type': 'application/json',
       'Authorization': token ? `Bearer ${token}` : '',
     };
   }
 
+  /**
+   * Resolve a 401 by trying the refresh token once. Returns `true` when the
+   * caller should retry the original request with a fresh Authorization
+   * header. Returns `false` for transient failures (we keep the session) and
+   * also `false` when the refresh token is conclusively rejected — in that
+   * case the session manager has already cleared storage.
+   */
+  private static async tryRefreshOn401(): Promise<boolean> {
+    try {
+      const renewed = await refreshCustomerTokens();
+      return !!renewed?.accessToken;
+    } catch {
+      return false;
+    }
+  }
+
   private static async handleRequest<T>(
     endpoint: string,
     options: RequestInit,
-    retryConfig?: Partial<import('../lib/network-resilience').RetryConfig>
+    retryConfig?: Partial<import('../lib/network-resilience').RetryConfig>,
+    retried401 = false
   ): Promise<T> {
     // Ensure initialized
     if (!this.initialized) {
@@ -89,12 +125,19 @@ export class ApiService {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
-        
-        // Handle 401 by clearing token
-        if (response.status === 401) {
-          await this.clearSessionToken();
+
+        // 90-day persistent login: on 401 we *first* try the refresh token.
+        // We only drop tokens when the refresh endpoint conclusively rejects
+        // them (see refreshCustomerTokens()) — never on a single bad request.
+        if (response.status === 401 && !retried401) {
+          const refreshed = await this.tryRefreshOn401();
+          if (refreshed) {
+            return this.handleRequest<T>(endpoint, options, retryConfig, true);
+          }
+          // No refresh available / network blip — leave the stored session
+          // alone so the next call can try again instead of forcing logout.
         }
-        
+
         // Check if retryable
         const retryableStatusCodes = retryConfig?.retryableStatusCodes || [408, 429, 500, 502, 503, 504];
         if (retryableStatusCodes.includes(response.status)) {
@@ -163,15 +206,25 @@ export class ApiService {
   }
 
   static async saveSessionToken(token: string) {
+    // Keep the legacy single-key slot in sync. The structured session bundle
+    // is written by saveCustomerLoginResponse() from auth-session.ts during
+    // OTP / password login.
     await AsyncStorage.setItem(SESSION_TOKEN_KEY, token);
   }
 
+  /**
+   * Full logout — only call from an explicit user action (e.g. Settings → Log
+   * out). API request failures should NEVER call this directly; the 401
+   * handler in handleRequest already takes care of recovering via refresh.
+   */
   static async clearSessionToken() {
-    await AsyncStorage.removeItem(SESSION_TOKEN_KEY);
+    await clearCustomerSession();
   }
 
   static async getSessionToken(): Promise<string | null> {
-    return await AsyncStorage.getItem(SESSION_TOKEN_KEY);
+    const fresh = await getValidCustomerAccessToken();
+    if (fresh) return fresh;
+    return AsyncStorage.getItem(SESSION_TOKEN_KEY);
   }
 }
 
@@ -204,13 +257,26 @@ export const CustomerApi = {
     );
     return response.pets || response;
   },
+  /** GET /customer/:phone/pets/:petId — aligns with Lambda pets routes */
+  getPet: (phone: string, petId: string) =>
+    ApiService.get(
+      `/customer/${encodeURIComponent(phone)}/pets/${encodeURIComponent(petId)}`
+    ),
   addPet: (phone: string, petData: any) => ApiService.post(`/customer/pets`, { phone, pets: [petData] }),
   updatePet: (petId: string, petData: any) => ApiService.put(`/pet/${petId}`, petData),
   deletePet: (petId: string) => ApiService.delete(`/pet/${petId}`),
   
   // Services
   searchServices: (params: any) => ApiService.post('/search/vendors', params),
-  getServiceDetails: (serviceId: string) => ApiService.get(`/customer/services/${serviceId}`),
+  /** Published vendor listing id = vendor_services.id; backend resolves via GET /services/:id (not /customer/services/:id). */
+  getServiceDetails: async (serviceId: string) => {
+    const raw = await ApiService.get<any>(`/services/${encodeURIComponent(serviceId)}`);
+    const svc = raw?.service ?? raw;
+    if (__DEV__ && svc && (svc.id || svc.serviceId)) {
+      console.log('[getServiceDetails]', { requestedServiceId: serviceId, resolvedId: String(svc.id ?? svc.serviceId) });
+    }
+    return svc;
+  },
   getServices: (params?: any) => {
     const query = params ? `?${new URLSearchParams(params).toString()}` : '';
     return ApiService.get(`/customer/services${query}`);
@@ -236,6 +302,9 @@ export const CustomerApi = {
     return response.bookings || response;
   },
   getBookingDetails: (bookingId: string) => ApiService.get(`/bookings/${bookingId}`),
+  /** Server-side refund preview (tiers, net paid, non-refundable platform fee). */
+  calculateBookingRefund: (bookingId: string) =>
+    ApiService.post(`/bookings/${bookingId}/calculate-refund`, {}),
   cancelBooking: (bookingId: string, reason?: string) => 
     ApiService.post(`/bookings/${bookingId}/cancel`, { reason }),
   rescheduleBooking: (bookingId: string, newDate: string, newTime: string, reason?: string) =>
@@ -266,14 +335,53 @@ export const CustomerApi = {
   getSupportTickets: (phone: string) => ApiService.get(`/crm/tickets?customerPhone=${phone}`),
   createSupportTicket: (phone: string, ticketData: any) => 
     ApiService.post('/crm/tickets', { customerPhone: phone, ...ticketData }),
+  /** FAQs for Help & Support (falls back to empty list if route missing) */
+  getFAQs: async () => {
+    try {
+      return await ApiService.get('/customer/faqs');
+    } catch {
+      try {
+        return await ApiService.get('/support/faqs');
+      } catch {
+        return { faqs: [] };
+      }
+    }
+  },
+  /** Help & Support contact form → support ticket */
+  contactSupport: async (data: { subject: string; message: string; customerId?: string }) => {
+    const phone = data.customerId || '';
+    try {
+      return await ApiService.post('/support/tickets', {
+        customerPhone: phone,
+        subject: data.subject,
+        message: data.message,
+        source: 'customer',
+      });
+    } catch {
+      return ApiService.post('/crm/tickets', {
+        customerPhone: phone,
+        subject: data.subject,
+        message: data.message,
+      });
+    }
+  },
   
-  // Pet Bookings
-  getPetBookings: (phone: string, petId: string) => 
-    ApiService.get(`/customer/bookings/pet/${phone}/${petId}`),
+  // Pet Bookings — GET /customer/:phone/pets/:petId/bookings (Lambda)
+  getPetBookings: (phone: string, petId: string) =>
+    ApiService.get(
+      `/customer/${encodeURIComponent(phone)}/pets/${encodeURIComponent(petId)}/bookings`
+    ),
   
-  // OTP
-  generateOtp: (phone: string) => ApiService.post('/otp/generate', { phone }),
-  verifyOtp: (phone: string, otp: string) => ApiService.post('/otp/verify', { phone, otp }),
+  // OTP (API Gateway uses /auth/otp/* — include E.164 phone + optional referral)
+  generateOtp: (phone: string) =>
+    ApiService.post('/auth/otp/send', { phone: phone.startsWith('+') ? phone : `+91${phone}`, role: 'customer' }),
+  verifyOtp: (phone: string, otp: string, referralCode?: string) =>
+    ApiService.post('/auth/otp/verify', {
+      phone: phone.startsWith('+') ? phone : `+91${phone}`,
+      otp,
+      role: 'customer',
+      ...(referralCode?.trim() ? { referralCode: referralCode.trim().toUpperCase() } : {}),
+    }),
   
   // Notifications
   getNotifications: (customerId: string) => ApiService.get(`/customer/notifications/${customerId}`),
@@ -497,12 +605,32 @@ export const PaymentApi = {
 // ✅ NEW: Appointment API (SQL-migrated endpoints)
 export const AppointmentApi = {
   // Use new customer-appointments endpoints
-  getAppointments: (customerId: string) => ApiService.get(`/customer/appointments?customerId=${customerId}`),
-  getAppointment: (appointmentId: string) => ApiService.get(`/customer/appointments/${appointmentId}`),
-  cancelAppointment: (appointmentId: string, reason?: string) => 
-    ApiService.post(`/customer/appointments/${appointmentId}/cancel`, { reason }),
-  rescheduleAppointment: (appointmentId: string, newDate: string, newTime: string, reason?: string) =>
-    ApiService.post(`/customer/appointments/${appointmentId}/reschedule`, { appointment_date: newDate, appointment_time: newTime, reason }),
+  getAppointments: (customerId: string) =>
+    ApiService.get(`/customer/appointments?customerId=${encodeURIComponent(customerId)}`),
+  /** Pass DB customer UUID when available so detail matches list (JWT sub may differ from customers.id). */
+  getAppointment: (appointmentId: string, customerId?: string) => {
+    const q = customerId ? `?customerId=${encodeURIComponent(customerId)}` : '';
+    return ApiService.get(`/customer/appointments/${encodeURIComponent(appointmentId)}${q}`);
+  },
+  cancelAppointment: (appointmentId: string, reason?: string, customerId?: string) => {
+    const q = customerId ? `?customerId=${encodeURIComponent(customerId)}` : '';
+    return ApiService.post(`/customer/appointments/${encodeURIComponent(appointmentId)}/cancel${q}`, {
+      reason,
+    });
+  },
+  rescheduleAppointment: (
+    appointmentId: string,
+    newDate: string,
+    newTime: string,
+    reason?: string,
+    customerId?: string
+  ) => {
+    const q = customerId ? `?customerId=${encodeURIComponent(customerId)}` : '';
+    return ApiService.post(
+      `/customer/appointments/${encodeURIComponent(appointmentId)}/reschedule${q}`,
+      { appointment_date: newDate, appointment_time: newTime, reason }
+    );
+  },
 };
 
 // ✅ NEW: Booking OTP API (SQL-migrated endpoints)
@@ -560,6 +688,60 @@ export const SearchApi = {
     ApiService.get(`/search/services${query ? `?query=${query}` : ''}`),
   getFeaturedVendors: () => ApiService.get('/search/vendors/featured'),
   getCategories: () => ApiService.get('/search/categories'),
+};
+
+/**
+ * Same contract as customer-web GET /search?q=&category=&limit= — service hits use vendor_services.id.
+ */
+export const EnhancedSearchApi = {
+  search: async (params: {
+    query?: string;
+    category?: string;
+    sortBy?: 'relevance' | 'price_low' | 'price_high' | 'rating';
+    limit?: number;
+  }) => {
+    const sp = new URLSearchParams();
+    const q = (params.query || '').trim();
+    const hasCategory = !!(params.category && params.category !== 'all');
+    if (q) sp.set('q', q);
+    if (hasCategory) sp.set('category', params.category!);
+    if (params.limit != null) sp.set('limit', String(params.limit));
+    else sp.set('limit', '50');
+    if (!q && !hasCategory) {
+      return { services: [] as any[] };
+    }
+    const raw = await ApiService.get<any>(`/search?${sp.toString()}`);
+    const servicesRaw = raw.services ?? raw.data?.services ?? [];
+    const mapped = (Array.isArray(servicesRaw) ? servicesRaw : []).map((s: any) => {
+      const id = String(s.id ?? s.vendor_service_id ?? s.vendorServiceId ?? '').trim();
+      const vendorId = String(s.vendorId ?? s.vendor_id ?? '').trim();
+      const price = parseFloat(String(s.price ?? s.base_price ?? '0')) || 0;
+      return {
+        id,
+        name: s.serviceName ?? s.service_name ?? s.name ?? '',
+        description:
+          s.description ?? s.custom_description ?? s.service_description ?? s.description_text ?? '',
+        category: s.category ?? s.serviceType ?? s.service_type ?? '',
+        price,
+        vendorId,
+        vendorName: s.vendorName ?? s.vendor_name ?? s.business_name ?? '',
+        rating: s.rating != null ? parseFloat(String(s.rating)) : undefined,
+        imageUrl: s.image_url ?? s.imageUrl,
+      };
+    }).filter((s: { id: string }) => s.id);
+    if (__DEV__ && mapped[0]) {
+      console.log('[EnhancedSearchApi] first hit', {
+        searchResultId: mapped[0].id,
+        vendorId: mapped[0].vendorId,
+      });
+    }
+    let out = mapped;
+    const sort = params.sortBy || 'relevance';
+    if (sort === 'price_low') out = [...out].sort((a, b) => a.price - b.price);
+    else if (sort === 'price_high') out = [...out].sort((a, b) => b.price - a.price);
+    else if (sort === 'rating') out = [...out].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0));
+    return { services: out, vendors: raw.vendors ?? raw.data?.vendors ?? [] };
+  },
 };
 
 // ✅ NEW: Wallet API (Batch 14 SQL-migrated endpoints)
@@ -780,6 +962,30 @@ export const DatingChatApi = {
   getUnreadCount: (matchId: string) => ApiService.get(`/dating/chat/${matchId}/unread-count`),
 };
 
+/** Booking-scoped customer ↔ vendor chat (Lambda `chat.ts`) */
+export const BookingChatApi = {
+  getConversation: (bookingId: string) =>
+    ApiService.get(`/chat/booking/${bookingId}/conversation`),
+  sendMessage: (
+    bookingId: string,
+    payload: {
+      senderPhone: string;
+      senderName?: string;
+      senderType: 'customer';
+      message: string;
+      messageType?: string;
+    }
+  ) => ApiService.post(`/chat/booking/${bookingId}/message`, payload),
+  markConversationRead: (bookingId: string) =>
+    ApiService.post(`/chat/conversations/${bookingId}/read`, {}),
+  getConversations: (opts: { customerId?: string; phone?: string }) => {
+    const q = new URLSearchParams();
+    if (opts.customerId) q.append('customerId', opts.customerId);
+    if (opts.phone) q.append('phone', opts.phone.replace(/\D/g, ''));
+    return ApiService.get(`/chat/conversations?${q.toString()}`);
+  },
+};
+
 // ✅ NEW: Tier Commission API (Batch 15 SQL-migrated endpoints)
 export const TierCommissionApi = {
   calculateCommission: (bookingId: string) => 
@@ -866,6 +1072,17 @@ export const BookingValidationApi = {
 export const SlotAvailabilityApi = {
   getVendorAvailability: (vendorId: string, date: string) => 
     ApiService.get(`/vendor/${vendorId}/availability/${date}`),
+  /** vendorId + vendor_services.id (same id as search / GET /services/:id). */
+  getAvailableSlots: (vendorId: string, serviceId: string, date: string) => {
+    const q = new URLSearchParams({
+      date,
+      serviceId,
+      serviceStyle: 'at_center',
+    });
+    return ApiService.get(
+      `/customer/vendor/${encodeURIComponent(vendorId)}/available-slots?${q.toString()}`
+    );
+  },
 };
 
 // ✅ NEW: Refund Policy Engine API (Batch 17 SQL-migrated endpoints)
@@ -993,8 +1210,16 @@ export const SupportCrmApi = {
     limit?: number;
     offset?: number;
   }) => {
-    const query = params ? new URLSearchParams(Object.entries(params).map(([k,v]) => [k, String(v)])).toString() : '';
-    return ApiService.get(`/support/tickets${query ? `?${query}` : ''}`);
+    if (!params) {
+      return ApiService.get('/support/tickets');
+    }
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null) continue;
+      q.set(k, String(v));
+    }
+    const s = q.toString();
+    return ApiService.get(`/support/tickets${s ? `?${s}` : ''}`);
   },
   
   getTicket: (ticketId: string) => ApiService.get(`/support/tickets/${ticketId}`),

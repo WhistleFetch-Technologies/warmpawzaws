@@ -68,7 +68,6 @@ const DEFAULT_SERVICE_CATEGORIES = [
   { id: 'veterinary', name: 'Veterinary Services' },
   { id: 'grooming', name: 'Grooming Services' },
   { id: 'walkers_training_boarding', name: 'Walkers, Training & Boarding' },
-  { id: 'ecommerce', name: 'E-commerce Products' },
 ];
 const DEFAULT_SERVICE_FORMATS = [
   { id: 'in_clinic', name: 'In-Clinic' },

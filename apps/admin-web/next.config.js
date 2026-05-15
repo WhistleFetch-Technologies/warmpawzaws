@@ -1,17 +1,38 @@
 const path = require('path');
+const { getDevDistDir } = require('./scripts/dev-cache-path.cjs');
+
+/**
+ * `distDir` for builds/starts vs dev. Dev must stay consistent in worker processes too:
+ * `scripts/start-dev.cjs` sets WARMPAWZ_ADMIN_WEB_DEV_DISTDIR so reloads are not confused
+ * when argv no longer equals `next dev`.
+ */
+function resolveDistDir() {
+  const cmd = process.argv[2];
+  if (cmd === 'build' || cmd === 'start') {
+    return 'dist';
+  }
+  const fromEnv = process.env.WARMPAWZ_ADMIN_WEB_DEV_DISTDIR;
+  if (fromEnv) {
+    return fromEnv;
+  }
+  if (cmd === 'dev' || process.env.npm_lifecycle_event === 'dev') {
+    return getDevDistDir(__dirname);
+  }
+  return 'dist';
+}
 
 /**
  * Next.js config – Admin Web
  * Retained structure for AWS Serverless: static export → S3 + CloudFront.
  * Build for performance: compress, tree-shake, chunk splitting.
  * See docs/NEXTJS_AWS_SERVERLESS_ARCHITECTURE.md
+ *
+ * Dev cache path: `scripts/dev-cache-path.cjs` (outside OneDrive on Windows when possible).
  */
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  ...(process.env.NODE_ENV === 'production' && process.env.NEXT_EXPORT !== 'false'
-    ? { output: 'export' }
-    : {}),
-  distDir: 'dist',
+  ...(process.argv[2] === 'build' && process.env.NEXT_EXPORT !== 'false' ? { output: 'export' } : {}),
+  distDir: resolveDistDir(),
   reactStrictMode: true,
   transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs'],
   swcMinify: true,
@@ -20,7 +41,7 @@ const nextConfig = {
   typescript: { ignoreBuildErrors: true },
   eslint: { ignoreDuringBuilds: false },
   experimental: {
-    outputFileTracingExcludes: process.env.NODE_ENV === 'production' ? { '*': ['**/*'] } : undefined,
+    outputFileTracingExcludes: process.argv[2] === 'build' ? { '*': ['**/*'] } : undefined,
     optimizePackageImports: [
       'lucide-react',
       '@radix-ui/react-dialog',
@@ -39,6 +60,7 @@ const nextConfig = {
   webpack: (config, { isServer }) => {
     const uiNodeModulesPath = path.resolve(__dirname, '../../packages/ui/node_modules');
     config.resolve.modules = [
+      path.resolve(__dirname),
       path.resolve(__dirname, 'node_modules'),
       uiNodeModulesPath,
       ...(config.resolve.modules || []),

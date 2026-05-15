@@ -26,4 +26,4 @@ ALTER TABLE vendor_refund_tiers
 ALTER TABLE vendor_refund_tiers
   ALTER COLUMN cancelled_by SET DEFAULT 'pet_parent';
 
-COMMENT ON COLUMN vendor_refund_tiers.cancelled_by IS 'Who cancels: pet_parent (customer) or provider (service provider/platform). Required; no "any".';
+COMMENT ON COLUMN vendor_refund_tiers.cancelled_by IS 'Who cancels: pet_parent (customer) or provider (service provider/platform). Required. No any.';

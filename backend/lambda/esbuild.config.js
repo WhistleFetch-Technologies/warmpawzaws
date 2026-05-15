@@ -57,11 +57,11 @@ const apiContractsResolvePlugin = {
   },
 };
 
-// Plugin to resolve custom TypeScript extensions like .booking.ts
+// Plugin to resolve custom TypeScript extensions like .booking.ts, .customer.ts, etc.
 const customExtensionResolvePlugin = {
   name: 'custom-extension-resolve',
   setup(build) {
-    // Handle imports that might have custom extensions like .booking
+    // Handle imports that might have custom extensions like .booking, .customer, etc.
     build.onResolve({ filter: /.*/ }, (args) => {
       // If the path doesn't have an extension, try to resolve with custom extensions
       if (!args.path.includes('.') || args.path.endsWith('/')) {
@@ -72,16 +72,30 @@ const customExtensionResolvePlugin = {
       if (args.path.startsWith('.')) {
         const basePath = path.resolve(path.dirname(args.importer), args.path);
         
-        // Try .booking.ts extension
-        const bookingTsPath = basePath + '.booking.ts';
-        if (fs.existsSync(bookingTsPath)) {
-          return { path: bookingTsPath };
+        // List of custom extensions to try
+        const customExtensions = ['.booking', '.customer', '.razorpay', '.notification', '.teleCommunication', '.controller'];
+        
+        // First, try if the path already ends with a custom extension (like .customer)
+        for (const ext of customExtensions) {
+          if (args.path.endsWith(ext)) {
+            const fullPath = basePath + '.ts';
+            if (fs.existsSync(fullPath)) {
+              return { path: fullPath };
+            }
+          }
         }
         
-        // Try .booking extension (without .ts)
-        const bookingPath = basePath + '.booking';
-        if (fs.existsSync(bookingPath + '.ts')) {
-          return { path: bookingPath + '.ts' };
+        // Then try adding custom extensions to the base path
+        for (const ext of customExtensions) {
+          const extTsPath = basePath + ext + '.ts';
+          if (fs.existsSync(extTsPath)) {
+            return { path: extTsPath };
+          }
+          
+          const extPath = basePath + ext;
+          if (fs.existsSync(extPath + '.ts')) {
+            return { path: extPath + '.ts' };
+          }
         }
       }
       
@@ -90,6 +104,7 @@ const customExtensionResolvePlugin = {
   },
 };
 
+// Build API handler bundle
 esbuild.build({
   entryPoints: ['src/handler/index.ts'],
   bundle: true,
@@ -107,6 +122,7 @@ esbuild.build({
     '@opensearch-project/opensearch',
     '@opensearch-project/opensearch/aws',
     'firebase-admin', // Not used in Lambda, exclude to reduce bundle size
+    '@grpc/grpc-js',  // Has corrupt source map; not needed at Lambda runtime
     // ✅ FIX: These MUST be bundled for Lambda to work:
     // - 'pg' - PostgreSQL driver (removed from external)
     // - 'jose' - JWT handling (removed from external)
@@ -139,6 +155,7 @@ esbuild.build({
     '@warmpawz/api-contracts/payments': path.resolve(__dirname, '../../packages/api-contracts/dist/payments.js'),
     '@warmpawz/api-contracts/common': path.resolve(__dirname, '../../packages/api-contracts/dist/common/index.js'),
     '@warmpawz/api-contracts/discovery': path.resolve(__dirname, '../../packages/api-contracts/dist/discovery.js'),
+    '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/dist/index.js'),
   },
   
   // AWS Lambda specific settings
@@ -152,6 +169,91 @@ esbuild.build({
   
   // Error handling
 }).catch((error) => {
-  console.error('Build failed:', error);
+  console.error('Build failed (api handler):', error);
+  process.exit(1);
+});
+
+// Build Loyalty Events Consumer bundle
+esbuild.build({
+  entryPoints: ['src/Lambdas/loyalty-events-consumer.ts'],
+  bundle: true,
+  platform: 'node',
+  target: 'node18',
+  outfile: 'dist/loyalty-consumer.js',
+  plugins: [apiContractsResolvePlugin, customExtensionResolvePlugin],
+  external: [
+    '@aws-sdk/*',
+    'aws-lambda',
+    'pg-native',
+    '@opensearch-project/opensearch',
+    '@opensearch-project/opensearch/aws',
+    'firebase-admin',
+  ],
+  packages: 'bundle',
+  format: 'cjs',
+  sourcemap: !isProduction,
+  minify: isProduction,
+  nodePaths: [
+    path.resolve(__dirname, 'node_modules'),
+    path.resolve(__dirname, '../../node_modules'),
+    path.resolve(__dirname, '../../packages/api-contracts/dist'),
+  ],
+  alias: {
+    '@warmpawz/api-contracts': path.resolve(__dirname, '../../packages/api-contracts/dist/index.js'),
+    '@warmpawz/api-contracts/auth': path.resolve(__dirname, '../../packages/api-contracts/dist/auth.js'),
+    '@warmpawz/api-contracts/bookings': path.resolve(__dirname, '../../packages/api-contracts/dist/bookings.js'),
+    '@warmpawz/api-contracts/vendors': path.resolve(__dirname, '../../packages/api-contracts/dist/vendors.js'),
+    '@warmpawz/api-contracts/customers': path.resolve(__dirname, '../../packages/api-contracts/dist/customers.js'),
+    '@warmpawz/api-contracts/payments': path.resolve(__dirname, '../../packages/api-contracts/dist/payments.js'),
+    '@warmpawz/api-contracts/common': path.resolve(__dirname, '../../packages/api-contracts/dist/common/index.js'),
+    '@warmpawz/api-contracts/discovery': path.resolve(__dirname, '../../packages/api-contracts/dist/discovery.js'),
+    '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/dist/index.js'),
+  },
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development'),
+  },
+  logLevel: isProduction ? 'warning' : 'info',
+  color: true,
+}).catch((error) => {
+  console.error('Build failed (loyalty consumer):', error);
+  process.exit(1);
+});
+
+// Allyticas RDS retention cleanup (scheduled Lambda)
+esbuild.build({
+  entryPoints: ['src/jobs/analytics-retention.ts'],
+  bundle: true,
+  platform: 'node',
+  target: 'node18',
+  outfile: 'dist/analytics-retention.js',
+  plugins: [apiContractsResolvePlugin, customExtensionResolvePlugin],
+  external: [
+    '@aws-sdk/*',
+    'aws-lambda',
+    'pg-native',
+    '@opensearch-project/opensearch',
+    '@opensearch-project/opensearch/aws',
+    'firebase-admin',
+  ],
+  packages: 'bundle',
+  format: 'cjs',
+  sourcemap: !isProduction,
+  minify: isProduction,
+  nodePaths: [
+    path.resolve(__dirname, 'node_modules'),
+    path.resolve(__dirname, '../../node_modules'),
+    path.resolve(__dirname, '../../packages/api-contracts/dist'),
+  ],
+  alias: {
+    '@warmpawz/api-contracts': path.resolve(__dirname, '../../packages/api-contracts/dist/index.js'),
+    '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/src/index.ts'),
+  },
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development'),
+  },
+  logLevel: isProduction ? 'warning' : 'info',
+  color: true,
+}).catch((error) => {
+  console.error('Build failed (analytics-retention):', error);
   process.exit(1);
 });

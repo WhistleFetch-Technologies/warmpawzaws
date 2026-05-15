@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, Camera, Upload, ChevronRight, ChevronLeft, Check, AlertCircle,
   Calendar, Syringe, Heart, Shield, Dog, Cat, Sparkles, Image as ImageIcon,
@@ -9,6 +9,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { addPetErrorMessage, resolveCustomerIdForPetMutation } from '@/lib/pet-create-helpers';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -17,6 +18,8 @@ import { toast } from 'sonner';
 
 interface VaccinationRecord {
   id: string;
+  /** Stable id for wizard rows, e.g. `dog:rabies` — used when pet type changes. */
+  vaccineKey?: string;
   name: string;
   lastDate: string;
   nextDueDate: string;
@@ -80,6 +83,10 @@ interface EnhancedAddPetModalProps {
   onClose: () => void;
   onSuccess: () => void;
   editPet?: PetData; // For edit mode
+  /** `modal` = bottom sheet over dimmed backdrop (default). `fullscreen` = embedded full viewport (e.g. home `add-pet` screen). */
+  variant?: 'modal' | 'fullscreen';
+  /** Fullscreen header back; defaults to `onClose` when omitted. */
+  onBack?: () => void;
 }
 
 type Step = 'photo' | 'basic' | 'physical' | 'health' | 'vaccinations' | 'behavior' | 'review';
@@ -102,22 +109,110 @@ const CAT_BREEDS = [
   'American Shorthair', 'Birman', 'Himalayan', 'Indie/Mixed', 'Other'
 ];
 
-const COMMON_VACCINATIONS = {
+type PetSpecies = 'Dog' | 'Cat';
+
+interface VaccinationTemplate {
+  key: string;
+  displayName: string;
+  /** Sent as `name` / `type` on POST /pets — stable for analytics & backend. */
+  payloadName: string;
+  description: string;
+  intervalDays: number;
+}
+
+const VACCINATION_TEMPLATES: Record<PetSpecies, VaccinationTemplate[]> = {
   Dog: [
-    { name: 'Rabies', interval: 365 },
-    { name: 'DHPP (Distemper, Hepatitis, Parainfluenza, Parvovirus)', interval: 365 },
-    { name: 'Bordetella (Kennel Cough)', interval: 180 },
-    { name: 'Leptospirosis', interval: 365 },
-    { name: 'Canine Influenza', interval: 365 },
-    { name: 'Lyme Disease', interval: 365 },
+    {
+      key: 'dog:rabies',
+      displayName: 'Rabies Vaccine',
+      payloadName: 'Rabies Vaccine',
+      description:
+        'Protects dogs from the deadly rabies virus, prevents transmission to humans, and is usually given once yearly or as advised by the vet.',
+      intervalDays: 365,
+    },
+    {
+      key: 'dog:dhpp',
+      displayName: 'DHPP Vaccine',
+      payloadName: 'DHPP Vaccine',
+      description:
+        'Protects against Distemper, Hepatitis, Parvovirus, and Parainfluenza, helping prevent severe contagious diseases, with booster doses generally recommended yearly or every 3 years.',
+      intervalDays: 365,
+    },
+    {
+      key: 'dog:bordetella',
+      displayName: 'Bordetella (Kennel Cough) Vaccine',
+      payloadName: 'Bordetella (Kennel Cough) Vaccine',
+      description:
+        'Helps protect dogs from highly contagious kennel cough infections common in boarding, grooming, and daycare environments, usually taken annually or every 6–12 months for high-risk dogs.',
+      intervalDays: 180,
+    },
+    {
+      key: 'dog:leptospirosis',
+      displayName: 'Leptospirosis Vaccine',
+      payloadName: 'Leptospirosis Vaccine',
+      description:
+        'Protects against bacterial infections spread through contaminated water or urine that can affect both pets and humans, commonly administered once yearly.',
+      intervalDays: 365,
+    },
+    {
+      key: 'dog:canine-influenza',
+      displayName: 'Canine Influenza Vaccine',
+      payloadName: 'Canine Influenza Vaccine',
+      description:
+        'Helps prevent dog flu infections that spread easily in social environments, reducing severity of respiratory illness, with annual booster recommendations.',
+      intervalDays: 365,
+    },
+    {
+      key: 'dog:lyme',
+      displayName: 'Lyme Disease Vaccine',
+      payloadName: 'Lyme Disease Vaccine',
+      description:
+        'Protects dogs from Lyme disease caused by tick bites, helping reduce joint, kidney, and fever-related complications, typically recommended yearly in tick-prone areas.',
+      intervalDays: 365,
+    },
   ],
   Cat: [
-    { name: 'Rabies', interval: 365 },
-    { name: 'FVRCP (Feline Viral Rhinotracheitis, Calicivirus, Panleukopenia)', interval: 365 },
-    { name: 'FeLV (Feline Leukemia)', interval: 365 },
-    { name: 'FIV (Feline Immunodeficiency Virus)', interval: 365 },
-    { name: 'Bordetella', interval: 365 },
-  ]
+    {
+      key: 'cat:rabies',
+      displayName: 'Rabies Vaccine',
+      payloadName: 'Rabies Vaccine',
+      description:
+        'Protects cats from the deadly rabies virus, prevents transmission to humans, and is usually given once yearly or as advised by the vet.',
+      intervalDays: 365,
+    },
+    {
+      key: 'cat:fvrcp',
+      displayName: 'FVRCP Vaccine',
+      payloadName: 'FVRCP Vaccine',
+      description:
+        'Protects against common feline respiratory and viral diseases like rhinotracheitis, calicivirus, and panleukopenia, typically taken annually or every 3 years after boosters.',
+      intervalDays: 365,
+    },
+    {
+      key: 'cat:felv',
+      displayName: 'FeLV Vaccine',
+      payloadName: 'FeLV Vaccine',
+      description:
+        'Helps protect cats from feline leukemia virus that weakens the immune system, especially important for outdoor or multi-cat households, with yearly booster doses recommended.',
+      intervalDays: 365,
+    },
+    {
+      key: 'cat:fiv',
+      displayName: 'FIV Vaccine',
+      payloadName: 'FIV Vaccine',
+      description:
+        'Helps reduce the risk of feline immunodeficiency virus infection that affects immunity, mainly recommended for high-risk outdoor cats, with boosters as advised by veterinarians.',
+      intervalDays: 365,
+    },
+    {
+      key: 'cat:bordetella',
+      displayName: 'Bordetella Vaccine',
+      payloadName: 'Bordetella Vaccine',
+      description:
+        'Protects cats from Bordetella respiratory infections commonly spread in boarding or grooming environments, generally recommended annually for social or frequently traveling cats.',
+      intervalDays: 365,
+    },
+  ],
 };
 
 // ============================================================================
@@ -129,13 +224,17 @@ export function EnhancedAddPetModal({
   isOpen, 
   onClose, 
   onSuccess,
-  editPet 
+  editPet,
+  variant = 'modal',
+  onBack,
 }: EnhancedAddPetModalProps) {
+  const isModal = variant === 'modal';
+  const handleHeaderDismiss = () => (onBack ?? onClose)();
+
   const [step, setStep] = useState<Step>('photo');
   const [loading, setLoading] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Pet data state
   const [petData, setPetData] = useState<PetData>({
@@ -178,6 +277,19 @@ export function EnhancedAddPetModal({
   const [newMedication, setNewMedication] = useState('');
   const [newCondition, setNewCondition] = useState('');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
+  const prevPetTypeRef = useRef(petData.type);
+  useEffect(() => {
+    if (prevPetTypeRef.current === petData.type) return;
+    prevPetTypeRef.current = petData.type;
+    const prefix = petData.type === 'Dog' ? 'dog:' : 'cat:';
+    setPetData((prev) => ({
+      ...prev,
+      vaccinations: prev.vaccinations.filter(
+        (v) => !v.vaccineKey || v.vaccineKey.startsWith(prefix)
+      ),
+    }));
+  }, [petData.type]);
 
   // Calculate age from date of birth
   const calculateAge = (dob: string): string => {
@@ -256,17 +368,23 @@ export function EnhancedAddPetModal({
     }
   };
 
-  // Add vaccination record
-  const addVaccination = (name: string, lastDate: string, intervalDays: number = 365) => {
+  // Add vaccination record (replaces same vaccineKey if present)
+  const addVaccination = (
+    vaccineKey: string,
+    payloadName: string,
+    lastDate: string,
+    intervalDays: number = 365
+  ) => {
     const newVax: VaccinationRecord = {
       id: `vax_${Date.now()}`,
-      name,
+      vaccineKey,
+      name: payloadName,
       lastDate,
       nextDueDate: calculateNextDueDate(lastDate, intervalDays),
     };
-    setPetData(prev => ({
+    setPetData((prev) => ({
       ...prev,
-      vaccinations: [...prev.vaccinations, newVax],
+      vaccinations: [...prev.vaccinations.filter((v) => v.vaccineKey !== vaccineKey), newVax],
     }));
   };
 
@@ -331,41 +449,41 @@ export function EnhancedAddPetModal({
   const handleSavePet = async () => {
     setLoading(true);
     try {
-      // Get existing pets
-      const response = await apiClient.get(`/customer/pets/${phone}`) as any;
-      let existingPets: any[] = [];
-      
-      if (Array.isArray(response)) {
-        existingPets = response;
-      } else if (Array.isArray(response?.pets)) {
-        existingPets = response.pets;
+      const customerId = await resolveCustomerIdForPetMutation();
+      if (!customerId) {
+        toast.error('Customer not found. Try signing out and back in.');
+        return;
       }
-      
-      // ✅ FIX: Map frontend fields to backend expected format
-      const petToSave = {
-        id: petData.id,
-        name: petData.name,
-        type: petData.type,           // Backend maps this to species
-        species: petData.type,        // Also send as species for compatibility
-        breed: petData.breed,
+
+      const ageFromDob = (() => {
+        if (!petData.dateOfBirth) return undefined;
+        const birthDate = new Date(petData.dateOfBirth);
+        if (Number.isNaN(birthDate.getTime())) return undefined;
+        const now = new Date();
+        const ageInMonths =
+          (now.getFullYear() - birthDate.getFullYear()) * 12 +
+          (now.getMonth() - birthDate.getMonth());
+        return Math.max(0, Math.floor(ageInMonths / 12));
+      })();
+
+      const payload: Record<string, unknown> = {
+        customerId,
+        name: petData.name.trim(),
+        petType: petData.type,
+        species: petData.type,
+        breed: petData.breed || undefined,
+        age: ageFromDob,
+        ageUnit: 'years',
         gender: petData.gender?.toLowerCase(),
-        weight: petData.weight,
-        color: petData.color,
-        size: petData.size,
-        photo: petData.photo,         // Backend expects 'photo', not 'photos'
-        dob: petData.dateOfBirth,     // Backend expects 'dob'
-        age: calculateAge(petData.dateOfBirth),
-        microchipId: petData.microchipId,
-        
-        // ✅ Enhanced health data
-        allergies: petData.allergies,
-        chronicConditions: petData.chronicConditions,
-        currentMedications: petData.currentMedications,
-        dietaryRestrictions: petData.dietaryRestrictions,
-        spayedNeutered: petData.isSpayedNeutered,
-        
-        // ✅ Vaccination records
-        vaccinations: petData.vaccinations.map(v => ({
+        weight: petData.weight ? Number(petData.weight) : undefined,
+        color: petData.color || undefined,
+        size: petData.size || undefined,
+        photo: petData.photo || undefined,
+        dob: petData.dateOfBirth || undefined,
+        microchipId: petData.microchipId || undefined,
+        allergies: petData.allergies || [],
+        chronicConditions: petData.chronicConditions || [],
+        vaccinations: petData.vaccinations.map((v) => ({
           type: v.name,
           name: v.name,
           date: v.lastDate,
@@ -373,56 +491,42 @@ export function EnhancedAddPetModal({
           nextDue: v.nextDueDate,
           nextDueDate: v.nextDueDate,
         })),
-        
-        // ✅ Behavior data
-        behaviorNotes: petData.specialNeeds || petData.temperament,
-        temperament: petData.temperament,
-        activityLevel: petData.activityLevel,
-        isGoodWithKids: petData.isGoodWithKids,
-        isGoodWithOtherPets: petData.isGoodWithOtherPets,
-        specialNeeds: petData.specialNeeds,
-        
-        // ✅ Additional fields
-        coatType: petData.coatType,
-        eyeColor: petData.eyeColor,
-        distinguishingMarks: petData.distinguishingMarks,
-        bloodType: petData.bloodType,
-        hasInsurance: petData.hasInsurance,
-        insuranceProvider: petData.insuranceProvider,
-        insurancePolicyNumber: petData.insurancePolicyNumber,
-        
-        // ✅ Fallback health records for backward compatibility
-        healthRecords: {
-          allergies: petData.allergies,
-          chronicConditions: petData.chronicConditions,
-          currentMedications: petData.currentMedications,
-          isSpayedNeutered: petData.isSpayedNeutered,
+        behaviorNotes: petData.specialNeeds || petData.temperament || undefined,
+        specialNeeds: petData.specialNeeds || undefined,
+        dietaryRestrictions: petData.dietaryRestrictions || undefined,
+        spayedNeutered: petData.isSpayedNeutered,
+        medicalHistory: {
+          allergies: petData.allergies || [],
+          chronicConditions: petData.chronicConditions || [],
+          currentMedications: petData.currentMedications || [],
+          temperament: petData.temperament || undefined,
+          activityLevel: petData.activityLevel || undefined,
+          isGoodWithKids: petData.isGoodWithKids,
+          isGoodWithOtherPets: petData.isGoodWithOtherPets,
+          coatType: petData.coatType || undefined,
+          eyeColor: petData.eyeColor || undefined,
+          distinguishingMarks: petData.distinguishingMarks || undefined,
+          bloodType: petData.bloodType || undefined,
+          hasInsurance: petData.hasInsurance,
+          insuranceProvider: petData.insuranceProvider || undefined,
+          insurancePolicyNumber: petData.insurancePolicyNumber || undefined,
+          emergencyVetName: petData.emergencyVetName || undefined,
+          emergencyVetPhone: petData.emergencyVetPhone || undefined,
         },
-        
-        createdAt: (editPet as any)?.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
       };
-      
-      // Update or add pet
-      let updatedPets;
+
       if (editPet) {
-        updatedPets = existingPets.map(p => p.id === editPet.id ? petToSave : p);
+        await apiClient.put(`/pets/${editPet.id}`, payload);
       } else {
-        updatedPets = [...existingPets, petToSave];
+        await apiClient.post('/pets', payload);
       }
-      
-      // Save to backend
-      await apiClient.post('/customer/pets', {
-        phone,
-        pets: updatedPets,
-      });
-      
+
       toast.success(`${petData.name} ${editPet ? 'updated' : 'added'} successfully!`);
       onSuccess();
       onClose();
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error saving pet:', error);
-      toast.error('Failed to save pet. Please try again.');
+      toast.error(addPetErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -444,34 +548,62 @@ export function EnhancedAddPetModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-end justify-center">
+    <div
+      className={
+        isModal
+          ? 'fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-end justify-center'
+          : 'fixed inset-0 z-[100] flex flex-col bg-white min-h-[100dvh]'
+      }
+    >
       <div 
-        className="bg-white w-full max-w-lg rounded-t-3xl flex flex-col"
-        style={{ height: '95vh', maxHeight: '95vh' }}
+        className={
+          isModal
+            ? 'bg-white w-full max-w-lg rounded-t-3xl flex flex-col'
+            : 'bg-white w-full max-w-customer mx-auto flex flex-col flex-1 min-h-0'
+        }
+        style={
+          isModal
+            ? { height: '95vh', maxHeight: '95vh' }
+            : { height: '100%', maxHeight: '100dvh', minHeight: '100dvh' }
+        }
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-orange-400 p-5 rounded-t-3xl flex-shrink-0">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center">
+        <div className={`bg-gradient-to-r from-orange-500 via-amber-500 to-orange-400 p-5 flex-shrink-0 ${isModal ? 'rounded-t-3xl' : ''}`}>
+          <div className="flex items-center justify-between mb-4 gap-2">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+              {!isModal && (
+                <button
+                  type="button"
+                  onClick={handleHeaderDismiss}
+                  className="w-10 h-10 shrink-0 bg-white/20 backdrop-blur rounded-full flex items-center justify-center hover:bg-white/30 transition"
+                  aria-label="Back"
+                >
+                  <ChevronLeft className="w-5 h-5 text-white" />
+                </button>
+              )}
+              <div className="w-12 h-12 shrink-0 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center">
                 {petData.type === 'Dog' ? <Dog className="w-7 h-7 text-white" /> : <Cat className="w-7 h-7 text-white" />}
               </div>
-              <div>
-                <h2 className="text-xl font-bold text-white">
+              <div className="min-w-0">
+                <h2 className="text-xl font-bold text-white truncate">
                   {editPet ? 'Edit Pet' : 'Add New Pet'}
                 </h2>
-                <p className="text-white/80 text-sm">
+                <p className="text-white/80 text-sm truncate">
                   {petData.name || 'Your furry friend'}
                 </p>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="w-10 h-10 bg-white/20 backdrop-blur rounded-full flex items-center justify-center hover:bg-white/30 transition"
-            >
-              <X className="w-5 h-5 text-white" />
-            </button>
+            {isModal ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-10 h-10 shrink-0 bg-white/20 backdrop-blur rounded-full flex items-center justify-center hover:bg-white/30 transition"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5 text-white" />
+              </button>
+            ) : null}
           </div>
           
           {/* Step Progress */}
@@ -514,10 +646,11 @@ export function EnhancedAddPetModal({
               </div>
               
               <div className="flex flex-col items-center">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingPhoto}
-                  className={`relative w-48 h-48 rounded-3xl overflow-hidden border-4 transition-all ${
+                <label
+                  htmlFor="enhanced-add-pet-photo-input"
+                  className={`relative flex w-48 h-48 rounded-3xl overflow-hidden border-4 transition-all ${
+                    uploadingPhoto ? 'pointer-events-none cursor-default' : 'cursor-pointer'
+                  } ${
                     validationErrors.photo 
                       ? 'border-red-400 bg-red-50' 
                       : photoPreview 
@@ -534,7 +667,7 @@ export function EnhancedAddPetModal({
                       </div>
                     </>
                   ) : uploadingPhoto ? (
-                    <div className="flex flex-col items-center justify-center h-full">
+                    <div className="flex flex-col items-center justify-center h-full w-full">
                       <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
                       <p className="mt-3 text-sm text-gray-600">Uploading... {uploadProgress}%</p>
                       <div className="mt-2 w-40 bg-gray-200 rounded-full h-1.5">
@@ -545,7 +678,7 @@ export function EnhancedAddPetModal({
                       </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center h-full">
+                    <div className="flex flex-col items-center justify-center h-full w-full">
                       <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mb-3">
                         <Camera className="w-8 h-8 text-orange-500" />
                       </div>
@@ -553,15 +686,15 @@ export function EnhancedAddPetModal({
                       <p className="text-xs text-gray-500 mt-1">JPG, PNG up to 5MB</p>
                     </div>
                   )}
-                </button>
+                </label>
                 
                 <input
-                  ref={fileInputRef}
+                  id="enhanced-add-pet-photo-input"
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   onChange={handlePhotoUpload}
-                  className="hidden"
+                  disabled={uploadingPhoto}
+                  className="sr-only"
                 />
                 
                 {validationErrors.photo && (
@@ -1004,55 +1137,68 @@ export function EnhancedAddPetModal({
           {step === 'vaccinations' && (
             <div className="space-y-5">
               <div className="text-center mb-6">
-                <h3 className="text-xl font-bold text-gray-900">Vaccination Records</h3>
-                <p className="text-gray-600 text-sm">Track {petData.name || 'your pet'}'s immunizations</p>
+                <h3 className="text-xl font-bold text-gray-900">Vaccination records</h3>
+                <p className="text-gray-600 text-sm mt-1 px-1">
+                  Add each vaccine your pet has received. Pick a <span className="font-medium text-gray-800">date last given</span>{' '}
+                  so we can estimate the next due date and send reminders.
+                </p>
               </div>
-              
-              {/* Quick Add Common Vaccines */}
+
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Add Vaccination
-                </label>
-                <div className="space-y-2">
-                  {COMMON_VACCINATIONS[petData.type].map((vax) => {
-                    const isAdded = petData.vaccinations.some(v => v.name === vax.name);
+                <span className="block text-sm font-medium text-gray-700 mb-3">Vaccines for {petData.type}s</span>
+                <div className="space-y-3">
+                  {VACCINATION_TEMPLATES[petData.type].map((tmpl) => {
+                    const isAdded = petData.vaccinations.some((v) => v.vaccineKey === tmpl.key);
+                    const record = petData.vaccinations.find((v) => v.vaccineKey === tmpl.key);
+                    const dateInputId = `vax-date-${tmpl.key}`;
                     return (
-                      <div key={vax.name} className={`p-3 rounded-xl border-2 transition ${
-                        isAdded ? 'border-green-300 bg-green-50' : 'border-gray-200'
-                      }`}>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-medium text-gray-900 text-sm">{vax.name}</span>
-                          {isAdded && <Badge className="bg-green-500 text-white text-xs">Added</Badge>}
-                        </div>
+                      <div
+                        key={tmpl.key}
+                        className={`p-4 rounded-xl border-2 transition ${
+                          isAdded ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'
+                        }`}
+                      >
+                        <h4 className="font-semibold text-gray-900 text-base mb-1">{tmpl.displayName}</h4>
+                        <p className="text-sm text-gray-600 leading-relaxed mb-3">{tmpl.description}</p>
+
                         {!isAdded && (
-                          <div className="flex gap-2 items-center">
-                            <span className="text-xs text-gray-500">Last given:</span>
+                          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+                            <label htmlFor={dateInputId} className="text-sm font-medium text-gray-700 shrink-0">
+                              Date last given
+                            </label>
                             <input
+                              id={dateInputId}
                               type="date"
                               max={new Date().toISOString().split('T')[0]}
                               onChange={(e) => {
                                 if (e.target.value) {
-                                  addVaccination(vax.name, e.target.value, vax.interval);
+                                  addVaccination(
+                                    tmpl.key,
+                                    tmpl.payloadName,
+                                    e.target.value,
+                                    tmpl.intervalDays
+                                  );
                                 }
                               }}
-                              className="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none"
+                              className="w-full sm:max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-white"
                             />
                           </div>
                         )}
-                        {isAdded && (
-                          <div className="flex items-center justify-between text-xs text-gray-600">
+
+                        {isAdded && record && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-gray-700">
                             <span>
-                              Last: {petData.vaccinations.find(v => v.name === vax.name)?.lastDate}
+                              <span className="text-gray-500">Last given:</span>{' '}
+                              <span className="font-medium text-gray-900">{record.lastDate}</span>
                             </span>
                             <span className="text-orange-600 font-medium">
-                              Next due: {petData.vaccinations.find(v => v.name === vax.name)?.nextDueDate}
+                              Next due: {record.nextDueDate}
                             </span>
                             <button
-                              onClick={() => {
-                                const vaxRecord = petData.vaccinations.find(v => v.name === vax.name);
-                                if (vaxRecord) removeVaccination(vaxRecord.id);
-                              }}
-                              className="text-red-500 hover:text-red-600"
+                              type="button"
+                              onClick={() => removeVaccination(record.id)}
+                              className="text-red-500 hover:text-red-600 p-1 rounded-md focus:outline-none focus:ring-2 focus:ring-red-300"
+                              aria-label={`Remove ${tmpl.displayName}`}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -1063,15 +1209,15 @@ export function EnhancedAddPetModal({
                   })}
                 </div>
               </div>
-              
-              {/* Info Box */}
+
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
                 <div className="flex items-start gap-3">
                   <Bell className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                   <div>
-                    <p className="text-sm font-medium text-amber-900">Vaccination Reminders</p>
+                    <p className="text-sm font-medium text-amber-900">Vaccination reminders</p>
                     <p className="text-xs text-amber-700 mt-1">
-                      We'll send you reminders when vaccinations are due. Keep your pet's records updated!
+                      We&apos;ll send you reminders when vaccinations are due. Keep dates accurate so timing stays
+                      helpful for your vet and sitters.
                     </p>
                   </div>
                 </div>

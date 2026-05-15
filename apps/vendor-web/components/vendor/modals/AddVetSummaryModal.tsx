@@ -120,28 +120,28 @@ export function AddVetSummaryModal({ appointmentId, petName, vendorId, staffId: 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/60 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 pb-[env(safe-area-inset-bottom,0px)]">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-lg max-h-[min(92dvh,calc(100dvh-env(safe-area-inset-bottom)))] overflow-hidden flex flex-col shadow-xl min-h-0">
         {/* Header */}
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-green-50">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
+        <div className="p-3 sm:p-4 border-b border-gray-200 flex items-start justify-between gap-3 bg-gradient-to-r from-blue-50 to-green-50 shrink-0">
+          <div className="flex items-start gap-2 sm:gap-3 min-w-0 flex-1">
+            <div className="p-2 bg-blue-100 rounded-lg shrink-0">
               <Stethoscope className="w-5 h-5 text-blue-600" />
             </div>
-            <div>
-              <h3 className="text-lg font-bold text-gray-900">Consultation Summary</h3>
-              <p className="text-sm text-gray-600">{petName}</p>
+            <div className="min-w-0">
+              <h3 className="text-base sm:text-lg font-bold text-gray-900">Consultation Summary</h3>
+              <p className="text-sm text-gray-600 truncate">{petName}</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose}>
+          <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0 touch-manipulation" aria-label="Close">
             <X className="w-5 h-5" />
           </Button>
         </div>
 
         {/* Form */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Vitals */}
-          <div className="grid grid-cols-2 gap-3">
+        <div className="flex-1 overflow-y-auto overscroll-y-contain p-3 sm:p-4 space-y-4 min-h-0">
+          {/* Vitals — stack on very narrow screens */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <Label htmlFor="weight">Weight (kg)</Label>
               <Input
@@ -216,33 +216,33 @@ export function AddVetSummaryModal({ appointmentId, petName, vendorId, staffId: 
               </div>
             )}
 
-            <div className="mt-2 p-3 border border-dashed border-gray-300 rounded-lg space-y-2">
-              <div className="grid grid-cols-2 gap-2">
+            <div className="mt-2 p-3 border border-dashed border-gray-300 rounded-lg space-y-2 min-w-0">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <Input
                   placeholder="Medication name"
                   value={newPrescription.medication}
                   onChange={(e) => setNewPrescription({ ...newPrescription, medication: e.target.value })}
-                  className="text-sm"
+                  className="text-sm min-w-0 w-full"
                 />
                 <Input
                   placeholder="Dosage (e.g., 10mg)"
                   value={newPrescription.dosage}
                   onChange={(e) => setNewPrescription({ ...newPrescription, dosage: e.target.value })}
-                  className="text-sm"
+                  className="text-sm min-w-0 w-full"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <Input
                   placeholder="Frequency (e.g., twice daily)"
                   value={newPrescription.frequency}
                   onChange={(e) => setNewPrescription({ ...newPrescription, frequency: e.target.value })}
-                  className="text-sm"
+                  className="text-sm min-w-0 w-full"
                 />
                 <Input
                   placeholder="Duration (e.g., 7 days)"
                   value={newPrescription.duration}
                   onChange={(e) => setNewPrescription({ ...newPrescription, duration: e.target.value })}
-                  className="text-sm"
+                  className="text-sm min-w-0 w-full"
                 />
               </div>
               <Button type="button" variant="outline" size="sm" onClick={addPrescription}>
@@ -276,26 +276,26 @@ export function AddVetSummaryModal({ appointmentId, petName, vendorId, staffId: 
           </div>
         </div>
 
-        {/* Footer: Draft (CRUD) and Publish */}
-        <div className="p-4 border-t border-gray-200 flex gap-3">
-          <Button variant="outline" onClick={onClose} className="flex-1">
+        {/* Footer — stack on mobile so buttons are not clipped */}
+        <div className="p-3 sm:p-4 border-t border-gray-200 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-stretch shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <Button variant="outline" onClick={onClose} className="w-full sm:flex-1 sm:min-w-0 min-h-[44px]">
             Cancel
           </Button>
-          <Button 
+          <Button
             variant="outline"
-            onClick={() => handleSubmit(true)} 
+            onClick={() => handleSubmit(true)}
             disabled={saving}
-            className="flex-1"
+            className="w-full sm:flex-1 sm:min-w-0 min-h-[44px]"
           >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <FileText className="w-4 h-4 mr-2" />}
-            Save as Draft
+            {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2 shrink-0" /> : <FileText className="w-4 h-4 mr-2 shrink-0" />}
+            <span className="truncate">Save as Draft</span>
           </Button>
-          <Button 
-            onClick={() => handleSubmit(false)} 
+          <Button
+            onClick={() => handleSubmit(false)}
             disabled={saving}
-            className="flex-1 bg-blue-600 hover:bg-blue-700"
+            className="w-full sm:flex-1 sm:min-w-0 min-h-[44px] bg-blue-600 hover:bg-blue-700"
           >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+            {saving ? <Loader2 className="w-4 h-4 animate-spin mr-2 shrink-0" /> : <Save className="w-4 h-4 mr-2 shrink-0" />}
             Publish
           </Button>
         </div>

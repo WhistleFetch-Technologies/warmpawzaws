@@ -9,6 +9,8 @@
  * - CloudWatch Events (full sync schedule)
  * 
  * Date: 2026-01-02
+ *
+ * warmpawz-services documents: id = vendor_services.id (bookable id for GET /services and /booking).
  * ============================================================================
  */
 
@@ -68,7 +70,13 @@ export async function handler(event: SQSEvent | ScheduledEvent, context: Context
 async function processSQSMessages(event: SQSEvent) {
   for (const record of event.Records) {
     try {
-      const message: SyncMessage = JSON.parse(record.body);
+      const raw = JSON.parse(record.body);
+      const message: SyncMessage = {
+        entity: raw.entity,
+        action: raw.action,
+        entity_id: raw.entity_id || raw.entityId,
+        data: raw.data,
+      };
       console.log('Processing sync message:', message);
 
       await processEntityUpdate(message);
@@ -98,14 +106,25 @@ async function processEntityUpdate(message: SyncMessage) {
 
   switch (action) {
     case 'create':
-    case 'update':
-      // Fetch latest data from database if not provided
-      const document = data || await fetchEntityFromDatabase(entity, entity_id);
+    case 'update': {
+      // Bookable service documents use vendor_services.id (matches GET /services/:id + customer /booking/:id).
+      let document: any = null;
+      if (entity === 'service') {
+        const fetched = await fetchVendorServiceForSearchIndex(entity_id);
+        document = fetched ? { ...fetched, ...(data || {}) } : null;
+        if (!document) {
+          await deleteDocument(indexName, entity_id);
+          return;
+        }
+      } else {
+        document = data || (await fetchEntityFromDatabase(entity, entity_id));
+      }
       if (document) {
         const indexableDoc = transformForIndex(entity, document);
         await indexDocument(indexName, entity_id, indexableDoc);
       }
       break;
+    }
     case 'delete':
       await deleteDocument(indexName, entity_id);
       break;
@@ -116,9 +135,39 @@ async function processEntityUpdate(message: SyncMessage) {
 // DATABASE FETCH FUNCTIONS
 // ============================================================================
 
+/**
+ * Loads a vendor_services row only if it meets the same live-listing rules as GET /search SQL fallback
+ * (see search.ts searchWithSQL). Document id must stay vendor_services.id so customer /booking/:id works.
+ */
+async function fetchVendorServiceForSearchIndex(vendorServiceId: string): Promise<any> {
+  const res = await query(
+    `SELECT vs.*, v.business_name as vendor_name, v.owner_name, v.city, v.state,
+            v.latitude as vendor_lat, v.longitude as vendor_lon, v.status as vendor_status,
+            v.specialization as vendor_specialization, v.is_active as vendor_is_active
+     FROM vendor_services vs
+     JOIN vendors v ON vs.vendor_id = v.id
+     WHERE vs.id = $1::uuid
+       AND vs.publish_status = 'published'
+       AND vs.is_enabled = true
+       AND v.is_active = true
+       AND v.status = 'approved'
+       AND v.latitude IS NOT NULL
+       AND v.longitude IS NOT NULL
+       AND EXISTS (
+         SELECT 1 FROM vendor_availability_v2 va
+         WHERE va.vendor_id = v.id
+            OR va.vendor_id IN (
+              SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone
+            )
+       )
+     LIMIT 1`,
+    [vendorServiceId]
+  );
+  return res.rows[0] || null;
+}
+
 async function fetchEntityFromDatabase(entity: string, id: string): Promise<any> {
   const tableMap: Record<string, string> = {
-    service: 'services',
     vendor: 'vendors',
     staff: 'staff',
     product: 'products',
@@ -153,28 +202,38 @@ async function performFullSync() {
 }
 
 async function syncServices() {
-  console.log('Syncing services...');
-  
+  console.log('Syncing vendor_services (bookable ids = vendor_services.id, aligned with GET /search SQL fallback)...');
+
   const services = await query(`
-    SELECT 
-      s.*,
-      v.business_name as vendor_name,
-      v.latitude as vendor_lat,
-      v.longitude as vendor_lon
-    FROM services s
-    JOIN vendors v ON s.vendor_id = v.id
-    WHERE s.is_active = true AND v.status = 'active'
+    SELECT vs.*, v.business_name as vendor_name, v.owner_name, v.city, v.state,
+           v.latitude as vendor_lat, v.longitude as vendor_lon, v.status as vendor_status,
+           v.specialization as vendor_specialization, v.is_active as vendor_is_active
+    FROM vendor_services vs
+    JOIN vendors v ON vs.vendor_id = v.id
+    WHERE vs.publish_status = 'published'
+      AND vs.is_enabled = true
+      AND v.is_active = true
+      AND v.status = 'approved'
+      AND v.latitude IS NOT NULL
+      AND v.longitude IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM vendor_availability_v2 va
+        WHERE va.vendor_id = v.id
+           OR va.vendor_id IN (
+             SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone
+           )
+      )
   `);
 
-  const serviceRows = Array.isArray(services) ? services : (services as any).rows || [];
-  const documents = serviceRows.map((service: any) => ({
-    id: service.id,
-    document: transformForIndex('service', service),
+  const serviceRows = services.rows || [];
+  const documents = serviceRows.map((vs: any) => ({
+    id: vs.id,
+    document: transformForIndex('service', vs),
   }));
 
   if (documents.length > 0) {
     await bulkIndex(INDEXES.SERVICES, documents);
-    console.log(`Synced ${documents.length} services`);
+    console.log(`Synced ${documents.length} vendor_services to OpenSearch`);
   }
 }
 
@@ -272,27 +331,48 @@ async function syncProblems() {
 
 function transformForIndex(entity: string, data: any): Record<string, any> {
   switch (entity) {
-    case 'service':
+    case 'service': {
+      // OpenSearch /search multi_match + customer UI expect service_name / description (same shape as SQL fallback).
+      const priceVal =
+        data.custom_price != null && data.custom_price !== ''
+          ? parseFloat(String(data.custom_price))
+          : data.price != null
+            ? parseFloat(String(data.price))
+            : 0;
+      const desc =
+        data.custom_description ||
+        data.service_description ||
+        data.description_text ||
+        data.service_name ||
+        '';
       return {
         id: data.id,
-        name: data.name,
-        description: data.description,
+        service_name: data.service_name,
+        name: data.service_name,
+        description: desc,
         category: data.category,
         service_style: data.service_style,
         vendor_id: data.vendor_id,
         vendor_name: data.vendor_name || data.business_name,
-        price: data.price,
-        duration: data.duration,
+        specialization: data.vendor_specialization || data.specialization || '',
+        price: Number.isFinite(priceVal) ? priceVal : 0,
+        duration: data.custom_duration ?? data.duration_minutes ?? data.duration ?? 30,
         rating: data.rating || 0,
         total_reviews: data.total_reviews || 0,
         tags: data.tags || [],
-        location: data.vendor_lat && data.vendor_lon
-          ? { lat: data.vendor_lat, lon: data.vendor_lon }
-          : null,
-        is_active: data.is_active,
+        city: (data.city || '').toLowerCase(),
+        state: data.state,
+        location:
+          data.vendor_lat != null && data.vendor_lon != null
+            ? { lat: parseFloat(String(data.vendor_lat)), lon: parseFloat(String(data.vendor_lon)) }
+            : null,
+        // Per-index row is always listable. GET /search OpenSearch uses bool filter status: approved across indices.
+        is_active: true,
+        status: 'approved',
         created_at: data.created_at,
         updated_at: data.updated_at,
       };
+    }
 
     case 'vendor':
       return {
@@ -342,7 +422,7 @@ function transformForIndex(entity: string, data: any): Record<string, any> {
         category: data.category,
         vendor_id: data.vendor_id,
         price: data.price,
-        stock_quantity: data.stock_quantity,
+        stock_quantity: data.stock ?? data.stock_quantity ?? 0,
         rating: data.rating || 0,
         tags: parseJsonArray(data.tags),
         is_active: data.is_active,

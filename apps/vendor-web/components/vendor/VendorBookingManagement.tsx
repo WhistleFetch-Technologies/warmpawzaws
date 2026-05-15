@@ -1,32 +1,97 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import {
+  VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT,
+  VENDOR_MIN_PAYOUT_REQUEST_RS,
+} from '@/lib/vendor-payout';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { toast } from 'sonner';
+import {
+  VENDOR_CANCELLATION_REASON_OPTIONS,
+  type VendorCancellationReasonSlug,
+} from '@/lib/vendor-cancellation-reasons';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
+import { setHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
+import { bookingNeedsWalkLiveTracker } from '@/lib/vendor-walk-live-tracker';
+import { isPackageSessionOneStarted } from '@/lib/vendor-package-parent-decline';
 import { VendorChatModal } from './VendorChatModal';
 import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
+import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { 
-  ArrowLeft, 
   Search, 
   Filter, 
   Calendar, 
   Phone, 
   Video, 
   MapPin, 
+  Navigation,
   MessageSquare, 
   CheckCircle, 
-  Play, 
-  Square, 
   Pill, 
   FileText, 
   RefreshCw, 
-  X 
+  X,
+  Sparkles,
+  Package,
 } from 'lucide-react';
-import { getVendorRoleId, hasVendorRole, isSoloVendor } from '@/lib/vendor-utils';
+import {
+  getVendorRoleId,
+  getVendorAllowedServiceStyles,
+  hasVendorRole,
+  isSoloVendor,
+} from '@/lib/vendor-utils';
+import { EmergencyAvailabilitySosCard } from './EmergencyAvailabilitySosCard';
+import { DeclineBookingModal } from './DeclineBookingModal';
+
+/** 7-day chart when API omits dailyBreakdown: bucket by credited-at (realizedAt). */
+function buildDailyTrendFromEarningTransactions(transactions: any[]): Array<{ day: string; amount: number }> {
+  const shortDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const formatLocalYmd = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const byKey = new Map<string, number>();
+  for (const t of transactions || []) {
+    const raw = t?.realizedAt ?? t?.realized_at ?? t?.createdAt ?? t?.created_at;
+    if (!raw) continue;
+    const k = formatLocalYmd(new Date(raw));
+    const a = Number(t?.amount ?? t?.price ?? 0);
+    if (!Number.isFinite(a)) continue;
+    byKey.set(k, (byKey.get(k) || 0) + a);
+  }
+  const ref = new Date();
+  const out: Array<{ day: string; amount: number }> = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() - i, 12, 0, 0, 0);
+    const key = formatLocalYmd(d);
+    const amt = Math.round((byKey.get(key) || 0) * 100) / 100;
+    out.push({ day: shortDay[d.getDay()] ?? '—', amount: amt });
+  }
+  return out;
+}
 
 interface VendorBookingManagementProps {
   vendorId: string;
@@ -38,6 +103,10 @@ interface VendorBookingManagementProps {
   vendorPhone?: string;
   /** Vendor name for chat display */
   vendorName?: string;
+  /** When true, omit outer shell and VendorHeader (parent provides them, e.g. VendorRouteShell). */
+  embedded?: boolean;
+  /** Set when opening `/bookings?walkSessions=1` from the walker dashboard tile. */
+  walkSessionsFocus?: boolean;
 }
 
 interface Booking {
@@ -83,6 +152,67 @@ interface TimeSlot {
   time: string;
   available: boolean;
   booked?: boolean;
+  isPast?: boolean;
+  serviceType?: string;
+}
+
+interface BreakWindow {
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+}
+
+function timeToMinutes(timeStr: string): number {
+  const normalized = (timeStr || '').trim();
+  const parts = normalized.split(':');
+  const hours = parseInt(parts[0] || '0', 10);
+  const minutes = parseInt(parts[1] || '0', 10);
+  return (hours * 60) + minutes;
+}
+
+function normalizeBookingTimeTo24h(rawTime: string): string | null {
+  if (!rawTime || typeof rawTime !== 'string') return null;
+  const trimmed = rawTime.trim();
+  if (!trimmed) return null;
+
+  // Format like "10:00 AM"
+  const ampmMatch = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (ampmMatch) {
+    let hour = parseInt(ampmMatch[1], 10);
+    const minute = parseInt(ampmMatch[2], 10);
+    const period = ampmMatch[3].toUpperCase();
+    if (period === 'PM' && hour < 12) hour += 12;
+    if (period === 'AM' && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
+  // Formats like "10:00", "10:00:00", "10:00:00.123"
+  const hhmmssMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/);
+  if (hhmmssMatch) {
+    const hour = parseInt(hhmmssMatch[1], 10);
+    const minute = parseInt(hhmmssMatch[2], 10);
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
+  return null;
+}
+
+function format24hTo12hLabel(time24: string): string {
+  const normalized = normalizeBookingTimeTo24h(time24);
+  if (!normalized) return time24;
+  const [hh, mm] = normalized.split(':').map((v) => parseInt(v, 10));
+  const period = hh >= 12 ? 'PM' : 'AM';
+  const hour12 = hh % 12 || 12;
+  return `${hour12}:${String(mm).padStart(2, '0')} ${period}`;
+}
+
+function normalizeServiceType(raw: string | undefined): string {
+  const v = (raw || '').toLowerCase().trim();
+  if (!v) return 'other';
+  if (v === 'at_center' || v === 'at_clinic' || v === 'at_vendor') return 'at_center';
+  if (v === 'at_home' || v === 'home_visit' || v === 'home_service') return 'at_home';
+  if (v === 'tele' || v === 'video_consultation' || v === 'tele_consultation' || v === 'online') return 'tele';
+  return v;
 }
 
 /** Format DB time (e.g. "10:00:00" or "10:00") to 12h (e.g. "10:00 AM") */
@@ -97,16 +227,18 @@ function formatDbTimeTo12h(raw: string): string {
   return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
-export function VendorBookingManagement({ 
-  vendorId, 
-  vendorData, 
+export function VendorBookingManagement({
+  vendorId,
+  vendorData,
   onBack,
   chatEnabled = true,
   vendorPhone,
-  vendorName
+  vendorName,
+  embedded = false,
+  walkSessionsFocus = false,
 }: VendorBookingManagementProps) {
   const router = useRouter();
-  
+
   // ✅ FIX: Check if vendor is solo groomer (groomer_solo) - they only do at_home, no tele
   const isSoloGroomer = hasVendorRole(vendorData, ['pet_groomer', 'groomer', 'groomer_solo']) && 
                         (vendorData?.vendorConfiguration === 'solo' || 
@@ -114,11 +246,7 @@ export function VendorBookingManagement({
                          vendorData?.vendor_type === 'solo' ||
                          isSoloVendor(vendorData));
   
-  // Get allowed service styles - solo groomers only have at_home
-  const allowedServiceStyles = vendorData?.allowedServiceStyles || 
-                               vendorData?.serviceStyles?.selected || 
-                               vendorData?.serviceStyles?.solo || 
-                               [];
+  const allowedServiceStyles = getVendorAllowedServiceStyles(vendorData);
   const hasTeleService = !isSoloGroomer && allowedServiceStyles.includes('tele');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [activeFilter, setActiveFilter] = useState<'today' | 'week' | 'month'>('today');
@@ -126,6 +254,12 @@ export function VendorBookingManagement({
   const [activeTab, setActiveTab] = useState<'bookings' | 'earnings' | 'payouts'>('bookings');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+
+  /** Walk sessions tile: land on bookings-only UI; do not auto-open live tracker (vendor taps Live tracker). */
+  useEffect(() => {
+    if (walkSessionsFocus) setActiveTab('bookings');
+  }, [walkSessionsFocus]);
+
   const [stats, setStats] = useState({
     calls: 0,
     online: 0,
@@ -153,10 +287,20 @@ export function VendorBookingManagement({
     }>;
   } | null>(null);
   const [earningsLoading, setEarningsLoading] = useState(false);
+  const [tierInfo, setTierInfo] = useState<{
+    name?: string;
+    current?: string;
+    commission?: number;
+    commissionRate?: number;
+    canUpgrade?: boolean;
+    nextTier?: string | { name?: string };
+    payoutCycleLabel?: string;
+  } | null>(null);
   
   // Payouts State
   const [payoutsData, setPayoutsData] = useState<{
     availableForPayout: number;
+    minPayoutRequestAmount: number;
     pending: number;
     paidOut: number;
     bankAccount: {
@@ -182,7 +326,13 @@ export function VendorBookingManagement({
   const [otpInput, setOtpInput] = useState('');
   const [otpError, setOtpError] = useState('');
   const [completingBooking, setCompletingBooking] = useState(false);
-  
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
+  const [cancelPolicyReason, setCancelPolicyReason] =
+    useState<VendorCancellationReasonSlug>('operational');
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
+  const [declineModalBooking, setDeclineModalBooking] = useState<Booking | null>(null);
+
   // ✅ Chat Modal State
   const [showChatModal, setShowChatModal] = useState(false);
   const [chatBooking, setChatBooking] = useState<Booking | null>(null);
@@ -199,65 +349,129 @@ export function VendorBookingManagement({
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [prescriptionBookingId, setPrescriptionBookingId] = useState<string | null>(null);
 
-  // ✅ FIX: Load time slots from vendor operating hours and actual bookings
-  const generateTimeSlots = (operatingHours?: any, existingBookings?: Booking[]): TimeSlot[] => {
-    const slots: TimeSlot[] = [];
-    
-    // Get operating hours for selected date
+  /**
+   * Build time-slot chips purely from vendor availability API response.
+   * No fallback. No assumptions. Only real data.
+   *
+   * 1. Filter availability windows to the selected day-of-week.
+   * 2. Find the smallest startTime across all windows → that is the real day start.
+   * 3. Generate 30-min slots within each window.
+   * 4. Exclude break windows.
+   * 5. For today, skip slots whose time has already passed.
+   * 6. Mark booked slots from actual bookings.
+   * 7. Return sorted chronologically (earliest first).
+   */
+  const buildSlotsFromAvailability = (
+    availabilitySlots: any[] = [],
+    breaks: any[] = [],
+    existingBookings: Booking[] = []
+  ): TimeSlot[] => {
     const selectedDateObj = new Date(selectedDate);
-    const dayOfWeek = selectedDateObj.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-    
-    let startHour = 9;
-    let endHour = 18;
-    
-    // Use operating hours if available
-    if (operatingHours && operatingHours[dayOfWeek]) {
-      const dayHours = operatingHours[dayOfWeek];
-      if (dayHours.isOpen && dayHours.open && dayHours.close) {
-        const [openH] = dayHours.open.split(':').map(Number);
-        const [closeH] = dayHours.close.split(':').map(Number);
-        startHour = openH;
-        endHour = closeH;
-      } else if (!dayHours.isOpen) {
-        // Clinic closed on this day
-        return [];
-      }
-    }
-    
-    // Generate slots with 30-minute intervals
-    for (let hour = startHour; hour < endHour; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-        
-        // Check if this slot is booked
-        const isBooked = existingBookings?.some(b => {
-          const bookingTime = b.time.replace(/\s*(AM|PM)/, '');
-          return bookingTime === timeStr;
-        }) || false;
-        
-        slots.push({
-          time: timeStr,
-          available: !isBooked,
-          booked: isBooked
+    const dayOfWeek = selectedDateObj.getDay(); // 0=Sun..6=Sat
+    const isToday = selectedDate === new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const nowMinutes = isToday ? (now.getHours() * 60) + now.getMinutes() : 0;
+
+    // 1. Get enabled windows for selected day
+    const windowsForDay = availabilitySlots
+      .filter((s: any) => Number(s?.dayOfWeek) === dayOfWeek && s?.isEnabled !== false)
+      .map((s: any) => ({
+        start: (s.startTime || '').toString().substring(0, 5),
+        end:   (s.endTime   || '').toString().substring(0, 5),
+        serviceType: normalizeServiceType(
+          (Array.isArray(s.serviceStyles) && s.serviceStyles.length > 0 ? s.serviceStyles[0] : s.serviceType) || ''
+        ),
+      }))
+      .filter((w) => /^\d{2}:\d{2}$/.test(w.start) && /^\d{2}:\d{2}$/.test(w.end));
+
+    if (windowsForDay.length === 0) return [];
+
+    // 2. Collect break ranges for this day
+    const breakRanges = breaks
+      .filter((b: any) => Number(b?.dayOfWeek) === dayOfWeek)
+      .map((b: any) => ({
+        start: timeToMinutes((b.startTime || '').toString().substring(0, 5)),
+        end:   timeToMinutes((b.endTime   || '').toString().substring(0, 5)),
+      }));
+    const isInBreak = (m: number) => breakRanges.some((br) => m >= br.start && m < br.end);
+
+    // 3. Booked times set (normalised to HH:MM)
+    const bookedTimeSet = new Set(
+      existingBookings
+        .filter((b) => !['cancelled', 'no_show'].includes((b.status || '').toLowerCase()))
+        .map((b) => normalizeBookingTimeTo24h(b.time))
+        .filter((t): t is string => !!t)
+    );
+
+    // 4. Generate 30-min slots from each window, skip breaks only.
+    //    Past slots are kept but marked isPast so they render before future ones.
+    const slotMap = new Map<string, { order: number; slot: TimeSlot }>(); // key = type + minutes
+    for (const w of windowsForDay) {
+      const startM = timeToMinutes(w.start);
+      const endM   = timeToMinutes(w.end);
+      for (let m = startM; m < endM; m += 30) {
+        if (isInBreak(m)) continue;              // skip breaks
+        const hh = String(Math.floor(m / 60)).padStart(2, '0');
+        const mm = String(m % 60).padStart(2, '0');
+        const time = `${hh}:${mm}`;
+        const isPast = isToday && m < nowMinutes;
+        const isBooked = bookedTimeSet.has(time);
+        const key = `${w.serviceType}:${m}`;
+        slotMap.set(key, {
+          order: m,
+          slot: {
+            time,
+            available: isPast ? false : !isBooked,
+            booked: isBooked,
+            isPast,
+            serviceType: w.serviceType,
+          },
         });
       }
     }
-    
-    return slots;
+
+    // 5. Return sorted by time (ascending)
+    return Array.from(slotMap.values())
+      .sort((a, b) => a.order - b.order)
+      .map((entry) => entry.slot);
   };
 
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
+  const [breakWindows, setBreakWindows] = useState<BreakWindow[]>([]);
+  const selectedDayOfWeek = new Date(selectedDate).getDay();
+  const slotTypeOrder = ['at_center', 'at_home', 'tele', 'other'];
+  const slotTypeLabelMap: Record<string, string> = {
+    at_center: 'At Center',
+    at_home: 'At Home',
+    tele: 'Tele',
+    other: 'Other',
+  };
+  const groupedSlotsByType = slotTypeOrder
+    .map((type) => ({
+      type,
+      label: slotTypeLabelMap[type] || type,
+      slots: timeSlots.filter((slot) => (slot.serviceType || 'other') === type),
+    }))
+    .filter((group) => group.slots.length > 0);
+  const breakWindowsForDay = breakWindows
+    .filter((b) => b.dayOfWeek === selectedDayOfWeek)
+    .map((b) => ({
+      start: (b.startTime || '').toString().substring(0, 5),
+      end: (b.endTime || '').toString().substring(0, 5),
+    }))
+    .filter((b) => /^\d{2}:\d{2}$/.test(b.start) && /^\d{2}:\d{2}$/.test(b.end))
+    .sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
 
   useEffect(() => {
     loadBookings();
   }, [selectedDate, activeFilter]);
   
-  // Load earnings data when earnings tab is active
+  // Load earnings when Earnings tab is shown (vendorId must be set; not tied to bookings date filter)
   useEffect(() => {
-    if (activeTab === 'earnings') {
+    if (activeTab === 'earnings' && vendorId) {
       loadEarningsData();
     }
-  }, [activeTab, activeFilter]);
+  }, [activeTab, vendorId]);
   
   // Load payouts data when payouts tab is active
   useEffect(() => {
@@ -276,7 +490,7 @@ export function VendorBookingManagement({
         vendorId
       });
       
-      // ✅ FIX: Load both bookings and operating hours
+      // Load bookings and vendor-configured availability in parallel
       // Use startDate for week/month filters, date for today filter
       let dateParam = '';
       if (activeFilter === 'today') {
@@ -287,9 +501,9 @@ export function VendorBookingManagement({
         dateParam = `startDate=${selectedDate}`;
       }
       
-      const [bookingsData, facilityData] = await Promise.all([
+      const [bookingsData, availabilityData] = await Promise.all([
         apiClient.get(`/vendor/bookings/${vendorId}?${dateParam}&filter=all`) as Promise<any>,
-        apiClient.get(`/vendor/${vendorId}/facility`).catch(() => null) as Promise<any>
+        apiClient.get(`/vendor/${vendorId}/availability`).catch(() => null) as Promise<any>
       ]);
 
       if (bookingsData && bookingsData.success) {
@@ -326,6 +540,13 @@ export function VendorBookingManagement({
           date: booking.booking_date || booking.scheduledDate || booking.date || selectedDate,
           price: booking.price || 0,
           serviceName: booking.service?.name || booking.service_name || booking.serviceName || 'Service',
+          serviceCategory:
+            booking.service?.category != null
+              ? String(booking.service.category)
+              : booking.service_category != null
+                ? String(booking.service_category)
+                : '',
+          service_style: booking.service_style || booking.serviceStyle || '',
           duration: booking.duration || 30,
           
           // ✅ NEW: Chat fields
@@ -345,6 +566,49 @@ export function VendorBookingManagement({
           // Track rescheduled bookings
           isRescheduled: Boolean(booking.isRescheduled || booking.rescheduledAt || booking.rescheduled_at),
           rescheduledAt: booking.rescheduledAt || booking.rescheduled_at || null,
+
+          packagePurchaseId: booking.packagePurchaseId ?? booking.package_purchase_id ?? null,
+          package_purchase_id: booking.package_purchase_id ?? booking.packagePurchaseId ?? null,
+          isPackageSession: Boolean(booking.isPackageSession ?? booking.is_package_session),
+          is_package_session: Boolean(booking.is_package_session ?? booking.isPackageSession),
+          packageSessionNumber:
+            booking.packageSessionNumber != null
+              ? Number(booking.packageSessionNumber)
+              : booking.package_session_number != null
+                ? Number(booking.package_session_number)
+                : null,
+          package_session_number:
+            booking.package_session_number != null
+              ? Number(booking.package_session_number)
+              : booking.packageSessionNumber != null
+                ? Number(booking.packageSessionNumber)
+                : null,
+          packageTotalSessions:
+            booking.packageTotalSessions != null
+              ? Number(booking.packageTotalSessions)
+              : booking.package_total_sessions != null
+                ? Number(booking.package_total_sessions)
+                : null,
+          package_total_sessions:
+            booking.package_total_sessions != null
+              ? Number(booking.package_total_sessions)
+              : booking.packageTotalSessions != null
+                ? Number(booking.packageTotalSessions)
+                : null,
+          packageRemainingSessions:
+            booking.packageRemainingSessions != null
+              ? Number(booking.packageRemainingSessions)
+              : booking.package_remaining_sessions != null
+                ? Number(booking.package_remaining_sessions)
+                : null,
+          package_remaining_sessions:
+            booking.package_remaining_sessions != null
+              ? Number(booking.package_remaining_sessions)
+              : booking.packageRemainingSessions != null
+                ? Number(booking.packageRemainingSessions)
+                : null,
+          packageUnlimitedUsage: Boolean(booking.packageUnlimitedUsage ?? booking.package_unlimited_usage),
+          package_name: booking.package_name ?? booking.packageName ?? null,
         };
         });
         
@@ -387,19 +651,23 @@ export function VendorBookingManagement({
           totalBookings: mappedBookings.length
         });
         
-        // ✅ FIX: Load operating hours and regenerate time slots based on real data
-        let operatingHours = null;
-        if (facilityData && facilityData.facility && facilityData.facility.operatingHours) {
-          operatingHours = facilityData.facility.operatingHours;
-        }
-        
-        // Generate time slots based on operating hours and existing bookings
-        const newSlots = generateTimeSlots(operatingHours, mappedBookings);
+        // Build slots purely from vendor availability API — no fallback, no assumptions.
+        const availabilitySlots = availabilityData?.availability?.slots || [];
+        const availabilityBreaks = availabilityData?.availability?.breaks || [];
+        const newSlots = buildSlotsFromAvailability(availabilitySlots, availabilityBreaks, mappedBookings);
         setTimeSlots(newSlots);
+        setBreakWindows(
+          availabilityBreaks.map((b: any) => ({
+            dayOfWeek: Number(b?.dayOfWeek),
+            startTime: (b?.startTime || '').toString(),
+            endTime: (b?.endTime || '').toString(),
+          }))
+        );
       } else {
         console.error('Failed to load bookings:', bookingsData);
         setBookings([]);
         setTimeSlots([]);
+        setBreakWindows([]);
         // ✅ FIX: Reset stats to 0 when no bookings are found for the selected period
         setStats({
           calls: 0,
@@ -411,6 +679,7 @@ export function VendorBookingManagement({
       console.error('Error loading bookings:', error);
       setBookings([]);
       setTimeSlots([]);
+      setBreakWindows([]);
       // ✅ FIX: Reset stats to 0 on error
       setStats({
         calls: 0,
@@ -423,41 +692,75 @@ export function VendorBookingManagement({
   };
 
   const loadEarningsData = async () => {
+    if (!vendorId) return;
     try {
       setEarningsLoading(true);
       console.log('💰 [VENDOR-UI] Loading earnings data for vendor:', vendorId);
       
-      // Fetch earnings data for different periods in parallel
-      const [todayData, weekData, monthData, totalData, transactionsData] = await Promise.all([
+      // Fetch earnings, transactions, and tier in parallel
+      const [todayData, weekData, monthData, totalData, transactionsData, tierRes] = await Promise.all([
         apiClient.get(`/vendor/${vendorId}/earnings?period=day`).catch(() => null) as Promise<any>,
         apiClient.get(`/vendor/${vendorId}/earnings?period=week`).catch(() => null) as Promise<any>,
         apiClient.get(`/vendor/${vendorId}/earnings?period=month`).catch(() => null) as Promise<any>,
         apiClient.get(`/vendor/${vendorId}/earnings?period=lifetime`).catch(() => null) as Promise<any>,
-        apiClient.get(`/vendor/${vendorId}/transactions?period=month&limit=10`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/transactions?period=month&limit=25`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${vendorId}/tier`).catch(() => null) as Promise<any>,
       ]);
+
+      if (tierRes?.tier) {
+        setTierInfo(tierRes.tier);
+      } else {
+        setTierInfo(null);
+      }
       
       console.log('📊 [VENDOR-UI] Earnings API responses:', { todayData, weekData, monthData, totalData, transactionsData });
       
-      // Calculate daily trend from week data
-      const dailyTrend = weekData?.dailyBreakdown || weekData?.dailyEarnings || [
-        { day: 'Mon', amount: 0 },
-        { day: 'Tue', amount: 0 },
-        { day: 'Wed', amount: 0 },
-        { day: 'Thu', amount: 0 },
-        { day: 'Fri', amount: 0 },
-        { day: 'Sat', amount: 0 },
-        { day: 'Sun', amount: 0 },
-      ];
+      const fromApi =
+        weekData?.earnings?.dailyBreakdown ||
+        weekData?.earnings?.dailyEarnings ||
+        weekData?.dailyBreakdown ||
+        weekData?.dailyEarnings;
+      let dailyTrend: Array<{ day: string; amount: number }>;
+      if (Array.isArray(fromApi) && fromApi.length > 0) {
+        dailyTrend = fromApi.map((d: any, index: number) => ({
+          day: d.day || d.date || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index] || '',
+          amount: Number(d.amount ?? d.earnings ?? 0) || 0,
+        }));
+      } else {
+        const weekTx = weekData?.earnings?.transactions;
+        const built = Array.isArray(weekTx) && weekTx.length > 0 ? buildDailyTrendFromEarningTransactions(weekTx) : null;
+        dailyTrend =
+          built && built.some((x) => x.amount > 0)
+            ? built
+            : [
+                { day: 'Mon', amount: 0 },
+                { day: 'Tue', amount: 0 },
+                { day: 'Wed', amount: 0 },
+                { day: 'Thu', amount: 0 },
+                { day: 'Fri', amount: 0 },
+                { day: 'Sat', amount: 0 },
+                { day: 'Sun', amount: 0 },
+              ];
+      }
       
-      // Map transactions to display format
-      const transactions = (transactionsData?.transactions || transactionsData?.data || []).slice(0, 5).map((t: any) => ({
-        id: t.id || t.transactionId,
-        date: t.date || t.createdAt || new Date().toISOString().split('T')[0],
-        service: t.serviceName || t.service || 'Service',
-        amount: t.amount || t.price || 0,
-        status: t.status || 'completed',
-        customer: t.customerName || t.customer || 'Customer',
-      }));
+      // Prefer credited-at time so totals align with earnings APIs (booking_date can differ)
+      const transactions = (transactionsData?.transactions || transactionsData?.data || []).slice(0, 15).map((t: any) => {
+        const credited =
+          t.realizedAt ||
+          t.realized_at ||
+          t.createdAt ||
+          t.created_at ||
+          t.date ||
+          new Date().toISOString().split('T')[0];
+        return {
+          id: String(t.id || t.transactionId || Math.random()),
+          date: credited,
+          service: t.serviceName || t.service || 'Service',
+          amount: Number(t.amount || t.price || 0) || 0,
+          status: t.status || 'completed',
+          customer: t.customerName || t.customer || 'Customer',
+        };
+      });
       
       // API returns { success, earnings: { totalEarnings, thisPeriod, ... }, period } - extract numbers only
       const eNum = (res: any, field: 'thisPeriod' | 'totalEarnings') => {
@@ -481,6 +784,7 @@ export function VendorBookingManagement({
       console.log('✅ [VENDOR-UI] Earnings data loaded successfully');
     } catch (error) {
       console.error('❌ Error loading earnings:', error);
+      setTierInfo(null);
       // Set empty data on error
       setEarningsData({
         today: 0,
@@ -506,26 +810,73 @@ export function VendorBookingManagement({
         apiClient.get(`/vendor/${vendorId}/settlements?limit=10`).catch(() => null) as Promise<any>,
         apiClient.get(`/vendor/${vendorId}/settlements?summary=true`).catch(() => null) as Promise<any>,
         apiClient.get(`/vendor/${vendorId}/bank-details`).catch(() => apiClient.get(`/vendor/${vendorId}/bank-account`).catch(() => null)) as Promise<any>,
-        apiClient.get(`/settlements/policy`).catch(() => null) as Promise<any>,
+        apiClient
+          .get(`/settlements/policy?vendorId=${encodeURIComponent(vendorId)}`)
+          .catch(() => null) as Promise<any>,
       ]);
       
       console.log('📊 [VENDOR-UI] Payouts API responses:', { settlementsData, settlementsSummary, bankData, policyData });
       
       // Extract summary totals
       const summary = settlementsSummary?.summary || settlementsData?.summary || {};
-      
-      // Map payout history
-      const payoutHistory = (settlementsData?.settlements || settlementsData?.data || []).slice(0, 5).map((s: any) => ({
-        id: s.id || s.settlementId,
-        date: s.date || s.createdAt || s.processedAt || new Date().toISOString().split('T')[0],
-        amount: s.amount || s.netAmount || s.payout || 0,
-        status: s.status || 'completed',
-        txnId: s.transactionId || s.txnId || s.utr || `TXN${s.id?.slice(0, 8)?.toUpperCase() || 'XXXXXX'}`,
-      }));
+      const settlementsPayload = settlementsData?.data ?? settlementsData;
+      const payoutRows = Array.isArray(settlementsPayload?.payouts) ? settlementsPayload.payouts : [];
+      const settlementRows = Array.isArray(settlementsPayload?.settlements)
+        ? settlementsPayload.settlements
+        : Array.isArray(settlementsData?.settlements)
+          ? settlementsData.settlements
+          : [];
+
+      // Bank "Payout History" must use `payouts` from GET /vendor/:id/settlements (actual transfers).
+      // Using only `settlements` stays empty when money flows via vendor_earnings + payouts with no per-row settlement UI rows.
+      const mapBankPayout = (p: any) => {
+        const id = String(p.id ?? '');
+        const when = p.processedAt || p.created_at || p.createdAt || new Date().toISOString();
+        return {
+          id,
+          date: typeof when === 'string' ? when : new Date(when).toISOString(),
+          amount: Number(p.amount ?? 0) || 0,
+          status: String(p.status || p.payout_status || 'pending').toLowerCase(),
+          txnId:
+            p.razorpayPayoutId ||
+            p.razorpay_payout_id ||
+            p.transactionId ||
+            `TXN${id.replace(/-/g, '').slice(0, 8).toUpperCase() || 'XXXXXXXX'}`,
+        };
+      };
+      const mapSettlementRow = (s: any) => ({
+        id: String(s.id || s.settlementId || ''),
+        date:
+          s.date ||
+          s.createdAt ||
+          s.created_at ||
+          s.processedAt ||
+          s.completedAt ||
+          new Date().toISOString().split('T')[0],
+        amount: Number(s.amount ?? s.netAmount ?? s.payout ?? 0) || 0,
+        status: String(s.status || 'completed').toLowerCase(),
+        txnId:
+          s.transactionId ||
+          s.txnId ||
+          s.utr ||
+          s.payout_reference ||
+          `TXN${String(s.id || '').replace(/-/g, '').slice(0, 8).toUpperCase() || 'XXXXXXXX'}`,
+      });
+
+      let payoutHistory =
+        payoutRows.length > 0 ? payoutRows.slice(0, 10).map(mapBankPayout) : settlementRows.slice(0, 5).map(mapSettlementRow);
+      payoutHistory = payoutHistory.slice(0, 5);
       
       // Extract bank account info (bankDetails from GET /vendor/:id/bank-details)
       const bankAccount = bankData?.bankDetails || bankData?.bankAccount || bankData?.bank || bankData?.data;
-      
+      const bankVerifiedFlag =
+        !!bankAccount?.verified ||
+        !!bankAccount?.isVerified ||
+        !!bankAccount?.bank_verified ||
+        !!bankAccount?.is_verified ||
+        (typeof bankAccount?.verification_status === 'string' &&
+          bankAccount.verification_status.toLowerCase() === 'verified');
+
       const policy = policyData?.policy ?? policyData;
       const payoutDays = policy?.holdPeriodDays ?? policy?.payoutPeriodDays ?? 7;
       const payoutScheduleText =
@@ -534,15 +885,27 @@ export function VendorBookingManagement({
         policyData?.payoutSchedule ||
         `Earnings are held for ${payoutDays} days (per your tier) before becoming eligible for settlement. Minimum payout and schedule are set by Finance.`;
 
+      // Use ?? not || so 0 from API is kept (|| would fall through to pendingAmount and show a false "available").
       setPayoutsData({
-        availableForPayout: summary.availableForPayout || summary.available || summary.pendingAmount || 0,
-        pending: summary.pending || summary.holdAmount || summary.onHold || 0,
-        paidOut: summary.paidOut || summary.totalPaidOut || summary.completed || 0,
+        availableForPayout: Number(
+          summary.availableForPayout ?? summary.available ?? summary.pendingAmount ?? 0,
+        ),
+        minPayoutRequestAmount: Number(
+          summary.minPayoutRequestAmount ?? summary.min_payout_request_amount,
+        ) || VENDOR_MIN_PAYOUT_REQUEST_RS,
+        pending: Number(summary.heldInOpenPayouts ?? summary.holdAmount ?? summary.onHold ?? 0),
+        paidOut: Number(
+          summary.paidOut ??
+            summary.totalPaidOut ??
+            summary.completedAmount ??
+            summary.totalSettled ??
+            0,
+        ),
         bankAccount: bankAccount ? {
           bankName: bankAccount.bankName || bankAccount.bank_name || 'Bank',
           accountNumber: bankAccount.accountNumber || bankAccount.account_number || '••••••••••',
           accountHolder: bankAccount.accountHolder || bankAccount.account_holder || vendorData?.fullName || 'Account Holder',
-          verified: bankAccount.verified || bankAccount.isVerified || false,
+          verified: bankVerifiedFlag,
         } : null,
         payoutHistory,
         payoutSchedule: payoutScheduleText,
@@ -554,6 +917,7 @@ export function VendorBookingManagement({
       // Set empty data on error
       setPayoutsData({
         availableForPayout: 0,
+        minPayoutRequestAmount: VENDOR_MIN_PAYOUT_REQUEST_RS,
         pending: 0,
         paidOut: 0,
         bankAccount: null,
@@ -566,12 +930,18 @@ export function VendorBookingManagement({
   };
 
   const handleRequestPayout = async () => {
+    const minReq =
+      payoutsData?.minPayoutRequestAmount ?? VENDOR_MIN_PAYOUT_REQUEST_RS;
     if (!payoutsData?.availableForPayout || payoutsData.availableForPayout <= 0) {
-      alert('No amount available for payout');
+      toast.error('No amount available for payout');
+      return;
+    }
+    if (payoutsData.availableForPayout < minReq) {
+      toast.error(VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT);
       return;
     }
     if (!payoutsData?.bankAccount?.verified) {
-      alert('Please add and verify your bank account in Settings first. Automatic settlement requires a verified bank account.');
+      toast.error('Please add and verify your bank account in Settings first.');
       router.push('/settings?tab=bank');
       return;
     }
@@ -587,28 +957,48 @@ export function VendorBookingManagement({
       }) as any;
       
       if (response?.success) {
-        alert('✅ Payout request submitted successfully!');
+        toast.success(
+          (response as any)?.message ||
+            'Payout request submitted. You will be notified when it is processed.'
+        );
         loadPayoutsData(); // Refresh data
       } else {
-        alert(`❌ Failed to request payout: ${response?.error || 'Unknown error'}`);
+        toast.error(`Failed to request payout: ${response?.error || 'Unknown error'}`);
       }
     } catch (error) {
       console.error('Error requesting payout:', error);
-      alert('❌ Error requesting payout. Please try again.');
+      toast.error('Error requesting payout. Please try again.');
     }
   };
 
-  const handleCancelBooking = async (bookingId: string) => {
-    if (!confirm('Are you sure you want to cancel this booking?')) return;
+  const openCancelBookingDialog = (e: MouseEvent<HTMLButtonElement>, bookingId: string) => {
+    e.stopPropagation();
+    setCancelTargetId(bookingId);
+    setCancelPolicyReason('operational');
+    setCancelDialogOpen(true);
+  };
 
+  const confirmCancelBooking = async () => {
+    if (!cancelTargetId) return;
+    setCancelSubmitting(true);
     try {
-      const data = await apiClient.post(`/vendor/bookings/${bookingId}/cancel`, {}) as any;
+      const data = (await apiClient.post(`/vendor/bookings/${cancelTargetId}/cancel`, {
+        vendorCancellationReason: cancelPolicyReason,
+      })) as any;
 
       if (data && data.success) {
-        loadBookings(); // Reload bookings
+        toast.success(data?.refund?.message || 'Booking cancelled');
+        setCancelDialogOpen(false);
+        setCancelTargetId(null);
+        loadBookings();
+      } else {
+        toast.error(data?.error || 'Failed to cancel booking');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error cancelling booking:', error);
+      toast.error(error?.message || 'Failed to cancel booking');
+    } finally {
+      setCancelSubmitting(false);
     }
   };
 
@@ -617,40 +1007,21 @@ export function VendorBookingManagement({
     console.log('Edit booking:', bookingId);
   };
   
-  // Accept Booking (Cafe/Resort)
-  const handleAcceptBooking = async (booking: Booking) => {
-    try {
-      setCompletingBooking(true);
-      const data = await apiClient.post(`/vendor/bookings/${booking.id}/confirm`, { vendorId }) as any;
-
-      if (data && data.success) {
-        alert('✅ Booking accepted!');
-        loadBookings();
-      } else {
-        console.error('Failed to accept booking:', data);
-        alert(`❌ Failed to accept: ${data?.error || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Error accepting booking:', error);
-      alert('❌ Error accepting booking');
-    } finally {
-      setCompletingBooking(false);
-    }
-  };
-
   // Complete Booking (with OTP for in-person services)
   const handleCompleteBooking = (booking: Booking) => {
     setSelectedBooking(booking);
     setOtpInput('');
     setOtpError('');
-    
-    // Check if this is a dog walking service (requires session tracking)
-    const isDogWalking = booking.serviceName?.toLowerCase().includes('walk') || 
-                         booking.serviceName?.toLowerCase().includes('walking');
-    
-    if (isDogWalking && booking.status === 'confirmed') {
-      // For dog walking, show OTP modal to START session (not complete)
-      setShowOTPModal(true);
+
+    if (bookingNeedsWalkLiveTracker(booking, vendorData) && booking.status === 'confirmed') {
+      const id = booking.bookingId || booking.id;
+      if (id) {
+        setHomeServiceTrackingReturnHref(
+          walkSessionsFocus ? '/bookings?walkSessions=1' : '/bookings'
+        );
+        router.push(`/bookings/home-service?bookingId=${encodeURIComponent(id)}`);
+      }
+      return;
     } else if (booking.communicationType === 'video') {
       // For tele consultations, complete without OTP
       handleCompleteWithoutOTP(booking);
@@ -695,29 +1066,17 @@ export function VendorBookingManagement({
     }
   };
   
-  // End session for dog walking (no OTP needed)
-  const handleEndSession = async (booking: Booking) => {
-    if (!confirm('End this walking session?')) return;
-    
-    try {
-      setCompletingBooking(true);
-      
-      const data = await apiClient.post(`/vendor/bookings/${booking.id}/end-session`, { vendorId }) as any;
-      
-      // data already available
-      
-      if (data && data.success) {
-        alert('✅ Session ended and booking completed!');
-        loadBookings(); // Reload bookings
-      } else {
-        alert(`❌ Error: ${data.error || 'Failed to end session'}`);
-      }
-    } catch (error) {
-      console.error('Error ending session:', error);
-      alert('❌ Error ending session. Please try again.');
-    } finally {
-      setCompletingBooking(false);
+  /** Walker live session: start OTP, GPS, end OTP — use dedicated tracking screen (not list + end-session API). */
+  const openWalkLiveTracker = (booking: Booking) => {
+    const id = booking.bookingId || booking.id;
+    if (!id) {
+      toast.error('Missing booking id');
+      return;
     }
+    setHomeServiceTrackingReturnHref(
+      walkSessionsFocus ? '/bookings?walkSessions=1' : '/bookings'
+    );
+    router.push(`/bookings/home-service?bookingId=${encodeURIComponent(id)}`);
   };
   
   // Complete booking without OTP (for tele consultations)
@@ -801,59 +1160,45 @@ export function VendorBookingManagement({
     setShowPrescriptionModal(true);
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-[430px] mx-auto bg-white min-h-screen pb-20">
-        {/* Header */}
-        <div className="p-4 bg-white border-b border-gray-200 sticky top-0 z-10">
-          <div className="flex items-center gap-3 mb-4">
-            <button onClick={onBack} className="w-8 h-8 flex items-center justify-center">
-              <ArrowLeft className="w-5 h-5 text-gray-700" />
-            </button>
-            <div className="flex-1">
-              <h1 className="font-semibold text-gray-900">{vendorData?.businessName || vendorData?.fullName || 'Booking Management'}</h1>
-              <p className="text-xs text-gray-500">{vendorData?.address || 'India'}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Search className="w-5 h-5 text-gray-400" />
-              <Filter className="w-5 h-5 text-gray-400" />
+  const bookingMainBody = (
+    <>
+        {!walkSessionsFocus && (
+          <div className="border-b border-gray-200 bg-white px-4 pb-4">
+            {/* Tab Navigation — hidden on Walk sessions flow (bookings only) */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setActiveTab('bookings')}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'bookings'
+                    ? 'bg-[#FF8C42] text-white'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                Bookings
+              </button>
+              <button
+                onClick={() => setActiveTab('earnings')}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'earnings'
+                    ? 'bg-[#FF8C42] text-white'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                Earnings
+              </button>
+              <button
+                onClick={() => setActiveTab('payouts')}
+                className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === 'payouts'
+                    ? 'bg-[#FF8C42] text-white'
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                Payouts
+              </button>
             </div>
           </div>
-
-          {/* Tab Navigation */}
-          <div className="flex gap-2">
-            <button
-              onClick={() => setActiveTab('bookings')}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'bookings'
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              Bookings
-            </button>
-            <button
-              onClick={() => setActiveTab('earnings')}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'earnings'
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              Earnings
-            </button>
-            <button
-              onClick={() => setActiveTab('payouts')}
-              className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                activeTab === 'payouts'
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600'
-              }`}
-            >
-              Payouts
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* Schedule Section */}
         <div className="p-4 bg-white border-b border-gray-100">
@@ -975,15 +1320,13 @@ export function VendorBookingManagement({
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42] mx-auto"></div>
                 </div>
               ) : (() => {
-                // ✅ FIX: Filter out completed bookings from main dashboard view
-                const activeBookings = bookings.filter(b => b.status !== 'completed');
-                return activeBookings.length === 0 ? (
+                return bookings.length === 0 ? (
                   <div className="text-center py-8 text-gray-500 text-sm">
                     No appointments scheduled
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {activeBookings.map((booking) => (
+                    {bookings.map((booking) => (
                     <div 
                       key={booking.id} 
                       className="border border-gray-200 rounded-xl p-3 cursor-pointer hover:shadow-lg hover:border-[#FF8C42] transition-all"
@@ -1002,6 +1345,25 @@ export function VendorBookingManagement({
                                 📅 Rescheduled
                               </span>
                             )}
+                            {(booking as any).packagePurchaseId && (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-800">
+                                <Package className="h-3 w-3 shrink-0" />
+                                {(booking as any).packageSessionNumber != null &&
+                                (booking as any).packageTotalSessions != null
+                                  ? `Session ${(booking as any).packageSessionNumber} of ${(booking as any).packageTotalSessions}`
+                                  : 'Package'}
+                                {(booking as any).packageRemainingSessions != null &&
+                                !(booking as any).packageUnlimitedUsage && (
+                                  <span className="text-purple-600">
+                                    {' '}
+                                    · {(booking as any).packageRemainingSessions} left
+                                  </span>
+                                )}
+                                {(booking as any).packageUnlimitedUsage ? (
+                                  <span className="text-purple-600"> · Unlimited</span>
+                                ) : null}
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
                             <span>🐕</span>
@@ -1016,87 +1378,128 @@ export function VendorBookingManagement({
                       
                       {/* NEW: Smart buttons based on service type and status */}
                       {booking.status !== 'completed' && booking.status !== 'cancelled' && (() => {
-                        
-                        // PENDING STATE (Cafe/Resort)
-                        if (booking.status === 'pending') {
-                          return (
-                            <div className="mt-3 grid grid-cols-2 gap-2">
-                              <button
-                                className="px-4 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium transition-colors"
-                                onClick={() => handleCancelBooking(booking.id)}
-                                disabled={completingBooking}
-                              >
-                                Reject
-                              </button>
-                              <button
-                                className="px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium transition-colors"
-                                onClick={() => handleAcceptBooking(booking)}
-                                disabled={completingBooking}
-                              >
-                                Accept
-                              </button>
-                            </div>
-                          );
-                        }
+                        const packagePurchaseId = String(
+                          booking.packagePurchaseId || (booking as any).package_purchase_id || ''
+                        ).trim();
+                        const isPackageSessionRow = Boolean(
+                          booking.isPackageSession || (booking as any).is_package_session
+                        );
+                        const isPackageParentRow = Boolean(
+                          packagePurchaseId && !isPackageSessionRow
+                        );
 
-                        const isDogWalking = booking.serviceName?.toLowerCase().includes('walk') || 
-                                            booking.serviceName?.toLowerCase().includes('walking');
-                        
-                        if (isDogWalking) {
-                          // DOG WALKING: Show Start/End Session buttons
-                          if (booking.status === 'in_progress') {
-                            return (
-                              <div className="mt-3">
-                                <button
-                                  onClick={() => handleEndSession(booking)}
-                                  disabled={completingBooking}
-                                  className="w-full px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                                >
-                                  <Square className="w-4 h-4" />
-                                  End Session & Complete
-                                </button>
-                                <p className="text-xs text-gray-500 mt-1 text-center">
-                                  🗺️ Customer is tracking your location
-                                </p>
-                              </div>
-                            );
-                          } else {
-                            return (
-                              <div className="mt-3">
-                                <button
-                                  onClick={() => handleCompleteBooking(booking)}
-                                  disabled={completingBooking}
-                                  className="w-full px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                                >
-                                  <Play className="w-4 h-4" />
-                                  Start Session with OTP
-                                </button>
-                                <p className="text-xs text-gray-500 mt-1 text-center">
-                                  Enter customer OTP to start walk & enable live tracking
-                                </p>
-                              </div>
-                            );
-                          }
-                        } else {
-                          // REGULAR SERVICES: Complete with OTP (or without for tele)
+                        const showWalkTracker = bookingNeedsWalkLiveTracker(booking, vendorData);
+                        /** Package session rows: complete each session with OTP — no per-session Decline. */
+                        const isPackageSessionBooking = Boolean(packagePurchaseId && isPackageSessionRow);
+
+                        // Package umbrella row: Decline entire package only (refund + cancel all sessions on server).
+                        if (isPackageParentRow) {
+                          if (booking.status !== 'pending' && booking.status !== 'confirmed') return null;
+                          const sessionOneStarted = isPackageSessionOneStarted(packagePurchaseId, bookings);
                           return (
                             <div className="mt-3">
                               <button
-                                onClick={() => handleCompleteBooking(booking)}
-                                disabled={completingBooking}
-                                className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                type="button"
+                                className={`w-full px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                                  sessionOneStarted || completingBooking
+                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                    : 'bg-red-100 hover:bg-red-200 text-red-700'
+                                }`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (sessionOneStarted) return;
+                                  setDeclineModalBooking({
+                                    ...booking,
+                                    scheduledDate: booking.date,
+                                    scheduledTime: booking.time,
+                                  } as any);
+                                }}
+                                disabled={completingBooking || sessionOneStarted}
                               >
-                                <CheckCircle className="w-4 h-4" />
-                                {booking.communicationType === 'video' ? 'Mark Complete' : 'Complete with OTP'}
+                                {sessionOneStarted
+                                  ? 'Decline unavailable (session 1 already started)'
+                                  : 'Decline package (refund per policy · cancels all sessions)'}
                               </button>
                               <p className="text-xs text-gray-500 mt-1 text-center">
-                                {booking.communicationType === 'video' 
-                                  ? 'Tele consultation - No OTP required' 
-                                  : 'Ask customer for 4-digit OTP to complete'}
+                                {sessionOneStarted
+                                  ? 'After session 1 starts, the package can no longer be declined from here.'
+                                  : 'Declines the purchase and cancels every scheduled session for this package.'}
                               </p>
                             </div>
                           );
                         }
+
+                        if (booking.status === 'pending' || booking.status === 'confirmed') {
+                          const declineBtn = (
+                            <button
+                              type="button"
+                              className="w-full px-4 py-2.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-medium transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeclineModalBooking({
+                                  ...booking,
+                                  scheduledDate: booking.date,
+                                  scheduledTime: booking.time,
+                                } as any);
+                              }}
+                              disabled={completingBooking}
+                            >
+                              Decline booking (refund per policy)
+                            </button>
+                          );
+
+                          if (showWalkTracker) {
+                            if (isPackageSessionBooking) return null;
+                            return <div className="mt-3">{declineBtn}</div>;
+                          }
+
+                          return (
+                            <div className="mt-3 space-y-2">
+                              {!isPackageSessionBooking && declineBtn}
+                              {booking.status === 'confirmed' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCompleteBooking(booking)}
+                                    disabled={completingBooking}
+                                    className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                                  >
+                                    <CheckCircle className="w-4 h-4" />
+                                    {booking.communicationType === 'video' ? 'Mark Complete' : 'Complete with OTP'}
+                                  </button>
+                                  <p className="text-xs text-gray-500 mt-1 text-center">
+                                    {booking.communicationType === 'video'
+                                      ? 'Tele consultation - No OTP required'
+                                      : 'Ask customer for 4-digit OTP to complete'}
+                                  </p>
+                                </>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (showWalkTracker) {
+                          return null;
+                        }
+
+                        return (
+                          <div className="mt-3">
+                            <button
+                              type="button"
+                              onClick={() => handleCompleteBooking(booking)}
+                              disabled={completingBooking}
+                              className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                              {booking.communicationType === 'video' ? 'Mark Complete' : 'Complete with OTP'}
+                            </button>
+                            <p className="text-xs text-gray-500 mt-1 text-center">
+                              {booking.communicationType === 'video'
+                                ? 'Tele consultation - No OTP required'
+                                : 'Ask customer for 4-digit OTP to complete'}
+                            </p>
+                          </div>
+                        );
                       })()}
                       
                       {booking.status === 'completed' && (
@@ -1105,8 +1508,25 @@ export function VendorBookingManagement({
                         </div>
                       )}
                       
-                      {/* ✅ ACTION BUTTONS: Chat, Prescription, Video Call */}
+                      {/* ✅ ACTION BUTTONS: Live tracker (walkers), Chat, Prescription, Video Call */}
                       <div className="mt-3 pt-3 border-t border-gray-100 flex gap-2 flex-wrap">
+                        {bookingNeedsWalkLiveTracker(booking, vendorData) &&
+                          booking.status !== 'completed' &&
+                          booking.status !== 'cancelled' &&
+                          booking.status !== 'pending' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openWalkLiveTracker(booking);
+                            }}
+                            title="Start OTP, GPS route, end OTP"
+                            className="flex-1 min-w-[100px] py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1"
+                          >
+                            <Navigation className="w-3.5 h-3.5" />
+                            Live tracker
+                          </button>
+                        )}
                         {/* Video Call Button - TELE ONLY */}
                         {booking.communicationType === 'video' && booking.serviceType === 'tele' && booking.status !== 'completed' && (
                           <button
@@ -1206,25 +1626,47 @@ export function VendorBookingManagement({
             <div className="p-4 bg-white border-t border-gray-100">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Available Time Slots</h3>
               
-              <div className="grid grid-cols-4 gap-2">
-                {timeSlots.map((slot, index) => (
-                  <button
-                    key={index}
-                    className={`p-3 rounded-lg text-sm font-medium transition-all ${
-                      slot.booked
-                        ? 'bg-pink-100 text-pink-700 border border-pink-200'
-                        : slot.available
-                        ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                        : 'bg-gray-100 text-gray-400 border border-gray-200'
-                    }`}
-                    disabled={!slot.available && !slot.booked}
-                  >
-                    {slot.time}
-                  </button>
-                ))}
-              </div>
+              {groupedSlotsByType.map((group) => (
+                <div key={group.type} className="mb-4 last:mb-0">
+                  <h4 className="text-xs font-semibold text-gray-600 mb-2">{group.label}</h4>
+                  <div className="grid grid-cols-4 gap-2">
+                    {group.slots.map((slot, index) => (
+                      <button
+                        key={`${group.type}-${slot.time}-${index}`}
+                        className={`p-3 rounded-lg text-sm font-medium transition-all ${
+                          slot.isPast
+                            ? 'bg-gray-100 text-gray-400 border border-gray-200 opacity-60'
+                            : slot.booked
+                            ? 'bg-pink-100 text-pink-700 border border-pink-200'
+                            : slot.available
+                            ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                            : 'bg-gray-100 text-gray-400 border border-gray-200'
+                        }`}
+                        disabled={slot.isPast || (!slot.available && !slot.booked)}
+                      >
+                        {format24hTo12hLabel(slot.time)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {breakWindowsForDay.length > 0 && (
+                <div className="mb-4 last:mb-0">
+                  <h4 className="text-xs font-semibold text-gray-600 mb-2">Break</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {breakWindowsForDay.map((br, index) => (
+                      <div
+                        key={`break-${br.start}-${br.end}-${index}`}
+                        className="p-3 rounded-lg text-sm font-medium bg-gray-100 text-gray-500 border border-gray-200"
+                      >
+                        {format24hTo12hLabel(br.start)} - {format24hTo12hLabel(br.end)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               
-              <div className="flex items-center gap-4 mt-4 text-xs text-gray-600">
+              <div className="flex items-center gap-4 mt-4 text-xs text-gray-600 flex-wrap">
                 <div className="flex items-center gap-1">
                   <div className="w-3 h-3 bg-blue-100 border border-blue-200 rounded"></div>
                   <span>Available</span>
@@ -1234,29 +1676,16 @@ export function VendorBookingManagement({
                   <span>Booked</span>
                 </div>
                 <div className="flex items-center gap-1">
-                  <div className="w-3 h-3 bg-gray-100 border border-gray-200 rounded"></div>
-                  <span>Unavailable</span>
+                  <div className="w-3 h-3 bg-gray-100 border border-gray-200 rounded opacity-60"></div>
+                  <span>Past</span>
                 </div>
               </div>
             </div>
 
-            {/* Emergency Availability Toggle - Only show for ambulance and vet roles, not for solo business types */}
+            {/* Emergency Availability (SOS) — ambulance & vet roles; gated by VENDOR_FEATURE_FLAGS.emergencyAvailabilitySos */}
             {hasVendorRole(vendorData, ['ambulance', 'veterinarian', 'vet_clinic', 'veterinary_clinic', 'vet', 'pet_clinic', 'animal_hospital']) && (
-              <div className="p-4 bg-white border-t border-gray-100">
-                <div className="flex items-center justify-between p-4 bg-red-50 border border-red-200 rounded-xl">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-xl">🚨</span>
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Emergency Availability</h3>
-                      <p className="text-xs text-gray-600">24x7 on-call service</p>
-                    </div>
-                  </div>
-                  <button className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium">
-                    Enable
-                  </button>
-                </div>
+              <div className="border-t border-gray-100 bg-white p-4">
+                <EmergencyAvailabilitySosCard />
               </div>
             )}
           </>
@@ -1271,6 +1700,57 @@ export function VendorBookingManagement({
               </div>
             ) : (
               <>
+                {/* Tier summary + upgrade (full flow on /earnings) */}
+                <div className="p-4 bg-gradient-to-r from-amber-500 to-orange-500 text-white border-b border-orange-600/30">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <Sparkles className="w-5 h-5 shrink-0 mt-0.5 opacity-95" />
+                      <div className="min-w-0">
+                        <p className="text-xs opacity-90">Your tier</p>
+                        <p className="text-lg font-bold truncate">
+                          {tierInfo?.name || tierInfo?.current || 'Standard'}
+                        </p>
+                        {(() => {
+                          const cr = tierInfo?.commissionRate ?? tierInfo?.commission;
+                          const commissionPct =
+                            typeof cr === 'number' && Number.isFinite(cr)
+                              ? cr > 1
+                                ? Math.round(cr)
+                                : Math.round(cr * 100)
+                              : 15;
+                          return (
+                            <p className="text-xs opacity-90 mt-1">
+                              Commission ~{commissionPct}% ·{' '}
+                              {tierInfo?.payoutCycleLabel || 'Settlement per Finance'}
+                            </p>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2 shrink-0">
+                      {tierInfo?.canUpgrade ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="h-9 px-3 bg-white text-orange-700 hover:bg-orange-50 font-semibold"
+                          onClick={() => router.push('/earnings')}
+                        >
+                          Upgrade tier
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className="h-9 px-3 bg-white/95 text-orange-800 hover:bg-white font-medium"
+                          onClick={() => router.push('/earnings')}
+                        >
+                          Tiers & earnings
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Earnings Summary */}
                 <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 border-b border-green-200">
                   <div className="grid grid-cols-3 gap-3 mb-3">
@@ -1279,6 +1759,7 @@ export function VendorBookingManagement({
                         ₹{(earningsData?.today || 0).toLocaleString('en-IN')}
                       </div>
                       <div className="text-xs text-gray-600">Today</div>
+                      <div className="text-[10px] text-gray-500 mt-1 leading-tight">Credited today</div>
                     </div>
                     <div className="bg-white p-3 rounded-lg text-center">
                       <div className="text-2xl font-bold text-green-600">
@@ -1311,7 +1792,8 @@ export function VendorBookingManagement({
 
                 {/* Recent Transactions */}
                 <div className="p-4">
-                  <h3 className="font-semibold text-gray-900 mb-3">Recent Transactions</h3>
+                  <h3 className="font-semibold text-gray-900 mb-1">Recent Transactions</h3>
+                  <p className="text-xs text-gray-500 mb-3">Amounts credited to your account (may differ from appointment date).</p>
                   {(!earningsData?.transactions || earningsData.transactions.length === 0) ? (
                     <div className="text-center py-8 text-gray-500 text-sm">
                       No transactions yet
@@ -1323,7 +1805,10 @@ export function VendorBookingManagement({
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex-1">
                               <div className="font-medium text-gray-900 text-sm">{transaction.service}</div>
-                              <div className="text-xs text-gray-500">{transaction.customer} • {new Date(transaction.date).toLocaleDateString('en-IN')}</div>
+                              <div className="text-xs text-gray-500">
+                                {transaction.customer} · Credited{' '}
+                                {new Date(transaction.date).toLocaleDateString('en-IN')}
+                              </div>
                             </div>
                             <div className="text-right">
                               <div className="font-bold text-green-600">₹{transaction.amount.toLocaleString('en-IN')}</div>
@@ -1402,10 +1887,18 @@ export function VendorBookingManagement({
                         ₹{(payoutsData?.availableForPayout || 0).toLocaleString('en-IN')}
                       </div>
                       <div className="text-sm text-gray-600">Available for Payout</div>
+                      <p className="mt-2 text-xs text-amber-800/90 text-center px-1">
+                        {VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT}
+                      </p>
                     </div>
                     <button 
                       onClick={handleRequestPayout}
-                      disabled={!payoutsData?.availableForPayout || payoutsData.availableForPayout <= 0}
+                      disabled={
+                        !payoutsData?.availableForPayout ||
+                        payoutsData.availableForPayout <= 0 ||
+                        payoutsData.availableForPayout <
+                          (payoutsData.minPayoutRequestAmount ?? VENDOR_MIN_PAYOUT_REQUEST_RS)
+                      }
                       className="w-full bg-[#FF8C42] hover:bg-[#ff7a28] text-white rounded-xl h-11 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Request Payout
@@ -1530,12 +2023,86 @@ export function VendorBookingManagement({
             )}
           </>
         )}
-      </div>
-      
+    </>
+  );
+
+  return (
+    <>
+      {!embedded ? (
+        <div className="vendor-page-shell bg-gray-50">
+          <div className="vendor-app-column min-h-screen bg-white pb-20">
+            <VendorHeader
+              title={vendorData?.businessName || vendorData?.fullName || 'Booking Management'}
+              subtitle={vendorData?.address || 'India'}
+              onBack={onBack}
+            />
+            {bookingMainBody}
+          </div>
+        </div>
+      ) : (
+        <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-white">
+          <div className="min-h-0 flex-1 overflow-y-auto pb-20">{bookingMainBody}</div>
+        </div>
+      )}
+
+      {declineModalBooking && (
+        <DeclineBookingModal
+          booking={declineModalBooking as any}
+          vendorId={vendorId}
+          onClose={() => setDeclineModalBooking(null)}
+          onSuccess={() => {
+            setDeclineModalBooking(null);
+            loadBookings();
+          }}
+        />
+      )}
+
+      <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <DialogContent className="sm:max-w-md" onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Cancel booking</DialogTitle>
+            <DialogDescription>
+              Select the provider cancellation reason. Customer refund and fees follow Admin Finance (Refund tiers
+              for Service Provider / Platform).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="vendor-cancel-reason">Vendor cancellation reason</Label>
+            <Select
+              value={cancelPolicyReason}
+              onValueChange={(v) => setCancelPolicyReason(v as VendorCancellationReasonSlug)}
+            >
+              <SelectTrigger id="vendor-cancel-reason" className="w-full">
+                <SelectValue placeholder="Select reason" />
+              </SelectTrigger>
+              <SelectContent>
+                {VENDOR_CANCELLATION_REASON_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setCancelDialogOpen(false)}>
+              Back
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void confirmCancelBooking()}
+              disabled={cancelSubmitting}
+            >
+              {cancelSubmitting ? 'Cancelling…' : 'Cancel booking'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* OTP VERIFICATION MODAL */}
       {showOTPModal && selectedBooking && (() => {
-        const isDogWalking = selectedBooking.serviceName?.toLowerCase().includes('walk') || 
-                            selectedBooking.serviceName?.toLowerCase().includes('walking');
+        const isDogWalking = bookingNeedsWalkLiveTracker(selectedBooking, vendorData);
         const isStartSession = isDogWalking && selectedBooking.status === 'confirmed';
         
         return (
@@ -1680,6 +2247,6 @@ export function VendorBookingManagement({
           onUploadSuccess={() => loadBookings()}
         />
       )}
-    </div>
+    </>
   );
 }

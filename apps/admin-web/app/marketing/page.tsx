@@ -48,12 +48,18 @@ import {
 	Eye,
 	EyeOff,
 	ExternalLink,
+	AlertCircle,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
+import {
+	normalizeAdminBannersList,
+	formatAdminBannerPlacementLabel,
+	adminBannerPositionFromRow,
+	normalizeLocationValue,
+} from "@/lib/banner-admin";
 import { toast, Toaster } from "sonner";
 import {
 	CouponManagement,
-	AdvancedPromotionsEngine,
 } from "@/components/admin/marketing";
 
 import { AdminLayout } from '@/components/admin/layout/AdminLayout';
@@ -64,7 +70,6 @@ export default function MarketingPromotionsTab() {
 		| "ui-config"
 		| "spotlight"
 		| "coupons"
-		| "advanced"
 		| "banners"
 		| "articles"
 		| "announcements"
@@ -88,7 +93,11 @@ export default function MarketingPromotionsTab() {
 		display_order: 0,
 		gradient_from: "#FF8C42",
 		gradient_to: "#FF6B35",
+		target_state: "",
+		target_city: "",
 	});
+	const [bannerGeoStates, setBannerGeoStates] = useState<string[]>([]);
+	const [bannerGeoCities, setBannerGeoCities] = useState<string[]>([]);
 	
 	// Articles State
 	const [articles, setArticles] = useState<any[]>([]);
@@ -100,7 +109,7 @@ export default function MarketingPromotionsTab() {
 		content: "",
 		category: "tips",
 		read_time: "5 min",
-		is_published: false,
+		is_published: true,
 		featured: false,
 	});
 	
@@ -144,6 +153,7 @@ export default function MarketingPromotionsTab() {
 		validFrom: "",
 		validUntil: "",
 		isActive: true,
+		published: true,
 		displayType: "spotlight",
 	});
 
@@ -178,6 +188,20 @@ export default function MarketingPromotionsTab() {
 			loadRoles(); // Load roles first
 		}
 	}, [activeTab]);
+
+	useEffect(() => {
+		if (activeTab === "banners") {
+			loadBannerGeoStates();
+		}
+	}, [activeTab]);
+
+	useEffect(() => {
+		if (!bannerForm.target_state) {
+			loadBannerGeoCities();
+			return;
+		}
+		loadBannerGeoCities(bannerForm.target_state);
+	}, [bannerForm.target_state]);
 
 	// Reload config when geography changes or tab is opened
 	useEffect(() => {
@@ -441,8 +465,24 @@ export default function MarketingPromotionsTab() {
 					discountValue: promo.discount_value !== undefined ? promo.discount_value : (promo.discountValue !== undefined ? promo.discountValue : 0),
 					// Map is_active -> isActive
 					isActive: promo.is_active !== undefined ? promo.is_active : (promo.isActive !== undefined ? promo.isActive : true),
-					// Map serviceCategory (if applicable_services exists)
-					serviceCategory: promo.serviceCategory || promo.target_category || 'all',
+					// Map serviceCategory/serviceStyle from persisted applicable_services + metadata
+					serviceCategory: (() => {
+						const rawServices = Array.isArray(promo.applicable_services)
+							? promo.applicable_services
+							: (typeof promo.applicable_services === 'string'
+								? (() => { try { return JSON.parse(promo.applicable_services); } catch { return []; } })()
+								: []);
+						const categoryToken = (rawServices || []).find((s: string) => typeof s === 'string' && !s.startsWith('style:'));
+						return promo.serviceCategory || promo.service_category || promo.target_category || categoryToken || promo.metadata?.serviceCategory || promo.metadata?.promotionTarget?.serviceCategory || 'all';
+					})(),
+					serviceStyle: (() => {
+						const rawStyle = promo.serviceStyle || promo.service_style || promo.metadata?.serviceStyle || promo.metadata?.promotionTarget?.serviceStyle || 'all';
+						const normalized = String(rawStyle).trim().toLowerCase();
+						if (normalized === 'online') return 'tele';
+						if (normalized === 'clinic' || normalized === 'center') return 'at_center';
+						if (normalized === 'home_visit' || normalized === 'home') return 'at_home';
+						return normalized || 'all';
+					})(),
 					// Map validFrom/validUntil
 					validFrom: promo.validFrom || promo.start_date || '',
 					validUntil: promo.validUntil || promo.end_date || '',
@@ -461,10 +501,33 @@ export default function MarketingPromotionsTab() {
 
 	const handleSavePromo = async () => {
 		try {
+			const applicableServices =
+				promoForm.serviceCategory && promoForm.serviceCategory !== 'all'
+					? [promoForm.serviceCategory]
+					: [];
+			if (promoForm.serviceStyle && promoForm.serviceStyle !== 'all') {
+				applicableServices.push(`style:${promoForm.serviceStyle}`);
+			}
+			const payload = {
+				...promoForm,
+				applicableServices,
+				serviceCategory: promoForm.serviceCategory,
+				serviceStyle: promoForm.serviceStyle,
+				metadata: {
+					promotionTarget: {
+						serviceCategory: promoForm.serviceCategory || 'all',
+						serviceStyle: promoForm.serviceStyle || 'all',
+					},
+					serviceStyle: promoForm.serviceStyle || 'all',
+				},
+				validFrom: promoForm.validFrom?.trim() ? promoForm.validFrom : null,
+				validUntil: promoForm.validUntil?.trim() ? promoForm.validUntil : null,
+				published: promoForm.published !== false,
+			};
 			if (editingPromo) {
-				await apiClient.put(`/marketing/promotions/${editingPromo.id}`, promoForm);
+				await apiClient.put(`/marketing/promotions/${editingPromo.id}`, payload);
 			} else {
-				await apiClient.post("/marketing/promotions", promoForm);
+				await apiClient.post("/marketing/promotions", payload);
 			}
 			toast.success(
 				`Promotion ${editingPromo ? "updated" : "created"} successfully`
@@ -503,6 +566,7 @@ export default function MarketingPromotionsTab() {
 			validFrom: "",
 			validUntil: "",
 			isActive: true,
+			published: true,
 			displayType: "spotlight",
 		});
 	};
@@ -520,6 +584,7 @@ export default function MarketingPromotionsTab() {
 			validFrom: promo.validFrom,
 			validUntil: promo.validUntil,
 			isActive: promo.isActive,
+			published: promo.published !== false,
 			displayType: promo.displayType,
 		});
 		setShowPromoModal(true);
@@ -534,12 +599,122 @@ export default function MarketingPromotionsTab() {
 		try {
 			const data = await apiClient.get("/admin/banners");
 			const bannersList = Array.isArray((data as any).banners) ? (data as any).banners : [];
-			setBanners(bannersList);
+			setBanners(normalizeAdminBannersList(bannersList));
 		} catch (error) {
 			console.error("Error loading banners:", error);
 			setBanners([]);
 		} finally {
 			setLoading(false);
+		}
+	};
+
+	const loadBannerGeoStates = async () => {
+		try {
+			const data = await apiClient.get("/admin/banners/locations/states");
+			const rows = Array.isArray((data as any).states) ? (data as any).states : [];
+			const adminStates = rows
+				.map((row: any) => normalizeLocationValue(row?.value))
+				.filter((value: string | null): value is string => Boolean(value));
+			if (adminStates.length > 0) {
+				setBannerGeoStates(adminStates);
+				return;
+			}
+
+			// Fallback to service launch state catalog when address-derived list is empty
+			const cfg = await apiClient.get("/config/service-launch");
+			const availableStates = Array.isArray((cfg as any).availableStates)
+				? (cfg as any).availableStates
+				: [];
+			const fallbackStates = availableStates
+				.map((s: any) => normalizeLocationValue(s?.name || s?.code))
+				.filter((value: string | null): value is string => Boolean(value));
+			setBannerGeoStates(fallbackStates);
+		} catch (error) {
+			console.error("Error loading banner states:", error);
+			// Last fallback: service-launch catalog
+			try {
+				const cfg = await apiClient.get("/config/service-launch");
+				const availableStates = Array.isArray((cfg as any).availableStates)
+					? (cfg as any).availableStates
+					: [];
+				const fallbackStates = availableStates
+					.map((s: any) => normalizeLocationValue(s?.name || s?.code))
+					.filter((value: string | null): value is string => Boolean(value));
+				setBannerGeoStates(fallbackStates);
+			} catch {
+				setBannerGeoStates([]);
+			}
+		}
+	};
+
+	const resolveStateCodeFromName = async (stateName: string): Promise<string> => {
+		try {
+			const cfg = await apiClient.get("/config/service-launch");
+			const availableStates = Array.isArray((cfg as any).availableStates)
+				? (cfg as any).availableStates
+				: [];
+			const match = availableStates.find(
+				(s: any) => String(s?.name || "").trim().toLowerCase() === stateName.trim().toLowerCase()
+			);
+			return match?.code || stateName;
+		} catch {
+			return stateName;
+		}
+	};
+
+	const loadBannerGeoCities = async (state?: string) => {
+		try {
+			const query = state ? `?state=${encodeURIComponent(state)}` : "";
+			const data = await apiClient.get(`/admin/banners/locations/cities${query}`);
+			const rows = Array.isArray((data as any).cities) ? (data as any).cities : [];
+			const adminCities = rows
+				.map((row: any) => normalizeLocationValue(row?.value))
+				.filter((value: string | null): value is string => Boolean(value));
+			if (adminCities.length > 0) {
+				setBannerGeoCities(adminCities);
+				return;
+			}
+
+			// Fallback to service-launch city catalog (state-scoped)
+			if (state) {
+				const stateCode = await resolveStateCodeFromName(state);
+				const fallback = await apiClient.get(
+					`/config/service-launch/cities?stateCode=${encodeURIComponent(stateCode)}`
+				);
+				const fallbackCities = Array.isArray((fallback as any).cities)
+					? (fallback as any).cities
+					: [];
+				setBannerGeoCities(
+					fallbackCities
+						.map((city: any) => normalizeLocationValue(city))
+						.filter((value: string | null): value is string => Boolean(value))
+				);
+				return;
+			}
+
+			setBannerGeoCities([]);
+		} catch (error) {
+			console.error("Error loading banner cities:", error);
+			if (!state) {
+				setBannerGeoCities([]);
+				return;
+			}
+			try {
+				const stateCode = await resolveStateCodeFromName(state);
+				const fallback = await apiClient.get(
+					`/config/service-launch/cities?stateCode=${encodeURIComponent(stateCode)}`
+				);
+				const fallbackCities = Array.isArray((fallback as any).cities)
+					? (fallback as any).cities
+					: [];
+				setBannerGeoCities(
+					fallbackCities
+						.map((city: any) => normalizeLocationValue(city))
+						.filter((value: string | null): value is string => Boolean(value))
+				);
+			} catch {
+				setBannerGeoCities([]);
+			}
 		}
 	};
 
@@ -558,6 +733,8 @@ export default function MarketingPromotionsTab() {
 					isActive: bannerForm.is_active,
 					ctaText: bannerForm.cta_text,
 					metadata: { gradient_from: bannerForm.gradient_from, gradient_to: bannerForm.gradient_to },
+					targetState: normalizeLocationValue(bannerForm.target_state),
+					targetCity: normalizeLocationValue(bannerForm.target_city),
 				});
 			} else {
 				await apiClient.post("/admin/banners", {
@@ -572,6 +749,8 @@ export default function MarketingPromotionsTab() {
 					isActive: bannerForm.is_active,
 					ctaText: bannerForm.cta_text,
 					metadata: { gradient_from: bannerForm.gradient_from, gradient_to: bannerForm.gradient_to },
+					targetState: normalizeLocationValue(bannerForm.target_state),
+					targetCity: normalizeLocationValue(bannerForm.target_city),
 				});
 			}
 			toast.success(`Banner ${editingBanner ? "updated" : "created"} successfully`);
@@ -610,6 +789,8 @@ export default function MarketingPromotionsTab() {
 			display_order: banners.length,
 			gradient_from: "#FF8C42",
 			gradient_to: "#FF6B35",
+			target_state: "",
+			target_city: "",
 		});
 	};
 
@@ -621,13 +802,15 @@ export default function MarketingPromotionsTab() {
 			image_url: banner.image_url || banner.imageUrl || "",
 			cta_text: banner.cta_text || banner.ctaText || "Shop Now",
 			cta_link: banner.cta_link || banner.linkUrl || "",
-			position: banner.position || "home_top",
+			position: (banner.position as string) || adminBannerPositionFromRow(banner),
 			is_active: banner.is_active !== false,
 			start_date: banner.start_date ? new Date(banner.start_date).toISOString().split("T")[0] : "",
 			end_date: banner.end_date ? new Date(banner.end_date).toISOString().split("T")[0] : "",
 			display_order: banner.display_order || banner.priority || 0,
 			gradient_from: banner.metadata?.gradient_from || "#FF8C42",
 			gradient_to: banner.metadata?.gradient_to || "#FF6B35",
+			target_state: normalizeLocationValue(banner.target_state || banner.targetState) || "",
+			target_city: normalizeLocationValue(banner.target_city || banner.targetCity) || "",
 		});
 		setShowBannerModal(true);
 	};
@@ -641,8 +824,10 @@ export default function MarketingPromotionsTab() {
 		try {
 			const data = await apiClient.get("/admin/content/pages");
 			const allPages = Array.isArray((data as any).pages) ? (data as any).pages : [];
-			// Filter for marketing articles
-			const articlesList = allPages.filter((p: any) => p.category === 'marketing' || p.category === 'tips' || p.category === 'article');
+			// Filter for all article categories available in the article creation form
+			const articlesList = allPages.filter((p: any) =>
+				['marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior', 'general'].includes(p.category)
+			);
 			setArticles(articlesList);
 		} catch (error) {
 			console.error("Error loading articles:", error);
@@ -675,6 +860,11 @@ export default function MarketingPromotionsTab() {
 				});
 			}
 			toast.success(`Article ${editingArticle ? "updated" : "created"} successfully`);
+			if (!articleForm.is_published) {
+				toast.info("Draft saved", {
+					description: "Customers only see articles when Published is turned on.",
+				});
+			}
 			setShowArticleModal(false);
 			loadArticles();
 			resetArticleForm();
@@ -703,7 +893,7 @@ export default function MarketingPromotionsTab() {
 			content: "",
 			category: "tips",
 			read_time: "5 min",
-			is_published: false,
+			is_published: true,
 			featured: false,
 		});
 	};
@@ -1003,17 +1193,6 @@ export default function MarketingPromotionsTab() {
 								<span className="font-medium text-sm">Coupons</span>
 							</button>
 							<button
-								onClick={() => setActiveTab("advanced")}
-								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
-									activeTab === "advanced"
-										? "border-[#FF8C42] text-[#FF8C42] bg-orange-50/50"
-										: "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-50"
-								}`}
-							>
-								<Zap className="w-4 h-4" />
-								<span className="font-medium text-sm">Advanced</span>
-							</button>
-							<button
 								onClick={() => setActiveTab("banners")}
 								className={`flex items-center gap-2 px-4 py-3 border-b-[3px] transition-colors whitespace-nowrap ${
 									activeTab === "banners"
@@ -1161,6 +1340,7 @@ export default function MarketingPromotionsTab() {
 
 						{/* UI CONFIG TAB - Service Launch by Geography */}
 						{activeTab === "ui-config" && (
+							<>
 							<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 								{/* Geographic Scope Selection */}
 								<Card className="p-6 col-span-1 h-fit relative overflow-visible">
@@ -1223,7 +1403,8 @@ export default function MarketingPromotionsTab() {
 												<li><strong>Launched</strong> - Fully available to all</li>
 											</ul>
 											<p className="mt-3 text-xs">
-												City overrides State settings. State overrides Default.
+												<strong>Order of precedence (what customers see):</strong> City → State → Default (All India).
+												Setting <strong>Default</strong> to Hidden does <strong>not</strong> remove existing state or city overrides — customers in a city that is still &quot;Launched&quot; will keep seeing the service until you change that region&apos;s dropdown to Hidden (or Coming Soon).
 											</p>
 										</div>
 									</div>
@@ -1235,7 +1416,7 @@ export default function MarketingPromotionsTab() {
 										<div>
 											<h3 className="font-semibold">Service Launch Status</h3>
 											<p className="text-sm text-gray-500">
-												Control service visibility and booking availability by geography
+												Control service visibility and booking availability by geography. Customer home catalogue tiles use the same rules: pick state and city on the left, then set each service to Launched, Coming Soon, Beta, or Hidden.
 											</p>
 										</div>
 										<Button
@@ -1353,6 +1534,28 @@ export default function MarketingPromotionsTab() {
 																</div>
 															</div>
 															
+															{/* Default vs regional: explain why customer may still see a "hidden" default */}
+															{!selectedState && !selectedCity &&
+																svc.stateOverrides &&
+																typeof svc.stateOverrides === 'object' &&
+																Object.keys(svc.stateOverrides).length > 0 && (
+																	<div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-2 rounded flex items-start gap-2">
+																		<AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+																		<span>
+																			This service has <strong>regional overrides</strong>. Default (All India) only applies where no state/city override exists. To hide it everywhere, open each state or city that still shows Launched and set it to Hidden.
+																		</span>
+																	</div>
+																)}
+															{(selectedState || selectedCity) &&
+																svc.defaultStatus === 'hidden' &&
+																(svc.effectiveStatus === 'launched' || svc.effectiveStatus === 'beta') && (
+																	<div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-2 rounded flex items-start gap-2">
+																		<AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+																		<span>
+																			Default is <strong>Hidden</strong>, but this <strong>region</strong> is set to <strong className="capitalize">{String(svc.effectiveStatus).replace('_', ' ')}</strong>. Customers in this region use the regional status first, so they still see this service until you set the dropdown above to Hidden.
+																		</span>
+																	</div>
+																)}
 															{/* Info Messages */}
 															{svc.effectiveStatus === "coming_soon" && (
 																<div className="text-xs text-amber-600 bg-amber-50 p-2 rounded flex items-center gap-2">
@@ -1407,6 +1610,7 @@ export default function MarketingPromotionsTab() {
 									)}
 								</Card>
 							</div>
+							</>
 						)}
 
 						{/* SPOTLIGHT TAB */}
@@ -1506,17 +1710,14 @@ export default function MarketingPromotionsTab() {
 						{/* COUPONS TAB */}
 						{activeTab === "coupons" && <CouponManagement />}
 
-						{/* ADVANCED TAB */}
-						{activeTab === "advanced" && <AdvancedPromotionsEngine />}
-
 						{/* BANNERS TAB */}
 						{activeTab === "banners" && (
 							<div className="space-y-6">
 								<div className="flex justify-between items-center">
 									<div>
-										<h3 className="text-lg font-medium">Home Banners</h3>
+										<h3 className="text-lg font-medium">Banners by placement</h3>
 										<p className="text-sm text-gray-500">
-											Manage promotional banners displayed on customer home screen
+											Home hero and middle, Find All Services (category), and shop checkout each use their own placement
 										</p>
 									</div>
 									<Button
@@ -1554,7 +1755,9 @@ export default function MarketingPromotionsTab() {
 														{banner.is_active ? 'Active' : 'Inactive'}
 													</Badge>
 													<Badge className="absolute top-2 left-2 bg-blue-500">
-														{banner.position?.replace('_', ' ') || 'home_top'}
+														{formatAdminBannerPlacementLabel(
+															(banner.position as string) || (banner.type as string)
+														)}
 													</Badge>
 												</div>
 												<div className="p-4">
@@ -1971,6 +2174,15 @@ export default function MarketingPromotionsTab() {
 							/>
 							<Label>Active</Label>
 						</div>
+						<div className="flex items-center gap-2">
+							<Switch
+								checked={promoForm.published}
+								onCheckedChange={(checked: boolean) =>
+									setPromoForm({ ...promoForm, published: checked })
+								}
+							/>
+							<Label>Published</Label>
+						</div>
 					</div>
 
 					<DialogFooter>
@@ -2074,7 +2286,7 @@ export default function MarketingPromotionsTab() {
 							{editingBanner ? "Edit Banner" : "Create New Banner"}
 						</DialogTitle>
 						<DialogDescription>
-							Configure promotional banner for customer home screen
+							Choose where the banner appears: home hero, home middle, home lower, Find All Services (category), or shop checkout.
 						</DialogDescription>
 					</DialogHeader>
 
@@ -2175,10 +2387,14 @@ export default function MarketingPromotionsTab() {
 									<SelectContent>
 										<SelectItem value="home_top">Home Top (Hero Carousel)</SelectItem>
 										<SelectItem value="home_middle">Home Middle</SelectItem>
+										<SelectItem value="home_lower">Home Lower</SelectItem>
 										<SelectItem value="category">Category Page</SelectItem>
 										<SelectItem value="checkout">Checkout Page</SelectItem>
 									</SelectContent>
 								</Select>
+								<p className="text-xs text-gray-500 mt-1.5">
+									Home top, middle, and lower: customer home only. Category: Find All Services. Checkout: shop checkout.
+								</p>
 							</div>
 							<div>
 								<Label>Display Order</Label>
@@ -2188,6 +2404,58 @@ export default function MarketingPromotionsTab() {
 									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, display_order: parseInt(e.target.value) || 0 })}
 									min="0"
 								/>
+							</div>
+						</div>
+
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>State</Label>
+								<Select
+									value={bannerForm.target_state || "__all_states__"}
+									onValueChange={(v: string) =>
+										setBannerForm({
+											...bannerForm,
+											target_state: v === "__all_states__" ? "" : v,
+											target_city: "",
+										})
+									}
+								>
+									<SelectTrigger>
+										<SelectValue placeholder="All States" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="__all_states__">All States</SelectItem>
+										{bannerGeoStates.map((state) => (
+											<SelectItem key={state} value={state}>
+												{state}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+							<div>
+								<Label>City</Label>
+								<Select
+									value={bannerForm.target_city || "__all_cities__"}
+									onValueChange={(v: string) =>
+										setBannerForm({
+											...bannerForm,
+											target_city: v === "__all_cities__" ? "" : v,
+										})
+									}
+								>
+									<SelectTrigger>
+										<SelectValue placeholder="All Cities" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="__all_cities__">All Cities</SelectItem>
+										{bannerGeoCities.map((city) => (
+											<SelectItem key={city} value={city}>
+												{city}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
 							</div>
 						</div>
 
@@ -2261,7 +2529,8 @@ export default function MarketingPromotionsTab() {
 							{editingArticle ? "Edit Article" : "Create New Article"}
 						</DialogTitle>
 						<DialogDescription>
-							Create educational content for pet owners
+							Create educational content for pet owners. New articles are visible on the customer app when{" "}
+							<strong>Published</strong> is on (drafts stay in admin only).
 						</DialogDescription>
 					</DialogHeader>
 
@@ -2303,7 +2572,7 @@ export default function MarketingPromotionsTab() {
 										<SelectItem value="grooming">Grooming</SelectItem>
 										<SelectItem value="insurance">Insurance</SelectItem>
 										<SelectItem value="behavior">Behavior</SelectItem>
-										<SelectItem value="marketing">General</SelectItem>
+										<SelectItem value="general">General</SelectItem>
 									</SelectContent>
 								</Select>
 							</div>
@@ -2338,20 +2607,25 @@ export default function MarketingPromotionsTab() {
 							/>
 						</div>
 
-						<div className="flex gap-6 p-3 bg-gray-50 rounded-lg">
-							<div className="flex items-center gap-2">
-								<Switch
-									checked={articleForm.is_published}
-									onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, is_published: checked })}
-								/>
-								<Label>Published</Label>
-							</div>
-							<div className="flex items-center gap-2">
-								<Switch
-									checked={articleForm.featured}
-									onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, featured: checked })}
-								/>
-								<Label>Featured on Home</Label>
+						<div className="flex flex-col gap-3 p-3 bg-gray-50 rounded-lg">
+							<p className="text-xs text-gray-600">
+								Only <span className="font-medium">Published</span> articles appear under Pet care articles on the customer site.
+							</p>
+							<div className="flex gap-6 flex-wrap">
+								<div className="flex items-center gap-2">
+									<Switch
+										checked={articleForm.is_published}
+										onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, is_published: checked })}
+									/>
+									<Label>Published</Label>
+								</div>
+								<div className="flex items-center gap-2">
+									<Switch
+										checked={articleForm.featured}
+										onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, featured: checked })}
+									/>
+									<Label>Featured on Home</Label>
+								</div>
 							</div>
 						</div>
 					</div>

@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { formatAverageForDisplay } from '@/lib/rating-display';
 import { toast } from 'sonner';
+import { StarRating } from './shared/StarRating';
 
 interface VendorProfileDetailProps {
   vendorId: string;
@@ -36,8 +38,30 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
       ]);
 
       if (vendorRes.vendor || vendorRes.success) {
-        setVendor(vendorRes.vendor || vendorRes);
-        setRating(vendorRes.rating || { averageRating: vendorRes.rating || 4.5, totalReviews: vendorRes.reviewCount || 0 });
+        const v = vendorRes.vendor || vendorRes;
+        setVendor(v);
+        const tr =
+          Number(
+            v.reviewCount ??
+              v.totalReviews ??
+              vendorRes.reviewCount ??
+              vendorRes.totalReviews ??
+              0
+          ) || 0;
+        const arRaw =
+          (typeof vendorRes.rating === 'object' && vendorRes.rating != null
+            ? (vendorRes.rating as { averageRating?: number }).averageRating
+            : undefined) ??
+          v.averageRating ??
+          v.rating ??
+          vendorRes.averageRating ??
+          (typeof vendorRes.rating === 'number' ? vendorRes.rating : undefined);
+        const ar =
+          arRaw != null && arRaw !== '' ? Number(arRaw) : NaN;
+        setRating({
+          averageRating: tr > 0 && Number.isFinite(ar) && ar > 0 ? ar : 0,
+          totalReviews: tr,
+        });
       }
 
       if (productsRes.products) {
@@ -80,8 +104,21 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
 
   const vendorName = vendor.businessName || vendor.vendorName || vendor.name || 'Vendor';
   const vendorImage = vendor.vendorProfileImage || vendor.image;
-  const averageRating = rating?.averageRating || vendor.rating || 4.5;
-  const totalReviews = rating?.totalReviews || vendor.reviewCount || vendor.totalReviews || 0;
+  const totalReviews =
+    Number(
+      rating?.totalReviews ??
+        vendor.reviewCount ??
+        vendor.totalReviews ??
+        0
+    ) || 0;
+  const rawAvg =
+    rating?.averageRating ?? vendor.rating ?? vendor.avgRating;
+  const parsedAvg =
+    rawAvg != null && rawAvg !== '' ? Number(rawAvg) : NaN;
+  const averageRating =
+    totalReviews > 0 && Number.isFinite(parsedAvg) && parsedAvg > 0
+      ? parsedAvg
+      : 0;
   
   return (
     <div>
@@ -100,12 +137,7 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
             <div className="flex-1 min-w-0">
               <h2 className="text-xl font-bold text-gray-900 mb-1">{vendorName}</h2>
               <div className="flex items-center gap-2 mb-2">
-                <div className="flex items-center gap-1">
-                  <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
-                  <span className="font-semibold">{averageRating.toFixed(1)}</span>
-                </div>
-                <span className="text-gray-400">•</span>
-                <span className="text-sm text-gray-600">{totalReviews} reviews</span>
+                <StarRating rating={averageRating} reviewCount={totalReviews} />
               </div>
               {vendor.address && (
                 <div className="flex items-center gap-1 text-sm text-gray-600">
@@ -131,7 +163,11 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
               <div className="text-xs text-gray-600 mt-1">Products</div>
             </Card>
             <Card className="p-3 text-center">
-              <div className="text-lg font-bold text-[#FF8C42]">{averageRating.toFixed(1)}</div>
+              <div className="text-lg font-bold text-[#FF8C42]">
+                {totalReviews > 0 && averageRating > 0
+                  ? averageRating.toFixed(1)
+                  : '—'}
+              </div>
               <div className="text-xs text-gray-600 mt-1">Rating</div>
             </Card>
             <Card className="p-3 text-center">

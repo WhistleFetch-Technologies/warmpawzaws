@@ -26,6 +26,60 @@ import {
   normalizeServiceStyle,
   isAllowedServiceStyle,
 } from '../utils/service-catalog-sync';
+import { resolveCustomerDefaultAddressLocation } from '../utils/customer-default-address-location';
+import { serviceCategoryVisibleOnCustomerDashboard } from '../utils/customer-category-visibility';
+
+/** Extra columns for customer category visibility (migration 711). */
+const SERVICE_CATEGORY_VISIBILITY_SQL = `
+              , COALESCE(customer_visibility_type, 'GLOBAL') as customer_visibility_type,
+              customer_visibility_state,
+              customer_visibility_city,
+              COALESCE(customer_dashboard_card_active, true) as customer_dashboard_card_active`;
+
+async function resolveLocationForCustomerCategories(c: {
+  req: { query: (key: string) => string | undefined };
+}): Promise<{ state: string; city: string; latitude: number | null; longitude: number | null }> {
+  const phone = String(c.req.query('phone') || c.req.query('customerPhone') || '').trim();
+  let state = String(c.req.query('state') || '').trim();
+  let city = String(c.req.query('city') || '').trim();
+  const qLat = c.req.query('latitude');
+  const qLng = c.req.query('longitude');
+
+  let latitude: number | null = null;
+  let longitude: number | null = null;
+  if (qLat && qLng) {
+    const la = parseFloat(String(qLat));
+    const lo = parseFloat(String(qLng));
+    if (!Number.isNaN(la) && !Number.isNaN(lo)) {
+      latitude = la;
+      longitude = lo;
+    }
+  }
+
+  if (phone && (!state || !city || latitude == null || longitude == null)) {
+    const addr = await resolveCustomerDefaultAddressLocation(phone);
+    if (addr) {
+      if (!state && addr.state) state = addr.state;
+      if (!city && addr.city) city = addr.city;
+      if (latitude == null && addr.latitude != null) latitude = addr.latitude;
+      if (longitude == null && addr.longitude != null) longitude = addr.longitude;
+    }
+  }
+
+  return { state, city, latitude, longitude };
+}
+
+function filterServiceCategoriesForCustomerLocation(
+  rows: any[],
+  loc: { state: string; city: string }
+): any[] {
+  return (rows || []).filter((r) =>
+    serviceCategoryVisibleOnCustomerDashboard(r as Record<string, unknown>, {
+      state: loc.state,
+      city: loc.city,
+    })
+  );
+}
 
 /** Map service_catalog category_id to specialization_master category_id for spec resolution */
 const CATEGORY_TO_SPEC_CATEGORY: Record<string, string> = {
@@ -178,11 +232,18 @@ export function registerServiceCatalogEndpoints(app: Hono) {
 
   /**
    * GET /services/:serviceId
-   * Get service details by ID (customer-facing endpoint)
+   * Get service details by ID (customer-facing). Bookable vendor listings use vendor_services.id
+   * (same id as GET /search services[] and OpenSearch warmpawz-services documents).
+   *
+   * Resolution order: service_catalog (platform template) → vendor_services.id → vendor_services.service_id.
    */
-  app.get("/services/:serviceId", async (c) => {
+  const handleGetServiceById = async (c: any) => {
     try {
-      const { serviceId } = c.req.param();
+      const serviceId = String(c.req.param('serviceId') || '').trim();
+      // Static export build sentinel (see customer-web app/booking/[serviceId]/page.tsx) — never hit DB with ::uuid cast.
+      if (!serviceId || serviceId === 'placeholder') {
+        return c.json({ error: 'Service not found' }, 404);
+      }
 
       // ✅ FIX: Handle UUID vs text comparison properly
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
@@ -234,21 +295,41 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         });
       }
 
-      // 2. Try vendor_services.id (ProblemGridFlowRouter passes vendor_services.id from by-problem)
-      const vsResultById = await query(
-        `SELECT vs.*, v.business_name as vendor_name, v.address as vendor_address
-         FROM vendor_services vs
-         INNER JOIN vendors v ON vs.vendor_id = v.id
-         WHERE vs.id = $1::uuid AND vs.is_enabled = true`,
-        [serviceId]
-      );
+      // 2. Try vendor_services.id (non-UUID ids must skip ::uuid or Postgres throws → HTTP 500)
+      if (isUUID) {
+        const vsResultById = await query(
+          `SELECT vs.*, v.business_name as vendor_name, v.address as vendor_address
+           FROM vendor_services vs
+           INNER JOIN vendors v ON vs.vendor_id = v.id
+           WHERE vs.id = $1::uuid AND vs.is_enabled = true`,
+          [serviceId]
+        );
 
-      if (vsResultById.rows.length > 0) {
-        const vs = vsResultById.rows[0];
-        const price = vs.custom_price != null ? parseFloat(vs.custom_price) : parseFloat(vs.price || '0');
-        return c.json({
-          success: true,
-          service: {
+        if (vsResultById.rows.length > 0) {
+          const vs = vsResultById.rows[0];
+          const price = vs.custom_price != null ? parseFloat(vs.custom_price) : parseFloat(vs.price || '0');
+          return c.json({
+            success: true,
+            service: {
+              id: vs.id,
+              serviceId: vs.id,
+              serviceName: vs.service_name,
+              name: vs.service_name,
+              displayName: vs.service_name,
+              description: vs.custom_description || vs.service_name,
+              vendor_id: vs.vendor_id,
+              vendor_name: vs.vendor_name,
+              vendor_address: vs.vendor_address,
+              service_style: vs.service_style || 'at_center',
+              serviceStyle: vs.service_style || 'at_center',
+              basePrice: price,
+              price,
+              duration: vs.custom_duration ?? vs.duration_minutes ?? 30,
+              durationMinutes: vs.custom_duration ?? vs.duration_minutes ?? 30,
+              category: vs.category,
+              sub_category: vs.sub_category,
+            },
+            // Also include flat structure for backward compatibility
             id: vs.id,
             serviceId: vs.id,
             serviceName: vs.service_name,
@@ -266,26 +347,8 @@ export function registerServiceCatalogEndpoints(app: Hono) {
             durationMinutes: vs.custom_duration ?? vs.duration_minutes ?? 30,
             category: vs.category,
             sub_category: vs.sub_category,
-          },
-          // Also include flat structure for backward compatibility
-          id: vs.id,
-          serviceId: vs.id,
-          serviceName: vs.service_name,
-          name: vs.service_name,
-          displayName: vs.service_name,
-          description: vs.custom_description || vs.service_name,
-          vendor_id: vs.vendor_id,
-          vendor_name: vs.vendor_name,
-          vendor_address: vs.vendor_address,
-          service_style: vs.service_style || 'at_center',
-          serviceStyle: vs.service_style || 'at_center',
-          basePrice: price,
-          price,
-          duration: vs.custom_duration ?? vs.duration_minutes ?? 30,
-          durationMinutes: vs.custom_duration ?? vs.duration_minutes ?? 30,
-          category: vs.category,
-          sub_category: vs.sub_category,
-        });
+          });
+        }
       }
 
       // 3. Fallback: vendor_services.service_id (base service UUID) - in case serviceId is the base service UUID
@@ -350,7 +413,9 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       console.error('Error fetching service:', error);
       return c.json({ error: error.message }, 500);
     }
-  });
+  };
+
+  app.get('/services/:serviceId', handleGetServiceById);
 
   /**
    * GET /service-catalog/role/:roleId
@@ -557,20 +622,32 @@ export function registerServiceCatalogEndpoints(app: Hono) {
               COALESCE(icon_color::text, 'text-gray-500') as icon_color,
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(created_at::text, '') as created_at
+              ${SERVICE_CATEGORY_VISIBILITY_SQL}
             FROM service_categories
             WHERE (is_active = true OR is_active IS NULL)
             LIMIT 1000
           `).catch(() => ({ rows: [] }));
+          const loc = await resolveLocationForCustomerCategories(c);
           const sorted = (categories.rows || []).sort((a: any, b: any) => {
             const orderA = parseInt(a.display_order) || 0;
             const orderB = parseInt(b.display_order) || 0;
             if (orderA !== orderB) return orderA - orderB;
             return (a.name || '').localeCompare(b.name || '');
           });
+          const filtered = filterServiceCategoriesForCustomerLocation(sorted, {
+            state: loc.state,
+            city: loc.city,
+          });
           return c.json({
             success: true,
-            categories: sorted,
-            total: sorted.length,
+            categories: filtered,
+            total: filtered.length,
+            location: {
+              state: loc.state || null,
+              city: loc.city || null,
+              latitude: loc.latitude,
+              longitude: loc.longitude,
+            },
           }, 200);
         } catch (catError: any) {
           return c.json({
@@ -713,6 +790,7 @@ export function registerServiceCatalogEndpoints(app: Hono) {
               COALESCE(icon_color::text, 'text-gray-500') as icon_color,
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(created_at::text, '') as created_at
+              ${SERVICE_CATEGORY_VISIBILITY_SQL}
             FROM service_categories
             WHERE (is_active = true OR is_active IS NULL)
             LIMIT 1000
@@ -759,10 +837,22 @@ export function registerServiceCatalogEndpoints(app: Hono) {
         return (a.name || '').localeCompare(b.name || '');
       });
 
+      const loc = await resolveLocationForCustomerCategories(c);
+      const filteredCategories = filterServiceCategoriesForCustomerLocation(sortedCategories, {
+        state: loc.state,
+        city: loc.city,
+      });
+
       return c.json({
         success: true,
-        categories: sortedCategories,
-        total: sortedCategories.length,
+        categories: filteredCategories,
+        total: filteredCategories.length,
+        location: {
+          state: loc.state || null,
+          city: loc.city || null,
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+        },
       });
     } catch (error: any) {
       console.error('[Service Categories] Outer catch block - error:', error?.message, 'type:', typeof error, 'stack:', error?.stack?.substring(0, 200));

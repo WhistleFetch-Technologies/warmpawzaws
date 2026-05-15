@@ -19,6 +19,8 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import { Construct } from 'constructs';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as eventTargets from 'aws-cdk-lib/aws-events-targets';
 import { AuroraStack } from './aurora-stack';
 import { S3Stack } from './s3-stack';
 import { CognitoStack } from './cognito-stack';
@@ -46,7 +48,7 @@ export class LambdaStack extends Construct {
   public readonly notificationProcessor: lambda.Function;
   public readonly emailProcessor: lambda.Function;
   public readonly smsProcessor: lambda.Function;
-  public readonly analyticsProcessor: lambda.Function;
+  public readonly analyticsRetention: lambda.Function;
   public readonly settlementProcessor: lambda.Function;
   public readonly functions: Map<string, lambda.Function>;
 
@@ -97,6 +99,8 @@ export class LambdaStack extends Construct {
         : logs.RetentionDays.ONE_WEEK,
       environment: {
         NODE_ENV: environment === 'prod' ? 'production' : 'development',
+        // Align with Terraform api-handler: UAT-issuer tokens (issueAuthTokensAfterOtp) when not prod; set UAT_JWT_SECRET on the function to match warmpawz-dev-api-handler if this Lambda is used for auth
+        UAT_MODE: environment === 'prod' ? 'false' : 'true',
         // Database (using RDS Proxy or direct cluster)
         AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
         AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
@@ -131,6 +135,8 @@ export class LambdaStack extends Construct {
         DYNAMODB_REPORTS_TABLE: props.dynamoDbStack.reportsTable.tableName,
         DYNAMODB_CHAT_MESSAGES_TABLE: props.dynamoDbStack.chatMessagesTable.tableName,
         DYNAMODB_AI_CONVERSATIONS_TABLE: props.dynamoDbStack.aiConversationsTable.tableName,
+        // EventBridge rule on default bus (same pattern as CLI); Admin Save updates PutRule schedule.
+        SETTLEMENT_CALCULATE_CRON_RULE_NAME: `warmpawz-${environment}-settlement-calculate-daily`,
         // CORS: from config/urls.json (no hardcoded URLs in Lambda code)
         ALLOWED_ORIGINS: (() => {
           try {
@@ -270,36 +276,44 @@ export class LambdaStack extends Construct {
       description: 'Processes SMS from SMS queue',
     });
 
-    // Analytics Queue Processor
-    this.analyticsProcessor = new lambda.Function(this, 'AnalyticsProcessor', {
-      functionName: `warmpawz-analytics-processor-${environment}`,
+    /**
+     * Allyticas product analytics TTL cleanup (RDS). Replaces legacy SQS+Dynamo analytics processor.
+     */
+    this.analyticsRetention = new lambda.Function(this, 'AnalyticsRetention', {
+      functionName: `warmpawz-analytics-retention-${environment}`,
       runtime: lambda.Runtime.NODEJS_20_X,
-      handler: 'dist/src/jobs/analytics-processor.handler',
+      handler: 'dist/analytics-retention.handler',
       code: lambda.Code.fromAsset('../../backend/lambda', {
         exclude: ['node_modules', '*.ts', '!*.d.ts', 'tsconfig.json', '.git'],
       }),
       layers: sharedLayer ? [sharedLayer] : undefined,
-      timeout: cdk.Duration.seconds(30),
+      timeout: cdk.Duration.seconds(120),
       memorySize: 256,
       role: props.iamStack.lambdaExecutionRole,
       vpc: props.vpc,
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       allowPublicSubnet: true,
       securityGroups: [props.securityStack.lambdaSecurityGroup],
-      logRetention: environment === 'prod' 
-        ? logs.RetentionDays.THREE_MONTHS 
-        : environment === 'stage' 
-        ? logs.RetentionDays.ONE_MONTH 
-        : logs.RetentionDays.ONE_WEEK,
+      logRetention:
+        environment === 'prod'
+          ? logs.RetentionDays.THREE_MONTHS
+          : environment === 'stage'
+            ? logs.RetentionDays.ONE_MONTH
+            : logs.RetentionDays.ONE_WEEK,
       environment: {
         NODE_ENV: environment === 'prod' ? 'production' : 'development',
         AURORA_PROXY_ENDPOINT: props.auroraStack.proxy?.endpoint || props.auroraStack.cluster.clusterEndpoint.hostname,
         AURORA_SECRET_ARN: props.auroraStack.secret.secretArn,
         AURORA_DATABASE: 'warmpawz',
-        // AWS_REGION is automatically set by Lambda runtime
-        ANALYTICS_QUEUE_URL: props.sqsStack.analyticsQueue.queueUrl,
+        ANALYTICS_RETENTION_DAYS: environment === 'prod' ? '180' : '90',
       },
-      description: 'Processes analytics events from analytics queue',
+      description: 'Deletes old Allyticas analytics_events rows per ANALYTICS_RETENTION_DAYS',
+    });
+
+    new events.Rule(this, 'AnalyticsRetentionSchedule', {
+      schedule: events.Schedule.rate(cdk.Duration.days(1)),
+      targets: [new eventTargets.LambdaFunction(this.analyticsRetention)],
+      description: 'Daily Allyticas RDS retention cleanup',
     });
 
     // Settlement Queue Processor
@@ -367,15 +381,6 @@ export class LambdaStack extends Construct {
     );
     props.sqsStack.smsQueue.grantConsumeMessages(this.smsProcessor);
 
-    // Analytics Queue → Analytics Processor
-    this.analyticsProcessor.addEventSource(
-      new lambdaEventSources.SqsEventSource(props.sqsStack.analyticsQueue, {
-        batchSize: 10,
-        maxBatchingWindow: cdk.Duration.seconds(5),
-      })
-    );
-    props.sqsStack.analyticsQueue.grantConsumeMessages(this.analyticsProcessor);
-
     // Settlement Queue → Settlement Processor
     this.settlementProcessor.addEventSource(
       new lambdaEventSources.SqsEventSource(props.sqsStack.settlementQueue, {
@@ -401,7 +406,7 @@ export class LambdaStack extends Construct {
     this.functions.set('notification-processor', this.notificationProcessor);
     this.functions.set('email-processor', this.emailProcessor);
     this.functions.set('sms-processor', this.smsProcessor);
-    this.functions.set('analytics-processor', this.analyticsProcessor);
+    this.functions.set('analytics-retention', this.analyticsRetention);
     this.functions.set('settlement-processor', this.settlementProcessor);
   }
 }

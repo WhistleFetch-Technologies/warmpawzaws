@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingState } from '@/components/ui/states';
 import { AlertTriangle, IndianRupee, Info, XCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { toast } from 'sonner';
 
 interface CancelBookingModalProps {
@@ -49,6 +50,9 @@ export function CancelBookingModal({
           cancellationFee: refund.cancellationFee || 0,
           message: refund.message || 'No refund available for this booking',
           policy: refund.policy || {},
+          platformFeeApplies:
+            refund.platformFeeApplies === true ||
+            (typeof refund.platformFeeNonRefundable === 'number' && refund.platformFeeNonRefundable > 0),
         });
       } else {
         setRefundInfo({
@@ -91,9 +95,12 @@ export function CancelBookingModal({
         actorType: 'customer'
       }) as any;
 
-      toast.success(result.message || 'Booking cancelled successfully');
-      if (result.refund) {
-        toast.info(`Refund of ₹${result.refund.amount} will be processed`);
+      toast.success(pickBookingApiMessage(result, 'Booking cancelled successfully'));
+      const refund = getBookingResponsePayload(result).refund as Record<string, unknown> | undefined;
+      if (refund && typeof refund.message === 'string' && refund.message.trim()) {
+        toast.info(refund.message.trim());
+      } else if (refund && typeof refund.amount === 'number' && refund.amount > 0) {
+        toast.info(`Refund of ₹${refund.amount} will be processed`);
       }
       onSuccess();
     } catch (error: any) {
@@ -151,6 +158,12 @@ export function CancelBookingModal({
                       -₹{refundInfo.cancellationFee.toFixed(2)}
                     </span>
                   </div>
+                )}
+
+                {refundInfo.platformFeeApplies && (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
+                    Platform fee is not refundable.
+                  </p>
                 )}
 
                 <div className="flex items-start gap-2 mt-3 text-xs text-gray-600">

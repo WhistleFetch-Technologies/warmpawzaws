@@ -9,6 +9,8 @@
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { DeclineBookingModal } from '@/components/vendor/DeclineBookingModal';
+import { isPackageSessionOneStarted } from '@/lib/vendor-package-parent-decline';
 
 interface VendorBookingManagementScreenProps {
   vendorId?: string;
@@ -41,6 +43,7 @@ export function VendorBookingManagementScreen({
   const [refreshing, setRefreshing] = useState(false);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [filter, setFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled'>('all');
+  const [declineBooking, setDeclineBooking] = useState<Booking | null>(null);
   const isStaff = !!staffId;
 
   useEffect(() => {
@@ -87,47 +90,6 @@ export function VendorBookingManagementScreen({
   const onRefresh = () => {
     setRefreshing(true);
     loadBookings();
-  };
-
-  const handleAccept = async (bookingId: string) => {
-    if (isStaff) {
-      toast.error('Staff members cannot accept bookings. Please contact the vendor.');
-      return;
-    }
-
-    if (!vendorId) return;
-
-    try {
-      console.log(`[VendorBookingManagementScreen] Accepting booking: ${bookingId}`);
-      await apiClient.post(`/vendor/bookings/${bookingId}/accept`, { vendorId });
-      toast.success('Booking accepted successfully!');
-      loadBookings();
-    } catch (error: any) {
-      console.error(`[VendorBookingManagementScreen] Error accepting booking:`, error);
-      toast.error(error.message || 'Failed to accept booking. Please try again.');
-    }
-  };
-
-  const handleReject = async (bookingId: string) => {
-    if (isStaff) {
-      toast.error('Staff members cannot reject bookings. Please contact the vendor.');
-      return;
-    }
-
-    if (!vendorId) return;
-
-    const reason = prompt('Please provide a reason for rejection:');
-    if (!reason) return;
-
-    try {
-      console.log(`[VendorBookingManagementScreen] Rejecting booking: ${bookingId}`);
-      await apiClient.post(`/vendor/bookings/${bookingId}/reject`, { vendorId, reason });
-      toast.success('Booking rejected successfully!');
-      loadBookings();
-    } catch (error: any) {
-      console.error(`[VendorBookingManagementScreen] Error rejecting booking:`, error);
-      toast.error(error.message || 'Failed to reject booking. Please try again.');
-    }
   };
 
   const getStatusColor = (status: string) => {
@@ -239,21 +201,52 @@ export function VendorBookingManagementScreen({
                     </p>
                   )}
 
-                  {booking.status === 'pending' && !isStaff && (
+                  {!isStaff &&
+                    vendorId &&
+                    (booking.status === 'pending' || booking.status === 'confirmed') && (
+                    (() => {
+                      const packagePurchaseId = String((booking as any).packagePurchaseId ?? (booking as any).package_purchase_id ?? '').trim();
+                      const isPackageSessionRow = Boolean((booking as any).isPackageSession ?? (booking as any).is_package_session);
+
+                      // Session rows: decline only from package parent. Parent row: show Decline here.
+                      if (isPackageSessionRow && packagePurchaseId) return null;
+
+                      const isPackageParentRow = Boolean(packagePurchaseId && !isPackageSessionRow);
+
+                      const sessionOneStarted =
+                        isPackageParentRow && packagePurchaseId
+                          ? isPackageSessionOneStarted(packagePurchaseId, bookings as any[])
+                          : false;
+
+                      return (
                     <div className="flex space-x-2 mb-3">
                       <button
-                        className="flex-1 bg-green-500 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-green-600 transition-colors"
-                        onClick={() => handleAccept(booking.id)}
+                        className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
+                          sessionOneStarted
+                            ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                            : 'bg-red-500 text-white hover:bg-red-600'
+                        }`}
+                        disabled={sessionOneStarted}
+                        onClick={() => {
+                          if (sessionOneStarted) return;
+                          setDeclineBooking({
+                            ...booking,
+                            id: booking.id,
+                            customerName: booking.customer_name,
+                            scheduledDate: booking.booking_date,
+                            scheduledTime: booking.booking_time,
+                          } as any);
+                        }}
                       >
-                        Accept
-                      </button>
-                      <button
-                        className="flex-1 bg-red-500 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-red-600 transition-colors"
-                        onClick={() => handleReject(booking.id)}
-                      >
-                        Reject
+                        {sessionOneStarted
+                          ? 'Decline unavailable'
+                          : isPackageParentRow
+                            ? 'Decline package'
+                            : 'Decline / refund'}
                       </button>
                     </div>
+                      );
+                    })()
                   )}
 
                   <button
@@ -273,6 +266,18 @@ export function VendorBookingManagementScreen({
           )}
         </div>
       </div>
+
+      {declineBooking && vendorId && (
+        <DeclineBookingModal
+          booking={declineBooking as any}
+          vendorId={vendorId}
+          onClose={() => setDeclineBooking(null)}
+          onSuccess={() => {
+            setDeclineBooking(null);
+            loadBookings();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -248,11 +248,11 @@ export function TierManagement() {
           </Button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-full">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-full items-stretch">
           {(tiers ?? []).map((tier) => (
             <Card
               key={tier.id}
-              className={`relative overflow-hidden border-2 transition-all w-full max-w-full ${
+              className={`relative h-full min-h-0 overflow-hidden border-2 transition-all w-full max-w-full ${
                 tier.isDefault
                   ? 'border-blue-200 bg-blue-50/30'
                   : 'border-slate-200 hover:border-orange-200'
@@ -263,7 +263,7 @@ export function TierManagement() {
                   Default
                 </div>
               )}
-              <CardHeader className="pb-2">
+              <CardHeader className="shrink-0 pb-2">
                 <div className="flex justify-between items-start">
                   <div>
                     <CardTitle className="text-lg font-bold text-slate-900">
@@ -279,47 +279,47 @@ export function TierManagement() {
                     <Layers className="w-5 h-5" />
                   </div>
                 </div>
-                <CardDescription className="mt-2 line-clamp-2 h-10">
-                  {tier.description}
-                </CardDescription>
+                <CardDescription className="mt-2 break-words">{tier.description}</CardDescription>
               </CardHeader>
 
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-2 gap-4 py-4 border-t border-b border-slate-100">
-                  <div>
-                    <div className="text-xs text-slate-500 uppercase tracking-wide font-semibold">
-                      Commission
+              <CardContent className="flex min-h-0 flex-1 flex-col">
+                <div className="flex min-h-0 flex-1 flex-col space-y-6">
+                  <div className="grid grid-cols-2 gap-4 py-4 border-t border-b border-slate-100">
+                    <div>
+                      <div className="text-xs text-slate-500 uppercase tracking-wide font-semibold">
+                        Commission
+                      </div>
+                      <div className="text-2xl font-bold text-slate-900">
+                        {tier.commissionRate}%
+                      </div>
                     </div>
-                    <div className="text-2xl font-bold text-slate-900">
-                      {tier.commissionRate}%
+                    <div>
+                      <div className="text-xs text-slate-500 uppercase tracking-wide font-semibold">
+                        Payout
+                      </div>
+                      <div className="text-2xl font-bold text-slate-900">
+                        T+{tier.payoutPeriodDays}
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <div className="text-xs text-slate-500 uppercase tracking-wide font-semibold">
-                      Payout
+
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-600">Monthly Cost</span>
+                      <span className="font-semibold">
+                        {tier.monthlyCost === 0 ? 'Free' : `₹${tier.monthlyCost}`}
+                      </span>
                     </div>
-                    <div className="text-2xl font-bold text-slate-900">
-                      T+{tier.payoutPeriodDays}
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-600">Applicable Roles</span>
+                      <span className="font-medium text-slate-900">
+                        {tier.roles.length === 0 ? 'All Roles' : `${tier.roles.length} Roles`}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600">Monthly Cost</span>
-                    <span className="font-semibold">
-                      {tier.monthlyCost === 0 ? 'Free' : `₹${tier.monthlyCost}`}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600">Applicable Roles</span>
-                    <span className="font-medium text-slate-900">
-                      {tier.roles.length === 0 ? 'All Roles' : `${tier.roles.length} Roles`}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-2">
+                <div className="mt-auto flex shrink-0 gap-2 pt-2">
                   <Button variant="outline" className="flex-1" onClick={() => openModal(tier)}>
                     <Edit2 className="w-4 h-4 mr-2" /> Edit
                   </Button>

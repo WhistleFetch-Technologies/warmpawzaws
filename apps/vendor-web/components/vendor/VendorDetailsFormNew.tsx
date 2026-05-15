@@ -16,6 +16,7 @@ import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { toast } from 'sonner';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { EnhancedBankAccountForm } from '@/components/shared/EnhancedBankAccountForm';
+import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 
 interface VendorDetailsFormProps {
   vendorId?: string;
@@ -303,7 +304,7 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white w-full max-w-[430px] mx-auto pb-32">
+    <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white vendor-app-column pb-32">
       {onBack && (
         <div className="px-6 pt-6">
           <button onClick={onBack} className="flex items-center gap-2 text-gray-600 hover:text-[#FF8C42]">
@@ -355,6 +356,12 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
                   ...(components?.state != null && { state: components.state || '' }),
                   ...(components?.pincode != null && { pincode: components.pincode || '' }),
                 }));
+                if (components?.coordinates) {
+                  setCoordinates({
+                    lat: components.coordinates.lat,
+                    lng: components.coordinates.lng,
+                  });
+                }
               }}
               placeholder="Search address, landmark, city..."
               className={errors.address ? 'border-red-500' : ''}
@@ -434,31 +441,31 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
             <div className="grid grid-cols-2 gap-3">
                 <div>
                     <Label className="mb-1.5 block text-gray-700">Aadhaar Front *</Label>
-                    <div 
-                        className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-[#FF8C42] ${errors.aadhaar ? 'border-red-500' : 'border-gray-200'}`} 
-                        onClick={() => document.getElementById('aadhaar-front-upload')?.click()}
+                    <TouchFilePicker
+                      accept="image/*"
+                      onFileChange={(e) => handleFileUpload('aadhaar', e.target.files?.[0] || null, 'front')}
+                      className={`cursor-pointer rounded-lg border-2 border-dashed p-4 text-center hover:border-[#FF8C42] ${errors.aadhaar ? 'border-red-500' : 'border-gray-200'}`}
                     >
-                        <input id="aadhaar-front-upload" type="file" accept="image/*" className="hidden" onChange={e => handleFileUpload('aadhaar', e.target.files?.[0] || null, 'front')} />
                         {aadhaarFiles.front ? (
-                            <span className="text-green-600 text-xs font-medium">{aadhaarFiles.front.name}</span>
+                            <span className="text-xs font-medium text-green-600">{aadhaarFiles.front.name}</span>
                         ) : (
-                            <span className="text-gray-500 text-xs">Upload front</span>
+                            <span className="text-xs text-gray-500">Upload front</span>
                         )}
-                    </div>
+                    </TouchFilePicker>
                 </div>
                 <div>
                     <Label className="mb-1.5 block text-gray-700">Aadhaar Back *</Label>
-                    <div 
-                        className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer hover:border-[#FF8C42] ${errors.aadhaar ? 'border-red-500' : 'border-gray-200'}`} 
-                        onClick={() => document.getElementById('aadhaar-back-upload')?.click()}
+                    <TouchFilePicker
+                      accept="image/*"
+                      onFileChange={(e) => handleFileUpload('aadhaar', e.target.files?.[0] || null, 'back')}
+                      className={`cursor-pointer rounded-lg border-2 border-dashed p-4 text-center hover:border-[#FF8C42] ${errors.aadhaar ? 'border-red-500' : 'border-gray-200'}`}
                     >
-                        <input id="aadhaar-back-upload" type="file" accept="image/*" className="hidden" onChange={e => handleFileUpload('aadhaar', e.target.files?.[0] || null, 'back')} />
                         {aadhaarFiles.back ? (
-                            <span className="text-green-600 text-xs font-medium">{aadhaarFiles.back.name}</span>
+                            <span className="text-xs font-medium text-green-600">{aadhaarFiles.back.name}</span>
                         ) : (
-                            <span className="text-gray-500 text-xs">Upload back</span>
+                            <span className="text-xs text-gray-500">Upload back</span>
                         )}
-                    </div>
+                    </TouchFilePicker>
                 </div>
             </div>
             {errors.aadhaar && <p className="text-xs text-red-500">{errors.aadhaar}</p>}
@@ -506,10 +513,13 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
             {isGSTRequired && (
                 <div>
                     <Label className="mb-1.5 block text-gray-700">GST Certificate *</Label>
-                    <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center cursor-pointer hover:border-[#FF8C42]" onClick={() => document.getElementById('gst-upload')?.click()}>
-                         <input id="gst-upload" type="file" className="hidden" onChange={e => handleFileUpload('gst', e.target.files?.[0] || null)} />
-                         {gstCertificate ? <span className="text-green-600 text-xs font-medium">{gstCertificate.name}</span> : <span className="text-gray-500 text-xs">Click to upload PDF/Image</span>}
-                    </div>
+                    <TouchFilePicker
+                      accept="image/*,.pdf,application/pdf"
+                      onFileChange={(e) => handleFileUpload('gst', e.target.files?.[0] || null)}
+                      className="cursor-pointer rounded-lg border-2 border-dashed border-gray-200 p-4 text-center hover:border-[#FF8C42]"
+                    >
+                         {gstCertificate ? <span className="text-xs font-medium text-green-600">{gstCertificate.name}</span> : <span className="text-xs text-gray-500">Click to upload PDF/Image</span>}
+                    </TouchFilePicker>
                 </div>
             )}
         </div>
@@ -566,10 +576,13 @@ export function VendorDetailsFormNew({ vendorId, onSubmit, onNext, onBack, servi
             </div>
             <div>
                 <Label className="mb-1.5 block text-gray-700">Cancelled Cheque *</Label>
-                 <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center cursor-pointer hover:border-[#FF8C42]" onClick={() => document.getElementById('cheque-upload')?.click()}>
-                         <input id="cheque-upload" type="file" className="hidden" onChange={e => handleFileUpload('cheque', e.target.files?.[0] || null)} />
-                         {bankDetails.cancelledCheque ? <span className="text-green-600 text-xs font-medium">{bankDetails.cancelledCheque.name}</span> : <span className="text-gray-500 text-xs">Click to upload</span>}
-                </div>
+                 <TouchFilePicker
+                   accept="image/*,.pdf,application/pdf"
+                   onFileChange={(e) => handleFileUpload('cheque', e.target.files?.[0] || null)}
+                   className="cursor-pointer rounded-lg border-2 border-dashed border-gray-200 p-4 text-center hover:border-[#FF8C42]"
+                 >
+                         {bankDetails.cancelledCheque ? <span className="text-xs font-medium text-green-600">{bankDetails.cancelledCheque.name}</span> : <span className="text-xs text-gray-500">Click to upload</span>}
+                 </TouchFilePicker>
             </div>
         </div>
 

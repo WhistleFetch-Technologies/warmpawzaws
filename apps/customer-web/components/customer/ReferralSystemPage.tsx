@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Share2, Users, Gift, Copy, CheckCircle2, GiftIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ProfileAccountScreenHeader } from '@/components/customer/shared/ProfileAccountScreenHeader';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
@@ -19,6 +20,7 @@ interface ReferralSystemPageProps {
   preSelectedVendorId?: string;
   vendorId?: string;
   onBack: () => void;
+  onCloseToHome?: () => void;
   onNavigate?: (screen: string, data?: any) => void;
   onSuccess?: (bookingId?: string) => void;
   onComplete?: () => void;
@@ -30,6 +32,92 @@ interface ReferralStats {
   pending_referrals: number;
   total_rewards: number;
   referral_code: string;
+}
+
+/** Clipboard API + execCommand fallback (Android WebView / older Chrome). */
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through to execCommand
+  }
+  try {
+    if (typeof document === 'undefined') return false;
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Android intent URLs are length-sensitive; keep extras under a safe budget. */
+const ANDROID_INTENT_TEXT_MAX = 4000;
+
+type WebSharePayload = Pick<ShareData, 'title' | 'text' | 'url'>;
+
+function isNonEmptyWebShareData(data: WebSharePayload): boolean {
+  return !!(data.text?.trim() || data.url?.trim() || data.title?.trim());
+}
+
+/**
+ * Try Web Share with payloads that match iOS/Android system sheets.
+ * We always call `navigator.share` when a payload has text/url (do not trust `canShare` alone —
+ * Android Chrome often reports false for valid payloads, so the sheet never opened).
+ */
+async function invokeWebShare(
+  payloads: WebSharePayload[]
+): Promise<'shared' | 'aborted' | 'failed'> {
+  if (typeof navigator.share !== 'function') return 'failed';
+  for (const data of payloads) {
+    if (!isNonEmptyWebShareData(data)) continue;
+    try {
+      await navigator.share(data);
+      return 'shared';
+    } catch (e) {
+      if ((e as DOMException)?.name === 'AbortError') return 'aborted';
+    }
+  }
+  return 'failed';
+}
+
+function triggerAndroidSendIntent(shareTitle: string, textPayload: string) {
+  const intent =
+    'intent:#Intent;action=android.intent.action.SEND;type=text/plain;' +
+    `S.android.intent.extra.TEXT=${encodeURIComponent(textPayload)};` +
+    `S.android.intent.extra.SUBJECT=${encodeURIComponent(shareTitle)};end`;
+  try {
+    const a = document.createElement('a');
+    a.href = intent;
+    a.rel = 'noreferrer';
+    a.style.position = 'fixed';
+    a.style.width = '0';
+    a.style.height = '0';
+    a.style.left = '-9999px';
+    a.setAttribute('data-intent', '1');
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch {
+    // fall through
+  }
+  try {
+    window.location.href = intent;
+  } catch {
+    // ignore
+  }
 }
 
 export function ReferralSystemPage(props: ReferralSystemPageProps) {
@@ -72,41 +160,107 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
     }
   };
 
-  const copyReferralCode = () => {
-    if (stats?.referral_code) {
-      navigator.clipboard.writeText(stats.referral_code);
+  const copyReferralCode = async () => {
+    if (!stats?.referral_code) return;
+    const ok = await copyTextToClipboard(stats.referral_code);
+    if (ok) {
       setCopied(true);
       toast.success('Referral code copied!');
       setTimeout(() => setCopied(false), 2000);
+    } else {
+      toast.error('Could not copy automatically. Long-press the code to copy it.');
     }
   };
 
-  const shareReferral = () => {
-    const referralLink = `${window.location.origin}/auth?ref=${stats?.referral_code}`;
-    const shareText = `Join WarmPawz and get amazing pet care services! Use my referral code: ${stats?.referral_code}`;
-    
-    if (navigator.share) {
-      navigator.share({
-        title: 'Join WarmPawz',
-        text: shareText,
-        url: referralLink,
-      });
-    } else {
-      navigator.clipboard.writeText(`${shareText}\n${referralLink}`);
-      toast.success('Referral link copied to clipboard!');
+  const shareReferral = async () => {
+    if (!stats?.referral_code) return;
+
+    const shareTitle = 'Join Warmpawz';
+    const code = stats.referral_code;
+    const referralLink = `${window.location.origin}/auth?ref=${encodeURIComponent(code)}`;
+    const shareLine = `Join Warmpawz and get amazing pet care services! Use my referral code: ${code}`;
+    const combinedBody = `${shareLine}\n${referralLink}`;
+    const isAndroid = /Android/i.test(navigator.userAgent);
+
+    const textPayloadForIntent =
+      combinedBody.length > ANDROID_INTENT_TEXT_MAX
+        ? `${combinedBody.slice(0, ANDROID_INTENT_TEXT_MAX - 20)}…`
+        : combinedBody;
+
+    // Android: prefer a single `text` payload first (most reliable with Web Share on Chrome);
+    // iOS is fine with title + text + url.
+    const sharePayloads: WebSharePayload[] = isAndroid
+      ? [
+          { text: combinedBody },
+          { title: shareTitle, text: shareLine, url: referralLink },
+          { title: shareTitle, text: combinedBody },
+          { title: shareTitle, url: referralLink },
+          { text: `${shareLine} ${referralLink}` },
+        ]
+      : [
+          { title: shareTitle, text: shareLine, url: referralLink },
+          { title: shareTitle, text: combinedBody },
+          { title: shareTitle, url: referralLink },
+          { text: combinedBody },
+          { text: `${shareLine} ${referralLink}` },
+        ];
+
+    const shareResult = await invokeWebShare(sharePayloads);
+    if (shareResult === 'shared' || shareResult === 'aborted') return;
+
+    // Web Share often missing or blocked in in-app WebViews; try SEND chooser via intent.
+    if (isAndroid) {
+      triggerAndroidSendIntent(shareTitle, textPayloadForIntent);
     }
+
+    const copied = await copyTextToClipboard(combinedBody);
+    if (copied) {
+      toast.success('Referral message and link copied — paste into your chat or email.');
+      return;
+    }
+
+    if (isAndroid) {
+      // Clipboard after `await` often fails without a fresh user gesture; offer an explicit action.
+      toast.info('Could not open share or copy automatically.', {
+        description: 'Tap Copy below, then paste into WhatsApp, SMS, or email.',
+        action: {
+          label: 'Copy message & link',
+          onClick: () => {
+            void copyTextToClipboard(combinedBody).then((ok) => {
+              if (ok) {
+                toast.success('Copied! Paste to share with friends.');
+              } else {
+                toast.error('Copy failed. Long-press the referral link in your browser address bar, or type the code for friends to enter at sign-up.');
+              }
+            });
+          },
+        },
+      });
+      return;
+    }
+
+    toast.error('Could not share or copy. Use the copy button next to your referral code.');
   };
 
   if (!phone) {
     return (
       <div className="min-h-screen bg-gray-50 p-4">
         <div className="max-w-md mx-auto">
-          <div className="flex items-center gap-4 mb-6">
-            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <h1 className="text-xl font-semibold">Referral Program</h1>
-          </div>
+          {props.onCloseToHome ? (
+            <ProfileAccountScreenHeader
+              onCloseToHome={props.onCloseToHome}
+              onBack={props.onBack}
+              title="Referral Program"
+              className="mb-6"
+            />
+          ) : (
+            <div className="flex items-center gap-4 mb-6">
+              <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full">
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <h1 className="text-xl font-semibold">Referral Program</h1>
+            </div>
+          )}
           <Card className="p-6 text-center">
             <p className="text-gray-600">Please login to access referral program</p>
           </Card>
@@ -118,14 +272,23 @@ export function ReferralSystemPage(props: ReferralSystemPageProps) {
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       <div className="max-w-md mx-auto bg-white min-h-screen">
-        <div className="sticky top-0 z-10 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-3 rounded-b-2xl shadow-md">
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full text-white hover:bg-white/20">
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <h1 className="text-xl font-semibold text-white">Referral Program</h1>
+        {props.onCloseToHome ? (
+          <ProfileAccountScreenHeader
+            onCloseToHome={props.onCloseToHome}
+            onBack={props.onBack}
+            title="Referral Program"
+            className="sticky top-0 z-10"
+          />
+        ) : (
+          <div className="sticky top-0 z-10 bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white px-4 py-3 rounded-b-2xl shadow-md">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={props.onBack} className="rounded-full text-white hover:bg-white/20">
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <h1 className="text-xl font-semibold text-white">Referral Program</h1>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="p-4 space-y-4">
           {/* Referral Code Card */}

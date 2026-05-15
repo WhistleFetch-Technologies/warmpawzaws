@@ -41,6 +41,71 @@ interface Prescription {
   instructions?: string;
 }
 
+/** Set to true to re-enable the header "Order" control (UX / business toggle). */
+const PHARMACY_ORDER_BUTTON_ENABLED = false;
+
+function isUserShareCancel(err: unknown): boolean {
+  if (!err) return false;
+  if (err instanceof DOMException && err.name === 'AbortError') return true;
+  const n = (err as { name?: string })?.name;
+  return n === 'AbortError';
+}
+
+function buildPrescriptionShareText(p: Prescription): string {
+  const title = p.title || 'Prescription';
+  const lines: string[] = [title, ''];
+  const diagnosis = p.content_data?.diagnosis || p.diagnosis;
+  if (diagnosis) {
+    lines.push(`Diagnosis: ${diagnosis}`);
+  }
+  const meds = p.content_data?.medications;
+  if (Array.isArray(meds) && meds.length > 0) {
+    lines.push('Medications:');
+    meds.forEach((m: { name?: string; dosage?: string; frequency?: string; duration?: string; instructions?: string }, i: number) => {
+      const row = [
+        `${i + 1}. ${m.name || 'Medication'}`,
+        m.dosage && `Dosage: ${m.dosage}`,
+        m.frequency && `Frequency: ${m.frequency}`,
+        m.duration && `Duration: ${m.duration}`,
+        m.instructions && `Note: ${m.instructions}`,
+      ]
+        .filter(Boolean)
+        .join(' | ');
+      lines.push(row);
+    });
+  } else if (p.medication_name) {
+    lines.push(`Medication: ${p.medication_name}`);
+  }
+  const notes = p.content_data?.notes || p.instructions;
+  if (notes) lines.push(`Notes: ${notes}`);
+  return lines.join('\n');
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* continue */
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export function PrescriptionHistoryModal({
   bookingId,
   petId,
@@ -167,12 +232,7 @@ export function PrescriptionHistoryModal({
     setUploadingFile(file);
   };
 
-  const getBaseUrl = (): string => {
-    if (typeof window !== 'undefined' && (window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl) {
-      return (window as any).__WARMPAWZ_RUNTIME_CONFIG__.apiBaseUrl;
-    }
-    return process.env.NEXT_PUBLIC_API_BASE_URL || getApiBaseUrl() || '';
-  };
+  const getBaseUrl = (): string => getApiBaseUrl() || '';
 
   const handleUpload = async () => {
     if (!uploadingFile || !recordDate) {
@@ -327,6 +387,99 @@ export function PrescriptionHistoryModal({
     return prescription.prescription_date || prescription.record_date || prescription.created_at;
   };
 
+  const shareSelectedPrescription = async (p: Prescription) => {
+    const shareTitle = p.title || 'Prescription';
+    const bodyText = buildPrescriptionShareText(p);
+    const fileUrl = p.file_url?.trim();
+
+    const runShare = async (data: ShareData): Promise<'ok' | 'cancel' | 'unavailable'> => {
+      if (typeof navigator === 'undefined' || !navigator.share) return 'unavailable';
+      try {
+        await navigator.share(data);
+        return 'ok';
+      } catch (err) {
+        if (isUserShareCancel(err)) return 'cancel';
+        return 'unavailable';
+      }
+    };
+
+    if (fileUrl) {
+      const blurb = p.description || 'Medical prescription from Warmpawz';
+      const r1 = await runShare({ title: shareTitle, text: blurb, url: fileUrl });
+      if (r1 === 'ok') {
+        toast.success('Shared');
+        return;
+      }
+      if (r1 === 'cancel') return;
+      const textWithUrl = `${bodyText}\n\n${fileUrl}`;
+      const r2 = await runShare({ title: shareTitle, text: textWithUrl });
+      if (r2 === 'ok') {
+        toast.success('Shared');
+        return;
+      }
+      if (r2 === 'cancel') return;
+      if (await copyTextToClipboard(textWithUrl)) {
+        toast.success('Link and details copied — paste into any app to share');
+        return;
+      }
+      toast.error('Could not open share. Try again or use the full document view.');
+      return;
+    }
+
+    if (bodyText.replace(/\s/g, '').length < 2) {
+      toast.error('Nothing to share for this prescription');
+      return;
+    }
+
+    const r3 = await runShare({ title: shareTitle, text: bodyText });
+    if (r3 === 'ok') {
+      toast.success('Shared');
+      return;
+    }
+    if (r3 === 'cancel') return;
+    if (await copyTextToClipboard(bodyText)) {
+      toast.success('Prescription text copied — paste into WhatsApp or another app');
+      return;
+    }
+    toast.error('Could not share. Try copying from the screen or use another device.');
+  };
+
+  /** Kept for when PHARMACY_ORDER_BUTTON_ENABLED is true; do not remove. */
+  const openPharmacyOrderFromViewer = async () => {
+    if (!selectedPrescription) return;
+    try {
+      let medications: any[] = [];
+      if (selectedPrescription.content_data?.medications) {
+        medications = Array.isArray(selectedPrescription.content_data.medications)
+          ? selectedPrescription.content_data.medications
+          : [];
+      }
+      if (onOrderMedicine) {
+        onOrderMedicine(selectedPrescription.id, bookingId, medications);
+        setShowViewer(false);
+        onClose();
+        toast.success('Opening pharmacy order...');
+      } else {
+        window.dispatchEvent(
+          new CustomEvent('orderMedicineFromPrescription', {
+            detail: {
+              prescriptionId: selectedPrescription.id,
+              bookingId,
+              medications,
+              fileUrl: selectedPrescription.file_url,
+            },
+          })
+        );
+        setShowViewer(false);
+        onClose();
+        toast.success('Opening pharmacy order...');
+      }
+    } catch (error: unknown) {
+      console.error('Error ordering medicine:', error);
+      toast.error('Failed to open pharmacy order. Please try again.');
+    }
+  };
+
   // Sort prescriptions by date (latest first)
   const sortedPrescriptions = [...prescriptions].sort((a, b) => {
     const dateA = new Date(getPrescriptionDate(a)).getTime();
@@ -337,7 +490,7 @@ export function PrescriptionHistoryModal({
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center">
-        <div className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto">
+        <div className="bg-white w-full max-w-customer rounded-t-[32px] sm:rounded-[32px] max-h-[90vh] overflow-y-auto">
           {/* Header */}
           <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-[32px] z-10">
             <h2 className="font-bold text-gray-800">Prescription History</h2>
@@ -442,15 +595,24 @@ export function PrescriptionHistoryModal({
         </div>
       </div>
 
-      {/* Upload Modal */}
+      {/* Upload Modal — scrollable sheet above bottom nav + home indicator (see CustomerScreenWrapper / search pb patterns) */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 z-[60] flex items-end sm:items-center justify-center">
-          <div className="bg-white w-full max-w-[430px] rounded-t-[32px] sm:rounded-[32px] p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-gray-800">
+        <div
+          className="fixed inset-0 z-[65] flex items-end justify-center sm:items-center isolate pointer-events-none"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="upload-prescription-title"
+        >
+          <div className="absolute inset-0 bg-black/50 pointer-events-auto" aria-hidden />
+          <div
+            className="pointer-events-auto relative z-10 flex w-full max-w-customer min-h-0 flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl sm:rounded-[32px] max-h-[min(92dvh,calc(100dvh-env(safe-area-inset-bottom,0px)-0.75rem))] sm:max-h-[min(90vh,92dvh)]"
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-6 pb-4 pt-6 rounded-t-[32px] bg-white">
+              <h3 id="upload-prescription-title" className="font-bold text-gray-800 pr-2">
                 {selectedPrescription ? 'Upload Additional File' : 'Upload Handwritten Prescription'}
               </h3>
               <button
+                type="button"
                 onClick={() => {
                   setShowUploadModal(false);
                   setUploadingFile(null);
@@ -458,96 +620,101 @@ export function PrescriptionHistoryModal({
                   setContext('');
                   setSelectedPrescription(null);
                 }}
-                className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200"
+                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200"
               >
                 <X className="w-5 h-5 text-gray-600" />
               </button>
             </div>
-            
-            {selectedPrescription && (
-              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-sm text-blue-900">
-                  <strong>Adding file to:</strong> {selectedPrescription.title}
-                </p>
-                <p className="text-xs text-blue-700 mt-1">
-                  Date: {formatDate(getPrescriptionDate(selectedPrescription))}
-                </p>
-              </div>
-            )}
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Prescription Date <span className="text-red-500">*</span>
-                  {selectedPrescription && (
-                    <span className="text-xs text-gray-500 ml-2">
-                      (for this record: {formatDate(getPrescriptionDate(selectedPrescription))})
-                    </span>
-                  )}
-                </label>
-                <input
-                  type="date"
-                  value={recordDate || (selectedPrescription && getPrescriptionDate(selectedPrescription) ? new Date(getPrescriptionDate(selectedPrescription)).toISOString().split('T')[0] : '')}
-                  onChange={(e) => setRecordDate(e.target.value)}
-                  max={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Context/Notes (Optional)
-                </label>
-                <textarea
-                  value={context}
-                  onChange={(e) => setContext(e.target.value)}
-                  placeholder="Add any notes or context about this prescription..."
-                  rows={3}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none resize-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Upload Photo or PDF <span className="text-red-500">*</span>
-                </label>
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 transition-colors"
-                >
-                  {uploadingFile ? (
-                    <div>
-                      <File className="w-12 h-12 text-blue-500 mx-auto mb-2" />
-                      <p className="text-sm text-gray-700">{uploadingFile.name}</p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {(uploadingFile.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                    </div>
-                  ) : (
-                    <div>
-                      <Upload className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                      <p className="text-sm text-gray-700">Click to select file</p>
-                      <p className="text-xs text-gray-500 mt-1">JPG, PNG, GIF, WEBP, or PDF (max 10MB)</p>
-                    </div>
-                  )}
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-6 pt-4 [-webkit-overflow-scrolling:touch] scroll-pb-[calc(6rem+env(safe-area-inset-bottom,0px))] pb-[calc(1rem+5.5rem+env(safe-area-inset-bottom,0px))]"
+            >
+              {selectedPrescription && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-900">
+                    <strong>Adding file to:</strong> {selectedPrescription.title}
+                  </p>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Date: {formatDate(getPrescriptionDate(selectedPrescription))}
+                  </p>
                 </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,application/pdf"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-              </div>
+              )}
 
-              <Button
-                onClick={handleUpload}
-                disabled={!uploadingFile || !recordDate || uploading}
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl"
-              >
-                {uploading ? 'Uploading...' : 'Upload Prescription'}
-              </Button>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Prescription Date <span className="text-red-500">*</span>
+                    {selectedPrescription && (
+                      <span className="text-xs text-gray-500 ml-2">
+                        (for this record: {formatDate(getPrescriptionDate(selectedPrescription))})
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="date"
+                    value={recordDate || (selectedPrescription && getPrescriptionDate(selectedPrescription) ? new Date(getPrescriptionDate(selectedPrescription)).toISOString().split('T')[0] : '')}
+                    onChange={(e) => setRecordDate(e.target.value)}
+                    max={new Date().toISOString().split('T')[0]}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Context/Notes (Optional)
+                  </label>
+                  <textarea
+                    value={context}
+                    onChange={(e) => setContext(e.target.value)}
+                    placeholder="Add any notes or context about this prescription..."
+                    rows={3}
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Upload Photo or PDF <span className="text-red-500">*</span>
+                  </label>
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 transition-colors"
+                  >
+                    {uploadingFile ? (
+                      <div>
+                        <File className="w-12 h-12 text-blue-500 mx-auto mb-2" />
+                        <p className="text-sm text-gray-700">{uploadingFile.name}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {(uploadingFile.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                    ) : (
+                      <div>
+                        <Upload className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                        <p className="text-sm text-gray-700">Click to select file</p>
+                        <p className="text-xs text-gray-500 mt-1">JPG, PNG, GIF, WEBP, or PDF (max 10MB)</p>
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={handleUpload}
+                  disabled={!uploadingFile || !recordDate || uploading}
+                  className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-xl scroll-mt-4"
+                >
+                  {uploading ? 'Uploading...' : 'Upload Prescription'}
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -574,29 +741,8 @@ export function PrescriptionHistoryModal({
                   </button>
                 )}
                 <button
-                  onClick={async () => {
-                    try {
-                      const fileUrl = selectedPrescription.file_url;
-                      if (!fileUrl) {
-                        toast.error('No file URL available to share');
-                        return;
-                      }
-                      if (navigator.share) {
-                        await navigator.share({
-                          title: selectedPrescription.title || 'Prescription',
-                          text: selectedPrescription.description || 'Medical prescription',
-                          url: fileUrl,
-                        });
-                        toast.success('Prescription shared successfully');
-                      } else {
-                        await navigator.clipboard.writeText(fileUrl);
-                        toast.success('Prescription URL copied to clipboard');
-                      }
-                    } catch (error) {
-                      console.error('Error sharing prescription:', error);
-                      toast.error('Failed to share prescription');
-                    }
-                  }}
+                  type="button"
+                  onClick={() => shareSelectedPrescription(selectedPrescription)}
                   className="p-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors"
                   title="Share"
                 >
@@ -634,46 +780,20 @@ export function PrescriptionHistoryModal({
                   </button>
                 )}
                 
-                {/* ✅ FIX: Pharmacy Order Button - Show for all prescriptions */}
+                {/* Pharmacy order: implementation in openPharmacyOrderFromViewer; toggle PHARMACY_ORDER_BUTTON_ENABLED to re-enable */}
                 {(selectedPrescription.content_data || selectedPrescription.file_url) && (
                   <button
-                    onClick={async () => {
-                      try {
-                        // Extract medications from content_data if available
-                        let medications: any[] = [];
-                        if (selectedPrescription.content_data?.medications) {
-                          medications = Array.isArray(selectedPrescription.content_data.medications)
-                            ? selectedPrescription.content_data.medications
-                            : [];
-                        }
-                        
-                        // If onOrderMedicine callback is provided, use it
-                        if (onOrderMedicine) {
-                          onOrderMedicine(selectedPrescription.id, bookingId, medications);
-                          setShowViewer(false);
-                          onClose(); // Close prescription modal
-                          toast.success('Opening pharmacy order...');
-                        } else {
-                          // Fallback: Navigate to pharmacy order flow via window event
-                          window.dispatchEvent(new CustomEvent('orderMedicineFromPrescription', {
-                            detail: {
-                              prescriptionId: selectedPrescription.id,
-                              bookingId,
-                              medications,
-                              fileUrl: selectedPrescription.file_url,
-                            }
-                          }));
-                          setShowViewer(false);
-                          onClose();
-                          toast.success('Opening pharmacy order...');
-                        }
-                      } catch (error: any) {
-                        console.error('Error ordering medicine:', error);
-                        toast.error('Failed to open pharmacy order. Please try again.');
-                      }
+                    type="button"
+                    disabled={!PHARMACY_ORDER_BUTTON_ENABLED}
+                    onClick={() => {
+                      if (PHARMACY_ORDER_BUTTON_ENABLED) void openPharmacyOrderFromViewer();
                     }}
-                    className="p-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-colors flex items-center gap-1.5"
-                    title="Order Medicine from Pharmacy"
+                    className="p-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-100"
+                    title={
+                      PHARMACY_ORDER_BUTTON_ENABLED
+                        ? 'Order Medicine from Pharmacy'
+                        : 'Pharmacy order coming soon'
+                    }
                   >
                     <ShoppingCart className="w-4 h-4" />
                     <span className="text-xs font-medium">Order</span>

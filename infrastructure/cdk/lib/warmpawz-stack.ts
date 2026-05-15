@@ -205,7 +205,9 @@ export class WarmpawzStack extends cdk.Stack {
     // Admin routes: no API Gateway authorizer - /admin/* goes via catch-all so Lambda can allow UAT (X-UAT-Mode + token)
     // Auth is enforced in Lambda (admin.ts requireAdminAuth supports both Cognito JWT and UAT tokens).
 
-    // Customer routes require customer Cognito token
+    // Customer routes require customer Cognito token.
+    // Opaque UAT tokens (Bearer uat-token-customer-… + X-UAT-Mode) are not valid Cognito JWTs — those requests
+    // must use the catch-all `/{proxy+}` below (same Lambda) or a separate route without this authorizer.
     this.apiGatewayStack.addAuthorizedRoute(
       '/customer/{proxy+}',
       [

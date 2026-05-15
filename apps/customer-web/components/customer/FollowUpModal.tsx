@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { Button } from '@/components/ui/button';
 import { 
   X, 
@@ -331,7 +332,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
       const date = new Date();
       date.setDate(date.getDate() + i);
       dates.push({
-        value: date.toISOString().split('T')[0],
+        value: formatLocalDateYYYYMMDD(date),
         label: date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
       });
     }
@@ -341,7 +342,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
   if (loading) {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl w-full max-w-[430px] p-6">
+        <div className="bg-white rounded-2xl w-full max-w-customer p-6">
           <div className="flex items-center justify-center">
             <RefreshCw className="w-8 h-8 text-[#FF8C42] animate-spin" />
           </div>
@@ -352,7 +353,7 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-[430px] max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-2xl w-full max-w-customer max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <div className="flex items-center gap-2">
@@ -642,7 +643,8 @@ export function FollowUpModal({ onClose, bookings, customerPhone, onNavigate }: 
               {/* Time Slot Selection */}
               {selectedDate && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Time</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Select Time</label>
+                  <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
                   {availableSlots.length === 0 ? (
                     <div className="text-center py-6 bg-gray-50 rounded-lg">
                       <AlertCircle className="w-8 h-8 text-gray-400 mx-auto mb-2" />

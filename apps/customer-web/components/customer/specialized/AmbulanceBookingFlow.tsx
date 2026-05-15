@@ -8,6 +8,12 @@ import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 interface AmbulanceBookingFlowProps {
   vendorId: string;
   customerPhone: string;
+  /** When set, pre-selects service type (e.g. scheduled ride vs inter-hospital). */
+  initialEmergencyType?: 'emergency' | 'transfer' | 'other';
+  /** Hide service-type toggles when coming from a dedicated entry point. */
+  lockEmergencyType?: boolean;
+  /** If the vendor has no vehicles in the API, offer a single “next available” placeholder so the form can still submit. */
+  allowPlaceholderVehicleWhenEmpty?: boolean;
   onSuccess?: (bookingId: string) => void;
   onCancel?: () => void;
 }
@@ -24,7 +30,17 @@ interface Vehicle {
   estimated_arrival?: number; // minutes
 }
 
-export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCancel }: AmbulanceBookingFlowProps) {
+const PLACEHOLDER_VEHICLE_ID = '__dispatch_pool__';
+
+export function AmbulanceBookingFlow({
+  vendorId,
+  customerPhone,
+  initialEmergencyType,
+  lockEmergencyType,
+  allowPlaceholderVehicleWhenEmpty,
+  onSuccess,
+  onCancel,
+}: AmbulanceBookingFlowProps) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -32,7 +48,13 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
   const [error, setError] = useState<string | null>(null);
   
   // Booking details
-  const [emergencyType, setEmergencyType] = useState<'emergency' | 'transfer' | 'other'>('emergency');
+  const [emergencyType, setEmergencyType] = useState<'emergency' | 'transfer' | 'other'>(
+    initialEmergencyType ?? 'emergency'
+  );
+
+  useEffect(() => {
+    if (initialEmergencyType) setEmergencyType(initialEmergencyType);
+  }, [initialEmergencyType]);
   const [patientName, setPatientName] = useState('');
   const [patientAge, setPatientAge] = useState('');
   const [condition, setCondition] = useState('');
@@ -61,13 +83,66 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
         setVehicles(available);
         
         // Auto-select first available vehicle
-        if (available.length > 0 && !selectedVehicle) {
-          setSelectedVehicle(available[0].id);
+        if (available.length > 0) {
+          setSelectedVehicle((prev) => (prev && available.some((v: Vehicle) => v.id === prev) ? prev : available[0].id));
+        } else if (allowPlaceholderVehicleWhenEmpty) {
+          setVehicles([
+            {
+              id: PLACEHOLDER_VEHICLE_ID,
+              vehicle_number: 'Next available unit',
+              vehicle_type: 'basic',
+              capacity: 1,
+              equipment: [],
+              current_location: null,
+              is_available: true,
+              rating: 5,
+            },
+          ]);
+          setSelectedVehicle(PLACEHOLDER_VEHICLE_ID);
+        } else {
+          setVehicles([]);
+          setSelectedVehicle('');
+        }
+      } else {
+        if (allowPlaceholderVehicleWhenEmpty) {
+          setVehicles([
+            {
+              id: PLACEHOLDER_VEHICLE_ID,
+              vehicle_number: 'Next available unit',
+              vehicle_type: 'basic',
+              capacity: 1,
+              equipment: [],
+              current_location: null,
+              is_available: true,
+              rating: 5,
+            },
+          ]);
+          setSelectedVehicle(PLACEHOLDER_VEHICLE_ID);
+        } else {
+          setVehicles([]);
+          setSelectedVehicle('');
         }
       }
     } catch (err: any) {
       console.error('Error loading vehicles:', err);
-      setError('Failed to load available ambulances');
+      if (allowPlaceholderVehicleWhenEmpty) {
+        setVehicles([
+          {
+            id: PLACEHOLDER_VEHICLE_ID,
+            vehicle_number: 'Next available unit',
+            vehicle_type: 'basic',
+            capacity: 1,
+            equipment: [],
+            current_location: null,
+            is_available: true,
+            rating: 5,
+          },
+        ]);
+        setSelectedVehicle(PLACEHOLDER_VEHICLE_ID);
+        setError(null);
+      } else {
+        setError('Failed to load available ambulances');
+      }
     } finally {
       setLoading(false);
     }
@@ -83,6 +158,11 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
 
     if (!pickupAddress.trim()) {
       setError('Pickup address is required');
+      return;
+    }
+
+    if (emergencyType === 'transfer' && !dropAddress.trim()) {
+      setError('Please enter the destination hospital or drop-off address');
       return;
     }
 
@@ -115,7 +195,7 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
           patientAge,
           condition,
           urgency,
-          vehicleId: selectedVehicle,
+          vehicleId: selectedVehicle === PLACEHOLDER_VEHICLE_ID ? null : selectedVehicle,
           contactPhone,
         }),
         totalAmount: calculatePrice(),
@@ -179,40 +259,69 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
     );
   }
 
+  const banner =
+    lockEmergencyType && emergencyType === 'transfer'
+      ? {
+          wrap: 'bg-sky-50 border-sky-200',
+          icon: 'text-sky-600',
+          title: 'Inter-hospital transfer',
+          body: 'Provide pickup and destination. Our partner will confirm timing and vehicle.',
+        }
+      : lockEmergencyType && emergencyType === 'other'
+        ? {
+            wrap: 'bg-amber-50 border-amber-200',
+            icon: 'text-amber-700',
+            title: 'Scheduled ride',
+            body: 'Non-emergency transport (for example a planned vet visit). For urgent cases, use Emergency SOS.',
+          }
+        : {
+            wrap: 'bg-red-50 border-red-200',
+            icon: 'text-red-600',
+            title: 'Emergency Ambulance Booking',
+            body: 'For life-threatening emergencies, please call emergency services directly.',
+          };
+
+  const serviceTypeLabel = (type: 'emergency' | 'transfer' | 'other') =>
+    type === 'other' ? 'Scheduled' : type === 'transfer' ? 'Transfer' : 'Emergency';
+
   return (
     <div className="max-w-2xl mx-auto p-0">
-      <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-0 flex items-start gap-3">
-        <AlertCircle className="text-red-600 flex-shrink-0 mt-0.5" size={20} />
+      <div className={`${banner.wrap} border rounded-xl p-4 mb-4 flex items-start gap-3`}>
+        <AlertCircle className={`${banner.icon} flex-shrink-0 mt-0.5`} size={20} />
         <div>
-          <h3 className="font-semibold text-red-900">Emergency Ambulance Booking</h3>
-          <p className="text-sm text-red-700 mt-0">
-            For life-threatening emergencies, please call emergency services directly.
-          </p>
+          <h3 className="font-semibold text-gray-900">{banner.title}</h3>
+          <p className="text-sm text-gray-700 mt-1">{banner.body}</p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Emergency Type */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-0">
-            Service Type
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Service type
           </label>
-          <div className="grid grid-cols-3 gap-3">
-            {(['emergency', 'transfer', 'other'] as const).map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => setEmergencyType(type)}
-                className={`px-4 py-0 rounded-lg border-2 transition ${
-                  emergencyType === type
-                    ? 'border-orange-500 bg-orange-50 text-orange-700'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                {type.charAt(0).toUpperCase() + type.slice(1)}
-              </button>
-            ))}
-          </div>
+          {lockEmergencyType ? (
+            <p className="text-sm text-gray-800 font-medium rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+              {serviceTypeLabel(emergencyType)}
+            </p>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              {(['emergency', 'transfer', 'other'] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setEmergencyType(type)}
+                  className={`px-4 py-3 rounded-lg border-2 transition ${
+                    emergencyType === type
+                      ? 'border-orange-500 bg-orange-50 text-orange-700'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  {serviceTypeLabel(type)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Patient Details */}
@@ -418,7 +527,12 @@ export function AmbulanceBookingFlow({ vendorId, customerPhone, onSuccess, onCan
           )}
           <button
             type="submit"
-            disabled={processing || !selectedVehicle || !pickupAddress}
+            disabled={
+              processing ||
+              !selectedVehicle ||
+              !pickupAddress ||
+              (emergencyType === 'transfer' && !dropAddress.trim())
+            }
             className="flex-1 px-0 py-0 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
             {processing ? 'Booking...' : 'Book Ambulance'}

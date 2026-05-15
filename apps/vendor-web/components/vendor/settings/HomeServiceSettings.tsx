@@ -341,7 +341,7 @@ export function HomeServiceSettings({ vendorId, vendorData, onBack, onSave }: Ho
                   max={50}
                   value={config.serviceRadius}
                   onChange={(e) => setConfig(prev => ({ ...prev, serviceRadius: parseFloat(e.target.value) || 5 }))}
-                  className="w-24"
+                  className="h-9 min-w-[12rem] max-w-[14rem] shrink-0"
                 />
                 <span className="text-gray-600">kilometers</span>
               </div>

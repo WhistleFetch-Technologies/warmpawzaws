@@ -1,22 +1,96 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { MapPin, Calendar, Clock, User, Phone, Mail, Navigation, X, AlertTriangle, Wallet as WalletIcon, Video, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import {
+  getResolvedCustomerId,
+  isCustomerDatabaseUuid,
+  persistCustomerDatabaseId,
+} from '@/lib/customer-id-storage';
+import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+
+type AppointmentRefundEstimate = {
+  percentage: number;
+  amount: number;
+  platformFeeApplies: boolean;
+  source?: string;
+  eligible?: boolean;
+};
 
 interface AppointmentDetailsViewProps {
   appointmentId: string;
-  customerId: string;
+  /** Login phone — used to resolve DB customer UUID for API auth. */
+  phone: string;
   onBack: () => void;
   onReschedule?: (appointmentId: string) => void;
   onCancel?: (appointmentId: string) => void;
 }
 
+export function normalizeAppointmentDetailPayload(raw: Record<string, unknown> | null | undefined) {
+  if (!raw) return { appointment: null as any, vendor: null as any, staff: null as any, location: null as any };
+  const date = String(raw.appointment_date ?? raw.date ?? '');
+  let timeRaw = String(raw.appointment_time ?? raw.startTime ?? raw.start_time ?? '0:0');
+  if (timeRaw.length > 5 && timeRaw.includes('.')) timeRaw = timeRaw.split('.')[0] ?? timeRaw;
+  const serviceStyle = String(raw.service_style ?? raw.serviceStyle ?? '').toLowerCase() || 'at_center';
+
+  const appointment = {
+    ...raw,
+    date: date || raw.date,
+    startTime: timeRaw,
+    serviceName: raw.service_name ?? raw.serviceName,
+    serviceStyle,
+    duration: raw.duration,
+    status: String(raw.status ?? 'scheduled').toLowerCase(),
+    amount: raw.amount ?? raw.total_amount,
+    vendorId: raw.vendor_id ?? raw.vendorId,
+    vendorName: raw.vendor_name ?? raw.vendorName,
+    staffId: raw.staff_id ?? raw.staffId,
+    bookingId: raw.booking_id ?? raw.bookingId,
+  };
+
+  const vendorName = String(raw.vendor_name ?? '');
+  const vendorPhone = raw.vendor_phone != null ? String(raw.vendor_phone) : undefined;
+  const vendor =
+    vendorName || vendorPhone
+      ? { clinicName: vendorName, fullName: vendorName, phone: vendorPhone, email: undefined }
+      : null;
+
+  const addr = raw.vendor_address != null ? String(raw.vendor_address) : '';
+  const location =
+    addr || vendorName
+      ? { name: vendorName || 'Location', address: addr || vendorName, latitude: raw.latitude, longitude: raw.longitude }
+      : null;
+
+  return { appointment, vendor, staff: null, location };
+}
+
+async function resolveCustomerDatabaseIdForPhone(loginPhone: string): Promise<string | null> {
+  const cached = getResolvedCustomerId();
+  if (cached) return cached;
+  if (!loginPhone?.trim()) return null;
+  try {
+    const res = (await apiClient.get(
+      `/customer/profile?phone=${encodeURIComponent(loginPhone.trim())}`
+    )) as Record<string, unknown>;
+    const p = (res.profile ?? res) as Record<string, unknown>;
+    const id = p?.id ?? p?.customer_id;
+    if (typeof id === 'string' && isCustomerDatabaseUuid(id)) {
+      persistCustomerDatabaseId(id);
+      return id;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 export function AppointmentDetailsView({
   appointmentId,
-  customerId,
+  phone,
   onBack,
   onReschedule,
   onCancel
@@ -26,32 +100,102 @@ export function AppointmentDetailsView({
   const [vendor, setVendor] = useState<any>(null);
   const [staff, setStaff] = useState<any>(null);
   const [location, setLocation] = useState<any>(null);
+  const [customerDbId, setCustomerDbId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [refundMethod, setRefundMethod] = useState<'wallet' | 'original'>('wallet');
   const [cancelling, setCancelling] = useState(false);
+  const [estimatedRefund, setEstimatedRefund] = useState<AppointmentRefundEstimate | null>(null);
+  const [refundPreviewLoading, setRefundPreviewLoading] = useState(false);
 
-  useEffect(() => {
-    loadAppointmentDetails();
-  }, [appointmentId]);
-
-  const loadAppointmentDetails = async () => {
+  const loadAppointmentDetails = useCallback(async () => {
+    if (!appointmentId || appointmentId === 'undefined') return;
+    const id = appointmentId.trim();
+    if (!id) return;
     try {
       setLoading(true);
-      const data = await apiClient.get<{ appointment?: any; vendor?: any; staff?: any; location?: any }>(
-        `/appointment/${appointmentId}`
+      const cid = await resolveCustomerDatabaseIdForPhone(phone);
+      setCustomerDbId(cid);
+      if (!cid) {
+        setAppointment(null);
+        setVendor(null);
+        setStaff(null);
+        setLocation(null);
+        return;
+      }
+      const q = `customerId=${encodeURIComponent(cid)}`;
+      const data = await apiClient.get<{ appointment?: Record<string, unknown> }>(
+        `/appointment/${id}?${q}`
       );
-      setAppointment(data.appointment);
-      setVendor(data.vendor);
-      setStaff(data.staff);
-      setLocation(data.location);
+      const raw = data.appointment ?? (data as any).data?.appointment;
+      const normalized = normalizeAppointmentDetailPayload(
+        raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null
+      );
+      setAppointment(normalized.appointment);
+      setVendor(normalized.vendor);
+      setStaff(normalized.staff);
+      setLocation(normalized.location);
     } catch (error) {
       console.error('Error loading appointment:', error);
+      setAppointment(null);
     } finally {
       setLoading(false);
     }
+  }, [appointmentId, phone]);
+
+  useEffect(() => {
+    loadAppointmentDetails();
+  }, [loadAppointmentDetails]);
+
+  const loadRefundPreview = useCallback(async () => {
+    const id = appointmentId.trim();
+    if (!id) return;
+    setRefundPreviewLoading(true);
+    setEstimatedRefund(null);
+    try {
+      const ps = String(
+        appointment?.payment_status ?? appointment?.paymentStatus ?? ''
+      ).toLowerCase();
+      if (ps && !['paid', 'completed', 'pending_payment'].includes(ps)) {
+        setEstimatedRefund({ percentage: 0, amount: 0, platformFeeApplies: false });
+        return;
+      }
+      const result = (await apiClient.post('/customer/bookings/refund-preview', {
+        bookingId: id,
+      })) as Record<string, unknown>;
+      const payload = (result as any)?.data ?? result;
+      const refund = (payload as any)?.refund ?? payload;
+      if (refund && typeof refund.refundPercentage === 'number') {
+        setEstimatedRefund({
+          percentage: refund.refundPercentage,
+          amount: typeof refund.refundAmount === 'number' ? refund.refundAmount : 0,
+          platformFeeApplies:
+            refund.platformFeeApplies === true ||
+            (typeof refund.platformFeeNonRefundable === 'number' && refund.platformFeeNonRefundable > 0),
+          source: typeof refund.source === 'string' ? refund.source : undefined,
+          eligible: typeof refund.eligible === 'boolean' ? refund.eligible : undefined,
+        });
+      } else {
+        setEstimatedRefund({ percentage: 0, amount: 0, platformFeeApplies: false });
+      }
+    } catch {
+      setEstimatedRefund({ percentage: 0, amount: 0, platformFeeApplies: false });
+    } finally {
+      setRefundPreviewLoading(false);
+    }
+  }, [appointmentId, appointment?.payment_status, appointment?.paymentStatus]);
+
+  const openCancelAppointmentModal = () => {
+    setCancelReason('');
+    setEstimatedRefund(null);
+    setShowCancelModal(true);
+    void loadRefundPreview();
   };
+
+  if (!appointmentId || appointmentId === 'undefined' || !appointmentId.trim()) {
+    return null;
+  }
 
   const handleGetDirections = () => {
     if (location?.latitude && location?.longitude) {
@@ -71,21 +215,34 @@ export function AppointmentDetailsView({
       return;
     }
 
+    if (!customerDbId) {
+      alert('Unable to verify your account. Please try again.');
+      return;
+    }
+
     try {
       setCancelling(true);
       const data = await apiClient.post<{ success?: boolean }>(
-        `/appointment/${appointmentId}/cancel`,
+        `/appointment/${appointmentId.trim()}/cancel?customerId=${encodeURIComponent(customerDbId)}`,
         {
-          cancelledBy: 'customer',
           reason: cancelReason,
           refundMethod
         }
       );
 
       if (data.success !== false) {
-        const refundAmount = (data as any).refund?.amount || 0;
-        alert(`Appointment cancelled successfully! Refund of ₹${refundAmount} will be processed to your ${refundMethod === 'wallet' ? 'wallet' : 'original payment method'}.`);
+        const root = ((data as any)?.data ?? data) as Record<string, unknown>;
+        const refund = root?.refund as { amount?: number; message?: string } | undefined;
+        const refundAmount = typeof refund?.amount === 'number' ? refund.amount : 0;
+        const msg =
+          typeof refund?.message === 'string' && refund.message.trim()
+            ? refund.message.trim()
+            : refundAmount > 0
+              ? `Refund of ₹${refundAmount.toFixed(2)} will be processed to your ${refundMethod === 'wallet' ? 'wallet' : 'original payment method'}.`
+              : 'Appointment cancelled successfully.';
+        alert(`Appointment cancelled successfully! ${msg}`);
         setShowCancelModal(false);
+        setEstimatedRefund(null);
         loadAppointmentDetails(); // Refresh
         if (onCancel) onCancel(appointmentId);
       } else {
@@ -115,11 +272,20 @@ export function AppointmentDetailsView({
     return true;
   };
 
+  const isTeleActive =
+    appointment?.serviceStyle === 'tele' &&
+    (appointment?.status === 'confirmed' ||
+      appointment?.status === 'scheduled' ||
+      appointment?.status === 'in_progress');
+
   const formatDate = (date: string) => {
-    return new Date(date).toLocaleDateString('en-IN', { 
-      day: 'numeric', 
-      month: 'long', 
-      year: 'numeric' 
+    if (!date) return '—';
+    const d = new Date(date.includes('T') ? date : `${date}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return date;
+    return d.toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
     });
   };
 
@@ -133,10 +299,23 @@ export function AppointmentDetailsView({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[200px]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading appointment...</p>
+      <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        <ServiceDashboardHeader
+          serviceName="Appointment"
+          serviceSubtitle="Loading details…"
+          serviceIcon={Calendar}
+          stats={[
+            { value: '…', label: 'Date' },
+            { value: '…', label: 'Status' },
+          ]}
+          onBack={onBack}
+          showBackButton
+        />
+        <div className="flex items-center justify-center py-20">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-2 border-purple-200 border-t-purple-600 mx-auto mb-4" />
+            <p className="text-gray-600">Loading appointment…</p>
+          </div>
         </div>
       </div>
     );
@@ -144,20 +323,52 @@ export function AppointmentDetailsView({
 
   if (!appointment) {
     return (
-      <div className="flex items-center justify-center min-h-[200px]">
-        <div className="text-center">
-          <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <p className="text-gray-900">Appointment not found</p>
-          <Button onClick={onBack} className="mt-4">Go Back</Button>
+      <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        <ServiceDashboardHeader
+          serviceName="Appointment"
+          serviceSubtitle="Not available"
+          serviceIcon={Calendar}
+          stats={[
+            { value: '—', label: 'Date' },
+            { value: '—', label: 'Status' },
+          ]}
+          onBack={onBack}
+          showBackButton
+        />
+        <div className="flex items-center justify-center py-16 px-4">
+          <div className="text-center">
+            <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+            <p className="text-gray-900 font-medium">We could not load this appointment</p>
+            <p className="text-sm text-gray-500 mt-1">It may have been removed or you may need to sign in again.</p>
+            <Button onClick={onBack} className="mt-6 rounded-xl bg-[#FF8C42] hover:bg-[#e67d35]">
+              Go back
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
 
+  const statDate =
+    appointment.date &&
+    formatDate(typeof appointment.date === 'string' ? appointment.date : String(appointment.date));
+  const statStatus = (appointment.status || '').replace(/_/g, ' ') || '—';
+
   return (
     <>
-      {/* Header is provided by renderScreenWithLayout wrapper (StandardizedHeader) */}
-      
+      <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto pb-24">
+        <ServiceDashboardHeader
+          serviceName="Appointment"
+          serviceSubtitle={appointment.serviceName || 'Details'}
+          serviceIcon={Calendar}
+          stats={[
+            { value: statDate || '—', label: 'When' },
+            { value: statStatus, label: 'Status' },
+          ]}
+          onBack={onBack}
+          showBackButton
+        />
+
       <div className="p-4 space-y-4">
         {/* Date & Time */}
         <div className="bg-white rounded-xl p-4 shadow-sm">
@@ -184,7 +395,7 @@ export function AppointmentDetailsView({
         </div>
 
         {/* Service Details */}
-        <div className="bg-white rounded-xl p-4 shadow-sm">
+        <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
           <h3 className="text-gray-900 mb-3">Service Information</h3>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -293,17 +504,14 @@ export function AppointmentDetailsView({
         {appointment.status !== 'completed' && appointment.status !== 'cancelled' && (
           <div className="space-y-3">
             {/* ✅ FIX #3: Add video call button for tele consultations */}
-            {appointment.serviceStyle === 'tele' && (appointment.status === 'confirmed' || appointment.status === 'in_progress') && (
+            {isTeleActive && (
               <Button
                 onClick={() => {
                   // ✅ FIX: Use router.push with path format for CloudFront compatibility
-                  const queryParams = new URLSearchParams();
-                  if (customerId) {
-                    queryParams.set('customerId', customerId);
+                  if (customerDbId && isCustomerDatabaseUuid(customerDbId)) {
+                    persistCustomerDatabaseId(customerDbId);
                   }
-                  const queryString = queryParams.toString();
-                  const videoUrl = `/video/${appointmentId}${queryString ? `?${queryString}` : ''}`;
-                  router.push(videoUrl);
+                  router.push(`/video/${appointmentId}`);
                 }}
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white"
               >
@@ -323,7 +531,7 @@ export function AppointmentDetailsView({
             )}
             {canCancel() && (
               <Button
-                onClick={() => setShowCancelModal(true)}
+                onClick={openCancelAppointmentModal}
                 variant="outline"
                 className="w-full border-red-500 text-red-500 hover:bg-red-50"
               >
@@ -335,7 +543,7 @@ export function AppointmentDetailsView({
         )}
         
         {/* ✅ FIX #2: Add chat button for tele consultations during confirmed/in_progress */}
-        {appointment.serviceStyle === 'tele' && (appointment.status === 'confirmed' || appointment.status === 'in_progress') && (
+        {isTeleActive && (
           <Button
             onClick={() => {
               // Open chat - can navigate to booking details with chat mode
@@ -383,6 +591,7 @@ export function AppointmentDetailsView({
           </div>
         )}
       </div>
+      </div>
 
       {/* Cancel Modal */}
       {showCancelModal && (
@@ -390,20 +599,56 @@ export function AppointmentDetailsView({
           <div className="bg-white rounded-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl text-gray-900">Cancel Appointment</h2>
-              <button onClick={() => setShowCancelModal(false)} className="text-gray-400 hover:text-gray-600">
+              <button
+                onClick={() => {
+                  setShowCancelModal(false);
+                  setEstimatedRefund(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
                 <X className="w-6 h-6" />
               </button>
             </div>
 
             <div className="space-y-4">
-              {/* Warning */}
+              {refundPreviewLoading && !estimatedRefund && (
+                <p className="text-sm text-gray-600">Loading refund estimate…</p>
+              )}
+
+              {estimatedRefund && (
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                  <h4 className="font-medium text-blue-800 mb-2">Refund Information</h4>
+                  <p className="text-sm text-blue-700">
+                    Refund as per policy{' '}
+                    <span className="font-semibold">{estimatedRefund.percentage}%</span>
+                    {estimatedRefund.source ? (
+                      <span className="block text-xs text-blue-600 mt-1">
+                        Source:{' '}
+                        {estimatedRefund.source === 'vendor_refund_tiers'
+                          ? 'vendor refund tiers'
+                          : estimatedRefund.source}
+                      </span>
+                    ) : null}
+                  </p>
+                  {estimatedRefund.platformFeeApplies && (
+                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
+                      Platform fee is not refundable.
+                    </p>
+                  )}
+                  <p className="text-lg font-bold text-blue-800 mt-1">
+                    Estimated Refund: {formatPriceWithSymbol(estimatedRefund.amount)}
+                  </p>
+                </div>
+              )}
+
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
                 <p className="text-sm text-yellow-900">
-                  ⚠️ Cancellation policies will apply based on your appointment timing
+                  Cancellation and fees follow the policy above and your payment method choice.
                 </p>
               </div>
 
-              {/* Refund Method Selection */}
+              {/* Refund Method Selection — same behaviour as My Bookings (only when a monetary refund applies) */}
+              {estimatedRefund && estimatedRefund.amount > 0 && (
               <div>
                 <label className="block text-sm text-gray-700 mb-2">
                   Select Refund Method
@@ -424,7 +669,7 @@ export function AppointmentDetailsView({
                           Refund to Wallet
                         </p>
                         <p className="text-xs text-gray-600">
-                          ✅ Get 100% refund instantly (No cancellation fee)
+                          Instant credit to your wallet (per cancellation policy)
                         </p>
                       </div>
                     </div>
@@ -445,13 +690,14 @@ export function AppointmentDetailsView({
                           Refund to Original Payment
                         </p>
                         <p className="text-xs text-gray-600">
-                          ⚠️ Cancellation fees may apply (5-7 business days)
+                          Refund to original payment method (typically 5–7 business days; fees per policy)
                         </p>
                       </div>
                     </div>
                   </button>
                 </div>
               </div>
+              )}
 
               {/* Cancellation Reason */}
               <div>
@@ -470,7 +716,10 @@ export function AppointmentDetailsView({
               {/* Actions */}
               <div className="flex gap-3">
                 <Button
-                  onClick={() => setShowCancelModal(false)}
+                  onClick={() => {
+                    setShowCancelModal(false);
+                    setEstimatedRefund(null);
+                  }}
                   variant="outline"
                   className="flex-1"
                   disabled={cancelling}

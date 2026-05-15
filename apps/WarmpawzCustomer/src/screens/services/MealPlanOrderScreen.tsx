@@ -11,14 +11,21 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  SafeAreaView,
   ActivityIndicator,
   Alert,
   TextInput,
 } from 'react-native';
+import { ScreenShell } from '../../components/layout/ScreenShell';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
 import { CustomerApi, PaymentApi } from '../../services/api';
 import RazorpayCheckout from 'react-native-razorpay';
+import {
+  applyWarmpawzCustomerToRazorpayOptions,
+  profileEmailAndName,
+} from '../../utils/razorpay-checkout-options';
+
+/** In sync with customer web `MEAL_PLANS_COMING_SOON` — re-enable when meal subscriptions launch. */
+const MEAL_PLANS_COMING_SOON = true;
 
 interface MealPlanOrderScreenProps {
   vendorId: string;
@@ -76,6 +83,10 @@ export function MealPlanOrderScreen({
   const [quantity, setQuantity] = useState(1);
 
   useEffect(() => {
+    if (MEAL_PLANS_COMING_SOON) {
+      setLoading(false);
+      return;
+    }
     loadData();
   }, [vendorId, phone, customerId]);
 
@@ -238,8 +249,15 @@ export function MealPlanOrderScreen({
             throw new Error('Failed to create payment order');
           }
 
-          // Open Razorpay checkout
-          const options = {
+          let profile: any = null;
+          try {
+            profile = await CustomerApi.getCustomerByPhone(phone);
+          } catch {
+            /* non-fatal */
+          }
+          const { email: profileEmail, name: profileName } = profileEmailAndName(profile);
+
+          const baseOptions = {
             description: `Meal Plan Order - ${plan?.name}`,
             image: 'https://your-logo-url.com/logo.png',
             currency: 'INR',
@@ -247,13 +265,16 @@ export function MealPlanOrderScreen({
             amount: totalAmount * 100,
             name: 'Warmpawz',
             order_id: orderRes.order_id,
-            prefill: {
-              contact: phone,
-            },
             theme: {
               color: '#FF8C42',
             },
           };
+
+          const options = applyWarmpawzCustomerToRazorpayOptions(baseOptions, {
+            phone,
+            email: profileEmail,
+            name: profileName,
+          });
 
           const razorpayResponse = await RazorpayCheckout.open(options);
 
@@ -346,21 +367,42 @@ export function MealPlanOrderScreen({
     }
   };
 
+  if (MEAL_PLANS_COMING_SOON) {
+    return (
+      <ScreenShell style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={onBack} style={styles.backButton}>
+            <Text style={styles.backButtonText}>← Back</Text>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Meal plans</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.comingSoonContainer}>
+          <Text style={styles.comingSoonBadge}>COMING SOON</Text>
+          <Text style={styles.comingSoonTitle}>Not available yet</Text>
+          <Text style={styles.comingSoonMessage}>
+            Monthly meal subscriptions are not available in the app yet. Diet consultations are unchanged.
+          </Text>
+        </View>
+      </ScreenShell>
+    );
+  }
+
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <ScreenShell style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading meal plans...</Text>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   const selectedPlanData = mealPlans.find(p => p.id === selectedPlan);
 
   return (
-    <SafeAreaView style={styles.container}>
+    <ScreenShell style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← Back</Text>
@@ -574,7 +616,7 @@ export function MealPlanOrderScreen({
           )}
         </TouchableOpacity>
       </View>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
@@ -887,6 +929,34 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 18,
     fontWeight: 'bold',
+  },
+  comingSoonContainer: {
+    padding: spacing.lg,
+    alignItems: 'center',
+  },
+  comingSoonBadge: {
+    overflow: 'hidden',
+    backgroundColor: '#FEF3C7',
+    color: '#92400E',
+    fontSize: 10,
+    fontWeight: '800',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    marginBottom: spacing.md,
+  },
+  comingSoonTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  comingSoonMessage: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 });
 

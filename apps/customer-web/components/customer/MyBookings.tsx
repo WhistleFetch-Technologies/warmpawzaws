@@ -10,14 +10,45 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { copyTextToClipboard } from '@/lib/shareUtils';
-import { getServiceStyleDisplayLabel, formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import {
+  getServiceStyleDisplayLabel,
+  formatPriceWithSymbol,
+  customerBookingStatusShowsCheckInOtp,
+} from '@/lib/booking-display-utils';
+import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 
 import { useRouter } from 'next/navigation';
 import { BookingDetailModal } from './BookingDetailModal';
 import { RateServiceModal } from './RateServiceModal';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { UtensilsCrossed } from 'lucide-react';
+
+/** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
+export const MEAL_PLAN_ORDERS_ENABLED = false;
+/** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
+export const PHARMACY_ORDERS_ENABLED = false;
+
+const ORDERS_MEAL_PLANS_ROUTE = '/orders/meal-plans';
+const ORDERS_PHARMACY_ROUTE = '/orders/pharmacy';
+
+function mealPlanOrdersUrl(phone: string) {
+  return phone ? `${ORDERS_MEAL_PLANS_ROUTE}?phone=${encodeURIComponent(phone)}` : ORDERS_MEAL_PLANS_ROUTE;
+}
+
+function pharmacyOrdersUrl(phone: string) {
+  return phone ? `${ORDERS_PHARMACY_ROUTE}?phone=${encodeURIComponent(phone)}` : ORDERS_PHARMACY_ROUTE;
+}
+
+function isTeleBookingRowAlt(b: { serviceStyle?: string; serviceType?: string; serviceName?: string }) {
+  return (
+    ['tele', 'video_consultation', 'video', 'online'].includes(b.serviceStyle || '') ||
+    ['tele', 'video_consultation', 'video', 'online'].includes(b.serviceType || '') ||
+    (b.serviceName || '').toLowerCase().includes('video') ||
+    (b.serviceName || '').toLowerCase().includes('tele')
+  );
+}
 
 interface BookingOccurrence {
   occurrenceId: string;
@@ -52,10 +83,14 @@ interface Booking {
   status: 'pending' | 'confirmed' | 'in_progress' | 'arrived' | 'completed' | 'cancelled';
   completionOTP?: string;
   isPackage: boolean;
+  packagePurchaseId?: string;
   packageDetails?: {
-    totalSessions: number;
-    completedSessions: number;
-    frequency: string;
+    totalSessions?: number;
+    completedSessions?: number;
+    frequency?: string;
+    unlimited?: boolean;
+    remainingSessions?: number | string;
+    packagePurchaseId?: string;
   };
   occurrences?: BookingOccurrence[];
   createdAt: string;
@@ -69,6 +104,7 @@ interface Booking {
   otpCode?: string;
   otpVerified?: boolean;
   paymentStatus?: string;
+  completedAt?: string;
 }
 
 interface MyBookingsProps {
@@ -76,17 +112,32 @@ interface MyBookingsProps {
   onBack: () => void;
   initialBookingId?: string; // To open a specific booking
   onReorderMedicine?: (medications: any[]) => void;
-  onNavigate?: (screen: string, data?: { bookingId?: string }) => void; // For diagnostics-reports, sample-collection-tracking, etc.
+  onNavigate?: (
+    screen: string,
+    data?: { bookingId?: string; packagePurchaseId?: string; meetingId?: string }
+  ) => void;
 }
 
 export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
   const router = useRouter();
+
+  const navigateToMealPlanOrders = () => {
+    if (!MEAL_PLAN_ORDERS_ENABLED) return;
+    router.push(mealPlanOrdersUrl(phone));
+  };
+
+  const navigateToPharmacyOrders = () => {
+    if (!PHARMACY_ORDERS_ENABLED) return;
+    router.push(pharmacyOrdersUrl(phone));
+  };
+
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [activeFilter, setActiveFilter] = useState<'all' | 'upcoming' | 'completed'>('all');
   const [showOTP, setShowOTP] = useState<string | null>(null);
   const [copiedOTP, setCopiedOTP] = useState<string | null>(null);
+  const [showCompletionOtpFor, setShowCompletionOtpFor] = useState<string | null>(null);
   
   // ✅ New state for cancel/reschedule modals
   const [showCancelModal, setShowCancelModal] = useState<string | null>(null);
@@ -94,7 +145,11 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   const [cancellationReason, setCancellationReason] = useState('');
   const [refundMethod, setRefundMethod] = useState<'wallet' | 'original'>('wallet');
   const [processing, setProcessing] = useState(false);
-  const [estimatedRefund, setEstimatedRefund] = useState<{ percentage: number; amount: number } | null>(null);
+  const [estimatedRefund, setEstimatedRefund] = useState<{
+    percentage: number;
+    amount: number;
+    platformFeeApplies?: boolean;
+  } | null>(null);
   // ✅ FIX: Add state for review modal
   const [showReviewModal, setShowReviewModal] = useState<{ bookingId: string; vendorId: string; serviceName: string } | null>(null);
   
@@ -142,7 +197,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
       } else {
         rawBookings = result.bookings || result.data?.bookings || [];
       }
-      
+
       // ✅ DEBUG: Log diagnostic bookings to see what data we're getting
       console.log('[MyBookings] Loaded bookings:', rawBookings.length);
       const diagnosticBookings = rawBookings.filter((b: any) => {
@@ -249,6 +304,11 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         status: b.status || 'pending',
         completionOTP: b.completion_otp || b.completionOTP,
         isPackage: b.is_package || b.isPackage || false,
+        packagePurchaseId:
+          b.package_purchase_id ||
+          b.packagePurchaseId ||
+          b.package_details?.packagePurchaseId ||
+          b.packageDetails?.packagePurchaseId,
         packageDetails: b.package_details || b.packageDetails,
         occurrences: b.occurrences,
         createdAt: b.created_at || b.createdAt,
@@ -262,6 +322,12 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         otpCode: b.otp_code || b.otpCode,
         otpVerified: b.otp_verified || b.otpVerified,
         paymentStatus: b.payment_status || b.paymentStatus,
+        completedAt:
+          b.completed_at ||
+          b.completedAt ||
+          b.video_call_ended_at ||
+          b.videoCallEndedAt ||
+          '',
         };
       });
       
@@ -284,7 +350,9 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   // ✅ Load refund preview based on actual backend policy (refund tiers / rules)
   const loadRefundPreview = async (booking: Booking) => {
     try {
-      if (booking.paymentStatus !== 'paid') {
+      const ps = String(booking.paymentStatus || '').toLowerCase();
+      // Preview uses ledger + policy; allow any paid-like state (backend also treats wallet debits as paid for cancel).
+      if (ps && !['paid', 'completed', 'pending_payment'].includes(ps)) {
         setEstimatedRefund({ percentage: 0, amount: 0 });
         return;
       }
@@ -295,6 +363,9 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         setEstimatedRefund({
           percentage: refund.refundPercentage,
           amount: typeof refund.refundAmount === 'number' ? refund.refundAmount : 0,
+          platformFeeApplies:
+            refund.platformFeeApplies === true ||
+            (typeof refund.platformFeeNonRefundable === 'number' && refund.platformFeeNonRefundable > 0),
         });
       } else {
         setEstimatedRefund({ percentage: 0, amount: 0 });
@@ -319,18 +390,25 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         refundMethod: refundMethod,
       }) as any;
 
-      const payload = result.data ?? result;
+      const payload = getBookingResponsePayload(result);
       if (result.success) {
-        toast.success('Booking cancelled successfully');
-        const refund = payload.refund ?? result.refund;
-        if (refund && typeof refund.amount === 'number') {
-          toast.success(`Refund of ₹${refund.amount} will be credited to ${refundMethod === 'wallet' ? 'your wallet' : 'original payment method'}`);
+        toast.success(pickBookingApiMessage(result, 'Booking cancelled successfully'));
+        const refund = (payload.refund ?? (result as any).refund) as Record<string, unknown> | null | undefined;
+        if (refund && typeof refund.message === 'string' && refund.message.trim()) {
+          toast.info(refund.message.trim());
+        } else if (refund && typeof refund.amount === 'number' && refund.amount > 0) {
+          toast.info(
+            `Refund of ₹${refund.amount} will be credited to ${refundMethod === 'wallet' ? 'your wallet' : 'original payment method'}`
+          );
         }
         setShowCancelModal(null);
         setCancellationReason('');
         loadBookings(); // Refresh list
       } else {
-        toast.error(result.error || 'Failed to cancel booking');
+        const err = (result as any).error;
+        const errText =
+          typeof err === 'string' ? err : err && typeof err === 'object' && typeof err.message === 'string' ? err.message : null;
+        toast.error(errText || 'Failed to cancel booking');
       }
     } catch (error: any) {
       console.error('Cancel booking error:', error);
@@ -415,7 +493,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-[430px] mx-auto">
+    <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
       <ServiceDashboardHeader
         serviceName="My Bookings"
         serviceSubtitle="View and manage your appointments"
@@ -425,19 +503,85 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        bottomEdge="sheet"
+        sheetToneClass="bg-gray-50"
       />
-      
-      <div className="max-w-[430px] mx-auto">
-        {/* Meal Plan Orders - Access meal tracker at will (OBJECTIVE 1) */}
+
+      <div className="-mt-1 max-w-customer mx-auto">
+        {/* Meal Plan Orders; navigation gated by MEAL_PLAN_ORDERS_ENABLED (mirrors booking/MyBookings.tsx) */}
         <div className="px-4 py-3 bg-white border-b border-gray-100">
           <button
-            onClick={() => router.push(phone ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}` : '/orders/meal-plans')}
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 font-medium hover:bg-emerald-100 transition-colors"
+            type="button"
+            disabled={!MEAL_PLAN_ORDERS_ENABLED}
+            onClick={navigateToMealPlanOrders}
+            aria-label={
+              MEAL_PLAN_ORDERS_ENABLED
+                ? 'Open meal plan orders and tracking'
+                : 'Meal plan orders and tracking — coming soon'
+            }
+            className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium border transition-colors ${
+              MEAL_PLAN_ORDERS_ENABLED
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                : 'bg-emerald-50/55 border-emerald-200/50 text-emerald-700/65 cursor-not-allowed hover:bg-emerald-50/55'
+            }`}
           >
-            <UtensilsCrossed className="w-5 h-5" />
-            Meal Plan Orders & Tracking
+            <UtensilsCrossed className={`w-5 h-5 shrink-0 ${!MEAL_PLAN_ORDERS_ENABLED ? 'text-emerald-600/55' : ''}`} />
+            <span className="inline-flex items-center justify-center gap-2 flex-wrap">
+              Meal Plan Orders & Tracking
+              {!MEAL_PLAN_ORDERS_ENABLED && (
+                <span className="rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white shadow-sm">
+                  Soon
+                </span>
+              )}
+            </span>
           </button>
-          <p className="text-xs text-gray-500 mt-1.5 text-center">Track your meal plan deliveries and access order status</p>
+          <p
+            className={`text-xs mt-1.5 text-center ${
+              MEAL_PLAN_ORDERS_ENABLED ? 'text-gray-500' : 'text-emerald-800/55'
+            }`}
+          >
+            {MEAL_PLAN_ORDERS_ENABLED
+              ? 'Track your meal plan deliveries and access order status'
+              : 'Coming soon — track meal plan deliveries and order status here.'}
+          </p>
+        </div>
+
+        {/* Pharmacy Orders; navigation gated by PHARMACY_ORDERS_ENABLED */}
+        <div className="px-4 py-3 bg-white border-b border-gray-100">
+          <button
+            type="button"
+            disabled={!PHARMACY_ORDERS_ENABLED}
+            onClick={navigateToPharmacyOrders}
+            aria-label={
+              PHARMACY_ORDERS_ENABLED
+                ? 'Open pharmacy orders and tracking'
+                : 'Pharmacy orders and tracking — coming soon'
+            }
+            className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium border transition-colors ${
+              PHARMACY_ORDERS_ENABLED
+                ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
+                : 'bg-blue-50/55 border-blue-200/50 text-blue-700/65 cursor-not-allowed hover:bg-blue-50/55'
+            }`}
+          >
+            <Package className={`w-5 h-5 shrink-0 ${!PHARMACY_ORDERS_ENABLED ? 'text-blue-600/55' : ''}`} />
+            <span className="inline-flex items-center justify-center gap-2 flex-wrap">
+              Pharmacy Orders & Tracking
+              {!PHARMACY_ORDERS_ENABLED && (
+                <span className="rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white shadow-sm">
+                  Soon
+                </span>
+              )}
+            </span>
+          </button>
+          <p
+            className={`text-xs mt-1.5 text-center ${
+              PHARMACY_ORDERS_ENABLED ? 'text-gray-500' : 'text-blue-800/55'
+            }`}
+          >
+            {PHARMACY_ORDERS_ENABLED
+              ? 'Track your pharmacy orders and access order status'
+              : 'Coming soon — pharmacy order tracking will be available here.'}
+          </p>
         </div>
 
         {/* Filter Tabs */}
@@ -463,7 +607,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
       </div>
 
       {/* Bookings List */}
-      <div className="max-w-[430px] mx-auto p-4 space-y-3 pb-20">
+      <div className="max-w-customer mx-auto p-4 space-y-3 pb-20">
         {loading ? (
           <div className="flex justify-center items-center py-20">
             <RefreshCw className="w-8 h-8 text-[#FF8C42] animate-spin" />
@@ -530,7 +674,13 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
               <div className="space-y-2 text-sm text-gray-600">
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4" />
-                  <span>{new Date(booking.bookingDate).toLocaleDateString()} at {booking.bookingTime}</span>
+                  <span>
+                    {booking.status === 'completed' &&
+                    isTeleBookingRowAlt(booking) &&
+                    booking.completedAt
+                      ? `${new Date(booking.bookingDate).toLocaleDateString()} · Completed ${new Date(booking.completedAt).toLocaleString()}`
+                      : `${new Date(booking.bookingDate).toLocaleDateString()} at ${booking.bookingTime}`}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <MapPin className="w-4 h-4" />
@@ -668,8 +818,8 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
 
               {/* ✅ OTP Display for confirmed bookings (includes otpCode, completionOTP, startOTP) */}
               {/* Show OTP for confirmed bookings with OTP, regardless of payment status (handles COD) */}
-              {(booking.otpCode || booking.completionOTP || booking.startOTP) && 
-               (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'arrived') && 
+              {(booking.otpCode || booking.completionOTP || booking.startOTP) &&
+               customerBookingStatusShowsCheckInOtp(booking.status) &&
                !booking.otpVerified && (
                 <div className="mt-3 pt-3 border-t border-gray-200">
                   <div className="flex items-center justify-between bg-orange-50 rounded-lg p-3">
@@ -729,25 +879,89 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                 </div>
               )}
 
-              {booking.isPackage && booking.packageDetails && (
-                <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Package className="w-4 h-4 text-purple-600" />
+              {booking.otpVerified &&
+                booking.status === 'in_progress' &&
+                (booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home') &&
+                (booking.completionOTP || booking.otpCode) && (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/90 p-3" onClick={(e) => e.stopPropagation()}>
+                    <div className="mb-2 flex items-center gap-2">
+                      <Key className="h-4 w-4 text-amber-800" />
+                      <span className="text-sm font-semibold text-amber-900">End-of-service OTP</span>
+                    </div>
+                    <p className="mb-2 text-xs text-amber-900/90">
+                      When the walk or visit is finished, share this code with your provider so they can complete the booking.
+                    </p>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-mono text-lg font-bold tracking-wider text-amber-950">
+                        {showCompletionOtpFor === booking.bookingId
+                          ? String(booking.completionOTP || booking.otpCode)
+                          : '••••••'}
+                      </span>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowCompletionOtpFor(
+                              showCompletionOtpFor === booking.bookingId ? null : booking.bookingId
+                            );
+                          }}
+                          className="rounded p-1.5 hover:bg-amber-100"
+                          aria-label={showCompletionOtpFor === booking.bookingId ? 'Hide OTP' : 'Show OTP'}
+                        >
+                          {showCompletionOtpFor === booking.bookingId ? (
+                            <EyeOff className="h-4 w-4 text-amber-800" />
+                          ) : (
+                            <Eye className="h-4 w-4 text-amber-800" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyOTP(String(booking.completionOTP || booking.otpCode), `${booking.bookingId}-end`);
+                          }}
+                          className="rounded p-1.5 hover:bg-amber-100"
+                          aria-label="Copy end OTP"
+                        >
+                          {copiedOTP === `${booking.bookingId}-end` ? (
+                            <Check className="h-4 w-4 text-green-600" />
+                          ) : (
+                            <Copy className="h-4 w-4 text-amber-800" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              {booking.isPackage && (booking.packageDetails || booking.packagePurchaseId) && (
+                <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm min-w-0">
+                    <Package className="w-4 h-4 shrink-0 text-purple-600" />
                     <span className="text-purple-600">
-                      {booking.packageDetails.completedSessions}/{booking.packageDetails.totalSessions} sessions completed
+                      {booking.packageDetails
+                        ? booking.packageDetails.unlimited
+                          ? 'Unlimited package'
+                          : `${booking.packageDetails.completedSessions ?? 0}/${booking.packageDetails.totalSessions ?? '—'} sessions completed`
+                        : 'Package session'}
                     </span>
                   </div>
-                  {/* ✅ View Package button to track multi-visit packages */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      // Navigate to package tracking - could use a callback prop or router
-                      window.location.href = `/packages/${booking.bookingId}`;
-                    }}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 font-medium"
-                  >
-                    Track Package
-                  </button>
+                  {(booking.packagePurchaseId || booking.packageDetails?.packagePurchaseId) && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const pid =
+                          booking.packagePurchaseId || booking.packageDetails?.packagePurchaseId;
+                        if (!pid) return;
+                        router.push('/my-packages');
+                      }}
+                      className="shrink-0 text-xs px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 hover:bg-purple-200 font-medium"
+                    >
+                      Track package
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -813,6 +1027,11 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                   Based on our refund policy, you will receive{' '}
                   <span className="font-semibold">{estimatedRefund.percentage}%</span> refund.
                 </p>
+                {estimatedRefund.platformFeeApplies && (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
+                    Platform fee is not refundable.
+                  </p>
+                )}
                 <p className="text-lg font-bold text-blue-800 mt-1">
                   Estimated Refund: {formatPriceWithSymbol(estimatedRefund.amount)}
                 </p>
@@ -956,7 +1175,7 @@ function RescheduleModal({
       const date = new Date(today);
       date.setDate(today.getDate() + i);
       dates.push({
-        date: date.toISOString().split('T')[0],
+        date: formatLocalDateYYYYMMDD(date),
         label: date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
       });
     }
@@ -976,7 +1195,7 @@ function RescheduleModal({
     setLoading(true);
     try {
       const result = await apiClient.get(
-        `/customer/vendor/${booking.vendorId}/available-slots?date=${selectedDate}&serviceStyle=${booking.serviceStyle || 'at_center'}`
+        `/customer/vendor/${booking.vendorId}/available-slots?date=${encodeURIComponent(selectedDate)}&serviceStyle=${encodeURIComponent(booking.serviceStyle || 'at_center')}`
       ) as any;
       setAvailableSlots(result.slots || []);
     } catch (error) {
@@ -1001,9 +1220,13 @@ function RescheduleModal({
       }) as any;
 
       if (result.success) {
+        toast.success(pickBookingApiMessage(result, 'Booking rescheduled successfully'));
         onRescheduled();
       } else {
-        toast.error(result.error || 'Failed to reschedule');
+        const err = (result as any).error;
+        const errText =
+          typeof err === 'string' ? err : err && typeof err === 'object' && typeof err.message === 'string' ? err.message : null;
+        toast.error(errText || 'Failed to reschedule');
       }
     } catch (error: any) {
       console.error('Reschedule error:', error);
@@ -1032,7 +1255,11 @@ function RescheduleModal({
             <p className="text-sm text-gray-600">Current Appointment</p>
             <p className="font-medium">{booking.serviceName}</p>
             <p className="text-sm text-gray-700">
-              {new Date(booking.bookingDate).toLocaleDateString()} at {booking.bookingTime}
+              {booking.status === 'completed' &&
+              isTeleBookingRowAlt(booking) &&
+              booking.completedAt
+                ? `${new Date(booking.bookingDate).toLocaleDateString()} · Completed ${new Date(booking.completedAt).toLocaleString()}`
+                : `${new Date(booking.bookingDate).toLocaleDateString()} at ${booking.bookingTime}`}
             </p>
           </div>
 

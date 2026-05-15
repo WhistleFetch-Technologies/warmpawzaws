@@ -36,7 +36,7 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
         }
         
         const data = await apiClient.get<{ notifications?: any[] }>(
-          `/customer/notifications/${cleanPhone}?limit=10`
+          `/customer/notifications?phone=${encodeURIComponent(cleanPhone)}&limit=10`
         );
         
         const notifications = data.notifications || [];

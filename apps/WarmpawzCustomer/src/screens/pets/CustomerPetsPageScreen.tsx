@@ -11,12 +11,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   FlatList,
-  SafeAreaView,
   ActivityIndicator,
   Image,
   RefreshControl,
 } from 'react-native';
+import { OrangeBrandedScreenLayout } from '../../components/layout/OrangeBrandedScreenLayout';
 import { colors, spacing, borderRadius, typography } from '../../theme/colors';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CustomerApi } from '../../services/api';
 
 interface CustomerPetsPageScreenProps {
@@ -43,6 +44,7 @@ export function CustomerPetsPageScreen({
   onNavigate,
   onAddPet,
 }: CustomerPetsPageScreenProps) {
+  const insets = useSafeAreaInsets();
   const [pets, setPets] = useState<Pet[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -150,33 +152,31 @@ export function CustomerPetsPageScreen({
     </TouchableOpacity>
   );
 
+  const listPadBottom = Math.max(insets.bottom, spacing.xl);
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backButton}>
-            <Text style={styles.backButtonText}>← Back</Text>
-          </TouchableOpacity>
-        )}
-        <Text style={styles.title}>My Pets</Text>
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={handleAddPet}
-        >
+    <OrangeBrandedScreenLayout
+      title="My Pets"
+      onBack={onBack}
+      bodyBackgroundColor={colors.white}
+      padBodyBottomInset={false}
+      headerRight={
+        <TouchableOpacity style={styles.addButton} onPress={handleAddPet}>
           <Text style={styles.addButtonText}>+ Add</Text>
         </TouchableOpacity>
-      </View>
-
+      }
+    >
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
       ) : (
         <FlatList
+          style={styles.listFlex}
           data={pets}
           keyExtractor={(item) => item.id}
           renderItem={renderPetCard}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: listPadBottom }]}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
@@ -198,7 +198,7 @@ export function CustomerPetsPageScreen({
           }
         />
       )}
-    </SafeAreaView>
+    </OrangeBrandedScreenLayout>
   );
 }
 
@@ -207,26 +207,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.white,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-    backgroundColor: colors.primary,
-    borderBottomLeftRadius: borderRadius.lg,
-    borderBottomRightRadius: borderRadius.lg,
-  },
-  backButton: {
-    marginRight: spacing.md,
-  },
-  backButtonText: {
-    fontSize: typography.body,
-    color: colors.white,
-  },
-  title: {
-    fontSize: typography.h1,
-    fontWeight: 'bold',
-    color: colors.white,
+  listFlex: {
     flex: 1,
   },
   addButton: {

@@ -4,10 +4,11 @@
  * ============================================================================
  * 
  * Endpoints for fetching platform and convenience fee configurations.
- * Fees are stored in platform_settings table and can be configured per service style.
+ * GET /config/fees uses admin_settings (Admin → Finance) via utils/feeCalculator.
+ * POST /admin/config/fees still updates platform_settings (legacy admin JSON).
  * 
  * Endpoints:
- * - GET /config/fees - Get fee configuration
+ * - GET /config/fees - Calculated fees for checkout (public)
  * 
  * Date: 2026-01-27
  * ============================================================================
@@ -15,6 +16,7 @@
 
 import { Hono } from 'hono';
 import { query, select } from '../database/rds-connection';
+import { calculateFinalFees } from '../utils/feeCalculator';
 
 // Default fee configuration
 const DEFAULT_FEE_CONFIG = {
@@ -128,59 +130,30 @@ export function calculateFees(params: {
 export function registerFeeConfigEndpoints(app: Hono) {
   /**
    * GET /config/fees
-   * Get fee configuration for calculating platform and convenience fees
-   * 
-   * Query params:
-   * - amount: Transaction amount (required for fee calculation)
-   * - serviceStyle: Service style (at_home, at_center, tele, ecom, product)
-   * - type: Transaction type (booking or order)
+   * Query: amount, type (booking|order), serviceStyle, category (business service type)
    */
   app.get('/config/fees', async (c) => {
     try {
       const amount = parseFloat(c.req.query('amount') || '0');
       const serviceStyle = c.req.query('serviceStyle') || '';
       const type = (c.req.query('type') || 'booking') as 'booking' | 'order';
-      
-      // Try to fetch fee configuration from platform_settings
-      let feeConfig = { ...DEFAULT_FEE_CONFIG };
-      
-      try {
-        const settings = await select('platform_settings', { setting_key: 'platform:fees:config' });
-        if (settings.length > 0 && settings[0].setting_value) {
-          const storedConfig = settings[0].setting_value as any;
-          
-          // Merge stored config with defaults
-          feeConfig = {
-            ...DEFAULT_FEE_CONFIG,
-            ...storedConfig,
-            serviceStyleFees: {
-              ...DEFAULT_FEE_CONFIG.serviceStyleFees,
-              ...(storedConfig.serviceStyleFees || {}),
-            },
-          };
-        }
-      } catch (dbError) {
-        console.warn('[FEE-CONFIG] Could not fetch fee config from DB, using defaults:', dbError);
-        // Continue with default config
-      }
-      
-      // Calculate fees for the given amount
-      const fees = calculateFees({
+      const category =
+        c.req.query('category') || c.req.query('businessServiceType') || '';
+
+      const fees = await calculateFinalFees({
         amount,
-        serviceStyle,
         type,
-        config: feeConfig,
+        serviceStyle,
+        businessServiceType: category,
       });
-      
+
       return c.json({
         success: true,
-        ...fees,
-        config: {
-          platformFeePercentage: feeConfig.platformFeePercentage,
-          platformFeeMaxCap: feeConfig.platformFeeMaxCap,
-          convenienceFeeBase: feeConfig.convenienceFee,
-          serviceStyleFees: feeConfig.serviceStyleFees,
-        },
+        platformFee: fees.platformFee,
+        convenienceFee: fees.convenienceFee,
+        deliveryFee: fees.deliveryFee,
+        packagingFee: fees.packagingFee,
+        total: fees.total,
       });
     } catch (error: any) {
       console.error('[FEE-CONFIG] Error getting fee configuration:', error);

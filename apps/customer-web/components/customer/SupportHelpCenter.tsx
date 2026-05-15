@@ -1,13 +1,38 @@
 "use client";
 
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Search, HelpCircle, MessageCircle, Phone, Mail, FileText, ChevronRight, Send, Clock, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  Search,
+  HelpCircle,
+  MessageCircle,
+  Bot,
+  Mail,
+  FileText,
+  ChevronRight,
+  RefreshCw,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, supportCrmApi } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
+import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+
+const AIChatbotWidget = dynamic(
+  () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
+  { ssr: false }
+);
+import {
+  SupportTicketDetailView,
+  SupportTicketStatusBadge,
+  type SupportTicketDetailBundle,
+  type SupportTicketResponseRow,
+} from '@/components/customer/support';
 
 interface Ticket {
   id: string;
@@ -23,9 +48,21 @@ interface Ticket {
 interface SupportHelpCenterProps {
   phone?: string;
   onBack: () => void;
+  onCloseToHome?: () => void;
+  initialTab?: 'faq' | 'contact' | 'tickets';
+  /** In-app shell: route chatbot deep-links (services, support). Defaults to Next router for `/…` only. */
+  onChatbotNavigate?: (dest: string, data?: unknown) => void;
 }
 
-export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
+export function SupportHelpCenter({
+  phone,
+  onBack,
+  onCloseToHome,
+  initialTab,
+  onChatbotNavigate,
+}: SupportHelpCenterProps) {
+  const router = useRouter();
+  const [showAIChat, setShowAIChat] = useState(false);
   const [activeTab, setActiveTab] = useState<'faq' | 'contact' | 'tickets'>('faq');
   const [searchQuery, setSearchQuery] = useState('');
   const [showContactForm, setShowContactForm] = useState(false);
@@ -37,26 +74,46 @@ export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
   const [submitting, setSubmitting] = useState(false);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loadingTickets, setLoadingTickets] = useState(false);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+  const [ticketDetail, setTicketDetail] = useState<SupportTicketDetailBundle | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [replyText, setReplyText] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
 
-  // Load tickets when tab is active with auto-refresh
+  // Deep-link from home "Live chat" (sessionStorage or prop)
   useEffect(() => {
-    if (activeTab === 'tickets' && phone) {
-      loadTickets();
-      
-      // Auto-refresh tickets every 15 seconds to see agent replies
-      const refreshInterval = setInterval(() => {
-        loadTickets();
-      }, 15000);
-      
-      return () => clearInterval(refreshInterval);
+    if (initialTab === 'faq' || initialTab === 'contact' || initialTab === 'tickets') {
+      setActiveTab(initialTab);
+      try {
+        sessionStorage.removeItem(SUPPORT_INITIAL_TAB_KEY);
+      } catch {
+        /* ignore */
+      }
+      return;
     }
-  }, [activeTab, phone]);
+    if (typeof window === 'undefined') return;
+    try {
+      const stored = sessionStorage.getItem(SUPPORT_INITIAL_TAB_KEY);
+      if (stored === 'contact' || stored === 'tickets' || stored === 'faq') {
+        setActiveTab(stored);
+      }
+      sessionStorage.removeItem(SUPPORT_INITIAL_TAB_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, [initialTab]);
 
   const loadTickets = async () => {
     if (!phone) return;
     setLoadingTickets(true);
     try {
-      const response = await apiClient.get<any>(`/support/tickets?customerPhone=${encodeURIComponent(phone)}`);
+      const cid = getResolvedCustomerId() || undefined;
+      const response = (await supportCrmApi.getTickets({
+        customerId: cid,
+        customerPhone: phone,
+        limit: 50,
+        offset: 0,
+      })) as { success?: boolean; tickets?: Ticket[] };
       if (response.success) {
         setTickets(response.tickets || []);
       }
@@ -67,23 +124,63 @@ export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'open': return 'bg-yellow-100 text-yellow-700';
-      case 'in_progress': return 'bg-blue-100 text-blue-700';
-      case 'resolved': return 'bg-green-100 text-green-700';
-      case 'closed': return 'bg-gray-100 text-gray-600';
-      default: return 'bg-gray-100 text-gray-600';
+  const loadTicketDetail = useCallback(async (ticketId: string) => {
+    if (!ticketId.trim()) return;
+    setLoadingDetail(true);
+    try {
+      const res = (await supportCrmApi.getTicket(ticketId)) as {
+        success?: boolean;
+        ticket?: Record<string, unknown>;
+        responses?: SupportTicketResponseRow[];
+      };
+      if (res?.success && res.ticket) {
+        const raw = res.responses || [];
+        const visible = raw.filter((r) => !r.is_internal);
+        setTicketDetail({ ticket: res.ticket, responses: visible });
+      } else {
+        setTicketDetail(null);
+        toast.error('Could not load this ticket.');
+      }
+    } catch (error) {
+      console.error('Error loading ticket detail:', error);
+      toast.error('Could not load ticket.');
+      setTicketDetail(null);
+    } finally {
+      setLoadingDetail(false);
     }
-  };
+  }, []);
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'open': return <AlertCircle className="w-4 h-4" />;
-      case 'in_progress': return <Clock className="w-4 h-4" />;
-      case 'resolved': return <CheckCircle className="w-4 h-4" />;
-      case 'closed': return <CheckCircle className="w-4 h-4" />;
-      default: return <Clock className="w-4 h-4" />;
+  useEffect(() => {
+    if (activeTab !== 'tickets' || !selectedTicketId) {
+      return;
+    }
+    void loadTicketDetail(selectedTicketId);
+  }, [activeTab, selectedTicketId, loadTicketDetail]);
+
+  const refreshOpenTicket = useCallback(() => {
+    if (selectedTicketId) {
+      void loadTicketDetail(selectedTicketId);
+    }
+  }, [selectedTicketId, loadTicketDetail]);
+
+  const handleSendReply = async () => {
+    if (!selectedTicketId || !replyText.trim()) return;
+    setSendingReply(true);
+    try {
+      await supportCrmApi.respondToTicket(selectedTicketId, {
+        message: replyText.trim(),
+        responderId: getResolvedCustomerId() || undefined,
+        responderType: 'customer',
+      });
+      toast.success('Message sent');
+      setReplyText('');
+      await loadTicketDetail(selectedTicketId);
+      await loadTickets();
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to send';
+      toast.error(msg);
+    } finally {
+      setSendingReply(false);
     }
   };
 
@@ -160,6 +257,7 @@ export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
         setContactForm({ subject: '', message: '', category: 'general' });
         setShowContactForm(false);
         setActiveTab('tickets');
+        void loadTickets();
       }
     } catch (error: any) {
       console.error('Error creating support ticket:', error);
@@ -169,59 +267,88 @@ export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] text-white px-4 py-4 sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onBack}
-            className="rounded-full text-white hover:bg-white/20"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div className="flex-1">
-            <h1 className="text-xl font-bold">Help & Support</h1>
-            <p className="text-white/90 text-sm">We're here to help</p>
-          </div>
-        </div>
-      </div>
+  const openTickets = tickets.filter((t) => t.status === 'open' || t.status === 'in_progress').length;
 
-      {/* Tabs */}
-      <div className="bg-white border-b border-gray-200 sticky top-[72px] z-40">
-        <div className="flex">
-          <button
-            onClick={() => setActiveTab('faq')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'faq'
-                ? 'border-[#FF8C42] text-[#FF8C42]'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            FAQ
-          </button>
-          <button
-            onClick={() => setActiveTab('contact')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'contact'
-                ? 'border-[#FF8C42] text-[#FF8C42]'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            Contact
-          </button>
-          <button
-            onClick={() => setActiveTab('tickets')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'tickets'
-                ? 'border-[#FF8C42] text-[#FF8C42]'
-                : 'border-transparent text-gray-600 hover:text-gray-900'
-            }`}
-          >
-            My Tickets
-          </button>
+  const handleChatbotNavigate = useCallback(
+    (dest: string, data?: unknown) => {
+      const d = (dest || '').trim();
+      if (!d) return;
+      if (onChatbotNavigate) {
+        onChatbotNavigate(d, data);
+        return;
+      }
+      if (d.startsWith('/')) {
+        router.push(d);
+      }
+    },
+    [onChatbotNavigate, router]
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24 max-w-customer mx-auto">
+      {/* Single sticky chrome: header + tabs share one stack so tab offset never uses a magic pixel height. */}
+      <div className="sticky top-0 z-50 isolate bg-gray-50">
+        <ServiceDashboardHeader
+          className="z-50"
+          serviceName="Help & Support"
+          serviceSubtitle="We're here to help"
+          serviceIcon={HelpCircle}
+          iconColor="text-white"
+          stats={[
+            { value: String(faqCategories.length), label: 'Topics' },
+            { value: phone ? String(tickets.length) : '—', label: 'Tickets' },
+            { value: phone ? String(openTickets) : '—', label: 'Open' },
+          ]}
+          onCloseToHome={onCloseToHome}
+          onBack={onBack}
+          showBackButton={Boolean(onBack)}
+        />
+
+        {/* Tabs */}
+        <div className="bg-white border-b border-gray-200">
+          <div className="flex">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedTicketId(null);
+                setTicketDetail(null);
+                setActiveTab('faq');
+              }}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'faq'
+                  ? 'border-[#FF8C42] text-[#FF8C42]'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              FAQ
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedTicketId(null);
+                setTicketDetail(null);
+                setActiveTab('contact');
+              }}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'contact'
+                  ? 'border-[#FF8C42] text-[#FF8C42]'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Contact
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('tickets')}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'tickets'
+                  ? 'border-[#FF8C42] text-[#FF8C42]'
+                  : 'border-transparent text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              My Tickets
+            </button>
+          </div>
         </div>
       </div>
 
@@ -280,15 +407,6 @@ export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
                   <div className="space-y-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <Phone className="w-5 h-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Phone</p>
-                        <p className="text-sm text-gray-600">+91 1800-XXX-XXXX</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
                         <Mail className="w-5 h-5 text-blue-600" />
                       </div>
                       <div>
@@ -296,15 +414,19 @@ export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
                         <p className="text-sm text-gray-600">support@warmpawz.com</p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <MessageCircle className="w-5 h-5 text-blue-600" />
+                    <button
+                      type="button"
+                      onClick={() => setShowAIChat(true)}
+                      className="flex w-full items-center gap-3 rounded-lg p-1 -m-1 text-left hover:bg-blue-100/60 transition-colors"
+                    >
+                      <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
+                        <Bot className="w-5 h-5 text-blue-600" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-900">Live Chat</p>
-                        <p className="text-sm text-gray-600">Available 24/7</p>
+                        <p className="text-sm font-medium text-gray-900">Chat with us</p>
+                        <p className="text-sm text-gray-600">AI assistant · Available 24/7</p>
                       </div>
-                    </div>
+                    </button>
                   </div>
                 </Card>
 
@@ -326,12 +448,13 @@ export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
                       onChange={(e) => setContactForm({ ...contactForm, category: e.target.value })}
                       className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42]"
                     >
+                      {/* Values must match support_tickets.category CHECK in DB */}
                       <option value="general">General Inquiry</option>
-                      <option value="booking">Booking Issue</option>
-                      <option value="order">Order Issue</option>
-                      <option value="payment">Payment Issue</option>
+                      <option value="service">Booking / service issue</option>
+                      <option value="other">Order / other issue</option>
+                      <option value="billing">Payment or refund</option>
                       <option value="technical">Technical Support</option>
-                      <option value="refund">Refund Request</option>
+                      <option value="account">Account</option>
                     </select>
                   </div>
 
@@ -383,83 +506,119 @@ export function SupportHelpCenter({ phone, onBack }: SupportHelpCenterProps) {
 
         {activeTab === 'tickets' && (
           <div className="space-y-4">
-            {/* Refresh and Create buttons */}
-            <div className="flex gap-2">
-              <Button
-                onClick={loadTickets}
-                variant="outline"
-                size="sm"
-                disabled={loadingTickets}
-                className="flex items-center gap-2"
-              >
-                <RefreshCw className={`w-4 h-4 ${loadingTickets ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-              <Button
-                onClick={() => {
-                  setActiveTab('contact');
-                  setShowContactForm(true);
+            {selectedTicketId ? (
+              <SupportTicketDetailView
+                loadingInitial={loadingDetail && !ticketDetail}
+                detail={ticketDetail}
+                replyText={replyText}
+                onReplyTextChange={setReplyText}
+                sendingReply={sendingReply}
+                onSendReply={() => void handleSendReply()}
+                onMessagesRefresh={refreshOpenTicket}
+                onBack={() => {
+                  setSelectedTicketId(null);
+                  setTicketDetail(null);
+                  setReplyText('');
                 }}
-                size="sm"
-                className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
-              >
-                Create New Ticket
-              </Button>
-            </div>
+              />
+            ) : (
+              <>
+                {/* Refresh and Create buttons */}
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => void loadTickets()}
+                    variant="outline"
+                    size="sm"
+                    disabled={loadingTickets}
+                    className="flex items-center gap-2"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${loadingTickets ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setActiveTab('contact');
+                      setShowContactForm(true);
+                    }}
+                    size="sm"
+                    className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
+                  >
+                    Create New Ticket
+                  </Button>
+                </div>
 
-            {/* Loading state */}
-            {loadingTickets && (
-              <Card className="p-8 text-center">
-                <div className="w-8 h-8 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                <p className="text-gray-500">Loading your tickets...</p>
-              </Card>
-            )}
-
-            {/* Empty state */}
-            {!loadingTickets && tickets.length === 0 && (
-              <Card className="p-8 text-center">
-                <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500 mb-2">No support tickets yet</p>
-                <p className="text-sm text-gray-400">Create a ticket if you need help</p>
-              </Card>
-            )}
-
-            {/* Tickets list */}
-            {!loadingTickets && tickets.length > 0 && (
-              <div className="space-y-3">
-                {tickets.map((ticket) => (
-                  <Card key={ticket.id} className="p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${getStatusColor(ticket.status)}`}>
-                            {getStatusIcon(ticket.status)}
-                            {ticket.status.replace('_', ' ')}
-                          </span>
-                          {ticket.ticket_number && (
-                            <span className="text-xs text-gray-400">{ticket.ticket_number}</span>
-                          )}
-                        </div>
-                        <h4 className="font-medium text-gray-900 truncate">{ticket.subject}</h4>
-                        {ticket.message && (
-                          <p className="text-sm text-gray-500 line-clamp-2 mt-1">{ticket.message}</p>
-                        )}
-                        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                          <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
-                          {ticket.category && (
-                            <span className="capitalize">{ticket.category}</span>
-                          )}
-                        </div>
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-gray-300 flex-shrink-0" />
-                    </div>
+                {/* Loading state */}
+                {loadingTickets && (
+                  <Card className="p-8 text-center">
+                    <div className="w-8 h-8 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+                    <p className="text-gray-500">Loading your tickets...</p>
                   </Card>
-                ))}
-              </div>
+                )}
+
+                {/* Empty state */}
+                {!loadingTickets && tickets.length === 0 && (
+                  <Card className="p-8 text-center">
+                    <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 mb-2">No support tickets loaded</p>
+                    <p className="text-sm text-gray-400">Tap Refresh to load your tickets, or create a new one</p>
+                  </Card>
+                )}
+
+                {/* Tickets list */}
+                {!loadingTickets && tickets.length > 0 && (
+                  <div className="space-y-3">
+                    {tickets.map((ticket) => (
+                      <button
+                        key={ticket.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTicketId(ticket.id);
+                          setTicketDetail(null);
+                          setReplyText('');
+                        }}
+                        className="w-full text-left"
+                      >
+                        <Card className="p-4 transition-shadow hover:shadow-md cursor-pointer active:scale-[0.99]">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <SupportTicketStatusBadge status={ticket.status} />
+                                {ticket.ticket_number && (
+                                  <span className="text-xs text-gray-400">{ticket.ticket_number}</span>
+                                )}
+                              </div>
+                              <h4 className="font-medium text-gray-900 truncate">{ticket.subject}</h4>
+                              {ticket.message && (
+                                <p className="text-sm text-gray-500 line-clamp-2 mt-1">{ticket.message}</p>
+                              )}
+                              <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                                <span>{new Date(ticket.created_at).toLocaleDateString()}</span>
+                                {ticket.category && <span className="capitalize">{ticket.category}</span>}
+                              </div>
+                              <p className="text-xs text-[#FF8C42] mt-2 font-medium">Tap to open and reply</p>
+                            </div>
+                            <ChevronRight className="w-5 h-5 text-gray-300 flex-shrink-0 mt-1" />
+                          </div>
+                        </Card>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
       </div>
+
+      {showAIChat && (
+        <AIChatbotWidget
+          presentation="modal"
+          customerId={getResolvedCustomerId() || undefined}
+          customerPhone={phone}
+          onClose={() => setShowAIChat(false)}
+          onNavigate={handleChatbotNavigate}
+        />
+      )}
     </div>
   );
 }

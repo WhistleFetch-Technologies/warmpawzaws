@@ -1,13 +1,25 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { ArrowLeft, Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, GraduationCap, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
+import { formatLocalDateYYYYMMDD, parseYYYYMMDDToLocalDate } from '@/lib/local-calendar-date';
+import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
+import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 interface TrainingBookingRouterProps {
   phone: string;
@@ -41,6 +53,8 @@ interface TimeSlot {
   time: string;
   available: boolean;
 }
+
+type DateChip = { date: string; day: string; dayNum: number; month: string };
 
 interface Pet {
   id: string;
@@ -88,6 +102,7 @@ export function TrainingBookingRouter({
   // ✅ FIX: Prevent step from resetting to 'service' if we have service context
   // Use a ref to track if we've already initialized to avoid loops
   const initializedRef = useRef(false);
+  const packageRedirectRef = useRef(false);
   useEffect(() => {
     if (!initializedRef.current && hasServiceContext && step === 'service') {
       // If we have service context but step is 'service', move to datetime
@@ -97,7 +112,7 @@ export function TrainingBookingRouter({
   }, [serviceId, serviceType, serviceStyle, step]);
   const [loading, setLoading] = useState(false);
   // ✅ FIX: Use serviceStyle if provided, otherwise fall back to serviceType
-  const [selectedServiceType, setSelectedServiceType] = useState(serviceStyle || serviceType || 'at_home');
+  const [selectedServiceType, setSelectedServiceType] = useState(serviceStyle || serviceType || 'at_center');
   const [selectedDate, setSelectedDate] = useState(preFilledDate || '');
   const [selectedTime, setSelectedTime] = useState(preFilledTime || '');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(
@@ -122,6 +137,80 @@ export function TrainingBookingRouter({
       serviceStyle: serviceStyle || serviceType
     } : (selectedServices && selectedServices.length > 0 ? selectedServices[0] : null)
   );
+
+  const trainingProvidersDiscovery = useDiscoveryCount({
+    phone,
+    serviceStyle: selectedServiceType === 'at_center' ? 'at_center' : 'at_home',
+    category: 'training',
+  });
+
+  const trainingProviderStatValue = useMemo(() => {
+    const st =
+      trainingProvidersDiscovery.isLoading || trainingProvidersDiscovery.isFetching
+        ? 'loading'
+        : trainingProvidersDiscovery.isError
+          ? 'error'
+          : 'success';
+    return formatDiscoveryCountStat(trainingProvidersDiscovery.data, st);
+  }, [
+    trainingProvidersDiscovery.data,
+    trainingProvidersDiscovery.isLoading,
+    trainingProvidersDiscovery.isFetching,
+    trainingProvidersDiscovery.isError,
+  ]);
+
+  useEffect(() => {
+    if (packageRedirectRef.current) return;
+    const vid = vendorId;
+    if (!vid) return;
+
+    const fromList = (selectedServices || []).filter(Boolean) as Record<string, unknown>[];
+    let pkgRow: Record<string, unknown> | null =
+      (fromList.find((r) => isVendorServicePackageRow(r)) as Record<string, unknown> | null) || null;
+
+    if (!pkgRow && serviceId && vendorServices.length > 0) {
+      const vs = vendorServices.find(
+        (row: any) =>
+          String(row?.id) === String(serviceId) || String(row?.serviceId || row?.service_id) === String(serviceId)
+      );
+      if (vs && isVendorServicePackageRow(vs)) pkgRow = vs as Record<string, unknown>;
+    }
+
+    if (!pkgRow && selectedVendorService && isVendorServicePackageRow(selectedVendorService)) {
+      pkgRow = selectedVendorService as Record<string, unknown>;
+    }
+
+    if (!pkgRow) return;
+
+    packageRedirectRef.current = true;
+    const styleFromRow = String(
+      (pkgRow.serviceStyle as string) ||
+        (pkgRow.service_style as string) ||
+        serviceStyle ||
+        serviceType ||
+        selectedServiceType ||
+        'at_center'
+    );
+    const nav = buildWalkerServiceDataForVendorPackagePurchase({
+      vendorId: String(vid),
+      vendorName: trainer?.name,
+      serviceRow: pkgRow,
+      serviceTypeCategory: 'training',
+      serviceStyle: styleFromRow,
+    });
+    if (nav) onNavigate('purchase-package', nav);
+  }, [
+    vendorId,
+    selectedServices,
+    serviceId,
+    vendorServices,
+    selectedVendorService,
+    trainer,
+    serviceStyle,
+    serviceType,
+    selectedServiceType,
+    onNavigate,
+  ]);
   
   // ✅ NEW: Store all selected services for passing to booking API
   const [allSelectedServices, setAllSelectedServices] = useState<any[]>(selectedServices || []);
@@ -162,6 +251,7 @@ export function TrainingBookingRouter({
         serviceStyle: style,
         icon: style === 'tele' ? Video : style === 'at_home' ? Home : style === 'outdoor' ? Home : Building2,
         color: style === 'tele' ? 'blue' : style === 'at_home' ? 'green' : style === 'outdoor' ? 'green' : 'purple',
+        isPackage: !!(s.isPackage ?? s.metadata?.isPackage),
       }));
     }
     return [];
@@ -172,69 +262,115 @@ export function TrainingBookingRouter({
     ? getServicesForStyle(selectedServiceType) 
     : defaultServiceTypeOptions;
 
-  const generateDates = () => {
-    const dates = [];
+  const generateDates = (): DateChip[] => {
+    const out: DateChip[] = [];
     const today = new Date();
     for (let i = 0; i < 7; i++) {
       const date = new Date(today);
       date.setDate(today.getDate() + i);
-      dates.push({
-        date: date.toISOString().split('T')[0],
+      out.push({
+        date: formatLocalDateYYYYMMDD(date),
         day: date.toLocaleDateString('en-US', { weekday: 'short' }),
         dayNum: date.getDate(),
         month: date.toLocaleDateString('en-US', { month: 'short' }),
       });
     }
-    return dates;
+    return out;
   };
+
+  // Build chips only on the client so "today" matches the user's timezone (SSR uses UTC and can shift the whole strip vs labels).
+  const [dates, setDates] = useState<DateChip[]>([]);
+  useEffect(() => {
+    setDates(generateDates());
+  }, []);
+
+  /** Ignore out-of-order slot responses when the user switches dates quickly */
+  const slotFetchSeq = useRef(0);
 
   // ✅ FIX B6: Generate time slots based on vendor operating hours
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
 
-  // Load slots when date is selected and vendor is known
+  /** Minutes for slot fitting (backend default 30); refetch when vendor catalog loads real duration */
+  const slotDurationMinutes = Math.max(
+    15,
+    Number(
+      selectedVendorService?.duration ??
+        selectedVendorService?.duration_minutes ??
+        duration ??
+        60
+    ) || 60
+  );
+
+  const loadTimeSlots = async (date: string) => {
+    if (!vendorId) return;
+    const seq = ++slotFetchSeq.current;
+
+    try {
+      setLoadingSlots(true);
+      const sid = String(
+        selectedVendorService?.serviceId ??
+          selectedVendorService?.id ??
+          serviceId ??
+          ''
+      ).trim();
+      const params = new URLSearchParams();
+      params.set('date', date);
+      params.set('serviceStyle', selectedServiceType);
+      params.set('totalDuration', String(slotDurationMinutes));
+      if (sid) params.set('serviceId', sid);
+
+      const raw = await apiClient.get(
+        `/customer/vendor/${vendorId}/available-slots?${params.toString()}`
+      );
+
+      if (seq !== slotFetchSeq.current) return;
+
+      const { success, slots: normalized, message } = normalizeAvailableSlotsResponse(raw);
+
+      if (success && normalized.length > 0) {
+        setTimeSlots(normalized);
+        return;
+      }
+
+      if (!success) {
+        const defaultSlots: TimeSlot[] = [
+          '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+          '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
+        ].map((time) => ({ time, available: true }));
+        setTimeSlots(defaultSlots);
+        return;
+      }
+
+      // success but no slot rows (or unparsed) — UI shows "No slots available"; optional API hint in dev
+      setTimeSlots([]);
+      if (message && process.env.NODE_ENV === 'development') {
+        console.warn('[TrainingBooking] available-slots:', message);
+      }
+    } catch (error) {
+      if (seq !== slotFetchSeq.current) return;
+      console.error('Error loading time slots:', error);
+      const defaultSlots: TimeSlot[] = [
+        '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+        '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30',
+      ].map((time) => ({ time, available: true }));
+      setTimeSlots(defaultSlots);
+    } finally {
+      if (seq === slotFetchSeq.current) {
+        setLoadingSlots(false);
+      }
+    }
+  };
+
+  // Load slots when date is selected and vendor is known (re-run when service duration/id resolves from catalog)
   useEffect(() => {
     if (selectedDate && vendorId) {
       loadTimeSlots(selectedDate);
     } else {
-      // Reset slots when date is cleared
       setTimeSlots([]);
     }
-  }, [selectedDate, vendorId, selectedServiceType]);
-
-  const loadTimeSlots = async (date: string) => {
-    if (!vendorId) return;
-    
-    try {
-      setLoadingSlots(true);
-      const response = await apiClient.get(
-        `/customer/vendor/${vendorId}/available-slots?date=${date}&serviceStyle=${selectedServiceType}`
-      ) as any;
-
-      if (response.success && response.slots) {
-        setTimeSlots(response.slots);
-      } else {
-        // Fallback to default slots if API fails
-        const defaultSlots: TimeSlot[] = [
-          '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-          '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
-        ].map(time => ({ time, available: true }));
-        setTimeSlots(defaultSlots);
-      }
-    } catch (error) {
-      console.error('Error loading time slots:', error);
-      // Fallback to default slots on error
-      const defaultSlots: TimeSlot[] = [
-        '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
-        '14:00', '14:30', '15:00', '15:30', '16:00', '16:30', '17:00', '17:30'
-      ].map(time => ({ time, available: true }));
-      setTimeSlots(defaultSlots);
-    } finally {
-      setLoadingSlots(false);
-    }
-  };
-
-  const [dates] = useState(generateDates());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadTimeSlots uses latest slotDurationMinutes / selectedVendorService
+  }, [selectedDate, vendorId, selectedServiceType, slotDurationMinutes, selectedVendorService?.id, serviceId]);
 
   useEffect(() => {
     loadCustomerData();
@@ -261,8 +397,9 @@ export function TrainingBookingRouter({
       // Load actual vendor training services
       const servicesResponse = await apiClient.get(`/customer/vendor/${vendorId}/services?category=training`) as any;
       if (servicesResponse.success && servicesResponse.services) {
-        setVendorServices(servicesResponse.services);
-        console.log('Loaded vendor services:', servicesResponse.services.length);
+        const merged = mergeCustomerVendorServicesPayload(servicesResponse);
+        setVendorServices(merged);
+        console.log('Loaded vendor services:', merged.length);
       }
     } catch (error) {
       console.error('Error loading vendor services:', error);
@@ -408,6 +545,27 @@ export function TrainingBookingRouter({
   const handleNext = () => {
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
+
+    if (step === 'service' && vendorId && vendorServices.length > 0 && selectedServiceType) {
+      const row = vendorServices.find(
+        (vs: any) =>
+          String(vs?.id) === String(selectedServiceType) ||
+          String(vs?.serviceId || vs?.service_id) === String(selectedServiceType)
+      );
+      if (row && isVendorServicePackageRow(row)) {
+        const nav = buildWalkerServiceDataForVendorPackagePurchase({
+          vendorId: String(vendorId),
+          vendorName: trainer?.name,
+          serviceRow: row as Record<string, unknown>,
+          serviceTypeCategory: 'training',
+          serviceStyle: String(row.serviceStyle ?? row.service_style ?? serviceStyle ?? serviceType ?? 'at_center'),
+        });
+        if (nav) {
+          onNavigate('purchase-package', nav);
+          return;
+        }
+      }
+    }
     
     // ✅ FIX: Skip address for tele and at_center (customer goes to center)
     if (step === 'pet' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
@@ -423,6 +581,13 @@ export function TrainingBookingRouter({
   const handleBack = useCallback(() => {
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
+
+    // When we skipped the in-flow service step (hasServiceContext → start at datetime), Date/Time is the
+    // first visible step — back must leave the booking flow, not navigate to the hidden `service` step.
+    if (step === 'datetime' && hasServiceContext) {
+      onBack();
+      return;
+    }
     
     // ✅ FIX: Handle back from payment for tele and at_center (both skip address - customer goes to center)
     if (step === 'payment' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
@@ -435,7 +600,7 @@ export function TrainingBookingRouter({
     } else {
       onBack();
     }
-  }, [step, selectedServiceType, onBack]);
+  }, [step, selectedServiceType, onBack, hasServiceContext]);
 
   // ✅ NEW: Expose handleBack to parent for header navigation
   useEffect(() => {
@@ -543,13 +708,24 @@ export function TrainingBookingRouter({
   };
 
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: '45+', label: 'Trainers', icon: <GraduationCap className="w-4 h-4" /> },
-    { value: '800+', label: 'Sessions' },
-    { value: '4.9', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+  const trainingProviderStatLabel =
+    selectedServiceType === 'at_center' ? 'Centres' : 'Trainers';
+  const dashboardStats = useMemo(
+    () => [
+      {
+        value: trainingProviderStatValue,
+        label: trainingProviderStatLabel,
+        icon: <GraduationCap className="w-4 h-4" />,
+      },
+      { value: '800+', label: 'Sessions' },
+      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
+    ],
+    [trainingProviderStatValue, trainingProviderStatLabel]
+  );
 
-  // ✅ FIX: Prepare step indicators for header
+  const getHeaderSubtitle = () =>
+    trainer?.name ? `Book with ${trainer.name}` : 'Book your training session';
+
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
     
@@ -581,20 +757,74 @@ export function TrainingBookingRouter({
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader - Hide when on payment step */}
       {step !== 'payment' && (
         <ServiceDashboardHeader
           serviceName="Training Booking"
-          serviceSubtitle={trainer?.name ? `Book with ${trainer.name}` : "Book your training session"}
+          serviceSubtitle={getHeaderSubtitle()}
           serviceIcon={GraduationCap}
           iconColor="text-white"
           stats={dashboardStats}
           steps={getStepIndicators()}
-          onBack={onBack}
+          onBack={handleBack}
           showBackButton={true}
           headerColor="bg-[#FF8C42]"
         />
       )}
+
+      {step === 'payment' && !showPaymentPage && (
+        <PrePaymentBookingReview
+          title="Booking Summary"
+          subtitle="Review before payment"
+          headerIcon={GraduationCap}
+          stats={dashboardStats}
+          onBack={handleBack}
+          lead={{
+            icon:
+              selectedServiceType === 'tele' ? Video : selectedServiceType === 'at_home' ? Home : Building2,
+            iconContainerClassName:
+              selectedServiceType === 'tele'
+                ? 'bg-blue-100 text-blue-600'
+                : selectedServiceType === 'at_home'
+                  ? 'bg-green-100 text-green-600'
+                  : 'bg-purple-100 text-purple-600',
+            title: String(selectedServiceOption?.name ?? ''),
+            subtitle: selectedServiceOption?.duration
+              ? `${selectedServiceOption.duration} mins`
+              : undefined,
+            trailing: <span>₹{selectedServiceOption?.price}</span>,
+          }}
+          rows={[
+            {
+              id: 'datetime',
+              icon: Calendar,
+              label: 'Date & Time',
+              primary: `${parseYYYYMMDDToLocalDate(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at ${selectedTime}`,
+            },
+            {
+              id: 'pet',
+              icon: User,
+              label: 'Pet',
+              primary: `${selectedPet?.name} (${selectedPet?.breed})`,
+            },
+          ]}
+          notes={{
+            value: notes,
+            onChange: setNotes,
+            placeholder: 'Any symptoms or concerns...',
+            showNotes: true,
+          }}
+          total={{ label: 'Total', amountFormatted: `₹${selectedServiceOption?.price}` }}
+          totalTextClassName="text-orange-600"
+          primaryButton={{
+            label: 'Proceed to Payment',
+            onClick: handleProceedToPayment,
+            disabled: processing,
+            loading: processing,
+          }}
+        />
+      )}
+
+      {(step !== 'payment' || showPaymentPage) && (
       <div className="max-w-md mx-auto px-4 py-6">
         {/* Step indicator moved to header */}
 
@@ -658,10 +888,13 @@ export function TrainingBookingRouter({
           <div className="space-y-6">
             <div>
               <h2 className="text-lg font-bold text-gray-900 mb-3">Select Date</h2>
-              <div className="flex gap-2 overflow-x-auto pb-2">
-                {dates.map((d) => (
+              <div className="flex gap-2 overflow-x-auto pb-2 min-h-[5.5rem]">
+                {dates.length === 0 ? (
+                  <div className="flex items-center justify-center w-full py-4 text-sm text-gray-500">Loading dates…</div>
+                ) : dates.map((d) => (
                   <button
                     key={d.date}
+                    type="button"
                     onClick={() => setSelectedDate(d.date)}
                     className={`flex-shrink-0 w-16 p-3 rounded-xl text-center transition-all ${
                       selectedDate === d.date 
@@ -677,9 +910,10 @@ export function TrainingBookingRouter({
               </div>
             </div>
 
-            {selectedDate && (
+            {dates.length > 0 && selectedDate && (
               <div>
-                <h2 className="text-lg font-bold text-gray-900 mb-3">Select Time</h2>
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Select Time</h2>
+                <p className="text-xs text-gray-500 mb-2">Select next closest time</p>
                 {loadingSlots ? (
                   <div className="flex items-center justify-center py-8">
                     <div className="text-center">
@@ -921,83 +1155,6 @@ export function TrainingBookingRouter({
           </div>
         )}
 
-        {/* Payment Summary - Now using UniversalPaymentPage */}
-        {step === 'payment' && !showPaymentPage && (
-          <div className="space-y-4">
-            <h2 className="text-lg font-bold text-gray-900">Booking Summary</h2>
-            
-            <div className="bg-white rounded-xl p-4 space-y-4">
-              {/* Service */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                  selectedServiceType === 'tele' ? 'bg-blue-100 text-blue-600' :
-                  selectedServiceType === 'at_home' ? 'bg-green-100 text-green-600' :
-                  'bg-purple-100 text-purple-600'
-                }`}>
-                  {selectedServiceType === 'tele' ? <Video className="w-6 h-6" /> :
-                   selectedServiceType === 'at_home' ? <Home className="w-6 h-6" /> :
-                   <Building2 className="w-6 h-6" />}
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold">{selectedServiceOption?.name}</h3>
-                  <p className="text-sm text-gray-500">{selectedServiceOption?.duration} mins</p>
-                </div>
-                <p className="font-bold">₹{selectedServiceOption?.price}</p>
-              </div>
-
-              {/* Date & Time */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <Calendar className="w-5 h-5 text-gray-400" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Date & Time</p>
-                  <p className="font-medium">
-                    {new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })} at {selectedTime}
-                  </p>
-                </div>
-              </div>
-
-              {/* Pet */}
-              <div className="flex items-center gap-3 pb-4 border-b">
-                <User className="w-5 h-5 text-gray-400" />
-                <div className="flex-1">
-                  <p className="text-sm text-gray-500">Pet</p>
-                  <p className="font-medium">{selectedPet?.name} ({selectedPet?.breed})</p>
-                </div>
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Additional Notes (Optional)
-                </label>
-                <textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Any symptoms or concerns..."
-                  className="w-full p-3 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                  rows={3}
-                />
-              </div>
-            </div>
-
-            {/* Price Breakdown */}
-            <div className="bg-white rounded-xl p-4">
-              <div className="flex justify-between items-center text-lg">
-                <span className="font-bold">Total</span>
-                <span className="font-bold text-orange-600">₹{selectedServiceOption?.price}</span>
-              </div>
-            </div>
-
-            <Button 
-              onClick={handleProceedToPayment} 
-              className="w-full bg-[#FF8C42] hover:bg-[#FF7A35]"
-              disabled={processing}
-            >
-              {processing ? 'Processing...' : 'Proceed to Payment'}
-            </Button>
-          </div>
-        )}
-
         {/* ✅ UniversalPaymentPage Integration */}
         {step === 'payment' && showPaymentPage && (
           <UniversalPaymentPage
@@ -1018,11 +1175,15 @@ export function TrainingBookingRouter({
             address={selectedAddress}
             showAddressSelection={selectedServiceType === 'at_home'}
             baseAmount={selectedServiceOption?.price || price || 499}
+            priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
             duration={selectedServiceOption?.duration || duration || 30}
             quantity={1}
             customerPhone={phone}
             customerId={customerId || undefined}
             onBack={() => setShowPaymentPage(false)}
+            onPaymentAbandoned={() => {
+              if (selectedDate) void loadTimeSlots(selectedDate);
+            }}
             onSuccess={handlePaymentSuccess}
           />
         )}
@@ -1048,7 +1209,7 @@ export function TrainingBookingRouter({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Date</span>
-                  <span className="font-medium">{new Date(selectedDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                  <span className="font-medium">{parseYYYYMMDDToLocalDate(selectedDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Time</span>
@@ -1223,6 +1384,7 @@ export function TrainingBookingRouter({
           />
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -1490,7 +1652,10 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
         
         // Try reverse geocoding
         try {
-          const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+          const apiKey =
+            (await getGoogleMapsBrowserApiKey()) ||
+            process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
+            '';
           if (!apiKey) {
             console.warn('Google Maps API key not configured');
             toast.error('Location services not configured. Please enter address manually.');

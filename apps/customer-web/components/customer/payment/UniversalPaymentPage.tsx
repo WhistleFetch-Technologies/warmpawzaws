@@ -1,21 +1,37 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import {
-  ArrowLeft, CreditCard, Wallet, Tag, ChevronRight,
+  CreditCard, Wallet, Tag, ChevronRight, ChevronDown,
   CheckCircle2, Shield, X, Percent, Info, MapPin,
-  Clock, Calendar, User, Plus, Smartphone, Building2,
+  Clock, Calendar, Plus, Smartphone, Building2,
   Home, Video, Gift, Sparkles, AlertCircle, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { AddPaymentMethodModal } from './AddPaymentMethodModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
-// 1. Update imports (around line 13)
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
+import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
+import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import {
+  digitsToRazorpayContactE164,
+  RAZORPAY_PREFILL_EMAIL_FALLBACK,
+  sanitizeRazorpayInstanceOptions,
+  getWarmpawzRazorpayStandardDisplayConfig,
+} from '@/lib/razorpay/razorpay-utils';
+import {
+  isWarmpawzCustomerNativeWebView,
+  waitForWarmpawzNativeRazorpayResult,
+  WARMPAWZ_RAZORPAY_NATIVE_MSG,
+} from '@/lib/razorpay/native-webview-bridge';
 
 // Razorpay type declaration
 declare global {
@@ -54,6 +70,10 @@ interface UniversalPaymentPageProps {
   petId?: string;
   petName?: string;
   petBreed?: string;
+  /** When length > 1, shows an inline selector without changing the rest of the row layout */
+  petSwitcherPets?: { id: string; name: string }[];
+  /** Called when the user picks a pet from the switcher, or null for “no pet” (checkout still allowed). */
+  onPetSwitcherChange?: (pet: { id: string; name: string } | null) => void;
 
   // Address (for home services/orders)
   addressId?: string;
@@ -69,12 +89,19 @@ interface UniversalPaymentPageProps {
 
   // Pricing
   baseAmount: number;
+  /** When true, baseAmount is tax-inclusive (service_catalog.metadata.show_final_price_inclusive_tax). */
+  priceIncludesTax?: boolean;
   duration?: number;
   quantity?: number;
   selectedServices?: any[]; // ✅ NEW: Selected services for multi-service bookings
 
   // Customer
   customerPhone: string;
+  /**
+   * Used for Razorpay `prefill.email` together with E.164 `prefill.contact` from {@link digitsToRazorpayContactE164}.
+   * Desktop checkout may still default to UPI QR per Razorpay/NPCI; email + E.164 contact is best-effort for collect/VPA where supported.
+   */
+  customerEmail?: string;
   customerId?: string;
 
   /** 
@@ -83,10 +110,26 @@ interface UniversalPaymentPageProps {
    * tele-queue-accepted: queue-first flow; booking already exists with pending_payment; just collect payment and confirm
    */
   flowType?: 'tele-scheduled' | 'tele-instant' | 'tele-queue-accepted';
+  initialPromotionId?: string;
+  initialPromotionIntent?: {
+    promotionId?: string;
+    serviceCategory?: string;
+    serviceStyle?: string;
+    clickedAt?: number;
+    source?: string;
+  };
+
+  /**
+   * fullscreen: default; CTA hugs bottom (overlays, dedicated routes).
+   * appShell: matches CustomerHomeWrapper + BottomNavigation — CTA sits above the tab bar.
+   */
+  layoutVariant?: 'fullscreen' | 'appShell';
 
   // Navigation
   onBack: () => void;
   onSuccess: (bookingId: string, orderId?: string, otpCode?: string, meta?: { isInstantTele?: boolean }) => void;
+  /** After user closes Razorpay without paying (or we attempt slot release). Use to refetch `available-slots` so UI matches DB. */
+  onPaymentAbandoned?: () => void;
 }
 
 interface CouponResult {
@@ -145,7 +188,7 @@ interface PlatformFees {
 
 interface PromotionOffer {
   id: string;
-  type: 'spotlight' | 'category_discount' | 'service_discount' | 'flash_sale';
+  type: 'spotlight' | 'category_discount' | 'service_discount' | 'flash_sale' | 'coupon';
   title: string;
   description: string;
   discountType: 'percentage' | 'fixed';
@@ -167,6 +210,19 @@ interface RazorpayOffer {
 }
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** POST /tax/calculate used to return success:true with empty items + error — treat as failure so UI does not show 9%+9% with ₹0 tax. */
+function taxCalculateResponseHasPayload(res: any): boolean {
+  if (!res || res.success !== true) return false;
+  const err = res.error;
+  if (typeof err === 'string' && err.trim()) return false;
+  if (err != null && typeof err === 'object') return false;
+  return Array.isArray(res.items) && res.items.length > 0;
+}
+
+function petsListForPaymentPicker(data: unknown): { id: string; name: string }[] {
+  return petsFromApiResponse(data).map((p) => ({ id: p.id, name: p.name }));
+}
 
 /**
  * Forensic: extract booking ID from any create-booking response shape.
@@ -236,24 +292,36 @@ export function UniversalPaymentPage({
   category,
   vendorId,
   vendorName,
+  vendorAddress,
+  staffName,
+  staffPhoto,
   bookingDate,
   bookingTime,
   petId,
   petName,
   petBreed,
+  petSwitcherPets,
+  onPetSwitcherChange,
   addressId,
   address,
   showAddressSelection = false,
   baseAmount,
+  priceIncludesTax = false,
   duration,
   quantity = 1,
   selectedServices,
   customerPhone,
+  customerEmail,
   customerId,
   flowType,
+  initialPromotionId,
+  initialPromotionIntent,
+  layoutVariant = 'fullscreen',
   onBack,
   onSuccess,
+  onPaymentAbandoned,
 }: UniversalPaymentPageProps) {
+  const router = useRouter();
   // State
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -281,6 +349,8 @@ export function UniversalPaymentPage({
   const [appliedPromotion, setAppliedPromotion] = useState<PromotionOffer | null>(null);
   const [razorpayOffers, setRazorpayOffers] = useState<RazorpayOffer[]>([]);
   const [selectedRazorpayOffer, setSelectedRazorpayOffer] = useState<RazorpayOffer | null>(null);
+  /** Optional UPI ID (VPA) for collect flow — passed as `prefill.vpa` (Razorpay may still show QR-only on desktop web per NPCI/Razorpay). */
+  const [manualUpiVpa, setManualUpiVpa] = useState('');
   const [paymentPolicies, setPaymentPolicies] = useState<Record<string, { title: string; description: string; details?: string[] }> | null>(null);
   const [refundPolicySummary, setRefundPolicySummary] = useState<string | null>(null);
 
@@ -307,16 +377,164 @@ export function UniversalPaymentPage({
   const [subscriptionCovered, setSubscriptionCovered] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
   const [checkingSubscription, setCheckingSubscription] = useState(false);
+  const [fetchedPetsForPicker, setFetchedPetsForPicker] = useState<{ id: string; name: string }[]>([]);
+  /** Bumps when user returns to this tab (e.g. after adding a pet on /pets) so the picker refetches. */
+  const [petsListRefreshNonce, setPetsListRefreshNonce] = useState(0);
+  const [localPetSelection, setLocalPetSelection] = useState<{ id: string; name: string } | null>(null);
+
+  const customerAddrStateForTax =
+    (typeof selectedAddress?.state === 'string' && selectedAddress.state.trim()
+      ? selectedAddress.state.trim()
+      : undefined) ??
+    (typeof address?.state === 'string' && address.state.trim() ? address.state.trim() : undefined);
+
+  const applyDefaultGstBreakdown = useCallback(
+    (ratePct: number) => {
+      const lineTotal = baseAmount;
+      const taxable = priceIncludesTax ? lineTotal / (1 + ratePct / 100) : lineTotal;
+      const totalTax = (taxable * ratePct) / 100;
+      setTaxBreakdown({
+        subtotal: taxable,
+        cgst: totalTax / 2,
+        sgst: totalTax / 2,
+        igst: 0,
+        totalTax,
+        total: taxable + totalTax,
+        taxRate: ratePct,
+        isInterState: false,
+      });
+    },
+    [baseAmount, priceIncludesTax]
+  );
+
+  const calculateTax = useCallback(async () => {
+    const catalogServiceId = resolvedServiceId || serviceId;
+    const addr = selectedAddress || address;
+    const hasAddrHint =
+      addr &&
+      (String(addr.state || '').trim() ||
+        String(addr.city || '').trim() ||
+        String(addr.pincode || '').trim());
+    const customerLocation = hasAddrHint
+      ? {
+          state: String(addr!.state || '').trim() || undefined,
+          city: addr!.city ? String(addr.city).trim() : undefined,
+          pincode: addr!.pincode ? String(addr.pincode).trim() : undefined,
+        }
+      : undefined;
+
+    try {
+      const taxRes = await apiClient.post<any>('/tax/calculate', {
+        items: [
+          {
+            id: catalogServiceId || productId || bookingId || 'item',
+            type: type === 'booking' ? 'service' : 'product',
+            serviceId: type === 'booking' ? catalogServiceId : undefined,
+            bookingId: type === 'booking' ? bookingId : undefined,
+            productId: type === 'order' ? productId : undefined,
+            amount: baseAmount,
+            quantity,
+            category: category || 'pet_services',
+            serviceStyle,
+            amountTaxInclusive: priceIncludesTax,
+          },
+        ],
+        vendorId,
+        customerId,
+        customerPhone,
+        customerLocation,
+        bookingId: type === 'booking' ? bookingId : undefined,
+      });
+
+      if (taxCalculateResponseHasPayload(taxRes)) {
+        const cgst = taxRes.totalCGST || 0;
+        const sgst = taxRes.totalSGST || 0;
+        const igst = taxRes.totalIGST || 0;
+        const totalTax = taxRes.totalTax ?? cgst + sgst + igst;
+        const exclusiveSub = Number(taxRes.totalAmount);
+        const taxableForLabel = Number.isFinite(exclusiveSub) ? exclusiveSub : baseAmount;
+        const rawRate = Number(taxRes.items?.[0]?.taxRate);
+        const declaredRate = Number.isFinite(rawRate) ? rawRate : 18;
+        const taxRate = resolveGstDisplayRatePercent(
+          taxableForLabel,
+          totalTax,
+          declaredRate,
+          18
+        );
+        const interState =
+          typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0;
+        const grand = Number(taxRes.grandTotal);
+        const totalPay = Number.isFinite(grand) ? grand : taxableForLabel + totalTax;
+
+        setTaxBreakdown({
+          subtotal: taxableForLabel,
+          cgst,
+          sgst,
+          igst,
+          totalTax,
+          total: totalPay,
+          taxRate,
+          isInterState: interState,
+          taxDetails: taxRes.breakdown || [],
+        });
+        return;
+      }
+
+      if (baseAmount > 0) {
+        console.warn('Tax calculate returned no usable items; using default 18% split', taxRes);
+        applyDefaultGstBreakdown(18);
+      }
+    } catch (error) {
+      console.error('Tax calculation error, using default 18%:', error);
+      if (baseAmount > 0) {
+        applyDefaultGstBreakdown(18);
+      }
+    }
+  }, [
+    address,
+    applyDefaultGstBreakdown,
+    baseAmount,
+    bookingId,
+    category,
+    customerId,
+    customerPhone,
+    productId,
+    quantity,
+    resolvedServiceId,
+    selectedAddress,
+    serviceId,
+    serviceStyle,
+    type,
+    vendorId,
+    priceIncludesTax,
+  ]);
 
   useEffect(() => {
     loadPaymentData();
-    loadRazorpayScript();
+    if (!isWarmpawzCustomerNativeWebView()) {
+      loadRazorpayScript();
+    }
     calculateTax();
     loadPromotions();
     loadRazorpayOffers();
     loadPlatformFees();
     loadPaymentAndRefundPolicies();
-  }, [customerPhone, baseAmount, category, serviceStyle]);
+  }, [
+    bookingId,
+    customerPhone,
+    baseAmount,
+    category,
+    serviceStyle,
+    type,
+    vendorId,
+    customerId,
+    resolvedServiceId,
+    serviceId,
+    quantity,
+    productId,
+    customerAddrStateForTax,
+    calculateTax,
+  ]);
 
   // Check if customer has active subscription that covers this booking
   useEffect(() => {
@@ -363,6 +581,92 @@ export function UniversalPaymentPage({
       loadAddresses();
     }
   }, [showAddressSelection, customerPhone]);
+
+  useEffect(() => {
+    setLocalPetSelection(null);
+  }, [bookingId, orderId, type]);
+
+  const petListWasHiddenRef = useRef(false);
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') petListWasHiddenRef.current = true;
+      if (document.visibilityState === 'visible' && petListWasHiddenRef.current) {
+        setPetsListRefreshNonce((n) => n + 1);
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  useEffect(() => {
+    if (type !== 'booking' || petSwitcherPets !== undefined) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        let list: { id: string; name: string }[] = [];
+        if (customerId) {
+          try {
+            const res = await apiClient.get<unknown>(`/customer/${customerId}/pets`);
+            list = petsListForPaymentPicker(res);
+          } catch {
+            list = [];
+          }
+        }
+        if (!cancelled && list.length === 0 && customerPhone) {
+          try {
+            const byQuery = await apiClient.get<unknown>(
+              `/customer/pets?phone=${encodeURIComponent(customerPhone)}`
+            );
+            list = petsListForPaymentPicker(byQuery);
+          } catch {
+            /* try path route next */
+          }
+        }
+        if (!cancelled && list.length === 0 && customerPhone) {
+          try {
+            const byPath = await apiClient.get<unknown>(
+              `/customer/pets/${encodeURIComponent(customerPhone)}`
+            );
+            list = petsListForPaymentPicker(byPath);
+          } catch {
+            list = [];
+          }
+        }
+        if (!cancelled) setFetchedPetsForPicker(list);
+      } catch {
+        if (!cancelled) setFetchedPetsForPicker([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [type, petSwitcherPets, customerId, customerPhone, petsListRefreshNonce]);
+
+  useEffect(() => {
+    if (type !== 'booking') return;
+    const applyCheckoutSelection = () => {
+      const payload = readAndConsumeCheckoutPetSelection();
+      if (!payload) return;
+      if ('skip' in payload) {
+        if (onPetSwitcherChange) onPetSwitcherChange(null);
+        else setLocalPetSelection(null);
+        return;
+      }
+      const p = payload.pet;
+      if (onPetSwitcherChange) onPetSwitcherChange({ id: p.id, name: p.name });
+      else setLocalPetSelection({ id: p.id, name: p.name });
+    };
+    applyCheckoutSelection();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') applyCheckoutSelection();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('pageshow', applyCheckoutSelection);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('pageshow', applyCheckoutSelection);
+    };
+  }, [type, onPetSwitcherChange]);
 
   //  Resolve serviceId early (before payment flow)
   useEffect(() => {
@@ -461,14 +765,16 @@ export function UniversalPaymentPage({
           );
 
           if (matchingService) {
-            // Use service_id (UUID) from the vendor service
-            const resolved = matchingService.service_id || matchingService.serviceId;
-            if (uuidRegex.test(resolved)) {
-              setResolvedServiceId(resolved);
-              console.log(`✅ Resolved serviceId "${serviceId}" to UUID: "${resolved}"`);
-            } else if (uuidRegex.test(matchingService.id)) {
+            // ✅ FIX: Prioritize id (vendor_services.id) over service_id (services.id reference)
+            // bookings.service_id must reference vendor_services.id, not services.id
+            if (uuidRegex.test(matchingService.id)) {
               setResolvedServiceId(matchingService.id);
-              console.log(`✅ Resolved serviceId "${serviceId}" to UUID: "${matchingService.id}"`);
+              console.log(`✅ Resolved serviceId "${serviceId}" to vendor_services.id: "${matchingService.id}"`);
+            } else if (uuidRegex.test(matchingService.service_id || matchingService.serviceId)) {
+              // Fallback: if id is not a UUID, try service_id (shouldn't happen normally)
+            const resolved = matchingService.service_id || matchingService.serviceId;
+              setResolvedServiceId(resolved);
+              console.log(`✅ Resolved serviceId "${serviceId}" to service_id: "${resolved}"`);
             } else {
               console.warn(`⚠️ Could not resolve serviceId "${serviceId}" - service found but no UUID available`);
             }
@@ -489,6 +795,9 @@ export function UniversalPaymentPage({
 
   //  Pre-load Razorpay script on component mount so it's ready when user clicks payment
   useEffect(() => {
+    if (isWarmpawzCustomerNativeWebView()) {
+      return;
+    }
     if (typeof window !== 'undefined' && !window.Razorpay) {
       console.log('🔄 [RAZORPAY] Pre-loading Razorpay script on component mount...');
       loadRazorpayScript().catch((error) => {
@@ -663,6 +972,10 @@ export function UniversalPaymentPage({
         const walletRes = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
         if (walletRes.wallet) {
           setWallet(walletRes.wallet);
+          const bal = Number(walletRes.wallet.balance ?? 0);
+          if (type === 'booking' && Number.isFinite(bal) && bal > 0.009) {
+            setUseWallet(true);
+          }
         }
       } catch (e) {
         console.log('No wallet found');
@@ -691,10 +1004,19 @@ export function UniversalPaymentPage({
 
   const loadPromotions = async () => {
     try {
+      const selectedServiceIds = (selectedServices || [])
+        .map((s: any) => String(s?.serviceId || s?.service_id || s?.id || '').trim())
+        .filter(Boolean);
+      const params = new URLSearchParams({
+        category: String(category || initialPromotionIntent?.serviceCategory || ''),
+        serviceStyle: String(serviceStyle || initialPromotionIntent?.serviceStyle || ''),
+        amount: String(baseAmount || 0),
+      });
+      if (serviceId) params.set('serviceId', String(serviceId));
+      if (selectedServiceIds.length > 0) params.set('selectedServiceIds', selectedServiceIds.join(','));
+
       // Load applicable promotions (public endpoint – no admin auth required)
-      const promoRes = await apiClient.get<any>(
-        `/promotions/applicable?category=${category || ''}&serviceStyle=${serviceStyle || ''}&amount=${baseAmount}`
-      );
+      const promoRes = await apiClient.get<any>(`/promotions/applicable?${params.toString()}`);
 
       if (promoRes.success && promoRes.promotions) {
         const raw = promoRes.promotions as any[];
@@ -720,10 +1042,19 @@ export function UniversalPaymentPage({
           }));
 
         setPromotions(applicablePromos);
-
-        const spotlight = applicablePromos.find((p: PromotionOffer) => p.type === 'spotlight');
-        if (spotlight && spotlight.applicable) {
-          setAppliedPromotion(spotlight);
+        if (initialPromotionId) {
+          const matched = applicablePromos.find((p: PromotionOffer) => p.id === initialPromotionId);
+          if (matched && matched.applicable) {
+            setAppliedPromotion(matched);
+            toast.success('Special offer auto-applied to this payment.');
+          } else {
+            toast.info('The selected special offer is not eligible for this service/amount.');
+          }
+        } else {
+          const spotlight = applicablePromos.find((p: PromotionOffer) => p.type === 'spotlight');
+          if (spotlight && spotlight.applicable) {
+            setAppliedPromotion(spotlight);
+          }
         }
       }
     } catch (error) {
@@ -748,41 +1079,86 @@ export function UniversalPaymentPage({
 
   const loadPlatformFees = async () => {
     try {
-      // Load platform and convenience fees from fee config endpoint
+      const catParam = category != null && String(category).trim() !== '' ? `&category=${encodeURIComponent(String(category).trim())}` : '';
       const feesRes = await apiClient.get<any>(
-        `/config/fees?serviceStyle=${serviceStyle || ''}&amount=${baseAmount}&type=${type}`
+        `/config/fees?amount=${baseAmount}&type=${type}&serviceStyle=${encodeURIComponent(serviceStyle || '')}${catParam}`
       );
 
-      if (feesRes.success) {
-        const platformFee = feesRes.platformFee || 0;
-        const convenienceFee = feesRes.convenienceFee || 0;
-        // Delivery fee is usually calculated separately by logistics
-        const deliveryFee = serviceStyle === 'at_home' || type === 'order' ? (feesRes.deliveryFee || 0) : 0;
-        const packagingFee = type === 'order' ? (feesRes.packagingFee || 0) : 0;
-
-        console.log('[FEES] Loaded fee configuration:', {
-          platformFee,
-          convenienceFee,
-          deliveryFee,
-          packagingFee,
-          breakdown: feesRes.breakdown,
-        });
-
-        setPlatformFees({
-          platformFee,
-          convenienceFee,
-          deliveryFee,
-          packagingFee,
-          total: platformFee + convenienceFee + deliveryFee + packagingFee,
-        });
+      if (!feesRes?.success) {
+        throw new Error((feesRes && feesRes.error) || 'Fee configuration unavailable');
       }
+
+      let platformFee =
+        typeof feesRes.platformFee === 'number' && Number.isFinite(feesRes.platformFee)
+          ? feesRes.platformFee
+          : NaN;
+      let convenienceFee =
+        typeof feesRes.convenienceFee === 'number' && Number.isFinite(feesRes.convenienceFee)
+          ? feesRes.convenienceFee
+          : NaN;
+      let deliveryFee =
+        typeof feesRes.deliveryFee === 'number' && Number.isFinite(feesRes.deliveryFee)
+          ? feesRes.deliveryFee
+          : NaN;
+      let packagingFee =
+        typeof feesRes.packagingFee === 'number' && Number.isFinite(feesRes.packagingFee)
+          ? feesRes.packagingFee
+          : NaN;
+
+      const legacy = feesRes.fees && typeof feesRes.fees === 'object' ? feesRes.fees : null;
+      if (legacy && !Number.isFinite(platformFee)) {
+        const pct = parseFloat(String(legacy.platformFeePercentage));
+        const flat = parseFloat(String(legacy.platformFeeFlat ?? 0));
+        const max = parseFloat(String(legacy.maxPlatformFee ?? 500));
+        if (Number.isFinite(pct) && baseAmount > 0) {
+          let pf = Math.round((baseAmount * pct) / 100) + (Number.isFinite(flat) ? flat : 0);
+          if (Number.isFinite(max) && max > 0 && pf > max) pf = max;
+          platformFee = Math.max(0, pf);
+        } else {
+          platformFee = 0;
+        }
+      }
+      if (!Number.isFinite(platformFee)) platformFee = 0;
+      if (!Number.isFinite(convenienceFee)) convenienceFee = 0;
+      if (legacy && type === 'order' && !Number.isFinite(convenienceFee) && legacy.convenienceFee != null) {
+        const c = parseFloat(String(legacy.convenienceFee));
+        if (Number.isFinite(c)) convenienceFee = Math.max(0, c);
+      }
+      if (!Number.isFinite(deliveryFee)) deliveryFee = 0;
+      if (!Number.isFinite(packagingFee)) packagingFee = 0;
+
+      if (type === 'booking') {
+        convenienceFee = 0;
+      }
+      if (!(serviceStyle === 'at_home' || type === 'order')) {
+        deliveryFee = 0;
+      }
+      if (type !== 'order') {
+        packagingFee = 0;
+      }
+
+      console.log('[FEES] Loaded fee configuration:', {
+        platformFee,
+        convenienceFee,
+        deliveryFee,
+        packagingFee,
+        breakdown: feesRes.breakdown,
+      });
+
+      setPlatformFees({
+        platformFee,
+        convenienceFee,
+        deliveryFee,
+        packagingFee,
+        total: platformFee + convenienceFee + deliveryFee + packagingFee,
+      });
     } catch (error) {
       console.error('Error loading platform fees:', error);
       // Resilience-only fallback when /config/fees fails; production should use backend as single source of truth
       if (baseAmount > 0) {
         let defaultPlatformFee = Math.round((baseAmount * 2) / 100);
         defaultPlatformFee = Math.min(defaultPlatformFee, 200);
-        const defaultConvenienceFee = type === 'booking' ? 10 : 0;
+        const defaultConvenienceFee = type === 'order' ? 9 : 0;
         setPlatformFees({
           platformFee: defaultPlatformFee,
           convenienceFee: defaultConvenienceFee,
@@ -839,61 +1215,6 @@ export function UniversalPaymentPage({
     }
 
     return Math.min(discount, amount);
-  };
-
-  const calculateTax = async () => {
-    try {
-      // Get customer and vendor locations for tax calculation
-      const taxRes = await apiClient.post<any>('/tax/calculate', {
-        items: [{
-          id: serviceId || productId || 'item',
-          type: type === 'booking' ? 'service' : 'product',
-          serviceId: type === 'booking' ? serviceId : undefined,
-          productId: type === 'order' ? productId : undefined,
-          amount: baseAmount,
-          quantity,
-          category: category || 'pet_services',
-          serviceStyle: serviceStyle,
-        }],
-        vendorId,
-        customerId,
-        customerPhone,
-      });
-
-      if (taxRes.success) {
-        const cgst = taxRes.totalCGST || 0;
-        const sgst = taxRes.totalSGST || 0;
-        const igst = taxRes.totalIGST || 0;
-        const totalTax = taxRes.totalTax || cgst + sgst + igst;
-
-        setTaxBreakdown({
-          subtotal: baseAmount,
-          cgst,
-          sgst,
-          igst,
-          totalTax,
-          total: baseAmount + totalTax,
-          taxRate: taxRes.items?.[0]?.taxRate || 18,
-          isInterState: igst > 0,
-          taxDetails: taxRes.breakdown || [],
-        });
-      }
-    } catch (error) {
-      console.error('Tax calculation error, using default 18%:', error);
-      // Fallback to 18% GST
-      const taxRate = 18;
-      const totalTax = (baseAmount * taxRate) / 100;
-      setTaxBreakdown({
-        subtotal: baseAmount,
-        cgst: totalTax / 2,
-        sgst: totalTax / 2,
-        igst: 0,
-        totalTax,
-        total: baseAmount + totalTax,
-        taxRate,
-        isInterState: false,
-      });
-    }
   };
 
   const handleApplyCoupon = async () => {
@@ -1016,6 +1337,15 @@ export function UniversalPaymentPage({
   // ✅ NEW: If subscription covers this booking, final amount is 0
   const finalAmount = subscriptionCovered ? 0 : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
 
+  const effectivePetsForPicker = petSwitcherPets ?? fetchedPetsForPicker;
+  const effectivePetId = onPetSwitcherChange ? petId : (localPetSelection?.id ?? petId);
+  const effectivePetName = onPetSwitcherChange ? petName : (localPetSelection?.name ?? petName);
+  const selectedPetDisplayName =
+    (effectivePetName?.trim() ||
+      (effectivePetId && effectivePetsForPicker.some((x) => x.id === effectivePetId)
+        ? effectivePetsForPicker.find((x) => x.id === effectivePetId)!.name.trim()
+        : '')) || '';
+
   const handlePayment = async (skipPolicyCheck: boolean = false) => {
     // Check if policies have been accepted (for bookings)
     // ✅ FIX: Allow skipping policy check when called from modal acceptance
@@ -1036,6 +1366,10 @@ export function UniversalPaymentPage({
       let bookingCreationDeferred = false;
       let deferredBookingPayload: Record<string, unknown> | null = null;
       let requiredUpfrontAmount: number | null = null;
+      /** True once Razorpay success handler runs (do not cancel booking on modal dismiss — payment may have succeeded). */
+      let razorpayGatewaySuccessHandled = false;
+      /** True on payment.failed — user may retry; do not auto-cancel slot on dismiss. */
+      let razorpayPaymentFailed = false;
 
       // Step 1: Create booking/order if not already created
       let currentBookingId: string | undefined = bookingId;
@@ -1074,8 +1408,54 @@ export function UniversalPaymentPage({
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         let finalServiceId = resolvedServiceId || serviceId;
 
+        // ✅ FIX: If selectedServices is provided, use the first service's id (vendor_services.id)
+        // This ensures we use vendor_services.id instead of services.id to match the foreign key constraint
+        console.log(`🔍 [SERVICE-ID-RESOLUTION] Initial serviceId: "${serviceId}", resolvedServiceId: "${resolvedServiceId}", finalServiceId: "${finalServiceId}"`);
+        console.log(`🔍 [SERVICE-ID-RESOLUTION] selectedServices:`, selectedServices);
+        
+        if (selectedServices && selectedServices.length > 0) {
+          const firstSelectedService = selectedServices[0];
+          console.log(`🔍 [SERVICE-ID-RESOLUTION] First selected service:`, {
+            id: firstSelectedService.id,
+            serviceId: firstSelectedService.serviceId,
+            service_id: firstSelectedService.service_id,
+            hasId: !!firstSelectedService.id,
+            idIsUUID: firstSelectedService.id ? uuidRegex.test(String(firstSelectedService.id)) : false,
+            hasServiceId: !!firstSelectedService.serviceId,
+            serviceIdIsUUID: firstSelectedService.serviceId ? uuidRegex.test(String(firstSelectedService.serviceId)) : false,
+            fullObject: firstSelectedService,
+          });
+          
+          // ✅ CRITICAL: Prioritize id field (vendor_services.id) over serviceId (services.id)
+          // The id field should be vendor_services.id which is what bookings.service_id FK requires
+          const candidateId = firstSelectedService.id;
+          const candidateServiceId = firstSelectedService.serviceId || firstSelectedService.service_id;
+          
+          if (candidateId && uuidRegex.test(String(candidateId))) {
+            finalServiceId = String(candidateId);
+            console.log(`✅ [SERVICE-ID-RESOLUTION] Using serviceId from selectedServices[0].id (vendor_services.id): "${finalServiceId}"`);
+          } else if (candidateServiceId && uuidRegex.test(String(candidateServiceId))) {
+            // ⚠️ WARNING: This might be services.id, not vendor_services.id
+            // We'll use it but log a warning - the backend validation will catch if it's wrong
+            finalServiceId = String(candidateServiceId);
+            console.warn(`⚠️ [SERVICE-ID-RESOLUTION] Using serviceId from selectedServices[0].serviceId (might be services.id, not vendor_services.id): "${finalServiceId}"`);
+          } else {
+            console.warn(`⚠️ [SERVICE-ID-RESOLUTION] selectedServices[0] has no valid UUID in id or serviceId fields`);
+          }
+        } else {
+          console.log(`ℹ️ [SERVICE-ID-RESOLUTION] No selectedServices provided, using finalServiceId: "${finalServiceId}"`);
+        }
+        
+        console.log(`🔍 [SERVICE-ID-RESOLUTION] Final resolved serviceId before sync resolution: "${finalServiceId}"`);
+
+        // ✅ CRITICAL: Only resolve if we don't already have a valid UUID from selectedServices
+        // If selectedServices provided a valid UUID, skip the synchronous resolution to avoid overriding it
+        const hasValidServiceIdFromSelectedServices = selectedServices && selectedServices.length > 0 && 
+          selectedServices[0].id && uuidRegex.test(selectedServices[0].id);
+
         // If not a UUID, resolve it NOW (synchronously)
-        if (!uuidRegex.test(finalServiceId)) {
+        // BUT skip if we already got a valid UUID from selectedServices
+        if (!uuidRegex.test(finalServiceId) && !hasValidServiceIdFromSelectedServices) {
           console.log(`🔄 Resolving serviceId "${finalServiceId}" to UUID synchronously...`);
 
           try {
@@ -1155,16 +1535,18 @@ export function UniversalPaymentPage({
               );
 
               if (matchingService) {
-                // Use service_id (UUID) from the vendor service
-                const resolved = matchingService.service_id || matchingService.serviceId;
-                if (uuidRegex.test(resolved)) {
-                  finalServiceId = resolved;
-                  setResolvedServiceId(resolved);
-                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to UUID: "${resolved}"`);
-                } else if (uuidRegex.test(matchingService.id)) {
+                // ✅ FIX: Prioritize id (vendor_services.id) over service_id (services.id reference)
+                // bookings.service_id must reference vendor_services.id, not services.id
+                if (uuidRegex.test(matchingService.id)) {
                   finalServiceId = matchingService.id;
                   setResolvedServiceId(matchingService.id);
-                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to UUID: "${matchingService.id}"`);
+                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to vendor_services.id: "${matchingService.id}"`);
+                } else if (uuidRegex.test(matchingService.service_id || matchingService.serviceId)) {
+                  // Fallback: if id is not a UUID, try service_id (shouldn't happen normally)
+                const resolved = matchingService.service_id || matchingService.serviceId;
+                  finalServiceId = resolved;
+                  setResolvedServiceId(resolved);
+                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to service_id: "${resolved}"`);
                 } else {
                   throw new Error(`Service found but no valid UUID available. Service ID: ${serviceId}`);
                 }
@@ -1263,8 +1645,8 @@ export function UniversalPaymentPage({
               bookingDate,
               bookingTime,
               serviceType: serviceStyle || 'at_center',
-              petId,
-              petName,
+              petId: effectivePetId,
+              petName: effectivePetName,
               customerPhone,
               address: selectedAddress?.addressLine1 || address?.addressLine1,
             });
@@ -1329,6 +1711,19 @@ export function UniversalPaymentPage({
           ? (timeMatch[3] !== undefined ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:${timeMatch[3]}` : `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`)
           : bookingTime;
 
+        // ✅ FINAL CHECK: If selectedServices is provided, ensure we use vendor_services.id
+        // This is a last-ditch check to prevent using services.id instead of vendor_services.id
+        if (selectedServices && selectedServices.length > 0) {
+          const firstSelectedService = selectedServices[0];
+          if (firstSelectedService.id && uuidRegex.test(String(firstSelectedService.id))) {
+            // Only override if current finalServiceId doesn't match the vendor_services.id
+            if (finalServiceId !== String(firstSelectedService.id)) {
+              console.warn(`⚠️ [FINAL-CHECK] Overriding finalServiceId "${finalServiceId}" with selectedServices[0].id "${firstSelectedService.id}"`);
+              finalServiceId = String(firstSelectedService.id);
+            }
+          }
+        }
+
         const bookingPayload: Record<string, unknown> = {
           customerId: resolvedCustomerId, // ✅ Required UUID (resolved above)
           vendorId: vendorId, // ✅ Required UUID
@@ -1338,8 +1733,14 @@ export function UniversalPaymentPage({
           bookingTime: normalizedBookingTime, // ✅ Format: HH:MM or HH:MM:SS
           serviceType: serviceTypeValue, // ✅ Required enum
           amount: taxBreakdown.total, // ✅ Number (schema allows >= 0)
-          petId: petId || undefined, // ✅ Optional UUID
-          petName: petName || undefined, // ✅ Pet name for booking
+          ...(couponDiscount + (appliedPromotion?.discountAmount || 0) > 0
+            ? {
+                discountAmount: couponDiscount + (appliedPromotion?.discountAmount || 0),
+                ...(appliedCoupon?.code ? { couponCode: appliedCoupon.code } : {}),
+              }
+            : {}),
+          petId: effectivePetId || undefined, // ✅ Optional UUID
+          petName: effectivePetName || undefined, // ✅ Pet name for booking
           customerPhone: customerPhone, // ✅ Customer phone
           customerName: customerNameValue, // ✅ Customer name
           address: addressValue, // ✅ Optional string
@@ -1370,7 +1771,9 @@ export function UniversalPaymentPage({
           ...bookingPayload,
           originalServiceId: serviceId, // Log original
           resolvedServiceId: finalServiceId, // Log resolved UUID
+          selectedServicesDebug: selectedServices ? selectedServices.map(s => ({ id: s.id, serviceId: s.serviceId, service_id: s.service_id })) : null,
         });
+        console.log('📋 [CRITICAL] Final serviceId being sent to backend:', finalServiceId);
 
         // ✅ Payment policy aware: attempt booking creation (may be blocked if upfront payment required)
         // Try all possible booking creation endpoints
@@ -1529,6 +1932,10 @@ export function UniversalPaymentPage({
         bookingId: currentBookingId, // ✅ Required UUID (booking should already exist)
       };
 
+      if (category != null && String(category).trim() !== '') {
+        paymentPayload.category = String(category).trim();
+      }
+
       // ✅ Optional fields (not in schema but backend may handle)
       if (customerId) {
         paymentPayload.customerId = customerId; // ✅ Optional UUID
@@ -1561,8 +1968,17 @@ export function UniversalPaymentPage({
       console.log('📤 Creating payment with payload:', paymentPayload);
 
       // ✅ Create payment record (bookingId is REQUIRED - booking should already exist)
+      // ⚠️ SKIP for Razorpay-only payments when finalAmount > 0 (no wallet portion):
+      //    /razorpay/create-order inserts the payment row with razorpay_order_id.
+      //    When the customer pays part from wallet first, we MUST call /payments/create so the backend
+      //    debits wallet and leaves a pending row with razorpay_order_id NULL; create-order then reuses
+      //    that row (see razorpay.razorpay.ts orphan upsert).
+      const isRazorpayOnline = (paymentPayload.paymentMethod === 'razorpay' || selectedMethod === 'razorpay') && finalAmount > 0;
+      const needsPaymentsCreateForWalletSplit =
+        isRazorpayOnline && useWallet && (walletAmount || 0) > 0;
+      const skipPaymentsCreate = isRazorpayOnline && !needsPaymentsCreateForWalletSplit;
       let paymentRes: any = null;
-      if (type === 'booking' && currentBookingId && !bookingCreationDeferred) {
+      if (type === 'booking' && currentBookingId && !bookingCreationDeferred && !skipPaymentsCreate) {
         // ✅ Validate bookingId is a UUID before sending
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!uuidRegex.test(currentBookingId)) {
@@ -1608,7 +2024,12 @@ export function UniversalPaymentPage({
         console.log('📤 Full payment payload (for debugging):', JSON.stringify(paymentPayload, null, 2));
 
         try {
-          paymentRes = await apiClient.post<any>('/payments/create', paymentPayload);
+          const paymentRaw = await apiClient.post<any>('/payments/create', paymentPayload);
+          // Backend wraps as { success, data: { paymentId, status, ... } }
+          paymentRes =
+            paymentRaw && typeof paymentRaw === 'object' && paymentRaw.success && paymentRaw.data
+              ? { ...paymentRaw.data }
+              : paymentRaw;
         } catch (paymentError: any) {
           // ✅ Enhanced error logging to see validation errors
           console.error('❌ Payment creation failed:', paymentError);
@@ -1683,7 +2104,7 @@ export function UniversalPaymentPage({
           return;
         }
       } else {
-        // For orders, create a mock payment response to proceed
+        // For orders or Razorpay online (where /payments/create was skipped), set mock response
         paymentRes = {
           id: `payment-${Date.now()}`,
           status: 'pending',
@@ -1692,12 +2113,18 @@ export function UniversalPaymentPage({
       }
 
       // If fully paid with wallet
-      if (paymentRes.status === 'completed' || finalAmount === 0) {
+      if (paymentRes?.status === 'completed' || finalAmount === 0) {
         // If booking creation was deferred (payment policy), create booking now
         if (type === 'booking' && bookingCreationDeferred && deferredBookingPayload) {
           const createPayload = {
             ...deferredBookingPayload,
             paymentId: paymentRes?.id,
+            ...(useWallet && (walletAmount || 0) > 0
+              ? {
+                  useWallet: true,
+                  walletAmount: Math.round((walletAmount || 0) * 100) / 100,
+                }
+              : {}),
           } as Record<string, unknown>;
           console.log('🔄 Creating booking after wallet payment:', createPayload);
           const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
@@ -1764,6 +2191,10 @@ export function UniversalPaymentPage({
           offerId: selectedRazorpayOffer?.id,
           type: (flowType === 'tele-instant' || bookingCreationDeferred) ? 'booking_prepaid' : undefined,
           vendorId: (flowType === 'tele-instant' || bookingCreationDeferred) ? vendorId : undefined,
+          // Server debits wallet here if /payments/create was skipped (ensures wallet is always charged before Razorpay).
+          ...(type === 'booking' && currentBookingId && useWallet
+            ? { useWallet: true, walletAmount: Math.round((walletAmount || 0) * 100) / 100 }
+            : {}),
         }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
       } catch (orderError: any) {
         console.error('❌ [PAYMENT] Razorpay create-order API call failed:', {
@@ -1846,7 +2277,7 @@ export function UniversalPaymentPage({
       console.log('✅ [PAYMENT] Razorpay order created successfully:', { razorpayOrderId, keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing', amount: orderAmount });
 
       // ✅ FIX: Wait for Razorpay script to load before opening checkout
-      if (typeof window !== 'undefined' && !window.Razorpay) {
+      if (!isWarmpawzCustomerNativeWebView() && typeof window !== 'undefined' && !window.Razorpay) {
         console.log('⏳ [PAYMENT] Waiting for Razorpay script to load...');
         try {
           await loadRazorpayScript();
@@ -1857,184 +2288,410 @@ export function UniversalPaymentPage({
         }
       }
 
-      // Step 4: Open Razorpay checkout
-      const options = {
-        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: amountToCharge * 100,
-        currency: 'INR',
-        name: 'Warmpawz',
-        description: `${serviceName || productName} - ${vendorName}`,
-        order_id: razorpayOrderId,
-        handler: async (response: any) => {
-          try {
-            console.log('✅ [RAZORPAY] Payment response received:', {
-              order_id: response.razorpay_order_id,
-              payment_id: response.razorpay_payment_id,
-              has_signature: !!response.razorpay_signature,
-            });
+      // Step 4: Open Razorpay checkout (omit invalid offer ids / empty prefill — avoids Razorpay …/build/undefined)
+      const titlePart = [serviceName, productName].find((x) => typeof x === 'string' && String(x).trim());
+      const vendorPart =
+        typeof vendorName === 'string' && vendorName.trim() ? vendorName.trim() : 'Warmpawz';
+      const paymentDescription = titlePart
+        ? `${String(titlePart).trim()} — ${vendorPart}`
+        : `Payment — ${vendorPart}`;
+      const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
 
-            // ✅ Step 1: Verify payment with backend
-            console.log('🔄 [RAZORPAY] Verifying payment...');
-            const verifyRes = await apiClient.post('/razorpay/verify-payment', {
+      let resolvedCheckoutEmail: string | undefined =
+        typeof customerEmail === 'string' && customerEmail.includes('@') ? customerEmail.trim() : undefined;
+      if (!resolvedCheckoutEmail && customerPhone) {
+        try {
+          const profileResponse = (await apiClient.get(
+            `/customer/profile?phone=${encodeURIComponent(customerPhone)}`
+          )) as any;
+          const profile = profileResponse?.profile ?? profileResponse;
+          const em = profile?.email;
+          if (typeof em === 'string' && em.includes('@')) {
+            const t = em.trim();
+            if (t) resolvedCheckoutEmail = t;
+          }
+        } catch {
+          /* non-fatal */
+        }
+      }
+
+      const rawOfferId = selectedRazorpayOffer?.id;
+      const razorpayOfferIds =
+        typeof rawOfferId === 'string' &&
+        rawOfferId.trim() &&
+        rawOfferId.trim() !== 'undefined' &&
+        rawOfferId.trim() !== 'null'
+          ? [rawOfferId.trim()]
+          : [];
+      const amountPaise = Math.max(1, Math.round(Number(amountToCharge) * 100));
+
+      const e164Contact = digitsToRazorpayContactE164(phoneDigits);
+      const prefillEmail =
+        resolvedCheckoutEmail &&
+        resolvedCheckoutEmail.includes('@') &&
+        resolvedCheckoutEmail !== 'undefined' &&
+        resolvedCheckoutEmail !== 'null'
+          ? resolvedCheckoutEmail
+          : undefined;
+      const razorpayPrefill: Record<string, string> = {};
+      if (e164Contact) razorpayPrefill.contact = e164Contact;
+      if (prefillEmail) razorpayPrefill.email = prefillEmail;
+      const upiVpaTrimmed = manualUpiVpa.replace(/\s+/g, '').trim().toLowerCase();
+      const validPrefillVpa = upiVpaTrimmed.length > 0 && /^[\w.+-]+@[\w.-]+$/.test(upiVpaTrimmed);
+      if (validPrefillVpa) {
+        razorpayPrefill.vpa = upiVpaTrimmed;
+        razorpayPrefill.method = 'upi';
+      } else if (e164Contact && !razorpayPrefill.email) {
+        // Matches wallet/shop flows: Razorpay often drops UPI on mobile/live without any prefill.email.
+        razorpayPrefill.email = RAZORPAY_PREFILL_EMAIL_FALLBACK;
+      }
+
+      const processRazorpaySuccess = async (response: any) => {
+        try {
+          console.log('✅ [RAZORPAY] Payment response received:', {
+            order_id: response.razorpay_order_id,
+            payment_id: response.razorpay_payment_id,
+            has_signature: !!response.razorpay_signature,
+          });
+
+          // ✅ Step 1: Verify payment with backend (with retry)
+          console.log('🔄 [RAZORPAY] Verifying payment...');
+          let verifyRes: any = null;
+          const MAX_VERIFY_RETRIES = 3;
+          for (let attempt = 1; attempt <= MAX_VERIFY_RETRIES; attempt++) {
+            try {
+              verifyRes = await apiClient.post('/razorpay/verify-payment', {
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              }, undefined, 30000);
+              console.log(`✅ [RAZORPAY] Payment verified on attempt ${attempt}:`, verifyRes);
+              break; // success – exit retry loop
+            } catch (verifyErr: any) {
+              console.error(`❌ [RAZORPAY] verify-payment attempt ${attempt}/${MAX_VERIFY_RETRIES} failed:`, verifyErr?.message);
+              if (attempt === MAX_VERIFY_RETRIES) {
+                // All retries exhausted – throw so outer catch can handle
+                throw verifyErr;
+              }
+              // Exponential backoff: 1s, 2s
+              await new Promise((r) => setTimeout(r, attempt * 1000));
+            }
+          }
+
+          // ✅ Instant tele: create booking via instant-after-payment (no booking until payment done)
+          if (type === 'booking' && flowType === 'tele-instant') {
+            const instantRes = await apiClient.post<any>('/customer/tele/instant-after-payment', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              vendorId,
+              customerId,
+              petId: effectivePetId ?? null,
+              serviceId: resolvedServiceId || serviceId,
+              amount: amountToCharge,
+              serviceName,
+              vendorName,
+              petName: effectivePetName,
+            });
+            const bid = instantRes?.bookingId;
+            if (!bid) {
+              throw new Error(instantRes?.error || 'Instant booking creation failed');
+            }
+            toast.success('Payment successful! Connecting to vet...');
+            setProcessing(false);
+            onSuccess(bid, response.razorpay_order_id, undefined, { isInstantTele: true });
+            return;
+          }
+
+          // ✅ Queue-accepted tele: booking already exists, confirm payment and update status
+          if (type === 'booking' && flowType === 'tele-queue-accepted' && currentBookingId) {
+            const confirmRes = await apiClient.post<any>('/customer/tele/confirm-payment', {
+              bookingId: currentBookingId,
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
             });
-
-            console.log('✅ [RAZORPAY] Payment verified:', verifyRes);
-
-            // ✅ Instant tele: create booking via instant-after-payment (no booking until payment done)
-            if (type === 'booking' && flowType === 'tele-instant') {
-              const instantRes = await apiClient.post<any>('/customer/tele/instant-after-payment', {
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-                vendorId,
-                customerId,
-                petId,
-                serviceId: resolvedServiceId || serviceId,
-                amount: amountToCharge,
-                serviceName,
-                vendorName,
-                petName,
-              });
-              const bid = instantRes?.bookingId;
-              if (!bid) {
-                throw new Error(instantRes?.error || 'Instant booking creation failed');
-              }
-              toast.success('Payment successful! Connecting to vet...');
-              setProcessing(false);
-              onSuccess(bid, response.razorpay_order_id, undefined, { isInstantTele: true });
-              return;
+            if (!confirmRes?.success) {
+              throw new Error(confirmRes?.error || 'Payment confirmation failed');
             }
-
-            // ✅ Queue-accepted tele: booking already exists, confirm payment and update status
-            if (type === 'booking' && flowType === 'tele-queue-accepted' && currentBookingId) {
-              const confirmRes = await apiClient.post<any>('/customer/tele/confirm-payment', {
-                bookingId: currentBookingId,
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-              });
-              if (!confirmRes?.success) {
-                throw new Error(confirmRes?.error || 'Payment confirmation failed');
-              }
-              toast.success('Payment successful! Connecting to vet...');
-              setProcessing(false);
-              onSuccess(currentBookingId, response.razorpay_order_id, undefined, { isInstantTele: true });
-              return;
-            }
-
-            // ✅ If booking creation was deferred, create booking now with payment info
-            if (type === 'booking' && bookingCreationDeferred && deferredBookingPayload) {
-              const createPayload = {
-                ...deferredBookingPayload,
-                razorpayPaymentId: response.razorpay_payment_id,
-                razorpayOrderId: response.razorpay_order_id,
-              };
-              console.log('🔄 Creating booking after payment:', createPayload);
-              const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
-              const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'After Razorpay payment');
-              if (!bookingIdValue) {
-                console.error('❌ No booking ID after payment:', bookingRes);
-                throw new Error('Payment succeeded but booking creation failed. Please contact support.');
-              }
-              currentBookingId = bookingIdValue;
-              bookingCreationDeferred = false;
-            }
-
-            // ✅ Step 2: Apply coupon if used
-            if (appliedCoupon) {
-              try {
-                await apiClient.post('/coupons/apply', {
-                  couponCode: appliedCoupon.code,
-                  bookingId: currentBookingId,
-                  orderId: currentOrderId,
-                  customerId,
-                  amount: amountToCharge,
-                });
-                console.log('✅ [COUPON] Applied successfully');
-              } catch (couponErr) {
-                console.warn('⚠️ [COUPON] Failed to apply:', couponErr);
-                // Don't block payment success if coupon fails
-              }
-            }
-
-            // ✅ Step 3: Apply promotion if used
-            if (appliedPromotion) {
-              try {
-                await apiClient.post('/promotions/apply', {
-                  promotionId: appliedPromotion.id,
-                  bookingId: currentBookingId,
-                  orderId: currentOrderId,
-                  customerId,
-                  amount: amountToCharge,
-                });
-                console.log('✅ [PROMOTION] Applied successfully');
-              } catch (promoErr) {
-                console.warn('⚠️ [PROMOTION] Failed to apply:', promoErr);
-                // Don't block payment success if promotion fails
-              }
-            }
-
-            // ✅ Step 4: Generate OTP for eligible bookings
-            let otpCode: string | undefined = undefined;
-            if (type === 'booking' && serviceStyle !== 'tele') {
-              try {
-                otpCode = await generateBookingOTP(currentBookingId || '', customerId);
-                console.log('✅ [OTP] Generated successfully');
-              } catch (otpErr) {
-                console.warn('⚠️ [OTP] Failed to generate:', otpErr);
-                // Don't block payment success if OTP fails
-              }
-            }
-
-            // ✅ Step 5: Success - booking is now confirmed
-            console.log('✅ [PAYMENT] Complete! Booking confirmed:', currentBookingId);
-            toast.success('Payment successful! Booking confirmed.');
+            toast.success('Payment successful! Connecting to vet...');
             setProcessing(false);
-            onSuccess(currentBookingId || '', currentOrderId, otpCode);
-          } catch (err: any) {
-            console.error('❌ [PAYMENT] Verification failed:', err);
-            const errorMessage = err?.response?.data?.error || err?.message || 'Payment verification failed';
-            toast.error(`${errorMessage}. Please contact support with order ID: ${response.razorpay_order_id}`);
-            setProcessing(false);
+            onSuccess(currentBookingId, response.razorpay_order_id, undefined, { isInstantTele: true });
+            return;
           }
+
+          // ✅ If booking creation was deferred, create booking now with payment info
+          if (type === 'booking' && bookingCreationDeferred && deferredBookingPayload) {
+            const createPayload = {
+              ...deferredBookingPayload,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpayOrderId: response.razorpay_order_id,
+              ...(useWallet && (walletAmount || 0) > 0
+                ? {
+                    useWallet: true,
+                    walletAmount: Math.round((walletAmount || 0) * 100) / 100,
+                  }
+                : {}),
+            };
+            console.log('🔄 Creating booking after payment:', createPayload);
+            const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
+            const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'After Razorpay payment');
+            if (!bookingIdValue) {
+              console.error('❌ No booking ID after payment:', bookingRes);
+              throw new Error('Payment succeeded but booking creation failed. Please contact support.');
+            }
+            currentBookingId = bookingIdValue;
+            bookingCreationDeferred = false;
+          }
+
+          // ✅ Step 2: Apply coupon if used
+          if (appliedCoupon) {
+            try {
+              await apiClient.post('/coupons/apply', {
+                couponCode: appliedCoupon.code,
+                bookingId: currentBookingId,
+                orderId: currentOrderId,
+                customerId,
+                amount: amountToCharge,
+              });
+              console.log('✅ [COUPON] Applied successfully');
+            } catch (couponErr) {
+              console.warn('⚠️ [COUPON] Failed to apply:', couponErr);
+              // Don't block payment success if coupon fails
+            }
+          }
+
+          // ✅ Step 3: Apply promotion if used
+          if (appliedPromotion) {
+            try {
+              await apiClient.post('/promotions/apply', {
+                promotionId: appliedPromotion.id,
+                bookingId: currentBookingId,
+                orderId: currentOrderId,
+                customerId,
+                amount: amountToCharge,
+              });
+              console.log('✅ [PROMOTION] Applied successfully');
+            } catch (promoErr) {
+              console.warn('⚠️ [PROMOTION] Failed to apply:', promoErr);
+              // Don't block payment success if promotion fails
+            }
+          }
+
+          // ✅ Step 4: Generate OTP for eligible bookings
+          let otpCode: string | undefined = undefined;
+          if (type === 'booking' && serviceStyle !== 'tele') {
+            try {
+              otpCode = await generateBookingOTP(currentBookingId || '', customerId);
+              console.log('✅ [OTP] Generated successfully');
+            } catch (otpErr) {
+              console.warn('⚠️ [OTP] Failed to generate:', otpErr);
+              // Don't block payment success if OTP fails
+            }
+          }
+
+          // ✅ Step 5: Success - booking is now confirmed
+          console.log('✅ [PAYMENT] Complete! Booking confirmed:', currentBookingId);
+          toast.success('Payment successful! Booking confirmed.');
+          setProcessing(false);
+          onSuccess(currentBookingId || '', currentOrderId, otpCode);
+        } catch (err: any) {
+          console.error('❌ [PAYMENT] Verification failed:', err);
+          const errorMessage = err?.response?.data?.error || err?.message || 'Payment verification failed';
+          toast.error(`${errorMessage}. Please contact support with order ID: ${response.razorpay_order_id}`);
+          setProcessing(false);
+        }
+      };
+
+      const bookingIdForSlotReleaseOnDismiss: string | undefined =
+        type === 'booking' &&
+        flowType !== 'tele-instant' &&
+        typeof currentBookingId === 'string' &&
+        currentBookingId.length > 0 &&
+        !bookingCreationDeferred
+          ? currentBookingId
+          : undefined;
+
+      const releaseSlotIfCheckoutAbandoned = async () => {
+        const bid = bookingIdForSlotReleaseOnDismiss;
+        if (!bid || razorpayGatewaySuccessHandled || razorpayPaymentFailed) return;
+
+        const cid = typeof customerId === 'string' && customerId.trim() ? customerId.trim() : '';
+        const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
+        const qs = new URLSearchParams();
+        if (cid) qs.set('customerId', cid);
+        if (phoneDigits.length >= 10) qs.set('phone', phoneDigits);
+        const qstr = qs.toString() ? `?${qs.toString()}` : '';
+
+        const pickBooking = (detail: any) =>
+          detail?.data?.booking ?? detail?.booking ?? null;
+
+        let st: string | undefined;
+        let paymentStRaw: string | undefined;
+        try {
+          const detail = await apiClient.get(`/bookings/${bid}${qstr}`);
+          const b = pickBooking(detail);
+          st =
+            b?.status ??
+            detail?.data?.status ??
+            detail?.status;
+          paymentStRaw =
+            b?.payment_status ??
+            b?.paymentStatus ??
+            detail?.data?.booking?.payment_status;
+        } catch {
+          try {
+            const detail2 = await apiClient.get(`/customer/bookings/${bid}${qstr}`);
+            const b2 = pickBooking(detail2);
+            st =
+              b2?.status ??
+              detail2?.data?.status ??
+              detail2?.status;
+            paymentStRaw =
+              b2?.payment_status ??
+              b2?.paymentStatus ??
+              detail2?.data?.booking?.payment_status;
+          } catch {
+            /* GET optional — still attempt cancel when status unknown */
+          }
+        }
+
+        const pst = String(paymentStRaw ?? '').toLowerCase();
+        const paidLike = pst === 'paid' || pst === 'completed';
+
+        // Backend often creates pre-payment rows as status=confirmed + payment_status=pending (slot held).
+        // Old logic only cancelled pending/pending_payment — confirmed+unpaid was skipped, so slots never released.
+        const terminalNoCancel = st && ['cancelled', 'completed', 'no_show', 'in_progress'].includes(st);
+        const paidConfirmed = st === 'confirmed' && paidLike;
+        const skipCancel = terminalNoCancel || paidConfirmed;
+
+        if (!skipCancel) {
+          try {
+            await apiClient.post(`/bookings/${bid}/cancel`, {
+              reason: 'Payment abandoned',
+              cancellationReason: 'Payment abandoned',
+              ...(cid ? { customerId: cid } : {}),
+              ...(phoneDigits.length >= 10 ? { phone: phoneDigits } : {}),
+            });
+            toast.info('Payment cancelled. Your time slot has been released.');
+          } catch (e: any) {
+            console.warn('[PAYMENT] Release slot (cancel booking) failed:', e);
+            const msg =
+              e?.response?.error?.message ??
+              e?.responseData?.error?.message ??
+              e?.message ??
+              'Could not release the slot. Try refreshing the page or pick another time.';
+            toast.error(typeof msg === 'string' ? msg : 'Could not release the slot. Please try again.');
+          }
+        }
+
+        try {
+          onPaymentAbandoned?.();
+        } catch (cbErr) {
+          console.warn('[PAYMENT] onPaymentAbandoned failed:', cbErr);
+        }
+      };
+
+      const options: Record<string, unknown> = {
+        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+        amount: amountPaise,
+        currency: 'INR',
+        name: 'Warmpawz',
+        description: paymentDescription,
+        order_id: razorpayOrderId,
+        handler: async (response: any) => {
+          razorpayGatewaySuccessHandled = true;
+          await processRazorpaySuccess(response);
         },
-        prefill: {
-          contact: customerPhone,
-        },
-        theme: {
-          color: '#FF8C42',
-        },
-        offers: selectedRazorpayOffer ? [selectedRazorpayOffer.id] : [],
+        theme: { color: '#FF8C42' },
         modal: {
           ondismiss: () => {
             setProcessing(false);
-            toast.info('Payment cancelled');
+            void releaseSlotIfCheckoutAbandoned();
           },
         },
       };
-
-      // ✅ FIX: Double-check Razorpay is available before opening
-      if (!window.Razorpay) {
-        console.error('❌ [PAYMENT] Razorpay not available after script load');
-        throw new Error('Payment gateway not loaded. Please refresh the page and try again.');
+      // Custom `display` block can surface QR-only UPI on desktop; when user prefills VPA use default layout + prefill (Razorpay Payment Link–style `prefill.vpa`).
+      if (!validPrefillVpa) {
+        options.config = getWarmpawzRazorpayStandardDisplayConfig();
+      }
+      if (Object.keys(razorpayPrefill).length > 0) {
+        options.prefill = razorpayPrefill;
+      }
+      if (validPrefillVpa || (e164Contact && razorpayPrefill.email)) {
+        options.method = 'upi';
       }
 
       console.log('🚀 [PAYMENT] Opening Razorpay checkout...', {
         razorpayOrderId,
         amount: amountToCharge,
-        keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing'
+        keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing',
+        nativeHost: isWarmpawzCustomerNativeWebView(),
       });
 
-      try {
-        const razorpay = new window.Razorpay(options);
-        razorpay.open();
-        console.log('✅ [PAYMENT] Razorpay checkout opened successfully');
-      } catch (openError: any) {
-        console.error('❌ [PAYMENT] Failed to open Razorpay checkout:', openError);
-        throw new Error(`Failed to open payment gateway: ${openError.message || 'Unknown error'}`);
+      if (isWarmpawzCustomerNativeWebView()) {
+        const w = window as unknown as { ReactNativeWebView?: { postMessage: (s: string) => void } };
+        const nativeOpenPayload: Record<string, unknown> = {
+          description: paymentDescription,
+          currency: 'INR',
+          key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
+          amount: amountPaise,
+          name: 'Warmpawz',
+          order_id: razorpayOrderId,
+          ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
+          theme: { color: '#FF8C42' },
+          // Keep parity with web `new Razorpay(options)` — bare payload hid UPI in prod (react-native-razorpay).
+          ...(!validPrefillVpa ? { config: getWarmpawzRazorpayStandardDisplayConfig() } : {}),
+          ...(validPrefillVpa || (e164Contact && razorpayPrefill.email) ? { method: 'upi' as const } : {}),
+        };
+        try {
+          const resultPromise = waitForWarmpawzNativeRazorpayResult();
+          w.ReactNativeWebView!.postMessage(
+            JSON.stringify({ type: WARMPAWZ_RAZORPAY_NATIVE_MSG.OPEN, payload: nativeOpenPayload })
+          );
+          const nativeResponse = await resultPromise;
+          razorpayGatewaySuccessHandled = true;
+          await processRazorpaySuccess(nativeResponse);
+        } catch (nativeErr: any) {
+          const msg = nativeErr?.message || 'Payment cancelled';
+          if (msg === 'Payment cancelled' || msg.toLowerCase().includes('cancel')) {
+            toast.info('Payment cancelled');
+            void releaseSlotIfCheckoutAbandoned();
+          } else {
+            toast.error(msg);
+          }
+          setProcessing(false);
+        }
+      } else {
+        // ✅ FIX: Double-check Razorpay is available before opening (browser / PWA)
+        if (!window.Razorpay) {
+          console.error('❌ [PAYMENT] Razorpay not available after script load');
+          throw new Error('Payment gateway not loaded. Please refresh the page and try again.');
+        }
+
+        try {
+          const razorpay = new window.Razorpay(sanitizeRazorpayInstanceOptions(options));
+          // ✅ Listen for payment failures (these don't trigger the handler callback)
+          razorpay.on('payment.failed', (resp: any) => {
+            razorpayPaymentFailed = true;
+            console.error('❌ [RAZORPAY] Payment failed event:', {
+              code: resp?.error?.code,
+              description: resp?.error?.description,
+              source: resp?.error?.source,
+              step: resp?.error?.step,
+              reason: resp?.error?.reason,
+              orderId: resp?.error?.metadata?.order_id,
+              paymentId: resp?.error?.metadata?.payment_id,
+            });
+            toast.error(`Payment failed: ${resp?.error?.description || 'Unknown error'}. Please try again.`);
+            setProcessing(false);
+          });
+          razorpay.open();
+          console.log('✅ [PAYMENT] Razorpay checkout opened successfully');
+        } catch (openError: any) {
+          console.error('❌ [PAYMENT] Failed to open Razorpay checkout:', openError);
+          throw new Error(`Failed to open payment gateway: ${openError.message || 'Unknown error'}`);
+        }
       }
 
     } catch (error: any) {
@@ -2096,8 +2753,8 @@ export function UniversalPaymentPage({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Loader2 className="w-12 h-12 animate-spin text-[#FF8C42]" />
+      <div className="flex min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex-col items-center justify-center bg-orange-50">
+        <Loader2 className="h-12 w-12 animate-spin text-[#FF8C42]" />
       </div>
     );
   }
@@ -2121,26 +2778,48 @@ export function UniversalPaymentPage({
       ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.duration) || 0), 0)
       : firstServiceFromArray?.duration);
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-orange-50 pb-48">
-      {/* Header */}
-      <header className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] text-white shadow-lg sticky top-0 z-40">
-        <div className="max-w-lg mx-auto px-4 pt-4 pb-4 flex items-center gap-4">
-          <button onClick={onBack} className="text-white/90 hover:text-white">
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <div className="flex-1">
-            <h1 className="text-lg font-bold">Payment</h1>
-            <p className="text-sm text-white/80">Secure checkout</p>
-          </div>
-          <Shield className="w-6 h-6 text-white/90" />
-        </div>
-      </header>
+  const appShell = layoutVariant === 'appShell';
+  /** Keep in sync with globals.css --customer-footer-offset + .cw-fixed-above-customer-tabbar */
+  const ctaBottomClass = appShell
+    ? 'cw-fixed-above-customer-tabbar'
+    : 'bottom-[max(1rem,env(safe-area-inset-bottom,1rem))]';
+  /** Matches --customer-sticky-cta-scroll-padding (footer + fixed pay strip) */
+  const mainBottomPadding = appShell
+    ? 'cw-scroll-pad-tabbar-sticky-cta'
+    : 'pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]';
 
-      <main className="max-w-lg mx-auto px-4 py-6 space-y-4">
+  const paymentStats = [
+    { value: formatPriceWithSymbol(displayAmount), label: 'Due' },
+    {
+      value: displayDuration != null && !Number.isNaN(Number(displayDuration)) ? `${displayDuration} min` : '—',
+      label: 'Duration',
+    },
+    { value: type === 'booking' ? 'Booking' : 'Order', label: 'Type' },
+  ];
+
+  return (
+    <div className="mx-auto flex h-[100dvh] min-h-0 w-full max-w-customer flex-col overflow-hidden bg-orange-50">
+      {/* In-app payment summary (not Razorpay’s iframe). `compact` keeps safe-area without the 4rem mobile top pad. */}
+      <ServiceDashboardHeader
+        className="sticky top-0 z-50 shrink-0"
+        compact
+        serviceName="Payment"
+        serviceSubtitle="Secure checkout"
+        serviceIcon={Shield}
+        iconColor="text-white"
+        stats={paymentStats}
+        onBack={onBack}
+        showBackButton
+        bottomEdge="sheet"
+        sheetToneClass="bg-orange-50"
+      />
+
+      <main
+        className={`min-h-0 flex-1 space-y-4 overflow-y-auto px-4 -mt-2 pt-5 pb-4 ${mainBottomPadding}`}
+      >
         {/* Address Selection (if needed and on top) */}
         {showAddressSelection && (
-          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <MapPin className="w-5 h-5 text-[#FF8C42]" />
@@ -2173,8 +2852,61 @@ export function UniversalPaymentPage({
           </Card>
         )}
 
+        {type === 'booking' && (vendorName || vendorAddress || staffName || staffPhoto) && (
+          <Card className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <h2 className="mb-3 text-lg font-bold text-gray-900">Your provider</h2>
+            <div className="flex gap-3">
+              {staffPhoto ? (
+                <img
+                  src={staffPhoto}
+                  alt=""
+                  className="h-14 w-14 flex-shrink-0 rounded-full object-cover ring-2 ring-orange-100"
+                />
+              ) : (
+                <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600">
+                  {serviceStyle === 'at_center' ? (
+                    <Building2 className="h-7 w-7" />
+                  ) : (
+                    <Home className="h-7 w-7" />
+                  )}
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-gray-900">{vendorName || 'Provider'}</p>
+                {staffName && staffName.trim() !== (vendorName || '').trim() && (
+                  <p className="text-sm text-gray-600">Professional: {staffName}</p>
+                )}
+                {vendorAddress && (
+                  <p className="mt-1 flex items-start gap-2 text-sm text-gray-600">
+                    <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#FF8C42]" />
+                    <span>{vendorAddress}</span>
+                  </p>
+                )}
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {type === 'booking' && (
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <button
+              type="button"
+              onClick={() => router.push('/pets?forCheckout=1')}
+              className="flex w-full items-center justify-between gap-3 rounded-xl text-left transition-all duration-150 active:scale-[0.98] active:bg-gray-50 touch-manipulation"
+            >
+              <span className="shrink-0 text-sm font-medium text-gray-700">Pet</span>
+              <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+                <span className="truncate text-right text-sm font-semibold text-gray-900">
+                  {selectedPetDisplayName || 'Select Pet'}
+                </span>
+                <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
+              </div>
+            </button>
+          </Card>
+        )}
+
         {/* Booking/Order Summary - Universal display for all service booking flows */}
-        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="text-lg font-bold text-gray-900 mb-4">
             {type === 'booking' ? 'Booking Summary' : 'Order Summary'}
           </h2>
@@ -2258,17 +2990,6 @@ export function UniversalPaymentPage({
             </div>
           )}
 
-          {/* Pet (for bookings) */}
-          {type === 'booking' && petName && (
-            <div className="flex items-center gap-3 py-3 border-b border-gray-100">
-              <User className="w-5 h-5 text-gray-400" />
-              <div className="flex-1">
-                <p className="text-sm text-gray-500">Pet</p>
-                <p className="font-medium">{petName}{petBreed && ` (${petBreed})`}</p>
-              </div>
-            </div>
-          )}
-
           {/* Address (for home services/orders) */}
           {((serviceStyle === 'at_home' && type === 'booking') || type === 'order') && selectedAddress && (
             <div className="flex items-center gap-3 py-3">
@@ -2286,7 +3007,7 @@ export function UniversalPaymentPage({
 
         {/* Promotions & Spotlight Offers */}
         {promotions.length > 0 && (
-          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
               <h2 className="font-semibold text-gray-900">Available Offers</h2>
@@ -2297,7 +3018,7 @@ export function UniversalPaymentPage({
                 <button
                   key={promo.id}
                   onClick={() => applyPromotion(promo)}
-                  className={`w-full text-left p-3 rounded-xl border-2 transition ${appliedPromotion?.id === promo.id
+                  className={`w-full text-left p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${appliedPromotion?.id === promo.id
                     ? 'border-green-500 bg-green-50'
                     : 'border-gray-200 hover:border-[#FF8C42]'
                     }`}
@@ -2326,7 +3047,7 @@ export function UniversalPaymentPage({
         )}
 
         {/* Coupon Section */}
-        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Tag className="w-5 h-5 text-[#FF8C42]" />
@@ -2375,7 +3096,7 @@ export function UniversalPaymentPage({
           ) : (
             <button
               onClick={() => setShowCouponInput(true)}
-              className="w-full flex items-center justify-between p-3 border-2 border-dashed border-gray-200 rounded-xl hover:border-[#FF8C42] transition"
+              className="w-full flex items-center justify-between p-3 border-2 border-dashed border-gray-200 rounded-xl hover:border-[#FF8C42] transition-all duration-150 active:scale-[0.98] touch-manipulation"
             >
               <span className="text-gray-600">Have a coupon code?</span>
               <ChevronRight className="w-5 h-5 text-gray-400" />
@@ -2385,7 +3106,7 @@ export function UniversalPaymentPage({
 
         {/* Razorpay Offers */}
         {razorpayOffers.length > 0 && (
-          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center gap-2 mb-3">
               <Gift className="w-5 h-5 text-blue-500" />
               <h2 className="font-semibold text-gray-900">Payment Offers</h2>
@@ -2396,7 +3117,7 @@ export function UniversalPaymentPage({
                 <button
                   key={offer.id}
                   onClick={() => applyRazorpayOffer(offer)}
-                  className={`w-full text-left p-3 rounded-xl border-2 transition ${selectedRazorpayOffer?.id === offer.id
+                  className={`w-full text-left p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${selectedRazorpayOffer?.id === offer.id
                     ? 'border-blue-500 bg-blue-50'
                     : 'border-gray-200 hover:border-blue-300'
                     }`}
@@ -2423,10 +3144,10 @@ export function UniversalPaymentPage({
 
         {/* Wallet Section */}
         {wallet && wallet.balance > 0 && (
-          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <button
               onClick={() => setUseWallet(!useWallet)}
-              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${useWallet ? 'border-green-500 bg-green-50' : 'border-gray-200'
+              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${useWallet ? 'border-green-500 bg-green-50' : 'border-gray-200'
                 }`}
             >
               <div className="flex items-center gap-3">
@@ -2457,12 +3178,17 @@ export function UniversalPaymentPage({
         )}
 
         {/* Price Breakdown */}
-        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 mb-4">Price Details</h2>
+          {priceIncludesTax && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
+              List price includes GST. Taxable value and GST below add up to the amount you pay (before coupons/wallet).
+            </p>
+          )}
 
           <div className="space-y-3">
             <div className="flex justify-between text-gray-600">
-              <span>Subtotal</span>
+              <span>{priceIncludesTax ? 'Taxable value (excl. GST)' : 'Subtotal'}</span>
               <span>₹{taxBreakdown.subtotal.toFixed(2)}</span>
             </div>
 
@@ -2527,12 +3253,17 @@ export function UniversalPaymentPage({
 
             {/* Platform Fees */}
             {platformFees.platformFee > 0 && (
-              <div className="flex justify-between text-gray-600">
-                <span className="flex items-center gap-1">
-                  Platform Fee
-                  <Info className="w-3 h-3 text-gray-400 cursor-help" aria-label="Platform service charge" />
-                </span>
-                <span>₹{platformFees.platformFee.toFixed(2)}</span>
+              <div className="space-y-1">
+                <div className="flex justify-between text-gray-600">
+                  <span className="flex items-center gap-1">
+                    Platform Fee
+                    <Info className="w-3 h-3 text-gray-400 cursor-help" aria-label="Platform service charge" />
+                  </span>
+                  <span>₹{platformFees.platformFee.toFixed(2)}</span>
+                </div>
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5">
+                  Platform fee is not refundable.
+                </p>
               </div>
             )}
 
@@ -2620,7 +3351,7 @@ export function UniversalPaymentPage({
 
         {/* Saved Payment Methods */}
         {savedMethods.length > 0 && (
-          <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900">Saved Payment Methods</h2>
               <button
@@ -2637,7 +3368,7 @@ export function UniversalPaymentPage({
                 <button
                   key={method.id}
                   onClick={() => setSelectedMethod(method.id)}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${selectedMethod === method.id ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+                  className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${selectedMethod === method.id ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
                     }`}
                 >
                   <div className="flex items-center gap-3">
@@ -2673,10 +3404,10 @@ export function UniversalPaymentPage({
         )}
 
         {/* Pay with Razorpay (default) */}
-        <Card className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <button
             onClick={() => setSelectedMethod('razorpay')}
-            className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition ${selectedMethod === 'razorpay' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
+            className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${selectedMethod === 'razorpay' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
               }`}
           >
             <div className="flex items-center gap-3">
@@ -2702,6 +3433,30 @@ export function UniversalPaymentPage({
               Save card for faster checkout
             </button>
           )}
+
+          {selectedMethod === 'razorpay' && (
+            <div className="mt-4 space-y-2 border-t border-gray-100 pt-4">
+              <label htmlFor="warmpawz-upi-vpa" className="text-xs font-medium text-gray-700">
+                UPI ID (optional)
+              </label>
+              <Input
+                id="warmpawz-upi-vpa"
+                type="text"
+                inputMode="email"
+                autoComplete="off"
+                autoCapitalize="none"
+                spellCheck={false}
+                placeholder="e.g. yourname@paytm"
+                value={manualUpiVpa}
+                onChange={(e) => setManualUpiVpa(e.target.value)}
+                className="rounded-xl border-gray-200"
+              />
+              <p className="text-[11px] leading-snug text-gray-500">
+                If entered, we pass this to Razorpay as <span className="font-mono">prefill.vpa</span>. Desktop checkout often
+                stays QR-first; try mobile browser if collect does not appear — per Razorpay/NPCI rules.
+              </p>
+            </div>
+          )}
         </Card>
 
         {/* OTP Notice for Home/Center services */}
@@ -2722,14 +3477,15 @@ export function UniversalPaymentPage({
         )}
       </main>
 
-      {/* Fixed Bottom Payment Button */}
-      {/* Increased z-index to ensure it's above footer navigation (footer typically uses z-50) */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-lg z-[100]">
-        <div className="max-w-lg mx-auto">
+      {/* Fixed CTA — same max width as BottomNavigation (max-w-customer) */}
+      <div
+        className={`pointer-events-none fixed left-0 right-0 z-[100] mx-auto w-full max-w-customer px-4 ${ctaBottomClass}`}
+      >
+        <div className="pointer-events-auto w-full space-y-2">
           <Button
             onClick={() => handlePayment()}
             disabled={processing || serviceIdResolving || (showAddressSelection && !selectedAddress)}
-            className="w-full py-4 bg-gradient-to-r from-[#FF8C42] to-[#FF7029] hover:from-[#E67A35] hover:to-[#D66A25] text-white rounded-xl font-bold text-lg disabled:opacity-50"
+            className="h-auto w-full rounded-full bg-gradient-to-r from-[#FF8C42] to-[#FF7029] px-6 py-4 text-lg font-bold text-white shadow-md transition-all duration-150 hover:from-[#E67A35] hover:to-[#D66A25] active:scale-[0.98] touch-manipulation disabled:opacity-50"
           >
             {processing || serviceIdResolving ? (
               <span className="flex items-center gap-2">
@@ -2743,8 +3499,8 @@ export function UniversalPaymentPage({
               </>
             )}
           </Button>
-          <p className="text-center text-xs text-gray-500 mt-2 flex items-center justify-center gap-1">
-            <Shield className="w-3 h-3" />
+          <p className="flex items-center justify-center gap-1 text-center text-xs text-gray-600">
+            <Shield className="h-3 w-3 shrink-0 text-gray-500" />
             Secured by Razorpay • 100% Safe Payments
           </p>
         </div>
@@ -2752,8 +3508,8 @@ export function UniversalPaymentPage({
 
       {/* Address Selection Modal */}
       {showAddressModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
-          <div className="bg-white rounded-t-3xl w-full max-h-[80vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50">
+          <div className="w-full max-w-customer bg-white rounded-t-3xl max-h-[80vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b p-4 flex items-center justify-between">
               <h3 className="font-bold text-lg">Select Address</h3>
               <button onClick={() => setShowAddressModal(false)}>
@@ -2834,6 +3590,7 @@ export function UniversalPaymentPage({
         serviceId={resolvedServiceId || serviceId} // Use resolved serviceId if available
         customerId={customerId}
       />
+
     </div>
   );
 }
