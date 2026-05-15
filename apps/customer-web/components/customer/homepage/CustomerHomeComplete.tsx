@@ -475,18 +475,29 @@ export function CustomerHomeComplete({
   const [ecommerceShopCategories, setEcommerceShopCategories] = useState<Array<{ id: string; name: string }>>(
     [],
   );
+  // Evaluated lazily so runtime-config.js (which runs before hydration) is already applied.
+  const [customerCommerceEnabled] = useState<boolean>(() => isCustomerEcommerceEnabled());
 
   useEffect(() => {
-    if (!isCustomerEcommerceEnabled()) return;
+    if (!customerCommerceEnabled) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiClient.get<{ categories?: Array<{ id?: string; name?: string }> }>('/ecommerce/categories');
-        const list = res?.categories;
-        if (cancelled || !Array.isArray(list)) return;
-        setEcommerceShopCategories(
-          list.map((c) => ({ id: String(c.id ?? ''), name: String(c.name ?? 'Category') })).filter((c) => c.id),
-        );
+        const res = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>('/ecommerce/categories');
+        const raw = res?.categories;
+        if (cancelled || !Array.isArray(raw)) return;
+        const mapped = raw
+          .map((c) => {
+            const id = String(
+              c.id ?? c.category_id ?? c.uuid ?? '',
+            ).trim();
+            const name = String(
+              c.name ?? c.title ?? c.display_name ?? 'Category',
+            ).trim();
+            return { id, name };
+          })
+          .filter((c) => c.id);
+        if (!cancelled) setEcommerceShopCategories(mapped);
       } catch {
         if (!cancelled) setEcommerceShopCategories([]);
       }
@@ -494,7 +505,7 @@ export function CustomerHomeComplete({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [customerCommerceEnabled]);
 
   /** Single entry for home CTAs: internal screens → onNavigate; paths → router; http(s) / mailto / tel → window. */
   const handleNavigation = useCallback(
@@ -2280,7 +2291,7 @@ export function CustomerHomeComplete({
               <h2 className="text-gray-900 text-sm font-semibold">Shop</h2>
             </div>
             <div className="flex-1 h-px bg-gray-100" aria-hidden />
-            {isCustomerEcommerceEnabled() && ecommerceShopCategories.length > 0 ? (
+            {customerCommerceEnabled ? (
               <button
                 type="button"
                 onClick={() => handleNavigation('shop')}
@@ -2290,7 +2301,7 @@ export function CustomerHomeComplete({
               </button>
             ) : null}
           </div>
-          {!isCustomerEcommerceEnabled() ? (
+          {!customerCommerceEnabled ? (
             <div className="flex gap-3 overflow-x-auto px-4 py-1 scrollbar-hide">
               {[
                 { id: 'food', label: 'Food', icon: <Bone className="w-5 h-5 text-orange-500" /> },
@@ -2318,7 +2329,31 @@ export function CustomerHomeComplete({
               ))}
             </div>
           ) : ecommerceShopCategories.length === 0 ? (
-            <div className="px-4 py-3 text-xs text-gray-500">Marketplace categories will appear here when available.</div>
+            <div className="flex gap-3 overflow-x-auto px-4 py-1 scrollbar-hide">
+              {[
+                { id: 'food', label: 'Food', icon: <Bone className="w-5 h-5 text-orange-500" /> },
+                { id: 'toys', label: 'Toys', icon: <Dog className="w-5 h-5 text-blue-500" /> },
+                { id: 'clothes', label: 'Clothes', icon: <Shirt className="w-5 h-5 text-teal-500" /> },
+                { id: 'accessories', label: 'Accessories', icon: <Watch className="w-5 h-5 text-pink-500" /> },
+                { id: 'medicine', label: 'Medicine', icon: <Pill className="w-5 h-5 text-red-500" /> },
+                { id: 'grooming', label: 'Grooming', icon: <Scissors className="w-5 h-5 text-purple-500" /> },
+                { id: 'beds', label: 'Beds', icon: <Bed className="w-5 h-5 text-indigo-500" /> },
+                { id: 'bowls', label: 'Bowls', icon: <UtensilsCrossed className="w-5 h-5 text-green-500" /> },
+              ].map((category) => (
+                <button
+                  key={category.id}
+                  type="button"
+                  className="flex-shrink-0 flex flex-col items-center gap-1 active:opacity-90"
+                  onClick={() => handleNavigation('/shop')}
+                  aria-label={`Browse ${category.label}`}
+                >
+                  <div className="w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm">
+                    {category.icon}
+                  </div>
+                  <span className="text-[10px] text-gray-700 text-center font-medium leading-tight">{category.label}</span>
+                </button>
+              ))}
+            </div>
           ) : (
             <div className="flex gap-3 overflow-x-auto px-4 py-1 scrollbar-hide">
               {ecommerceShopCategories.map((category) => (

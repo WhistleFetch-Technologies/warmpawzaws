@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { Button } from '@/components/ui/button';
 import { 
   Camera, Edit2, Save, X, User, Calendar, 
@@ -1217,7 +1218,7 @@ export function UserAccountSidebar({
       action: 'my-packages' as const,
       isExternal: true,
     },
-    { icon: ShoppingBag, label: 'My Orders', color: 'from-orange-100 to-orange-200 text-orange-600', action: 'orders', isExternal: true, comingSoon: true },
+    { icon: ShoppingBag, label: 'My Orders', color: 'from-orange-100 to-orange-200 text-orange-600', action: 'orders', isExternal: true, comingSoon: !isCustomerEcommerceEnabled() },
     { icon: Wallet, label: 'My Wallet', color: 'from-emerald-100 to-emerald-200 text-emerald-600', action: 'wallet', isExternal: true },
     { icon: Award, label: 'Rewards & Loyalty', color: 'from-amber-100 to-amber-200 text-amber-600', action: 'rewards-loyalty', isExternal: true },
     { icon: Users, label: 'Refer & Earn', color: 'from-cyan-100 to-cyan-200 text-cyan-600', action: 'referral-system', isExternal: true },
@@ -1230,9 +1231,9 @@ export function UserAccountSidebar({
       color: 'from-pink-100 to-pink-200 text-pink-600',
       view: 'cart' as const,
       badge: cartItems.length,
-      comingSoon: true,
+      comingSoon: !isCustomerEcommerceEnabled(),
     },
-    { icon: Heart, label: 'Saved Items', color: 'from-red-100 to-red-200 text-red-600', view: 'saved' as const, badge: savedItems.length, comingSoon: true },
+    { icon: Heart, label: 'Saved Items', color: 'from-red-100 to-red-200 text-red-600', view: 'saved' as const, badge: savedItems.length, comingSoon: !isCustomerEcommerceEnabled() },
     { icon: CreditCard, label: 'Payment Settings', color: 'from-yellow-100 to-yellow-200 text-yellow-600', view: 'payments' as const },
     { icon: Bell, label: 'Notifications', color: 'from-indigo-100 to-indigo-200 text-indigo-600', view: 'notifications' as const },
     { icon: HelpCircle, label: 'Help & Support', color: 'from-gray-100 to-gray-200 text-gray-600', view: 'help' as const },
