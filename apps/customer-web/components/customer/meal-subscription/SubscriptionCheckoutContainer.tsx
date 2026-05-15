@@ -77,6 +77,14 @@ export function SubscriptionCheckoutContainer({
       convenienceFeeUpfront?: number;
       subtotalPerCycle?: number;
     };
+    gst?: {
+      foodGstPct?: number;
+      deliveryGstPct?: number;
+      foodGstAmount?: number;
+      deliveryGstAmount?: number;
+      totalGstAmount?: number;
+    };
+    deliveryQuoteMessage?: string;
   } | null>(null);
 
   const sessionsManualRef = useRef(false);
@@ -585,6 +593,12 @@ export function SubscriptionCheckoutContainer({
           )}
         </div>
 
+        {preview?.deliveryQuoteMessage && (
+          <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+            {preview.deliveryQuoteMessage}
+          </p>
+        )}
+
         <div>
           <Label>Dietary / delivery instructions</Label>
           <Textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={2} />
@@ -659,7 +673,8 @@ export function SubscriptionCheckoutContainer({
             !startDate ||
             (pets.length > 0 && !petId) ||
             (needsTwiceWeeklyDays && weekdays.length !== 2) ||
-            (needsWeeklyDay && weekdays.length !== 1)
+            (needsWeeklyDay && weekdays.length !== 1) ||
+            Boolean(preview?.deliveryQuoteMessage)
           }
         >
           {submitting ? 'Opening payment…' : `Pay ₹${estimatedTotal}`}

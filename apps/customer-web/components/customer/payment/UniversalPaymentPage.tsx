@@ -80,6 +80,7 @@ interface UniversalPaymentPageProps {
     logisticsType?: string;
     foodSubtotalInr: number;
     foodGstPct: number;
+    deliveryGstPct?: number;
     mealPlanGstCatalogCategoryId?: string;
     deliveryFeeInr: number;
     platformFeeInr: number;
@@ -477,6 +478,13 @@ export function UniversalPaymentPage({
         : String(mealPlanGstCatalogCategoryId || '').trim();
     if (!catId) catId = 'nutritionist';
 
+    const deliveryFeeForTax =
+      type === 'meal_one_time' && mealOneTimeDraft
+        ? Number(mealOneTimeDraft.deliveryFeeInr) || 0
+        : type === 'meal_subscription' && mealSubscriptionFeeTotals
+          ? Number(mealSubscriptionFeeTotals.deliveryFee) || 0
+          : 0;
+
     if (type === 'meal_subscription' && mealSubscriptionFeeTotals) {
       const p = mealSubscriptionFeeTotals;
       const t =
@@ -519,18 +527,31 @@ export function UniversalPaymentPage({
     }
 
     try {
+      const mealTaxItems: Record<string, unknown>[] = [
+        {
+          id: 'meal-plan-food',
+          type: 'service',
+          catalogCategoryId: catId,
+          gstApplicationScope: 'meal_plan_food',
+          amount: foodAmt,
+          quantity: 1,
+          category: 'nutrition',
+        },
+      ];
+      if (deliveryFeeForTax > 0.009) {
+        mealTaxItems.push({
+          id: 'meal-plan-delivery',
+          type: 'service',
+          catalogCategoryId: catId,
+          gstApplicationScope: 'meal_plan_delivery',
+          amount: deliveryFeeForTax,
+          quantity: 1,
+          category: 'nutrition',
+        });
+      }
+
       const taxRes = await apiClient.post<any>('/tax/calculate', {
-        items: [
-          {
-            id: 'meal-plan-food',
-            type: 'service',
-            catalogCategoryId: catId,
-            gstApplicationScope: 'meal_plan_food',
-            amount: foodAmt,
-            quantity: 1,
-            category: 'nutrition',
-          },
-        ],
+        items: mealTaxItems,
         vendorId,
         customerId,
         customerPhone,
@@ -547,12 +568,25 @@ export function UniversalPaymentPage({
         const totalTax = taxRes.totalTax ?? cgst + sgst + igst;
         const exclusiveSub = Number(taxRes.totalAmount);
         const taxableForLabel = Number.isFinite(exclusiveSub) ? exclusiveSub : foodAmt;
-        const rawRate = Number(taxRes.items?.[0]?.taxRate);
-        const fallbackRateDraft =
-          type === 'meal_one_time' && mealOneTimeDraft
-            ? Math.min(100, Math.max(0, Number(mealOneTimeDraft.foodGstPct) || 5))
-            : 5;
-        const taxRate = Number.isFinite(rawRate) ? rawRate : fallbackRateDraft;
+        const foodLine = Array.isArray(taxRes.items)
+          ? taxRes.items.find(
+              (it: { id?: string; itemId?: string }) =>
+                it.id === 'meal-plan-food' || it.itemId === 'meal-plan-food',
+            )
+          : undefined;
+        const rawRate = Number(
+          (foodLine as { taxRate?: number; gstRate?: number } | undefined)?.taxRate ??
+            (foodLine as { gstRate?: number } | undefined)?.gstRate ??
+            taxRes.items?.[0]?.taxRate ??
+            taxRes.items?.[0]?.gstRate,
+        );
+        const draftFoodPct =
+          type === 'meal_one_time' && mealOneTimeDraft ? Number(mealOneTimeDraft.foodGstPct) : NaN;
+        const taxRate = Number.isFinite(rawRate)
+          ? rawRate
+          : Number.isFinite(draftFoodPct)
+            ? Math.min(100, Math.max(0, draftFoodPct))
+            : 0;
         const interState =
           typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0.009;
         const grand = Number(taxRes.grandTotal);
@@ -575,19 +609,31 @@ export function UniversalPaymentPage({
       console.error('Meal checkout tax error:', e);
     }
 
-    const fallbackRate =
-      type === 'meal_one_time' && mealOneTimeDraft
-        ? Math.min(100, Math.max(0, Number(mealOneTimeDraft.foodGstPct) || 5))
-        : 5;
+    const draftFoodPctCatch =
+      type === 'meal_one_time' && mealOneTimeDraft ? Number(mealOneTimeDraft.foodGstPct) : NaN;
+    const fallbackRate = Number.isFinite(draftFoodPctCatch)
+      ? Math.min(100, Math.max(0, draftFoodPctCatch))
+      : 0;
     const taxable = foodAmt;
     const totalTax = (taxable * fallbackRate) / 100;
+    const deliveryPctFallback =
+      type === 'meal_one_time' &&
+      mealOneTimeDraft &&
+      typeof mealOneTimeDraft.deliveryGstPct === 'number'
+        ? mealOneTimeDraft.deliveryGstPct
+        : 0;
+    const deliveryTax =
+      deliveryFeeForTax > 0.009
+        ? Math.round(((deliveryFeeForTax * deliveryPctFallback) / 100) * 100) / 100
+        : 0;
+    const combinedTax = Math.round((totalTax + deliveryTax) * 100) / 100;
     setTaxBreakdown({
       subtotal: taxable,
-      cgst: totalTax / 2,
-      sgst: totalTax / 2,
+      cgst: combinedTax / 2,
+      sgst: combinedTax / 2,
       igst: 0,
-      totalTax,
-      total: taxable + totalTax,
+      totalTax: combinedTax,
+      total: taxable + deliveryFeeForTax + combinedTax,
       taxRate: fallbackRate,
       isInterState: false,
     });

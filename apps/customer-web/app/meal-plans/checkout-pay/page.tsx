@@ -25,6 +25,7 @@ export type MealOneTimePayDraft = {
   logisticsType?: string;
   foodSubtotalInr: number;
   foodGstPct: number;
+  deliveryGstPct?: number;
   mealPlanGstCatalogCategoryId?: string;
   deliveryFeeInr: number;
   platformFeeInr: number;
@@ -76,8 +77,9 @@ function MealOneTimePayInner() {
     const d = Number(draft.deliveryFeeInr) || 0;
     const p = Number(draft.platformFeeInr) || 0;
     const c = Number(draft.convenienceFeeInr) || 0;
-    const gstFlat = (food * (Number(draft.foodGstPct) || 0)) / 100;
-    return Math.round((food + d + p + c + gstFlat) * 100) / 100;
+    const gstFood = (food * (Number(draft.foodGstPct) || 0)) / 100;
+    const gstDelivery = (d * (Number(draft.deliveryGstPct) || 0)) / 100;
+    return Math.round((food + d + p + c + gstFood + gstDelivery) * 100) / 100;
   }, [draft]);
 
   const summaryLines: MealSubscriptionSummaryLine[] = useMemo(() => {

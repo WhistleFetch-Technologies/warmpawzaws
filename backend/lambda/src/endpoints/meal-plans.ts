@@ -728,7 +728,14 @@ export function registerMealPlanEndpoints(app: Hono) {
           Math.round(feeQuote.platformFeePerCycle * bc * 100) / 100;
         const convenienceFeeUpfront =
           Math.round(feeQuote.convenienceFeePerCycle * bc * 100) / 100;
-        const mealGstPreview = computeMealGstBreakdown(foodSubtotalUpfront, 0, gstRates.foodGstPct, 0);
+        const deliveryTotalUpfront =
+          feeQuote.totalDeliveryFeeUpfront != null ? feeQuote.totalDeliveryFeeUpfront : 0;
+        const mealGstPreview = computeMealGstBreakdown(
+          foodSubtotalUpfront,
+          deliveryTotalUpfront,
+          gstRates.foodGstPct,
+          gstRates.deliveryGstPct,
+        );
         const upfrontTotalWithFoodGst =
           Math.round((feeQuote.upfrontTotalAmount + mealGstPreview.totalGstAmount) * 100) / 100;
         return c.json({
@@ -738,11 +745,17 @@ export function registerMealPlanEndpoints(app: Hono) {
           purchaseCadence,
           deliveryFee: feeQuote.deliveryFeePendingAddress ? null : feeQuote.totalDeliveryFeeUpfront,
           deliveryFeePendingAddress: feeQuote.deliveryFeePendingAddress,
+          deliveryQuoteMessage: feeQuote.deliveryQuoteMessage,
           platformFee: feeQuote.platformFeePerCycle,
           convenienceFee: feeQuote.convenienceFeePerCycle,
           totalAmount: upfrontTotalWithFoodGst,
           leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
-          gst: { ...gstRates, foodGstAmount: mealGstPreview.foodGstAmount },
+          gst: {
+            ...gstRates,
+            foodGstAmount: mealGstPreview.foodGstAmount,
+            deliveryGstAmount: mealGstPreview.deliveryGstAmount,
+            totalGstAmount: mealGstPreview.totalGstAmount,
+          },
           subscriptionCheckout: {
             ...subCheckout,
             packageTotalAmount,
@@ -760,70 +773,138 @@ export function registerMealPlanEndpoints(app: Hono) {
         });
       }
 
-      let deliveryFee = 0;
+      let deliveryFee: number | null = null;
       let platformFee = 0;
       let convenienceFee = 0;
-      try {
-        const feeMap = await getFeeGlobalsMap();
-        const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
-        const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
-        platformFee = Math.round(subtotal * (platformFeePercentage / 100));
-        if (maxPlatformFee > 0 && platformFee > maxPlatformFee) platformFee = maxPlatformFee;
-        convenienceFee = parseFloat(
-          feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0'
+
+      const feeMap = await getFeeGlobalsMap();
+      const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
+      const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
+      platformFee = Math.round(subtotal * (platformFeePercentage / 100));
+      if (maxPlatformFee > 0 && platformFee > maxPlatformFee) platformFee = maxPlatformFee;
+      convenienceFee = parseFloat(
+        feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0'
+      );
+
+      const vendors = await query(
+        `SELECT latitude, longitude, metadata FROM vendors WHERE id = $1 LIMIT 1`,
+        [plan.vendor_id]
+      ).catch(() => ({ rows: [] }));
+      const vendor = vendors.rows?.[0] || {};
+      const customerLat = parseOptionalNumber(c.req.query('customerLat') || c.req.query('lat'));
+      const customerLng = parseOptionalNumber(c.req.query('customerLng') || c.req.query('lng'));
+      if (customerLat == null || customerLng == null) {
+        const mealGstNoAddr = computeMealGstBreakdown(
+          subtotal,
+          0,
+          gstRates.foodGstPct,
+          gstRates.deliveryGstPct,
         );
-
-        const vendors = await query(
-          `SELECT latitude, longitude, metadata FROM vendors WHERE id = $1 LIMIT 1`,
-          [plan.vendor_id]
-        ).catch(() => ({ rows: [] }));
-        const vendor = vendors.rows?.[0] || {};
-        const customerLat = parseOptionalNumber(c.req.query('customerLat') || c.req.query('lat'));
-        const customerLng = parseOptionalNumber(c.req.query('customerLng') || c.req.query('lng'));
-        if (customerLat == null || customerLng == null) {
-          const mealGstNoAddr = computeMealGstBreakdown(subtotal, 0, gstRates.foodGstPct, 0);
-          const packageTotalAmount =
-            subtotal + platformFee + convenienceFee + mealGstNoAddr.totalGstAmount;
-          return c.json(
-            {
-              success: true,
-              subtotal,
-              purchaseType: purchaseTypeNorm,
-              purchaseCadence,
-              deliveryFee: null,
-              deliveryFeePendingAddress: true,
-              platformFee,
-              convenienceFee,
-              totalAmount: packageTotalAmount,
-              leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
-              gst: { ...gstRates, foodGstAmount: mealGstNoAddr.foodGstAmount },
+        const packageTotalAmount =
+          subtotal + platformFee + convenienceFee + mealGstNoAddr.totalGstAmount;
+        return c.json(
+          {
+            success: true,
+            subtotal,
+            purchaseType: purchaseTypeNorm,
+            purchaseCadence,
+            deliveryFee: null,
+            deliveryFeePendingAddress: true,
+            platformFee,
+            convenienceFee,
+            totalAmount: packageTotalAmount,
+            leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+            gst: {
+              ...gstRates,
+              foodGstAmount: mealGstNoAddr.foodGstAmount,
+              deliveryGstAmount: mealGstNoAddr.deliveryGstAmount,
+              totalGstAmount: mealGstNoAddr.totalGstAmount,
             },
-            200
-          );
-        }
-        const vendorMeta = (typeof vendor.metadata === 'object' && vendor.metadata) || {};
-        const distanceKm = deriveDistanceKmFromLocations({
-          pickupLat: vendor.latitude ?? (vendorMeta as any).lat ?? (vendorMeta as any).latitude,
-          pickupLng: vendor.longitude ?? (vendorMeta as any).lng ?? (vendorMeta as any).longitude,
-          dropLat: customerLat,
-          dropLng: customerLng,
-          fallbackKm: 0,
-        });
-        const deliveryQuote = await computePolicyDeliveryFeeForOrder({
-          orderSubtotalInr: subtotal,
-          distanceKm,
-          logisticsType,
-          weekend,
-          festival,
-          rain,
-        });
-        deliveryFee = deliveryQuote.deliveryFeeInr;
-
-      } catch (_) {
-        deliveryFee = 0;
-        platformFee = Math.round(subtotal * 0.02);
+          },
+          200
+        );
       }
-      const mealGstOneTime = computeMealGstBreakdown(subtotal, 0, gstRates.foodGstPct, 0);
+      const vendorMeta = (typeof vendor.metadata === 'object' && vendor.metadata) || {};
+      const distanceKm = deriveDistanceKmFromLocations({
+        pickupLat: vendor.latitude ?? (vendorMeta as any).lat ?? (vendorMeta as any).latitude,
+        pickupLng: vendor.longitude ?? (vendorMeta as any).lng ?? (vendorMeta as any).longitude,
+        dropLat: customerLat,
+        dropLng: customerLng,
+      });
+      if (distanceKm == null) {
+        const mealGstNoVendorLoc = computeMealGstBreakdown(
+          subtotal,
+          0,
+          gstRates.foodGstPct,
+          gstRates.deliveryGstPct,
+        );
+        const packageTotalAmount =
+          subtotal + platformFee + convenienceFee + mealGstNoVendorLoc.totalGstAmount;
+        return c.json({
+          success: true,
+          subtotal,
+          purchaseType: purchaseTypeNorm,
+          purchaseCadence,
+          deliveryFee: null,
+          deliveryFeePendingAddress: false,
+          deliveryQuoteMessage:
+            'Vendor pickup coordinates are not configured. Distance-based delivery fee cannot be computed.',
+          platformFee,
+          convenienceFee,
+          totalAmount: packageTotalAmount,
+          leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+          gst: {
+            ...gstRates,
+            foodGstAmount: mealGstNoVendorLoc.foodGstAmount,
+            deliveryGstAmount: mealGstNoVendorLoc.deliveryGstAmount,
+            totalGstAmount: mealGstNoVendorLoc.totalGstAmount,
+          },
+        });
+      }
+      const deliveryQuote = await computePolicyDeliveryFeeForOrder({
+        orderSubtotalInr: subtotal,
+        distanceKm,
+        logisticsType,
+        weekend,
+        festival,
+        rain,
+      });
+      if (!deliveryQuote.success || deliveryQuote.deliveryFeeInr == null) {
+        const mealGstNoDelivery = computeMealGstBreakdown(
+          subtotal,
+          0,
+          gstRates.foodGstPct,
+          gstRates.deliveryGstPct,
+        );
+        const packageTotalAmount =
+          subtotal + platformFee + convenienceFee + mealGstNoDelivery.totalGstAmount;
+        return c.json({
+          success: true,
+          subtotal,
+          purchaseType: purchaseTypeNorm,
+          purchaseCadence,
+          deliveryFee: null,
+          deliveryFeePendingAddress: false,
+          deliveryQuoteMessage: deliveryQuote.message,
+          platformFee,
+          convenienceFee,
+          totalAmount: packageTotalAmount,
+          leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+          gst: {
+            ...gstRates,
+            foodGstAmount: mealGstNoDelivery.foodGstAmount,
+            deliveryGstAmount: mealGstNoDelivery.deliveryGstAmount,
+            totalGstAmount: mealGstNoDelivery.totalGstAmount,
+          },
+        });
+      }
+      deliveryFee = deliveryQuote.deliveryFeeInr;
+      const mealGstOneTime = computeMealGstBreakdown(
+        subtotal,
+        deliveryFee,
+        gstRates.foodGstPct,
+        gstRates.deliveryGstPct,
+      );
       const packageTotalAmount =
         subtotal + deliveryFee + platformFee + convenienceFee + mealGstOneTime.totalGstAmount;
       return c.json({
@@ -836,7 +917,12 @@ export function registerMealPlanEndpoints(app: Hono) {
         convenienceFee,
         totalAmount: packageTotalAmount,
         leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
-        gst: { ...gstRates, foodGstAmount: mealGstOneTime.foodGstAmount },
+        gst: {
+          ...gstRates,
+          foodGstAmount: mealGstOneTime.foodGstAmount,
+          deliveryGstAmount: mealGstOneTime.deliveryGstAmount,
+          totalGstAmount: mealGstOneTime.totalGstAmount,
+        },
       });
     } catch (error: any) {
       console.error('Error meal order preview:', error);
@@ -1067,26 +1153,47 @@ export function registerMealPlanEndpoints(app: Hono) {
         );
       }
       const policyForSignals = await fetchCustomerDeliveryFeePolicy();
-      
-      // ✅ FIX GAP 6.1 & 6.2: Get configurable delivery, platform and convenience fees
+
       let deliveryFee = 0;
       let platformFee = 0;
       let convenienceFee = 0;
-      
-      try {
-        const vendors = await query(
-          `SELECT latitude, longitude, metadata FROM vendors WHERE id = $1 LIMIT 1`,
-          [plan.vendor_id]
-        ).catch(() => ({ rows: [] }));
-        const vendor = vendors.rows?.[0] || {};
-        const vendorMeta = (typeof vendor.metadata === 'object' && vendor.metadata) || {};
-        const distanceKm = deriveDistanceKmFromLocations({
-          pickupLat: vendor.latitude ?? (vendorMeta as any).lat ?? (vendorMeta as any).latitude,
-          pickupLng: vendor.longitude ?? (vendorMeta as any).lng ?? (vendorMeta as any).longitude,
-          dropLat: normalizedAddress.lat,
-          dropLng: normalizedAddress.lng,
-          fallbackKm: 0,
-        });
+
+      const vendors = await query(
+        `SELECT latitude, longitude, metadata FROM vendors WHERE id = $1 LIMIT 1`,
+        [plan.vendor_id],
+      ).catch(() => ({ rows: [] }));
+      const vendor = vendors.rows?.[0] || {};
+      const vendorMeta = (typeof vendor.metadata === 'object' && vendor.metadata) || {};
+      const distanceKm = deriveDistanceKmFromLocations({
+        pickupLat: vendor.latitude ?? (vendorMeta as any).lat ?? (vendorMeta as any).latitude,
+        pickupLng: vendor.longitude ?? (vendorMeta as any).lng ?? (vendorMeta as any).longitude,
+        dropLat: normalizedAddress.lat,
+        dropLng: normalizedAddress.lng,
+      });
+
+      const feeMap = await getFeeGlobalsMap();
+      const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
+      const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
+      convenienceFee = parseFloat(
+        feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0',
+      );
+
+      platformFee = Math.round(subtotal * (platformFeePercentage / 100));
+      if (maxPlatformFee > 0 && platformFee > maxPlatformFee) {
+        platformFee = maxPlatformFee;
+      }
+
+      if ((logisticsType || 'warmpawz') === 'warmpawz') {
+        if (distanceKm == null) {
+          return c.json(
+            {
+              error:
+                'Vendor pickup coordinates are not configured. Distance-based delivery fee cannot be computed.',
+              code: 'VENDOR_LOCATION_MISSING',
+            },
+            400,
+          );
+        }
         const deliveryQuote = await computePolicyDeliveryFeeForOrder({
           orderSubtotalInr: subtotal,
           distanceKm,
@@ -1099,32 +1206,27 @@ export function registerMealPlanEndpoints(app: Hono) {
             parseOptionalBoolean(rain) ??
             (policyForSignals.runtimeSignals?.rainActive ?? false),
         });
-        deliveryFee = deliveryQuote.deliveryFeeInr;
-        
-        // Get platform and convenience fees from admin_settings or finance_rules
-        const feeMap = await getFeeGlobalsMap();
-
-        const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
-        const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
-        convenienceFee = parseFloat(
-          feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0'
-        );
-        
-        platformFee = Math.round(subtotal * (platformFeePercentage / 100));
-        if (maxPlatformFee > 0 && platformFee > maxPlatformFee) {
-          platformFee = maxPlatformFee;
+        if (!deliveryQuote.success || deliveryQuote.deliveryFeeInr == null) {
+          return c.json(
+            {
+              error: deliveryQuote.message || 'Delivery fee could not be computed for this address.',
+              code: 'DELIVERY_QUOTE_FAILED',
+              zone: deliveryQuote.zone,
+            },
+            400,
+          );
         }
-      } catch (feeError) {
-        console.warn('Error fetching configurable fees, using defaults:', feeError);
-        // Use default values
-        deliveryFee = logisticsType === 'warmpawz' ? 50 : 0;
-        platformFee = Math.round(subtotal * 0.02);
-        convenienceFee = 0;
+        deliveryFee = deliveryQuote.deliveryFeeInr;
       }
-      
+
       const totalAmountBeforeGst = subtotal + deliveryFee + platformFee + convenienceFee;
       const gstRatesOrder = await getMealPlanGstRates(plan as Record<string, unknown>);
-      const mealGstOrder = computeMealGstBreakdown(subtotal, 0, gstRatesOrder.foodGstPct, 0);
+      const mealGstOrder = computeMealGstBreakdown(
+        subtotal,
+        deliveryFee,
+        gstRatesOrder.foodGstPct,
+        gstRatesOrder.deliveryGstPct,
+      );
       const totalAmount = Math.round((totalAmountBeforeGst + mealGstOrder.totalGstAmount) * 100) / 100;
 
       const moCols = await mealOrdersTableColumns();

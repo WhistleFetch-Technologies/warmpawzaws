@@ -3,8 +3,6 @@ import {
   fetchCustomerDeliveryFeePolicy,
 } from './customer-delivery-fee-policy';
 
-const DEFAULT_DELIVERY_FEE_INR = 50;
-
 export function calculateDistanceKm(
   lat1: number,
   lng1: number,
@@ -29,13 +27,13 @@ function finiteOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Null when pickup or drop coordinates are missing — callers must not quote zone pricing on fake distance. */
 export function deriveDistanceKmFromLocations(input: {
   pickupLat?: unknown;
   pickupLng?: unknown;
   dropLat?: unknown;
   dropLng?: unknown;
-  fallbackKm?: number;
-}): number {
+}): number | null {
   const pickupLat = finiteOrNull(input.pickupLat);
   const pickupLng = finiteOrNull(input.pickupLng);
   const dropLat = finiteOrNull(input.dropLat);
@@ -50,38 +48,49 @@ export function deriveDistanceKmFromLocations(input: {
     return calculateDistanceKm(pickupLat, pickupLng, dropLat, dropLng);
   }
 
-  return Math.max(0, Number(input.fallbackKm || 0));
+  return null;
 }
 
 export async function computePolicyDeliveryFeeForOrder(input: {
   orderSubtotalInr: number;
-  distanceKm: number;
+  distanceKm: number | null | undefined;
   logisticsType?: string;
   weekend?: boolean;
   festival?: boolean;
   rain?: boolean;
 }): Promise<{
-  deliveryFeeInr: number;
+  success: boolean;
+  deliveryFeeInr: number | null;
   policyVersion: number;
   zone: 'zone_a' | 'zone_b' | 'out_of_coverage';
-  usedFallback: boolean;
   message?: string;
 }> {
   if ((input.logisticsType || 'warmpawz') !== 'warmpawz') {
     return {
+      success: true,
       deliveryFeeInr: 0,
       policyVersion: 0,
       zone: 'zone_a',
-      usedFallback: false,
       message: 'Own logistics selected; delivery fee from policy skipped.',
     };
   }
 
   const policy = await fetchCustomerDeliveryFeePolicy();
+
+  if (input.distanceKm == null || !Number.isFinite(Number(input.distanceKm))) {
+    return {
+      success: false,
+      deliveryFeeInr: null,
+      policyVersion: policy.version,
+      zone: 'out_of_coverage',
+      message: 'Delivery distance unavailable (missing vendor or customer coordinates).',
+    };
+  }
+
   const calculation = calculateCustomerDeliveryFee({
     policy,
     orderSubtotalInr: Math.max(0, Number(input.orderSubtotalInr || 0)),
-    distanceKm: Math.max(0, Number(input.distanceKm || 0)),
+    distanceKm: Math.max(0, Number(input.distanceKm)),
     weekend: !!input.weekend,
     festival: !!input.festival,
     rain: !!input.rain,
@@ -89,18 +98,18 @@ export async function computePolicyDeliveryFeeForOrder(input: {
 
   if (calculation.success) {
     return {
+      success: true,
       deliveryFeeInr: calculation.totalDeliveryFeeInr,
       policyVersion: policy.version,
       zone: calculation.zone,
-      usedFallback: false,
     };
   }
 
   return {
-    deliveryFeeInr: DEFAULT_DELIVERY_FEE_INR,
+    success: false,
+    deliveryFeeInr: null,
     policyVersion: policy.version,
     zone: calculation.zone,
-    usedFallback: true,
-    message: calculation.message || 'Policy calculation failed; fallback fee used.',
+    message: calculation.message || 'Delivery fee could not be computed from the active zone policy.',
   };
 }

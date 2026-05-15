@@ -46,6 +46,8 @@ export type MealSubscriptionCheckoutFeeResult = {
   /** Full upfront including delivery × sessions */
   upfrontTotalAmount: number;
   deliveryFeePendingAddress: boolean;
+  /** When coordinates exist but distance or zone policy cannot produce a fee */
+  deliveryQuoteMessage?: string;
   platformFeePerSession: number;
   convenienceFeePerSession: number;
 };
@@ -112,7 +114,10 @@ export async function computeMealSubscriptionCheckoutFees(
     };
   }
 
-  const policy = await fetchCustomerDeliveryFeePolicy().catch(() => ({ runtimeSignals: {} as Record<string, unknown> }));
+  const policy = await fetchCustomerDeliveryFeePolicy().catch(() => ({
+    runtimeSignals: {} as Record<string, unknown>,
+    version: 0,
+  }));
   const vendors = await query(
     `SELECT latitude, longitude, metadata FROM vendors WHERE id = $1 LIMIT 1`,
     [input.vendorId],
@@ -125,7 +130,6 @@ export async function computeMealSubscriptionCheckoutFees(
     pickupLng: vendor.longitude ?? (vendorMeta as { lng?: number }).lng ?? (vendorMeta as { longitude?: number }).longitude,
     dropLat: lat,
     dropLng: lng,
-    fallbackKm: 0,
   });
 
   const weekend = input.weekend ?? weekendIndiaNow();
@@ -133,6 +137,28 @@ export async function computeMealSubscriptionCheckoutFees(
     input.festival ?? Boolean((policy as { runtimeSignals?: { festivalActive?: boolean } }).runtimeSignals?.festivalActive);
   const rain =
     input.rain ?? Boolean((policy as { runtimeSignals?: { rainActive?: boolean } }).runtimeSignals?.rainActive);
+
+  if (distanceKm == null) {
+    const upfrontTotalAmount = Math.round(nonDeliveryPackagePerCycle * billingCycles * 100) / 100;
+    return {
+      subtotalPerCycle,
+      deliveriesPerBillingCycle: dpc,
+      billingCycles,
+      totalSessionsUsed,
+      perSessionFoodSubtotal,
+      perSessionDeliveryFee: null,
+      totalDeliveryFeeUpfront: null,
+      platformFeePerCycle,
+      convenienceFeePerCycle,
+      nonDeliveryPackagePerCycle,
+      upfrontTotalAmount,
+      deliveryFeePendingAddress: false,
+      deliveryQuoteMessage:
+        'Vendor pickup coordinates are not configured. Distance-based delivery fee cannot be computed.',
+      platformFeePerSession,
+      convenienceFeePerSession,
+    };
+  }
 
   const deliveryQuote = await computePolicyDeliveryFeeForOrder({
     orderSubtotalInr: perSessionFoodSubtotal,
@@ -142,6 +168,27 @@ export async function computeMealSubscriptionCheckoutFees(
     festival,
     rain,
   });
+
+  if (!deliveryQuote.success || deliveryQuote.deliveryFeeInr == null) {
+    const upfrontTotalAmount = Math.round(nonDeliveryPackagePerCycle * billingCycles * 100) / 100;
+    return {
+      subtotalPerCycle,
+      deliveriesPerBillingCycle: dpc,
+      billingCycles,
+      totalSessionsUsed,
+      perSessionFoodSubtotal,
+      perSessionDeliveryFee: null,
+      totalDeliveryFeeUpfront: null,
+      platformFeePerCycle,
+      convenienceFeePerCycle,
+      nonDeliveryPackagePerCycle,
+      upfrontTotalAmount,
+      deliveryFeePendingAddress: false,
+      deliveryQuoteMessage: deliveryQuote.message,
+      platformFeePerSession,
+      convenienceFeePerSession,
+    };
+  }
 
   const perSessionDeliveryFee = deliveryQuote.deliveryFeeInr;
   const totalDeliveryFeeUpfront =

@@ -5094,7 +5094,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           festival,
           rain,
         });
-        deliveryFee = quote.deliveryFeeInr;
+        deliveryFee =
+          quote.success && quote.deliveryFeeInr != null ? quote.deliveryFeeInr : 0;
       }
 
       // Packaging fee (only for orders)

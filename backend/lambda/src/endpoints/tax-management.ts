@@ -18,6 +18,7 @@ import {
 } from '../lib/gst-place-of-supply';
 import { findCustomerByPhone } from '../utils/customer-phone-lookup';
 import { resolveCatalogCategoryUuidFromRef } from '../lib/services/gst-catalog-role-resolution';
+import type { TaxItem } from '../lib/services/tax-calculation-service';
 
 /** service_catalog / vendor_services metadata: admin "Show final price (incl. taxes)" */
 function catalogPriceIncludesTaxMeta(meta: unknown): boolean {
@@ -931,7 +932,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
         serviceStyle?: string;
         roleId?: string;
         amountIsTaxInclusive?: boolean;
-        gstApplicationScope?: 'service_booking' | 'meal_plan_food';
+        gstApplicationScope?: 'service_booking' | 'meal_plan_food' | 'meal_plan_delivery';
       }> = [];
 
       let vendorRoleId: string | undefined;
@@ -959,6 +960,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
               '',
           ).trim();
           const isMealPlanFoodScope = gstScopeRaw === 'meal_plan_food';
+          const isMealPlanDeliveryScope = gstScopeRaw === 'meal_plan_delivery';
           const explicitCatRaw =
             (item as { catalogCategoryId?: string }).catalogCategoryId ||
             (item as { catalog_category_id?: string }).catalog_category_id;
@@ -976,6 +978,24 @@ export function registerTaxManagementEndpoints(app: Hono) {
                 roleId: (item as { roleId?: string }).roleId || vendorRoleId,
                 amountIsTaxInclusive,
                 gstApplicationScope: 'meal_plan_food',
+              });
+              continue;
+            }
+          }
+          if (isMealPlanDeliveryScope && explicitCatRaw && vendorId) {
+            const catalogCategoryUuid = await resolveCatalogCategoryUuidFromRef(String(explicitCatRaw));
+            if (catalogCategoryUuid) {
+              taxItems.push({
+                id: (item as { id?: string }).id || 'meal-plan-delivery',
+                type: 'service',
+                amount,
+                quantity,
+                catalogCategoryId: catalogCategoryUuid,
+                category: category || 'nutrition',
+                serviceStyle: item.serviceStyle,
+                roleId: (item as { roleId?: string }).roleId || vendorRoleId,
+                amountIsTaxInclusive,
+                gstApplicationScope: 'meal_plan_delivery',
               });
               continue;
             }
@@ -1075,10 +1095,11 @@ export function registerTaxManagementEndpoints(app: Hono) {
             roleId: item.roleId || vendorRoleId,
             amountIsTaxInclusive,
             gstApplicationScope:
-              String(item.gstApplicationScope || (item as { gst_application_scope?: string }).gst_application_scope || '').trim() ===
-              'meal_plan_food'
+              gstScopeRaw === 'meal_plan_food'
                 ? 'meal_plan_food'
-                : undefined,
+                : gstScopeRaw === 'meal_plan_delivery'
+                  ? 'meal_plan_delivery'
+                  : undefined,
           });
           continue;
         }
@@ -1110,7 +1131,7 @@ export function registerTaxManagementEndpoints(app: Hono) {
       }
 
       const taxResult = await taxCalculationService.calculateTax({
-        items: taxItems,
+        items: taxItems as TaxItem[],
         customerLocation: customerLocationObj,
         vendorLocation: vendorLocationObj,
         vendorId,

@@ -5,18 +5,17 @@
 
 import { query } from '../../database/rds-connection';
 
-function coerceRate(value: unknown, fallback: number): number {
-  if (value == null || value === '') return fallback;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
 function taxCategoryRowRate(row: Record<string, unknown>): number {
-  const t = coerceRate(row.tax_rate, NaN);
-  if (Number.isFinite(t) && t !== 0) return t;
-  const d = coerceRate(row.default_gst_rate, NaN);
-  if (Number.isFinite(d)) return d;
-  if (Number.isFinite(t)) return t;
+  const rawTax = row.tax_rate;
+  if (rawTax != null && rawTax !== '') {
+    const t = Number(rawTax);
+    if (Number.isFinite(t)) return Math.min(100, Math.max(0, t));
+  }
+  const rawDefault = row.default_gst_rate;
+  if (rawDefault != null && rawDefault !== '') {
+    const d = Number(rawDefault);
+    if (Number.isFinite(d)) return Math.min(100, Math.max(0, d));
+  }
   return 18;
 }
 
@@ -43,7 +42,7 @@ export async function resolveCatalogCategoryUuidFromRef(
 export type CatalogRoleGstResolution = { rate: number; taxCategoryId: string | null };
 
 /** Service checkout vs meal plan food — same catalogue category, different tax_categories rows. */
-export type GstApplicationScope = 'service_booking' | 'meal_plan_food';
+export type GstApplicationScope = 'service_booking' | 'meal_plan_food' | 'meal_plan_delivery';
 
 /**
  * Prefer tax row where junction includes vendor role; else row with no junction rows (wildcard).
@@ -57,7 +56,12 @@ export async function resolveGstRateForCatalogAndRole(
   const cat = String(catalogCategoryUuid).trim();
   const role =
     vendorRoleUuid && String(vendorRoleUuid).trim() !== '' ? String(vendorRoleUuid).trim() : null;
-  const scope = applicationScope === 'meal_plan_food' ? 'meal_plan_food' : 'service_booking';
+  const scope: GstApplicationScope =
+    applicationScope === 'meal_plan_food'
+      ? 'meal_plan_food'
+      : applicationScope === 'meal_plan_delivery'
+        ? 'meal_plan_delivery'
+        : 'service_booking';
 
   const result = await query(
     `SELECT tc.*,
@@ -68,12 +72,20 @@ export async function resolveGstRateForCatalogAndRole(
        AND tc.catalog_category_id::text = $1
        AND (
          ($2::text = 'meal_plan_food' AND tc.gst_application_scope = 'meal_plan_food')
-         OR ($2::text = 'service_booking' AND COALESCE(tc.gst_application_scope, 'service_booking') = 'service_booking')
+         OR ($2::text = 'meal_plan_delivery' AND tc.gst_application_scope = 'meal_plan_delivery')
+         OR (
+           $2::text = 'service_booking'
+           AND COALESCE(tc.gst_application_scope, 'service_booking') = 'service_booking'
+         )
        )`,
     [cat, scope],
   );
   const list = (result as { rows?: Record<string, unknown>[] })?.rows ?? [];
-  if (list.length === 0) return { rate: 18, taxCategoryId: null };
+  if (list.length === 0) {
+    return scope === 'service_booking'
+      ? { rate: 18, taxCategoryId: null }
+      : { rate: 0, taxCategoryId: null };
+  }
 
   const candidates: { row: Record<string, unknown>; score: number }[] = [];
 
@@ -93,7 +105,11 @@ export async function resolveGstRateForCatalogAndRole(
     }
   }
 
-  if (candidates.length === 0) return { rate: 18, taxCategoryId: null };
+  if (candidates.length === 0) {
+    return scope === 'service_booking'
+      ? { rate: 18, taxCategoryId: null }
+      : { rate: 0, taxCategoryId: null };
+  }
 
   candidates.sort((a, b) => b.score - a.score);
   const best = candidates[0].row;

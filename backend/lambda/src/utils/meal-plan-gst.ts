@@ -1,7 +1,6 @@
 /**
  * Meal plan checkout GST: same Admin catalogue category (e.g. Nutritionist) as services,
- * but a dedicated tax_categories row with gst_application_scope = 'meal_plan_food'.
- * Admin edits that row's rate in Finance → GST; no separate "meal delivery fee" tax bucket — delivery GST is 0 here.
+ * with tax_categories rows scoped as meal_plan_food (food) and meal_plan_delivery (delivery fee component).
  */
 
 import { query } from '../database/rds-connection';
@@ -10,12 +9,16 @@ import {
   resolveGstRateForCatalogAndRole,
 } from '../lib/services/gst-catalog-role-resolution';
 
-const DEFAULT_MEAL_FOOD_GST = 5;
-
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const rateCache = new Map<
   string,
-  { foodGstPct: number; catalogCategoryId: string | null; taxCategoryId: string | null; ts: number }
+  {
+    foodGstPct: number;
+    deliveryGstPct: number;
+    catalogCategoryId: string | null;
+    taxCategoryId: string | null;
+    ts: number;
+  }
 >();
 
 function cacheKey(catalogId: string, roleId: string): string {
@@ -71,8 +74,7 @@ export async function resolveMealPlanCatalogCategoryId(plan: Record<string, unkn
 }
 
 /**
- * Returns GST % for meal plan food from Admin (catalogue + meal_plan_food scope).
- * `deliveryGstPct` is always 0 — no separate meal-delivery tax category.
+ * Returns GST % for meal food (meal_plan_food) and delivery fee (meal_plan_delivery) from Admin GST config.
  */
 export async function getMealPlanGstRates(plan?: Record<string, unknown> | null): Promise<{
   foodGstPct: number;
@@ -101,9 +103,22 @@ export async function getMealPlanGstRates(plan?: Record<string, unknown> | null)
     if (row) {
       const rate = parseFloat(String(row.default_gst_rate));
       if (Number.isFinite(rate)) {
+        const roleIdOverride = await resolveVendorRoleId(
+          (p.vendor_id ?? p.vendorId) as string | null | undefined,
+        );
+        let deliveryGstPct = 0;
+        if (catalogForResponse) {
+          const rd = await resolveGstRateForCatalogAndRole(
+            catalogForResponse,
+            roleIdOverride,
+            'meal_plan_delivery',
+          );
+          deliveryGstPct =
+            Number.isFinite(rd.rate) && rd.rate >= 0 ? Math.min(100, rd.rate) : 0;
+        }
         return {
-          foodGstPct: rate,
-          deliveryGstPct: 0,
+          foodGstPct: Math.min(100, Math.max(0, rate)),
+          deliveryGstPct,
           taxCategoryId: tid,
           catalogCategoryId: catalogForResponse,
         };
@@ -118,7 +133,7 @@ export async function getMealPlanGstRates(plan?: Record<string, unknown> | null)
 
   if (!catalogId) {
     return {
-      foodGstPct: DEFAULT_MEAL_FOOD_GST,
+      foodGstPct: 0,
       deliveryGstPct: 0,
       taxCategoryId: null,
       catalogCategoryId: null,
@@ -130,29 +145,31 @@ export async function getMealPlanGstRates(plan?: Record<string, unknown> | null)
   if (hit && Date.now() - hit.ts < CACHE_TTL_MS) {
     return {
       foodGstPct: hit.foodGstPct,
-      deliveryGstPct: 0,
+      deliveryGstPct: hit.deliveryGstPct,
       taxCategoryId: hit.taxCategoryId,
       catalogCategoryId: hit.catalogCategoryId ?? catalogId,
     };
   }
 
-  const resolved = await resolveGstRateForCatalogAndRole(catalogId, roleId, 'meal_plan_food');
-  let foodGstPct = resolved.rate;
-  if (!resolved.taxCategoryId && resolved.rate === 18) {
-    foodGstPct = DEFAULT_MEAL_FOOD_GST;
-  }
-  if (!Number.isFinite(foodGstPct) || foodGstPct < 0) foodGstPct = DEFAULT_MEAL_FOOD_GST;
+  const resolvedFood = await resolveGstRateForCatalogAndRole(catalogId, roleId, 'meal_plan_food');
+  const resolvedDelivery = await resolveGstRateForCatalogAndRole(catalogId, roleId, 'meal_plan_delivery');
+
+  let foodGstPct = resolvedFood.rate;
+  let deliveryGstPct = resolvedDelivery.rate;
+  if (!Number.isFinite(foodGstPct) || foodGstPct < 0) foodGstPct = 0;
+  if (!Number.isFinite(deliveryGstPct) || deliveryGstPct < 0) deliveryGstPct = 0;
 
   rateCache.set(ck, {
     foodGstPct,
+    deliveryGstPct,
     catalogCategoryId: catalogId,
-    taxCategoryId: resolved.taxCategoryId,
+    taxCategoryId: resolvedFood.taxCategoryId,
     ts: Date.now(),
   });
   return {
     foodGstPct,
-    deliveryGstPct: 0,
-    taxCategoryId: resolved.taxCategoryId,
+    deliveryGstPct,
+    taxCategoryId: resolvedFood.taxCategoryId,
     catalogCategoryId: catalogId,
   };
 }

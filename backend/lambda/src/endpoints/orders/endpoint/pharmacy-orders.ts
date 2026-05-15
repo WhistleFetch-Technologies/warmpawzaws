@@ -47,17 +47,15 @@ async function calculateDeliveryFee(
   orderSubtotalInr = 0,
   logisticsType: string = 'warmpawz'
 ): Promise<number> {
-  try {
-    const quote = await computePolicyDeliveryFeeForOrder({
-      orderSubtotalInr,
-      distanceKm,
-      logisticsType,
-    });
-    return quote.deliveryFeeInr;
-  } catch (error) {
-    console.error('Error calculating delivery fee:', error);
-    return 50;
+  const quote = await computePolicyDeliveryFeeForOrder({
+    orderSubtotalInr,
+    distanceKm,
+    logisticsType,
+  });
+  if (!quote.success || quote.deliveryFeeInr == null) {
+    throw new Error(quote.message || 'Delivery fee unavailable for this location.');
   }
+  return quote.deliveryFeeInr;
 }
 
 // ✅ FIX GAP 6.1 & 6.2: Get configurable platform and convenience fees from admin settings

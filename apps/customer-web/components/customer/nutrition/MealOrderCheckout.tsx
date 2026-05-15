@@ -47,7 +47,10 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       taxCategoryId?: string | null;
       catalogCategoryId?: string | null;
       foodGstAmount?: number;
+      deliveryGstAmount?: number;
+      totalGstAmount?: number;
     };
+    deliveryQuoteMessage?: string;
   } | null>(null);
 
   const [petId, setPetId] = useState('');
@@ -222,7 +225,8 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       scheduledDeliverySlot: { start: scheduledTime, end: scheduledTime },
       logisticsType: 'warmpawz',
       foodSubtotalInr: preview.subtotal,
-      foodGstPct: Number(gst.foodGstPct) || 5,
+      foodGstPct: Number.isFinite(Number(gst.foodGstPct)) ? Number(gst.foodGstPct) : 0,
+      deliveryGstPct: Number.isFinite(Number(gst.deliveryGstPct)) ? Number(gst.deliveryGstPct) : 0,
       mealPlanGstCatalogCategoryId:
         gst.catalogCategoryId != null ? String(gst.catalogCategoryId) : undefined,
       deliveryFeeInr: preview.deliveryFee ?? 0,
@@ -454,6 +458,9 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
               This address has no latitude/longitude. Update the address with map location to get delivery fee.
             </p>
           )}
+          {preview?.deliveryQuoteMessage && (
+            <p className="text-xs text-red-700 mt-2">{preview.deliveryQuoteMessage}</p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -508,11 +515,28 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
                   <span>GST on meal (food)</span>
                   <span>
                     ₹
-                    {(
-                      (preview.subtotal * (Number(preview.gst.foodGstPct) || 0)) /
-                      100
-                    ).toFixed(2)}{' '}
+                    {(preview.gst.foodGstAmount != null
+                      ? Number(preview.gst.foodGstAmount).toFixed(2)
+                      : ((preview.subtotal * (Number(preview.gst.foodGstPct) || 0)) / 100).toFixed(2))}{' '}
                     ({Number(preview.gst.foodGstPct)}%)
+                  </span>
+                </div>
+              ) : null}
+              {preview.gst &&
+              preview.gst.deliveryGstPct != null &&
+              preview.deliveryFee != null &&
+              Number(preview.deliveryFee) > 0 ? (
+                <div className="flex justify-between text-slate-700">
+                  <span>GST on delivery</span>
+                  <span>
+                    ₹
+                    {(preview.gst.deliveryGstAmount != null
+                      ? Number(preview.gst.deliveryGstAmount).toFixed(2)
+                      : (
+                          (Number(preview.deliveryFee) * (Number(preview.gst.deliveryGstPct) || 0)) /
+                          100
+                        ).toFixed(2))}{' '}
+                    ({Number(preview.gst.deliveryGstPct)}%)
                   </span>
                 </div>
               ) : null}
@@ -530,6 +554,8 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
             !addressId ||
             !preview ||
             !hasSelectedAddressCoordinates ||
+            preview.deliveryFee == null ||
+            Boolean(preview.deliveryQuoteMessage) ||
             !scheduledDate ||
             !scheduledTime ||
             (pets.length > 0 && !petId)
