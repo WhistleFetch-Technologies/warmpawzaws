@@ -148,8 +148,11 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
     const capawesomeAvailable = useShouldUseCapawesomePicker();
     const [capawesomeFailed, setCapawesomeFailed] = React.useState(false);
     const useAndroidCameraPath = useShouldUseAndroidCameraPath(accept);
-    // On Android image-only accepts, prefer Camera/gallery plugin path first.
-    const useCapawesomePath = capawesomeAvailable && !capawesomeFailed && !useAndroidCameraPath;
+    // When Capawesome is linked, use it on every platform (including Android). It reads gallery bytes
+    // reliably (`readData` + retries). Routing Android-only image picks to @capacitor/camera first
+    // skipped that path and relied on deprecated `pickImages` + `fetch(webPath)`, which often yielded
+    // empty files on Android WebView.
+    const useCapawesomePath = capawesomeAvailable && !capawesomeFailed;
 
     const picking = React.useRef(false);
 
