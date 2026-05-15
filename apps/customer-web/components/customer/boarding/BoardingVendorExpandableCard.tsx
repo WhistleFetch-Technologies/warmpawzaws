@@ -74,6 +74,20 @@ export function BoardingVendorExpandableCard({
   const headerActsAsCollapse = !headerTapExpandsServices && expanded;
   const headerInteractive = headerTapExpandsServices || headerActsAsCollapse;
 
+  const raw = (v.raw ?? {}) as Record<string, any>;
+  const roleLabel = String(
+    raw.roleDisplayName || raw.roleName || raw.vendorType || ''
+  ).trim();
+  const nextSlot = (() => {
+    if (typeof raw.nextAvailableSlot === 'string') return raw.nextAvailableSlot;
+    if (raw.nextAvailableSlot?.formattedDisplay) return raw.nextAvailableSlot.formattedDisplay;
+    if (raw.nextAvailableSlot?.display) return raw.nextAvailableSlot.display;
+    if (typeof raw.nextAvailability === 'string') return raw.nextAvailability;
+    if (typeof raw.nextAvailable === 'string') return raw.nextAvailable;
+    if (raw.nextAvailable?.display) return raw.nextAvailable.display;
+    return null;
+  })();
+
   return (
     <Card className="bg-white rounded-xl border border-gray-100 shadow-sm">
       <div
@@ -138,6 +152,13 @@ export function BoardingVendorExpandableCard({
                 </button>
               )}
             </div>
+            {roleLabel && (
+              <div className="mt-0.5">
+                <Badge variant="outline" className="text-[10px] px-2 py-0.5">
+                  {roleLabel}
+                </Badge>
+              </div>
+            )}
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <StarRating
                 rating={v.rating}
@@ -150,20 +171,15 @@ export function BoardingVendorExpandableCard({
                   <span className="text-sm text-gray-500">{formatDistanceDisplay(v as any)}</span>
                 </>
               )}
-              {minP != null && v.planRows.length > 0 && (
+              {minP != null && (v.planRows.length > 0 || v.needsServiceFetch) && (
                 <>
                   <span className="text-gray-300">•</span>
-                  <div className="text-right">
-                    <span className="text-sm font-semibold text-[#FF8C42]">
-                      from {formatPriceWithSymbol(minP)}
-                    </span>
-                    {showPriceDisclaimer && (
-                      <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                    )}
-                  </div>
+                  <span className="text-sm font-semibold text-[#FF8C42]">
+                    from {formatPriceWithSymbol(minP)}
+                  </span>
                 </>
               )}
-              {v.planRows.length === 0 && (
+              {minP == null && v.planRows.length === 0 && (
                 <>
                   <span className="text-gray-300">•</span>
                   <span className="text-sm font-bold text-[#FF8C42]">{priceForCard(v, serviceSlug)}</span>
@@ -174,10 +190,17 @@ export function BoardingVendorExpandableCard({
               <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
               <span className="truncate">{displayAddress}</span>
             </div>
-            <div className="flex items-center gap-1 mt-1.5 text-sm text-gray-500">
-              <Clock className="w-3.5 h-3.5 text-gray-400" />
-              <span>{v.timing}</span>
-            </div>
+            {nextSlot ? (
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <Clock className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                <span className="text-sm font-medium text-green-600">Next: {nextSlot}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 mt-1.5 text-sm text-gray-500">
+                <Clock className="w-3.5 h-3.5 text-gray-400" />
+                <span>{v.timing}</span>
+              </div>
+            )}
             {!expanded && v.planRows.length === 0 && v.services.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {v.services.slice(0, 4).map((s, idx) => (

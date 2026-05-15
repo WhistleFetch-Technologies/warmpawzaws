@@ -417,11 +417,6 @@ function ProviderCard({ provider, serviceStyle, showPriceDisclaimer = false, isP
                 Package available
               </Badge>
             )}
-            {provider.specialization && !provider.bestForProblem && (
-              <Badge className="bg-purple-100 text-purple-700 text-xs">
-                {provider.specialization}
-              </Badge>
-            )}
           </div>
 
           {/* Stats Row */}
