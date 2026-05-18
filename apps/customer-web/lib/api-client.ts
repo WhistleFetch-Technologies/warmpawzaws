@@ -43,6 +43,48 @@ const LEGACY_DEV_API_GATEWAY_SUBDOMAIN = 'iixwc3fzfl';
 /** One in-flight list request per endpoint (React Strict Mode double-mounts effects in dev → duplicate fetches). */
 const customerArticlesListInflight = new Map<string, Promise<unknown>>();
 
+/** Share one in-flight GET per URL (home + sidebar + Strict Mode often hit the same route at once). */
+const getRequestInflight = new Map<string, Promise<unknown>>();
+
+/** Browsers cap ~6 connections per host; queue API calls so none sit 30s+ waiting then abort. */
+const API_CONCURRENCY_LIMIT = 5;
+let apiConcurrencyInFlight = 0;
+const apiConcurrencyWaiters: Array<() => void> = [];
+
+function isLocalCustomerDev(): boolean {
+  if (typeof window === 'undefined') return false;
+  const h = window.location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h.endsWith('.localhost');
+}
+
+async function acquireApiConcurrencySlot(): Promise<void> {
+  if (apiConcurrencyInFlight < API_CONCURRENCY_LIMIT) {
+    apiConcurrencyInFlight += 1;
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    apiConcurrencyWaiters.push(() => {
+      apiConcurrencyInFlight += 1;
+      resolve();
+    });
+  });
+}
+
+function releaseApiConcurrencySlot(): void {
+  apiConcurrencyInFlight = Math.max(0, apiConcurrencyInFlight - 1);
+  const next = apiConcurrencyWaiters.shift();
+  if (next) next();
+}
+
+async function withApiConcurrency<T>(fn: () => Promise<T>): Promise<T> {
+  await acquireApiConcurrencySlot();
+  try {
+    return await fn();
+  } finally {
+    releaseApiConcurrencySlot();
+  }
+}
+
 /** On localhost, use same-origin `/api/customer/articles` so Next can map upstream 502/503 → 200 + empty list. */
 function customerArticlesListFetchPath(endpoint: string): string {
   if (typeof window === 'undefined') return endpoint;
@@ -528,14 +570,36 @@ export class ApiClient {
         throw new ApiError('No network connection', 'offline', undefined, false);
       }
     }
-    
+
+    const method = (options.method ?? 'GET').toUpperCase();
+    const shouldDedupeGet =
+      method === 'GET' && !internal401RetryDone && typeof window !== 'undefined';
+    if (shouldDedupeGet) {
+      const existing = getRequestInflight.get(url);
+      if (existing) {
+        return existing as Promise<T>;
+      }
+    }
+
+    const runRequest = async (): Promise<T> => {
+    return withApiConcurrency(async () => {
     try {
       // ✅ FIX: Use custom timeout for payment endpoints (they need more time)
       const timeout = customTimeoutMs || (endpoint.includes('/razorpay/') ? 45000 : undefined); // 45s for payment endpoints
+      // Local dev: avoid 5× retry on timeout (each retry adds another queued fetch → hundreds of canceled rows).
+      const effectiveRetryConfig =
+        isLocalCustomerDev() && method === 'GET'
+          ? {
+              ...retryConfig,
+              maxRetries: 0,
+              retryableStatusCodes: [] as number[],
+              retryableErrors: [] as string[],
+            }
+          : retryConfig;
       const response = await resilientFetch(url, {
         ...options,
         headers,
-      }, retryConfig, timeout);
+      }, effectiveRetryConfig, timeout);
 
       if (!response.ok) {
         // Try to parse JSON, but also capture raw text if JSON parsing fails
@@ -722,6 +786,21 @@ export class ApiClient {
         error
       );
     }
+    });
+    };
+
+    if (shouldDedupeGet) {
+      const inflight = runRequest();
+      getRequestInflight.set(url, inflight);
+      void inflight.finally(() => {
+        if (getRequestInflight.get(url) === inflight) {
+          getRequestInflight.delete(url);
+        }
+      });
+      return inflight;
+    }
+
+    return runRequest();
   }
   
   private offlineQueue?: import('./error-handling').OfflineQueue;

@@ -1578,6 +1578,7 @@ export function CustomerHomeWrapper({
       >
         <CustomerHome 
           phone={phone}
+          backgroundTasksPaused={userSidebarOpen}
           refreshKey={refreshKey}
           onRefresh={() => setRefreshKey((key) => key + 1)}
           onNavigate={(screen, data) => {

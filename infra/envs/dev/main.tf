@@ -108,6 +108,9 @@ locals {
   # Java delivery/logistics ECS + API Gateway split (VPC link → internal ALB)
   delivery_stack_live       = var.enable_delivery_stack && var.delivery_service_image != ""
   delivery_codebuild_live   = local.delivery_stack_live && var.delivery_codebuild_github_url != ""
+
+  # Java customer-service ECS + API Gateway split (VPC link → internal ALB)
+  customer_stack_live = var.enable_customer_stack && var.customer_service_image != ""
 }
 
 # VPC Module
@@ -283,8 +286,8 @@ module "lambda" {
 }
 
 # -----------------------------------------------------------------------------
-# Delivery / logistics — Java ECS Fargate + internal ALB
-# Toggle: enable_delivery_stack + delivery_service_image in tfvars; then terraform apply + scripts/deploy-delivery-service.sh for image updates.
+# Delivery / logistics + customer-service — Java ECS Fargate + internal ALB
+# Toggle: enable_*_stack + *_service_image in tfvars; then terraform apply + deploy scripts for image updates.
 # -----------------------------------------------------------------------------
 resource "aws_security_group" "apigw_delivery_vpc_link" {
   count = local.delivery_stack_live ? 1 : 0
@@ -332,6 +335,51 @@ module "delivery_service_ecs" {
   hibernate_ddl_auto  = var.delivery_hibernate_ddl_auto
 }
 
+resource "aws_security_group" "apigw_customer_vpc_link" {
+  count = local.customer_stack_live ? 1 : 0
+
+  name_prefix = "warmpawz-dev-apigw-cust-vplnk-"
+  description = "API Gateway VPC link ENIs to internal customer ALB (HTTP)"
+  vpc_id      = module.vpc.vpc_id
+
+  egress {
+    description = "HTTP to internal ALB in VPC"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = [module.vpc.vpc_cidr]
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name        = "warmpawz-dev-apigw-customer-vpc-link"
+    Environment = local.environment
+  }
+}
+
+module "customer_service_ecs" {
+  count  = local.customer_stack_live ? 1 : 0
+  source = "../../modules/customer-service-ecs"
+
+  environment        = local.environment
+  aws_region         = var.aws_region
+  vpc_id             = module.vpc.vpc_id
+  private_subnet_ids = module.vpc.private_subnet_ids
+  apigw_vpc_link_security_group_ids = [aws_security_group.apigw_customer_vpc_link[0].id]
+
+  rds_endpoint          = module.rds.cluster_endpoint
+  database_name         = module.rds.database_name
+  rds_secret_arn        = module.rds.secret_arn
+  rds_security_group_id = module.rds.security_group_id
+
+  container_image           = var.customer_service_image
+  openapi_public_server_url = local.dev_http_api_invoke_url
+  hibernate_ddl_auto        = var.customer_hibernate_ddl_auto
+}
+
 module "delivery_codebuild" {
   count = local.delivery_codebuild_live ? 1 : 0
 
@@ -359,6 +407,18 @@ resource "aws_security_group_rule" "rds_postgres_from_delivery_ecs" {
   protocol          = "tcp"
   source_security_group_id = module.delivery_service_ecs[0].ecs_task_security_group_id
   description              = "delivery-service Fargate to shared dev Postgres (Terraform rule)"
+}
+
+resource "aws_security_group_rule" "rds_postgres_from_customer_ecs" {
+  count = local.customer_stack_live ? 1 : 0
+
+  type                     = "ingress"
+  security_group_id        = module.rds.security_group_id
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = module.customer_service_ecs[0].ecs_task_security_group_id
+  description              = "customer-service Fargate to shared dev Postgres (Terraform rule)"
 }
 
 # api-handler (VPC Lambda) POSTs meal dispatch to the internal ALB. The ALB SG otherwise only allows
@@ -467,6 +527,12 @@ module "api_gateway" {
     vpc_link_subnet_ids         = module.vpc.private_subnet_ids
     vpc_link_security_group_ids = [aws_security_group.apigw_delivery_vpc_link[0].id]
     alb_listener_arn            = module.delivery_service_ecs[0].alb_listener_arn
+  } : null
+
+  customer_java_integration = local.customer_stack_live ? {
+    vpc_link_subnet_ids         = module.vpc.private_subnet_ids
+    vpc_link_security_group_ids = [aws_security_group.apigw_customer_vpc_link[0].id]
+    alb_listener_arn            = module.customer_service_ecs[0].alb_listener_arn
   } : null
 }
 

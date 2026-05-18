@@ -141,3 +141,15 @@ variable "delivery_java_integration" {
   default = null
 }
 
+variable "customer_java_integration" {
+  description = "When set, creates VPC link + HTTP_PROXY integration to customer-service internal ALB."
+  type = object({
+    vpc_link_subnet_ids         = list(string)
+    vpc_link_security_group_ids = list(string)
+    alb_listener_arn            = string
+    timeout_ms                  = optional(number, 29000)
+    route_keys                  = optional(list(string), null)
+  })
+  default = null
+}
+

@@ -7,8 +7,8 @@ import {
   AlertCircle, ChevronRight, ArrowLeft
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { ApiError } from '@/lib/error-handling';
+import { isPetBookingsUnavailable, isPetNotFound } from '@/lib/pet-route-errors';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { fetchPetById } from '@/lib/fetch-customer-pet';
 
@@ -140,10 +140,9 @@ function extractBookingsList(payload: any): any[] {
   return [];
 }
 
-/** Prefer DB customer UUID for `/customer/:id/pets/*` when storage has it; else login phone. */
+/** Backend only supports phone-based pet routes: GET /customer/{phone}/pets/{petId}. */
 function segmentForCustomerPetRoutes(phone: string): string {
-  if (typeof window === 'undefined') return phone;
-  return getResolvedCustomerId() ?? phone;
+  return phone;
 }
 
 export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDelete, onViewPetProfile }: CustomerPetDetailsProps) {
@@ -184,12 +183,26 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
       try {
         const data = (await apiClient.get(`/customer/${pathSeg}/pets/${petId}`)) as any;
         if (data?.success && data.pet) raw = data.pet;
-      } catch {
+        else if (data?.pet) raw = data.pet;
+        else if (data?.id) raw = data;
+      } catch (primaryError) {
+        if (isPetNotFound(primaryError)) {
+          setPet(null);
+          return;
+        }
         /* fallback below */
       }
 
       if (!raw) {
-        raw = await fetchPetById(petId, phone);
+        try {
+          raw = await fetchPetById(petId, phone);
+        } catch (fallbackError) {
+          if (isPetNotFound(fallbackError)) {
+            setPet(null);
+            return;
+          }
+          throw fallbackError;
+        }
       }
 
       if (raw) {
@@ -197,13 +210,11 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
         setPet(mapped);
         setPhotoPreview(photoUrlFromPet(raw));
       } else {
-        console.error('Failed to load pet');
+        setPet(null);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading pet details:', error);
-      if (error?.status === 404 || error?.response?.status === 404) {
-        console.error('Pet not found');
-      }
+      setPet(null);
     } finally {
       setLoading(false);
     }
@@ -221,12 +232,15 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
 
       // Primary endpoint: pet-scoped history route.
       try {
-        const pathSeg = segmentForCustomerPetRoutes(phone);
-        const data = (await apiClient.get(`/customer/${pathSeg}/pets/${petId}/bookings`)) as any;
+        const data = (await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`)) as any;
         const rows = extractBookingsList(data);
         normalizeAndSet(rows);
         return;
       } catch (primaryError) {
+        if (isPetBookingsUnavailable(primaryError)) {
+          normalizeAndSet([]);
+          return;
+        }
         console.warn('Primary pet-bookings endpoint failed, trying fallback route:', primaryError);
       }
 
@@ -239,14 +253,13 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
         normalizeAndSet(fallbackRows);
         return;
       } catch (fallbackError) {
+        if (isPetBookingsUnavailable(fallbackError)) {
+          normalizeAndSet([]);
+          return;
+        }
         console.error('Error loading bookings (primary + fallback):', fallbackError);
         setBookings([]);
-        if (fallbackError instanceof ApiError && fallbackError.statusCode === 404) {
-          // Missing route should behave like "no bookings", not a hard error card.
-          setBookingsLoadError(null);
-        } else {
-          setBookingsLoadError('Could not load bookings. Please try again in a moment.');
-        }
+        setBookingsLoadError('Could not load bookings. Please try again in a moment.');
       }
     } finally {
       setLoadingBookings(false);
@@ -816,7 +829,12 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     <div className="flex items-start justify-between mb-3">
                       <div>
                         <h4 className="font-semibold text-gray-800 mb-1">
-                          {booking.serviceType.charAt(0).toUpperCase() + booking.serviceType.slice(1)} Service
+                          {(() => {
+                            const label = String(booking.serviceType || 'Service').trim() || 'Service';
+                            const titled =
+                              label.charAt(0).toUpperCase() + label.slice(1);
+                            return /\bservice\b/i.test(titled) ? titled : `${titled} Service`;
+                          })()}
                         </h4>
                         <p className="text-sm text-gray-600">{booking.vendorName}</p>
                       </div>

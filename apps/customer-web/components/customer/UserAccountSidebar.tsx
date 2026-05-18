@@ -547,7 +547,6 @@ export function UserAccountSidebar({
   useEffect(() => {
     setTimeout(() => setIsOpen(true), 50);
     loadProfile();
-    loadBookings();
     try {
       const v = sessionStorage.getItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
       if (v === 'bookings') {

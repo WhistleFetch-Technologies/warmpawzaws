@@ -122,3 +122,21 @@ variable "delivery_codebuild_use_github_codeconnection" {
   type        = bool
   default     = false
 }
+
+variable "enable_customer_stack" {
+  description = "When true and customer_service_image is set, provisions ECS Fargate + internal ALB for customer-service and splits API Gateway routes to Java via VPC link."
+  type        = bool
+  default     = false
+}
+
+variable "customer_service_image" {
+  description = "Full ECR URI for customer-service (push from deploy script). Ignored unless enable_customer_stack is true."
+  type        = string
+  default     = ""
+}
+
+variable "customer_hibernate_ddl_auto" {
+  description = "spring.jpa.hibernate.ddl-auto for customer-service ECS tasks (validate recommended on shared RDS)"
+  type        = string
+  default     = "validate"
+}

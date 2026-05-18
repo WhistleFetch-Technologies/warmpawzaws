@@ -6,6 +6,8 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { isPetBookingsUnavailable } from '@/lib/pet-route-errors';
 
 interface PetProfileProps {
   phone: string;
@@ -67,30 +69,82 @@ export function PetProfile({
     loadPetBookingHistory();
   }, [phone, petId]);
 
+  const emptyStats = (): BookingStats => ({
+    total: 0,
+    confirmed: 0,
+    inProgress: 0,
+    completed: 0,
+    cancelled: 0,
+  });
+
+  const extractBookings = (payload: any): Booking[] => {
+    if (!payload) return [];
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload.bookings)) return payload.bookings;
+    if (Array.isArray(payload.data)) return payload.data;
+    return [];
+  };
+
   const loadPetBookingHistory = async () => {
+    const pathSeg =
+      (typeof window !== 'undefined' ? getResolvedCustomerId() : null) ?? phone;
+
     try {
       setLoading(true);
-      console.log(`🐾 [PET-PROFILE] Loading booking history for pet: ${petId} (${petName})`);
-      let data: any;
+      let rows: Booking[] = [];
+
       try {
-        data = (await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`)) as any;
-      } catch (primaryError) {
-        console.warn('🐾 [PET-PROFILE] Primary pet-bookings endpoint failed, trying fallback:', primaryError);
-        data = (await apiClient.get(
-          `/customer/bookings?phone=${encodeURIComponent(phone)}&petId=${encodeURIComponent(petId)}`
+        const data = (await apiClient.get(
+          `/customer/${pathSeg}/pets/${petId}/bookings`
         )) as any;
+        rows = extractBookings(data);
+        if (data?.stats) {
+          setStats(data.stats);
+        }
+      } catch (primaryError) {
+        if (isPetBookingsUnavailable(primaryError)) {
+          setBookings([]);
+          setStats(emptyStats());
+          return;
+        }
+        console.warn('🐾 [PET-PROFILE] Primary pet-bookings endpoint failed, trying fallback:', primaryError);
+        try {
+          const fallback = (await apiClient.get(
+            `/customer/bookings?phone=${encodeURIComponent(phone)}&petId=${encodeURIComponent(petId)}`
+          )) as any;
+          rows = extractBookings(fallback);
+          if (fallback?.stats) {
+            setStats(fallback.stats);
+          }
+        } catch (fallbackError) {
+          if (isPetBookingsUnavailable(fallbackError)) {
+            setBookings([]);
+            setStats(emptyStats());
+            return;
+          }
+          console.error('❌ [PET-PROFILE] Error loading bookings:', fallbackError);
+          setBookings([]);
+          setStats(emptyStats());
+          return;
+        }
       }
 
-      console.log('✅ [PET-PROFILE] Loaded bookings:', data);
-
-      if (data && data.success) {
-        setBookings(data.bookings || []);
-        setStats(data.stats || stats);
-      } else {
-        console.error('❌ [PET-PROFILE] Failed to load bookings:', data?.error);
-      }
+      setBookings(rows);
+      setStats((prev) =>
+        prev.total > 0
+          ? prev
+          : {
+              total: rows.length,
+              confirmed: rows.filter((b) => b.status === 'confirmed').length,
+              inProgress: rows.filter((b) => b.status === 'in_progress').length,
+              completed: rows.filter((b) => b.status === 'completed').length,
+              cancelled: rows.filter((b) => b.status === 'cancelled').length,
+            }
+      );
     } catch (error) {
       console.error('❌ [PET-PROFILE] Error loading bookings:', error);
+      setBookings([]);
+      setStats(emptyStats());
     } finally {
       setLoading(false);
     }

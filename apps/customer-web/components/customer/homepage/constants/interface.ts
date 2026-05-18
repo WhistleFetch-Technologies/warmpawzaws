@@ -32,6 +32,8 @@ export interface CustomerHomeCompleteProps {
     onOpenMenu?: () => void;
     onOpenCategoryMapper?: () => void;
     hideHeaderFooter?: boolean; // ✅ NEW: Option to hide header/footer when using standardized layout
+    /** When true (e.g. account sidebar open), skip home polling and heavy background fetches. */
+    backgroundTasksPaused?: boolean;
 }
 
 

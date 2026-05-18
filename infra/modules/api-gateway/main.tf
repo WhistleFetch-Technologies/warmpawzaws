@@ -109,6 +109,12 @@ locals {
     "ANY /v3/api-docs/{proxy+}",
     "ANY /v3/api-docs.yaml",
   ]
+
+  customer_java_route_defaults = [
+    "ANY /customer/{proxy+}",
+    "ANY /customers/{proxy+}",
+    "ANY /pets/{proxy+}",
+  ]
 }
 
 # CloudWatch Log Group for API Gateway
@@ -240,6 +246,19 @@ resource "aws_apigatewayv2_vpc_link" "delivery_java" {
   }
 }
 
+resource "aws_apigatewayv2_vpc_link" "customer_java" {
+  count = var.customer_java_integration != null ? 1 : 0
+
+  name               = "warmpawz-${var.environment}-customer-java"
+  security_group_ids = var.customer_java_integration.vpc_link_security_group_ids
+  subnet_ids         = var.customer_java_integration.vpc_link_subnet_ids
+
+  tags = {
+    Name        = "warmpawz-${var.environment}-customer-vpc-link"
+    Environment = var.environment
+  }
+}
+
 resource "aws_apigatewayv2_integration" "delivery_java" {
   count = var.delivery_java_integration != null ? 1 : 0
 
@@ -257,10 +276,31 @@ resource "aws_apigatewayv2_integration" "delivery_java" {
   }
 }
 
+resource "aws_apigatewayv2_integration" "customer_java" {
+  count = var.customer_java_integration != null ? 1 : 0
+
+  api_id             = local.api_gateway_id
+  integration_type   = "HTTP_PROXY"
+  integration_uri    = var.customer_java_integration.alb_listener_arn
+  integration_method = "ANY"
+  connection_type    = "VPC_LINK"
+  connection_id      = aws_apigatewayv2_vpc_link.customer_java[0].id
+
+  timeout_milliseconds = var.customer_java_integration.timeout_ms
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 locals {
   delivery_java_route_sel = var.delivery_java_integration == null ? [] : coalesce(var.delivery_java_integration.route_keys, [])
   delivery_java_route_keys = var.delivery_java_integration == null ? toset([]) : (
     length(local.delivery_java_route_sel) > 0 ? toset(local.delivery_java_route_sel) : toset(local.delivery_java_route_defaults)
+  )
+  customer_java_route_sel = var.customer_java_integration == null ? [] : coalesce(var.customer_java_integration.route_keys, [])
+  customer_java_route_keys = var.customer_java_integration == null ? toset([]) : (
+    length(local.customer_java_route_sel) > 0 ? toset(local.customer_java_route_sel) : toset(local.customer_java_route_defaults)
   )
 }
 
@@ -278,6 +318,22 @@ resource "aws_apigatewayv2_route" "delivery_java" {
   }
 
   depends_on = [aws_apigatewayv2_integration.delivery_java]
+}
+
+resource "aws_apigatewayv2_route" "customer_java" {
+  for_each = local.customer_java_route_keys
+
+  api_id    = local.api_gateway_id
+  route_key = each.value
+  target    = "integrations/${aws_apigatewayv2_integration.customer_java[0].id}"
+
+  authorization_type = "NONE"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  depends_on = [aws_apigatewayv2_integration.customer_java]
 }
 
 # Custom Domain (optional)

@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { Calendar, TrendingUp, Clock, Filter, Search, Package, ArrowLeft, Home } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { ApiError } from '@/lib/error-handling';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { isPetBookingsUnavailable } from '@/lib/pet-route-errors';
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface Pet {
@@ -115,19 +116,36 @@ export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: Pe
   };
 
   const loadPetBookings = async () => {
+    const pathSeg =
+      (typeof window !== 'undefined' ? getResolvedCustomerId() : null) ?? phone;
+
     try {
       setLoading(true);
       let rows: any[] = [];
 
       try {
-        const data = (await apiClient.get(`/customer/${phone}/pets/${petData.id}/bookings`)) as any;
+        const data = (await apiClient.get(
+          `/customer/${pathSeg}/pets/${petData.id}/bookings`
+        )) as any;
         rows = extractRows(data);
       } catch (primaryError) {
+        if (isPetBookingsUnavailable(primaryError)) {
+          setBookings([]);
+          return;
+        }
         console.warn('Pet-profile primary bookings route failed, trying fallback:', primaryError);
-        const fallback = (await apiClient.get(
-          `/customer/bookings?phone=${encodeURIComponent(phone)}&petId=${encodeURIComponent(petData.id)}`
-        )) as any;
-        rows = extractRows(fallback);
+        try {
+          const fallback = (await apiClient.get(
+            `/customer/bookings?phone=${encodeURIComponent(phone)}&petId=${encodeURIComponent(petData.id)}`
+          )) as any;
+          rows = extractRows(fallback);
+        } catch (fallbackError) {
+          if (isPetBookingsUnavailable(fallbackError)) {
+            setBookings([]);
+            return;
+          }
+          throw fallbackError;
+        }
       }
 
       const mapped = rows.map(mapBooking);
@@ -140,9 +158,7 @@ export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: Pe
       setBookings(sortedBookings);
     } catch (error) {
       console.error('Error loading pet bookings:', error);
-      if (!(error instanceof ApiError && error.statusCode === 404)) {
-        setBookings([]);
-      }
+      setBookings([]);
     } finally {
       setLoading(false);
     }

@@ -135,7 +135,7 @@ public class CustomerAddressController {
     public ResponseEntity<CommonResponse<AddressResponse>> updateAddress(
             @PathVariable(required = false) String customerRef,
             @PathVariable UUID addressId,
-            @RequestBody AddressRequest request
+            @Valid @RequestBody AddressRequest request
     ) {
         AddressResponse response;
         UUID customerId = tryParseUuid(customerRef);
@@ -152,7 +152,7 @@ public class CustomerAddressController {
     public ResponseEntity<CommonResponse<AddressResponse>> patchAddress(
             @PathVariable(required = false) String customerRef,
             @PathVariable UUID addressId,
-            @RequestBody AddressRequest request
+            @Valid @RequestBody AddressRequest request
     ) {
         AddressResponse response;
         UUID customerId = tryParseUuid(customerRef);

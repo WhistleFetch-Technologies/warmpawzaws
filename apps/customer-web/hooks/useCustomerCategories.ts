@@ -62,7 +62,11 @@ export function iconColorToBg(colorClass: string | undefined): string {
   return m[colorClass] || 'bg-gray-100 text-gray-600';
 }
 
-export function useCustomerCategories(phone?: string | null) {
+export function useCustomerCategories(
+  phone?: string | null,
+  options?: { enabled?: boolean }
+) {
+  const enabled = options?.enabled !== false;
   const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [quickServiceTiles, setQuickServiceTiles] = useState<QuickServiceTile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -149,8 +153,12 @@ export function useCustomerCategories(phone?: string | null) {
   }, [phone]);
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
     fetchCategories();
-  }, [fetchCategories]);
+  }, [fetchCategories, enabled]);
 
   return {
     categories,

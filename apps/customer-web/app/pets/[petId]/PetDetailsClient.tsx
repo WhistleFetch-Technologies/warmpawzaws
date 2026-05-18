@@ -7,6 +7,7 @@ import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { petsApi } from '@/lib/api-client';
 import { fetchPetById } from '@/lib/fetch-customer-pet';
+import { isPetNotFound } from '@/lib/pet-route-errors';
 import { PetProfile } from '@/components/customer/PetProfile';
 
 interface PetDetails {
@@ -71,9 +72,14 @@ export function PetDetailsClient({ petId: petIdProp }: PetDetailsClientProps) {
         setPet(null);
         setError('Pet not found');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error loading pet details:', err);
-      setError(err.message || 'Failed to load pet profile');
+      if (isPetNotFound(err)) {
+        setPet(null);
+        setError('Pet not found');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to load pet profile');
+      }
     } finally {
       setLoading(false);
     }

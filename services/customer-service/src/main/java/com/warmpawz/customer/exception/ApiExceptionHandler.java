@@ -9,11 +9,14 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.client.RestClientException;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+@Slf4j
 @ControllerAdvice
 public class ApiExceptionHandler {
 
@@ -60,8 +63,15 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
+    @ExceptionHandler(RestClientException.class)
+    public ResponseEntity<CommonResponse<Map<String, Object>>> handleRestClient(RestClientException ex) {
+        log.warn("External HTTP call failed", ex);
+        return build(HttpStatus.BAD_GATEWAY, "External service unavailable", Map.of());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<CommonResponse<Map<String, Object>>> handleFallback(Exception ex) {
+        log.error("Unhandled exception", ex);
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected server error", Map.of());
     }
 

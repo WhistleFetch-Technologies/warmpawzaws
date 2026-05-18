@@ -213,7 +213,8 @@ export function CustomerHomeComplete({
   onOpenCategoryMapper,
   refreshKey = 0,
   onRefresh,
-  hideHeaderFooter = false // ✅ NEW: Default to showing header/footer
+  hideHeaderFooter = false, // ✅ NEW: Default to showing header/footer
+  backgroundTasksPaused = false,
 }: CustomerHomeCompleteProps) {
   const router = useRouter();
   const [userData, setUserData] = useState<UserData>({
@@ -332,6 +333,7 @@ export function CustomerHomeComplete({
    * Reuses the same endpoint as VetServicesByStyle so we don't introduce a new backend.
    */
   useEffect(() => {
+    if (backgroundTasksPaused) return;
     let cancelled = false;
     const fetchMinPrice = async (style: 'tele' | 'at_home' | 'at_center'): Promise<number | null> => {
       try {
@@ -364,7 +366,7 @@ export function CustomerHomeComplete({
       if (atCenter != null) setClinicMinPrice(atCenter);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [backgroundTasksPaused]);
 
   const persistAiFabOffset = useCallback(
     (o: { x: number; y: number }) => {
@@ -483,7 +485,7 @@ export function CustomerHomeComplete({
   const [customerCommerceEnabled] = useState<boolean>(() => isCustomerEcommerceEnabled());
 
   useEffect(() => {
-    if (!customerCommerceEnabled) return;
+    if (backgroundTasksPaused || !customerCommerceEnabled) return;
     let cancelled = false;
     (async () => {
       try {
@@ -509,7 +511,7 @@ export function CustomerHomeComplete({
     return () => {
       cancelled = true;
     };
-  }, [customerCommerceEnabled]);
+  }, [customerCommerceEnabled, backgroundTasksPaused]);
 
   /** Single entry for home CTAs: internal screens → onNavigate; paths → router; http(s) / mailto / tel → window. */
   const handleNavigation = useCallback(
@@ -551,7 +553,7 @@ export function CustomerHomeComplete({
     refresh: refreshGpsTracking,
   } = useActiveGpsTracking(phone, {
     pollingIntervalMs: 10000, // Poll every 10 seconds
-    enabled: !!phone,
+    enabled: !!phone && !backgroundTasksPaused,
     onSessionStart: (session: ActiveTrackingSession) => {
       // Show popup when a new tracking session starts
       if (!dismissedTrackingSessions.has(session.sessionId)) {
@@ -610,12 +612,12 @@ export function CustomerHomeComplete({
     hasActiveCall: hasActiveVideoCall,
     joinCall: joinVideoCall,
   } = useActiveVideoCall(customerId, {
-    enabled: !!customerId,
+    enabled: !!customerId && !backgroundTasksPaused,
     pollingIntervalMs: 10000,
   });
 
   // Dynamic categories from admin catalog (fallback to hardcoded list if API fails or returns empty)
-  const { quickServiceTiles } = useCustomerCategories(phone);
+  const { quickServiceTiles } = useCustomerCategories(phone, { enabled: !backgroundTasksPaused });
 
   // Define quickServices constant (fallback when API has no categories)
   // Training / trainer labels come from API `service_categories.name` when present (not hardcoded here).
@@ -712,10 +714,11 @@ export function CustomerHomeComplete({
   sourceQuickServices = deduplicatedServices;
 
   useEffect(() => {
+    if (backgroundTasksPaused) return;
     loadUserData();
     loadServicesFromAPI();
     loadDynamicContent();
-  }, [phone, refreshKey]); // Add refreshKey to dependencies
+  }, [phone, refreshKey, backgroundTasksPaused]); // Add refreshKey to dependencies
 
   const resolveCustomerLocation = async (): Promise<{ city: string; state: string }> => {
     let city = '';
@@ -1020,6 +1023,7 @@ export function CustomerHomeComplete({
   // `filteredQuickServices` is authoritative (may be empty when nothing is launched).
   // Get customer's location from default address (most accurate) or profile fallback
   useEffect(() => {
+    if (backgroundTasksPaused) return;
     const loadServiceLaunchConfig = async () => {
       try {
         setServiceLaunchTilesResolved(false);
@@ -1244,7 +1248,7 @@ export function CustomerHomeComplete({
       setFilteredQuickServices(sourceQuickServices);
       setServiceLaunchTilesResolved(true);
     }
-  }, [phone, refreshKey, quickServiceTiles.length]);
+  }, [phone, refreshKey, quickServiceTiles.length, backgroundTasksPaused]);
 
   /** Map API + defaults for hero; dedupe defaults by CTA vertical; icons from CTA / metadata */
   const homeCarouselBanners = useMemo(() => {
@@ -1368,31 +1372,32 @@ export function CustomerHomeComplete({
 
   // Load active bookings with tracking for "Attention" section
   useEffect(() => {
-    if (phone) {
-      // ✅ Set customerId early so incoming-call poll uses UUID (backend matches recipient_id to UUID)
-      apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`).then((r) => {
-        if (r?.customer?.id) setCustomerId(r.customer.id);
-      }).catch(() => { });
+    if (backgroundTasksPaused || !phone) return;
+
+    // ✅ Set customerId early so incoming-call poll uses UUID (backend matches recipient_id to UUID)
+    apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`).then((r) => {
+      if (r?.customer?.id) setCustomerId(r.customer.id);
+    }).catch(() => { });
+    loadActiveBookings();
+    checkPendingReviews(); // ✅ Check for pending reviews on load
+    checkUpcomingCalls(); // ✅ FIX GAP-6.2: Check for upcoming calls
+    checkActiveOrderTracking(); // ✅ FIX GAP-8.4: Check for active orders
+    checkIncomingCalls(); // ✅ WhatsApp-style: Check for incoming video call
+    const interval = setInterval(() => {
       loadActiveBookings();
-      checkPendingReviews(); // ✅ Check for pending reviews on load
-      checkUpcomingCalls(); // ✅ FIX GAP-6.2: Check for upcoming calls
-      checkActiveOrderTracking(); // ✅ FIX GAP-8.4: Check for active orders
-      checkIncomingCalls(); // ✅ WhatsApp-style: Check for incoming video call
-      const interval = setInterval(() => {
-        loadActiveBookings();
-        checkUpcomingCalls();
-        checkActiveOrderTracking();
-        checkIncomingCalls(); // Incoming call notification (Accept/Reject)
-      }, 15000); // Poll every 15s so 5-min-away calls show quickly
-      const incomingCallInterval = setInterval(checkIncomingCalls, 5000); // Poll every 5s for incoming call (like vendor)
-      return () => {
-        clearInterval(interval);
-        clearInterval(incomingCallInterval);
-      };
-    }
-  }, [phone, refreshKey]);
+      checkUpcomingCalls();
+      checkActiveOrderTracking();
+      checkIncomingCalls(); // Incoming call notification (Accept/Reject)
+    }, 15000); // Poll every 15s so 5-min-away calls show quickly
+    const incomingCallInterval = setInterval(checkIncomingCalls, 5000); // Poll every 5s for incoming call (like vendor)
+    return () => {
+      clearInterval(interval);
+      clearInterval(incomingCallInterval);
+    };
+  }, [phone, refreshKey, backgroundTasksPaused]);
 
   useEffect(() => {
+    if (backgroundTasksPaused) return;
     const clean = (phone || '').replace(/[^0-9]/g, '');
     if (clean.length < 10) {
       setNotificationUnreadCount(0);
@@ -1418,9 +1423,10 @@ export function CustomerHomeComplete({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [phone, refreshKey, notificationInboxVersion]);
+  }, [phone, refreshKey, notificationInboxVersion, backgroundTasksPaused]);
 
   useEffect(() => {
+    if (backgroundTasksPaused) return;
     const clean = (phone || '').replace(/[^0-9]/g, '');
     if (clean.length < 10) {
       setCombinedMessageUnreadCount(0);
@@ -1444,7 +1450,7 @@ export function CustomerHomeComplete({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [phone, refreshKey, customerId, messagesInboxVersion]);
+  }, [phone, refreshKey, customerId, messagesInboxVersion, backgroundTasksPaused]);
 
   const loadActiveBookings = async () => {
     try {
