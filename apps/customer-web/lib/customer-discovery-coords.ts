@@ -12,26 +12,27 @@ export function resolveCustomerDiscoveryPhone(candidate?: string): string {
   ).trim();
 }
 
-function cacheCoords(lat: string, lng: string) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem('customer_latitude', lat);
-    localStorage.setItem('customer_longitude', lng);
-  } catch {
-    /* ignore */
-  }
-}
+export type CustomerDiscoveryCoordsSource = 'profile' | 'localStorage' | 'geolocation';
 
-/** Same resolution order as useHubVendorDiscovery for discover-services parity. */
-export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
+/**
+ * Same resolution order as useHubVendorDiscovery: profile → localStorage → GPS.
+ * When coords come from profile or geolocation, they are written to `customer_latitude` /
+ * `customer_longitude` so other screens (by-style listings) reuse them without racing.
+ */
+export async function resolveCustomerDiscoveryCoords(
+  phone?: string,
+  options?: { persist?: boolean }
+): Promise<{
   latitude?: string;
   longitude?: string;
+  source?: CustomerDiscoveryCoordsSource;
 }> {
+  const persist = options?.persist !== false;
   let latitude: string | undefined;
   let longitude: string | undefined;
-  const ph = (phone || '').trim();
+  let source: CustomerDiscoveryCoordsSource | undefined;
 
-  // Tier 1: customer profile API (most accurate — from their saved default address)
+  const ph = (phone || '').trim();
   if (ph.length >= 8) {
     try {
       const profileRes = (await apiClient.get(
@@ -41,14 +42,12 @@ export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
       if (profile?.latitude != null && profile?.longitude != null) {
         latitude = String(profile.latitude);
         longitude = String(profile.longitude);
-        cacheCoords(latitude, longitude);
+        source = 'profile';
       }
     } catch {
       /* ignore */
     }
   }
-
-  // Tier 2: localStorage (already cached from a previous resolution)
   if (latitude == null && typeof window !== 'undefined') {
     try {
       const lat = localStorage.getItem('customer_latitude');
@@ -56,13 +55,12 @@ export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
       if (lat && lng) {
         latitude = lat;
         longitude = lng;
+        source = 'localStorage';
       }
     } catch {
       /* ignore */
     }
   }
-
-  // Tier 3: browser geolocation
   if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -73,11 +71,27 @@ export async function resolveCustomerDiscoveryCoords(phone?: string): Promise<{
       });
       latitude = String(pos.coords.latitude);
       longitude = String(pos.coords.longitude);
-      cacheCoords(latitude, longitude);
+      source = 'geolocation';
     } catch {
       /* ignore */
     }
   }
 
-  return { latitude, longitude };
+  if (
+    persist &&
+    typeof window !== 'undefined' &&
+    latitude != null &&
+    longitude != null &&
+    source != null &&
+    source !== 'localStorage'
+  ) {
+    try {
+      localStorage.setItem('customer_latitude', latitude);
+      localStorage.setItem('customer_longitude', longitude);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return { latitude, longitude, source };
 }

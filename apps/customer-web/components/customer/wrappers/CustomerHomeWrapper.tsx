@@ -7,7 +7,7 @@ import { setClientShellScreenForErrors } from '@/lib/client-error-reporting';
 import { CustomerHomeComplete as CustomerHome } from '../homepage/CustomerHomeComplete';
 import { UserAccountSidebar } from '../UserAccountSidebar';
 import { CustomerPetDetails } from '../CustomerPetDetails';
-import { CustomerPetProfile } from '../CustomerPetProfile';
+import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { WalkerService } from '../WalkerService';
 import { WalkerDashboard } from '../walker/WalkerDashboard';
 import { WalkerBookingRouter } from '../walker/WalkerBookingRouter';
@@ -458,6 +458,12 @@ export function CustomerHomeWrapper({
   const [instantConnectingBookingId, setInstantConnectingBookingId] = useState<string | null>(null); // Instant tele: after payment, show connecting then video
   /** `?service=tele` / Book Now: skip TeleConsultationRouter mode selection → instant vet list */
   const [teleSkipModeSelection, setTeleSkipModeSelection] = useState(false);
+  /** Home → Veterinary Care → "Tele Consult" tile: skip mode selection → scheduled provider list (back returns to home) */
+  const [teleSkipToScheduled, setTeleSkipToScheduled] = useState(false);
+  /** Home → Veterinary Care → "Vet at Home" tile: deep link into HomeVisitRouter (back returns to home, not vet hub) */
+  const [vetHomeFromHome, setVetHomeFromHome] = useState(false);
+  /** Home → Veterinary Care → "Clinic Visit" tile: deep link into ClinicListView (back returns to home, not vet hub) */
+  const [vetClinicFromHome, setVetClinicFromHome] = useState(false);
   /** Grooming/training style lists: chevron opens embedded vendor profile (`vendorId` on *ServicesByStyle / Universal). */
   const [groomingCenterProfileVendorId, setGroomingCenterProfileVendorId] = useState<string | null>(null);
   const [groomingHomeProfileVendorId, setGroomingHomeProfileVendorId] = useState<string | null>(null);
@@ -473,6 +479,13 @@ export function CustomerHomeWrapper({
   const trainingHomeOpenedWithEmbedRef = useRef(false);
   /** After opening grooming/training style hub from problem-grid discovery, full back returns here instead of the service hub. */
   const [returnToProblemGridFromStyleHub, setReturnToProblemGridFromStyleHub] = useState(false);
+  /**
+   * The specialization slug (e.g. "bath_only", "vaccination") from the most recently tapped problem tile.
+   * Passed to all discovery screens so specialization is preserved even when the user reaches them outside
+   * of ProblemGridFlowRouter (e.g. grooming hub → At Salon tile).
+   * Cleared when the user navigates directly to a hub or home without a problem context.
+   */
+  const [problemGridSpecialization, setProblemGridSpecialization] = useState<string | undefined>(undefined);
   /** Problem grid → boarding vendor profile when URL props do not supply `petBoardingVendorId`. */
   const [problemFlowBoardingVendorId, setProblemFlowBoardingVendorId] = useState<string | null>(null);
   const [problemFlowBoardingSlug, setProblemFlowBoardingSlug] = useState<string | null>(null);
@@ -605,7 +618,14 @@ export function CustomerHomeWrapper({
     const prev = prevScreenForTeleRef.current;
     if (prev === 'vet-tele-consultation' && currentScreen !== 'vet-tele-consultation') {
       setTeleSkipModeSelection(false);
+      setTeleSkipToScheduled(false);
       syncTeleConsultUrl(false);
+    }
+    if (prev === 'vet-home-visit' && currentScreen !== 'vet-home-visit') {
+      setVetHomeFromHome(false);
+    }
+    if (prev === 'vet-clinic-list' && currentScreen !== 'vet-clinic-list') {
+      setVetClinicFromHome(false);
     }
     prevScreenForTeleRef.current = currentScreen;
   }, [currentScreen, syncTeleConsultUrl]);
@@ -774,7 +794,23 @@ export function CustomerHomeWrapper({
     }
     else if (service === 'vet-tele-consultation') {
       setVetServiceData(_data);
+      if ((data as any)?.startStep === 'scheduled') setTeleSkipToScheduled(true);
+      else setTeleSkipToScheduled(false);
       setCurrentScreen('vet-tele-consultation');
+      return;
+    }
+    else if (service === 'vet-home-visit') {
+      setVetServiceData(_data);
+      if ((data as any)?.startStep === 'home') setVetHomeFromHome(true);
+      else setVetHomeFromHome(false);
+      setCurrentScreen('vet-home-visit');
+      return;
+    }
+    else if (service === 'vet-clinic-list') {
+      setVetServiceData(_data);
+      if ((data as any)?.startStep === 'home') setVetClinicFromHome(true);
+      else setVetClinicFromHome(false);
+      setCurrentScreen('vet-clinic-list');
       return;
     }
     else if (service === 'grooming') {
@@ -943,13 +979,23 @@ export function CustomerHomeWrapper({
     setVetServiceData(data);
     // ✅ FIX: Handle all navigation screens including pharmacy, lab, etc.
     if (screen === 'vet-booking') setCurrentScreen('vet-booking');
-    else if (screen === 'vet-clinic-list') setCurrentScreen('vet-clinic-list');
+    else if (screen === 'vet-clinic-list') {
+      if ((data as any)?.startStep === 'home') setVetClinicFromHome(true);
+      else setVetClinicFromHome(false);
+      setCurrentScreen('vet-clinic-list');
+    }
     else if (screen === 'vet-clinic-booking') setCurrentScreen('vet-clinic-booking');
     else if (screen === 'vet-tele-consultation') {
+      if ((data as any)?.startStep === 'scheduled') setTeleSkipToScheduled(true);
+      else setTeleSkipToScheduled(false);
       setCurrentScreen('vet-tele-consultation');
       return;
     }
-    else if (screen === 'vet-home-visit') setCurrentScreen('vet-home-visit');
+    else if (screen === 'vet-home-visit') {
+      if ((data as any)?.startStep === 'home') setVetHomeFromHome(true);
+      else setVetHomeFromHome(false);
+      setCurrentScreen('vet-home-visit');
+    }
     else if (screen === 'pharmacy') {
       console.log('🔵 [handleVetNavigate] Setting pharmacy landing (Medicine)');
       setCurrentScreen('pharmacy');
@@ -1238,6 +1284,7 @@ export function CustomerHomeWrapper({
       setSelectedVendorId(undefined);
       setSelectedProblem(null);
       setCurrentServiceType(null);
+      setProblemGridSpecialization(undefined);
     } else if (screen === 'cart') {
       setUserSidebarOpen(false);
       setPetSitterOriginScreen(null);
@@ -1490,8 +1537,8 @@ export function CustomerHomeWrapper({
         onProfileClick={handleProfileClick}
         accountSidebar={accountSidebarOverlay}
       >
-        {/* Mobile-first shell: max-w-customer (fluid, see tailwind.config.js) */}
-        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        {/* Full width inside CustomerScreenWrapper (already max-w-customer); avoid double max-width + hairline frame */}
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           {/* ✅ FIX: Skip StandardizedHeader for service routers that use ServiceDashboardHeader (frame UI) */}
           {!options.skipHeader && (
             <StandardizedHeader
@@ -1617,6 +1664,7 @@ export function CustomerHomeWrapper({
                   }
                 ),
               });
+              setProblemGridSpecialization(data?.problemId || undefined);
               setCurrentScreen('problem_grid_flow');
             } else if (screen === 'problem_grid') {
               setCurrentServiceType(data?.roleId || 'general');
@@ -1761,7 +1809,20 @@ export function CustomerHomeWrapper({
         }}
       />
     );
-  if (currentScreen === 'add-pet') return <CustomerPetProfile session={{ phone }} prefillData={null} onComplete={handlePetProfileComplete} onBack={handleBack} />;
+  if (currentScreen === 'add-pet')
+    return (
+      <EnhancedAddPetModal
+        key="screen-add-pet"
+        variant="fullscreen"
+        phone={phone}
+        isOpen
+        onBack={handleBack}
+        onClose={handleBack}
+        onSuccess={() => {
+          void handlePetProfileComplete([]);
+        }}
+      />
+    );
   
   // Core Services
   // ✅ FIX: Walker with Frame UI (ServiceDashboardHeader only – skipHeader to avoid double header)
@@ -1773,6 +1834,7 @@ export function CustomerHomeWrapper({
           setCurrentScreen('problem_grid');
         } else if (screen === 'problem_selected') {
           setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Walking Service', roleId: 'walker' });
+          setProblemGridSpecialization(data?.problemId || undefined);
           setCurrentScreen('problem_grid_flow');
         } else {
           handleWalkerNavigate(screen, data);
@@ -1795,7 +1857,7 @@ export function CustomerHomeWrapper({
         serviceType={walkerServiceData?.serviceType || 'walking'}
         price={walkerServiceData?.price}
         duration={walkerServiceData?.duration}
-        onBack={() => setCurrentScreen('walker')}
+        onBack={() => setCurrentScreen(previousScreen || 'walker')}
         onNavigate={(screen, data) => {
           if (screen === 'booking-details' || screen === 'booking-confirmation') {
             handleViewBooking(data?.bookingId);
@@ -1925,6 +1987,7 @@ export function CustomerHomeWrapper({
               return;
             }
             setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Vet Service', roleId: 'veterinarian' });
+            setProblemGridSpecialization(data?.problemId || undefined);
             setCurrentScreen('problem_grid_flow');
           } else {
             handleVetNavigate(screen, data);
@@ -1945,7 +2008,7 @@ export function CustomerHomeWrapper({
         onNavigate={handleVetNavigate}
       />
     );
-  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} onBack={() => setCurrentScreen('vet')} onNavigate={(screen, data) => {
+  if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} specialization={problemGridSpecialization} onBack={() => setCurrentScreen(vetClinicFromHome ? 'home' : 'vet')} onNavigate={(screen, data) => {
     if (screen === 'vet-services-by-style') {
       setVetServiceData({
         ...(data || {}),
@@ -2117,7 +2180,13 @@ export function CustomerHomeWrapper({
         serviceStyle={vetServiceData?.serviceStyle || 'tele'}
         serviceTypeName={vetServiceData?.serviceTypeName}
         category={vetServiceData?.category || 'vet'}
+        specialization={vetServiceData?.specialization || problemGridSpecialization}
         onBack={() => {
+          if (vetServiceData?.returnScreen === 'problem_grid_flow') {
+            setVetServiceData(null);
+            setCurrentScreen('problem_grid_flow');
+            return;
+          }
           if (vetServiceData?.vendorId && vetServiceData?.returnScreen === 'vet-clinic-list') {
             setVetServiceData((p: any) => {
               if (!p || typeof p !== 'object') return null;
@@ -2165,7 +2234,8 @@ export function CustomerHomeWrapper({
       <TeleConsultationRouter 
         phone={phone} 
         skipModeSelection={teleSkipModeSelection}
-        onBack={() => setCurrentScreen('vet')} 
+        skipToScheduled={teleSkipToScheduled}
+        onBack={() => setCurrentScreen(teleSkipToScheduled ? 'home' : 'vet')} 
         onNavigate={(screen, data) => {
           // Handle navigation from TeleConsultationRouter
           if (screen === 'video-call') {
@@ -2199,7 +2269,7 @@ export function CustomerHomeWrapper({
     return renderScreenWithLayout('vet-home-visit',
       <HomeVisitRouter 
         phone={phone} 
-        onBack={() => setCurrentScreen('vet')} 
+        onBack={() => setCurrentScreen(vetHomeFromHome ? 'home' : 'vet')} 
         onNavigate={(screen, data) => {
           // Handle navigation from HomeVisitRouter
           if (screen === 'payment') {
@@ -2381,6 +2451,7 @@ export function CustomerHomeWrapper({
           } else {
             setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Grooming Service', roleId: 'groomer' });
           }
+          setProblemGridSpecialization(data?.problemId || undefined);
           setCurrentScreen('problem_grid_flow');
         } else if (screen === 'grooming_center' || screen === 'at_center') {
           console.log('🟢 [CustomerHomeWrapper] Setting grooming_center screen');
@@ -2439,6 +2510,7 @@ export function CustomerHomeWrapper({
           setCurrentScreen('problem_grid');
         } else if (screen === 'problem_selected') {
           setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Training Service', roleId: 'trainer' });
+          setProblemGridSpecialization(data?.problemId || undefined);
           setCurrentScreen('problem_grid_flow');
         } else if (screen === 'training_center') {
           const embed = (data as { embedVendorId?: string } | undefined)?.embedVendorId;
@@ -2501,6 +2573,7 @@ export function CustomerHomeWrapper({
               categoryHint: 'behavioral',
             }),
           });
+          setProblemGridSpecialization((problem.id || problem.problemId) || undefined);
           setCurrentScreen('problem_grid_flow');
         }}
       />
@@ -2524,6 +2597,7 @@ export function CustomerHomeWrapper({
           setCurrentScreen('problem_grid');
         } else if (screen === 'problem_selected') {
           setSelectedProblem({ id: data?.problemId, title: data?.problemTitle || 'Boarding Service', roleId: 'boarding' });
+          setProblemGridSpecialization(data?.problemId || undefined);
           setCurrentScreen('problem_grid_flow');
         } else if (screen === 'boarding_facility') {
           setCurrentScreen('boarding_facility');
@@ -3541,12 +3615,13 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'grooming_center') {
     return (
       <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           <GroomingServicesByStyle
             phone={phone}
             serviceStyle="at_center"
             serviceTypeName="Grooming Center"
             category="grooming"
+            specialization={problemGridSpecialization}
             vendorId={groomingCenterProfileVendorId ?? undefined}
             onBack={() => {
               if (groomingCenterProfileVendorId) {
@@ -3569,12 +3644,13 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'grooming_home') {
     return (
       <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           <GroomingServicesByStyle
             phone={phone}
             serviceStyle="at_home"
             serviceTypeName="At Home Grooming"
             category="grooming"
+            specialization={problemGridSpecialization}
             vendorId={groomingHomeProfileVendorId ?? undefined}
             onBack={() => {
               if (groomingHomeProfileVendorId) {
@@ -3649,13 +3725,14 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'training_center') {
     return (
       <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           <UniversalServicesByStyle
             phone={phone}
             roleId="trainer"
             serviceStyle="at_center"
             serviceTypeName="Training Center"
             category="training"
+            specialization={problemGridSpecialization}
             bookingScreen="training-booking"
             vendorId={trainingCenterProfileVendorId ?? undefined}
             onBack={() => {
@@ -3684,13 +3761,14 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'training_home') {
     return (
       <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           <UniversalServicesByStyle
             phone={phone}
             roleId="trainer"
             serviceStyle="at_home"
             serviceTypeName="At Home Training"
             category="training"
+            specialization={problemGridSpecialization}
             bookingScreen="training-booking"
             vendorId={trainingHomeProfileVendorId ?? undefined}
             onBack={() => {
@@ -4161,6 +4239,131 @@ export function CustomerHomeWrapper({
     );
   }
 
+  const handleProblemGridDiscoveryNavigate = (screen: string, data?: any) => {
+    const gridBack = 'problem_grid_flow';
+    const mergeReturn = (d?: any) => {
+      if (!d || typeof d !== 'object' || Array.isArray(d)) return { returnScreen: gridBack };
+      return { ...d, returnScreen: d.returnScreen ?? gridBack };
+    };
+
+    if (screen === 'grooming_embed_vendor_profile' && data?.vendorId) {
+      setReturnToProblemGridFromStyleHub(true);
+      const st = String(data.serviceStyle || '').toLowerCase();
+      if (st === 'at_home' || st === 'home_visit') {
+        setGroomingHomeProfileVendorId(String(data.vendorId));
+        setCurrentScreen('grooming_home');
+      } else {
+        setGroomingCenterProfileVendorId(String(data.vendorId));
+        setCurrentScreen('grooming_center');
+      }
+      return;
+    }
+
+    if (screen === 'grooming-booking' || (screen === 'create-booking' && data?.serviceType === 'grooming')) {
+      const st = String(data?.serviceStyle || '').toLowerCase();
+      if (st === 'at_home' || st === 'home_visit') groomingHomeNavigate(screen, data);
+      else groomingCenterNavigate(screen, data);
+      return;
+    }
+
+    if (screen === 'training_embed_vendor_profile' && data?.vendorId) {
+      setReturnToProblemGridFromStyleHub(true);
+      const st = String(data.serviceStyle || '').toLowerCase();
+      if (st === 'at_center') {
+        setTrainingCenterProfileVendorId(String(data.vendorId));
+        setCurrentScreen('training_center');
+      } else {
+        setTrainingHomeProfileVendorId(String(data.vendorId));
+        setCurrentScreen('training_home');
+      }
+      return;
+    }
+
+    if (screen === 'training-booking') {
+      const st = String(data?.serviceStyle || '').toLowerCase();
+      if (st === 'at_center') trainingCenterNavigate(screen, data);
+      else trainingHomeNavigate(screen, data);
+      return;
+    }
+
+    if (screen === 'purchase-package') {
+      setPreviousScreen('problem_grid_flow');
+      const vid = String(data?.vendorId ?? '').trim();
+      const vsid = String(data?.vendorServiceId ?? (data as any)?.vendor_service_id ?? '').trim();
+      const payload =
+        typeof data === 'object' && data != null && !Array.isArray(data)
+          ? { ...(data as Record<string, unknown>) }
+          : {};
+      if (vid) (payload as any).vendorId = vid;
+      if (vsid) (payload as any).vendorServiceId = vsid;
+      setWalkerServiceData(Object.keys(payload).length ? payload : vid ? { vendorId: vid } : null);
+      setCurrentScreen('purchase-package');
+      return;
+    }
+
+    if (screen === 'vet-services-by-style') {
+      handleVetNavigate(screen, mergeReturn(data));
+      return;
+    }
+
+    if (screen === 'vet-booking' || screen === 'appointment') {
+      handleVetNavigate(screen === 'appointment' ? 'vet-booking' : screen, data);
+      return;
+    }
+
+    if (screen === 'vet-clinic-profile' || screen === 'vet-doctor-details') {
+      handleVetNavigate(screen, {
+        ...(data || {}),
+        clinicProfileBackScreen: data?.clinicProfileBackScreen ?? gridBack,
+        doctorProfileBackScreen: data?.doctorProfileBackScreen ?? gridBack,
+      });
+      return;
+    }
+
+    if (screen === 'nutritionist-booking') {
+      setPreviousScreen('problem_grid_flow');
+      setSelectedVendorId(data?.vendorId);
+      setVetServiceData({
+        vendorId: data?.vendorId,
+        serviceType: data?.serviceType || data?.category || 'pet_nutritionist',
+        serviceStyle: data?.serviceStyle || 'at_home',
+        nutritionist: data?.nutritionist,
+        serviceId: data?.serviceId,
+        service: data?.service,
+        price: data?.price,
+        duration: data?.duration,
+        serviceName: data?.serviceName,
+      });
+      setCurrentScreen('nutritionist-booking');
+      return;
+    }
+
+    if (screen === 'walker-booking') {
+      setPreviousScreen('problem_grid_flow');
+      setWalkerServiceData(data);
+      setCurrentScreen('walker-booking');
+      return;
+    }
+
+    if (screen === 'boarding-booking') {
+      setPreviousScreen('problem_grid_flow');
+      setVetServiceData({
+        vendorId: data?.vendorId as string | undefined,
+        serviceType: 'boarding',
+        serviceId: data?.serviceId as string | undefined,
+        serviceName: data?.serviceName as string | undefined,
+        price: data?.price as number | undefined,
+        duration: data?.duration as number | undefined,
+        serviceStyle: data?.serviceStyle as string | undefined,
+        facility: data?.facility,
+      });
+      setCurrentScreen('boarding-booking');
+      return;
+    }
+
+    handleVetNavigate(screen, data);
+  };
+
   // ✅ NEW: Problem Grid Flow Router - Service Style Selection after Problem Grid
   if (currentScreen === 'problem_grid_flow' && selectedProblem) {
     return (
@@ -4207,14 +4410,9 @@ export function CustomerHomeWrapper({
             setCurrentScreen('home');
           }
           setSelectedProblem(null);
+          setProblemGridSpecialization(undefined);
         }}
-        onBookingComplete={(bookingId) => {
-          // Navigate to booking details after successful booking
-          handleViewBooking(bookingId);
-          setSelectedProblem(null);
-          setCurrentServiceType(null);
-        }}
-        onVendorProfile={handleProblemGridVendorProfile}
+        onDiscoveryNavigate={handleProblemGridDiscoveryNavigate}
       />
     );
   }

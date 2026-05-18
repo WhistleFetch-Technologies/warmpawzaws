@@ -1398,8 +1398,8 @@ export function VendorDashboard({
                   </button>
                 )}
 
-                {/* ✅ NEW: Delivery Management */}
-                {onNavigateToDeliveryManagement && capabilities.delivery && (
+                {/* Delivery: nutritionists manage drops under Diet → meal plans; hide duplicate tile */}
+                {onNavigateToDeliveryManagement && capabilities.delivery && !isNutritionistVendor && (
                   <button
                     onClick={onNavigateToDeliveryManagement}
                     className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-orange-100 transition-colors"

@@ -33,7 +33,9 @@ import { isValidUUID } from '../../../types/entities';
 import { presignS3GetUrlIfApplicable } from '../../../utils/s3-media-presign';
 import { findCustomerByPhone } from '../../../utils/customer-phone-lookup';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
-import { resolveMealCheckoutTotalInr } from '../../../utils/meal-order-pricing';
+import {
+  resolveCustomerMealPlanOrderDisplayTotals,
+} from '../../../utils/meal-order-pricing';
 
 // ============================================================================
 // CUSTOMER HANDLERS
@@ -482,10 +484,12 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       const mealResult = await query(
         `SELECT mo.*, mp.name as meal_plan_name, mp.plan_name as mp_plan_name,
                 mp.price_per_meal as mp_price_per_meal, mp.price as mp_legacy_price,
-                v.business_name as vendor_name
+                v.business_name as vendor_name,
+                p.name as pet_name
          FROM meal_orders mo
          LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
          LEFT JOIN vendors v ON mo.vendor_id = v.id
+         LEFT JOIN pets p ON mo.pet_id = p.id
          WHERE mo.customer_id = $1
          ORDER BY mo.created_at DESC`,
         [customerId]
@@ -502,7 +506,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           price_per_meal: o.mp_price_per_meal,
           price: o.mp_legacy_price,
         };
-        const { subtotal, total } = resolveMealCheckoutTotalInr(o, planForPricing);
+        const { subtotal, total } = resolveCustomerMealPlanOrderDisplayTotals(o, planForPricing);
         allOrders.push({
           id: o.id,
           order_number: o.order_number || o.id?.toString().slice(-8),
@@ -511,8 +515,11 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           meal_plan_id: o.meal_plan_id,
           meal_plan_name: o.meal_name || o.meal_plan_name || o.mp_plan_name,
           pet_id: o.pet_id,
+          pet_name: o.pet_name,
+          quantity: o.quantity,
           vendor_id: o.vendor_id,
           vendor_name: o.vendor_name,
+          subscription_id: o.subscription_id ?? null,
           subtotal,
           total_amount: total,
           status: o.status,
@@ -534,7 +541,9 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
             `SELECT o.id, o.order_number, o.order_status as status, o.total_amount, o.shipping_address as delivery_address,
                     o.delivery_date as scheduled_delivery_date, o.delivery_time as scheduled_delivery_slot, o.created_at,
                     o.vendor_id, v.business_name as vendor_name,
-                    (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_plan_name
+                    (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_plan_name,
+                    (SELECT p.name FROM meal_plan_orders mpo LEFT JOIN pets p ON p.id = mpo.pet_id WHERE mpo.order_id = o.id LIMIT 1) as pet_name,
+                    (SELECT mpo.quantity FROM meal_plan_orders mpo WHERE mpo.order_id = o.id LIMIT 1) as line_quantity
              FROM orders o
              LEFT JOIN vendors v ON o.vendor_id = v.id
              WHERE o.customer_id = $1 AND o.order_type = 'meal_plan_delivery'
@@ -551,6 +560,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
               meal_plan_id: null,
               meal_plan_name: o.meal_plan_name || 'Meal Plan',
               pet_id: null,
+              pet_name: o.pet_name,
+              quantity: o.line_quantity,
               vendor_id: o.vendor_id,
               vendor_name: o.vendor_name,
               total_amount: safeMoney(o.total_amount),

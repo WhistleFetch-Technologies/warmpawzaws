@@ -25,6 +25,7 @@ import {
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import { pickProviderDistanceKm } from '@/lib/distance-display';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { StarRating } from '../shared/StarRating';
@@ -33,6 +34,10 @@ interface ClinicListViewProps {
   phone: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
+  /** Problem tile / specialization id for GET /customer/services/by-style */
+  specialization?: string;
+  /** `returnScreen` when opening vet-services-by-style from Details (default: vet-clinic-list). */
+  vetStyleProfileReturnScreen?: string;
 }
 
 /** One bookable row — stable identity for keys + booking */
@@ -166,7 +171,13 @@ function mapByStyleProvider(p: any): ClinicProvider | null {
     address,
     rating: Number(p.rating ?? 0) || 0,
     review_count: Number(p.reviewCount ?? p.review_count ?? 0) || 0,
-    distanceKm: p.distance != null && p.distance !== '' ? Number(p.distance) : null,
+    distanceKm: (() => {
+      if (p.distance != null && p.distance !== '') {
+        const n = Number(p.distance);
+        return Number.isFinite(n) ? n : null;
+      }
+      return pickProviderDistanceKm(p);
+    })(),
     timing: p.businessHours || p.timing || '9 AM - 8 PM',
     photo: p.photo || p.vendorPhoto || p.photoUrl,
     nextAvailableSlot: nextSlot,
@@ -185,21 +196,19 @@ function cleanProviderName(name: string): string {
   return String(name || 'Clinic').replace(/\s*-\s*[a-f0-9-]{8,}\s*$/i, '').trim();
 }
 
-export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProps) {
+export function ClinicListView({
+  phone,
+  onBack,
+  onNavigate,
+  specialization,
+  vetStyleProfileReturnScreen = 'vet-clinic-list',
+}: ClinicListViewProps) {
   const [loading, setLoading] = useState(true);
   const [clinics, setClinics] = useState<ClinicProvider[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'rating' | 'distance' | 'price'>('all');
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
   const [fetchingServicesFor, setFetchingServicesFor] = useState<string | null>(null);
-
-  const getLocationParams = async (): Promise<string> => {
-    const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
-    if (latitude && longitude) {
-      return `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
-    }
-    return '';
-  };
 
   const fetchVendorServicesForClinic = useCallback(
     async (clinicId: string) => {
@@ -241,11 +250,14 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
 
   useEffect(() => {
     loadClinics();
-  }, []);
+  }, [specialization, phone]);
 
   const loadDiscoverFallback = async (locationParams: string) => {
+    const specParam = specialization
+      ? `&specialization=${encodeURIComponent(specialization)}`
+      : '';
     const response = (await apiClient.get(
-      `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}`
+      `/customer/discover-services?category=vet&serviceStyle=at_center${locationParams}${specParam}`
     )) as any;
     const servicesData = response.vendors || response.services || [];
     if (servicesData.length === 0) return [];
@@ -301,7 +313,13 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
             String(service.vendorReviewCount || service.reviewsCount || service.review_count || '0'),
             10
           ),
-          distanceKm: service.distance != null ? Number(service.distance) : null,
+          distanceKm: (() => {
+            if (service.distance != null) {
+              const n = Number(service.distance);
+              return Number.isFinite(n) ? n : null;
+            }
+            return pickProviderDistanceKm(service);
+          })(),
           timing: actualTiming,
           photo: service.vendorPhoto || service.photo || service.photoUrl || service.vendorProfileImage,
           nextAvailableSlot: nextSlot,
@@ -327,13 +345,20 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
   const loadClinics = async () => {
     try {
       setLoading(true);
-      const locationParams = await getLocationParams();
+      const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
+      let locationParams = '';
+      if (latitude != null && longitude != null) {
+        locationParams = `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
+      }
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
 
       let mapped: ClinicProvider[] = [];
       const loadByStyle = async (roleId: string) => {
+        const specParam = specialization
+          ? `&specialization=${encodeURIComponent(specialization)}`
+          : '';
         const response = (await apiClient.get(
-          `/customer/services/by-style?style=at_center&category=vet&roleId=${encodeURIComponent(roleId)}${locationParams}${phoneParam}`
+          `/customer/services/by-style?style=at_center&category=vet&roleId=${encodeURIComponent(roleId)}${locationParams}${phoneParam}${specParam}`
         )) as any;
         if (!response.success) return [];
         const providerData = response.providers || response.vendors || [];
@@ -356,7 +381,9 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
         }
       }
 
-      if (mapped.length === 0) {
+      // Only use the unfiltered /vendors fallback when there is no specialization filter.
+      // If specialization is active, an empty list is correct — do not widen to all vets.
+      if (mapped.length === 0 && !specialization) {
         try {
           const fallbackResponse = (await apiClient.get('/vendors?role=veterinarian')) as any;
           if (fallbackResponse?.vendors?.length > 0) {
@@ -463,7 +490,7 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
       serviceStyle: 'at_center',
       serviceTypeName: 'Vet Clinic',
       category: 'vet',
-      returnScreen: 'vet-clinic-list',
+      returnScreen: vetStyleProfileReturnScreen,
     });
   };
 
@@ -513,8 +540,9 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="mx-auto flex min-h-screen min-h-[100dvh] w-full max-w-customer flex-col bg-gray-50">
       <ServiceDashboardHeader
+        fullWidth
         serviceName="Veterinary Clinic"
         serviceSubtitle="Find a veterinary clinic near you"
         serviceIcon={Stethoscope}
@@ -523,9 +551,11 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-white"
       />
 
-      <div className="max-w-customer mx-auto px-4 pt-4 pb-36">
+      {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
+      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 pb-36 sm:rounded-t-[2rem]">
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
@@ -564,7 +594,11 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
               🏥
             </div>
             <p className="text-gray-800 font-semibold">No clinics found</p>
-            <p className="text-sm text-gray-500 mt-1">Try adjusting your search or filters</p>
+            <p className="text-sm text-gray-500 mt-1">
+              {specialization
+                ? 'No clinics offering this specialization are available in your area'
+                : 'Try adjusting your search or filters'}
+            </p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -709,59 +743,59 @@ export function ClinicListView({ phone, onBack, onNavigate }: ClinicListViewProp
                             return (
                               <div
                                 key={service.stableKey}
-                                className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 space-y-2"
+                                className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
                               >
-                                {/* Row 1: name + package badge (left) | price (right) */}
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                                    <h5 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
-                                      {service.name}
-                                    </h5>
-                                    {isPackage && (
-                                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
-                                        Package
-                                      </span>
+                                {/* Row 1: name + package badge (left) | price + note (right) */}
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-start gap-2">
+                                      <h5 className="min-w-0 flex-1 font-semibold text-gray-900 text-[15px] leading-snug">
+                                        {service.name}
+                                      </h5>
+                                      {isPackage && (
+                                        <span className="mt-0.5 px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                                          Package
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Row 2: description */}
+                                    {descTrim ? (
+                                      <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+                                        <ServiceDescriptionInline
+                                          description={descTrim}
+                                          title={service.name}
+                                          className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
+                                          dialogHint="Full description from the clinic (vendor-provided)"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <p className="mt-1.5 text-gray-400 text-sm line-clamp-2 italic">
+                                        Professional in-clinic care — tap Book Now to continue.
+                                      </p>
                                     )}
                                   </div>
+
                                   <div className="shrink-0 text-right">
                                     <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
                                       {formatPriceWithSymbol(service.price)}
                                     </div>
-                                    <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                                    <p className="mt-0.5 text-[11px] leading-4 text-gray-500 max-w-[9rem]">{INDICATIVE_PRICING_NOTE}</p>
                                   </div>
                                 </div>
 
-                                {/* Row 2: description full width */}
-                                {descTrim ? (
-                                  <div onClick={(e) => e.stopPropagation()}>
-                                    <ServiceDescriptionInline
-                                      description={descTrim}
-                                      title={service.name}
-                                      className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
-                                      dialogHint="Full description from the clinic (vendor-provided)"
-                                    />
-                                  </div>
-                                ) : (
-                                  <p className="text-gray-400 text-sm line-clamp-2 italic">
-                                    Professional in-clinic care — tap Book Now to continue.
-                                  </p>
-                                )}
-
                                 {/* Row 3: badges (left) | Book Now (right) */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge variant="outline" className="text-xs shrink-0">
-                                      <Clock className="w-3 h-3 mr-1" />
-                                      {service.duration} mins
-                                    </Badge>
-                                    <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
-                                      {service.category || 'Veterinary'}
-                                    </Badge>
+                                <div className="flex items-center justify-between gap-2 mt-3">
+                                  <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                                    <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                    <span>{service.duration} mins</span>
+                                    <span className="text-gray-300">·</span>
+                                    <span>{service.category || 'Vet Care'}</span>
                                   </div>
                                   <Button
                                     type="button"
                                     size="sm"
-                                    className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
+                                    className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 rounded-full px-5"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleBookService(clinic, service);

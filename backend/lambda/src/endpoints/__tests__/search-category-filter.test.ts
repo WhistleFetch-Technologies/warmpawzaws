@@ -1,4 +1,54 @@
-import { expandSearchCategoryForSql, getSearchCategoryIlikePatterns } from '../../utils/search-category-aliases';
+import {
+  expandSearchCategoryForSql,
+  expandSearchCategoryNormalizedTokens,
+  getSearchCategoryIlikePatterns,
+  isHubBrowseCategoryOnly,
+} from '../../utils/search-category-aliases';
+
+describe('isHubBrowseCategoryOnly', () => {
+  it('is true when hub slug set and keyword empty', () => {
+    expect(isHubBrowseCategoryOnly('training', '')).toBe(true);
+    expect(isHubBrowseCategoryOnly('training', '   ')).toBe(true);
+    expect(isHubBrowseCategoryOnly(' vet ', undefined)).toBe(true);
+  });
+
+  it('is false when keyword present', () => {
+    expect(isHubBrowseCategoryOnly('training', 'dog')).toBe(false);
+    expect(isHubBrowseCategoryOnly('training', ' grooming ')).toBe(false);
+  });
+
+  it('is false when hub missing', () => {
+    expect(isHubBrowseCategoryOnly('', '')).toBe(false);
+    expect(isHubBrowseCategoryOnly(undefined, '')).toBe(false);
+  });
+});
+
+describe('expandSearchCategoryNormalizedTokens', () => {
+  it('normalizes training aliases for strict SQL/client hub browse', () => {
+    const tokens = expandSearchCategoryNormalizedTokens('training');
+    expect(tokens).toContain('training');
+    expect(tokens).toContain('behavioral');
+    expect(tokens).toContain('dog_trainer');
+    expect(tokens).not.toContain('veterinary');
+  });
+
+  it('does not invent ILIKE patterns — hub browse relies on structured category tokens only', () => {
+    const tokens = expandSearchCategoryNormalizedTokens('training');
+    expect(tokens.every((t) => typeof t === 'string' && !t.includes('%'))).toBe(true);
+  });
+
+  it('includes wellness catalog slug for nutritionist hub (catalog inversion)', () => {
+    expect(expandSearchCategoryNormalizedTokens('nutritionist')).toContain('wellness');
+    expect(expandSearchCategoryNormalizedTokens('nutritionist')).toContain('nutrition');
+  });
+
+  it('vet hub merges diagnostics catalog slugs', () => {
+    const t = expandSearchCategoryNormalizedTokens('vet');
+    expect(t).toContain('diagnostic');
+    expect(t).toContain('diagnostics');
+    expect(t).toContain('veterinary');
+  });
+});
 
 describe('search category expansion for SQL filtering', () => {
   it('keeps All unfiltered when category is empty', () => {
@@ -17,6 +67,12 @@ describe('search category expansion for SQL filtering', () => {
     );
     expect(expandSearchCategoryForSql('training')).toEqual(
       expect.arrayContaining(['training', 'trainer', 'training_center', 'dog_trainer'])
+    );
+  });
+
+  it('expands nutritionist with catalog wellness id for SQL equality sets', () => {
+    expect(expandSearchCategoryForSql('nutritionist')).toEqual(
+      expect.arrayContaining(['nutritionist', 'wellness', 'nutrition'])
     );
   });
 

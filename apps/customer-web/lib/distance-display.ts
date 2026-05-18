@@ -16,6 +16,21 @@ export function formatDistanceFromKm(distanceKm: number): string {
   return `${Math.round(distanceKm)} km`;
 }
 
+/** Normalize distance from discovery/by-style payloads (snake_case + camelCase). */
+export function pickProviderDistanceKm(item: {
+  distance?: unknown;
+  distanceKm?: unknown;
+  distance_km?: unknown;
+}): number | null {
+  const raw = item.distanceKm ?? item.distance_km ?? item.distance;
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string') {
+    const parsed = Number.parseFloat(raw.trim());
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
 export function formatDistanceDisplay(input: {
   distanceText?: string | null;
   distance?: number | string | null;

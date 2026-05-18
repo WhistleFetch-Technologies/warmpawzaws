@@ -212,6 +212,8 @@ export function UniversalProviderProfile({
   const [notes, setNotes] = useState('');
   const [customerId, setCustomerId] = useState<string | null>(null);
 
+  const showFacilitiesAmenitiesOnAbout = !(category === 'vet' && serviceStyle === 'at_home');
+
   // When returning from address book with a selected address, pre-select it
   useEffect(() => {
     if (initialSelectedAddress && initialSelectedAddress.id) {
@@ -560,11 +562,6 @@ export function UniversalProviderProfile({
                   <p className="text-sm text-gray-500 truncate">{provider.qualifications}</p>
                 )}
                 
-                {provider.specialization && (
-                  <Badge className="bg-purple-100 text-purple-700 text-xs mt-1">
-                    {provider.specialization}
-                  </Badge>
-                )}
               </div>
             </div>
 
@@ -934,17 +931,18 @@ export function UniversalProviderProfile({
                   </Card>
                 )}
 
-                {/* Amenities Section */}
-                <Card className="p-4">
-                  <h3 className="font-medium mb-3 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-orange-500" />
-                    Facilities & Amenities
-                  </h3>
-                  <AmenitiesSection
-                    amenities={provider.amenities || []}
-                    compact={true}
-                  />
-                </Card>
+                {showFacilitiesAmenitiesOnAbout && (
+                  <Card className="p-4">
+                    <h3 className="font-medium mb-3 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-orange-500" />
+                      Facilities & Amenities
+                    </h3>
+                    <AmenitiesSection
+                      amenities={provider.amenities || []}
+                      compact={true}
+                    />
+                  </Card>
+                )}
               </div>
             )}
 

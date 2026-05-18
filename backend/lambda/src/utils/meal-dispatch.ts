@@ -8,8 +8,12 @@
  *   POST {DELIVERY_SERVICE_BASE_URL}/logistics/meal/dispatch
  *
  * Idempotent: the Java service returns the existing `delivery_tracking` row if one already exists for
- * this meal order with `logistics_partner='pidge'`. Failures are non-fatal — the vendor flow continues
- * and the existing "Notify Logistics" / "Dispatched" buttons remain as a manual fallback.
+ * this meal order with `logistics_partner='pidge'`.
+ *
+ * When `MEAL_DISPATCH_REQUIRED` is true (default), `PUT .../meal-orders/.../status`:
+ * - `preparing` runs dispatch first; 422 if it fails.
+ * - `ready_for_pickup` requires `meal_orders.pidge_order_id` (set when Java links Pidge).
+ * Set `MEAL_DISPATCH_REQUIRED=false` only for local/dev without delivery-service.
  */
 
 import { query } from '../database/rds-connection';
@@ -93,9 +97,41 @@ function formatFetchFailure(e: unknown): string {
   return parts.join(' | ');
 }
 
+/** When true (default), transition to `preparing` fails if Pidge/delivery-service dispatch fails. */
+export function isMealDispatchStrict(): boolean {
+  const v = process.env.MEAL_DISPATCH_REQUIRED;
+  if (v === undefined || v === '') return true;
+  return !['false', '0', 'no'].includes(String(v).trim().toLowerCase());
+}
+
+/** Enforced for `ready_for_pickup` when `isMealDispatchStrict()` — blocks fake pickup without Pidge. */
+export async function assertMealOrderHasPidgeForPickup(
+  mealOrderId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const r = await query(
+      `SELECT pidge_order_id FROM meal_orders WHERE id = $1 LIMIT 1`,
+      [mealOrderId]
+    );
+    const row = r.rows[0] as { pidge_order_id?: string | null } | undefined;
+    const pid = row?.pidge_order_id;
+    if (pid != null && String(pid).trim() !== '') {
+      return { ok: true };
+    }
+    return {
+      ok: false,
+      error:
+        'Cannot mark ready for pickup: no Pidge order is linked yet. Complete "Start preparing" so a rider is scheduled, then try again.',
+    };
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Could not verify Pidge link: ${message}` };
+  }
+}
+
 /**
- * Best-effort dispatch. Never throws — returns `{ ok:false, error }` on any failure
- * so the calling status-update endpoint can still return success to the vendor.
+ * Dispatch to delivery-service. Never throws — returns `{ ok:false, error }` on any failure
+ * so callers can choose strict (block `preparing`) vs best-effort (dev) behavior.
  */
 export async function dispatchMealLogistics(mealOrderId: string): Promise<DispatchResult> {
   try {

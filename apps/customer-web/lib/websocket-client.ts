@@ -10,6 +10,8 @@
  * ============================================================================
  */
 
+import { getWebSocketBaseUrl } from './api-client';
+
 type WebSocketMessage = {
   type:
     | 'order_status_update'
@@ -27,6 +29,7 @@ type MessageHandler = (message: WebSocketMessage) => void;
 class WebSocketClient {
   private ws: WebSocket | null = null;
   private url: string;
+  private readonly disabled: boolean;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
@@ -34,16 +37,27 @@ class WebSocketClient {
   private isConnecting = false;
   private connectionId: string | null = null;
 
-  constructor(apiBaseUrl: string, userId: string, userType: 'customer' | 'vendor') {
-    // Convert HTTP API URL to WebSocket URL
-    const wsUrl = apiBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
-    this.url = `${wsUrl}/ws?userId=${userId}&userType=${userType}`;
+  constructor(_apiBaseUrl: string, userId: string, userType: 'customer' | 'vendor') {
+    const base = getWebSocketBaseUrl();
+    if (!base) {
+      this.disabled = true;
+      this.url = '';
+      return;
+    }
+    this.disabled = false;
+    const wsUrl = base.replace('https://', 'wss://').replace('http://', 'ws://');
+    const q = new URLSearchParams({ userId, userType });
+    this.url = `${wsUrl}/ws?${q.toString()}`;
   }
 
   /**
    * Connect to WebSocket server
    */
   connect(): Promise<void> {
+    if (this.disabled) {
+      return Promise.resolve();
+    }
+
     if (this.ws?.readyState === WebSocket.OPEN) {
       return Promise.resolve();
     }
@@ -196,6 +210,9 @@ class WebSocketClient {
    * Attempt to reconnect
    */
   private attemptReconnect(): void {
+    if (this.disabled) {
+      return;
+    }
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('[WebSocket] Max reconnect attempts reached');
       return;

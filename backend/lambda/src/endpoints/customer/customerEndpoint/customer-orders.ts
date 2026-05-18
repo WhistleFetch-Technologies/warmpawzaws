@@ -19,6 +19,44 @@ import { query, insert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 
+/** Maps checkout address shapes to NOT NULL `orders.shipping_*`; full object also in `metadata.address_snapshot`. */
+function shippingColumnsFromAddress(
+  addr: Record<string, unknown> | null | undefined,
+  fallbackPhone: string
+): {
+  shipping_address: string;
+  shipping_city: string;
+  shipping_state: string;
+  shipping_pincode: string;
+  shipping_phone: string;
+  missing: string[];
+} {
+  const a = addr && typeof addr === 'object' ? addr : {};
+  const line1 = String(
+    a.addressLine1 ?? a.address_line1 ?? a.line1 ?? a.street ?? a.address ?? ''
+  ).trim();
+  const line2 = [a.addressLine2, a.address_line2, a.landmark].filter(Boolean).map(String).join(', ');
+  const shipping_address = [line1, line2].filter(Boolean).join(', ') || line1;
+  const city = String(a.city ?? '').trim();
+  const state = String(a.state ?? '').trim();
+  const pincode = String(a.pincode ?? a.postalCode ?? a.zip ?? '').trim();
+  const phone = String(a.phone ?? a.mobile ?? a.phone_number ?? fallbackPhone ?? '').trim();
+  const missing: string[] = [];
+  if (!line1) missing.push('addressLine1');
+  if (!city) missing.push('city');
+  if (!state) missing.push('state');
+  if (!pincode) missing.push('pincode');
+  if (!phone) missing.push('phone');
+  return {
+    shipping_address: shipping_address || line1,
+    shipping_city: city,
+    shipping_state: state,
+    shipping_pincode: pincode,
+    shipping_phone: phone,
+    missing,
+  };
+}
+
 // ============================================================================
 // POST /customer/orders - Create order for customer
 // ============================================================================
@@ -31,10 +69,8 @@ class CreateCustomerOrderHandler extends BaseHandler {
                         context.event.queryStringParameters?.customerId ||
                         context.userId;
 
-      // Get customer phone from context or body
       let customerPhone = body.customer_phone || body.customerPhone;
       
-      // If no phone in body, try to get from customer ID
       if (!customerPhone && customerId) {
         try {
           const customers = await query(
@@ -58,17 +94,20 @@ class CreateCustomerOrderHandler extends BaseHandler {
         return this.error('Items are required', 400);
       }
 
-      // Handle both naming conventions
       const shippingAddress = body.shipping_address || body.shippingAddress || body.address || {};
       const paymentMethod = body.payment_method || body.paymentMethod || 'cod';
-      const paymentId = body.payment_id || body.paymentId;
-      
-      // Use tax breakdown from frontend if provided, otherwise calculate
-      const taxAmount = body.taxAmount || 0;
-      const subtotal = body.subtotal || 0;
-      const total = body.total || 0;
+      const rawPaymentId = body.payment_id ?? body.paymentId;
+      const paymentIdForRow =
+        rawPaymentId != null &&
+        String(rawPaymentId).length > 0 &&
+        isValidUUID(String(rawPaymentId))
+          ? String(rawPaymentId)
+          : null;
 
-      // Get or create customer by phone
+      const bodyTax = Number(body.taxAmount);
+      const bodySubtotal = Number(body.subtotal);
+      const bodyTotal = Number(body.total);
+
       let actualCustomerId = customerId;
       if (!actualCustomerId) {
         try {
@@ -79,9 +118,12 @@ class CreateCustomerOrderHandler extends BaseHandler {
           if (customers.rows.length > 0) {
             actualCustomerId = customers.rows[0].id;
           } else {
-            // Create a new customer
             const newCustomerId = randomUUID();
-            const customerName = shippingAddress.name || `Customer ${customerPhone.slice(-4)}`;
+            const addrName =
+              shippingAddress && typeof shippingAddress === 'object'
+                ? (shippingAddress as { name?: string }).name
+                : undefined;
+            const customerName = addrName || `Customer ${customerPhone.slice(-4)}`;
             await insert('customers', {
               id: newCustomerId,
               name: customerName,
@@ -98,105 +140,181 @@ class CreateCustomerOrderHandler extends BaseHandler {
         }
       }
 
-      // Calculate totals if not provided
-      let calculatedSubtotal = subtotal;
-      const orderItems = [];
-      let firstVendorId = null;
+      const ship = shippingColumnsFromAddress(
+        shippingAddress as Record<string, unknown>,
+        String(customerPhone)
+      );
+      if (ship.missing.length > 0) {
+        return this.error(
+          `Incomplete delivery address (missing: ${ship.missing.join(', ')})`,
+          400
+        );
+      }
 
-      if (calculatedSubtotal === 0) {
-        // Calculate from items
-        for (const item of items) {
-          const productId = item.product_id || item.productId;
-          const quantity = item.quantity || 1;
-          
-          try {
-            const products = await query(
-              'SELECT id, name, price, vendor_id FROM products WHERE id = $1',
-              [productId]
-            );
-            if (products.rows.length > 0) {
-              const product = products.rows[0];
-              const itemTotal = parseFloat(product.price) * quantity;
-              calculatedSubtotal += itemTotal;
-              
-              if (!firstVendorId && product.vendor_id) {
-                firstVendorId = product.vendor_id;
-              }
-
-              orderItems.push({
-                product_id: productId,
-                product_name: product.name,
-                quantity: quantity,
-                unit_price: parseFloat(product.price),
-                total: itemTotal,
-              });
-            }
-          } catch (e) {
-            console.error('Error fetching product:', e);
-          }
-        }
-      } else {
-        // Use provided items structure
-        for (const item of items) {
-          const productId = item.product_id || item.productId;
-          const quantity = item.quantity || 1;
-          const price = item.price || 0;
-          
-          orderItems.push({
-            product_id: productId,
-            quantity: quantity,
-            unit_price: parseFloat(price.toString()),
-            total: parseFloat(price.toString()) * quantity,
-          });
+      const productIds = items.map(
+        (it: { product_id?: string; productId?: string }) => it.product_id || it.productId
+      );
+      for (const pid of productIds) {
+        if (!pid || !isValidUUID(String(pid))) {
+          return this.error('Each item must include a valid product id (UUID)', 400);
         }
       }
 
-      // Create order
+      const uniqueIds = [...new Set(productIds.map(String))];
+
+      let productsRes;
+      try {
+        productsRes = await query(
+          `SELECT id, name, price, vendor_id FROM products WHERE id = ANY($1::uuid[])`,
+          [uniqueIds]
+        );
+      } catch (e) {
+        console.error('Error loading products for order:', e);
+        return this.error('Failed to load products for this order', 500);
+      }
+
+      if (productsRes.rows.length !== uniqueIds.length) {
+        return this.error('One or more products were not found', 400);
+      }
+
+      const productById = new Map<
+        string,
+        { id: string; name: string; price: unknown; vendor_id: string | null }
+      >(productsRes.rows.map((r: { id: string; name: string; price: unknown; vendor_id: string | null }) => [String(r.id), r]));
+
+      type LineRow = {
+        product_id: string;
+        product_name: string;
+        quantity: number;
+        unit_price: number;
+        total_price: number;
+        db_unit_price: number;
+      };
+      const orderItems: LineRow[] = [];
+      let firstVendorId: string | null = null;
+
+      for (const item of items) {
+        const productId = String(item.product_id || item.productId);
+        const row = productById.get(productId);
+        if (!row) {
+          return this.error(`Unknown product: ${productId}`, 400);
+        }
+        const quantity = Math.max(1, parseInt(String(item.quantity ?? 1), 10) || 1);
+        const dbUnit = parseFloat(String(row.price ?? 0)) || 0;
+        const clientRaw = item.price ?? item.unit_price ?? item.unitPrice;
+        const clientUnit =
+          clientRaw !== undefined && clientRaw !== null
+            ? parseFloat(String(clientRaw))
+            : NaN;
+        const unit_price = Number.isFinite(clientUnit) ? clientUnit : dbUnit;
+        const total_price = unit_price * quantity;
+        if (!firstVendorId && row.vendor_id) {
+          firstVendorId = row.vendor_id;
+        }
+        orderItems.push({
+          product_id: productId,
+          product_name: row.name || 'Product',
+          quantity,
+          unit_price,
+          total_price,
+          db_unit_price: dbUnit,
+        });
+      }
+
+      const calculatedSubtotal = orderItems.reduce((s, l) => s + l.total_price, 0);
+      const shippingAmount = calculatedSubtotal > 499 ? 0 : 49;
+      const calculatedTaxAmount =
+        Number.isFinite(bodyTax) && bodyTax >= 0 ? bodyTax : calculatedSubtotal * 0.18;
+      const recomputedTotal = calculatedSubtotal + shippingAmount + calculatedTaxAmount;
+      const finalTotal =
+        Number.isFinite(bodyTotal) && bodyTotal > 0 ? bodyTotal : recomputedTotal;
+
+      const metadata: Record<string, unknown> = {
+        source: 'POST /customer/orders',
+        order_type_hint: 'ecommerce',
+        address_snapshot: shippingAddress,
+        client_totals: {
+          subtotal: bodySubtotal,
+          taxAmount: bodyTax,
+          total: bodyTotal,
+        },
+        taxBreakdown: body.taxBreakdown ?? null,
+        taxByType: body.taxByType ?? null,
+        line_pricing: orderItems.map((l) => ({
+          product_id: l.product_id,
+          unit_price_charged: l.unit_price,
+          db_list_price: l.db_unit_price,
+        })),
+        totals: {
+          subtotal: calculatedSubtotal,
+          shipping: shippingAmount,
+          tax: calculatedTaxAmount,
+          total_charged: finalTotal,
+          recomputed_total: recomputedTotal,
+        },
+      };
+      // Razorpay ids are not UUIDs; keep reconciliation data here instead of orders.payment_id.
+      if (rawPaymentId != null && String(rawPaymentId) !== '' && !paymentIdForRow) {
+        metadata.external_payment = {
+          gateway: paymentMethod === 'razorpay' ? 'razorpay' : String(paymentMethod),
+          payment_id: String(rawPaymentId),
+        };
+      }
+
       const orderId = randomUUID();
       const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      
-      // Calculate amounts (use provided or calculate)
-      const shippingAmount = subtotal > 499 ? 0 : 49;
-      const calculatedTaxAmount = taxAmount || (calculatedSubtotal * 0.18);
-      const finalTotal = total || (calculatedSubtotal + shippingAmount + calculatedTaxAmount);
-      
-      const order = {
+      const createdAt = new Date().toISOString();
+
+      const orderRow: Record<string, unknown> = {
         id: orderId,
         order_number: orderNumber,
         customer_id: actualCustomerId,
         vendor_id: firstVendorId,
-        status: 'pending',
+        order_status: 'pending',
         payment_status: paymentMethod === 'cod' ? 'pending' : 'paid',
         payment_method: paymentMethod,
-        payment_id: paymentId || null,
+        payment_id: paymentIdForRow,
         subtotal: calculatedSubtotal,
         shipping_amount: shippingAmount,
         tax_amount: calculatedTaxAmount,
         discount_amount: 0,
         total_amount: finalTotal,
-        final_amount: finalTotal,
-        delivery_address: JSON.stringify(shippingAddress),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        shipping_address: ship.shipping_address,
+        shipping_city: ship.shipping_city,
+        shipping_state: ship.shipping_state,
+        shipping_pincode: ship.shipping_pincode,
+        shipping_phone: ship.shipping_phone,
+        metadata,
+        created_at: createdAt,
+        updated_at: createdAt,
       };
 
       try {
-        await insert('orders', order);
-        
-        // Insert order items
-        for (const item of orderItems) {
+        await insert('orders', orderRow);
+
+        for (const line of orderItems) {
           await insert('order_items', {
             order_id: orderId,
-            product_id: item.product_id,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            total: item.total,
+            product_id: line.product_id,
+            name: line.product_name,
+            quantity: line.quantity,
+            unit_price: line.unit_price,
+            total_price: line.total_price,
           });
         }
       } catch (e: any) {
         console.error('Error creating order:', e);
         return this.error(e.message || 'Failed to create order', 500);
       }
+
+      const itemsForResponse = orderItems.map((l) => ({
+        product_id: l.product_id,
+        product_name: l.product_name,
+        quantity: l.quantity,
+        unit_price: l.unit_price,
+        total: l.total_price,
+        total_price: l.total_price,
+      }));
 
       return this.success({
         orderId: orderId,
@@ -206,10 +324,10 @@ class CreateCustomerOrderHandler extends BaseHandler {
           order_number: orderNumber,
           status: 'pending',
           total: finalTotal,
-          items: orderItems,
+          items: itemsForResponse,
           address: shippingAddress,
           payment_method: paymentMethod,
-          created_at: order.created_at,
+          created_at: createdAt,
         },
         message: 'Order placed successfully!',
       });

@@ -1,4 +1,4 @@
-import { getSearchCategoryAliases } from '@warmpawz/service-launch-mappings';
+import { getSearchCategoryAliases, normalizeCategoryToken } from '@warmpawz/service-launch-mappings';
 
 const HUB_QUERY_HINTS: Record<string, string[]> = {
   vet: ['vet', 'veterinar', 'doctor', 'clinic', 'animal hosp', 'pet hosp'],
@@ -40,9 +40,9 @@ const HUB_QUERY_HINTS: Record<string, string[]> = {
   ],
 };
 
-function normalizedAllowed(hubId: string): Set<string> {
+function normalizedAllowedTokens(hubId: string): Set<string> {
   const list = getSearchCategoryAliases(hubId);
-  return new Set(list.map((s) => s.toLowerCase()));
+  return new Set(list.map((s) => normalizeCategoryToken(s)).filter(Boolean));
 }
 
 /** When the user has a text query, infer if that query is “about” a hub (for vendors missing category). */
@@ -54,7 +54,7 @@ function hubMatchesSearchText(hubId: string, searchQuery: string): boolean {
   return q.includes(hubId);
 }
 
-/** Match hub from business / service name when category column is empty (common in legacy data). */
+/** Match hub from business / service name when category column is empty (common in legacy data). Keyword search only. */
 function hubMatchesResultName(hubId: string, name: string | undefined): boolean {
   const n = (name || '').toLowerCase().trim();
   if (!n) return false;
@@ -67,7 +67,8 @@ function hubMatchesResultName(hubId: string, name: string | undefined): boolean 
 export type HubFilterableResult = { type: string; category: string; name?: string };
 
 /**
- * Client-side chip filter for GET /search results (used when q is present so chip changes do not re-hit API).
+ * Client-side chip filter for GET /search rows. Hub-only browse uses strict canonical category tokens only
+ * (same idea as SQL hub browse). With a keyword query, legacy rows without category may still match via hints.
  */
 export function applyHubCategoryFilter<T extends HubFilterableResult>(
   results: T[],
@@ -75,11 +76,15 @@ export function applyHubCategoryFilter<T extends HubFilterableResult>(
   searchQuery: string
 ): T[] {
   if (!hubId) return results;
-  const allowed = normalizedAllowed(hubId);
+  const allowed = normalizedAllowedTokens(hubId);
+  const q = (searchQuery || '').trim();
+  const strictHubBrowse = !q;
+
   return results.filter((r) => {
-    const c = (r.category || '').trim().toLowerCase();
+    const c = normalizeCategoryToken(r.category || '');
     if (c && allowed.has(c)) return true;
-    if (c && [...allowed].some((a) => a.length >= 3 && c.includes(a))) return true;
+    if (c && !allowed.has(c)) return false;
+    if (strictHubBrowse) return false;
     if (!c && r.type === 'vendor' && hubMatchesSearchText(hubId, searchQuery)) return true;
     if (!c && hubMatchesResultName(hubId, r.name)) return true;
     return false;

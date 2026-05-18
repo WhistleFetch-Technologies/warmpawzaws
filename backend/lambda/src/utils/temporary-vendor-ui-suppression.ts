@@ -16,7 +16,6 @@ export const TEMPORARY_SUPPRESSED_VENDOR_IDS: readonly string[] = [
 	'bd489856-97bb-436f-9e1f-cb8b86460d29',
 	'c630354a-529d-49f4-a975-776e481c3aa1',
 	'216246dc-4f30-4e72-9c47-23b61197f5e6',
-	'2640db3a-ed16-4cbe-bb4d-709e7dc389ca',
 	'51111e34-5327-4c7e-b46e-61eb9a7be4d8',
 	'a9bf1007-cf4c-4050-b926-f2c47e1b657f',
 	'75eeb757-a719-4b5f-9b81-6d8fbd69cec3',

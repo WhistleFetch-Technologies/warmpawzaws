@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import {
@@ -19,13 +20,16 @@ import {
   Phone,
   User,
   AlertCircle,
+  UtensilsCrossed,
+  ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
 
 export interface MealPlanOrder {
   id: string;
   order_number: string;
+  /** Present when this row mirrors a canonical weekly/monthly subscription session. */
+  subscription_id?: string | null;
   meal_plan_id: string;
   meal_plan_name: string;
   pet_id: string;
@@ -106,7 +110,10 @@ export function MealPlanOrdersPanel({
         const r = response as { orders?: unknown[] };
         const mealPlanOrders = (r?.orders || []).map((o: Record<string, unknown>) => ({
           ...o,
+          subscription_id: o.subscription_id != null ? String(o.subscription_id) : null,
           meal_plan_name: (o.meal_plan_name as string) || (o.meal_plan_id as string) || 'Meal Plan',
+          pet_name: (o.pet_name as string) || undefined,
+          quantity: o.quantity != null ? Number(o.quantity) : undefined,
           delivery_date: o.delivery_date || o.scheduled_delivery_date || o.created_at,
           delivery_time:
             (o.delivery_time as string) || formatDeliveryTime(o.scheduled_delivery_slot) || '',
@@ -202,17 +209,41 @@ export function MealPlanOrdersPanel({
   };
 
   const handleBackClick = () => {
-    if (onBack) onBack();
-    else goBackOrHome(router);
+    // Shell passes onBack → My Bookings. Standalone must not use router.back() after visiting
+    // /subscriptions from this page — history would return to subscriptions instead of bookings.
+    if (onBack) {
+      onBack();
+      return;
+    }
+    router.push('/bookings');
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div>
-      </div>
-    );
-  }
+  const hubNav = (
+    <div
+      className="mt-5 rounded-xl border border-orange-100 bg-gradient-to-r from-orange-50/80 to-amber-50/60 p-3 sm:p-4"
+      role="navigation"
+      aria-label="Subscriptions"
+    >
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-orange-800/80">
+        More nutrition
+      </p>
+      <Link
+        href="/subscriptions"
+        className="group flex items-center justify-between gap-2 rounded-lg border border-white/80 bg-white/90 px-3 py-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md"
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-600">
+            <UtensilsCrossed className="h-4 w-4" aria-hidden />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-gray-900">Subscriptions</span>
+            <span className="block truncate text-xs text-gray-500">Meal plans &amp; recurring deliveries</span>
+          </span>
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition group-hover:text-orange-500" aria-hidden />
+      </Link>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -229,9 +260,16 @@ export function MealPlanOrdersPanel({
             Meal Plan Orders
           </h1>
           <p className="text-gray-600 mt-2">Track your meal plan deliveries</p>
+          {hubNav}
         </div>
 
-        {orders.length === 0 ? (
+        {loading ? (
+          <div className="flex justify-center py-16">
+            <div className="h-12 w-12 animate-spin rounded-full border-2 border-orange-200 border-t-orange-500" />
+          </div>
+        ) : null}
+
+        {!loading && orders.length === 0 ? (
           <div className="bg-white rounded-xl p-12 text-center">
             <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-900 mb-2">No Orders Yet</h3>
@@ -243,7 +281,9 @@ export function MealPlanOrdersPanel({
               Order Meal Plan
             </button>
           </div>
-        ) : (
+        ) : null}
+
+        {!loading && orders.length > 0 ? (
           <div className="space-y-4">
             {orders.map((order) => (
               <div
@@ -295,7 +335,7 @@ export function MealPlanOrdersPanel({
 
                   <div className="text-right ml-4">
                     <p className="text-2xl font-bold text-orange-600">₹{order.total_amount}</p>
-                    <p className="text-sm text-gray-500 mt-1">Qty: {order.quantity}</p>
+                    <p className="text-sm text-gray-500 mt-1">Qty: {order.quantity ?? '—'}</p>
                   </div>
                 </div>
 
@@ -400,21 +440,32 @@ export function MealPlanOrdersPanel({
                   </div>
                 )}
 
-                <div className="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between">
+                <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap items-center justify-between gap-2">
                   <div className="text-sm text-gray-600">
                     Ordered: {new Date(order.created_at).toLocaleString()}
                   </div>
-                  <button
-                    onClick={(e) => handleTrackClick(order.id, e)}
-                    className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
-                  >
-                    Track Order
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 justify-end">
+                    {order.subscription_id ? (
+                      <Link
+                        href={`/subscriptions/detail?id=${encodeURIComponent(order.subscription_id)}`}
+                        className="px-4 py-2 rounded-lg text-sm font-semibold border border-orange-300 text-orange-700 bg-white hover:bg-orange-50"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Reschedule in subscription
+                      </Link>
+                    ) : null}
+                    <button
+                      onClick={(e) => handleTrackClick(order.id, e)}
+                      className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
+                    >
+                      Track Order
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

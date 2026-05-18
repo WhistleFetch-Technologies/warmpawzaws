@@ -46,6 +46,25 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
 
 
   useEffect(() => {
+    // Prefer persisted customer coordinates so distance renders for every center
+    // even when the browser blocks geolocation. Fall back to a live position
+    // request when no cached value is available.
+    try {
+      if (typeof window !== 'undefined') {
+        const cachedLat = window.localStorage.getItem('customer_latitude');
+        const cachedLng = window.localStorage.getItem('customer_longitude');
+        if (cachedLat && cachedLng) {
+          const lat = parseFloat(cachedLat);
+          const lng = parseFloat(cachedLng);
+          if (Number.isFinite(lat) && Number.isFinite(lng)) {
+            setUserLocation({ lat, lon: lng });
+            return;
+          }
+        }
+      }
+    } catch {
+      /* ignore */
+    }
     const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
     getCurrentPositionSafe((coords: { lat: number; lng: number }) =>
       setUserLocation({ lat: coords.lat, lon: coords.lng })
@@ -88,6 +107,10 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
       });
 
       if (userLocation) {
+        // Send canonical names + legacy aliases so every backend revision
+        // can locate the customer reference point.
+        params.append('latitude', userLocation.lat.toString());
+        params.append('longitude', userLocation.lon.toString());
         params.append('lat', userLocation.lat.toString());
         params.append('lon', userLocation.lon.toString());
       }
@@ -115,6 +138,10 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
       });
 
       if (userLocation) {
+        // Send canonical names + legacy aliases so every backend revision
+        // can locate the customer reference point.
+        params.append('latitude', userLocation.lat.toString());
+        params.append('longitude', userLocation.lon.toString());
         params.append('lat', userLocation.lat.toString());
         params.append('lon', userLocation.lon.toString());
       }

@@ -26,6 +26,7 @@ interface GroomingServicesByStyleProps {
   serviceTypeName?: string;
   category?: string;
   vendorId?: string; // Optional: filter to show only this vendor's services (vendor profile mode)
+  specialization?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
 }
@@ -74,6 +75,7 @@ export function GroomingServicesByStyle({
   serviceTypeName,
   category = 'grooming',
   vendorId,
+  specialization,
   onBack, 
   onNavigate 
 }: GroomingServicesByStyleProps) {
@@ -108,12 +110,14 @@ export function GroomingServicesByStyle({
     phone,
     serviceStyle: 'at_center',
     category: 'grooming',
+    specialization: specialization,
     enabled: serviceStyle === 'at_center',
   });
   const salonHomeDiscovery = useDiscoveryCount({
     phone,
     serviceStyle: 'at_home',
     category: 'grooming',
+    specialization: specialization,
     enabled: serviceStyle === 'at_home',
   });
 
@@ -171,7 +175,7 @@ export function GroomingServicesByStyle({
     if (vendorId) {
       loadVendorProfile();
     }
-  }, [serviceStyle, vendorId]);
+  }, [serviceStyle, vendorId, specialization]);
 
   // ✅ NEW: Load active promotions for discount display
   useEffect(() => {
@@ -211,10 +215,13 @@ export function GroomingServicesByStyle({
 
       // Use by-style endpoint (primary)
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
-        const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${phoneParam}`
-        ) as any;
-        console.log(`🔵 [Grooming] API: GET by-style?style=${serviceStyle}&category=${category}`);
+      const specializationParam = specialization
+        ? `&specialization=${encodeURIComponent(specialization)}`
+        : '';
+      const byStyleUrl = `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`;
+      console.log(`🔵 [Grooming] specialization prop="${specialization}" url=${byStyleUrl}`);
+        const response = await apiClient.get(byStyleUrl) as any;
+        console.log(`🔵 [Grooming] by-style response: specializationApplied=${(response as any).specializationApplied ?? 'n/a'} total=${(response as any).total}`);
 
       if (response.success) {
         let byStyleProviders = response.providers || response.vendors || [];
@@ -416,7 +423,7 @@ export function GroomingServicesByStyle({
   const openGroomingProviderProfile = (e: MouseEvent, provider: Provider) => {
     e.stopPropagation();
     const vid = getWebGroomingTrainingEmbedVendorId(provider as unknown as Record<string, unknown>);
-    onNavigate('grooming_embed_vendor_profile', { vendorId: vid });
+    onNavigate('grooming_embed_vendor_profile', { vendorId: vid, serviceStyle });
   };
 
   const handleSelectService = (provider: Provider, service: any) => {
@@ -620,7 +627,7 @@ export function GroomingServicesByStyle({
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center max-w-md mx-auto">
+      <div className="mx-auto flex min-h-screen w-full max-w-customer items-center justify-center bg-white">
         <div className="text-center">
           <Loader2 className="w-10 h-10 animate-spin text-[#FF8C42] mx-auto mb-3" />
           <p className="text-gray-600">Loading {vendorId ? 'salon profile' : 'available services'}...</p>
@@ -662,6 +669,7 @@ export function GroomingServicesByStyle({
       <div className="min-h-screen bg-gray-50 relative overflow-hidden">
         {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
         <ServiceDashboardHeader
+          fullWidth
           className="!z-0 isolation-auto"
           serviceName={getServiceTitle()}
           serviceSubtitle={getServiceSubtitle()}
@@ -673,7 +681,7 @@ export function GroomingServicesByStyle({
           headerColor="bg-[#FF8C42]"
           bottomEdge="flat"
         />
-        <div className="relative z-0 mx-auto max-w-md">
+        <div className="relative z-0 mx-auto w-full max-w-customer">
         {hasPhotos ? (
           <div className="relative w-full -mt-3 sm:-mt-3">
             <div className="overflow-hidden rounded-t-[24px] bg-gray-200 shadow-[0_-4px_20px_rgba(0,0,0,0.06)] sm:rounded-t-[28px]">
@@ -697,7 +705,7 @@ export function GroomingServicesByStyle({
           </div>
         )}
 
-        <div className="max-w-md mx-auto px-4 cw-scroll-pad-tabbar-sticky-cta">
+        <div className="mx-auto w-full max-w-customer px-4 cw-scroll-pad-tabbar-sticky-cta">
           {/* Salon Header Info - Grooming-Focused */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-4 -mt-6 relative z-10">
             <div className="mb-4">
@@ -1110,9 +1118,10 @@ export function GroomingServicesByStyle({
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
       <ServiceDashboardHeader
+        fullWidth
         serviceName={getServiceTitle()}
         serviceSubtitle={getServiceSubtitle()}
         serviceIcon={Scissors}
@@ -1121,10 +1130,13 @@ export function GroomingServicesByStyle({
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-white"
       />
-      
+
+      {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
+      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]">
       {/* Info section */}
-      <div className="max-w-md mx-auto px-6 pt-4 pb-2 bg-white">
+      <div className="px-6 pt-6 pb-2">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center">
             {getStyleIcon()}
@@ -1149,7 +1161,7 @@ export function GroomingServicesByStyle({
       </div>
 
       {/* Content */}
-      <div className="max-w-md mx-auto px-4 cw-scroll-pad-tabbar">
+      <div className="px-4 cw-scroll-pad-tabbar">
         {providers.length === 0 ? (
           <Card className="p-8 text-center bg-white">
             <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -1288,10 +1300,6 @@ export function GroomingServicesByStyle({
                           )}
                         </div>
                         <p className="text-gray-500 text-sm">{getProviderTypeLabel(provider)}</p>
-                        {/* ✅ NEW: Specialisation display */}
-                        {provider.specialisation && (
-                          <p className="text-xs text-purple-600 font-medium mt-1">{provider.specialisation}</p>
-                        )}
                         <div className="flex items-center gap-3 mt-1">
                           <div className="flex items-center gap-1">
                             <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
@@ -1484,6 +1492,7 @@ export function GroomingServicesByStyle({
             })}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

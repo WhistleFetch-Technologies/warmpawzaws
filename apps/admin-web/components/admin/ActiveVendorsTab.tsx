@@ -111,11 +111,8 @@ export function ActiveVendorsTab() {
           vendors: aParsed.vendors ?? activeData.vendors ?? [],
           total: aParsed.total ?? activeData.total ?? (aParsed.vendors ?? activeData.vendors ?? []).length,
         };
-        if ((data.vendors?.length ?? 0) === 0 && (data.total ?? 0) === 0) {
-          throw new Error('Active endpoint returned empty');
-        }
       } catch (e) {
-        console.warn('[ActiveVendorsTab] /admin/vendors/active failed or empty, trying /admin/vendors:', e);
+        console.warn('[ActiveVendorsTab] /admin/vendors/active failed, trying /admin/vendors:', e);
         try {
           const listData = await apiClient.get<any>(listUrl);
           const raw = (listData as any)?.data ?? (listData as any)?.body ?? listData;
@@ -136,7 +133,9 @@ export function ActiveVendorsTab() {
         .filter((c: string) => c && c.trim())
       )].sort() as string[];
       
-      if (cities.length === 0 && uniqueCities.length > 0) {
+      // Only repopulate the city list from unfiltered results so we don't lose cities when
+      // another filter narrows down the vendors to a single city.
+      if (cityFilter === 'all' && uniqueCities.length > 0) {
         setCities(uniqueCities);
       }
 
@@ -395,8 +394,8 @@ export function ActiveVendorsTab() {
             options={[
               { value: 'all', label: 'All Categories' },
               { value: 'vet', label: 'Veterinary' },
-              { value: 'grooming', label: 'Grooming' },
-              { value: 'walking', label: 'Walking' },
+              { value: 'groomer', label: 'Grooming' },
+              { value: 'walker', label: 'Walking' },
               { value: 'boarding', label: 'Boarding' },
               { value: 'training', label: 'Training' },
               { value: 'nutritionist', label: 'Nutritionist' },

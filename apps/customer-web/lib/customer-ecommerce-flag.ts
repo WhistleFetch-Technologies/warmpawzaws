@@ -1,25 +1,35 @@
 /**
- * Customer marketplace visibility. When disabled, home keeps "coming soon" for shop tiles;
- * when enabled, home loads ecommerce categories and opens Shop with real category UUIDs.
+ * Customer marketplace feature flag (shop, cart, wishlist, orders).
  *
- * Customer ecommerce is currently disabled regardless of build/runtime flags.
- * Re-enable here when the customer marketplace is ready to launch again.
+ * Toggle on/off in one place:
+ *   • Locally  — set NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=true|false in .env.local
+ *   • Deployed — set the same env var in the build environment, OR override at runtime via
+ *                window.__WARMPAWZ_RUNTIME_CONFIG__.customerEcommerceEnabled (runtime-config.js)
+ *   • Hard-off — replace the body with `return false;` and redeploy
+ *
+ * Precedence (highest → lowest):
+ *   1. window.__WARMPAWZ_RUNTIME_CONFIG__.customerEcommerceEnabled  (runtime override)
+ *   2. NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED                        (build-time env)
+ *   3. false                                                          (default: off / coming soon)
  */
 
-export type CustomerWarmpawzRuntimeConfig = {
-  apiBaseUrl?: string;
-  uatMode?: boolean;
-  environment?: string;
-  customerEcommerceEnabled?: boolean;
-};
-
-declare global {
-  interface Window {
-    __WARMPAWZ_RUNTIME_CONFIG__?: CustomerWarmpawzRuntimeConfig;
-  }
+function parseExplicitEnv(raw: string | undefined): boolean | null {
+  if (raw === undefined || raw === '') return null;
+  const v = raw.toLowerCase().trim();
+  if (v === 'true' || v === '1') return true;
+  if (v === 'false' || v === '0') return false;
+  return null;
 }
 
 export function isCustomerEcommerceEnabled(): boolean {
-  // Temporarily disabled on the customer side. Keep admin/vendor ecommerce available.
-  return false;
+  if (typeof window !== 'undefined') {
+    const rc = (window as unknown as { __WARMPAWZ_RUNTIME_CONFIG__?: { customerEcommerceEnabled?: boolean } })
+      .__WARMPAWZ_RUNTIME_CONFIG__?.customerEcommerceEnabled;
+    if (typeof rc === 'boolean') return rc;
+  }
+  const explicit = parseExplicitEnv(
+    typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED : undefined
+  );
+  if (explicit !== null) return explicit;
+  return false; // default: off until launch
 }

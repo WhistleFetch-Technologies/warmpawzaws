@@ -11,6 +11,7 @@ import { VendorPrescriptionModal } from './modals/VendorPrescriptionModal';
 import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
 import { VendorChatModal } from './VendorChatModal';
 import { PetMedicalHistoryModal } from './PetMedicalHistoryModal';
+import { getVendorBookingVenuePillLabel } from '@/lib/vendor-utils';
 
 interface VendorBookingDetailModalProps {
   bookingId: string;
@@ -230,13 +231,18 @@ export function VendorBookingDetailModal({
             </div>
           ) : (
             <div className="p-6 space-y-6 pb-24">
-              {/* Status Badge */}
-              <div className="flex items-center justify-between">
-                <span className={`px-4 py-2 rounded-full font-semibold border ${getStatusColor(booking.status)}`}>
-                  {booking.status === 'in_progress' ? 'In Progress' : 
-                   booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
-                </span>
-                <span className="text-sm text-gray-600">
+              {/* Status + venue (home / clinic / tele) */}
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                  <span className={`px-4 py-2 rounded-full font-semibold border shrink-0 ${getStatusColor(booking.status)}`}>
+                    {booking.status === 'in_progress' ? 'In Progress' :
+                     booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                  </span>
+                  <span className="px-4 py-2 rounded-full font-semibold border shrink-0 bg-violet-50 text-violet-800 border-violet-200">
+                    {getVendorBookingVenuePillLabel(booking)}
+                  </span>
+                </div>
+                <span className="text-sm text-gray-600 shrink-0">
                   Booking #{booking.id.slice(0, 8)}
                 </span>
               </div>

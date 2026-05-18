@@ -51,6 +51,14 @@ function vendorDiscoverableStatusSql(alias = 'v', allowAllPending = false): stri
   return `(${statusInList} OR ${pendingClause})`;
 }
 
+/**
+ * Parity with `sqlVendorOnlineForCustomerDiscovery` in service-discovery.customer.ts:
+ * hide vendors with `is_online = false` from all customer discovery (NULL → online).
+ */
+function sqlVendorOnlineForCustomerDiscovery(vAlias = 'v'): string {
+  return `COALESCE(${vAlias}.is_online, true) = true`;
+}
+
 function isVendorStatusDiscoverable(status: string | null | undefined, vendorType: string | null | undefined, allowAllPending = false): boolean {
   const s = String(status ?? '').trim().toLowerCase();
   const vt = String(vendorType ?? '').trim().toLowerCase();
@@ -74,6 +82,42 @@ function pushSpecializationKeyVariants(target: Set<string>, value: string | null
   target.add(trimmed.toLowerCase());
   const normalized = normalizeSpecializationKey(trimmed);
   if (normalized) target.add(normalized);
+}
+
+/** Normalize a slug by replacing non-alphanumeric runs with underscore (mirrors service-discovery). */
+function aggressiveNormalizeSlugPG(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
+/**
+ * Customer tiles use short slugs (e.g. `barking`); vendors/catalog often store
+ * `excessive_barking` / display phrases. Expand search keys so profile specializations match tiles.
+ * Mirrors SPECIALIZATION_SYNONYM_CLUSTERS from service-discovery.customer.ts.
+ */
+function mergeBehavioralSpecializationSynonyms(target: Set<string>, problemId: string): void {
+  const raw = String(problemId || '').trim().toLowerCase();
+  const n = aggressiveNormalizeSlugPG(raw);
+  const allClusters: string[][] = [
+    ['barking', 'excessive_barking', 'excessive barking', 'excessive bark', 'vocalization'],
+    ['separation_anxiety', 'separation anxiety'],
+    ['fear_phobia', 'fear phobia', 'fear & phobias', 'fear and phobia', 'fear_phobias', 'fear and phobias'],
+    ['destructive', 'destructive_behavior', 'destructive behavior'],
+    ['resource_guarding', 'resource guarding', 'possessive behavior', 'possessive', 'guarding'],
+    ['diet_plan', 'diet plan', 'custom_diet', 'custom diet', 'custom_diet_plans', 'custom diet plans'],
+    ['weight_management', 'weight management'],
+    ['allergies', 'allergy_diet', 'allergy diet', 'food_allergies', 'food allergies'],
+    ['puppy_nutrition', 'puppy nutrition'],
+    ['senior_nutrition', 'senior nutrition', 'senior_pet_nutrition', 'senior pet nutrition'],
+    ['special_diet', 'prescription_diet', 'prescription diet', 'medical_diet', 'medical diet'],
+  ];
+  for (const syns of allClusters) {
+    const normSyns = syns.map((s) => aggressiveNormalizeSlugPG(s));
+    const hit = normSyns.includes(n) || syns.some((s) => s.toLowerCase() === raw);
+    if (hit) {
+      for (const s of syns) pushSpecializationKeyVariants(target, s);
+      break;
+    }
+  }
 }
 
 /** Align with service-discovery.roleConfigAllowsStyle (Admin role catalogue gates tele / at_home). */
@@ -805,15 +849,30 @@ export function registerProblemGridEndpoints(app: Hono) {
         roleIds = [];
         
         // ✅ FIX: Infer role from problemId for common training/behavioral problems
+        const BEHAVIOR_PROBLEM_ROLE_FALLBACK = [
+          'behaviorist_solo',
+          'behaviorist_center',
+          'behaviourist',
+          'behaviourist_solo',
+          'behaviourist_center',
+          'pet_behaviourist',
+          'dog_behaviourist',
+          'behaviorist',
+          'pet_behaviorist',
+          'trainer',
+          'trainer_solo',
+          'trainer_center',
+        ];
         const problemToRoleMap: Record<string, string[]> = {
-          'potty_training': ['trainer', 'trainer_solo', 'trainer_center'],
-          'basic_obedience': ['trainer', 'trainer_solo', 'trainer_center'],
-          'socialization': ['trainer', 'trainer_solo', 'trainer_center'],
-          'aggression': ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
-          'separation_anxiety': ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
-          'barking': ['behaviorist_solo', 'behaviorist_center'],
-          'destructive': ['behaviorist_solo', 'behaviorist_center'],
-          'fear_phobia': ['behaviorist_solo', 'behaviorist_center'],
+          potty_training: ['trainer', 'trainer_solo', 'trainer_center'],
+          basic_obedience: ['trainer', 'trainer_solo', 'trainer_center'],
+          socialization: ['trainer', 'trainer_solo', 'trainer_center'],
+          aggression: [...BEHAVIOR_PROBLEM_ROLE_FALLBACK],
+          separation_anxiety: [...BEHAVIOR_PROBLEM_ROLE_FALLBACK],
+          barking: [...BEHAVIOR_PROBLEM_ROLE_FALLBACK],
+          destructive: [...BEHAVIOR_PROBLEM_ROLE_FALLBACK],
+          fear_phobia: [...BEHAVIOR_PROBLEM_ROLE_FALLBACK],
+          resource_guarding: [...BEHAVIOR_PROBLEM_ROLE_FALLBACK],
         };
         
         if (problemToRoleMap[problemId]) {
@@ -881,9 +940,39 @@ export function registerProblemGridEndpoints(app: Hono) {
       if (roleIds.length > 0) {
       // Expand problem_grid role_id to actual roles.name values so trainer problems also match behaviorist vendors
       const problemRoleToVendorRoleNames: Record<string, string[]> = {
-        trainer: ['trainer', 'trainer_solo', 'trainer_center', 'behaviorist_solo', 'behaviorist_center'],
-        behaviourist: ['behaviourist', 'behaviorist_solo', 'behaviorist_center'],
-        behaviorist: ['behaviorist_solo', 'behaviorist_center'],
+        trainer: [
+          'trainer',
+          'trainer_solo',
+          'trainer_center',
+          'behaviorist_solo',
+          'behaviorist_center',
+          'behaviourist',
+          'behaviourist_solo',
+          'behaviourist_center',
+          'pet_behaviourist',
+          'dog_behaviourist',
+          'behaviorist',
+          'pet_behaviorist',
+        ],
+        behaviourist: [
+          'behaviourist',
+          'behaviourist_solo',
+          'behaviourist_center',
+          'pet_behaviourist',
+          'dog_behaviourist',
+          'behaviorist_solo',
+          'behaviorist_center',
+          'behaviorist',
+          'pet_behaviorist',
+        ],
+        behaviorist: [
+          'behaviorist_solo',
+          'behaviorist_center',
+          'behaviourist',
+          'behaviourist_solo',
+          'pet_behaviourist',
+          'dog_behaviourist',
+        ],
       };
       let expandedRoleIds = [...roleIds];
       for (const rid of roleIds) {
@@ -901,6 +990,7 @@ export function registerProblemGridEndpoints(app: Hono) {
       for (const subCategoryId of subCategoryIds) {
         pushSpecializationKeyVariants(specializationSearchKeys, subCategoryId);
       }
+      mergeBehavioralSpecializationSynonyms(specializationSearchKeys, String(problemId));
 
       try {
         const currentKeys = [...specializationSearchKeys];
@@ -1010,6 +1100,7 @@ export function registerProblemGridEndpoints(app: Hono) {
         LEFT JOIN roles r ON v.role_id = r.id
         LEFT JOIN reviews rev ON rev.vendor_id = v.id AND (rev.is_published = true OR rev.is_published IS NULL)
         WHERE ${statusFilter}
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
           AND v.is_active = true
           AND vs.is_enabled = true
           AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
@@ -1045,34 +1136,61 @@ export function registerProblemGridEndpoints(app: Hono) {
           // Profile API shows: specializations: ["dermatology"] - this is in vendors.specializations
           servicesQuery += ` AND (
             r.name = ANY($${paramIndex}::text[]) OR
-            -- ✅ PRIMARY: Check vendors.specializations JSONB column (same schema as profile API)
-            -- This is where the profile API gets specializations from: GET /vendor/:vendorId/profile returns v.specializations
-            (v.specializations IS NOT NULL 
+            -- vendor_specializations: stored slug/UUID matches query keys directly
+            vs.vendor_id IN (
+              SELECT vsp.vendor_id FROM vendor_specializations vsp
+              WHERE LOWER(TRIM(vsp.specialization)) = ANY($${paramIndex + 2}::text[])
+                 OR regexp_replace(LOWER(TRIM(vsp.specialization)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+            ) OR
+            -- vendor_specializations: stored UUID → expand via specialization_master
+            EXISTS (
+              SELECT 1 FROM vendor_specializations vsp2
+              JOIN specialization_master sm
+                ON sm.is_active = true
+                   AND (sm.id::text = vsp2.specialization
+                     OR LOWER(TRIM(sm.specialization_id)) = LOWER(TRIM(vsp2.specialization))
+                     OR LOWER(TRIM(sm.name))              = LOWER(TRIM(vsp2.specialization))
+                     OR LOWER(TRIM(sm.display_name))      = LOWER(TRIM(vsp2.specialization)))
+              WHERE vsp2.vendor_id = v.id
+                AND (
+                  LOWER(TRIM(sm.specialization_id)) = ANY($${paramIndex + 2}::text[])
+                  OR LOWER(TRIM(sm.name))            = ANY($${paramIndex + 2}::text[])
+                  OR regexp_replace(LOWER(TRIM(sm.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+                  OR regexp_replace(LOWER(TRIM(sm.display_name)),      '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+                )
+            ) OR
+            -- vendors.specializations JSONB column (slug or UUID stored per element)
+            (v.specializations IS NOT NULL
              AND jsonb_typeof(v.specializations) = 'array'
              AND jsonb_array_length(v.specializations) > 0
-              AND EXISTS (
-               SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
-               WHERE LOWER(TRIM(spec)) = ANY($${paramIndex + 2}::text[])
-                  OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+             AND (
+               EXISTS (
+                 SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec
+                 WHERE LOWER(TRIM(spec)) = ANY($${paramIndex + 2}::text[])
+                    OR regexp_replace(LOWER(TRIM(spec)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+               ) OR
+               EXISTS (
+                 SELECT 1 FROM jsonb_array_elements_text(v.specializations) elem(val)
+                 JOIN specialization_master sm2
+                   ON sm2.is_active = true
+                      AND (sm2.id::text = elem.val
+                        OR LOWER(TRIM(sm2.specialization_id)) = LOWER(TRIM(elem.val))
+                        OR LOWER(TRIM(sm2.name))              = LOWER(TRIM(elem.val)))
+                 WHERE LOWER(TRIM(sm2.specialization_id)) = ANY($${paramIndex + 2}::text[])
+                    OR regexp_replace(LOWER(TRIM(sm2.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+                    OR regexp_replace(LOWER(TRIM(sm2.display_name)),      '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+               )
              )) OR
-            -- ✅ SECONDARY: Check vendor_specializations table (where vendors store specializations from profile)
-            vs.vendor_id IN (
-              SELECT vendor_id 
-              FROM vendor_specializations 
-              WHERE LOWER(TRIM(specialization)) = ANY($${paramIndex + 2}::text[])
-                 OR regexp_replace(LOWER(TRIM(specialization)), '[[:space:]-]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
-            ) OR
-            -- ✅ FALLBACK: Check vendors.metadata.specializations
-            (v.metadata IS NOT NULL 
+            -- vendors.metadata.specializations fallback
+            (v.metadata IS NOT NULL
              AND v.metadata->'specializations' IS NOT NULL
-             AND jsonb_typeof(v.metadata->'specializations') = 'array'
-             AND jsonb_array_length(v.metadata->'specializations') > 0
+             AND (v.metadata->'specializations')::text NOT IN ('null', '[]', '')
              AND EXISTS (
-              SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
-              WHERE LOWER(TRIM(spec)) = ANY($${paramIndex + 2}::text[])
-                 OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
-            )) OR
-            -- Fallback: Check service name (partial match)
+               SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec
+               WHERE LOWER(TRIM(spec)) = ANY($${paramIndex + 2}::text[])
+                  OR regexp_replace(LOWER(TRIM(spec)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 2}::text[])
+             )) OR
+            -- Service name fallback
             vs.service_name ILIKE ANY($${paramIndex + 1}::text[])
           )`;
           params.push(roleIds, searchTerms, specializationKeys);
@@ -1083,34 +1201,61 @@ export function registerProblemGridEndpoints(app: Hono) {
           // The profile API shows: specializations: ["dermatology"] - this is in vendors.specializations
           // We need to check if the problemId (specialization ID) exists in this array
           servicesQuery += ` AND (
-            -- ✅ PRIMARY: Check vendor_specializations table (where profile API loads from first)
+            -- vendor_specializations: stored slug/UUID matches query keys directly
             vs.vendor_id IN (
-              SELECT vendor_id 
-              FROM vendor_specializations 
-              WHERE LOWER(TRIM(specialization)) = ANY($${paramIndex + 1}::text[])
-                 OR regexp_replace(LOWER(TRIM(specialization)), '[[:space:]-]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+              SELECT vsp.vendor_id FROM vendor_specializations vsp
+              WHERE LOWER(TRIM(vsp.specialization)) = ANY($${paramIndex + 1}::text[])
+                 OR regexp_replace(LOWER(TRIM(vsp.specialization)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
             ) OR
-            -- ✅ SECONDARY: Check vendors.specializations JSONB column (same schema as profile API)
-            -- This is where the profile API gets specializations from
-            (v.specializations IS NOT NULL 
+            -- vendor_specializations: stored UUID → expand via specialization_master
+            EXISTS (
+              SELECT 1 FROM vendor_specializations vsp2
+              JOIN specialization_master sm
+                ON sm.is_active = true
+                   AND (sm.id::text = vsp2.specialization
+                     OR LOWER(TRIM(sm.specialization_id)) = LOWER(TRIM(vsp2.specialization))
+                     OR LOWER(TRIM(sm.name))              = LOWER(TRIM(vsp2.specialization))
+                     OR LOWER(TRIM(sm.display_name))      = LOWER(TRIM(vsp2.specialization)))
+              WHERE vsp2.vendor_id = v.id
+                AND (
+                  LOWER(TRIM(sm.specialization_id)) = ANY($${paramIndex + 1}::text[])
+                  OR LOWER(TRIM(sm.name))            = ANY($${paramIndex + 1}::text[])
+                  OR regexp_replace(LOWER(TRIM(sm.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+                  OR regexp_replace(LOWER(TRIM(sm.display_name)),      '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+                )
+            ) OR
+            -- vendors.specializations JSONB column (slug or UUID stored per element)
+            (v.specializations IS NOT NULL
              AND jsonb_typeof(v.specializations) = 'array'
              AND jsonb_array_length(v.specializations) > 0
-             AND EXISTS (
-               SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec 
-               WHERE LOWER(TRIM(spec)) = ANY($${paramIndex + 1}::text[])
-                  OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+             AND (
+               EXISTS (
+                 SELECT 1 FROM jsonb_array_elements_text(v.specializations) AS spec
+                 WHERE LOWER(TRIM(spec)) = ANY($${paramIndex + 1}::text[])
+                    OR regexp_replace(LOWER(TRIM(spec)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+               ) OR
+               EXISTS (
+                 SELECT 1 FROM jsonb_array_elements_text(v.specializations) elem(val)
+                 JOIN specialization_master sm2
+                   ON sm2.is_active = true
+                      AND (sm2.id::text = elem.val
+                        OR LOWER(TRIM(sm2.specialization_id)) = LOWER(TRIM(elem.val))
+                        OR LOWER(TRIM(sm2.name))              = LOWER(TRIM(elem.val)))
+                 WHERE LOWER(TRIM(sm2.specialization_id)) = ANY($${paramIndex + 1}::text[])
+                    OR regexp_replace(LOWER(TRIM(sm2.specialization_id)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+                    OR regexp_replace(LOWER(TRIM(sm2.display_name)),      '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+               )
              )) OR
-            -- ✅ FALLBACK: Check vendors.metadata.specializations
-            (v.metadata IS NOT NULL 
+            -- vendors.metadata.specializations fallback
+            (v.metadata IS NOT NULL
              AND v.metadata->'specializations' IS NOT NULL
-             AND jsonb_typeof(v.metadata->'specializations') = 'array'
-             AND jsonb_array_length(v.metadata->'specializations') > 0
+             AND (v.metadata->'specializations')::text NOT IN ('null', '[]', '')
              AND EXISTS (
-               SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec 
+               SELECT 1 FROM jsonb_array_elements_text(v.metadata->'specializations') AS spec
                WHERE LOWER(TRIM(spec)) = ANY($${paramIndex + 1}::text[])
-                  OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
+                  OR regexp_replace(LOWER(TRIM(spec)), '[^a-z0-9]+', '_', 'g') = ANY($${paramIndex + 1}::text[])
              )) OR
-            -- Fallback: Check service name (partial match)
+            -- Service name fallback
             vs.service_name ILIKE ANY($${paramIndex}::text[])
           )`;
           params.push(searchTerms, specializationKeys);
@@ -1149,6 +1294,7 @@ export function registerProblemGridEndpoints(app: Hono) {
                  OR regexp_replace(LOWER(TRIM(spec)), '[[:space:]-]+', '_', 'g') = ANY($1::text[])
             )
             AND ${vendorDiscoverableStatusSql('v', isDevOrUatEnvironment)}
+            AND ${sqlVendorOnlineForCustomerDiscovery('v')}
             AND v.is_active = true
           LIMIT 5
         `, [specializationKeys]);
@@ -1196,6 +1342,7 @@ export function registerProblemGridEndpoints(app: Hono) {
             INNER JOIN vendor_services vs ON vs.vendor_id = v.id
             LEFT JOIN roles r ON v.role_id = r.id
             WHERE ${statusFilter}
+              AND ${sqlVendorOnlineForCustomerDiscovery('v')}
               AND v.is_active = true
               AND vs.is_enabled = true
               AND (vs.publish_status IN ('published', 'auto_published', 'draft') OR vs.publish_status IS NULL)
@@ -1620,6 +1767,7 @@ export function registerProblemGridEndpoints(app: Hono) {
           GROUP BY vendor_id
         ) b_stats ON b_stats.vendor_id = v.id
         WHERE ${vendorDiscoverableStatusSql('v', false)}
+          AND ${sqlVendorOnlineForCustomerDiscovery('v')}
           AND v.is_active = true
       `;
 
@@ -1727,6 +1875,7 @@ export function registerProblemGridEndpoints(app: Hono) {
             WHERE specializations IS NOT NULL 
               AND jsonb_typeof(specializations) = 'array'
               AND jsonb_array_length(specializations) > 0
+              AND COALESCE(is_online, true) = true
               AND EXISTS (
                 SELECT 1 FROM jsonb_array_elements_text(specializations) AS spec 
                 WHERE spec = ANY($1::text[])
@@ -1764,6 +1913,7 @@ export function registerProblemGridEndpoints(app: Hono) {
               )
             )
             AND ${vendorDiscoverableStatusSql('v', false)}
+            AND ${sqlVendorOnlineForCustomerDiscovery('v')}
             AND v.is_active = true
             LIMIT 10
           `;
@@ -2095,6 +2245,7 @@ export function registerProblemGridEndpoints(app: Hono) {
             SELECT COUNT(*) as count FROM vendors 
             WHERE specializations IS NOT NULL 
               AND jsonb_typeof(specializations) = 'array'
+              AND COALESCE(is_online, true) = true
               AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(specializations) AS spec WHERE spec = ANY($1::text[]))
           `;
           const debugJsonbResult = await query(debugJsonbQuery, [subCategoryIds]);

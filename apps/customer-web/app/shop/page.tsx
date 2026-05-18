@@ -12,8 +12,10 @@ import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPay
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { handleShopPageBack, markWishlistOpenedFromShop } from '@/lib/go-back-or-replace';
+import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
 import { formatAverageForDisplay } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { emitWarmpawzCartUpdated, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
 
 // ============================================================================
 // TYPES
@@ -188,7 +190,7 @@ export default function ShopPage() {
 
   const loadCart = () => {
     if (typeof window !== 'undefined') {
-      const savedCart = localStorage.getItem('warmpawz_cart');
+      const savedCart = localStorage.getItem(WARMPAWZ_CART_KEY);
       if (savedCart) {
         try {
           setCart(JSON.parse(savedCart));
@@ -202,7 +204,8 @@ export default function ShopPage() {
   const saveCart = (newCart: CartItem[]) => {
     setCart(newCart);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('warmpawz_cart', JSON.stringify(newCart));
+      localStorage.setItem(WARMPAWZ_CART_KEY, JSON.stringify(newCart));
+      emitWarmpawzCartUpdated();
     }
   };
 
@@ -1094,7 +1097,6 @@ export default function ShopPage() {
 // ============================================================================
 
 function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAddToCart: () => void; inCart: boolean }) {
-  const [isWishlisted, setIsWishlisted] = React.useState(false);
   const [imageFailed, setImageFailed] = React.useState(false);
 
   const wishlistPid = canonicalProductId(product as unknown as Record<string, unknown>) || product.id;
@@ -1104,61 +1106,6 @@ function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAdd
   React.useEffect(() => {
     setImageFailed(false);
   }, [product.id, product.images?.[0]]);
-
-  React.useEffect(() => {
-    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-    setIsWishlisted(wishlist.some((id: string) => String(id) === String(wishlistPid)));
-  }, [wishlistPid]);
-
-  const toggleWishlist = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const pid = wishlistPid;
-    if (!pid) {
-      console.warn('[wishlist] shop card: missing product id', { product });
-      return;
-    }
-    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-    const customerId = getResolvedCustomerId();
-    const wasInList = isWishlisted;
-
-    console.log('[wishlist] shop card toggle', { productId: pid, customerId, wasInList });
-
-    if (wasInList) {
-      localStorage.setItem(
-        'warmpawz_wishlist',
-        JSON.stringify(wishlist.filter((id: string) => String(id) !== String(pid)))
-      );
-      setIsWishlisted(false);
-    } else {
-      if (!wishlist.some((id: string) => String(id) === String(pid))) {
-        wishlist.push(pid);
-      }
-      localStorage.setItem('warmpawz_wishlist', JSON.stringify(wishlist));
-      setIsWishlisted(true);
-    }
-
-    if (customerId) {
-      const action = wasInList ? 'remove' : 'add';
-      try {
-        const res = await apiClient.post<any>(`/customer/${customerId}/wishlist`, {
-          productId: pid,
-          action,
-        });
-        console.log('[wishlist] shop POST response', { productId: pid, customerId, res });
-        if (action === 'add') {
-          const verify = await apiClient.get<any>(`/customer/${customerId}/wishlist`);
-          console.log('[wishlist] shop GET verify', {
-            customerId,
-            itemCount: verify?.wishlist?.items?.length ?? 0,
-          });
-        }
-      } catch (err) {
-        console.error('[wishlist] shop POST failed', { productId: pid, customerId, err });
-      }
-    } else {
-      console.warn('[wishlist] shop: no customerId; local only', { productId: pid });
-    }
-  };
 
   const handleCardClick = () => {
     window.location.href = `/shop/${wishlistPid}`;
@@ -1198,18 +1145,11 @@ function ProductCard({ product, onAddToCart, inCart }: { product: Product; onAdd
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={toggleWishlist}
-          className={`absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full shadow-sm transition-all ${
-            isWishlisted
-              ? 'bg-red-500 text-white'
-              : 'bg-white/90 text-slate-400 backdrop-blur-sm active:scale-95'
-          }`}
-          aria-label={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
-        >
-          <Heart className={`w-3.5 h-3.5 ${isWishlisted ? 'fill-current' : ''}`} />
-        </button>
+        <WishlistProductHeartButton
+          productId={wishlistPid}
+          visualVariant="shop-floating"
+          className="absolute top-2 right-2 w-8 h-8"
+        />
 
         {discount > 0 && !outOfStock && (
           <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-red-500 text-white text-[10px] font-bold rounded-md shadow-sm">

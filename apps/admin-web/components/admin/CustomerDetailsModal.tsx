@@ -12,6 +12,10 @@ interface DetailVendorShape {
   email?: string;
   phone?: string;
   city?: string;
+  state?: string;
+  pincode?: string;
+  /** Full line aligned with customer profile address */
+  location?: string;
   status?: string;
 }
 
@@ -81,9 +85,23 @@ export function CustomerDetailsModal({ isOpen, onClose, customerId }: CustomerDe
                 <dd className="font-medium text-gray-900">{vendor.email || '—'}</dd>
               </div>
               <div>
+                <dt className="text-gray-500">Address</dt>
+                <dd className="font-medium text-gray-900 whitespace-pre-wrap break-words">
+                  {vendor.location || '—'}
+                </dd>
+              </div>
+              <div>
                 <dt className="text-gray-500">City</dt>
                 <dd className="font-medium text-gray-900">{vendor.city || '—'}</dd>
               </div>
+              {(vendor.state || vendor.pincode) && (
+                <div>
+                  <dt className="text-gray-500">State / PIN</dt>
+                  <dd className="font-medium text-gray-900">
+                    {[vendor.state, vendor.pincode].filter(Boolean).join(' · ') || '—'}
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt className="text-gray-500">Status</dt>
                 <dd className="font-medium text-gray-900 capitalize">{vendor.status || '—'}</dd>

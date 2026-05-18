@@ -30,6 +30,14 @@ function addMonths(d: Date, n: number): Date {
 
 const MONTHLY_VENDOR_FREQ = new Set(['DAILY', 'ALTERNATE_DAYS', 'TWICE_WEEKLY', 'WEEKLY']);
 
+function normalizeMonthlyMode(schedule: Record<string, unknown> | null): 'fixed_sessions' | 'recurring_monthly' {
+  const m = String(schedule?.monthlyMode ?? 'recurring_monthly')
+    .trim()
+    .toLowerCase();
+  if (m === 'fixed_sessions') return 'fixed_sessions';
+  return 'recurring_monthly';
+}
+
 /** Maps vendor/API weekday tokens to JS `Date#getDay()` (Sun=0 … Sat=6). */
 export function parseJsWeekdayTargetsFromSchedule(schedule: Record<string, unknown> | null): number[] {
   const sch = schedule || {};
@@ -139,7 +147,11 @@ export function advanceDeliveryCursor(
     return addDays(cursor, 1);
   }
   if (pattern === 'specific_weekdays') {
-    const targets = parseJsWeekdayTargetsFromSchedule(sch);
+    const vf = String(sch.deliveryFrequency || '').toUpperCase();
+    const targets =
+      vf === 'TWICE_WEEKLY'
+        ? twiceWeeklyJsTargets(sch)
+        : parseJsWeekdayTargetsFromSchedule(sch);
     if (!targets.length) {
       return addDays(cursor, 7);
     }
@@ -153,11 +165,38 @@ export function advanceDeliveryCursor(
   return addDays(cursor, 7);
 }
 
+/** Count deliveries in [windowStart, windowEnd] using “next delivery strictly after cursor” (aligned with TWICE_WEEKLY monthly). */
+function countMonthlyCadenceDeliveriesInClosedWindow(
+  schedule: Record<string, unknown> | null,
+  windowStart: Date,
+  windowEnd: Date,
+): number {
+  let cursor = addDays(windowStart, -1);
+  let n = 0;
+  while (true) {
+    const next = advanceDeliveryCursor(cursor, 'MONTHLY_PLAN', schedule);
+    if (next > windowEnd) break;
+    if (next >= windowStart) n++;
+    cursor = next;
+    if (n > 200) break;
+  }
+  return Math.max(1, n);
+}
+
 /** Deliveries in one weekly billing window (catalog uses a full-week bundle). */
 export function weeklyDeliveriesPerBillingCycle(schedule: Record<string, unknown> | null): number {
   const sch = schedule || {};
   const pattern = normalizeWeeklyPattern(sch);
   if (pattern === 'specific_weekdays') {
+    const vf = String(sch.deliveryFrequency || '').toUpperCase();
+    if (vf === 'TWICE_WEEKLY') {
+      const t = twiceWeeklyJsTargets(sch);
+      return Math.max(1, Math.min(2, t.length || 2));
+    }
+    if (vf === 'WEEKLY') {
+      const t = parseJsWeekdayTargetsFromSchedule(sch);
+      return Math.max(1, Math.min(1, t.length || 1));
+    }
     const targets = parseJsWeekdayTargetsFromSchedule(sch);
     return Math.max(1, targets.length);
   }
@@ -181,20 +220,20 @@ export function weeklyDeliveriesPerBillingCycle(schedule: Record<string, unknown
 /** Deliveries in one calendar-month billing window (matches monthly vendor cadence). */
 export function monthlyDeliveriesPerBillingCycle(schedule: Record<string, unknown> | null): number {
   const sch = schedule || {};
+  const mode = normalizeMonthlyMode(sch);
+  const monthStart = new Date(2020, 0, 1);
+
+  /** Fixed session pack: one billing pack = 4 calendar weeks (28 days), same cadence math for all vendor monthly freqs. */
+  if (mode === 'fixed_sessions') {
+    const windowEnd = addDays(monthStart, 27);
+    return countMonthlyCadenceDeliveriesInClosedWindow(schedule, monthStart, windowEnd);
+  }
+
   const mf = String(sch.monthlyDeliveryFrequency || sch.deliveryFrequency || '').toUpperCase();
   if (mf === 'TWICE_WEEKLY') {
-    const monthStart = new Date(2020, 0, 1);
-    const monthEnd = new Date(2020, 0, 31);
-    let cursor = addDays(monthStart, -1);
-    let n = 0;
-    while (true) {
-      const next = advanceDeliveryCursor(cursor, 'MONTHLY_PLAN', schedule);
-      if (next > monthEnd) break;
-      if (next >= monthStart) n++;
-      cursor = next;
-      if (n > 120) break;
-    }
-    return Math.max(1, n);
+    /** ~4 weeks × 2 drops (calendar months vary 8–9; align pricing/session packs to 8). */
+    const windowEnd = addDays(monthStart, 27);
+    return countMonthlyCadenceDeliveriesInClosedWindow(schedule, monthStart, windowEnd);
   }
   let cursor = new Date(2020, 0, 1);
   const end = new Date(2020, 0, 31);

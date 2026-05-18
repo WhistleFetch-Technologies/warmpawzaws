@@ -1,12 +1,17 @@
 'use client';
 
-import { useState } from 'react';
-import { X, Star, ThumbsUp, ThumbsDown } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { X, Star, ThumbsUp, ThumbsDown, ImagePlus, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 // Uses apiClient (API Gateway)
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { awardReviewPoints } from '@/lib/loyalty-helper'; // ✅ NEW
+import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
+
+const MAX_REVIEW_PHOTOS = 6;
+
+type ReviewPhotoSlot = { previewUrl: string; storageKey: string };
 
 interface RateServiceModalProps {
   bookingId: string;
@@ -37,6 +42,48 @@ export function RateServiceModal({
   const [cleanliness, setCleanliness] = useState(0);
   const [valueForMoney, setValueForMoney] = useState(0);
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [reviewPhotos, setReviewPhotos] = useState<ReviewPhotoSlot[]>([]);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
+
+  const removeReviewPhoto = (index: number) => {
+    setReviewPhotos((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleReviewPhotoFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+
+    const room = MAX_REVIEW_PHOTOS - reviewPhotos.length;
+    if (room <= 0) {
+      toast.error(`You can add up to ${MAX_REVIEW_PHOTOS} photos`);
+      return;
+    }
+
+    setUploadingPhotos(true);
+    try {
+      for (const file of files.slice(0, room)) {
+        const res = await uploadCustomerPhotoWithProgress(file, customerId, {
+          verifyUpload: false,
+        });
+        const previewUrl = (res.url || res.publicUrl || '').trim();
+        const storageKey = res.fileName?.trim();
+        if (!res.success || !previewUrl || !storageKey) {
+          toast.error(res.error || 'Photo upload failed');
+          continue;
+        }
+        setReviewPhotos((prev) => {
+          if (prev.length >= MAX_REVIEW_PHOTOS) return prev;
+          if (prev.some((p) => p.storageKey === storageKey)) return prev;
+          return [...prev, { previewUrl, storageKey }];
+        });
+      }
+    } finally {
+      setUploadingPhotos(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (rating === 0) {
       toast.error('Please provide a rating');
@@ -57,7 +104,7 @@ export function RateServiceModal({
         cleanliness: cleanliness || rating,
         valueForMoney: valueForMoney || rating,
         wouldRecommend: wouldRecommend === true,
-        photos: [] // Photos support can be added later
+        photos: reviewPhotos.map((p) => p.storageKey),
       };
 
       // AWS Serverless compatible - use apiClient
@@ -227,6 +274,58 @@ export function RateServiceModal({
             />
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Add photos (optional)
+            </label>
+            <p className="text-xs text-gray-500 mb-3">
+              Up to {MAX_REVIEW_PHOTOS} images — e.g. your pet after the visit.
+            </p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif"
+              multiple
+              className="hidden"
+              onChange={handleReviewPhotoFiles}
+            />
+            <div className="flex flex-wrap gap-2">
+              {reviewPhotos.map((entry, idx) => (
+                <div
+                  key={entry.storageKey}
+                  className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-50"
+                >
+                  <img src={entry.previewUrl} alt="" className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeReviewPhoto(idx)}
+                    className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-xs text-white hover:bg-black/80"
+                    aria-label="Remove photo"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {reviewPhotos.length < MAX_REVIEW_PHOTOS && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingPhotos}
+                  className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 text-gray-500 transition-colors hover:border-[#FF8C42] hover:text-[#FF8C42] disabled:opacity-50"
+                >
+                  {uploadingPhotos ? (
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  ) : (
+                    <>
+                      <ImagePlus className="h-6 w-6" />
+                      <span className="text-[10px] font-medium">Add</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Recommendation */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-3">
@@ -263,7 +362,7 @@ export function RateServiceModal({
           {/* Submit Button */}
           <Button
             onClick={handleSubmit}
-            disabled={submitting || rating === 0}
+            disabled={submitting || rating === 0 || uploadingPhotos}
             className="w-full bg-[#FF8C42] hover:bg-[#FF7A2F] text-white py-6 rounded-xl text-lg font-semibold"
           >
             {submitting ? 'Submitting...' : 'Submit Review'}

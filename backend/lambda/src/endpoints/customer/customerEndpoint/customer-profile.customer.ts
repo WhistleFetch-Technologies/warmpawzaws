@@ -28,6 +28,7 @@ import { isValidUUID } from '../../../types/entities';
 import { presignS3GetUrlIfApplicable, stripS3PresignQueryFromUrl } from '../../../utils/s3-media-presign';
 import { regeneratePresignedUrl } from '../../constants/helper';
 import { getCustomerByPhoneFromMicroservice } from '../../../lib/services/customer-microservice-client';
+import { geocodeAddress, geocodeIndiaPincode } from '../../../lib/utils/geocode';
 /**
  * DB may store bare S3 keys, unsigned HTTPS object URLs, or expired presigned URLs.
  * presignS3GetUrlIfApplicable returns any string that already contains X-Amz-* unchanged,
@@ -691,6 +692,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           onboarding_status: customer.onboarding_status,
           profile_completed: customer.profile_completed,
           createdAt: customer.created_at,
+          latitude: customer.latitude != null ? Number(customer.latitude) : null,
+          longitude: customer.longitude != null ? Number(customer.longitude) : null,
           pets: petsOut,
         }
       });
@@ -762,6 +765,8 @@ export function registerCustomerProfileEndpoints(app: Hono) {
           floor: (customer as any).floor ?? null,
           photo: photoUrl || '',
           profile_photo_url: photoUrl || '',
+          latitude: (customer as any).latitude != null ? Number((customer as any).latitude) : null,
+          longitude: (customer as any).longitude != null ? Number((customer as any).longitude) : null,
         },
       });
     } catch (error: any) {
@@ -1004,6 +1009,22 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         const geo = deriveLatLngFromProfileData(profileData as ProfileAddressSyncPayload);
         updateData.latitude = geo.latitude;
         updateData.longitude = geo.longitude;
+      } else if (updateData.address || updateData.pincode) {
+        // Server-side geocode when frontend didn't supply coordinates
+        try {
+          const geoResult = updateData.pincode
+            ? await geocodeIndiaPincode(String(updateData.pincode))
+            : null;
+          const resolved = geoResult ?? (updateData.address
+            ? await geocodeAddress(String(updateData.address))
+            : null);
+          if (resolved) {
+            updateData.latitude = resolved.latitude;
+            updateData.longitude = resolved.longitude;
+          }
+        } catch {
+          // Non-fatal — profile saves even if geocoding fails
+        }
       }
 
       // Ensure we're not trying to update preferences column (it may not exist yet)
@@ -1204,6 +1225,22 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         const geo = deriveLatLngFromProfileData(profileData as ProfileAddressSyncPayload);
         updateData.latitude = geo.latitude;
         updateData.longitude = geo.longitude;
+      } else if (updateData.address || updateData.pincode) {
+        // Server-side geocode when frontend didn't supply coordinates
+        try {
+          const geoResult = updateData.pincode
+            ? await geocodeIndiaPincode(String(updateData.pincode))
+            : null;
+          const resolved = geoResult ?? (updateData.address
+            ? await geocodeAddress(String(updateData.address))
+            : null);
+          if (resolved) {
+            updateData.latitude = resolved.latitude;
+            updateData.longitude = resolved.longitude;
+          }
+        } catch {
+          // Non-fatal — profile saves even if geocoding fails
+        }
       }
 
       // Ensure we're not trying to update preferences column (it may not exist yet)

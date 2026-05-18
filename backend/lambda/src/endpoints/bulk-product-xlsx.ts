@@ -9,7 +9,7 @@
  *   O–Q  (15–17) Picture Information                  ← Image*, A+ Content, Size Chart
  *   R–T  (18–20) Other Product Details                ← Weight, Weight Unit, Shelf Life
  *   U–W  (21–23) Pricing Details                      ← SP*, MRP, COGS
- *   X–AH (24–34) Product Brief                        ← Pet Type, Category*, …, Tax*, …, HSN*, Cert
+ *   X–AH (24–34) Product Brief                        ← Pet Type, Category* (=IF(Grow="","",Grow) in new templates), …, Tax*, …, HSN*, Cert
  *   AI–AM(35–39) Manufacture Details
  *   AN–AP(40–42) Product Dimension                    ← Length/Breadth/Height (cm)
  *   AQ–AT(43–46) Shipping Dimensions + Casepack Vol.
@@ -93,6 +93,9 @@ const REQUIRED_COL_LETTERS = {
   HSN: 'AG',
   SP: 'U',
 } as const;
+
+/** 1-based column index for Category* — same letter as REQUIRED_COL_LETTERS.CATEGORY. */
+const BULK_TEMPLATE_CATEGORY_STAR_COL = BULK_TEMPLATE_COLUMN_HEADERS.indexOf('Category*') + 1;
 
 type Fill = ExcelJS.Fill;
 
@@ -307,20 +310,38 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
       c === 1 ? 52 : c === 3 || c === 4 ? 32 : c === 15 ? 40 : c === 2 ? 36 : 13;
   });
 
-  // Row 3 — single demo row
+  // Row 3 — single demo row. Category* mirrors Type (Category) via formula (rows 3–500).
+  const typeCatLetter = REQUIRED_COL_LETTERS.TYPE_CATEGORY;
+  const categoryMirrorFormula = (row: number) =>
+    `IF(${typeCatLetter}${row}="","",${typeCatLetter}${row})`;
+
   SAMPLE_ROW.forEach((v, i) => {
-    const cell = ws.getCell(3, i + 1);
+    const col = i + 1;
+    if (col === BULK_TEMPLATE_CATEGORY_STAR_COL) return;
+    const cell = ws.getCell(3, col);
     cell.value = v;
     cell.font = { size: 10 };
     cell.alignment = {
       vertical: 'top',
       horizontal: 'left',
-      wrapText: WRAP_COL_INDEXES.has(i + 1),
+      wrapText: WRAP_COL_INDEXES.has(col),
     };
     cell.border = THIN_BORDER as ExcelJS.Borders;
   });
+  const yDemo = ws.getCell(3, BULK_TEMPLATE_CATEGORY_STAR_COL);
+  yDemo.value = { formula: categoryMirrorFormula(3) };
+  yDemo.font = { size: 10 };
+  yDemo.alignment = { vertical: 'top', horizontal: 'left', wrapText: false };
+  yDemo.border = THIN_BORDER as ExcelJS.Borders;
 
-  // Dropdowns — letters track REQUIRED_COL_LETTERS.
+  for (let r = 4; r <= 500; r++) {
+    const c = ws.getCell(r, BULK_TEMPLATE_CATEGORY_STAR_COL);
+    c.value = { formula: categoryMirrorFormula(r) };
+    c.font = { size: 10 };
+    c.alignment = { vertical: 'top', horizontal: 'left', wrapText: false };
+  }
+
+  // Dropdowns — letters track REQUIRED_COL_LETTERS (unchanged; list on Y still works alongside formula).
   const { TYPE_CATEGORY, PET_TYPE, CATEGORY, TAX } = REQUIRED_COL_LETTERS;
   addInlineDropdown(ws, `${TYPE_CATEGORY}3:${TYPE_CATEGORY}500`, categories);
   addInlineDropdown(ws, `${CATEGORY}3:${CATEGORY}500`, categories);
@@ -436,9 +457,19 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   importedby: 'imported_by',
 };
 
-function cellText(cell: ExcelJS.Cell): string {
-  const v = cell.value;
+/**
+ * Reads display text from a stored cell value, including formula cached `result`
+ * when Excel saved the workbook after calculation.
+ */
+function cellValueToDisplayString(v: ExcelJS.CellValue): string {
   if (v === null || v === undefined) return '';
+  if (typeof v === 'object' && v !== null && 'formula' in v) {
+    const f = v as { result?: ExcelJS.CellValue };
+    if (f.result !== undefined && f.result !== null) {
+      return cellValueToDisplayString(f.result);
+    }
+    return '';
+  }
   if (typeof v === 'object' && v !== null && 'hyperlink' in v) {
     const h = v as ExcelJS.CellHyperlinkValue;
     return String(h.text ?? h.hyperlink ?? '');
@@ -452,6 +483,10 @@ function cellText(cell: ExcelJS.Cell): string {
   if (typeof v === 'boolean') return v ? 'true' : 'false';
   if (v instanceof Date) return v.toISOString();
   return String(v).trim();
+}
+
+function cellText(cell: ExcelJS.Cell): string {
+  return cellValueToDisplayString(cell.value as ExcelJS.CellValue);
 }
 
 /**

@@ -18,6 +18,11 @@ export interface HubVendorDiscoveryConfig {
   /** Fallback: /customer/vendors/search */
   fallbackVendorSearch?: { roleId: string; limit?: number };
   phoneQueryParam?: HubPhoneQueryParam;
+  /**
+   * When the hub is opened from a problem-grid tile, pass the tile's specialization id/slug
+   * here so both discover-services and by-style fallback receive the same filter.
+   */
+  specialization?: string;
 }
 
 export const HUB_DISCOVERY_GROOMING: HubVendorDiscoveryConfig = {
@@ -32,8 +37,8 @@ export const HUB_DISCOVERY_TRAINING: HubVendorDiscoveryConfig = {
   servicesApiCategory: 'training',
   serviceStyle: 'at_center',
   discoverCategory: 'training',
-  fallbackByStyle: { style: 'at_home', category: 'training' },
-  fallbackVendorSearch: { roleId: 'pet_trainer', limit: 50 },
+  fallbackByStyle: { style: 'at_center', category: 'training' },
+  fallbackVendorSearch: { roleId: 'trainer_center', limit: 50 },
 };
 
 export const HUB_DISCOVERY_VET: HubVendorDiscoveryConfig = {

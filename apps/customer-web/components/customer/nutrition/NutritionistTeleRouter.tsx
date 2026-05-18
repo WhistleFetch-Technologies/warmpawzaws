@@ -113,7 +113,7 @@ interface ModeSelectionProps {
 /** Nutritionist tele: scheduled only. Instant video calling is Vet-only. */
 function ModeSelection({ onSelectScheduled, onBack }: ModeSelectionProps) {
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto">
+    <div className="mx-auto min-h-screen w-full max-w-customer bg-[#FF8C42]">
       {/* Header - Consistent Design */}
       <div className="px-4 pt-12 pb-8">
         {/* Back Button */}
@@ -211,7 +211,7 @@ interface InstantProblemSelectionProps {
 
 function InstantProblemSelection({ onSelectProblem, onBack }: InstantProblemSelectionProps) {
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto">
+    <div className="mx-auto min-h-screen w-full max-w-customer bg-[#FF8C42]">
       {/* Header */}
       <div className="px-4 pt-12 pb-8">
         <button
@@ -270,7 +270,7 @@ interface InstantPetSelectionProps {
 
 function InstantPetSelection({ phone, selectedProblem, pets, loading, onSelectPet, onAddPet, onBack }: InstantPetSelectionProps) {
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto">
+    <div className="mx-auto min-h-screen w-full max-w-customer bg-[#FF8C42]">
       {/* Header */}
       <div className="px-4 pt-12 pb-8">
         <button

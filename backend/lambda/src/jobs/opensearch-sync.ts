@@ -143,7 +143,11 @@ async function fetchVendorServiceForSearchIndex(vendorServiceId: string): Promis
   const res = await query(
     `SELECT vs.*, v.business_name as vendor_name, v.owner_name, v.city, v.state,
             v.latitude as vendor_lat, v.longitude as vendor_lon, v.status as vendor_status,
-            v.specialization as vendor_specialization, v.is_active as vendor_is_active
+            v.specialization as vendor_specialization, v.is_active as vendor_is_active,
+            v.profile_image as vendor_profile_image,
+            v.address as vendor_address,
+            v.landmark as vendor_landmark,
+            v.pincode as vendor_pincode
      FROM vendor_services vs
      JOIN vendors v ON vs.vendor_id = v.id
      WHERE vs.id = $1::uuid
@@ -207,7 +211,12 @@ async function syncServices() {
   const services = await query(`
     SELECT vs.*, v.business_name as vendor_name, v.owner_name, v.city, v.state,
            v.latitude as vendor_lat, v.longitude as vendor_lon, v.status as vendor_status,
-           v.specialization as vendor_specialization, v.is_active as vendor_is_active
+           v.specialization as vendor_specialization, v.is_active as vendor_is_active,
+           v.profile_image as vendor_profile_image,
+           v.address as vendor_address,
+           v.landmark as vendor_landmark,
+           v.pincode as vendor_pincode,
+           (SELECT rn.name FROM roles rn WHERE rn.id = v.role_id LIMIT 1) AS vendor_role_name
     FROM vendor_services vs
     JOIN vendors v ON vs.vendor_id = v.id
     WHERE vs.publish_status = 'published'
@@ -243,7 +252,8 @@ async function syncVendors() {
   const vendors = await query(`
     SELECT 
       v.*,
-      r.service_styles
+      r.service_styles,
+      r.name AS role_name
     FROM vendors v
     LEFT JOIN roles r ON v.role_id = r.id
     WHERE v.status = 'active'
@@ -345,16 +355,35 @@ function transformForIndex(entity: string, data: any): Record<string, any> {
         data.description_text ||
         data.service_name ||
         '';
+      const categoryForSearch =
+        (typeof data.category === 'string' && data.category.trim() !== '')
+          ? data.category.trim()
+          : typeof data.vendor_role_name === 'string' && data.vendor_role_name.trim() !== ''
+            ? data.vendor_role_name.trim()
+            : undefined;
       return {
         id: data.id,
         service_name: data.service_name,
         name: data.service_name,
         description: desc,
-        category: data.category,
+        category: categoryForSearch,
         service_style: data.service_style,
         vendor_id: data.vendor_id,
         vendor_name: data.vendor_name || data.business_name,
         specialization: data.vendor_specialization || data.specialization || '',
+        /** Service listing image if present — customer cards prefer vendor profile when available */
+        image_url:
+          typeof data.image_url === 'string' && data.image_url.trim() !== ''
+            ? data.image_url
+            : typeof data.photo_url === 'string'
+              ? data.photo_url
+              : undefined,
+        vendor_profile_image: data.vendor_profile_image ?? null,
+        vendor_address: data.vendor_address ?? null,
+        vendor_landmark: data.vendor_landmark ?? null,
+        vendor_pincode: data.vendor_pincode ?? null,
+        vendor_latitude: data.vendor_lat != null ? parseFloat(String(data.vendor_lat)) : null,
+        vendor_longitude: data.vendor_lon != null ? parseFloat(String(data.vendor_lon)) : null,
         price: Number.isFinite(priceVal) ? priceVal : 0,
         duration: data.custom_duration ?? data.duration_minutes ?? data.duration ?? 30,
         rating: data.rating || 0,
@@ -380,10 +409,31 @@ function transformForIndex(entity: string, data: any): Record<string, any> {
         business_name: data.business_name,
         owner_name: data.owner_name,
         role_id: data.role_id,
+        role:
+          typeof data.role_name === 'string' && data.role_name.trim() !== ''
+            ? data.role_name.trim()
+            : undefined,
+        role_name:
+          typeof data.role_name === 'string' && data.role_name.trim() !== ''
+            ? data.role_name.trim()
+            : undefined,
+        /** Hub category filter: prefer vendors.category, else roles.name (parity with GET /search SQL). */
+        category: (() => {
+          if (typeof data.category === 'string' && data.category.trim() !== '') {
+            return data.category.trim();
+          }
+          if (typeof data.role_name === 'string' && data.role_name.trim() !== '') {
+            return data.role_name.trim();
+          }
+          return undefined;
+        })(),
         service_styles: parseJsonArray(data.service_styles),
         rating: data.rating || 0,
         total_reviews: data.total_reviews || 0,
+        profile_image: data.profile_image ?? data.photo_url ?? null,
         address: data.address,
+        landmark: data.landmark ?? null,
+        pincode: data.pincode ?? null,
         city: data.city,
         state: data.state,
         location: data.latitude && data.longitude
@@ -422,7 +472,7 @@ function transformForIndex(entity: string, data: any): Record<string, any> {
         category: data.category,
         vendor_id: data.vendor_id,
         price: data.price,
-        stock_quantity: data.stock_quantity,
+        stock_quantity: data.stock ?? data.stock_quantity ?? 0,
         rating: data.rating || 0,
         tags: parseJsonArray(data.tags),
         is_active: data.is_active,

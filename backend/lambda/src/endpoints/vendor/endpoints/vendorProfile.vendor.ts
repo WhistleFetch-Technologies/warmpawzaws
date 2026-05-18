@@ -29,9 +29,12 @@ import {
   resolveAndPersistVendorType,
   enrichVendorLocationFromOnboardingApplication,
   inferVendorKindFromServiceCategory,
+  appendVendorGeocodeToProfileUpdate,
+  persistVendorGeocodeIfNeeded,
   type VendorKind,
 } from './vendor-profile.vendor';
 import { geocodeVendorAddressFields } from '../../../utils/vendor-address-geocode';
+import { resolveVendorCoordinates } from '../../../lib/utils/vendor-coordinates';
 
 // Fields that require re-approval if changed
 const CRITICAL_FIELDS = [
@@ -1005,6 +1008,13 @@ export function registerVendorProfileEndpoints(app: Hono) {
           updateData[key] = value;
         }
       }
+
+      await appendVendorGeocodeToProfileUpdate({
+        vendor,
+        updateData,
+        rawUpdates: rawUpdates as Record<string, any>,
+        existingColumns,
+      });
       
       // Log skipped fields for debugging
       const skippedFields = Object.keys(updates).filter(k => !existingColumns.has(k) && safeColumns.includes(k));
@@ -1088,6 +1098,50 @@ export function registerVendorProfileEndpoints(app: Hono) {
             skippedFields: skippedFields
           }
         }, 400);
+      }
+
+      // Auto-geocode the new address whenever an address-side field changed
+      // and the caller did NOT provide an explicit lat/lng pair. This is the
+      // only way most vendors get coordinates onto their row — without it
+      // every distance computation on the customer side has to fall back
+      // to live geocoding (or shows nothing).
+      const addressFieldChanged = ['address', 'city', 'state', 'pincode'].some(
+        (f) =>
+          Object.prototype.hasOwnProperty.call(updateData, f) &&
+          updateData[f] !== vendor[f]
+      );
+      const explicitCoordsProvided =
+        Object.prototype.hasOwnProperty.call(updateData, 'latitude') ||
+        Object.prototype.hasOwnProperty.call(updateData, 'longitude');
+      if (addressFieldChanged && !explicitCoordsProvided) {
+        try {
+          const candidate = {
+            id: vendor.id,
+            address: updateData.address ?? vendor.address,
+            city: updateData.city ?? vendor.city,
+            state: updateData.state ?? vendor.state,
+            pincode: updateData.pincode ?? vendor.pincode,
+            latitude: undefined as unknown,
+            longitude: undefined as unknown,
+          };
+          const geocoded = await resolveVendorCoordinates(candidate, { persist: false });
+          if (geocoded) {
+            if (existingColumns.has('latitude')) updateData.latitude = geocoded.latitude;
+            if (existingColumns.has('longitude')) updateData.longitude = geocoded.longitude;
+            console.log(
+              `📍 [PROFILE-UPDATE] Auto-geocoded vendor ${vendor.id}: lat=${geocoded.latitude}, lng=${geocoded.longitude} (approximate=${geocoded.approximate})`
+            );
+          } else {
+            console.warn(
+              `📍 [PROFILE-UPDATE] Could not geocode address change for vendor ${vendor.id}. Distance will fall back to live geocode.`
+            );
+          }
+        } catch (gErr: any) {
+          console.warn(
+            '[PROFILE-UPDATE] Auto-geocode failed (non-fatal):',
+            gErr?.message || gErr
+          );
+        }
       }
 
       // If critical fields changed and vendor was approved, require re-approval
@@ -1328,6 +1382,7 @@ export function registerVendorProfileEndpoints(app: Hono) {
 
       // ✅ Align with vendor-profile.vendor: location backfill, persist vendor_type, parse roles.config JSON string
       vendor = await enrichVendorLocationFromOnboardingApplication(vendor);
+      vendor = await persistVendorGeocodeIfNeeded(vendor);
       const resolvedVt = await resolveAndPersistVendorType(vendor);
       vendor = { ...vendor, vendor_type: resolvedVt };
       

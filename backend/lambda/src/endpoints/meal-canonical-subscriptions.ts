@@ -7,7 +7,6 @@ import { Hono } from 'hono';
 import {
   createCanonicalSubscription,
   findSubscriptionByClientRequestKey,
-  getCanonicalSubscriptionForCustomer,
   listCanonicalDeliveriesForCustomer,
   runRollingSessionGenerationJob,
   type CreateCanonicalSubscriptionInput,
@@ -15,10 +14,14 @@ import {
 } from '../services/meal-subscription/meal-subscription-canonical-service';
 import {
   activateCanonicalSubscriptionAfterPayment,
+  applyWalletDebitToPendingMealSubscription,
+  enrichSubscriptionRowsWithPresignedMealImages,
+  getCanonicalSubscriptionDetailForCustomer,
   listCanonicalSubscriptionsForCustomer,
   pauseCanonicalSubscription,
   rescheduleCanonicalDeliverySession,
   resumeCanonicalSubscription,
+  setMealSubscriptionCheckoutRazorpayOrder,
   skipCanonicalDeliverySession,
   type MealSubscriptionLifecycleFilter,
 } from '../services/meal-subscription/meal-subscription-operations-service';
@@ -157,6 +160,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
     }
     const lifecycle = (c.req.query('lifecycle') || 'all') as MealSubscriptionLifecycleFilter;
     const rows = await listCanonicalSubscriptionsForCustomer(customerId, lifecycle);
+    await enrichSubscriptionRowsWithPresignedMealImages(rows);
     return c.json({ success: true, subscriptions: rows });
   });
 
@@ -169,7 +173,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
     if (!customerId) {
       return c.json({ success: false, error: 'customerId query parameter is required' }, 400);
     }
-    const row = await getCanonicalSubscriptionForCustomer(id, customerId);
+    const row = await getCanonicalSubscriptionDetailForCustomer(id, customerId);
     if (!row) {
       return c.json({ success: false, error: 'Subscription not found' }, 404);
     }
@@ -195,6 +199,63 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
       limit: Math.min(Math.max(limit, 1), 100),
       offset: Math.max(offset, 0),
     });
+  });
+
+  /**
+   * POST /meal/subscriptions/:id/wallet-debit
+   * Apply wallet balance toward pending initial payment (idempotent).
+   */
+  app.post('/meal/subscriptions/:id/wallet-debit', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const body = await parseJsonBody<Record<string, unknown>>(c);
+      const customerId = String(body.customerId || '').trim();
+      const amountInRupees = Number(body.amountInRupees);
+      const idempotencyKey = String(body.idempotencyKey || '').trim();
+      if (!customerId) {
+        return c.json({ success: false, error: 'customerId is required' }, 400);
+      }
+      if (!idempotencyKey) {
+        return c.json({ success: false, error: 'idempotencyKey is required' }, 400);
+      }
+      const result = await applyWalletDebitToPendingMealSubscription(id, customerId, amountInRupees, idempotencyKey);
+      if (!result.success) {
+        return c.json({ success: false, error: result.error || 'Wallet debit failed' }, 400);
+      }
+      return c.json({
+        success: true,
+        debited: result.debited,
+        remainderInRupees: result.remainderInRupees,
+        balanceAfter: result.balanceAfter,
+      });
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      return c.json({ success: false, error: err.message || 'Wallet debit failed' }, 500);
+    }
+  });
+
+  /**
+   * POST /meal/subscriptions/:id/checkout-order
+   * Attach Razorpay order id to pending initial payment (after split with wallet).
+   */
+  app.post('/meal/subscriptions/:id/checkout-order', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const body = await parseJsonBody<Record<string, unknown>>(c);
+      const customerId = String(body.customerId || '').trim();
+      const razorpayOrderId = String(body.razorpayOrderId || '').trim();
+      if (!customerId || !razorpayOrderId) {
+        return c.json({ success: false, error: 'customerId and razorpayOrderId are required' }, 400);
+      }
+      const ok = await setMealSubscriptionCheckoutRazorpayOrder(id, customerId, razorpayOrderId);
+      if (!ok) {
+        return c.json({ success: false, error: 'Could not attach order (check subscription state)' }, 400);
+      }
+      return c.json({ success: true });
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      return c.json({ success: false, error: err.message || 'Failed' }, 500);
+    }
   });
 
   /**

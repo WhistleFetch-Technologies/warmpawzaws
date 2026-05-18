@@ -48,16 +48,18 @@ export interface UseDiscoveryCountParams {
   serviceStyle: string;
   category?: string;
   roleId?: string;
+  /** When coming from a problem-grid tile, pass the tile specialization so the count matches the listing. */
+  specialization?: string;
   enabled?: boolean;
 }
 
 export function useDiscoveryCount(params: UseDiscoveryCountParams) {
-  const { phone, serviceStyle, category, roleId, enabled = true } = params;
+  const { phone, serviceStyle, category, roleId, specialization, enabled = true } = params;
 
   const effectivePhone = resolveCustomerDiscoveryPhone(phone);
 
   return useQuery({
-    queryKey: ['discovery-count', effectivePhone, serviceStyle, category ?? '', roleId ?? ''],
+    queryKey: ['discovery-count', effectivePhone, serviceStyle, category ?? '', roleId ?? '', specialization ?? ''],
     enabled: enabled !== false && Boolean(serviceStyle?.trim?.()),
     staleTime: 60_000,
     retry: 2,
@@ -67,6 +69,7 @@ export function useDiscoveryCount(params: UseDiscoveryCountParams) {
       qp.set('serviceStyle', serviceStyle);
       if (category) qp.set('category', category);
       if (roleId) qp.set('roleId', roleId);
+      if (specialization) qp.set('specialization', specialization);
       if (latitude && longitude) {
         qp.set('latitude', latitude);
         qp.set('longitude', longitude);

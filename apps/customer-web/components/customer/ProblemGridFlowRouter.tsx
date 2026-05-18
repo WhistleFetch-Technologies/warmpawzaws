@@ -11,14 +11,15 @@
  * - Routes to appropriate service discovery with pre-applied filters
  * - Maintains context through the entire booking flow
  *
- * Discovery lists vendors (grouped from /customer/services/by-problem); each
- * vendor expands inline to show services, then BookingFlow (vet-clinic style).
+ * Discovery delegates to the same Services hub components and GET /customer/services/by-style
+ * (ClinicListView, VetServicesByStyle, GroomingServicesByStyle, UniversalServicesByStyle) with
+ * specialization + customer coordinates aligned to localStorage.
  *
- * Date: 2026-01-20
+ * Date: 2026-05-13
  * ============================================================================
  */
 
-import React, { useState, useEffect, useMemo, useRef, type MouseEvent } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Home,
   Building2,
@@ -26,42 +27,40 @@ import {
   ArrowLeft,
   ArrowRight,
   Loader2,
-  MapPin,
-  Calendar,
-  Filter,
   Clock,
-  ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
-import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
-import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
-import { sanitizeDisplayImageUrl, pickVendorPhotoFromRow } from '@/lib/resolve-display-image-url';
-import { BookingFlow } from './BookingFlow';
-import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
-import {
-  groupByProblemRowsByVendor,
-  type ByProblemServiceRow,
-  type VendorGroupFromProblem,
-} from '@/lib/group-by-problem-vendors';
-import { StarRating } from '@/components/customer/shared/StarRating';
 import { toast } from 'sonner';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
+import { ClinicListView } from './vet/ClinicListView';
+import { VetServicesByStyle } from './vet/VetServicesByStyle';
+import { GroomingServicesByStyle } from './grooming/GroomingServicesByStyle';
+import { UniversalServicesByStyle } from './shared/UniversalServicesByStyle';
+import type { RoleId, ServiceStyle as HubServiceStyle } from './shared/roleConfig';
+import { BOARDING_NEEDS, NUTRITIONIST_NEEDS, WALKING_NEEDS } from './ProblemGridSection';
 
-function serviceCardThumbUrl(row: ByProblemServiceRow): string | undefined {
-  const fromService = sanitizeDisplayImageUrl((row as { serviceImageUrl?: string | null }).serviceImageUrl);
-  if (fromService) return fromService;
-  return pickVendorPhotoFromRow(row as Record<string, unknown>);
-}
+// ============================================================================
+// TYPES (used by discovery helpers below)
+// ============================================================================
 
-function serviceTitleInitial(title: string): string {
-  const t = title.trim();
-  if (!t) return '?';
-  const ch = t.charAt(0);
-  return /[a-zA-Z0-9]/.test(ch) ? ch.toUpperCase() : t.slice(0, 1);
+type ServiceStyle = 'at_home' | 'at_center' | 'tele';
+
+interface ProblemGridItem {
+  id: string;
+  name: string;
+  icon: string;
+  description?: string;
+  allowedServiceStyles?: ServiceStyle[];
+  linkedServiceRoles: string[];
+  specializations?: string[];
+  category: string;
+  popular?: boolean;
+  roleId?: string;
 }
 
 function isGroomingProblem(problem: ProblemGridItem | null): boolean {
@@ -92,74 +91,96 @@ function isVetProblem(problem: ProblemGridItem | null): boolean {
   return roleHints.some((v) => v.includes('vet') || v.includes('veterinar'));
 }
 
-function normalizeVendorType(row: ByProblemServiceRow): string {
-  const raw = (row as any).vendorType ?? (row as any).vendor_type ?? (row as any).providerType ?? '';
-  return String(raw).trim().toLowerCase();
+function tileIdsExceptViewAll(rows: { id: string }[]): Set<string> {
+  return new Set(rows.filter((r) => r.id !== 'view_all').map((r) => r.id));
 }
 
-function isSoloVendor(row: ByProblemServiceRow): boolean {
-  const t = normalizeVendorType(row);
-  return t === 'solo' || t === 'individual' || t === 'freelancer' || t === 'personal';
+const NUTRITION_TILE_IDS = tileIdsExceptViewAll(NUTRITIONIST_NEEDS);
+const WALKING_TILE_IDS = tileIdsExceptViewAll(WALKING_NEEDS);
+const BOARDING_TILE_IDS = tileIdsExceptViewAll(BOARDING_NEEDS);
+
+function isNutritionProblem(problem: ProblemGridItem | null): boolean {
+  if (!problem) return false;
+  const cat = String(problem.category || '').toLowerCase();
+  if (cat === 'nutrition' || cat === 'wellness') return true;
+  const hub = String(problem.roleId || '').toLowerCase();
+  if (hub.includes('nutrition') || hub === 'pet_nutritionist') return true;
+  if (NUTRITION_TILE_IDS.has(problem.id)) return true;
+  const roles = (problem.linkedServiceRoles || []).map((r) => String(r).toLowerCase());
+  return roles.some((r) => r.includes('nutrition'));
 }
 
-function isBusinessVendor(row: ByProblemServiceRow): boolean {
-  const t = normalizeVendorType(row);
-  return t === 'business' || t === 'company' || t === 'enterprise' || t === 'clinic' || t === 'center';
+function isWalkerProblem(problem: ProblemGridItem | null): boolean {
+  if (!problem) return false;
+  const cat = String(problem.category || '').toLowerCase();
+  if (cat === 'walker' || cat === 'walking') return true;
+  const hub = String(problem.roleId || '').toLowerCase();
+  if (['walker', 'pet_walker', 'dog_walker', 'walker_solo'].includes(hub)) return true;
+  if (WALKING_TILE_IDS.has(problem.id)) return true;
+  const roles = (problem.linkedServiceRoles || []).map((r) => String(r).toLowerCase());
+  const walkSlugs = new Set(['walker', 'walking', 'pet_walker', 'dog_walker', 'walker_solo', 'dog_walking']);
+  return roles.some((r) => walkSlugs.has(r));
 }
 
-/** Category / service-type label for bottom row (matches vet clinic cards) */
-function pickServiceCategoryLabel(row: ByProblemServiceRow, problemName?: string | null): string {
-  const x = row as Record<string, unknown>;
-  const cat = x.category ?? x.category_name ?? x.categoryName;
-  if (typeof cat === 'string' && cat.trim()) return cat.trim();
-  const rn = x.roleName ?? x.role_name;
-  if (typeof rn === 'string' && rn.trim()) {
-    return rn
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase());
-  }
-  if (problemName?.trim()) return problemName.trim();
-  return 'Service';
+function isBoardingProblem(problem: ProblemGridItem | null): boolean {
+  if (!problem) return false;
+  const cat = String(problem.category || '').toLowerCase();
+  if (cat === 'boarding') return true;
+  const hub = String(problem.roleId || '').toLowerCase();
+  if (hub.includes('board')) return true;
+  if (BOARDING_TILE_IDS.has(problem.id)) return true;
+  const roles = (problem.linkedServiceRoles || []).map((r) => String(r).toLowerCase());
+  return roles.some((r) => r.includes('board'));
 }
 
-// ============================================================================
-// TYPES
-// ============================================================================
+type ProblemDiscoveryKind =
+  | 'vet_at_center'
+  | 'vet_other'
+  | 'groomer'
+  | 'trainer'
+  | 'behavior'
+  | 'nutrition'
+  | 'walker'
+  | 'boarding';
 
-interface ProblemGridItem {
-  id: string;
-  name: string;
-  icon: string;
-  description?: string;
-  allowedServiceStyles?: ServiceStyle[];
-  linkedServiceRoles: string[];
-  specializations?: string[];
-  category: string;
-  popular?: boolean;
-  roleId?: string;
-}
+function pickProblemDiscoveryKind(
+  problem: ProblemGridItem | null,
+  serviceStyle: ServiceStyle | null
+): ProblemDiscoveryKind | null {
+  if (!problem || !serviceStyle) return null;
+  const hubRole = String(problem.roleId || '').toLowerCase();
+  const cat = String(problem.category || '').toLowerCase();
+  const allSlugs = [...(problem.linkedServiceRoles || []), problem.roleId].filter(Boolean).map((s) =>
+    String(s).toLowerCase()
+  );
+  const categoryIsBehavior = cat === 'behavioral' || cat === 'behavior' || cat === 'sub_behavior';
+  const openedFromTrainerHub =
+    hubRole === 'trainer' || hubRole === 'training' || (hubRole === 'pet_trainer' && !categoryIsBehavior);
+  const openedFromBehaviorHub = hubRole === 'behaviorist' || hubRole === 'behaviourist';
+  const anySlugMatchesBehavior = allSlugs.some((r) =>
+    /behav|behaviorist|behaviourist|pet_behavior|behaviorist_solo|behaviorist_center/.test(r)
+  );
+  const behavioralTileIds = new Set([
+    'barking',
+    'destructive',
+    'fear_phobia',
+    'resource_guarding',
+    'separation_anxiety',
+    'separation',
+  ]);
+  const problemTileId = String(problem.id || '').toLowerCase();
+  const looksBehavioral =
+    openedFromBehaviorHub ||
+    (!openedFromTrainerHub &&
+      (behavioralTileIds.has(problemTileId) || categoryIsBehavior || anySlugMatchesBehavior));
 
-type ServiceStyle = 'at_home' | 'at_center' | 'tele';
-
-/** Minimal shape kept for BookingFlow handoff */
-interface ServiceProvider {
-  id: string;
-  type: 'vendor' | 'staff';
-  vendorId: string;
-  name: string;
-  photo?: string;
-  rating: number;
-  reviewCount: number;
-  experience?: string;
-  specializations: string[];
-  distance: number;
-  distanceFormatted: string;
-  nextAvailable?: string;
-  price: number;
-  priceFormatted: string;
-  serviceId: string;
-  serviceName: string;
-  isInstantAvailable?: boolean;
+  if (looksBehavioral) return 'behavior';
+  if (isGroomingProblem(problem)) return 'groomer';
+  if (isVetProblem(problem)) return serviceStyle === 'at_center' ? 'vet_at_center' : 'vet_other';
+  if (isNutritionProblem(problem)) return 'nutrition';
+  if (isWalkerProblem(problem)) return 'walker';
+  if (isBoardingProblem(problem)) return 'boarding';
+  return 'trainer';
 }
 
 export type VendorProfileFromProblemContext = {
@@ -175,12 +196,12 @@ export type VendorProfileFromProblemContext = {
 
 interface ProblemGridFlowRouterProps {
   initialProblem?: ProblemGridItem;
+  /** Optional; discovery uses localStorage + profile/GPS via {@link resolveCustomerDiscoveryCoords}. */
   location?: { lat: number; lng: number };
   customerId?: string;
   onClose?: () => void;
-  onBookingComplete?: (bookingId: string) => void;
-  /** Chevron opens vendor/center profile in the parent app (e.g. vet clinic profile). If omitted, chevron toggles expand. */
-  onVendorProfile?: (ctx: VendorProfileFromProblemContext) => void;
+  /** Routes booking/profile/package flows from embedded Services lists (vet, grooming, training, behavior). */
+  onDiscoveryNavigate: (screen: string, data?: any) => void;
 }
 
 // ============================================================================
@@ -224,53 +245,19 @@ const SERVICE_STYLE_CONFIG: Record<
 // FLOW STEPS
 // ============================================================================
 
-type FlowStep = 'service-style' | 'discovery' | 'booking' | 'confirmation';
-
-function rowToServiceProvider(row: ByProblemServiceRow): ServiceProvider {
-  const serviceId = String(row.serviceId || row.service_id || '');
-  const vid = String(row.vendorId || row.vendor_id || '');
-  const price = typeof row.price === 'number' ? row.price : parseFloat(String(row.price || 0)) || 0;
-  const dist = row.distance != null && row.distance !== '' ? Number(row.distance) : NaN;
-  return {
-    id: String(row.id || `${vid}_${serviceId}`),
-    type: 'vendor',
-    vendorId: vid,
-    name: String(row.vendorName || row.vendor_name || 'Provider'),
-    photo: row.photo || row.photoUrl,
-    rating: Number(row.rating ?? row.vendorRating ?? 0),
-    reviewCount: Number(row.reviewCount ?? row.vendorReviews ?? 0),
-    specializations: Array.isArray(row.specializations) ? row.specializations : [],
-    distance: Number.isFinite(dist) ? dist : 0,
-    distanceFormatted: row.distanceFormatted || 'N/A',
-    nextAvailable: row.nextAvailable,
-    price,
-    priceFormatted: row.priceFormatted || `₹${price.toLocaleString('en-IN')}`,
-    serviceId,
-    serviceName: String(row.serviceName || row.name || 'Service'),
-    isInstantAvailable: row.isInstantAvailable,
-  };
-}
-
-// ============================================================================
-// COMPONENT
-// ============================================================================
+type FlowStep = 'service-style' | 'discovery';
 
 export function ProblemGridFlowRouter({
   initialProblem,
-  location,
   customerId,
   onClose,
-  onBookingComplete,
-  onVendorProfile,
+  onDiscoveryNavigate,
 }: ProblemGridFlowRouterProps) {
   const [currentStep, setCurrentStep] = useState<FlowStep>('service-style');
   const [selectedProblem, setSelectedProblem] = useState<ProblemGridItem | null>(initialProblem || null);
   const [selectedServiceStyle, setSelectedServiceStyle] = useState<ServiceStyle | null>(null);
-  const [selectedProvider, setSelectedProvider] = useState<ServiceProvider | null>(null);
-  /** Which vendor row is expanded to show inline services (discovery step only) */
-  const [expandedVendorId, setExpandedVendorId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [loadingProblemDetails, setLoadingProblemDetails] = useState(false);
+  const [discoveryListKey, setDiscoveryListKey] = useState(0);
 
   const emergencyBounceRef = useRef<string | null>(null);
   useEffect(() => {
@@ -282,9 +269,7 @@ export function ProblemGridFlowRouter({
     toast.info('Emergency care is coming soon on the app.');
     onClose?.();
   }, [initialProblem?.id, initialProblem?.name, onClose]);
-  /** Flat rows from by-problem (one per vendor_service) */
-  const [flatRows, setFlatRows] = useState<ByProblemServiceRow[]>([]);
-  const [isInstantMode, setIsInstantMode] = useState(false);
+
   const [allowedServiceStyles, setAllowedServiceStyles] = useState<ServiceStyle[]>(() => {
     if (!initialProblem) {
       return sanitizeCustomerAllowedServiceStyles([], { roleId: 'veterinarian' }) as ServiceStyle[];
@@ -309,13 +294,6 @@ export function ProblemGridFlowRouter({
     ? (['at_home', 'at_center'] as ServiceStyle[])
     : normalizedAvailableStyles;
   const hasTeleOption = availableStyles.includes('tele');
-
-  const vendorsGrouped = useMemo(() => groupByProblemRowsByVendor(flatRows), [flatRows]);
-
-  const visibleVendors = useMemo(() => {
-    if (!isInstantMode) return vendorsGrouped;
-    return vendorsGrouped.filter((v) => v.isInstantAvailable);
-  }, [vendorsGrouped, isInstantMode]);
 
   useEffect(() => {
     if (selectedProblem?.id) {
@@ -381,103 +359,43 @@ export function ProblemGridFlowRouter({
   };
 
   useEffect(() => {
-    if (selectedServiceStyle && selectedProblem) {
-      fetchProviders();
-    }
-  }, [selectedServiceStyle, selectedProblem]);
-
-  const fetchProviders = async () => {
-    if (!selectedProblem || !selectedServiceStyle) return;
-
-    if (!availableStyles.includes(selectedServiceStyle)) {
-      console.warn(`Service style ${selectedServiceStyle} is not allowed for problem ${selectedProblem.id}`);
-      setFlatRows([]);
-      return;
-    }
-
-    setLoading(true);
-    setExpandedVendorId(null);
-    try {
-      const byProblemParams = new URLSearchParams({
-        problemId: selectedProblem.id,
-        serviceStyle: selectedServiceStyle,
-        ...(location && {
-          lat: location.lat.toString(),
-          lng: location.lng.toString(),
-        }),
-      });
-      const res = await apiClient.get<any>(`/customer/services/by-problem?${byProblemParams}`);
-
-      if (res.success) {
-        let rows: ByProblemServiceRow[] = res.providers || res.services || [];
-
-        if (selectedServiceStyle === 'at_center') {
-          rows = rows.filter((p: any) => {
-            const style = p.serviceStyle || p.service_style;
-            return style === 'at_center' || style === 'at_vendor' || style === 'at_clinic';
-          });
-          if (groomingOnlyHomeAndCenter) {
-            rows = rows.filter((p: ByProblemServiceRow) => !isSoloVendor(p) || isBusinessVendor(p));
-          }
-        } else if (selectedServiceStyle === 'at_home') {
-          rows = rows.filter((p: any) => {
-            const style = p.serviceStyle || p.service_style;
-            return style === 'at_home' || style === 'home_visit';
-          });
-        } else if (selectedServiceStyle === 'tele') {
-          rows = rows.filter((p: any) => {
-            const style = p.serviceStyle || p.service_style;
-            return style === 'tele' || style === 'online' || style === 'video_consultation';
-          });
-        }
-
-        setFlatRows(rows);
-      } else {
-        setFlatRows([]);
+    if (currentStep !== 'discovery' || !selectedServiceStyle) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (typeof localStorage === 'undefined') return;
+        const lat = localStorage.getItem('customer_latitude');
+        const lng = localStorage.getItem('customer_longitude');
+        if (lat && lng) return;
+        const { latitude, longitude } = await resolveCustomerDiscoveryCoords(customerId);
+        if (cancelled || !latitude || !longitude) return;
+        localStorage.setItem('customer_latitude', latitude);
+        localStorage.setItem('customer_longitude', longitude);
+        setDiscoveryListKey((k) => k + 1);
+      } catch {
+        /* ignore */
       }
-    } catch (error: any) {
-      console.error('Error fetching providers:', error);
-      setFlatRows([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentStep, selectedServiceStyle, customerId]);
 
   const handleServiceStyleSelect = (style: ServiceStyle) => {
     setSelectedServiceStyle(style);
     setCurrentStep('discovery');
   };
 
-  const toggleVendorExpanded = (vendor: VendorGroupFromProblem) => {
-    setExpandedVendorId((prev) => (prev === vendor.vendorId ? null : vendor.vendorId));
-  };
-
-  const handleServiceRowSelect = (row: ByProblemServiceRow) => {
-    setSelectedProvider(rowToServiceProvider(row));
-    setCurrentStep('booking');
-  };
-
-  const handleBookingComplete = (bookingId: string) => {
-    setCurrentStep('confirmation');
-    onBookingComplete?.(bookingId);
+  const goBackFromDiscovery = () => {
+    setCurrentStep('service-style');
+    setSelectedServiceStyle(null);
   };
 
   const goBack = () => {
     switch (currentStep) {
       case 'discovery':
-        setCurrentStep('service-style');
-        setSelectedServiceStyle(null);
-        setFlatRows([]);
-        setExpandedVendorId(null);
-        setIsInstantMode(false);
+        goBackFromDiscovery();
         break;
-      case 'booking': {
-        const reopenVendorId = selectedProvider?.vendorId ?? null;
-        setCurrentStep('discovery');
-        setSelectedProvider(null);
-        if (reopenVendorId) setExpandedVendorId(reopenVendorId);
-        break;
-      }
       case 'service-style':
         setAllowedServiceStyles(
           sanitizeCustomerAllowedServiceStyles([], {
@@ -491,6 +409,158 @@ export function ProblemGridFlowRouter({
       default:
         onClose?.();
     }
+  };
+
+  const renderDiscovery = () => {
+    if (!selectedProblem || !selectedServiceStyle) return null;
+
+    const kind = pickProblemDiscoveryKind(selectedProblem, selectedServiceStyle) ?? 'trainer';
+    const specId = selectedProblem.id;
+    console.log(`🔵 [ProblemGridFlowRouter] renderDiscovery: kind=${kind} style=${selectedServiceStyle} specId=${specId} problemId=${selectedProblem.id}`);
+    const hubStyle = selectedServiceStyle as HubServiceStyle;
+    const profileBack = 'problem_grid_flow';
+    const key = `${kind}-${selectedServiceStyle}-${specId}-${discoveryListKey}`;
+    const phone = customerId || '';
+
+    if (kind === 'vet_at_center') {
+      return (
+        <div key={key} className="mx-auto w-full max-w-customer">
+          <ClinicListView
+            phone={phone}
+            specialization={specId}
+            vetStyleProfileReturnScreen="problem_grid_flow"
+            onBack={goBackFromDiscovery}
+            onNavigate={onDiscoveryNavigate}
+          />
+        </div>
+      );
+    }
+
+    if (kind === 'vet_other') {
+      return (
+        <div key={key} className="mx-auto w-full max-w-customer">
+          <VetServicesByStyle
+            phone={phone}
+            serviceStyle={selectedServiceStyle}
+            serviceTypeName={selectedProblem.name}
+            category="vet"
+            specialization={specId}
+            discoveryProfileBackScreen={profileBack}
+            onBack={goBackFromDiscovery}
+            onNavigate={onDiscoveryNavigate}
+          />
+        </div>
+      );
+    }
+
+    if (kind === 'groomer') {
+      return (
+        <div key={key} className="mx-auto w-full max-w-customer">
+          <GroomingServicesByStyle
+            phone={phone}
+            serviceStyle={selectedServiceStyle}
+            serviceTypeName={selectedServiceStyle === 'at_center' ? 'Grooming Center' : 'At Home Grooming'}
+            category="grooming"
+            specialization={specId}
+            onBack={goBackFromDiscovery}
+            onNavigate={onDiscoveryNavigate}
+          />
+        </div>
+      );
+    }
+
+    if (kind === 'behavior') {
+      return (
+        <div key={key} className="mx-auto w-full max-w-customer">
+          <UniversalServicesByStyle
+            phone={phone}
+            roleId={'behaviorist' as RoleId}
+            serviceStyle={hubStyle}
+            serviceTypeName={selectedProblem.name}
+            category="behaviourist"
+            specialization={specId}
+            profileBackScreen={profileBack}
+            bookingScreen="training-booking"
+            onBack={goBackFromDiscovery}
+            onNavigate={onDiscoveryNavigate}
+          />
+        </div>
+      );
+    }
+
+    if (kind === 'nutrition') {
+      return (
+        <div key={key} className="mx-auto w-full max-w-customer">
+          <UniversalServicesByStyle
+            phone={phone}
+            roleId={'nutritionist' as RoleId}
+            serviceStyle={hubStyle}
+            serviceTypeName={selectedProblem.name}
+            category="nutrition"
+            specialization={specId}
+            profileBackScreen={profileBack}
+            bookingScreen="nutritionist-booking"
+            onBack={goBackFromDiscovery}
+            onNavigate={onDiscoveryNavigate}
+          />
+        </div>
+      );
+    }
+
+    if (kind === 'walker') {
+      return (
+        <div key={key} className="mx-auto w-full max-w-customer">
+          <UniversalServicesByStyle
+            phone={phone}
+            roleId={'walker' as RoleId}
+            serviceStyle={hubStyle}
+            serviceTypeName={selectedProblem.name}
+            category="walker"
+            specialization={specId}
+            profileBackScreen={profileBack}
+            bookingScreen="walker-booking"
+            onBack={goBackFromDiscovery}
+            onNavigate={onDiscoveryNavigate}
+          />
+        </div>
+      );
+    }
+
+    if (kind === 'boarding') {
+      return (
+        <div key={key} className="mx-auto w-full max-w-customer">
+          <UniversalServicesByStyle
+            phone={phone}
+            roleId={'boarding' as RoleId}
+            serviceStyle={hubStyle}
+            serviceTypeName={selectedProblem.name}
+            category="boarding"
+            specialization={specId}
+            profileBackScreen={profileBack}
+            bookingScreen="boarding-booking"
+            onBack={goBackFromDiscovery}
+            onNavigate={onDiscoveryNavigate}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div key={key} className="mx-auto w-full max-w-customer">
+        <UniversalServicesByStyle
+          phone={phone}
+          roleId={'trainer' as RoleId}
+          serviceStyle={hubStyle}
+          serviceTypeName={selectedProblem.name}
+          category="training"
+          specialization={specId}
+          profileBackScreen={profileBack}
+          bookingScreen="training-booking"
+          onBack={goBackFromDiscovery}
+          onNavigate={onDiscoveryNavigate}
+        />
+      </div>
+    );
   };
 
   const renderServiceStyleSelection = () => (
@@ -573,7 +643,6 @@ export function ProblemGridFlowRouter({
               className="bg-white text-purple-600 hover:bg-purple-50"
               onClick={() => {
                 setSelectedServiceStyle('tele');
-                setIsInstantMode(true);
                 setCurrentStep('discovery');
               }}
             >
@@ -601,379 +670,21 @@ export function ProblemGridFlowRouter({
     </div>
   );
 
-  const renderVendorServiceRows = (v: VendorGroupFromProblem) => (
-    <div className="space-y-3">
-      {v.rows.map((row, idx) => {
-        const serviceId = String(row.serviceId || row.service_id || idx);
-        const title = String(row.serviceName || row.name || 'Service');
-        const price = typeof row.price === 'number' ? row.price : parseFloat(String(row.price || 0)) || 0;
-        const duration = Number(row.duration) || 0;
-        const desc = (row.description && String(row.description).trim()) || '';
-        const descTrim = desc.trim();
-        const nameTrim = title.trim();
-        const showDesc = descTrim.length > 0 && descTrim !== nameTrim;
-        const thumb = serviceCardThumbUrl(row);
-        const categoryLabel = pickServiceCategoryLabel(row, selectedProblem?.name);
-        const distFmt = row.distanceFormatted?.trim();
-        const showDistance =
-          selectedServiceStyle !== 'tele' && distFmt && distFmt !== 'N/A';
-
-        return (
-          <div
-            key={`${v.vendorId}-${serviceId}-${idx}`}
-            role="button"
-            tabIndex={0}
-            onClick={() => handleServiceRowSelect(row)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handleServiceRowSelect(row);
-              }
-            }}
-            className="cursor-pointer rounded-xl border border-gray-100 bg-white shadow-sm transition hover:border-[#FF8C42] hover:shadow-md"
-          >
-            <div className="flex items-stretch gap-3 p-4">
-              <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                {thumb ? (
-                  <img src={thumb} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#FF8C42] to-[#FF7029] text-white">
-                    <span className="text-xl font-bold">{serviceTitleInitial(title)}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Price + CTA on the right; left = title, desc, metadata only (avoids horizontal overflow) */}
-              <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
-                <div className="min-w-0 flex-1 pr-1">
-                  <h3 className="font-medium text-gray-900 leading-snug break-words">{title}</h3>
-                  <div className="mt-1">
-                    {showDesc ? (
-                      <div onClick={(e) => e.stopPropagation()}>
-                        <ServiceDescriptionInline
-                          description={descTrim}
-                          title={title}
-                          className="m-0 mt-1 text-sm leading-5 text-gray-500"
-                          dialogHint="Full service description (from your provider)"
-                        />
-                      </div>
-                    ) : (
-                      <p className="text-gray-400 text-sm mt-1 line-clamp-2 italic">
-                        Professional care — tap Book Now to continue.
-                      </p>
-                    )}
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="text-xs shrink-0">
-                      <Clock className="w-3 h-3 mr-1" />
-                      {duration > 0 ? `${duration} mins` : 'Duration on request'}
-                    </Badge>
-                    {showDistance && (
-                      <span className="flex items-center gap-1 text-xs text-gray-600 shrink-0">
-                        <MapPin className="h-3.5 w-3.5 text-gray-400" aria-hidden />
-                        {distFmt}
-                      </span>
-                    )}
-                    <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
-                      {categoryLabel}
-                    </Badge>
-                  </div>
-                </div>
-                <div className="flex shrink-0 flex-col items-end text-right ml-1 min-w-[6.5rem]">
-                  <div className="text-lg font-bold text-[#FF8C42] mb-2 tabular-nums">
-                    {formatPriceWithSymbol(price)}
-                  </div>
-                  {isVetProblem(selectedProblem) && (
-                    <p className="mb-2 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                  )}
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="bg-[#FF8C42] hover:bg-[#E67A35] text-white w-full sm:w-auto"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleServiceRowSelect(row);
-                    }}
-                  >
-                    Book Now
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-
-  const renderDiscovery = () => (
-    <div className="space-y-4">
-      <div className="flex min-w-0 items-center gap-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={goBack}
-          className="relative z-10 h-11 min-h-[44px] min-w-[44px] shrink-0 p-0 touch-manipulation"
-          aria-label="Go back"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2 className="truncate text-lg font-bold text-gray-900">{selectedProblem?.name}</h2>
-            {selectedServiceStyle && (
-              <Badge
-                className={`${SERVICE_STYLE_CONFIG[selectedServiceStyle].bgColor} ${SERVICE_STYLE_CONFIG[selectedServiceStyle].color}`}
-              >
-                {SERVICE_STYLE_CONFIG[selectedServiceStyle].label}
-              </Badge>
-            )}
-          </div>
-          <p className="text-sm text-gray-500">
-            {isInstantMode ? 'Instantly available providers' : 'Select a service provider'}
-          </p>
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Badge variant="outline" className="bg-orange-50 border-orange-200 text-orange-700">
-          <Filter className="w-3 h-3 mr-1" />
-          {selectedProblem?.name}
-        </Badge>
-        {selectedProblem?.specializations?.map((spec) => (
-          <Badge key={spec} variant="outline" className="bg-gray-50">
-            {spec}
-          </Badge>
-        ))}
-      </div>
-
-      {loading && (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-[#FF8C42]" />
-        </div>
-      )}
-
-      {!loading && visibleVendors.length > 0 && (
-        <div className="space-y-3">
-          {visibleVendors.map((vendor) => {
-            const expanded = expandedVendorId === vendor.vendorId;
-            // Always allow header tap to expand/collapse; chevron uses stopPropagation to open profile only.
-            const headerInteractive = true;
-            return (
-              <Card
-                key={vendor.vendorId}
-                className={`overflow-hidden transition border-gray-200 ${expanded ? 'border-[#FF8C42] ring-1 ring-[#FF8C42]/30' : ''}`}
-              >
-                <div
-                  role={headerInteractive ? 'button' : undefined}
-                  tabIndex={headerInteractive ? 0 : undefined}
-                  onClick={
-                    headerInteractive
-                      ? () => toggleVendorExpanded(vendor)
-                      : undefined
-                  }
-                  onKeyDown={
-                    headerInteractive
-                      ? (e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            toggleVendorExpanded(vendor);
-                          }
-                        }
-                      : undefined
-                  }
-                  className={`p-4 text-left w-full ${
-                    headerInteractive ? 'cursor-pointer hover:bg-gray-50' : ''
-                  }`}
-                >
-                  <div className="flex gap-4">
-                    <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center">
-                      {vendor.photo ? (
-                        <img src={vendor.photo} alt={vendor.vendorName} className="w-full h-full object-cover" />
-                      ) : (
-                        <Building2 className="w-8 h-8 text-gray-400" />
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <h3 className="font-semibold text-gray-900 truncate">{vendor.vendorName}</h3>
-                          <p className="text-sm text-gray-500 truncate">
-                            {vendor.serviceCount} service{vendor.serviceCount !== 1 ? 's' : ''}
-                            {vendor.specializations.length > 0
-                              ? ` · ${vendor.specializations.slice(0, 2).join(', ')}`
-                              : ''}
-                          </p>
-                        </div>
-                        <div className="flex items-start gap-2 flex-shrink-0">
-                          {vendor.isInstantAvailable && (
-                            <Badge className="bg-green-100 text-green-700 flex-shrink-0">Available Now</Badge>
-                          )}
-                          {onVendorProfile && selectedServiceStyle ? (
-                            <button
-                              type="button"
-                              aria-label={`View ${vendor.vendorName} profile`}
-                              className="p-1 -m-1 rounded-md text-gray-400 hover:text-[#FF8C42] hover:bg-orange-50 transition-colors focus-visible:outline focus-visible:ring-2 focus-visible:ring-[#FF8C42]/40"
-                              onClick={(e: MouseEvent) => {
-                                e.stopPropagation();
-                                onVendorProfile({
-                                  vendorId: vendor.vendorId,
-                                  vendorName: vendor.vendorName,
-                                  serviceStyle: selectedServiceStyle,
-                                  problemCategory: selectedProblem?.category,
-                                  roleIds: selectedProblem?.linkedServiceRoles,
-                                  problemId: selectedProblem?.id,
-                                  problemTitle: selectedProblem?.name,
-                                });
-                              }}
-                            >
-                              <ChevronRight
-                                className={`w-5 h-5 transition-transform mt-0.5 ${expanded ? 'rotate-90' : ''}`}
-                                aria-hidden
-                              />
-                            </button>
-                          ) : (
-                            <ChevronRight
-                              className={`w-5 h-5 text-gray-400 transition-transform mt-0.5 pointer-events-none ${expanded ? 'rotate-90' : ''}`}
-                              aria-hidden
-                            />
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-3 mt-2 text-sm">
-                        <StarRating
-                          rating={vendor.rating}
-                          reviewCount={vendor.reviewCount}
-                          textClassName="text-xs text-gray-500"
-                        />
-                        {selectedServiceStyle !== 'tele' && (
-                          <span className="flex items-center gap-1 text-gray-500">
-                            <MapPin className="w-3 h-3" />
-                            {vendor.distanceFormatted}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-lg font-bold text-[#FF8C42]">
-                        ₹{vendor.minPrice.toLocaleString('en-IN')}
-                      </p>
-                      <p className="text-xs text-gray-500">onwards</p>
-                      {isVetProblem(selectedProblem) && (
-                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {expanded && selectedServiceStyle && (
-                  <div className="border-t border-gray-100 bg-gray-50 p-4 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h4 className="text-sm font-semibold text-gray-700">
-                        Available Services ({vendor.rows.length})
-                      </h4>
-                    </div>
-                    {vendor.rows.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-2">No services listed for this provider.</p>
-                    ) : (
-                      <div className="max-h-[min(60vh,28rem)] overflow-y-auto pr-1">
-                        {renderVendorServiceRows(vendor)}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {!expanded && vendor.rows.length > 0 && (
-                  <div className="px-4 py-3 bg-gray-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-gray-100">
-                    <div className="text-sm text-gray-600">
-                      {vendor.serviceCount} service{vendor.serviceCount !== 1 ? 's' : ''} available
-                      <span className="text-gray-900 font-medium">
-                        {' '}
-                        from ₹{vendor.minPrice.toLocaleString('en-IN')}
-                      </span>
-                      {isVetProblem(selectedProblem) && (
-                        <p className="mt-0.5 text-xs text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                      )}
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="text-[#FF8C42] border-[#FF8C42] hover:bg-[#FF8C42]/10 shrink-0"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setExpandedVendorId(vendor.vendorId);
-                      }}
-                    >
-                      View Services
-                    </Button>
-                  </div>
-                )}
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {!loading && visibleVendors.length === 0 && (
-        <div className="text-center py-12">
-          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Filter className="w-8 h-8 text-gray-400" />
-          </div>
-          <h3 className="font-semibold text-gray-900 mb-2">No providers found</h3>
-          <p className="text-sm text-gray-500 mb-4">Try changing the service type or check back later</p>
-          <Button variant="outline" onClick={goBack}>
-            Change Service Type
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-
-  const renderBooking = () => {
-    if (!selectedProvider || !selectedServiceStyle) return null;
-
-    return (
-      <BookingFlow
-        serviceId={selectedProvider.serviceId}
-        customerPhone={customerId || ''}
-        onBack={goBack}
-        onComplete={handleBookingComplete}
-      />
-    );
-  };
-
-  const renderConfirmation = () => (
-    <div className="min-h-[400px] flex flex-col items-center justify-center text-center p-6">
-      <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mb-6">
-        <span className="text-5xl">✓</span>
-      </div>
-      <h2 className="text-2xl font-bold text-gray-900 mb-2">Booking Confirmed!</h2>
-      <p className="text-gray-600 mb-6">
-        Your {selectedProblem?.name}{' '}
-        {selectedServiceStyle && SERVICE_STYLE_CONFIG[selectedServiceStyle].label.toLowerCase()} appointment is confirmed.
-      </p>
-      <div className="flex gap-3">
-        <Button variant="outline" onClick={onClose}>
-          Back to Home
-        </Button>
-        <Button className="bg-[#FF8C42] hover:bg-[#E67A35]" onClick={() => (window.location.href = '/bookings')}>
-          View Booking
-        </Button>
-      </div>
-    </div>
-  );
+  // ✅ Discovery step renders hub screens (Grooming/Walker/Vet/etc.) whose own
+  // ServiceDashboardHeader already pads for env(safe-area-inset-*). Re-applying
+  // `cw-header-safe-top` / `cw-header-safe-x` on this outer shell would push the
+  // orange header inside a viewport-padded box, leaving a visible gray frame on
+  // top/left/right (see "Dog Walking" hub for the desired edge-to-edge look).
+  // Only the service-style selection step needs that breathing room for its
+  // white card column.
+  const isDiscoveryStep = currentStep === 'discovery';
+  const outerSafeAreaClass = isDiscoveryStep ? '' : 'cw-header-safe-top cw-header-safe-x';
 
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-gray-50 cw-header-safe-top cw-header-safe-x pb-8">
-      <div className="mx-auto max-w-lg">
+    <div className={`min-h-screen min-h-[100dvh] bg-gray-50 pb-8 ${outerSafeAreaClass}`.trim()}>
+      <div className="mx-auto w-full max-w-customer">
         {currentStep === 'service-style' && renderServiceStyleSelection()}
-        {currentStep === 'discovery' && renderDiscovery()}
-        {currentStep === 'booking' && renderBooking()}
-        {currentStep === 'confirmation' && renderConfirmation()}
+        {isDiscoveryStep && renderDiscovery()}
       </div>
     </div>
   );

@@ -18,6 +18,7 @@
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
+import { resolveCustomerMealPlanOrderDisplayTotals } from '../utils/meal-order-pricing';
 import { resolveMealOrderIdForSubscriptionDelivery } from '../utils/resolve-meal-order-for-subscription-delivery';
 import { logisticsPartnerService } from '../lib/services/logistics-partner-service';
 import {
@@ -962,6 +963,12 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
 
         const deliveryTracking = tracking.rows[0];
         const displayStatus = order.status ?? order.order_status ?? 'pending';
+        const mealDisplayTotals =
+          orderType === 'meal'
+            ? resolveCustomerMealPlanOrderDisplayTotals(order, null)
+            : null;
+        const displayTotalAmount =
+          mealDisplayTotals != null ? mealDisplayTotals.total : order.total_amount;
 
         return c.json({
           success: true,
@@ -971,8 +978,8 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
             order_number: order.order_number || order.id?.toString().slice(-8),
             orderNumber: order.order_number || order.id?.toString().slice(-8),
             status: displayStatus,
-            total: order.total_amount,
-            total_amount: order.total_amount,
+            total: displayTotalAmount,
+            total_amount: displayTotalAmount,
             createdAt: order.created_at,
             created_at: order.created_at,
           },

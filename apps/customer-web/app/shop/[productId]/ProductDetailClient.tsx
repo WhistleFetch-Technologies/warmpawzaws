@@ -6,11 +6,16 @@ import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
-import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
+import {
+  mergeLineIntoWarmpawzCartStorage,
+  CART_UPDATED_EVENT,
+  WARMPAWZ_CART_KEY,
+} from '@/lib/warmpawz-cart-storage';
+import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
 import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import {
-  ArrowLeft, ShoppingCart, Heart, Star, Truck, Shield, Tag,
+  ArrowLeft, ShoppingCart, Star, Truck, Shield, Tag,
   Package, Store, Check, Plus, Minus, Share2, ChevronRight,
   Clock, ThumbsUp, User, AlertCircle, RefreshCcw
 } from 'lucide-react';
@@ -99,7 +104,6 @@ export default function ProductDetailClient() {
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectedVariations, setSelectedVariations] = useState<Record<string, string>>({});
   const [showReviews, setShowReviews] = useState(false);
-  const [isInWishlist, setIsInWishlist] = useState(false);
   const [isInCart, setIsInCart] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
 
@@ -124,14 +128,17 @@ export default function ProductDetailClient() {
 
   useEffect(() => {
     if (!wishlistProductId || typeof window === 'undefined') return;
-    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-    setIsInWishlist(
-      wishlist.some((x: string) => String(x) === String(wishlistProductId))
-    );
-    const cart = JSON.parse(localStorage.getItem('warmpawz_cart') || '[]');
-    setIsInCart(
-      cart.some((item: CartItem) => String(item.product_id) === String(wishlistProductId))
-    );
+    const sync = () => {
+      const cart = JSON.parse(localStorage.getItem(WARMPAWZ_CART_KEY) || '[]');
+      setIsInCart(
+        cart.some((item: CartItem) => String(item.product_id) === String(wishlistProductId))
+      );
+    };
+    sync();
+    window.addEventListener(CART_UPDATED_EVENT, sync);
+    return () => {
+      window.removeEventListener(CART_UPDATED_EVENT, sync);
+    };
   }, [wishlistProductId]);
 
   const loadProductData = async () => {
@@ -228,56 +235,6 @@ export default function ProductDetailClient() {
   // ============================================================================
   // ACTIONS
   // ============================================================================
-
-  const toggleWishlist = async () => {
-    if (typeof window === 'undefined' || !wishlistProductId) return;
-
-    const pid = wishlistProductId;
-    const wishlist = JSON.parse(localStorage.getItem('warmpawz_wishlist') || '[]');
-    const customerId = getResolvedCustomerId();
-    const wasInList = isInWishlist;
-
-    console.log('[wishlist] toggle start', { productId: pid, customerId, wasInList });
-
-    if (wasInList) {
-      const newWishlist = wishlist.filter((id: string) => String(id) !== String(pid));
-      localStorage.setItem('warmpawz_wishlist', JSON.stringify(newWishlist));
-      setIsInWishlist(false);
-    } else {
-      if (!wishlist.some((id: string) => String(id) === String(pid))) {
-        wishlist.push(pid);
-      }
-      localStorage.setItem('warmpawz_wishlist', JSON.stringify(wishlist));
-      setIsInWishlist(true);
-    }
-
-    if (customerId) {
-      const action = wasInList ? 'remove' : 'add';
-      try {
-        const res = await apiClient.post<any>(`/customer/${customerId}/wishlist`, {
-          productId: pid,
-          action,
-        });
-        console.log('[wishlist] POST /customer/:customerId/wishlist response', {
-          productId: pid,
-          customerId,
-          res,
-        });
-        if (action === 'add') {
-          const verify = await apiClient.get<any>(`/customer/${customerId}/wishlist`);
-          console.log('[wishlist] GET verify after add', {
-            customerId,
-            itemCount: verify?.wishlist?.items?.length ?? 0,
-            items: verify?.wishlist?.items,
-          });
-        }
-      } catch (e) {
-        console.error('[wishlist] POST sync failed', { productId: pid, customerId, err: e });
-      }
-    } else {
-      console.warn('[wishlist] no customerId resolved; saved locally only', { productId: pid });
-    }
-  };
 
   const mergeLineIntoLocalCart = (): boolean => {
     if (!product || product.stock === 0) return false;
@@ -442,14 +399,11 @@ export default function ProductDetailClient() {
               >
                 <Share2 className="w-5 h-5 text-slate-600" />
               </button>
-              <button
-                onClick={toggleWishlist}
-                className={`p-2 rounded-xl transition-colors ${
-                  isInWishlist ? 'bg-red-50 text-red-500' : 'hover:bg-slate-100 text-slate-600'
-                }`}
-              >
-                <Heart className={`w-5 h-5 ${isInWishlist ? 'fill-current' : ''}`} />
-              </button>
+              <WishlistProductHeartButton
+                productId={wishlistProductId}
+                visualVariant="header-toolbar"
+                heartClassName="w-5 h-5"
+              />
               <button
                 onClick={() => router.push('/shop')}
                 className="relative p-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl"

@@ -2693,7 +2693,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.description !== undefined) updateData.description = body.description;
       if (body.categoryId !== undefined) updateData.category_id = body.categoryId;
       if (body.price !== undefined) updateData.price = parseFloat(body.price);
-      if (body.stock !== undefined) updateData.stock_quantity = parseInt(body.stock, 10);
+      if (body.stock !== undefined) updateData.stock = parseInt(String(body.stock), 10);
+      else if (body.stock_quantity !== undefined) {
+        updateData.stock = parseInt(String(body.stock_quantity), 10);
+      }
       if (body.status !== undefined) {
         updateData.is_active = body.status !== 'inactive';
       }
@@ -3372,6 +3375,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           if (updates.category !== undefined) {
             updateData.category_id = updates.category;
           }
+          if (updates.stock !== undefined) {
+            updateData.stock = parseInt(String(updates.stock), 10);
+          } else if (updates.stock_quantity !== undefined) {
+            updateData.stock = parseInt(String(updates.stock_quantity), 10);
+          }
           break;
         default:
           return c.json({ success: false, error: `Invalid item type: ${itemType}` }, 400);
@@ -3381,7 +3389,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const ALLOWED_COLUMNS: Record<string, string[]> = {
         vendors: ['status', 'is_active', 'is_verified', 'commission_rate', 'rating', 'tier_level'],
         services: ['status', 'is_active', 'price', 'duration', 'category_id'],
-        products: ['is_active', 'price', 'category_id', 'status', 'stock_quantity'],
+        products: ['is_active', 'price', 'category_id', 'status', 'stock'],
       };
 
       // Validate all update field names against whitelist
@@ -4567,6 +4575,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           catalog_category_id: row.catalog_category_id ?? null,
           catalog_category_name: row.catalog_category_name ?? null,
           catalog_master_slug: row.catalog_master_slug ?? null,
+          gst_application_scope: row.gst_application_scope ?? null,
           roles: rolesParsed,
           role_ids,
           is_active: row.is_active !== false,
@@ -4587,11 +4596,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const catalogCategoryId = body.catalogCategoryId ?? body.catalog_category_id;
       const roleIdsRaw = body.roleIds ?? body.role_ids;
       const { description, defaultGSTRate, isActive, name } = body;
+      const gstApplicationScopeRaw = body.gstApplicationScope ?? body.gst_application_scope;
+      const gstApplicationScope =
+        String(gstApplicationScopeRaw || '').trim() === 'meal_plan_food' ? 'meal_plan_food' : 'service_booking';
 
       if (!catalogCategoryId || String(catalogCategoryId).trim() === '') {
         return c.json({ success: false, error: 'Catalog category is required' }, 400);
       }
-      if (!Array.isArray(roleIdsRaw) || roleIdsRaw.length === 0) {
+      if (
+        gstApplicationScope !== 'meal_plan_food' &&
+        (!Array.isArray(roleIdsRaw) || roleIdsRaw.length === 0)
+      ) {
         return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
       }
       const rate =
@@ -4626,6 +4641,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
         catalog_category_id: String(catalogCategoryId).trim(),
+        gst_application_scope: gstApplicationScope,
       };
 
       let newCategory: any[];
@@ -4647,12 +4663,18 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             if (m2.includes('catalog_category_id') && m2.includes('does not exist')) {
               delete insertPayload.catalog_category_id;
               newCategory = await tryInsertTaxCategory();
+            } else if (m2.includes('gst_application_scope') && m2.includes('does not exist')) {
+              delete insertPayload.gst_application_scope;
+              newCategory = await tryInsertTaxCategory();
             } else {
               throw e2;
             }
           }
         } else if (msg.includes('catalog_category_id') && msg.includes('does not exist')) {
           delete insertPayload.catalog_category_id;
+          newCategory = await tryInsertTaxCategory();
+        } else if (msg.includes('gst_application_scope') && msg.includes('does not exist')) {
+          delete insertPayload.gst_application_scope;
           newCategory = await tryInsertTaxCategory();
         } else {
           throw insErr;
@@ -4661,7 +4683,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const tcId = newCategory[0]?.id;
       const ccid = String(catalogCategoryId).trim();
-      if (tcId) {
+      if (tcId && Array.isArray(roleIdsRaw) && roleIdsRaw.length > 0) {
         for (const rid of roleIdsRaw) {
           const roleId = String(rid).trim();
           if (!roleId) continue;
@@ -4726,6 +4748,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             ? String(catalogCategoryId).trim()
             : null;
       }
+      const gstScopeBody = body.gstApplicationScope ?? body.gst_application_scope;
+      if (gstScopeBody !== undefined && gstScopeBody !== null) {
+        const s = String(gstScopeBody).trim();
+        updateData.gst_application_scope = s === 'meal_plan_food' ? 'meal_plan_food' : 'service_booking';
+      }
 
       const applyTaxCategoryUpdate = async (): Promise<void> => {
         if (Object.keys(updateData).length === 0) return;
@@ -4743,6 +4770,15 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             await applyTaxCategoryUpdate();
             return;
           }
+          if (
+            updateData.gst_application_scope !== undefined &&
+            msg.includes('gst_application_scope') &&
+            msg.includes('does not exist')
+          ) {
+            delete updateData.gst_application_scope;
+            await applyTaxCategoryUpdate();
+            return;
+          }
           throw updErr;
         }
       };
@@ -4750,36 +4786,43 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const roleIdsRaw = body.roleIds ?? body.role_ids;
       if (Array.isArray(roleIdsRaw)) {
+        const scMeta = await query(
+          `SELECT catalog_category_id::text AS cid, COALESCE(gst_application_scope, 'service_booking')::text AS gs
+           FROM tax_categories WHERE id = $1::uuid LIMIT 1`,
+          [id],
+        );
+        const effScope = String(scMeta.rows?.[0]?.gs || 'service_booking').trim();
         if (roleIdsRaw.length === 0) {
-          return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
-        }
-        let ccid = String(catalogCategoryId || '').trim();
-        if (!ccid) {
-          const cur = await query(
-            `SELECT catalog_category_id::text AS cid FROM tax_categories WHERE id = $1::uuid LIMIT 1`,
-            [id]
-          );
-          ccid = String(cur.rows?.[0]?.cid || '').trim();
-        }
-        if (!ccid) {
-          return c.json(
-            { success: false, error: 'catalogCategoryId is required to update role mapping' },
-            400
-          );
-        }
-        try {
-          await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
-          for (const rid of roleIdsRaw) {
-            const roleId = String(rid).trim();
-            if (!roleId) continue;
-            await query(
-              `INSERT INTO tax_category_roles (tax_category_id, role_id, catalog_category_id)
-               VALUES ($1::uuid, $2::uuid, $3::uuid)`,
-              [id, roleId, ccid]
+          if (effScope === 'meal_plan_food') {
+            await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
+          } else {
+            return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
+          }
+        } else {
+          let ccid = String(catalogCategoryId || '').trim();
+          if (!ccid) {
+            ccid = String(scMeta.rows?.[0]?.cid || '').trim();
+          }
+          if (!ccid) {
+            return c.json(
+              { success: false, error: 'catalogCategoryId is required to update role mapping' },
+              400,
             );
           }
-        } catch (e: any) {
-          if (!String(e?.message || '').includes('tax_category_roles')) throw e;
+          try {
+            await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
+            for (const rid of roleIdsRaw) {
+              const roleId = String(rid).trim();
+              if (!roleId) continue;
+              await query(
+                `INSERT INTO tax_category_roles (tax_category_id, role_id, catalog_category_id)
+                 VALUES ($1::uuid, $2::uuid, $3::uuid)`,
+                [id, roleId, ccid],
+              );
+            }
+          } catch (e: any) {
+            if (!String(e?.message || '').includes('tax_category_roles')) throw e;
+          }
         }
       }
 
@@ -5051,7 +5094,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           festival,
           rain,
         });
-        deliveryFee = quote.deliveryFeeInr;
+        deliveryFee =
+          quote.success && quote.deliveryFeeInr != null ? quote.deliveryFeeInr : 0;
       }
 
       // Packaging fee (only for orders)
@@ -5204,7 +5248,6 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           p.name,
           p.sku,
           p.stock,
-          p.stock_quantity,
           p.price,
           p.status,
           p.category_id,
@@ -5220,7 +5263,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         id: String(p.id || ''),
         name: String(p.name || ''),
         sku: String(p.sku || `SKU-${p.id}`),
-        stock: parseInt(p.stock || p.stock_quantity || '0', 10),
+        stock: parseInt(p.stock || '0', 10),
         price: parseFloat(p.price || '0'),
         status: String(p.status || 'active'),
         categoryId: String(p.category_id || ''),
@@ -5255,7 +5298,6 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         };
         if (product.stock !== undefined) {
           updateData.stock = parseInt(product.stock, 10);
-          updateData.stock_quantity = parseInt(product.stock, 10);
         }
         if (product.status !== undefined) {
           updateData.status = product.status;

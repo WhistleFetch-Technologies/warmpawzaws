@@ -28,6 +28,12 @@ interface VetServicesByStyleProps {
   serviceTypeName?: string;
   category?: string;
   vendorId?: string; // Optional: filter to show only this vendor's services (vendor profile mode)
+  /** Passed as `specialization` on GET /customer/services/by-style (problem grid / hub filters). */
+  specialization?: string;
+  /**
+   * When embedded (e.g. problem grid), chevron/profile targets use this for doctor + clinic + style-browser return.
+   */
+  discoveryProfileBackScreen?: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
 }
@@ -72,6 +78,8 @@ export function VetServicesByStyle({
   serviceTypeName,
   category = 'vet',
   vendorId,
+  specialization,
+  discoveryProfileBackScreen,
   onBack, 
   onNavigate 
 }: VetServicesByStyleProps) {
@@ -101,7 +109,7 @@ export function VetServicesByStyle({
     if (vendorId) {
       loadVendorProfile();
     }
-  }, [serviceStyle, vendorId]);
+  }, [serviceStyle, vendorId, specialization]);
 
   const loadServicesByStyle = async () => {
     // Resolve customer coordinates (localStorage → profile API → geolocation)
@@ -121,8 +129,11 @@ export function VetServicesByStyle({
       setLoading(true);
       
       const phoneParam = phone ? `&customerPhone=${encodeURIComponent(phone)}` : '';
+      const specializationParam = specialization
+        ? `&specialization=${encodeURIComponent(specialization)}`
+        : '';
       const response = await apiClient.get(
-        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${phoneParam}`
+        `/customer/services/by-style?style=${serviceStyle}&category=${category}${locationParams}${specializationParam}${phoneParam}`
       ) as any;
 
       if (response.success) {
@@ -220,6 +231,7 @@ export function VetServicesByStyle({
       serviceTypeName,
       category,
       provider: provider as unknown as Record<string, unknown>,
+      profileBackScreen: discoveryProfileBackScreen,
     });
     onNavigate(screen, data);
   };
@@ -438,12 +450,13 @@ export function VetServicesByStyle({
     ];
 
     return (
-      <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden border-black/[0.04] bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] sm:border-x sm:shadow-[0_0_48px_rgba(0,0,0,0.06)]">
+      <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden bg-gray-50">
         {/*
           Same as CustomerHomeComplete: `rounded-t-[24px] -mt-3` on the block below a flat
           orange header so the “bow” is the rounded top of the next surface (image here, white on home).
         */}
         <ServiceDashboardHeader
+          fullWidth
           className="!z-0 isolation-auto"
           serviceName={providerName}
           serviceSubtitle={specialization}
@@ -945,8 +958,9 @@ export function VetServicesByStyle({
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   return (
-    <div className="mx-auto min-h-[100dvh] min-h-screen w-full max-w-customer overflow-x-hidden border-black/[0.04] bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] sm:border-x sm:shadow-[0_0_48px_rgba(0,0,0,0.06)]">
+    <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden bg-gray-50">
       <ServiceDashboardHeader
+        fullWidth
         serviceName={getServiceTitle()}
         serviceSubtitle={getServiceSubtitle()}
         serviceIcon={Stethoscope}
@@ -955,10 +969,13 @@ export function VetServicesByStyle({
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-white"
       />
 
+      {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
+      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]">
       {/* Info section */}
-      <div className="w-full px-4 sm:px-6 pt-4 pb-2 bg-white">
+      <div className="w-full px-4 sm:px-6 pt-6 pb-2">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center">
             {getStyleIcon()}
@@ -1034,21 +1051,21 @@ export function VetServicesByStyle({
                       : undefined
                   }
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
+                  <div className="flex min-w-0 w-full items-start justify-between gap-2">
+                    <div className="flex min-w-0 flex-1 items-start gap-3">
                       {/* Provider Photo or Initial */}
                       {provider.photo ? (
                         <img 
                           src={provider.photo} 
                           alt={provider.name}
-                          className="w-12 h-12 rounded-full object-cover border-2 border-[#FF8C42]"
+                          className="h-12 w-12 shrink-0 rounded-full border-2 border-[#FF8C42] object-cover"
                         />
                       ) : (
-                        <div className="w-12 h-12 bg-[#FF8C42] rounded-full flex items-center justify-center text-white font-bold text-lg">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#FF8C42] text-lg font-bold text-white">
                           {provider.name.charAt(0)}
                         </div>
                       )}
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <h3 className="font-semibold text-gray-900">{provider.name}</h3>
                           {provider.isVerified && (
@@ -1077,8 +1094,8 @@ export function VetServicesByStyle({
                           )}
                         </div>
                         {providerAddress && (
-                          <div className="flex items-start gap-1 text-gray-500 text-xs mt-1 max-w-[240px]">
-                            <MapPin className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                          <div className="mt-1 flex min-w-0 items-start gap-1 text-xs text-gray-500">
+                            <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-gray-400" />
                             <span className="line-clamp-1">{providerAddress}</span>
                           </div>
                         )}
@@ -1118,61 +1135,57 @@ export function VetServicesByStyle({
                     <h4 className="text-sm font-medium text-gray-600 mb-2">
                       Available Services ({provider.services.length})
                     </h4>
-                    {provider.services.map((service) => {
-                      const isPackage =
-                        isVendorServicePackageRow(service as any) || (service as any).isPackage;
-                      const descTrim = service.description?.trim() ?? '';
-                      return (
-                        <div
-                          key={service.id}
-                          className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 space-y-2"
-                        >
-                          {/* Row 1: name + package badge (left) | price (right) */}
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex min-w-0 flex-1 items-center gap-2">
-                              <h5 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
+                    {provider.services.map((service) => (
+                      <div
+                        key={service.id}
+                        className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
+                      >
+                        {/* Price + CTA on the right only; left = name, desc, duration/category (same grid as ClinicListView) */}
+                        <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_6.25rem] items-start gap-2">
+                          <div className="min-w-0 pr-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h5 className="line-clamp-2 break-words font-medium leading-5 text-gray-900">
                                 {service.name}
                               </h5>
-                              {isPackage && (
-                                <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                              {(isVendorServicePackageRow(service as any) || (service as any).isPackage) && (
+                                <span className="shrink-0 rounded-full border border-purple-200 bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-700">
                                   Package
                                 </span>
                               )}
                             </div>
-                            <div className="shrink-0 text-right">
-                              <ServicePricingDisplay
-                                basePrice={service.originalPrice || service.price}
-                                vendorDiscount={service.vendorDiscount}
-                              />
-                              <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
-                            </div>
-                          </div>
-
-                          {/* Row 2: description full width */}
-                          {descTrim && (
-                            <ServiceDescriptionInline
-                              description={descTrim}
-                              title={service.name}
-                              className="m-0 text-sm leading-5 text-gray-500"
-                            />
-                          )}
-
-                          {/* Row 3: badges (left) | Book Now (right) */}
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant="outline" className="text-xs shrink-0">
-                                <Clock className="w-3 h-3 mr-1" />
+                            {service.description?.trim() ? (
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <ServiceDescriptionInline
+                                  description={service.description}
+                                  title={service.name}
+                                  className="m-0 mt-1 text-sm leading-5 text-gray-500 line-clamp-3"
+                                />
+                              </div>
+                            ) : null}
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className="shrink-0 text-xs">
+                                <Clock className="mr-1 h-3 w-3" />
                                 {service.duration} mins
                               </Badge>
                               {service.category && (
-                                <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
+                                <Badge variant="secondary" className="max-w-full shrink-0 text-xs">
                                   {service.category}
                                 </Badge>
                               )}
                             </div>
+                          </div>
+                          <div className="text-right">
+                            <ServicePricingDisplay
+                              basePrice={service.originalPrice || service.price}
+                              vendorDiscount={service.vendorDiscount}
+                              className="mb-1"
+                            />
+                            <p className="mb-2 text-[11px] leading-4 text-gray-500 break-words">
+                              {INDICATIVE_PRICING_NOTE}
+                            </p>
                             <Button
                               size="sm"
-                              className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
+                              className="h-8 w-full bg-[#FF8C42] px-2 text-xs font-semibold text-white hover:bg-[#E67A35] sm:h-9 sm:text-sm"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleSelectService(provider, service);
@@ -1182,8 +1195,8 @@ export function VetServicesByStyle({
                             </Button>
                           </div>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 )}
 
@@ -1226,6 +1239,7 @@ export function VetServicesByStyle({
             })}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

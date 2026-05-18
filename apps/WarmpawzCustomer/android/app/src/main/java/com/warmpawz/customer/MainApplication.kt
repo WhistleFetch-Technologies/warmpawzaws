@@ -5,7 +5,14 @@ import android.app.Application
 import android.app.Application.ActivityLifecycleCallbacks
 import android.graphics.Color
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.View
+import android.view.ViewGroup
+import android.view.ViewTreeObserver
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
@@ -70,26 +77,44 @@ class MainApplication : Application(), ReactApplication {
  * Razorpay's CheckoutActivity reads `theme.color` from the JS payload at runtime and overrides
  * (a) `window.statusBarColor` to that brand color and (b) `setDecorFitsSystemWindows(window, false)`
  * so the colored toolbar bleeds into the status bar (this is what makes our `← W Warmpawz`
- * header render on top of the system clock / battery icons on Android).
+ * header render on top of the system clock / battery icons on Android). That override happens
+ * AFTER `onCreate` / `onStart` / `onResume` — Razorpay only applies the brand color once its
+ * embedded WebView has loaded `checkout.js` and fired its theme callback. A single re-apply in
+ * a lifecycle callback or a `decorView.post {}` is too early and loses the race.
  *
- * The XML theme alone (white statusBarColor + windowLightStatusBar=true + fitsSystemWindows=true
- * in [AppTheme.RazorpayCheckout]) is not enough because Razorpay's runtime calls happen AFTER the
- * theme is applied. We re-apply our preferences in onActivityCreated AND onActivityResumed AND in
- * a posted runnable so that we win the last write — yielding the same look as the BHIVE / Razorpay
- * reference design: white system status bar with dark icons, merchant toolbar starting cleanly
- * below it.
+ * To win the race we layer three defences (all are cheap; together they match the BHIVE /
+ * Razorpay Trusted Business reference look — white system status bar with dark icons, merchant
+ * toolbar starting cleanly below it):
+ *   1. Burst re-applies at 0 / 50 / 150 / 400 / 800 / 1500 / 3000 ms after each lifecycle hit so
+ *      whenever Razorpay's WebView fires its theme handler we restore WHITE within one frame.
+ *   2. A `ViewTreeObserver.OnPreDrawListener` watchdog (installed once per checkout activity)
+ *      reverts any non-WHITE status bar before the next frame is drawn.
+ *   3. A `OnApplyWindowInsetsListener` on `android.R.id.content` that pads the content view by
+ *      the system bar inset so even if Razorpay flips back to `setDecorFitsSystemWindows(false)`,
+ *      its WebView still starts BELOW the status bar instead of under it.
  */
 private class RazorpayCheckoutWindowInsetsCallback : ActivityLifecycleCallbacks {
 
+  private val mainHandler = Handler(Looper.getMainLooper())
+
   override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
-    applyIfRazorpayCheckout(activity)
+    if (!isRazorpayCheckout(activity)) return
+    forceWhiteStatusBarBelowDecor(activity)
+    installContentInsetPadding(activity)
+    installPreDrawWatchdog(activity)
+    scheduleReapplyBursts(activity)
+  }
+
+  override fun onActivityStarted(activity: Activity) {
+    if (!isRazorpayCheckout(activity)) return
+    forceWhiteStatusBarBelowDecor(activity)
   }
 
   override fun onActivityResumed(activity: Activity) {
-    applyIfRazorpayCheckout(activity)
+    if (!isRazorpayCheckout(activity)) return
+    forceWhiteStatusBarBelowDecor(activity)
+    scheduleReapplyBursts(activity)
   }
-
-  override fun onActivityStarted(activity: Activity) {}
 
   override fun onActivityPaused(activity: Activity) {}
 
@@ -99,20 +124,83 @@ private class RazorpayCheckoutWindowInsetsCallback : ActivityLifecycleCallbacks 
 
   override fun onActivityDestroyed(activity: Activity) {}
 
-  private fun applyIfRazorpayCheckout(activity: Activity) {
-    if (activity.javaClass.name != CHECKOUT_CLASS) return
-    forceWhiteStatusBarBelowDecor(activity)
-    activity.window.decorView.post {
-      if (activity.isFinishing || activity.javaClass.name != CHECKOUT_CLASS) return@post
-      forceWhiteStatusBarBelowDecor(activity)
-    }
-  }
+  private fun isRazorpayCheckout(activity: Activity): Boolean =
+    activity.javaClass.name == CHECKOUT_CLASS
 
   private fun forceWhiteStatusBarBelowDecor(activity: Activity) {
     val window = activity.window
     WindowCompat.setDecorFitsSystemWindows(window, true)
-    window.statusBarColor = Color.WHITE
-    WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = true
+    if (window.statusBarColor != Color.WHITE) {
+      window.statusBarColor = Color.WHITE
+    }
+    val controller = WindowInsetsControllerCompat(window, window.decorView)
+    if (!controller.isAppearanceLightStatusBars) {
+      controller.isAppearanceLightStatusBars = true
+    }
+  }
+
+  /**
+   * Pad `android.R.id.content` by the system bar inset so the Razorpay WebView lays out below the
+   * status bar even if Razorpay calls `setDecorFitsSystemWindows(window, false)` after our reset.
+   * `setOnApplyWindowInsetsListener` replaces any previous listener, so re-invoking is idempotent.
+   */
+  private fun installContentInsetPadding(activity: Activity) {
+    val content = activity.window.findViewById<ViewGroup>(android.R.id.content) ?: return
+    ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
+      val sysBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+      // Only override top; preserve any horizontal / bottom padding Razorpay may rely on.
+      // When the decor view already handles system padding (mode 1) `sysBars.top` is 0, so this
+      // is a no-op. When Razorpay flips to edge-to-edge (mode 2), this pushes the WebView below
+      // the status bar.
+      v.setPadding(v.paddingLeft, sysBars.top, v.paddingRight, v.paddingBottom)
+      WindowInsetsCompat.CONSUMED
+    }
+    ViewCompat.requestApplyInsets(content)
+  }
+
+  /**
+   * Re-applies WHITE status bar + dark icons before every frame draw. Cheap (only writes if the
+   * value drifted) and self-detaches when the activity is finishing. Invoked once per activity
+   * instance from `onActivityCreated`.
+   */
+  private fun installPreDrawWatchdog(activity: Activity) {
+    val window = activity.window
+    val decor: View = window.decorView
+    decor.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+      override fun onPreDraw(): Boolean {
+        if (activity.isFinishing || !isRazorpayCheckout(activity)) {
+          decor.viewTreeObserver.removeOnPreDrawListener(this)
+          return true
+        }
+        if (window.statusBarColor != Color.WHITE) {
+          window.statusBarColor = Color.WHITE
+        }
+        val controller = WindowInsetsControllerCompat(window, decor)
+        if (!controller.isAppearanceLightStatusBars) {
+          controller.isAppearanceLightStatusBars = true
+        }
+        return true
+      }
+    })
+  }
+
+  /**
+   * Re-apply our overrides on a staircase of delays so we catch Razorpay's late theme push
+   * (`checkout.js` → native bridge → `window.setStatusBarColor`). 3 s is a generous upper bound;
+   * the WebView callback typically lands within ~500 ms.
+   */
+  private fun scheduleReapplyBursts(activity: Activity) {
+    longArrayOf(0L, 50L, 150L, 400L, 800L, 1500L, 3000L).forEach { delay ->
+      mainHandler.postDelayed({
+        if (!activity.isFinishing && isRazorpayCheckout(activity)) {
+          forceWhiteStatusBarBelowDecor(activity)
+          val content = activity.window.findViewById<ViewGroup>(android.R.id.content)
+          if (content != null) {
+            ViewCompat.requestApplyInsets(content)
+          }
+        }
+      }, delay)
+    }
   }
 
   companion object {

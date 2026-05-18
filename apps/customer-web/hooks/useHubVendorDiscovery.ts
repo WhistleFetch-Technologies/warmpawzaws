@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import {
   buildBoardingVendorListFromRows,
   mapServicesApiResponseToPlanRows,
@@ -46,46 +47,7 @@ export function useHubVendorDiscovery(
       if (customLoadRef.current) {
         rows = await customLoadRef.current();
       } else {
-        let latitude: string | undefined;
-        let longitude: string | undefined;
-        try {
-          const profileRes = (await apiClient.get(
-            `/customer/profile?phone=${encodeURIComponent(phone)}`
-          )) as any;
-          const profile = profileRes?.profile || profileRes;
-          if (profile?.latitude != null && profile?.longitude != null) {
-            latitude = String(profile.latitude);
-            longitude = String(profile.longitude);
-          }
-        } catch {
-          /* ignore */
-        }
-        if (latitude == null && typeof window !== 'undefined') {
-          try {
-            const lat = localStorage.getItem('customer_latitude');
-            const lng = localStorage.getItem('customer_longitude');
-            if (lat && lng) {
-              latitude = lat;
-              longitude = lng;
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-        if (latitude == null && typeof navigator !== 'undefined' && navigator.geolocation) {
-          try {
-            const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-              navigator.geolocation.getCurrentPosition(resolve, reject, {
-                timeout: 5000,
-                maximumAge: 300000,
-              });
-            });
-            latitude = String(pos.coords.latitude);
-            longitude = String(pos.coords.longitude);
-          } catch {
-            /* ignore */
-          }
-        }
+        const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
         const locationParams =
           latitude && longitude
             ? `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`
@@ -93,8 +55,11 @@ export function useHubVendorDiscovery(
 
         const phoneKey = config.phoneQueryParam === 'phone' ? 'phone' : 'customerPhone';
         const phoneParam = phone ? `&${phoneKey}=${encodeURIComponent(phone)}` : '';
+        const specParam = config.specialization
+          ? `&specialization=${encodeURIComponent(config.specialization)}`
+          : '';
 
-        let endpoint = `/customer/discover-services?category=${encodeURIComponent(config.discoverCategory)}&serviceStyle=${config.serviceStyle}${locationParams}${phoneParam}`;
+        let endpoint = `/customer/discover-services?category=${encodeURIComponent(config.discoverCategory)}&serviceStyle=${config.serviceStyle}${locationParams}${phoneParam}${specParam}`;
         if (config.discoverRoleId) {
           endpoint += `&roleId=${encodeURIComponent(config.discoverRoleId)}`;
         }
@@ -108,7 +73,7 @@ export function useHubVendorDiscovery(
 
         if (rows.length === 0 && config.fallbackByStyle) {
           try {
-            let altUrl = `/customer/services/by-style?style=${encodeURIComponent(config.fallbackByStyle.style)}&category=${encodeURIComponent(config.fallbackByStyle.category)}${locationParams}${phoneParam}`;
+            let altUrl = `/customer/services/by-style?style=${encodeURIComponent(config.fallbackByStyle.style)}&category=${encodeURIComponent(config.fallbackByStyle.category)}${locationParams}${phoneParam}${specParam}`;
             if (config.fallbackByStyle.roleId) {
               altUrl += `&roleId=${encodeURIComponent(config.fallbackByStyle.roleId)}`;
             }

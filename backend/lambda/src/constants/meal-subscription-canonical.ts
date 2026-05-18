@@ -38,6 +38,7 @@ export const MEAL_SUBSCRIPTION_DELIVERY_STATUS_VALUES = [
   'rescheduled',
   'cancelled',
   'failed',
+  'paused',
 ] as const;
 
 export type MealSubscriptionDeliveryStatus = (typeof MEAL_SUBSCRIPTION_DELIVERY_STATUS_VALUES)[number];
