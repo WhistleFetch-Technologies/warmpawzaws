@@ -24,3 +24,47 @@ export function mergeCustomerVendorServicesPayload(
   }
   return out;
 }
+
+/** Normalized service row for HomeServiceProviderProfile selection UI. */
+export type HomeServiceProfileService = {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  duration: number;
+  category: string;
+};
+
+/**
+ * Map raw vendor/customer service API rows to stable selection keys (deduped).
+ * Aligns with boarding/clinic profile mappers — always string ids for React keys and state.
+ */
+export function mapHomeServiceProfileServices(rows: unknown[]): HomeServiceProfileService[] {
+  const seen = new Set<string>();
+  const mapped: HomeServiceProfileService[] = [];
+
+  for (let idx = 0; idx < (rows?.length ?? 0); idx++) {
+    const raw = rows[idx];
+    if (!raw || typeof raw !== 'object') continue;
+    const s = raw as Record<string, unknown>;
+
+    const id = String(s.id ?? s.vendorServiceId ?? s.serviceId ?? s.service_id ?? '').trim();
+    const key = id || `row-${idx}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const name = String(s.name ?? s.serviceName ?? s.service_name ?? 'Service').trim() || 'Service';
+    const description = String(
+      s.description ?? s.shortDescription ?? s.longDescription ?? ''
+    ).trim();
+    const price =
+      parseFloat(String(s.price ?? s.custom_price ?? s.base_price ?? 0)) || 0;
+    const duration =
+      Number(s.duration ?? s.durationMinutes ?? s.duration_minutes ?? 0) || 0;
+    const category = String(s.category ?? s.categoryName ?? s.categorySlug ?? '').trim();
+
+    mapped.push({ id: key, name, description, price, duration, category });
+  }
+
+  return mapped;
+}
