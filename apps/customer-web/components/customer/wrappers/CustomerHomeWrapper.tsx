@@ -4294,6 +4294,24 @@ export function CustomerHomeWrapper({
       return;
     }
 
+    if (screen === 'walker-provider-profile' && data?.vendorId) {
+      setPreviousScreen('problem_grid_flow');
+      const vid = String(data.vendorId).trim();
+      const payload =
+        typeof data === 'object' && data != null && !Array.isArray(data)
+          ? { ...(data as Record<string, unknown>) }
+          : {};
+      setWalkerServiceData({
+        ...payload,
+        vendorId: vid,
+        walkerProfileBackScreen:
+          (payload.walkerProfileBackScreen as string | undefined) ?? gridBack,
+        serviceType: (payload.serviceType as string | undefined) ?? 'walking',
+      });
+      setCurrentScreen('walker-provider-profile');
+      return;
+    }
+
     if (screen === 'boarding-booking') {
       setPreviousScreen('problem_grid_flow');
       setVetServiceData({
