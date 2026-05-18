@@ -52,6 +52,10 @@ import {
   dispatchMealLogistics,
   isMealDispatchStrict,
 } from '../utils/meal-dispatch';
+import {
+  isPidgeMealLogistics,
+  vendorBlockedMealStatusForPidge,
+} from '../utils/meal-order-vendor-delivery-guard';
 
 async function mealOrdersTableColumns(): Promise<Set<string>> {
   try {
@@ -1524,11 +1528,25 @@ export function registerMealPlanEndpoints(app: Hono) {
       }
 
       const existingRows = await select('meal_orders', { id: orderId });
-      const existing = existingRows[0] as { status?: string } | undefined;
+      const existing = existingRows[0] as { status?: string; logistics_type?: string } | undefined;
       if (existing?.status === 'paused') {
         return c.json(
           { error: 'This order is paused until the customer resumes their meal subscription' },
           400,
+        );
+      }
+
+      if (
+        isPidgeMealLogistics(existing?.logistics_type) &&
+        vendorBlockedMealStatusForPidge(status)
+      ) {
+        return c.json(
+          {
+            success: false,
+            error:
+              'This order uses Pidge delivery — pickup and delivery completion are updated from Pidge automatically.',
+          },
+          422,
         );
       }
 
@@ -1849,6 +1867,16 @@ export function registerMealPlanEndpoints(app: Hono) {
       const order = orders[0];
       if (order.vendor_id == null) {
         return c.json({ error: 'Order has no vendor' }, 400);
+      }
+
+      if (isPidgeMealLogistics((order as { logistics_type?: string }).logistics_type)) {
+        return c.json(
+          {
+            success: false,
+            error: 'This order uses Pidge — logistics notifications are automatic.',
+          },
+          422,
+        );
       }
 
       const existing = await query(

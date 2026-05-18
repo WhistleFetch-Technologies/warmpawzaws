@@ -41,6 +41,10 @@ import {
   dispatchMealLogistics,
   isMealDispatchStrict,
 } from '../utils/meal-dispatch';
+import {
+  isPidgeMealLogistics,
+  vendorBlockedMealStatusForPidge,
+} from '../utils/meal-order-vendor-delivery-guard';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
 import { processSubscriptionVendorParentBookingFullRefund } from '../utils/meal-subscription-parent-booking-refund';
 import {
@@ -50,6 +54,7 @@ import {
 } from '../utils/meal-product-dietary';
 import type { MealsPerDayPreset } from '../constants/meal-product-enums';
 import { formatMealProductZodError, parseMealProductRequest } from '../zodContracts/meal-product.contract';
+import { resolveEffectiveMealDeliveryState } from '../utils/meal-delivery-effective-state';
 
 /** Coerce DB/API money fields so vendor UI never receives NaN or bogus strings. */
 function safeMoney(v: unknown): number {
@@ -3094,7 +3099,39 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
         .slice(0, 100);
 
-      const forVendor = deduped.map((row) => sanitizeVendorMealOrderRow(row as Record<string, unknown>));
+      const mealOrderIds = deduped
+        .filter((o: { source?: string; id?: string }) => String(o.source || '') === 'meal_orders' && o.id)
+        .map((o: { id: string }) => String(o.id));
+
+      const trackingByMealId = new Map<string, string>();
+      if (mealOrderIds.length > 0) {
+        try {
+          const trRows = await query(
+            `SELECT DISTINCT ON (meal_order_id) meal_order_id::text AS meal_order_id, status
+               FROM delivery_tracking
+              WHERE meal_order_id::text = ANY($1::text[])
+              ORDER BY meal_order_id, updated_at DESC NULLS LAST, created_at DESC`,
+            [mealOrderIds],
+          ).catch(() => ({ rows: [] as Array<{ meal_order_id?: string; status?: string }> }));
+          for (const r of trRows.rows || []) {
+            const mid = String(r.meal_order_id || '');
+            if (mid) trackingByMealId.set(mid, String(r.status ?? ''));
+          }
+        } catch (trErr) {
+          console.warn('[meal-orders] delivery_tracking batch lookup failed:', (trErr as Error)?.message);
+        }
+      }
+
+      const forVendor = deduped.map((row) => {
+        const rec = { ...(row as Record<string, unknown>) };
+        if (String(rec.source || '') === 'meal_orders' && rec.id) {
+          const mid = String(rec.id);
+          const dtStatus = trackingByMealId.get(mid);
+          rec.delivery_tracking_status = dtStatus ?? null;
+          rec.effective_delivery_status = resolveEffectiveMealDeliveryState(String(rec.status ?? ''), dtStatus ?? '');
+        }
+        return sanitizeVendorMealOrderRow(rec);
+      });
       return c.json({ success: true, orders: forVendor, total: forVendor.length });
     } catch (error: any) {
       console.error('Error fetching meal orders:', error);
@@ -3144,7 +3181,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
       const orderRowRes = await query(
         `SELECT mo.id, mo.vendor_id, mo.status AS order_status, mo.subscription_id,
-                mo.scheduled_delivery_date, mo.purchase_snapshot
+                mo.scheduled_delivery_date, mo.purchase_snapshot, mo.logistics_type
            FROM meal_orders mo
           WHERE mo.id = $1 AND mo.vendor_id::text = ANY($2::text[])
           LIMIT 1`,
@@ -3213,6 +3250,20 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
       if (!validStatuses.includes(actualStatus)) {
         return c.json({ error: `Invalid status. Valid statuses: ${validStatuses.join(', ')}` }, 400);
+      }
+
+      if (
+        isPidgeMealLogistics(orderRow.logistics_type) &&
+        vendorBlockedMealStatusForPidge(actualStatus)
+      ) {
+        return c.json(
+          {
+            success: false,
+            error:
+              'This order uses Pidge delivery — pickup and delivery completion are updated from Pidge automatically.',
+          },
+          422,
+        );
       }
 
       const order = {

@@ -1,13 +1,19 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { ArrowLeft, Check, Package, Truck } from 'lucide-react';
+import { Check, Package, Truck, MapPin } from 'lucide-react';
+import {
+  resolveEffectiveMealDeliveryState,
+  type MealDeliveryEffective,
+} from '@warmpawz/shared-types';
 
-const KITCHEN_STEP_META = [
+const MEAL_TIMELINE_STEPS = [
   { label: 'Order Confirmed', Icon: Package },
   { label: 'Preparing', Icon: Package },
   { label: 'Ready for Pickup', Icon: Package },
   { label: 'Picked Up', Icon: Truck },
+  { label: 'Out for Delivery', Icon: MapPin },
+  { label: 'Delivered', Icon: Check },
 ] as const;
 
 export function formatMealOrderDisplayId(order: {
@@ -22,52 +28,71 @@ export function formatMealOrderDisplayId(order: {
   return `#${tail}`;
 }
 
-/** Kitchen fulfillment progress (four steps before / alongside hyperlocal rider). */
-export function mealKitchenProgress(orderStatus: string): { filled: number; current: number | null } {
-  const s = String(orderStatus || '')
-    .toLowerCase()
-    .trim();
-  if (s === 'cancelled') return { filled: 0, current: null };
-  if (['pending', 'payment_pending', 'payment_processing'].includes(s)) return { filled: 0, current: 0 };
-  if (s === 'confirmed') return { filled: 1, current: null };
-  if (s === 'accepted') return { filled: 1, current: 1 };
-  if (s === 'preparing') return { filled: 1, current: 1 };
-  if (s === 'ready_for_pickup') return { filled: 2, current: 2 };
-  if (s === 'picked_up') return { filled: 3, current: 3 };
-  if (['on_the_way', 'out_for_delivery', 'in_transit', 'dispatched', 'arriving'].includes(s)) {
-    return { filled: 4, current: null };
+/** Six-step meal + hyperlocal timeline (order status + optional delivery_tracking). */
+export function mealKitchenProgress(
+  orderStatus: string,
+  logisticsStatus?: string | null,
+): { filled: number; current: number | null } {
+  const eff = resolveEffectiveMealDeliveryState(orderStatus, logisticsStatus);
+  if (eff === 'cancelled') return { filled: 0, current: null };
+  if (eff === 'failed') return { filled: 5, current: 5 };
+
+  const rankMap: Record<MealDeliveryEffective, number> = {
+    pending: 0,
+    confirmed: 1,
+    preparing: 2,
+    ready_for_pickup: 3,
+    picked_up: 4,
+    on_the_way: 5,
+    delivered: 6,
+    cancelled: 0,
+    failed: 5,
+  };
+
+  const r = rankMap[eff] ?? 0;
+  if (eff === 'delivered') {
+    return { filled: MEAL_TIMELINE_STEPS.length, current: null };
   }
-  if (s === 'delivered') return { filled: 4, current: null };
-  return { filled: 1, current: null };
+
+  const filled = r;
+  const current = filled < MEAL_TIMELINE_STEPS.length ? filled : null;
+  return { filled, current };
 }
 
 export function mealHeroHeadline(
   orderStatus: string,
   logisticsStatus: string | null | undefined
 ): string {
+  const eff = resolveEffectiveMealDeliveryState(orderStatus, logisticsStatus);
+  if (eff === 'delivered') return 'Delivered!';
+  if (eff === 'cancelled') return 'Cancelled';
+  if (eff === 'failed') return 'Delivery issue — support will assist';
+
   const ls = String(logisticsStatus || '')
     .toLowerCase()
     .trim();
   if (ls && ls !== 'pending_assignment') {
-    if (ls === 'assigned' || ls === 'heading_to_pickup') return 'Partner assigned…';
-    if (ls === 'at_pickup') return 'At pickup…';
-    if (ls === 'picked_up') return 'Picked up';
-    if (ls === 'on_the_way' || ls === 'nearby') return 'On the way…';
-    if (ls === 'delivered') return 'Delivered';
+    if (ls === 'assigned') return 'Finding delivery partner…';
+    if (ls === 'heading_to_pickup') return 'Rider heading to pickup…';
+    if (ls === 'at_pickup') return 'Rider at pickup…';
   }
-  const s = String(orderStatus || '')
-    .toLowerCase()
-    .trim();
-  if (['pending', 'payment_pending', 'payment_processing'].includes(s)) return 'Awaiting confirmation…';
-  if (s === 'confirmed') return 'Processing…';
-  if (s === 'accepted') return 'Processing…';
-  if (s === 'preparing') return 'Being prepared…';
-  if (s === 'ready_for_pickup') return 'Ready for pickup';
-  if (s === 'picked_up') return 'Picked up';
-  if (['on_the_way', 'out_for_delivery'].includes(s)) return 'On the way…';
-  if (s === 'delivered') return 'Delivered!';
-  if (s === 'cancelled') return 'Cancelled';
-  return 'Processing…';
+
+  switch (eff) {
+    case 'pending':
+      return 'Awaiting confirmation…';
+    case 'confirmed':
+      return 'Processing…';
+    case 'preparing':
+      return 'Being prepared…';
+    case 'ready_for_pickup':
+      return 'Ready for pickup';
+    case 'picked_up':
+      return 'Picked up';
+    case 'on_the_way':
+      return 'Out for delivery…';
+    default:
+      return 'Processing…';
+  }
 }
 
 export interface MealPlanOrderTrackingUIProps {
@@ -97,7 +122,7 @@ export function MealPlanOrderTrackingUI({
   orderDetailsCollapsible,
   floatingChatButton,
 }: MealPlanOrderTrackingUIProps) {
-  const { filled, current } = mealKitchenProgress(orderStatus);
+  const { filled, current } = mealKitchenProgress(orderStatus, logisticsStatus);
   const heroLine = mealHeroHeadline(orderStatus, logisticsStatus);
 
   return (
@@ -134,14 +159,14 @@ export function MealPlanOrderTrackingUI({
         <section className="bg-white rounded-2xl shadow-sm border border-slate-100/80 p-5">
           <h2 className="text-base font-bold text-slate-900 mb-5">Order Status</h2>
           <ul className="space-y-0">
-            {KITCHEN_STEP_META.map((step, index) => {
+            {MEAL_TIMELINE_STEPS.map((step, index) => {
               const isCurrent = current === index;
               const Icon = step.Icon;
               const showCheck = index < filled && !isCurrent;
               const pendingGrey = !showCheck && !isCurrent;
 
               const segmentGreen =
-                index < KITCHEN_STEP_META.length - 1 &&
+                index < MEAL_TIMELINE_STEPS.length - 1 &&
                 (index + 1 < filled ||
                   (index + 1 === filled && current != null && current > index));
 
@@ -164,7 +189,7 @@ export function MealPlanOrderTrackingUI({
                         <Icon className={`w-5 h-5 ${pendingGrey ? 'opacity-70' : ''}`} aria-hidden />
                       )}
                     </div>
-                    {index < KITCHEN_STEP_META.length - 1 ? (
+                    {index < MEAL_TIMELINE_STEPS.length - 1 ? (
                       <div
                         className={`w-0.5 flex-1 min-h-[28px] mt-1 ${segmentGreen ? 'bg-green-500' : 'bg-slate-200'}`}
                         aria-hidden
