@@ -540,8 +540,9 @@ export function ClinicListView({
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="mx-auto flex min-h-screen min-h-[100dvh] w-full max-w-customer flex-col bg-gray-50">
       <ServiceDashboardHeader
+        fullWidth
         serviceName="Veterinary Clinic"
         serviceSubtitle="Find a veterinary clinic near you"
         serviceIcon={Stethoscope}
@@ -550,9 +551,11 @@ export function ClinicListView({
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-white"
       />
 
-      <div className="max-w-customer mx-auto px-4 pt-4 pb-36">
+      {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
+      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 pb-36 sm:rounded-t-[2rem]">
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input

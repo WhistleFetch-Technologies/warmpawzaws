@@ -565,6 +565,7 @@ export async function insert(
     'services_config',
     'notification_preferences',
     'search_vector_data',
+    'photos', // reviews.photos — customer review images (JSON array of URLs)
     'channels', // notifications.channels is JSONB
     'data',    // notifications.data is JSONB (booking_id, meeting_id, etc.)
     'cancellation_windows',      // cancellation_policies
@@ -668,6 +669,7 @@ export async function update(
     'services_config',
     'notification_preferences',
     'search_vector_data',
+    'photos', // reviews.photos
     'channels', // notifications.channels is JSONB
     'data',    // notifications.data is JSONB (booking_id, meeting_id, etc.)
     'specializations', // vendors.specializations is JSONB array

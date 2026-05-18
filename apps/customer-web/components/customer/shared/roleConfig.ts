@@ -1,13 +1,35 @@
 /**
  * ROLE CONFIGURATION UTILITY
  * 
- * Centralized configuration for all service roles (vet, groomer, trainer)
- * This ensures single source of truth for role-specific settings
+ * Centralized configuration for all service roles (vet, groomer, trainer,
+ * walker, nutritionist, boarding, behaviorist).
+ * This ensures single source of truth for role-specific settings such as the
+ * header title, icon, allowed service styles and subtitle copy.
+ *
+ * NOTE: Adding a new role here is necessary so that
+ * {@link ./UniversalServicesByStyle} renders the right header / subtitle /
+ * icon when {@link ../ProblemGridFlowRouter} drives discovery for that role.
  */
 
-import { Stethoscope, Scissors, GraduationCap, LucideIcon } from 'lucide-react';
+import {
+  Stethoscope,
+  Scissors,
+  GraduationCap,
+  Footprints,
+  Bone,
+  Hotel,
+  Heart,
+  LucideIcon,
+} from 'lucide-react';
 
-export type RoleId = 'veterinarian' | 'groomer' | 'trainer';
+export type RoleId =
+  | 'veterinarian'
+  | 'groomer'
+  | 'trainer'
+  | 'walker'
+  | 'nutritionist'
+  | 'boarding'
+  | 'behaviorist';
 export type ServiceStyle = 'tele' | 'at_home' | 'at_center';
 
 export interface RoleConfig {
@@ -80,6 +102,74 @@ export const ROLE_CONFIG: Record<RoleId, RoleConfig> = {
     styleDescriptions: {
       at_home: 'Trainer comes to your location',
       at_center: 'Visit a training center near you',
+    },
+  },
+  walker: {
+    roleId: 'walker',
+    category: 'walker',
+    allowedStyles: ['at_home', 'at_center'], // NO tele
+    icon: Footprints,
+    roleName: 'Walker',
+    displayName: 'Walker Services',
+    styleLabels: {
+      at_home: 'At Home Walking',
+      at_center: 'Walker Center',
+    },
+    styleDescriptions: {
+      at_home: 'Walker comes to your location',
+      at_center: 'Visit a walking provider near you',
+    },
+  },
+  nutritionist: {
+    roleId: 'nutritionist',
+    category: 'nutrition',
+    allowedStyles: ['tele', 'at_home', 'at_center'],
+    icon: Bone,
+    roleName: 'Nutritionist',
+    displayName: 'Nutrition Services',
+    styleLabels: {
+      tele: 'Tele Consultation',
+      at_home: 'Home Visit',
+      at_center: 'Nutrition Center',
+    },
+    styleDescriptions: {
+      tele: 'Video consultation with a nutritionist',
+      at_home: 'Nutritionist comes to your location',
+      at_center: 'Visit a nutritionist near you',
+    },
+  },
+  boarding: {
+    roleId: 'boarding',
+    category: 'boarding',
+    allowedStyles: ['at_home', 'at_center'], // NO tele
+    icon: Hotel,
+    roleName: 'Boarding',
+    displayName: 'Boarding Services',
+    styleLabels: {
+      at_home: 'Home Boarding',
+      at_center: 'Boarding Center',
+    },
+    styleDescriptions: {
+      at_home: 'Pet sitter at your location',
+      at_center: 'Visit a boarding facility near you',
+    },
+  },
+  behaviorist: {
+    roleId: 'behaviorist',
+    category: 'behavioral',
+    allowedStyles: ['tele', 'at_home', 'at_center'],
+    icon: Heart,
+    roleName: 'Behaviorist',
+    displayName: 'Behaviorist Services',
+    styleLabels: {
+      tele: 'Tele Consultation',
+      at_home: 'Home Visit',
+      at_center: 'Behavior Center',
+    },
+    styleDescriptions: {
+      tele: 'Video consultation with a behaviorist',
+      at_home: 'Behaviorist comes to your location',
+      at_center: 'Visit a behavior center near you',
     },
   },
 };

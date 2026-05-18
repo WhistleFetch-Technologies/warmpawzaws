@@ -474,7 +474,7 @@ export function ProblemGridFlowRouter({
         <div key={key} className="mx-auto w-full max-w-customer">
           <UniversalServicesByStyle
             phone={phone}
-            roleId={'trainer' as RoleId}
+            roleId={'behaviorist' as RoleId}
             serviceStyle={hubStyle}
             serviceTypeName={selectedProblem.name}
             category="behaviourist"
@@ -493,7 +493,7 @@ export function ProblemGridFlowRouter({
         <div key={key} className="mx-auto w-full max-w-customer">
           <UniversalServicesByStyle
             phone={phone}
-            roleId={'trainer' as RoleId}
+            roleId={'nutritionist' as RoleId}
             serviceStyle={hubStyle}
             serviceTypeName={selectedProblem.name}
             category="nutrition"
@@ -512,7 +512,7 @@ export function ProblemGridFlowRouter({
         <div key={key} className="mx-auto w-full max-w-customer">
           <UniversalServicesByStyle
             phone={phone}
-            roleId={'trainer' as RoleId}
+            roleId={'walker' as RoleId}
             serviceStyle={hubStyle}
             serviceTypeName={selectedProblem.name}
             category="walker"
@@ -531,7 +531,7 @@ export function ProblemGridFlowRouter({
         <div key={key} className="mx-auto w-full max-w-customer">
           <UniversalServicesByStyle
             phone={phone}
-            roleId={'trainer' as RoleId}
+            roleId={'boarding' as RoleId}
             serviceStyle={hubStyle}
             serviceTypeName={selectedProblem.name}
             category="boarding"
@@ -670,11 +670,21 @@ export function ProblemGridFlowRouter({
     </div>
   );
 
+  // ✅ Discovery step renders hub screens (Grooming/Walker/Vet/etc.) whose own
+  // ServiceDashboardHeader already pads for env(safe-area-inset-*). Re-applying
+  // `cw-header-safe-top` / `cw-header-safe-x` on this outer shell would push the
+  // orange header inside a viewport-padded box, leaving a visible gray frame on
+  // top/left/right (see "Dog Walking" hub for the desired edge-to-edge look).
+  // Only the service-style selection step needs that breathing room for its
+  // white card column.
+  const isDiscoveryStep = currentStep === 'discovery';
+  const outerSafeAreaClass = isDiscoveryStep ? '' : 'cw-header-safe-top cw-header-safe-x';
+
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-gray-50 cw-header-safe-top cw-header-safe-x pb-8">
+    <div className={`min-h-screen min-h-[100dvh] bg-gray-50 pb-8 ${outerSafeAreaClass}`.trim()}>
       <div className="mx-auto w-full max-w-customer">
         {currentStep === 'service-style' && renderServiceStyleSelection()}
-        {currentStep === 'discovery' && renderDiscovery()}
+        {isDiscoveryStep && renderDiscovery()}
       </div>
     </div>
   );

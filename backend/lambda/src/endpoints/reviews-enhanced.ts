@@ -15,8 +15,75 @@
 
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
+
+const MAX_REVIEW_PHOTOS = 6;
+const REVIEW_PHOTO_PRESIGN_TTL_SEC = 3600;
+
+/** S3 object keys from POST /storage/upload-media (private bucket). */
+function isAllowedReviewPhotoStorageKey(key: string): boolean {
+  if (!key || key.length > 512 || key.includes('..')) return false;
+  if (!key.startsWith('media/')) return false;
+  if (/\s/.test(key)) return false;
+  return /^media\/[A-Za-z0-9/_.+-]+$/.test(key);
+}
+
+function normalizeReviewPhotoRefs(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const item of raw.slice(0, MAX_REVIEW_PHOTOS)) {
+    if (typeof item !== 'string') continue;
+    const t = item.trim();
+    if (!t || t.length > 2048) continue;
+    if (t.startsWith('https://') || t.startsWith('http://')) {
+      out.push(t);
+      continue;
+    }
+    if (isAllowedReviewPhotoStorageKey(t)) {
+      out.push(t);
+    }
+  }
+  return out;
+}
+
+async function resolveReviewPhotoForDisplay(
+  s3: S3Client,
+  bucket: string,
+  ref: string
+): Promise<string> {
+  const t = ref.trim();
+  if (!t) return '';
+  if (t.startsWith('https://') || t.startsWith('http://')) {
+    return t;
+  }
+  if (!isAllowedReviewPhotoStorageKey(t)) return '';
+  try {
+    return await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: bucket, Key: t }),
+      { expiresIn: REVIEW_PHOTO_PRESIGN_TTL_SEC }
+    );
+  } catch (e) {
+    console.error('[reviews] presign review photo failed', e);
+    return '';
+  }
+}
+
+function parseReviewPhotosRow(value: unknown): string[] {
+  if (value == null) return [];
+  let parsed: unknown = value;
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  return Array.isArray(parsed) ? parsed.filter((u): u is string => typeof u === 'string') : [];
+}
 
 // ============================================================================
 // CREATE REVIEW HANDLER
@@ -35,7 +102,10 @@ class CreateReviewHandler extends BaseHandler {
       review,
       tags,
       serviceStyle,
+      photos: photosRaw,
     } = body;
+
+    const photos = normalizeReviewPhotoRefs(photosRaw);
 
     if (!bookingId || !vendorId || !rating) {
       return this.error('Booking ID, Vendor ID, and rating are required', 400);
@@ -96,6 +166,7 @@ class CreateReviewHandler extends BaseHandler {
         service_type: serviceStyle || 'at_center',
         is_published: true,
         is_approved: true,
+        photos,
         created_at: new Date(),
         updated_at: new Date(),
       });
@@ -234,6 +305,7 @@ class GetVendorReviewsHandler extends BaseHandler {
           r.rating,
           r.comment as review,
           r.service_type as service_style,
+          r.photos as review_photos,
           r.created_at,
           c.full_name as customer_name,
           c.profile_photo_url as customer_photo,
@@ -280,20 +352,39 @@ class GetVendorReviewsHandler extends BaseHandler {
         [vendorId]
       );
 
+      const bucket =
+        process.env.S3_UPLOADS_BUCKET || process.env.S3_BUCKET_NAME || 'warmpawz-dev-uploads';
+      const region = process.env.AWS_REGION || 'ap-south-1';
+      const s3 = new S3Client({ region });
+
+      const mappedReviews = await Promise.all(
+        reviews.map(async (r) => {
+          const rawPhotos = parseReviewPhotosRow(r.review_photos);
+          const photoUrls = (
+            await Promise.all(
+              rawPhotos.map((ref) => resolveReviewPhotoForDisplay(s3, bucket, ref))
+            )
+          ).filter((u): u is string => typeof u === 'string' && u.length > 0);
+
+          return {
+            id: r.id,
+            bookingId: r.booking_id,
+            rating: r.rating,
+            review: r.review,
+            tags: [],
+            photos: photoUrls,
+            serviceStyle: r.service_style,
+            customerName: r.customer_name || 'Customer',
+            customerPhoto: r.customer_photo,
+            serviceName: r.service_name,
+            createdAt: r.created_at,
+          };
+        })
+      );
+
       return this.success({
         success: true,
-        reviews: reviews.map(r => ({
-          id: r.id,
-          bookingId: r.booking_id,
-          rating: r.rating,
-          review: r.review,
-          tags: [],
-          serviceStyle: r.service_style,
-          customerName: r.customer_name || 'Customer',
-          customerPhoto: r.customer_photo,
-          serviceName: r.service_name,
-          createdAt: r.created_at,
-        })),
+        reviews: mappedReviews,
         pagination: {
           total: parseInt(countResult[0]?.total) || 0,
           limit,

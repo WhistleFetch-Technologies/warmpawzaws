@@ -1536,8 +1536,8 @@ export function CustomerHomeWrapper({
         onProfileClick={handleProfileClick}
         accountSidebar={accountSidebarOverlay}
       >
-        {/* Mobile-first shell: max-w-customer (fluid, see tailwind.config.js) */}
-        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        {/* Full width inside CustomerScreenWrapper (already max-w-customer); avoid double max-width + hairline frame */}
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           {/* ✅ FIX: Skip StandardizedHeader for service routers that use ServiceDashboardHeader (frame UI) */}
           {!options.skipHeader && (
             <StandardizedHeader
@@ -3614,7 +3614,7 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'grooming_center') {
     return (
       <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           <GroomingServicesByStyle
             phone={phone}
             serviceStyle="at_center"
@@ -3643,7 +3643,7 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'grooming_home') {
     return (
       <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           <GroomingServicesByStyle
             phone={phone}
             serviceStyle="at_home"
@@ -3724,7 +3724,7 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'training_center') {
     return (
       <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           <UniversalServicesByStyle
             phone={phone}
             roleId="trainer"
@@ -3760,7 +3760,7 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'training_home') {
     return (
       <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-        <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           <UniversalServicesByStyle
             phone={phone}
             roleId="trainer"

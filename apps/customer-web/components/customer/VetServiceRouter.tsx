@@ -471,6 +471,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
     <div className="min-h-screen bg-gray-50" style={{ position: 'relative', zIndex: 0 }}>
       {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
       <ServiceDashboardHeader
+        fullWidth
         serviceName="Veterinary Services"
         serviceSubtitle="Professional pet healthcare"
         serviceIcon={Stethoscope}
