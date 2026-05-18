@@ -18,6 +18,11 @@ type ServiceDescriptionInlineProps = {
   dialogHint?: string;
   /** When false, render nothing if description is empty. Default true. */
   hideWhenEmpty?: boolean;
+  /**
+   * When false, only show a clamped preview (no “View more” control).
+   * Use inside parent `<button>` rows so nested interactive elements are avoided.
+   */
+  expandInDialog?: boolean;
 };
 
 export function ServiceDescriptionInline({
@@ -27,6 +32,7 @@ export function ServiceDescriptionInline({
   linkClassName = 'inline cursor-pointer align-baseline text-[11px] font-semibold text-[#FF8C42] hover:underline',
   dialogHint = 'Full description (vendor-provided)',
   hideWhenEmpty = true,
+  expandInDialog = true,
 }: ServiceDescriptionInlineProps) {
   const descTrim = description?.trim() ?? '';
   const [open, setOpen] = useState(false);
@@ -45,7 +51,7 @@ export function ServiceDescriptionInline({
   return (
     <>
       <p className={className}>
-        {showViewMore ? (
+        {showViewMore && expandInDialog ? (
           <>
             <span className="break-words">{preview}</span>
             <span
