@@ -8,12 +8,27 @@ export const RAZORPAY_PREFILL_EMAIL_FALLBACK = 'test@example.com';
 
 /** E.164 contact for Razorpay `prefill.contact` (better UPI flows than raw digits-only strings). */
 /**
- * Razorpay Standard Checkout: custom display so UPI is not QR-only (shows collect / VPA where Razorpay still offers it).
- * Pattern from https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/configure-payment-methods/sample-code/
+ * Razorpay Standard Checkout display config — kept in lockstep with
+ * `buildSanitizedStandardRazorpayCheckoutOptions` (ecommerce) and the React Native
+ * `applyWarmpawzCustomerToRazorpayOptions` helper so iOS / Android / Desktop render
+ * the same `Pay using UPI` block (GPay / PhonePe / Paytm intents + UPI Collect + QR)
+ * followed by the default Cards / Wallet / Netbanking blocks.
+ *
+ * Critical: declaring `flows: ['collect', 'intent', 'qr']` is what keeps the UPI tile
+ * visible on Android. Without explicit flows, Razorpay tries to enumerate installed
+ * UPI PSP apps; mobile browsers can't query packages on Android 11+, so the UPI tile
+ * silently disappears (iOS does not gate UPI on package enumeration — this is exactly
+ * why UPI used to show on iOS but not on Android).
+ *
+ * @see https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/configure-payment-methods/
+ * @see https://razorpay.com/docs/announcements/upi-collect-migration/standard-integration/
  */
 export function getWarmpawzRazorpayStandardDisplayConfig(): {
   display: {
-    blocks: Record<string, { name: string; instruments: { method: string }[] }>;
+    blocks: Record<string, {
+      name: string;
+      instruments: Array<{ method: string; flows?: string[] }>;
+    }>;
     sequence: string[];
     preferences: { show_default_blocks: boolean };
   };
@@ -21,19 +36,15 @@ export function getWarmpawzRazorpayStandardDisplayConfig(): {
   return {
     display: {
       blocks: {
-        banks: {
-          name: 'All payment options',
-          instruments: [
-            { method: 'upi' },
-            { method: 'card' },
-            { method: 'wallet' },
-            { method: 'netbanking' },
-          ],
+        upi: {
+          name: 'Pay using UPI',
+          instruments: [{ method: 'upi', flows: ['collect', 'intent', 'qr'] }],
         },
       },
-      sequence: ['block.banks'],
+      sequence: ['block.upi'],
       preferences: {
-        show_default_blocks: false,
+        // Keep Cards / Wallet / Netbanking rendering automatically below the explicit UPI block.
+        show_default_blocks: true,
       },
     },
   };
@@ -239,7 +250,11 @@ export const openRazorpayCheckout: any = async (options: RazorpayCheckoutOptions
     handler: options.onSuccess,
     config: getWarmpawzRazorpayStandardDisplayConfig(),
     ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
-    ...(e164 && email ? { method: 'upi' as const } : {}),
+    // Object form (`{ upi: true }`) matches buildSanitizedStandardRazorpayCheckoutOptions /
+    // applyWarmpawzCustomerToRazorpayOptions. The legacy string form (`'upi'`) is non-standard
+    // and silently ignored by checkout.js, which is why setting it on Android still left UPI
+    // hidden in earlier builds.
+    method: { upi: true },
     theme: {
       color: '#FF8C42',
       // The orange "W Warmpawz" merchant toolbar that Razorpay renders above

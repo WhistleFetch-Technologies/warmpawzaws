@@ -2184,12 +2184,22 @@ export function UniversalPaymentPage({
       try {
         orderRes = await apiClient.post<any>('/razorpay/create-order', {
           // Instant tele: no booking until after payment; use booking_prepaid
-          bookingId: (flowType === 'tele-instant' || bookingCreationDeferred) ? undefined : currentBookingId,
-          orderId: currentOrderId,
+          bookingId:
+            type === 'order'
+              ? undefined
+              : flowType === 'tele-instant' || bookingCreationDeferred
+                ? undefined
+                : currentBookingId,
+          orderId: type === 'order' ? currentOrderId : undefined,
           amount: amountToCharge,
           customerId,
           offerId: selectedRazorpayOffer?.id,
-          type: (flowType === 'tele-instant' || bookingCreationDeferred) ? 'booking_prepaid' : undefined,
+          type:
+            type === 'order' && currentOrderId
+              ? 'ecommerce_order'
+              : flowType === 'tele-instant' || bookingCreationDeferred
+                ? 'booking_prepaid'
+                : undefined,
           vendorId: (flowType === 'tele-instant' || bookingCreationDeferred) ? vendorId : undefined,
           // Server debits wallet here if /payments/create was skipped (ensures wallet is always charged before Razorpay).
           ...(type === 'booking' && currentBookingId && useWallet
@@ -2611,15 +2621,19 @@ export function UniversalPaymentPage({
           },
         },
       };
-      // Custom `display` block can surface QR-only UPI on desktop; when user prefills VPA use default layout + prefill (Razorpay Payment Link–style `prefill.vpa`).
-      if (!validPrefillVpa) {
-        options.config = getWarmpawzRazorpayStandardDisplayConfig();
-      }
+      // Always attach the `Pay using UPI` block — it carries `flows: ['collect','intent','qr']`
+      // which is what keeps UPI visible on Android (browsers can't enumerate packages, so
+      // Razorpay's UPI tile silently drops when flows aren't declared). `show_default_blocks: true`
+      // continues to render Cards / Wallet / Netbanking below UPI on every platform.
+      options.config = getWarmpawzRazorpayStandardDisplayConfig();
       if (Object.keys(razorpayPrefill).length > 0) {
         options.prefill = razorpayPrefill;
       }
+      // Object form mirrors buildSanitizedStandardRazorpayCheckoutOptions (the ecommerce flow that
+      // already works across iOS / Android / Web). The legacy string form (`'upi'`) is silently
+      // ignored by checkout.js and was the reason `method: 'upi'` did nothing on Android.
       if (validPrefillVpa || (e164Contact && razorpayPrefill.email)) {
-        options.method = 'upi';
+        options.method = { upi: true };
       }
 
       console.log('🚀 [PAYMENT] Opening Razorpay checkout...', {
@@ -2640,9 +2654,13 @@ export function UniversalPaymentPage({
           order_id: razorpayOrderId,
           ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
           theme: { color: '#FF8C42' },
-          // Keep parity with web `new Razorpay(options)` — bare payload hid UPI in prod (react-native-razorpay).
-          ...(!validPrefillVpa ? { config: getWarmpawzRazorpayStandardDisplayConfig() } : {}),
-          ...(validPrefillVpa || (e164Contact && razorpayPrefill.email) ? { method: 'upi' as const } : {}),
+          // Parity with the web `new Razorpay(options)` payload — `flows: ['collect','intent','qr']`
+          // is required for react-native-razorpay to render UPI on Android (without it the
+          // SDK tries to enumerate UPI PSP packages and drops the tile if discovery fails).
+          config: getWarmpawzRazorpayStandardDisplayConfig(),
+          ...(validPrefillVpa || (e164Contact && razorpayPrefill.email)
+            ? { method: { upi: true } }
+            : {}),
         };
         try {
           const resultPromise = waitForWarmpawzNativeRazorpayResult();
