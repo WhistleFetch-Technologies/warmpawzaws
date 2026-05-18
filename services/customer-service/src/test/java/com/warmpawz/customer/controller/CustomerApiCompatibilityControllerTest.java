@@ -13,6 +13,7 @@ import com.warmpawz.customer.dto.response.CustomerResponse;
 import com.warmpawz.customer.dto.response.PetResponse;
 import com.warmpawz.customer.exception.ApiExceptionHandler;
 import com.warmpawz.customer.exception.NotFoundException;
+import com.warmpawz.customer.service.BookingServiceClient;
 import com.warmpawz.customer.service.CustomerAddressService;
 import com.warmpawz.customer.service.CustomerPreferenceService;
 import com.warmpawz.customer.service.IdempotencyService;
@@ -29,6 +30,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -77,6 +79,9 @@ class CustomerApiCompatibilityControllerTest {
 
     @MockitoBean
     private IdempotencyService idempotencyService;
+
+    @MockitoBean
+    private BookingServiceClient bookingServiceClient;
 
     @BeforeEach
     void setupIdempotencyDefault() {
@@ -349,11 +354,12 @@ class CustomerApiCompatibilityControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("Pet deleted successfully"));
         mockMvc.perform(get("/customer/{phone}/pets/{petId}/bookings", "9999999999", petId))
-                .andExpect(status().isNotImplemented())
-                .andExpect(jsonPath("$.success").value(false))
-                .andExpect(jsonPath("$.message").value("Pet bookings are managed outside customer-service"))
-                .andExpect(jsonPath("$.data.ownerService").value("booking-service"))
-                .andExpect(jsonPath("$.data.status").value("not_migrated"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.message").value("booking_service_not_yet_available"))
+                .andExpect(jsonPath("$.data.bookings").isArray())
+                .andExpect(jsonPath("$.data.stats").isMap());
+        verify(bookingServiceClient, never()).getPetBookings(any(), any());
 
         mockMvc.perform(post("/pets")
                         .contentType(MediaType.APPLICATION_JSON)

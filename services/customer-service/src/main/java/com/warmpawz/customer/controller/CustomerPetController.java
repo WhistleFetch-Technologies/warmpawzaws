@@ -4,14 +4,17 @@ import com.warmpawz.customer.dto.common.CommonResponse;
 import com.warmpawz.customer.dto.common.PaginatedResult;
 import com.warmpawz.customer.dto.request.AddPetRequest;
 import com.warmpawz.customer.dto.request.LegacyPetsRequest;
+import com.warmpawz.customer.dto.response.CustomerResponse;
 import com.warmpawz.customer.dto.response.PetResponse;
 import com.warmpawz.customer.exception.BadRequestException;
+import com.warmpawz.customer.service.BookingServiceClient;
+import com.warmpawz.customer.service.CustomerService;
 import com.warmpawz.customer.service.IdempotencyService;
 import com.warmpawz.customer.service.PetService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,6 +35,11 @@ public class CustomerPetController {
 
     private final PetService petService;
     private final IdempotencyService idempotencyService;
+    private final BookingServiceClient bookingServiceClient;
+    private final CustomerService customerService;
+
+    @Value("${app.booking-service.enabled:false}")
+    private boolean bookingServiceEnabled;
 
     // =========================
     // ADD PET
@@ -228,17 +236,19 @@ public class CustomerPetController {
             @PathVariable String phone,
             @PathVariable UUID petId
     ) {
-        petService.getPetByPhone(requireValidPhone(phone), petId);
-        CommonResponse<Map<String, Object>> body = new CommonResponse<>();
-        body.setSuccess(false);
-        body.setMessage("Pet bookings are managed outside customer-service");
-        body.setData(Map.of(
-                "bookings", List.of(),
-                "stats", Map.of(),
-                "ownerService", "booking-service",
-                "status", "not_migrated"
-        ));
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(body);
+        String normalizedPhone = requireValidPhone(phone);
+        petService.getPetByPhone(normalizedPhone, petId);
+        if (!bookingServiceEnabled) {
+            Map<String, Object> data = Map.of(
+                    "bookings", List.of(),
+                    "stats", Map.of(),
+                    "message", "booking_service_not_yet_available"
+            );
+            return ResponseEntity.ok(CommonResponse.success(data));
+        }
+        CustomerResponse customer = customerService.getCustomerByPhone(normalizedPhone);
+        Map<String, Object> data = bookingServiceClient.getPetBookings(customer.getId(), petId);
+        return ResponseEntity.ok(CommonResponse.success(data));
     }
 
     private ResponseEntity<CommonResponse<PetResponse>> petResponse(PetResponse response) {
