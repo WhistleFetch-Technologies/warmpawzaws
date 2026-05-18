@@ -140,8 +140,15 @@ public class PidgeStoreChannelController {
 
 	public record VendorProxyBody(String method, String path, JsonNode body) {}
 
+	@Operation(summary = "Partial delivery create order",
+			description = "POST /v1.0/store/channel/vendor/order with line-level products[], customer_detail, and tax-inclusive bill/COD summation (Pidge partial delivery workflow).")
+	@PostMapping("/logistics/pidge/order/partial-delivery")
+	public ResponseEntity<Map<String, Object>> partialDeliveryCreate(@RequestBody JsonNode body) {
+		return ResponseEntity.ok(okPidge(pidge.createOrder(body)));
+	}
+
 	@Operation(summary = "Vendor proxy",
-			description = "Call any /v1.0/… path for APIs without a dedicated route (e.g. Partial Delivery — no URL in Postman).")
+			description = "Call any /v1.0/… path for APIs without a dedicated route.")
 	@PostMapping("/logistics/pidge/vendor-proxy")
 	public ResponseEntity<Map<String, Object>> vendorProxy(@RequestBody VendorProxyBody req) {
 		if (req.method() == null || req.path() == null) {

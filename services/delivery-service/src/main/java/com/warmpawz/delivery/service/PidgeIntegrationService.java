@@ -120,9 +120,14 @@ public class PidgeIntegrationService {
 		PidgeOrderPayloadBuilder.BrandDefaults defaults = credentialResolver.brandDefaults();
 		boolean omitBrand = payloadBuilder.shouldOmitBrandForCreateOrder(requestBody);
 		JsonNode normalized = payloadBuilder.applyOmitBrandIfNeeded(requestBody);
-		JsonNode pidgePayload = PidgeOrderPayloadBuilder.isNativeCreateOrderBody(normalized)
-				? normalized
-				: payloadBuilder.buildFromSimplified(normalized, defaults, omitBrand);
+		JsonNode pidgePayload;
+		if (PidgeOrderPayloadBuilder.isNativeCreateOrderBody(normalized)) {
+			pidgePayload = normalized;
+		} else if (PidgePartialDeliverySupport.isPartialDeliveryCreateOrderBody(normalized)) {
+			pidgePayload = PidgePartialDeliverySupport.normalizePartialDeliveryCreateOrder(objectMapper, normalized);
+		} else {
+			pidgePayload = payloadBuilder.buildFromSimplified(normalized, defaults, omitBrand);
+		}
 		String base = credentialResolver.resolveRequired().baseUrl();
 		return exchangeWithRetry("POST", base + CREATE_ORDER_PATH, pidgePayload);
 	}

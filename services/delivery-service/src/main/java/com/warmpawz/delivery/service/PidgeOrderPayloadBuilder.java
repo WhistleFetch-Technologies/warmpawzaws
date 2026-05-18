@@ -35,7 +35,7 @@ public class PidgeOrderPayloadBuilder {
 		}
 
 		JsonNode senderRaw = firstObject(input, "sender", "pickup", "senderDetail");
-		JsonNode receiverRaw = firstObject(input, "receiver", "delivery", "receiverDetail");
+		JsonNode receiverRaw = firstObject(input, "receiver", "delivery", "receiverDetail", "customer_detail", "customerDetail");
 		ObjectNode senderDetail = toReceiverSenderDetail(senderRaw, defaults.defaultCountry());
 		ObjectNode receiverDetail = toReceiverSenderDetail(receiverRaw, defaults.defaultCountry());
 
@@ -53,6 +53,9 @@ public class PidgeOrderPayloadBuilder {
 		pocDetail.put("email", pocEmail != null ? pocEmail : "");
 
 		ArrayNode products = buildProducts(input.path("items"));
+		if (products.isEmpty()) {
+			products = buildProducts(input.path("products"));
+		}
 		double billAmount = number(input, "billAmount", "bill_amount", "subTotal", "orderValue");
 		double codAmount = number(input, "codAmount", "cod_amount");
 
@@ -299,6 +302,9 @@ public class PidgeOrderPayloadBuilder {
 			p.set("dimension", dim);
 			if (it.hasNonNull("image_url")) {
 				p.put("image_url", it.get("image_url").asText());
+			}
+			if (it.hasNonNull("force_action")) {
+				p.put("force_action", it.get("force_action").asText());
 			}
 			out.add(p);
 		}

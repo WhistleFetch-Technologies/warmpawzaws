@@ -2,6 +2,7 @@ package com.warmpawz.delivery.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.warmpawz.delivery.config.PidgeProperties;
+import com.warmpawz.delivery.service.serviceimpl.PidgeTicketWebhookProcessingService;
 import com.warmpawz.delivery.service.serviceimpl.PidgeWebhookProcessingService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -10,10 +11,11 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 /**
- * Webhooks: GET/POST /webhooks/pidge — canonical Pidge ingress (register this URL in Pidge; monolith no longer handles Pidge).
+ * Webhooks: GET/POST /webhooks/pidge — canonical Pidge ingress (status updates + Rider Task from Communications Module).
  */
 @RestController
 @RequiredArgsConstructor
@@ -22,6 +24,7 @@ public class LogisticsWebhookController {
 
 	private final PidgeProperties pidgeProperties;
 	private final PidgeWebhookProcessingService pidgeWebhookProcessingService;
+	private final PidgeTicketWebhookProcessingService pidgeTicketWebhookProcessingService;
 
 	@GetMapping("/webhooks/pidge")
 	public ResponseEntity<Map<String, Object>> pidgeWebhookInfo() {
@@ -32,17 +35,47 @@ public class LogisticsWebhookController {
 		return ResponseEntity.ok(Map.of(
 				"ok", true,
 				"message",
-				"Register clientUrl in Pidge (Channel integration → Webhook URL). Point PUBLIC_API_BASE_URL at this delivery-service. Local dev: ngrok/cloudflared.",
+				"Register clientUrl in Pidge. Status updates: Channel integration → Webhook URL. "
+						+ "Rider active task: Communications Module. Ticket status: set update_info.callback_url on create issue.",
 				"clientUrl", clientUrl,
+				"riderTaskUrl", clientUrl + "/rider-task",
+				"ticketStatusUrl", clientUrl + "/ticket",
 				"method", "POST",
+				"payloadKinds", List.of("order_status", "rider_task", "ticket_status"),
 				"note",
-				"Optional: PIDGE_WEBHOOK_BEARER_TOKEN + Authorization: Bearer <token>."));
+				"Optional: PIDGE_WEBHOOK_BEARER_TOKEN + Authorization: Bearer <token> (use {{callback_auth}} in Pidge)."));
 	}
 
 	@PostMapping(value = "/webhooks/pidge", consumes = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<?> pidgeIngest(
 			@RequestHeader(value = "Authorization", required = false) String authorization,
 			@RequestBody JsonNode payload) {
+		return ingestPidgeWebhook(authorization, payload, WebhookKind.AUTO);
+	}
+
+	/** Explicit ingress when Pidge Communications Module is configured with a dedicated rider-task URL. */
+	@PostMapping(value = "/webhooks/pidge/rider-task", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> pidgeRiderTaskIngest(
+			@RequestHeader(value = "Authorization", required = false) String authorization,
+			@RequestBody JsonNode payload) {
+		return ingestPidgeWebhook(authorization, payload, WebhookKind.RIDER_TASK);
+	}
+
+	/** Ticket Management — Webhook Ticket Status Update ({@code update_info.callback_url} on create issue). */
+	@PostMapping(value = "/webhooks/pidge/ticket", consumes = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> pidgeTicketStatusIngest(
+			@RequestHeader(value = "Authorization", required = false) String authorization,
+			@RequestBody JsonNode payload) {
+		return ingestPidgeWebhook(authorization, payload, WebhookKind.TICKET_STATUS);
+	}
+
+	private enum WebhookKind {
+		AUTO,
+		RIDER_TASK,
+		TICKET_STATUS
+	}
+
+	private ResponseEntity<?> ingestPidgeWebhook(String authorization, JsonNode payload, WebhookKind kind) {
 		String secret = pidgeProperties.getWebhookBearerToken();
 		if (secret != null && !secret.isBlank()) {
 			String expected = "Bearer " + secret.trim();
@@ -50,7 +83,12 @@ public class LogisticsWebhookController {
 				return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Unauthorized"));
 			}
 		}
-		Map<String, Object> result = pidgeWebhookProcessingService.handlePidgePayload(payload);
+		Map<String, Object> result =
+				switch (kind) {
+					case RIDER_TASK -> pidgeWebhookProcessingService.handleRiderTaskPayload(payload);
+					case TICKET_STATUS -> pidgeTicketWebhookProcessingService.handleTicketStatusPayload(payload);
+					case AUTO -> pidgeWebhookProcessingService.handlePidgePayload(payload);
+				};
 		if (result.containsKey("error")) {
 			return ResponseEntity.badRequest().body(result);
 		}
