@@ -59,11 +59,25 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
     const files = Array.from(e.target.files || []);
     e.target.value = '';
 
+    // Helpful Android diagnostics: name/size/type are the three things that confirm bytes survived
+    // the Capawesome pick → File conversion. An entry with size 0 is the #1 cause of
+    // "upload returns success but gallery stays empty".
+    if (files.length > 0) {
+      console.log(
+        '[GALLERY] Picked files:',
+        files.map((f) => ({ name: f.name, size: f.size, type: f.type }))
+      );
+    }
+
     const valid = files.filter((file) => {
       // Use same rules as @capacitor/camera + Capawesome: Android often yields application/octet-stream
       // or empty MIME; match by extension for image/* (see fileMatchesAccept).
       if (!fileMatchesAccept(file, 'image/*')) {
         toast.error(`${file.name} is not an image`);
+        return false;
+      }
+      if (file.size === 0) {
+        toast.error(`${file.name || 'Selected photo'} is empty. Please try a different photo or reopen the picker.`);
         return false;
       }
       if (file.size > MAX_FILE_MB * 1024 * 1024) {
@@ -81,6 +95,7 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
     }
 
     setUploading(true);
+    const beforeCount = photos.length;
     try {
       const formData = new FormData();
       valid.forEach((photo) => formData.append('photos', photo));
@@ -88,14 +103,31 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
       const uploadData = (await apiClient.post(`/vendor/facility/${vendorId}/upload-photos`, formData)) as {
         success?: boolean;
         error?: string;
+        photoUrls?: string[];
+        totalPhotos?: number;
+        uploadedCount?: number;
       };
+      console.log('[GALLERY] Upload response:', uploadData);
 
       if (!uploadData?.success) {
         throw new Error(uploadData?.error || 'Upload failed');
       }
 
-      toast.success(valid.length === 1 ? 'Photo uploaded' : `${valid.length} photos uploaded`);
-      await loadPhotos();
+      // Backend may return success=true while skipping every file (e.g. 0-byte Android pick,
+      // S3 error per-file). Refuse the false "success" so the user is not misled.
+      const uploadedCount =
+        uploadData.uploadedCount ??
+        (Array.isArray(uploadData.photoUrls) ? uploadData.photoUrls.length : undefined);
+      if (uploadedCount === 0) {
+        throw new Error('No photos were saved. Please reopen the picker and try again.');
+      }
+
+      const newCount = await loadPhotos();
+      if (newCount <= beforeCount) {
+        throw new Error('Upload finished but the gallery did not update. Please retry.');
+      }
+      const stored = uploadedCount ?? newCount - beforeCount;
+      toast.success(stored === 1 ? 'Photo uploaded' : `${stored} photos uploaded`);
     } catch (err: unknown) {
       console.error('[GALLERY] Upload failed:', err);
       toast.error(err instanceof Error ? err.message : 'Failed to upload photos');

@@ -401,22 +401,68 @@ export class ApiClient {
   async post<T>(endpoint: string, data?: any): Promise<T> {
     // Handle FormData - don't stringify or set Content-Type header
     if (data instanceof FormData) {
+      // Re-resolve base URL at call time so deploy-time runtime config (and prod vs dev
+      // CloudFront host detection) always wins, even if `apiClient` was instantiated
+      // before runtime-config.js executed inside the Capacitor WebView.
+      const resolvedBaseUrl = getApiBaseUrl();
+      if (resolvedBaseUrl && resolvedBaseUrl !== this.baseUrl) {
+        this.baseUrl = resolvedBaseUrl;
+      }
+      if (!this.baseUrl) {
+        throw new Error('API_BASE_URL is not configured (runtime-config.js missing or empty).');
+      }
+
+      // Silently refresh Cognito access tokens (same as JSON requests) so a stale token does
+      // not 401 the multipart upload.
+      try {
+        const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
+        await refreshVendorTokensIfNeeded();
+      } catch {
+        /* non-blocking */
+      }
+
       const token = this.getAuthToken();
       const headers: Record<string, string> = {};
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      
+      if (UAT_MODE) {
+        headers['X-UAT-Mode'] = 'true';
+      }
+
+      const base = this.baseUrl.replace(/\/+$/, '');
+      const path = endpoint.replace(/^\/+/, '/');
+      const url = `${base}${path}`;
+
       // Don't set Content-Type for FormData - browser will set it with boundary
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      const response = await fetch(url, {
         method: 'POST',
         headers,
         body: data,
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(error.error || error.message || `HTTP ${response.status}`);
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        // Mirror the nested-error parsing in `request()` so multipart failures surface a
+        // human message ("No photos provided", S3 errors, etc.) instead of "[object Object]".
+        let errorMessage = `HTTP ${response.status}`;
+        if (errorData?.error && typeof errorData.error === 'object') {
+          if (typeof errorData.error.details === 'string') {
+            errorMessage = errorData.error.details;
+          } else if (errorData.error.message) {
+            errorMessage = errorData.error.message;
+          } else {
+            errorMessage = JSON.stringify(errorData.error);
+          }
+        } else if (typeof errorData?.error === 'string') {
+          errorMessage = errorData.error;
+        } else if (typeof errorData?.message === 'string') {
+          errorMessage = errorData.message;
+        }
+        const err = new Error(errorMessage);
+        (err as any).statusCode = response.status;
+        (err as any).originalError = errorData;
+        throw err;
       }
 
       return response.json();

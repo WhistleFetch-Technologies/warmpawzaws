@@ -6416,9 +6416,21 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       const photoUrls: string[] = [];
       const photoKeys: string[] = [];
+      const skippedReasons: string[] = [];
 
       for (const photo of photos) {
         try {
+          // Defensive: Capacitor/Capawesome on Android occasionally hands us a `File` with
+          // zero bytes when the WebView cannot read the underlying content:// URI. Persisting
+          // those would silently return success and break the gallery. Refuse them here too.
+          const size = typeof (photo as any)?.size === 'number' ? (photo as any).size : 0;
+          if (!size) {
+            const reason = `${photo.name || 'unnamed'}: 0 bytes (empty upload skipped)`;
+            console.warn(`⚠️ [FACILITY-PHOTOS] ${reason}`);
+            skippedReasons.push(reason);
+            continue;
+          }
+
           // Generate a unique filename
           const timestamp = Date.now();
           const ext = photo.name.split('.').pop() || 'jpg';
@@ -6427,6 +6439,13 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           // Convert File to ArrayBuffer and upload to S3
           const arrayBuffer = await photo.arrayBuffer();
           const uint8Array = new Uint8Array(arrayBuffer);
+
+          if (uint8Array.byteLength === 0) {
+            const reason = `${photo.name || 'unnamed'}: empty body after arrayBuffer()`;
+            console.warn(`⚠️ [FACILITY-PHOTOS] ${reason}`);
+            skippedReasons.push(reason);
+            continue;
+          }
 
           await s3Client.send(new PutObjectCommand({
             Bucket: BUCKET_NAME,
@@ -6440,11 +6459,33 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           photoUrls.push(fileKey); // Store key, not URL
           photoKeys.push(fileKey);
 
-          console.log(`📸 [FACILITY-PHOTOS] Uploaded to S3: ${fileKey}`);
+          console.log(`📸 [FACILITY-PHOTOS] Uploaded to S3: ${fileKey} (${uint8Array.byteLength} bytes)`);
         } catch (photoError: any) {
+          const reason = `${photo.name || 'unnamed'}: ${photoError?.message || photoError}`;
           console.error(`❌ [FACILITY-PHOTOS] Error processing photo ${photo.name}:`, photoError);
+          skippedReasons.push(reason);
           // Continue with other photos
         }
+      }
+
+      // Refuse the "success with zero uploads" false positive that the vendor app was
+      // previously toasting as a successful upload. The client now relies on `uploadedCount`
+      // and a 4xx here so the gallery does not stay empty after a fake success.
+      if (photoUrls.length === 0) {
+        console.warn(
+          `⚠️ [FACILITY-PHOTOS] No photos uploaded for vendor ${actualVendorId} (attempted=${photos.length}, skipped=${skippedReasons.length})`
+        );
+        return c.json(
+          {
+            success: false,
+            error:
+              'No photos were saved. The selected file(s) appeared empty or could not be processed. Please re-pick the photos and try again.',
+            uploadedCount: 0,
+            attemptedCount: photos.length,
+            skipped: skippedReasons,
+          },
+          400
+        );
       }
 
       // Update vendor metadata with new photos (use resolved vendor id)
@@ -6468,6 +6509,9 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         success: true,
         photoUrls: photoUrls,
         totalPhotos: allPhotos.length,
+        uploadedCount: photoUrls.length,
+        attemptedCount: photos.length,
+        skipped: skippedReasons,
       });
     } catch (error: any) {
       console.error('Error uploading facility photos:', error);

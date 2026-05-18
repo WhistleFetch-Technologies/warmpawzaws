@@ -4,8 +4,6 @@ import {
   Camera,
   CameraResultType,
   CameraSource,
-  MediaType,
-  MediaTypeSelection,
 } from '@capacitor/camera';
 import { Capacitor } from '@capacitor/core';
 import { isImageOnlyFileAccept } from '@/lib/capacitor';
@@ -134,8 +132,17 @@ async function readGetPhotoToFile(photo: {
 }
 
 /**
- * Picks one or more images on Android (Capacitor) when HTML `<input type="file">` is unreliable in WebView.
- * Prefers `chooseFromGallery` (Camera 8+); falls back to deprecated `pickImages` / `getPhoto` on failure.
+ * Picks one image on Android (Capacitor) using `Camera.getPhoto({ resultType: Base64 })`.
+ *
+ * This is the most reliable Android path because base64 bytes are read by the native plugin
+ * directly from `MediaStore` and handed to JS through the Capacitor bridge — there is no
+ * WebView `fetch(content://…)` / `convertFileSrc` round-trip. That round-trip is the path
+ * that has been returning 0-byte blobs on a lot of devices/galleries and is what made the
+ * vendor "Add photo" silently fail.
+ *
+ * Returns at most one file regardless of `options.multiple`. The caller can re-invoke for
+ * additional photos — gallery UI already supports incremental adds and this is the only way
+ * to guarantee Android byte fidelity without adding `@capacitor/filesystem`.
  */
 export async function pickImageFilesWithCapacitorCamera(options: {
   accept: string;
@@ -148,68 +155,60 @@ export async function pickImageFilesWithCapacitorCamera(options: {
 
   const out: File[] = [];
 
-  if (options.multiple) {
-    try {
-      const { results } = await Camera.chooseFromGallery({
-        mediaType: MediaTypeSelection.Photo,
-        allowMultipleSelection: true,
-        limit: 0,
-        quality: 90,
-        correctOrientation: true,
-      });
-      if (!results?.length) {
-        return { files: [], rejectedByAccept: false };
-      }
-      for (let i = 0; i < results.length; i++) {
-        const r = results[i];
-        if (r.type !== MediaType.Photo) {
-          continue;
-        }
-        const fmt = r.metadata?.format || 'jpeg';
-        const ext = fmt.replace(/jpeg/i, 'jpg');
-        const name = `image-${i}-${Date.now()}.${ext}`;
-        out.push(
-          await capacitorImageToFile(
-            { webPath: r.webPath, uri: r.uri, format: fmt },
-            name
-          )
-        );
-      }
-    } catch {
-      try {
-        const { photos } = await Camera.pickImages({ quality: 90, limit: 0, correctOrientation: true });
-        if (!photos?.length) {
-          return { files: [], rejectedByAccept: false };
-        }
-        for (let i = 0; i < photos.length; i++) {
-          const p = photos[i];
-          const ext = (p.format || 'jpeg').replace(/jpeg/i, 'jpg');
-          const name = `image-${i}-${Date.now()}.${ext}`;
-          out.push(await capacitorImageToFile({ webPath: p.webPath, path: p.path, format: p.format }, name));
-        }
-      } catch {
-        const photo = await Camera.getPhoto({
-          quality: 90,
-          allowEditing: false,
-          resultType: CameraResultType.Uri,
-          source: CameraSource.Prompt,
-        });
-        out.push(await readGetPhotoToFile(photo));
-      }
-    }
-  } else {
-    const photo = await Camera.getPhoto({
+  // Single, deterministic path: ask Camera plugin for base64 from the gallery. This bypasses
+  // every WebView byte-read path that has been failing on Android in this app.
+  let photo;
+  try {
+    photo = await Camera.getPhoto({
       quality: 90,
       allowEditing: false,
-      resultType: CameraResultType.Uri,
-      source: CameraSource.Prompt,
+      resultType: CameraResultType.Base64,
+      source: CameraSource.Photos,
+      correctOrientation: true,
     });
-    out.push(await readGetPhotoToFile(photo));
+  } catch (primaryErr) {
+    // User dismissal / older device that can't drive CameraSource.Photos → fall back to Prompt
+    // (camera or gallery), still asking for Base64 so we get reliable bytes.
+    console.warn('[CameraPick] CameraSource.Photos failed, retrying with Prompt', primaryErr);
+    photo = await Camera.getPhoto({
+      quality: 90,
+      allowEditing: false,
+      resultType: CameraResultType.Base64,
+      source: CameraSource.Prompt,
+      correctOrientation: true,
+    });
+  }
+
+  if (photo?.base64String) {
+    const ext = (photo.format || 'jpeg').replace(/jpeg/i, 'jpg');
+    const name = `image-${Date.now()}.${ext}`;
+    out.push(
+      await capacitorImageToFile(
+        { base64String: photo.base64String, format: photo.format || 'jpeg' },
+        name
+      )
+    );
+  } else if (photo) {
+    // Defensive: if a future plugin version drops base64String, try the remaining URL fields.
+    const fmt = photo.format || 'jpeg';
+    const ext = fmt.replace(/jpeg/i, 'jpg');
+    const name = `image-${Date.now()}.${ext}`;
+    out.push(
+      await capacitorImageToFile(
+        {
+          webPath: (photo as any).webPath,
+          path: (photo as any).path,
+          dataUrl: (photo as any).dataUrl,
+          format: fmt,
+        },
+        name
+      )
+    );
   }
 
   const matched: File[] = [];
   for (const f of out) {
-    if (fileMatchesAccept(f, options.accept)) {
+    if (f.size > 0 && fileMatchesAccept(f, options.accept)) {
       matched.push(f);
     }
   }
