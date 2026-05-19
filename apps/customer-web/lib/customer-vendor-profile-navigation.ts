@@ -1,6 +1,7 @@
 import {
   pickCustomerVendorAccountId,
   pickVetPractitionerProfileEntityId,
+  pickWalkerVendorId,
 } from '@warmpawz/shared-types';
 
 export type WebCustomerVendorStyleListingVertical = 'vet' | 'grooming';
@@ -153,6 +154,37 @@ export function getWebVetDiscoveryChevronNavTarget(input: {
 
 export function getWebGroomingTrainingEmbedVendorId(provider: Record<string, unknown>): string {
   return pickCustomerVendorAccountId(provider);
+}
+
+/** Walker problem-grid / UniversalServicesByStyle chevron → {@link HomeServiceProviderProfile}. */
+export function getWebWalkerDiscoveryChevronNavTarget(input: {
+  provider: Record<string, unknown>;
+  providerDisplayName?: string;
+  serviceStyle: string;
+  profileBackScreen?: string;
+  specialization?: string;
+}): { screen: string; data: Record<string, unknown> } | null {
+  const row = input.provider;
+  const vendorId =
+    pickWalkerVendorId(row) || pickCustomerVendorAccountId(row) || '';
+  if (!String(vendorId).trim()) {
+    return null;
+  }
+  const displayName =
+    input.providerDisplayName?.trim() ||
+    String(row.name || row.businessName || row.business_name || 'Walker').trim() ||
+    'Walker';
+  return {
+    screen: 'walker-provider-profile',
+    data: {
+      vendorId: String(vendorId).trim(),
+      walker: { name: displayName, ...row },
+      serviceType: 'walking',
+      serviceStyle: String(input.serviceStyle),
+      ...(input.profileBackScreen ? { walkerProfileBackScreen: input.profileBackScreen } : {}),
+      ...(input.specialization ? { specialization: input.specialization } : {}),
+    },
+  };
 }
 
 /** Legacy `vet-vendor-profile` payloads from older navigators. */

@@ -24,7 +24,7 @@ import { getEffectiveCapabilities } from '../../../utils/capability-filter';
 import { computeEffectiveAllowedServiceStyles } from '../../../utils/effective-service-styles';
 import {
   getTemporaryVendorSuppressionParams,
-  sqlExcludeSuppressedBookingRows,
+  sqlAndExcludeSuppressedBookingRows,
   filterBookingsTemporarySuppression,
 } from '../../../utils/temporary-vendor-ui-suppression';
 
@@ -260,8 +260,12 @@ class VendorStatsHandler extends BaseHandler {
     let bookingsQuery = `SELECT * FROM bookings bk WHERE bk.vendor_id = $1`;
     const params: unknown[] = [vendorId];
     let nextP = 2;
+    bookingsQuery += sqlAndExcludeSuppressedBookingRows(
+      'bk',
+      supStats ? nextP : undefined,
+      supStats ? nextP + 1 : undefined,
+    );
     if (supStats) {
-      bookingsQuery += ` AND ${sqlExcludeSuppressedBookingRows('bk', nextP, nextP + 1)}`;
       params.push(supStats.vendorIds, supStats.cutoffDateIst);
       nextP += 2;
     }

@@ -38,7 +38,7 @@ import {
 import {
   getTemporaryVendorSuppressionParams,
   shouldHideBookingRowFromVendorUi,
-  sqlExcludeSuppressedBookingRows,
+  sqlAndExcludeSuppressedBookingRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
 
 // Helper function to format detailed address with all fields
@@ -145,8 +145,12 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       }
 
       const temporarySuppression = getTemporaryVendorSuppressionParams();
+      queryText += sqlAndExcludeSuppressedBookingRows(
+        'b',
+        temporarySuppression ? paramIndex : undefined,
+        temporarySuppression ? paramIndex + 1 : undefined,
+      );
       if (temporarySuppression) {
-        queryText += ` AND ${sqlExcludeSuppressedBookingRows('b', paramIndex, paramIndex + 1)}`;
         params.push(temporarySuppression.vendorIds, temporarySuppression.cutoffDateIst);
         paramIndex += 2;
       }
@@ -1454,8 +1458,12 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
       let paramIndex = vendorIds.length + 1;
 
       const tempSupAlias = getTemporaryVendorSuppressionParams();
+      queryText += sqlAndExcludeSuppressedBookingRows(
+        'b',
+        tempSupAlias ? paramIndex : undefined,
+        tempSupAlias ? paramIndex + 1 : undefined,
+      );
       if (tempSupAlias) {
-        queryText += ` AND ${sqlExcludeSuppressedBookingRows('b', paramIndex, paramIndex + 1)}`;
         params.push(tempSupAlias.vendorIds, tempSupAlias.cutoffDateIst);
         paramIndex += 2;
       }
@@ -1561,8 +1569,8 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
       const vendorIds = [vendorId];
       if (paramVendorId !== vendorId) vendorIds.push(paramVendorId);
       const todaySup = getTemporaryVendorSuppressionParams();
-      const todaySupFrag1 = todaySup ? ` AND ${sqlExcludeSuppressedBookingRows('b', 3, 4)}` : '';
-      const todaySupFrag2 = todaySup ? ` AND ${sqlExcludeSuppressedBookingRows('b', 4, 5)}` : '';
+      const todaySupFrag1 = sqlAndExcludeSuppressedBookingRows('b', todaySup ? 3 : undefined, todaySup ? 4 : undefined);
+      const todaySupFrag2 = sqlAndExcludeSuppressedBookingRows('b', todaySup ? 4 : undefined, todaySup ? 5 : undefined);
       const todaySupTail = todaySup ? [todaySup.vendorIds, todaySup.cutoffDateIst] : [];
 
       const result = vendorIds.length === 1
