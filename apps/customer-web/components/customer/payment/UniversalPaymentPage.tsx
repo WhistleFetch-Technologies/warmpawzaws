@@ -16,7 +16,12 @@ import { toast } from 'sonner';
 import { AddPaymentMethodModal } from './AddPaymentMethodModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
-import { apiClient, getApiBaseUrl } from '@/lib/api-client';
+import {
+  apiClient,
+  beginForcedLogoutSuppression,
+  endForcedLogoutSuppression,
+  getApiBaseUrl,
+} from '@/lib/api-client';
 import {
   urlCustomerAddressesByPhone,
   urlCustomerPetsByCustomerId,
@@ -376,6 +381,17 @@ export function UniversalPaymentPage({
   onPaymentAbandoned,
 }: UniversalPaymentPageProps) {
   const router = useRouter();
+
+  // Defense-in-depth: while the payment page is mounted, transient 401s from any
+  // best-effort helper endpoint (pets, addresses, wallet, refund policy, etc.) must
+  // never hard-redirect the user to /auth. Silent refresh still runs; truly critical
+  // calls (`/bookings/create`, `/razorpay/create-order`, `/razorpay/verify-payment`,
+  // `/payments/create`) keep throwing ApiError and surface an in-page error toast.
+  useEffect(() => {
+    beginForcedLogoutSuppression();
+    return () => endForcedLogoutSuppression();
+  }, []);
+
   // State
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -576,7 +592,7 @@ export function UniversalPaymentPage({
           addr.state || addr.city || addr.pincode
             ? { state: addr.state || undefined, city: addr.city || undefined, pincode: addr.pincode || undefined }
             : undefined,
-      });
+      }, undefined, undefined, { suppressForcedLogout: true });
 
       if (taxCalculateResponseHasPayload(taxRes)) {
         const cgst = taxRes.totalCGST || 0;
@@ -721,7 +737,7 @@ export function UniversalPaymentPage({
         customerPhone,
         customerLocation,
         bookingId: type === 'booking' ? bookingId : undefined,
-      });
+      }, undefined, undefined, { suppressForcedLogout: true });
 
       if (taxCalculateResponseHasPayload(taxRes)) {
         const cgst = taxRes.totalCGST || 0;
@@ -840,7 +856,7 @@ export function UniversalPaymentPage({
           serviceId: resolvedServiceId || serviceId,
           serviceStyle,
           category,
-        });
+        }, undefined, undefined, { suppressForcedLogout: true });
 
         if (coverageRes.success && coverageRes.covered) {
           console.log('✅ [SUBSCRIPTION] Booking covered by subscription:', coverageRes.subscription);
@@ -892,9 +908,15 @@ export function UniversalPaymentPage({
     (async () => {
       try {
         let list: { id: string; name: string }[] = [];
+        // suppressForcedLogout: pet-picker lookups are best-effort. A 401 here (often
+        // because the customer ID UUID isn't yet reconciled) must not boot the user mid-pay.
         if (customerId) {
           try {
-            const res = await apiClient.get<unknown>(urlCustomerPetsByCustomerId(customerId));
+            const res = await apiClient.get<unknown>(
+              urlCustomerPetsByCustomerId(customerId),
+              undefined,
+              { suppressForcedLogout: true }
+            );
             list = petsListForPaymentPicker(res);
           } catch {
             list = [];
@@ -903,7 +925,9 @@ export function UniversalPaymentPage({
         if (!cancelled && list.length === 0 && customerPhone) {
           try {
             const byQuery = await apiClient.get<unknown>(
-              urlCustomerPetsByPhoneQuery(customerPhone)
+              urlCustomerPetsByPhoneQuery(customerPhone),
+              undefined,
+              { suppressForcedLogout: true }
             );
             list = petsListForPaymentPicker(byQuery);
           } catch {
@@ -913,7 +937,9 @@ export function UniversalPaymentPage({
         if (!cancelled && list.length === 0 && customerPhone) {
           try {
             const byPath = await apiClient.get<unknown>(
-              urlCustomerPetsByPhonePath(customerPhone)
+              urlCustomerPetsByPhonePath(customerPhone),
+              undefined,
+              { suppressForcedLogout: true }
             );
             list = petsListForPaymentPicker(byPath);
           } catch {
@@ -986,7 +1012,9 @@ export function UniversalPaymentPage({
 
         for (const endpoint of endpoints) {
           try {
-            vendorServicesRes = await apiClient.get<any>(endpoint);
+            // suppressForcedLogout: vendor service catalogue lookup is best-effort and several
+            // of these endpoints legitimately 401 for some vendors — must not boot the user.
+            vendorServicesRes = await apiClient.get<any>(endpoint, undefined, { suppressForcedLogout: true });
             // Check if response has services in any format
             if (vendorServicesRes?.allServices ||
               vendorServicesRes?.services ||
@@ -1232,7 +1260,12 @@ export function UniversalPaymentPage({
 
   const loadAddresses = async () => {
     try {
-      const data = await apiClient.get<any>(urlCustomerAddressesByPhone(customerPhone));
+      // suppressForcedLogout: address list is best-effort; user can still pay if it fails.
+      const data = await apiClient.get<any>(
+        urlCustomerAddressesByPhone(customerPhone),
+        undefined,
+        { suppressForcedLogout: true }
+      );
       const addressList = data.addresses || [];
       setAddresses(addressList);
 
@@ -1257,7 +1290,7 @@ export function UniversalPaymentPage({
 
       // Load wallet balance
       try {
-        const walletRes = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
+        const walletRes = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`, undefined, { suppressForcedLogout: true });
         if (walletRes.wallet) {
           setWallet(walletRes.wallet);
           const bal = Number(walletRes.wallet.balance ?? 0);
@@ -1274,7 +1307,7 @@ export function UniversalPaymentPage({
 
       // Load saved payment methods
       try {
-        const methodsRes = await apiClient.get<any>(`/customer/payment-methods?phone=${encodeURIComponent(customerPhone)}`);
+        const methodsRes = await apiClient.get<any>(`/customer/payment-methods?phone=${encodeURIComponent(customerPhone)}`, undefined, { suppressForcedLogout: true });
         if (methodsRes.methods) {
           setSavedMethods(methodsRes.methods);
           const defaultMethod = methodsRes.methods.find((m: SavedPaymentMethod) => m.isDefault);
@@ -1307,7 +1340,7 @@ export function UniversalPaymentPage({
       if (selectedServiceIds.length > 0) params.set('selectedServiceIds', selectedServiceIds.join(','));
 
       // Load applicable promotions (public endpoint – no admin auth required)
-      const promoRes = await apiClient.get<any>(`/promotions/applicable?${params.toString()}`);
+      const promoRes = await apiClient.get<any>(`/promotions/applicable?${params.toString()}`, undefined, { suppressForcedLogout: true });
 
       if (promoRes.success && promoRes.promotions) {
         const raw = promoRes.promotions as any[];
@@ -1357,7 +1390,9 @@ export function UniversalPaymentPage({
     try {
       // Load Razorpay offers (card offers, cashback, etc.)
       const offersRes = await apiClient.get<any>(
-        `/razorpay/offers?amount=${baseAmount}`
+        `/razorpay/offers?amount=${baseAmount}`,
+        undefined,
+        { suppressForcedLogout: true }
       );
 
       if (offersRes.success && offersRes.offers) {
@@ -1372,7 +1407,9 @@ export function UniversalPaymentPage({
     try {
       const catParam = category != null && String(category).trim() !== '' ? `&category=${encodeURIComponent(String(category).trim())}` : '';
       const feesRes = await apiClient.get<any>(
-        `/config/fees?amount=${baseAmount}&type=${type}&serviceStyle=${encodeURIComponent(serviceStyle || '')}${catParam}`
+        `/config/fees?amount=${baseAmount}&type=${type}&serviceStyle=${encodeURIComponent(serviceStyle || '')}${catParam}`,
+        undefined,
+        { suppressForcedLogout: true }
       );
 
       if (!feesRes?.success) {
@@ -1465,7 +1502,9 @@ export function UniversalPaymentPage({
     try {
       const serviceType = type === 'booking' ? 'booking' : (category || 'default');
       const policiesRes = await apiClient.get<{ success?: boolean; policies?: Record<string, { title: string; description: string; details?: string[] }> }>(
-        `/config/policies?service_type=${encodeURIComponent(serviceType)}&policies=payment,cancellation,refund`
+        `/config/policies?service_type=${encodeURIComponent(serviceType)}&policies=payment,cancellation,refund`,
+        undefined,
+        { suppressForcedLogout: true }
       );
       if (policiesRes?.policies && typeof policiesRes.policies === 'object') {
         setPaymentPolicies(policiesRes.policies);
@@ -1475,7 +1514,9 @@ export function UniversalPaymentPage({
     }
     try {
       const refundRes = await apiClient.get<{ success?: boolean; policy?: { refundPercentages?: Array<{ withinHours: number; percentage: number }>; cancellationWindowHours?: number } }>(
-        `/customer/refund-policy?vendorId=${encodeURIComponent(vendorId || '')}&serviceId=${encodeURIComponent(serviceId || '')}`
+        `/customer/refund-policy?vendorId=${encodeURIComponent(vendorId || '')}&serviceId=${encodeURIComponent(serviceId || '')}`,
+        undefined,
+        { suppressForcedLogout: true }
       );
       if (refundRes?.policy?.refundPercentages?.length) {
         const parts = refundRes.policy.refundPercentages
@@ -2144,10 +2185,10 @@ export function UniversalPaymentPage({
         let resolvedCustomerId = customerId;
         if (!resolvedCustomerId && customerPhone) {
           try {
-            const byPhoneRes = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`) as any;
+            const byPhoneRes = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`, undefined, { suppressForcedLogout: true }) as any;
             resolvedCustomerId = byPhoneRes?.customer?.id ?? byPhoneRes?.id;
             if (!resolvedCustomerId) {
-              const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(customerPhone)}`) as any;
+              const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(customerPhone)}`, undefined, { suppressForcedLogout: true }) as any;
               const profile = profileRes?.profile ?? profileRes;
               resolvedCustomerId = profile?.id ?? profile?.customerId;
             }
@@ -2166,7 +2207,7 @@ export function UniversalPaymentPage({
         // Get customer name from profile
         let customerNameValue = '';
         try {
-          const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(customerPhone)}`) as any;
+          const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(customerPhone)}`, undefined, { suppressForcedLogout: true }) as any;
           if (profileResponse?.profile || profileResponse) {
             const profile = profileResponse.profile || profileResponse;
             customerNameValue = profile.name || profile.fullName || '';
@@ -2773,8 +2814,12 @@ export function UniversalPaymentPage({
         typeof customerEmail === 'string' && customerEmail.includes('@') ? customerEmail.trim() : undefined;
       if (!resolvedCheckoutEmail && customerPhone) {
         try {
+          // suppressForcedLogout: profile lookup is only for Razorpay email prefill — a 401
+          // here must not interrupt the in-flight payment (we already have enough to charge).
           const profileResponse = (await apiClient.get(
-            `/customer/profile?phone=${encodeURIComponent(customerPhone)}`
+            `/customer/profile?phone=${encodeURIComponent(customerPhone)}`,
+            undefined,
+            { suppressForcedLogout: true }
           )) as any;
           const profile = profileResponse?.profile ?? profileResponse;
           const em = profile?.email;
@@ -3000,8 +3045,13 @@ export function UniversalPaymentPage({
 
         let st: string | undefined;
         let paymentStRaw: string | undefined;
+        // suppressForcedLogout: dismiss-handler booking lookups are best-effort. A 401 here
+        // (e.g. token rotation during the Razorpay modal) must not boot the user — we still
+        // need to attempt the cancel below to release the slot.
         try {
-          const detail = await apiClient.get(`/bookings/${bid}${qstr}`);
+          const detail = await apiClient.get(`/bookings/${bid}${qstr}`, undefined, {
+            suppressForcedLogout: true,
+          });
           const b = pickBooking(detail);
           st =
             b?.status ??
@@ -3013,7 +3063,9 @@ export function UniversalPaymentPage({
             detail?.data?.booking?.payment_status;
         } catch {
           try {
-            const detail2 = await apiClient.get(`/customer/bookings/${bid}${qstr}`);
+            const detail2 = await apiClient.get(`/customer/bookings/${bid}${qstr}`, undefined, {
+              suppressForcedLogout: true,
+            });
             const b2 = pickBooking(detail2);
             st =
               b2?.status ??
@@ -3039,12 +3091,21 @@ export function UniversalPaymentPage({
 
         if (!skipCancel) {
           try {
-            await apiClient.post(`/bookings/${bid}/cancel`, {
-              reason: 'Payment abandoned',
-              cancellationReason: 'Payment abandoned',
-              ...(cid ? { customerId: cid } : {}),
-              ...(phoneDigits.length >= 10 ? { phone: phoneDigits } : {}),
-            });
+            // suppressForcedLogout: slot-release cancel is a cleanup side-effect after the
+            // user closed Razorpay. A transient 401 here must not redirect them away from
+            // the payment page — let them retry the booking instead.
+            await apiClient.post(
+              `/bookings/${bid}/cancel`,
+              {
+                reason: 'Payment abandoned',
+                cancellationReason: 'Payment abandoned',
+                ...(cid ? { customerId: cid } : {}),
+                ...(phoneDigits.length >= 10 ? { phone: phoneDigits } : {}),
+              },
+              undefined,
+              undefined,
+              { suppressForcedLogout: true }
+            );
             toast.info('Payment cancelled. Your time slot has been released.');
           } catch (e: any) {
             console.warn('[PAYMENT] Release slot (cancel booking) failed:', e);

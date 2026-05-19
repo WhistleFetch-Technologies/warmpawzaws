@@ -56,7 +56,7 @@ public final class BookingMapper {
         r.setSubscriptionId(booking.getSubscriptionId());
         r.setRoomId(booking.getRoomId());
         r.setSelectedServices(booking.getSelectedServices());
-        r.setEstimatedArrival(booking.getEstimatedArrival());
+        r.setEstimatedArrival(instantToString(booking.getEstimatedArrival()));
         r.setCheckOutDate(booking.getCheckOutDate());
         r.setCheckOutTime(booking.getCheckOutTime());
         r.setCreatedAt(instantToString(booking.getCreatedAt()));

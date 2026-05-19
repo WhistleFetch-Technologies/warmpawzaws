@@ -1,0 +1,6 @@
+# Copy to booking-stack.auto.tfvars in this directory (gitignored as *.tfvars)
+#
+# enable_booking_stack  = true
+# booking_service_image = "ACCOUNT.dkr.ecr.ap-south-1.amazonaws.com/warmpawz-dev-booking-svc:latest"
+#
+# After first image push from scripts/deploy-booking-service-dev.sh, pin the tag if not using :latest.

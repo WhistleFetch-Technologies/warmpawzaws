@@ -111,6 +111,9 @@ locals {
 
   # Java customer-service ECS + API Gateway split (VPC link → internal ALB)
   customer_stack_live = var.enable_customer_stack && var.customer_service_image != ""
+
+  # Java booking-service ECS + API Gateway split (VPC link → internal ALB)
+  booking_stack_live = var.enable_booking_stack && var.booking_service_image != ""
 }
 
 # VPC Module
@@ -380,6 +383,57 @@ module "customer_service_ecs" {
   hibernate_ddl_auto        = var.customer_hibernate_ddl_auto
 }
 
+resource "aws_security_group" "apigw_booking_vpc_link" {
+  count = local.booking_stack_live ? 1 : 0
+
+  name_prefix = "warmpawz-dev-apigw-book-vplnk-"
+  description = "API Gateway VPC link ENIs to internal booking ALB (HTTP)"
+  vpc_id      = module.vpc.vpc_id
+
+  egress {
+    description = "HTTP to internal ALB in VPC"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = [module.vpc.vpc_cidr]
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name        = "warmpawz-dev-apigw-booking-vpc-link"
+    Environment = local.environment
+  }
+}
+
+module "booking_service_ecs" {
+  count  = local.booking_stack_live ? 1 : 0
+  source = "../../modules/booking-service-ecs"
+
+  environment        = local.environment
+  aws_region         = var.aws_region
+  vpc_id             = module.vpc.vpc_id
+  private_subnet_ids = module.vpc.private_subnet_ids
+  apigw_vpc_link_security_group_ids = [aws_security_group.apigw_booking_vpc_link[0].id]
+
+  rds_endpoint          = module.rds.cluster_endpoint
+  database_name         = module.rds.database_name
+  rds_secret_arn        = module.rds.secret_arn
+  rds_security_group_id = module.rds.security_group_id
+
+  container_image           = var.booking_service_image
+  openapi_public_server_url = local.dev_http_api_invoke_url
+  hibernate_ddl_auto        = var.booking_hibernate_ddl_auto
+
+  sns_enabled                      = "true"
+  booking_created_topic_arn        = module.sns.booking_updates_topic_arn
+  booking_status_updated_topic_arn = module.sns.booking_updates_topic_arn
+  sns_publish_topic_arns           = [module.sns.booking_updates_topic_arn]
+  customer_service_url = local.customer_stack_live ? "http://${module.customer_service_ecs[0].internal_alb_dns_name}" : ""
+}
+
 module "delivery_codebuild" {
   count = local.delivery_codebuild_live ? 1 : 0
 
@@ -421,6 +475,18 @@ resource "aws_security_group_rule" "rds_postgres_from_customer_ecs" {
   description              = "customer-service Fargate to shared dev Postgres (Terraform rule)"
 }
 
+resource "aws_security_group_rule" "rds_postgres_from_booking_ecs" {
+  count = local.booking_stack_live ? 1 : 0
+
+  type                     = "ingress"
+  security_group_id        = module.rds.security_group_id
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
+  source_security_group_id = module.booking_service_ecs[0].ecs_task_security_group_id
+  description              = "booking-service Fargate to shared dev Postgres (Terraform rule)"
+}
+
 # api-handler (VPC Lambda) POSTs meal dispatch to the internal ALB. The ALB SG otherwise only allows
 # API Gateway VPC link ENIs — without this rule, Node fetch fails with a generic "fetch failed".
 resource "aws_security_group_rule" "delivery_internal_alb_ingress_from_lambda" {
@@ -447,6 +513,17 @@ resource "aws_vpc_security_group_ingress_rule" "secretsmanager_vpce_from_deliver
   security_group_id            = each.value
   referenced_security_group_id = module.delivery_service_ecs[0].ecs_task_security_group_id
   description                  = "delivery-service ECS tasks read RDS secret via Secrets Manager VPCE"
+  ip_protocol                  = "tcp"
+  from_port                    = 443
+  to_port                      = 443
+}
+
+resource "aws_vpc_security_group_ingress_rule" "secretsmanager_vpce_from_booking_ecs" {
+  for_each = local.booking_stack_live ? toset(data.aws_vpc_endpoint.secretsmanager.security_group_ids) : toset([])
+
+  security_group_id            = each.value
+  referenced_security_group_id = module.booking_service_ecs[0].ecs_task_security_group_id
+  description                  = "booking-service ECS tasks read RDS secret via Secrets Manager VPCE"
   ip_protocol                  = "tcp"
   from_port                    = 443
   to_port                      = 443
@@ -533,6 +610,12 @@ module "api_gateway" {
     vpc_link_subnet_ids         = module.vpc.private_subnet_ids
     vpc_link_security_group_ids = [aws_security_group.apigw_customer_vpc_link[0].id]
     alb_listener_arn            = module.customer_service_ecs[0].alb_listener_arn
+  } : null
+
+  booking_java_integration = local.booking_stack_live ? {
+    vpc_link_subnet_ids         = module.vpc.private_subnet_ids
+    vpc_link_security_group_ids = [aws_security_group.apigw_booking_vpc_link[0].id]
+    alb_listener_arn            = module.booking_service_ecs[0].alb_listener_arn
   } : null
 }
 

@@ -46,6 +46,61 @@ const customerArticlesListInflight = new Map<string, Promise<unknown>>();
 /** Share one in-flight GET per URL (home + sidebar + Strict Mode often hit the same route at once). */
 const getRequestInflight = new Map<string, Promise<unknown>>();
 
+/**
+ * Global "auth flow guard" depth counter. While > 0, transient 401s on best-effort
+ * helper endpoints (refund-policy, pets, addresses, wallet, etc.) MUST NOT force-redirect
+ * the user to `/auth`. Critical calls still throw `ApiError` and surface a clear in-page
+ * error; silent refresh keeps running. Used by pages that load many ancillary endpoints
+ * during a critical UX flow (booking, payment) where a transient 401 would otherwise
+ * eject the user mid-journey.
+ */
+let forcedLogoutSuppressionDepth = 0;
+
+/**
+ * One-time install: while the suppression guard is active, swallow ANY ApiError that
+ * bubbles up as an unhandled rejection (timeout, network blip, transient 5xx, etc.).
+ * Without this, a fire-and-forget caller that forgets `.catch()` lights up Next.js's
+ * dev error overlay with "ApiError: Request timeout" mid-payment-page. We still
+ * console.warn so the failure is visible in DevTools. Production unchanged — the guard
+ * is only set during BookingFlow + UniversalPaymentPage mount.
+ */
+let forcedLogoutRejectionHandlerInstalled = false;
+function installForcedLogoutRejectionGuardOnce(): void {
+  if (forcedLogoutRejectionHandlerInstalled) return;
+  if (typeof window === 'undefined') return;
+  forcedLogoutRejectionHandlerInstalled = true;
+  window.addEventListener('unhandledrejection', (ev) => {
+    if (forcedLogoutSuppressionDepth <= 0) return;
+    const reason: any = ev.reason;
+    if (!reason) return;
+    const isApiError =
+      reason instanceof ApiError ||
+      (typeof reason === 'object' && reason !== null && reason.name === 'ApiError');
+    if (!isApiError) return;
+    ev.preventDefault();
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        '[customer-api] Suppressed unhandled ApiError during booking/payment guard:',
+        reason?.message,
+        reason
+      );
+    }
+  });
+}
+
+export function beginForcedLogoutSuppression(): void {
+  forcedLogoutSuppressionDepth += 1;
+  installForcedLogoutRejectionGuardOnce();
+}
+
+export function endForcedLogoutSuppression(): void {
+  forcedLogoutSuppressionDepth = Math.max(0, forcedLogoutSuppressionDepth - 1);
+}
+
+export function isForcedLogoutSuppressed(): boolean {
+  return forcedLogoutSuppressionDepth > 0;
+}
+
 /** Browsers cap ~6 connections per host; queue API calls so none sit 30s+ waiting then abort. */
 const API_CONCURRENCY_LIMIT = 5;
 let apiConcurrencyInFlight = 0;
@@ -436,7 +491,7 @@ export class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {},
+    options: RequestInit & { suppressForcedLogout?: boolean } = {},
     retryConfig?: Partial<import('./error-handling').RetryConfig>,
     customTimeoutMs?: number,
     internal401RetryDone?: boolean
@@ -584,8 +639,13 @@ export class ApiClient {
     const runRequest = async (): Promise<T> => {
     return withApiConcurrency(async () => {
     try {
-      // ✅ FIX: Use custom timeout for payment endpoints (they need more time)
-      const timeout = customTimeoutMs || (endpoint.includes('/razorpay/') ? 45000 : undefined); // 45s for payment endpoints
+      // ✅ FIX: Use custom timeout for payment endpoints (they need more time).
+      // Localhost dev: Next dev compile can block responses for 60–120s on first hit, which
+      // would otherwise abort genuine API calls at the default 30s and surface
+      // "ApiError: Request timeout" in the dev error overlay. Give dev 90s headroom.
+      const timeout =
+        customTimeoutMs ||
+        (endpoint.includes('/razorpay/') ? 45000 : isLocalCustomerDev() ? 90000 : undefined);
       // Local dev: avoid 5× retry on timeout (each retry adds another queued fetch → hundreds of canceled rows).
       const effectiveRetryConfig =
         isLocalCustomerDev() && method === 'GET'
@@ -713,6 +773,8 @@ export class ApiClient {
           !path.startsWith('/public/') &&
           !isCustomerForgotPasswordFlow &&
           !isOptionalUnauthRead &&
+          !options.suppressForcedLogout &&
+          forcedLogoutSuppressionDepth === 0 &&
           typeof window !== 'undefined' &&
           treat401AsFullSignOut &&
           !suppressForcedLogout401
@@ -722,6 +784,17 @@ export class ApiClient {
           localStorage.removeItem('authToken');
           localStorage.removeItem('customerPhone');
           window.location.href = '/auth';
+        } else if (
+          response.status === 401 &&
+          forcedLogoutSuppressionDepth > 0 &&
+          process.env.NODE_ENV !== 'production'
+        ) {
+          console.warn(
+            '[customer-api] 401 suppressed by forced-logout guard (depth=' +
+              forcedLogoutSuppressionDepth +
+              '):',
+            path
+          );
         }
         
         // Create ApiError with full error data preserved
@@ -805,8 +878,8 @@ export class ApiClient {
   
   private offlineQueue?: import('./error-handling').OfflineQueue;
 
-  async get<T>(endpoint: string, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
-    return this.request<T>(endpoint, { method: 'GET' }, retryConfig);
+  async get<T>(endpoint: string, retryConfig?: Partial<import('./error-handling').RetryConfig>, callOptions?: { suppressForcedLogout?: boolean }): Promise<T> {
+    return this.request<T>(endpoint, { method: 'GET', ...callOptions }, retryConfig);
   }
 
   /**
@@ -863,11 +936,12 @@ export class ApiClient {
     return p;
   }
 
-  async post<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>, customTimeoutMs?: number): Promise<T> {
+  async post<T>(endpoint: string, data?: any, retryConfig?: Partial<import('./error-handling').RetryConfig>, customTimeoutMs?: number, callOptions?: { suppressForcedLogout?: boolean }): Promise<T> {
     return this.request<T>(endpoint, {
       method: 'POST',
       // CRITICAL: Don't stringify FormData - pass it directly
       body: data instanceof FormData ? data : requestJsonBody(data),
+      ...callOptions,
     }, retryConfig, customTimeoutMs);
   }
 

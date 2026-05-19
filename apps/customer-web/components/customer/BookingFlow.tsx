@@ -3,7 +3,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { apiClient } from '@/lib/api-client';
+import {
+  apiClient,
+  beginForcedLogoutSuppression,
+  endForcedLogoutSuppression,
+} from '@/lib/api-client';
 import {
   urlCustomerAddressesByPhone,
   urlCustomerPetsByPhonePath,
@@ -173,6 +177,17 @@ const requiresAddress = (service: Service | null, specializedType: string | null
 
 export function BookingFlow({ serviceId, customerPhone, onBack, onComplete }: BookingFlowProps) {
   const router = useRouter();
+
+  // Defense-in-depth: the booking flow fires many best-effort helper calls (pets,
+  // addresses, wallet, vendor services, time slots, subscription coverage). A transient
+  // 401 from any of these must NEVER hard-redirect the user out of the in-progress
+  // booking. Silent token refresh still runs; create/cancel/payment calls (when reached)
+  // surface a clear in-page error instead of forced logout.
+  useEffect(() => {
+    beginForcedLogoutSuppression();
+    return () => endForcedLogoutSuppression();
+  }, []);
+
   const [step, setStep] = useState<'details' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmed'>('details');
   const [loading, setLoading] = useState(true);
   const [service, setService] = useState<Service | null>(null);

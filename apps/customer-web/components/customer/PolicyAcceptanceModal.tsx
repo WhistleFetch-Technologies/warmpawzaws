@@ -97,19 +97,17 @@ export function PolicyAcceptanceModal({
   const loadPolicies = async () => {
     try {
       setLoading(true);
-      // Load refund policy from customer-facing endpoint
+      // Load refund policy from customer-facing endpoint.
+      // suppressForcedLogout: a transient 401 here (e.g. token mid-refresh) must NEVER eject
+      // the user from the booking → payment flow. The modal renders safe defaults on failure.
       const query = new URLSearchParams();
       if (vendorId) query.append('vendorId', vendorId);
       if (serviceId) query.append('serviceId', serviceId);
       const endpoint = query.toString() ? `/customer/refund-policy?${query.toString()}` : '/customer/refund-policy';
-      let response: any = null;
-      try {
-        response = await apiClient.get<any>(endpoint);
-      } catch (err) {
-        // Fallback to admin endpoint if customer endpoint is unavailable
-        response = await apiClient.get<any>('/admin/settings/refund-policy');
-      }
-      
+      // Customer pages must not call /admin/* endpoints — those will always 401 for non-admin
+      // tokens. On failure fall through to the catch block below which sets platform defaults.
+      const response: any = await apiClient.get<any>(endpoint, undefined, { suppressForcedLogout: true });
+
       const asFiniteNumber = (v: unknown): number | undefined => {
         if (typeof v === 'number' && Number.isFinite(v)) return v;
         if (typeof v === 'string' && v.trim() !== '') {
@@ -195,14 +193,22 @@ export function PolicyAcceptanceModal({
       try {
         // Record policy acceptance
         // Try the policy-acceptance endpoint, but don't fail if it doesn't exist
-        await apiClient.post('/policy-acceptance', {
-          customerId,
-          policyType: bookingType === 'service' ? 'booking' : bookingType,
-          vendorId,
-          serviceId,
-          acceptedAt: new Date().toISOString(),
-          policyVersion: '1.0',
-        }).catch((error: any) => {
+        // suppressForcedLogout: acceptance logging is best-effort — a 401 here must not
+        // boot the user out of the booking modal they just confirmed.
+        await apiClient.post(
+          '/policy-acceptance',
+          {
+            customerId,
+            policyType: bookingType === 'service' ? 'booking' : bookingType,
+            vendorId,
+            serviceId,
+            acceptedAt: new Date().toISOString(),
+            policyVersion: '1.0',
+          },
+          undefined,
+          undefined,
+          { suppressForcedLogout: true }
+        ).catch((error: any) => {
           // Non-blocking - acceptance recording is optional (endpoint may not exist)
           // Only log if it's not a 404 (expected)
           if (error?.statusCode !== 404 && error?.status !== 404) {

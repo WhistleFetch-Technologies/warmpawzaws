@@ -160,7 +160,17 @@ public class BookingServiceImpl implements BookingService {
         booking.setStatus(initialStatus);
         booking.setServiceType(request.getServiceType());
         booking.setServiceStyle(request.getServiceStyle());
-        booking.setAddress(request.getAddress());
+        String resolvedAddress = request.getAddress();
+        if (resolvedAddress == null || resolvedAddress.isBlank()) {
+            String line1 = request.getAddressLine1();
+            String line2 = request.getAddressLine2();
+            if (line1 != null && !line1.isBlank()) {
+                resolvedAddress = line2 != null && !line2.isBlank()
+                        ? line1.trim() + ", " + line2.trim()
+                        : line1.trim();
+            }
+        }
+        booking.setAddress(resolvedAddress);
         booking.setAddressLine1(request.getAddressLine1());
         booking.setAddressLine2(request.getAddressLine2());
         booking.setCity(request.getCity());

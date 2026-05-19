@@ -140,3 +140,21 @@ variable "customer_hibernate_ddl_auto" {
   type        = string
   default     = "validate"
 }
+
+variable "enable_booking_stack" {
+  description = "When true and booking_service_image is set, provisions ECS Fargate + internal ALB for booking-service and splits API Gateway routes to Java via VPC link."
+  type        = bool
+  default     = false
+}
+
+variable "booking_service_image" {
+  description = "Full ECR URI for booking-service (push from deploy script). Ignored unless enable_booking_stack is true."
+  type        = string
+  default     = ""
+}
+
+variable "booking_hibernate_ddl_auto" {
+  description = "spring.jpa.hibernate.ddl-auto for booking-service ECS tasks (validate recommended on shared RDS)"
+  type        = string
+  default     = "validate"
+}

@@ -58,16 +58,18 @@ public class Booking {
     @Column(name = "service_type", nullable = false)
     private String serviceType;
 
-    @Column(name = "service_style")
+    /** Not on all RDS schemas yet — use service_type; migration 753 adds column when applied. */
+    @Transient
     private String serviceStyle;
 
     @Column(name = "address")
     private String address;
 
-    @Column(name = "address_line1")
+    /** Not on all RDS schemas yet — folded into address at create time; migration 753 adds column. */
+    @Transient
     private String addressLine1;
 
-    @Column(name = "address_line2")
+    @Transient
     private String addressLine2;
 
     @Column(name = "city")
@@ -121,7 +123,7 @@ public class Booking {
     @Column(name = "cancellation_reason")
     private String cancellationReason;
 
-    @Column(name = "reschedule_reason")
+    @Transient
     private String rescheduleReason;
 
     @Column(name = "rescheduled_from_booking_id")
@@ -139,7 +141,7 @@ public class Booking {
     @Column(name = "total_duration_minutes")
     private Integer totalDurationMinutes;
 
-    @Column(name = "flow_variant")
+    @Transient
     private String flowVariant;
 
     @Column(name = "vendor_timezone")
@@ -154,8 +156,9 @@ public class Booking {
     @Column(name = "selected_services", columnDefinition = "jsonb")
     private String selectedServices;
 
-    @Column(name = "estimated_arrival", columnDefinition = "jsonb")
-    private String estimatedArrival;
+    /** Matches migration 541: TIMESTAMPTZ (commute ETA for at_home). */
+    @Column(name = "estimated_arrival")
+    private Instant estimatedArrival;
 
     @Column(name = "check_out_date")
     private LocalDate checkOutDate;
