@@ -7,12 +7,15 @@ import com.warmpawz.booking.dto.request.CreateBookingRequest;
 import com.warmpawz.booking.dto.response.BookingResponse;
 import com.warmpawz.booking.service.BookingService;
 import com.warmpawz.booking.service.IdempotencyService;
+import com.warmpawz.booking.util.JwtPrincipalUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -47,14 +50,10 @@ public class CustomerBookingController {
     @Operation(summary = "Get booking for authenticated customer")
     public ResponseEntity<CommonResponse<BookingResponse>> getBookingById(
             @PathVariable UUID bookingId,
-            @RequestParam(required = false) UUID customerId
+            @AuthenticationPrincipal Jwt jwt
     ) {
-        BookingResponse response;
-        if (customerId != null) {
-            response = bookingService.getBookingByIdForCustomer(bookingId, customerId);
-        } else {
-            response = bookingService.getBookingById(bookingId);
-        }
+        UUID customerId = JwtPrincipalUtil.extractUuid(jwt);
+        BookingResponse response = bookingService.getBookingByIdForCustomer(bookingId, customerId);
         return ResponseEntity.ok(CommonResponse.success(response));
     }
 
@@ -62,10 +61,12 @@ public class CustomerBookingController {
     @Operation(summary = "List bookings for a customer (paginated)")
     public ResponseEntity<CommonResponse<PaginatedResult<BookingResponse>>> getBookingsByCustomer(
             @PathVariable UUID customerId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String status
     ) {
+        JwtPrincipalUtil.requireSelf(jwt, customerId);
         Page<BookingResponse> bookingsPage = bookingService.getBookingsByCustomer(customerId, page, size, status);
         PaginationMetadata meta = new PaginationMetadata(
                 bookingsPage.getNumber(),
@@ -81,23 +82,36 @@ public class CustomerBookingController {
 
     @GetMapping("/customer/{customerId}/pets/{petId}/bookings")
     @Operation(summary = "Get bookings for a specific pet belonging to a customer")
-    public ResponseEntity<CommonResponse<List<BookingResponse>>> getBookingsByPet(
+    public ResponseEntity<CommonResponse<PaginatedResult<BookingResponse>>> getBookingsByPet(
             @PathVariable UUID customerId,
             @PathVariable UUID petId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size
     ) {
-        Page<BookingResponse> result = bookingService.getBookingsByCustomerAndPet(
+        JwtPrincipalUtil.requireSelf(jwt, customerId);
+        Page<BookingResponse> bookingsPage = bookingService.getBookingsByCustomerAndPet(
                 customerId, petId, page, size);
-        return ResponseEntity.ok(CommonResponse.success(result.getContent()));
+        PaginationMetadata meta = new PaginationMetadata(
+                bookingsPage.getNumber(),
+                bookingsPage.getSize(),
+                bookingsPage.getTotalElements(),
+                bookingsPage.getTotalPages(),
+                bookingsPage.hasNext(),
+                bookingsPage.hasPrevious()
+        );
+        PaginatedResult<BookingResponse> result = new PaginatedResult<>(bookingsPage.getContent(), meta);
+        return ResponseEntity.ok(CommonResponse.success(result));
     }
 
     @GetMapping("/customer/{customerId}/bookings/{bookingId}")
     @Operation(summary = "Get a specific booking for a customer")
     public ResponseEntity<CommonResponse<BookingResponse>> getBookingByIdForCustomer(
             @PathVariable UUID customerId,
-            @PathVariable UUID bookingId
+            @PathVariable UUID bookingId,
+            @AuthenticationPrincipal Jwt jwt
     ) {
+        JwtPrincipalUtil.requireSelf(jwt, customerId);
         BookingResponse response = bookingService.getBookingByIdForCustomer(bookingId, customerId);
         return ResponseEntity.ok(CommonResponse.success(response));
     }
@@ -105,8 +119,10 @@ public class CustomerBookingController {
     @GetMapping("/customer/{customerId}/bookings/follow-up-eligible")
     @Operation(summary = "Get completed bookings eligible for follow-up (last 30 days)")
     public ResponseEntity<CommonResponse<List<BookingResponse>>> getFollowUpEligibleBookings(
-            @PathVariable UUID customerId
+            @PathVariable UUID customerId,
+            @AuthenticationPrincipal Jwt jwt
     ) {
+        JwtPrincipalUtil.requireSelf(jwt, customerId);
         List<BookingResponse> bookings = bookingService.getFollowUpEligibleBookings(customerId);
         return ResponseEntity.ok(CommonResponse.success(bookings));
     }

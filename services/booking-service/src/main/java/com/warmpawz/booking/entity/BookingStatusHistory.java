@@ -23,10 +23,11 @@ public class BookingStatusHistory {
     @Column(name = "booking_id", nullable = false)
     private UUID bookingId;
 
-    @Column(name = "from_status")
+    /** Dev RDS (migration 062) uses old_status; migration 010 uses from_status. */
+    @Column(name = "old_status")
     private String fromStatus;
 
-    @Column(name = "to_status", nullable = false)
+    @Column(name = "new_status", nullable = false)
     private String toStatus;
 
     @Column(name = "reason")

@@ -2246,6 +2246,7 @@ export function UniversalPaymentPage({
           bookingTime: normalizedBookingTime, // ✅ Format: HH:MM or HH:MM:SS
           serviceType: serviceTypeValue, // ✅ Required enum
           amount: taxBreakdown.total, // ✅ Number (schema allows >= 0)
+          totalAmount: taxBreakdown.total, // Java booking-service uses this for pending_payment vs confirmed
           ...(couponDiscount + (appliedPromotion?.discountAmount || 0) > 0
             ? {
                 discountAmount: couponDiscount + (appliedPromotion?.discountAmount || 0),

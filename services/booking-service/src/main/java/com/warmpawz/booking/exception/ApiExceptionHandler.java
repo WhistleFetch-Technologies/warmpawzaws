@@ -30,6 +30,11 @@ public class ApiExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, "Validation failed", data);
     }
 
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<CommonResponse<Map<String, Object>>> handleForbidden(ForbiddenException ex) {
+        return build(HttpStatus.FORBIDDEN, ex.getMessage(), Map.of());
+    }
+
     @ExceptionHandler({NotFoundException.class, EntityNotFoundException.class})
     public ResponseEntity<CommonResponse<Map<String, Object>>> handleNotFound(Exception ex) {
         return build(HttpStatus.NOT_FOUND, ex.getMessage(), Map.of());
@@ -42,7 +47,15 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<CommonResponse<Map<String, Object>>> handleConstraintConflict(DataIntegrityViolationException ex) {
-        return build(HttpStatus.CONFLICT, "Request conflicts with existing resource", Map.of());
+        String root = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+        String message = "Request conflicts with existing resource";
+        if (root != null) {
+            String lower = root.toLowerCase();
+            if (lower.contains("booking") && (lower.contains("unique") || lower.contains("duplicate"))) {
+                message = "This time slot is already booked. Please choose another time or complete payment for your existing booking.";
+            }
+        }
+        return build(HttpStatus.CONFLICT, message, Map.of());
     }
 
     @ExceptionHandler(BadRequestException.class)

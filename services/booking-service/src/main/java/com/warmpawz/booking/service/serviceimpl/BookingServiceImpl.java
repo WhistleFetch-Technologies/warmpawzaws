@@ -26,6 +26,7 @@ import com.warmpawz.booking.repository.BookingStatusHistoryRepository;
 import com.warmpawz.booking.service.BookingService;
 import com.warmpawz.booking.service.RefundCalculationService;
 import com.warmpawz.booking.service.SnsEventPublisher;
+import com.warmpawz.booking.util.BookingTimeUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -40,12 +41,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -103,8 +106,8 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     public BookingResponse createBooking(CreateBookingRequest request) {
-        String bookingTime = request.getBookingTime();
-        int startMinutes = parseTimeToMinutes(bookingTime);
+        LocalTime bookingTime = BookingTimeUtil.parseBookingTime(request.getBookingTime());
+        int startMinutes = BookingTimeUtil.toMinutes(bookingTime);
 
         int effectiveDuration = 30;
         if (request.getSelectedServices() != null && !request.getSelectedServices().isEmpty()) {
@@ -128,6 +131,20 @@ public class BookingServiceImpl implements BookingService {
             return BookingMapper.toBookingResponse(duplicates.get(0));
         }
 
+        // Reuse unpaid booking for the same slot (e.g. customer tapped Pay again after a failed Razorpay step).
+        List<Booking> atSlot = bookingRepository.findActiveBookingsAtSlot(
+                request.getVendorId(),
+                request.getBookingDate(),
+                bookingTime
+        );
+        for (Booking existing : atSlot) {
+            if (isReusableBookingForCustomer(existing, request.getCustomerId())) {
+                log.info("event=booking_reuse_existing bookingId={} customerId={} status={}",
+                        existing.getId(), request.getCustomerId(), existing.getStatus());
+                return BookingMapper.toBookingResponse(existing);
+            }
+        }
+
         List<Booking> overlapping = bookingRepository.findOverlappingBookings(
                 request.getVendorId(),
                 request.getBookingDate(),
@@ -136,11 +153,21 @@ public class BookingServiceImpl implements BookingService {
                 endMinutes
         );
         if (!overlapping.isEmpty()) {
+            Optional<Booking> ownReusable = overlapping.stream()
+                    .filter(b -> isReusableBookingForCustomer(b, request.getCustomerId()))
+                    .findFirst();
+            if (ownReusable.isPresent()) {
+                log.info("event=booking_reuse_existing_overlap bookingId={} customerId={}",
+                        ownReusable.get().getId(), request.getCustomerId());
+                return BookingMapper.toBookingResponse(ownReusable.get());
+            }
             throw new ConflictException("This time slot is not available");
         }
 
+        BigDecimal payableAmount = resolvePayableAmount(request);
+
         String initialStatus;
-        boolean isFree = request.getTotalAmount() == null || request.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0;
+        boolean isFree = payableAmount.compareTo(BigDecimal.ZERO) <= 0;
         boolean isPackage = request.getPackagePurchaseId() != null;
         if (isFree || isPackage) {
             initialStatus = BookingStatus.CONFIRMED;
@@ -181,13 +208,15 @@ public class BookingServiceImpl implements BookingService {
         booking.setBasePrice(request.getAmount() != null ? request.getAmount() : BigDecimal.ZERO);
         booking.setDiscountAmount(BigDecimal.ZERO);
         booking.setTaxAmount(BigDecimal.ZERO);
-        booking.setTotalAmount(request.getTotalAmount() != null ? request.getTotalAmount() : BigDecimal.ZERO);
+        booking.setTotalAmount(payableAmount);
         booking.setDurationMinutes(effectiveDuration);
         booking.setTotalDurationMinutes(effectiveDuration);
         booking.setPackagePurchaseId(request.getPackagePurchaseId());
         booking.setIsPackageSession(request.getPackagePurchaseId() != null);
         booking.setCheckOutDate(request.getCheckOutDate());
-        booking.setCheckOutTime(request.getCheckOutTime());
+        if (request.getCheckOutTime() != null && !request.getCheckOutTime().isBlank()) {
+            booking.setCheckOutTime(BookingTimeUtil.parseBookingTime(request.getCheckOutTime()));
+        }
         booking.setFlowVariant(request.getFlowVariant());
         booking.setNotes(request.getNotes());
         booking.setSubscriptionId(request.getSubscriptionId());
@@ -270,6 +299,12 @@ public class BookingServiceImpl implements BookingService {
         bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new NotFoundException("Booking not found: " + bookingId));
         return statusHistoryRepository.findByBookingIdOrderByCreatedAtAsc(bookingId);
+    }
+
+    @Override
+    public BookingResponse updateBookingStatusForVendor(UUID bookingId, UUID vendorId, UpdateBookingStatusRequest request) {
+        requireVendorBooking(bookingId, vendorId);
+        return updateBookingStatus(bookingId, request);
     }
 
     @Override
@@ -470,7 +505,7 @@ public class BookingServiceImpl implements BookingService {
         newBooking.setStaffId(original.getStaffId());
         newBooking.setPetId(original.getPetId());
         newBooking.setBookingDate(request.getNewDate());
-        newBooking.setBookingTime(request.getNewTime());
+        newBooking.setBookingTime(BookingTimeUtil.parseBookingTime(request.getNewTime()));
         newBooking.setStatus(BookingStatus.CONFIRMED);
         newBooking.setServiceType(original.getServiceType());
         newBooking.setServiceStyle(original.getServiceStyle());
@@ -564,10 +599,12 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     public BookingResponse vendorConfirmBooking(UUID bookingId, UUID vendorId) {
+        Booking booking = requireVendorBooking(bookingId, vendorId);
+        String previousStatus = booking.getStatus();
         BookingResponse response = transitionVendorPendingBooking(
                 bookingId, vendorId, BookingStatus.CONFIRMED, "vendor_confirmed_booking");
         snsEventPublisher.publishBookingStatusUpdated(
-                response.getId(), BookingStatus.PENDING, BookingStatus.CONFIRMED,
+                response.getId(), previousStatus, BookingStatus.CONFIRMED,
                 response.getCustomerId(), response.getVendorId());
         return response;
     }
@@ -592,7 +629,7 @@ public class BookingServiceImpl implements BookingService {
     public BookingResponse vendorCancelBooking(UUID bookingId, UUID vendorId, VendorCancelBookingRequest request) {
         Booking booking = requireVendorBooking(bookingId, vendorId);
         String currentStatus = booking.getStatus();
-        Set<String> cancellableStatuses = Set.of(BookingStatus.PENDING, BookingStatus.CONFIRMED);
+        Set<String> cancellableStatuses = Set.of(BookingStatus.PENDING, BookingStatus.PENDING_PAYMENT, BookingStatus.CONFIRMED);
         if (!cancellableStatuses.contains(currentStatus)) {
             throw new BadRequestException("Cannot cancel a booking that is " + currentStatus);
         }
@@ -698,8 +735,9 @@ public class BookingServiceImpl implements BookingService {
             throw new BadRequestException("Follow-up can only be created for completed bookings");
         }
 
+        LocalTime selectedTime = BookingTimeUtil.parseBookingTime(request.getSelectedTime());
         List<Booking> slotConflicts = bookingRepository.findActiveBookingsAtSlot(
-                request.getVendorId(), request.getSelectedDate(), request.getSelectedTime());
+                request.getVendorId(), request.getSelectedDate(), selectedTime);
         if (!slotConflicts.isEmpty()) {
             throw new ConflictException("The requested time slot is already booked");
         }
@@ -713,7 +751,7 @@ public class BookingServiceImpl implements BookingService {
         newBooking.setStaffId(request.getStaffId() != null ? request.getStaffId() : original.getStaffId());
         newBooking.setPetId(request.getPetId() != null ? request.getPetId() : original.getPetId());
         newBooking.setBookingDate(request.getSelectedDate());
-        newBooking.setBookingTime(request.getSelectedTime());
+        newBooking.setBookingTime(selectedTime);
         newBooking.setStatus(BookingStatus.PENDING);
         newBooking.setServiceType(original.getServiceType());
         newBooking.setServiceStyle(original.getServiceStyle());
@@ -769,17 +807,18 @@ public class BookingServiceImpl implements BookingService {
         boolean canReschedule = true;
         String reason = null;
 
+        ZoneId vendorZone = resolveVendorZone(booking.getVendorTimezone());
+
         if (!RESCHEDULABLE_STATUSES.contains(currentStatus)) {
             canReschedule = false;
             reason = "Booking is not in a reschedulable state";
-        } else if (booking.getBookingDate().isBefore(LocalDate.now())) {
+        } else if (booking.getBookingDate().isBefore(LocalDate.now(vendorZone))) {
             canReschedule = false;
             reason = "Cannot reschedule a past booking";
         }
 
-        LocalTime time = LocalTime.parse(booking.getBookingTime());
-        ZonedDateTime bookingDateTime = LocalDateTime.of(booking.getBookingDate(), time)
-                .atZone(ZoneOffset.UTC);
+        ZonedDateTime bookingDateTime = LocalDateTime.of(booking.getBookingDate(), booking.getBookingTime())
+                .atZone(vendorZone);
         long hoursUntilBooking = ChronoUnit.HOURS.between(Instant.now(), bookingDateTime.toInstant());
 
         if (canReschedule && hoursUntilBooking < DEFAULT_MIN_NOTICE_HOURS) {
@@ -801,8 +840,10 @@ public class BookingServiceImpl implements BookingService {
             UUID bookingId, UUID vendorId, String newStatus, String logEvent) {
         Booking booking = requireVendorBooking(bookingId, vendorId);
         String currentStatus = booking.getStatus();
-        if (!BookingStatus.PENDING.equals(currentStatus)) {
-            throw new BadRequestException("Can only confirm pending bookings");
+        boolean isConfirmable = BookingStatus.PENDING.equals(currentStatus)
+                || BookingStatus.PENDING_PAYMENT.equals(currentStatus);
+        if (!isConfirmable) {
+            throw new BadRequestException("Can only confirm pending or pending_payment bookings");
         }
 
         booking.setStatus(newStatus);
@@ -816,8 +857,10 @@ public class BookingServiceImpl implements BookingService {
             UUID bookingId, UUID vendorId, String reason, String logEvent) {
         Booking booking = requireVendorBooking(bookingId, vendorId);
         String currentStatus = booking.getStatus();
-        if (!BookingStatus.PENDING.equals(currentStatus)) {
-            throw new BadRequestException("Can only reject pending bookings");
+        boolean isRejectable = BookingStatus.PENDING.equals(currentStatus)
+                || BookingStatus.PENDING_PAYMENT.equals(currentStatus);
+        if (!isRejectable) {
+            throw new BadRequestException("Can only reject pending or pending_payment bookings");
         }
 
         booking.setStatus(BookingStatus.CANCELLED);
@@ -850,6 +893,32 @@ public class BookingServiceImpl implements BookingService {
         statusHistoryRepository.save(history);
     }
 
+    /**
+     * Customer-web sends {@code amount}; some clients also send {@code totalAmount}.
+     * Treating null totalAmount as free incorrectly created {@code confirmed} bookings and caused 409s.
+     */
+    private static BigDecimal resolvePayableAmount(CreateBookingRequest request) {
+        if (request.getTotalAmount() != null) {
+            return request.getTotalAmount();
+        }
+        if (request.getAmount() != null) {
+            return request.getAmount();
+        }
+        return BigDecimal.ZERO;
+    }
+
+    private static boolean isReusableBookingForCustomer(Booking booking, UUID customerId) {
+        if (!customerId.equals(booking.getCustomerId())) {
+            return false;
+        }
+        if (BookingStatus.PENDING_PAYMENT.equals(booking.getStatus())) {
+            return true;
+        }
+        return BookingStatus.CONFIRMED.equals(booking.getStatus())
+                && booking.getPaymentStatus() != null
+                && "pending".equalsIgnoreCase(booking.getPaymentStatus());
+    }
+
     private int parseTimeToMinutes(String bookingTime) {
         String[] parts = bookingTime.split(":");
         return Integer.parseInt(parts[0]) * 60 + Integer.parseInt(parts[1]);
@@ -857,5 +926,16 @@ public class BookingServiceImpl implements BookingService {
 
     private String minutesToTime(int minutes) {
         return String.format("%02d:%02d", minutes / 60, minutes % 60);
+    }
+
+    private static ZoneId resolveVendorZone(String vendorTimezone) {
+        if (vendorTimezone != null && !vendorTimezone.isBlank()) {
+            try {
+                return ZoneId.of(vendorTimezone);
+            } catch (Exception ignored) {
+                // fall through to UTC default
+            }
+        }
+        return ZoneOffset.UTC;
     }
 }

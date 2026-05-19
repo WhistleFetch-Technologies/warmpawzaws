@@ -7,12 +7,15 @@ import com.warmpawz.booking.dto.request.UpdateBookingStatusRequest;
 import com.warmpawz.booking.dto.request.VendorCancelBookingRequest;
 import com.warmpawz.booking.dto.response.BookingResponse;
 import com.warmpawz.booking.service.BookingService;
+import com.warmpawz.booking.util.JwtPrincipalUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,10 +33,12 @@ public class VendorBookingController {
     @Operation(summary = "List bookings for a vendor (paginated)")
     public ResponseEntity<CommonResponse<PaginatedResult<BookingResponse>>> getBookingsByVendor(
             @PathVariable UUID vendorId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String status
     ) {
+        JwtPrincipalUtil.requireSelf(jwt, vendorId);
         Page<BookingResponse> bookingsPage = bookingService.getBookingsByVendor(vendorId, page, size, status);
         PaginationMetadata meta = new PaginationMetadata(
                 bookingsPage.getNumber(),
@@ -51,18 +56,21 @@ public class VendorBookingController {
     @Operation(summary = "List bookings for a vendor (alias)")
     public ResponseEntity<CommonResponse<PaginatedResult<BookingResponse>>> getBookingsByVendorAlias(
             @PathVariable UUID vendorId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String status
     ) {
-        return getBookingsByVendor(vendorId, page, size, status);
+        return getBookingsByVendor(vendorId, jwt, page, size, status);
     }
 
     @GetMapping("/vendor/{vendorId}/bookings/today")
     @Operation(summary = "Today's bookings for a vendor")
     public ResponseEntity<CommonResponse<List<BookingResponse>>> getTodayBookings(
-            @PathVariable UUID vendorId
+            @PathVariable UUID vendorId,
+            @AuthenticationPrincipal Jwt jwt
     ) {
+        JwtPrincipalUtil.requireSelf(jwt, vendorId);
         List<BookingResponse> bookings = bookingService.getTodayBookingsForVendor(vendorId);
         return ResponseEntity.ok(CommonResponse.success(bookings));
     }
@@ -71,8 +79,9 @@ public class VendorBookingController {
     @Operation(summary = "Get booking details for vendor")
     public ResponseEntity<CommonResponse<BookingResponse>> getBookingDetails(
             @PathVariable UUID bookingId,
-            @RequestHeader(value = "X-Vendor-Id", required = false) UUID vendorId
+            @AuthenticationPrincipal Jwt jwt
     ) {
+        UUID vendorId = JwtPrincipalUtil.extractUuid(jwt);
         BookingResponse response = bookingService.getBookingDetailsForVendor(bookingId, vendorId);
         return ResponseEntity.ok(CommonResponse.success(response));
     }
@@ -81,10 +90,11 @@ public class VendorBookingController {
     @Operation(summary = "Update booking status (vendor)")
     public ResponseEntity<CommonResponse<BookingResponse>> updateStatus(
             @PathVariable UUID bookingId,
-            @RequestHeader(value = "X-Vendor-Id", required = false) UUID vendorId,
+            @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody UpdateBookingStatusRequest request
     ) {
-        BookingResponse response = bookingService.updateBookingStatus(bookingId, request);
+        UUID vendorId = JwtPrincipalUtil.extractUuid(jwt);
+        BookingResponse response = bookingService.updateBookingStatusForVendor(bookingId, vendorId, request);
         return ResponseEntity.ok(CommonResponse.success(response, "Booking status updated"));
     }
 

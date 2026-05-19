@@ -2,6 +2,7 @@ package com.warmpawz.booking.mapper;
 
 import com.warmpawz.booking.dto.response.BookingResponse;
 import com.warmpawz.booking.entity.Booking;
+import com.warmpawz.booking.util.BookingTimeUtil;
 
 import java.time.Instant;
 import java.util.List;
@@ -24,7 +25,7 @@ public final class BookingMapper {
         r.setServiceId(booking.getServiceId());
         r.setPetId(booking.getPetId());
         r.setBookingDate(booking.getBookingDate());
-        r.setBookingTime(booking.getBookingTime());
+        r.setBookingTime(BookingTimeUtil.formatBookingTime(booking.getBookingTime()));
         r.setStatus(booking.getStatus());
         r.setServiceType(booking.getServiceType());
         r.setServiceStyle(booking.getServiceStyle());
@@ -54,11 +55,13 @@ public final class BookingMapper {
         r.setFlowVariant(booking.getFlowVariant());
         r.setVendorTimezone(booking.getVendorTimezone());
         r.setSubscriptionId(booking.getSubscriptionId());
-        r.setRoomId(booking.getRoomId());
+        r.setRoomId(booking.getRoomId() != null ? booking.getRoomId().toString() : null);
         r.setSelectedServices(booking.getSelectedServices());
-        r.setEstimatedArrival(instantToString(booking.getEstimatedArrival()));
+        if (booking.getEstimatedArrival() != null) {
+            r.setEstimatedArrival(instantToString(booking.getEstimatedArrival()));
+        }
         r.setCheckOutDate(booking.getCheckOutDate());
-        r.setCheckOutTime(booking.getCheckOutTime());
+        r.setCheckOutTime(BookingTimeUtil.formatBookingTime(booking.getCheckOutTime()));
         r.setCreatedAt(instantToString(booking.getCreatedAt()));
         r.setUpdatedAt(instantToString(booking.getUpdatedAt()));
         r.setCompletedAt(instantToString(booking.getCompletedAt()));

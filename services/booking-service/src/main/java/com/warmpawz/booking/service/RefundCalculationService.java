@@ -7,8 +7,11 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 
 @Service
@@ -44,13 +47,11 @@ public class RefundCalculationService {
         }
 
         try {
-            String[] parts = booking.getBookingTime().split(":");
-            int hours = Integer.parseInt(parts[0]);
-            int minutes = Integer.parseInt(parts[1]);
-            LocalDateTime bookingDateTime = booking.getBookingDate()
-                    .atTime(hours, minutes);
-            LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-            long hoursUntilBooking = ChronoUnit.HOURS.between(now, bookingDateTime);
+            ZoneId vendorZone = resolveVendorZone(booking.getVendorTimezone());
+            ZonedDateTime bookingDateTime = LocalDateTime
+                    .of(booking.getBookingDate(), booking.getBookingTime())
+                    .atZone(vendorZone);
+            long hoursUntilBooking = ChronoUnit.HOURS.between(Instant.now(), bookingDateTime.toInstant());
 
             if (hoursUntilBooking > 24) {
                 return new RefundPreviewResponse(booking.getId(), booking.getStatus(),
@@ -75,5 +76,16 @@ public class RefundCalculationService {
                     totalAmount, totalAmount, BigDecimal.ZERO, 100, "wallet",
                     "full", "Full refund (policy calculation error — defaulting to full)");
         }
+    }
+
+    private static ZoneId resolveVendorZone(String vendorTimezone) {
+        if (vendorTimezone != null && !vendorTimezone.isBlank()) {
+            try {
+                return ZoneId.of(vendorTimezone);
+            } catch (Exception ignored) {
+                // fall through to UTC default
+            }
+        }
+        return ZoneOffset.UTC;
     }
 }

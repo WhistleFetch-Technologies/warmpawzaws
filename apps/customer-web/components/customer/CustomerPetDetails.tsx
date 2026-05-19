@@ -65,6 +65,7 @@ interface CustomerPetDetailsProps {
 function photoUrlFromPet(raw: any): string {
   return (
     raw?.photo ||
+    raw?.photo_url ||
     raw?.image ||
     raw?.profile_photo_url ||
     raw?.profilePhotoUrl ||

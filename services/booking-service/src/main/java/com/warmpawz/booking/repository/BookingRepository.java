@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -48,12 +49,10 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
               AND (:staffId IS NULL AND b.staffId IS NULL
                    OR b.staffId = :staffId)
               AND (
-                (:startMinutes < (CAST(SUBSTRING(b.bookingTime, 1, 2) AS integer) * 60
-                                  + CAST(SUBSTRING(b.bookingTime, 4, 2) AS integer)
+                (:startMinutes < (EXTRACT(HOUR FROM b.bookingTime) * 60 + EXTRACT(MINUTE FROM b.bookingTime)
                                   + COALESCE(b.durationMinutes, b.totalDurationMinutes, 30)))
                 AND
-                ((CAST(SUBSTRING(b.bookingTime, 1, 2) AS integer) * 60
-                  + CAST(SUBSTRING(b.bookingTime, 4, 2) AS integer)) < :endMinutes)
+                ((EXTRACT(HOUR FROM b.bookingTime) * 60 + EXTRACT(MINUTE FROM b.bookingTime)) < :endMinutes)
               )
             """)
     List<Booking> findOverlappingBookings(
@@ -78,7 +77,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
             @Param("customerId") UUID customerId,
             @Param("vendorId") UUID vendorId,
             @Param("bookingDate") LocalDate bookingDate,
-            @Param("bookingTime") String bookingTime,
+            @Param("bookingTime") LocalTime bookingTime,
             @Param("staffId") UUID staffId,
             @Param("windowStart") Instant windowStart
     );
@@ -115,5 +114,5 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     List<Booking> findActiveBookingsAtSlot(
             @Param("vendorId") UUID vendorId,
             @Param("bookingDate") LocalDate bookingDate,
-            @Param("bookingTime") String bookingTime);
+            @Param("bookingTime") LocalTime bookingTime);
 }

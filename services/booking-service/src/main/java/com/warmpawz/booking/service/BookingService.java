@@ -36,6 +36,8 @@ public interface BookingService {
 
     BookingResponse updateBookingStatus(UUID bookingId, UpdateBookingStatusRequest request);
 
+    BookingResponse updateBookingStatusForVendor(UUID bookingId, UUID vendorId, UpdateBookingStatusRequest request);
+
     BookingResponse cancelBooking(UUID bookingId, CancelBookingRequest request);
 
     BookingResponse rescheduleBooking(UUID bookingId, RescheduleBookingRequest request);

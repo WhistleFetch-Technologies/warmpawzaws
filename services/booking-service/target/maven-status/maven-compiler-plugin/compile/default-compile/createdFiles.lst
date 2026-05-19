@@ -4,6 +4,7 @@ com\warmpawz\booking\dto\request\RefundPreviewRequest.class
 com\warmpawz\booking\dto\response\ReschedulePolicyResponse.class
 com\warmpawz\booking\service\serviceimpl\IdempotencyServiceImpl.class
 com\warmpawz\booking\dto\request\RescheduleBookingRequest.class
+com\warmpawz\booking\exception\ForbiddenException.class
 com\warmpawz\booking\telemetry\SqlCountingStatementInspector.class
 com\warmpawz\booking\dto\request\CancelBookingRequest.class
 com\warmpawz\booking\dto\request\CreateBookingRequest$SelectedServiceItem.class
@@ -11,6 +12,7 @@ com\warmpawz\booking\config\CacheConfig$FallbackCache.class
 com\warmpawz\booking\controller\CustomerBookingController.class
 com\warmpawz\booking\controller\VendorBookingController.class
 com\warmpawz\booking\exception\BadRequestException.class
+com\warmpawz\booking\util\BookingTimeUtil.class
 com\warmpawz\booking\controller\BookingController.class
 com\warmpawz\booking\service\RefundCalculationService.class
 com\warmpawz\booking\service\idempotency\DbIdempotencyProvider.class
@@ -41,6 +43,7 @@ com\warmpawz\booking\controller\FollowUpController.class
 com\warmpawz\booking\config\SwaggerConfig.class
 com\warmpawz\booking\telemetry\SqlQueryCounterContext.class
 com\warmpawz\booking\service\idempotency\RedisIdempotencyProvider.class
+com\warmpawz\booking\util\JwtPrincipalUtil.class
 com\warmpawz\booking\service\idempotency\IdempotencyProvider.class
 com\warmpawz\booking\entity\BookingService.class
 com\warmpawz\booking\service\IdempotencyService.class
