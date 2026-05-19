@@ -4,6 +4,11 @@
  * Remove this module’s usage once the cleanup window is past.
  */
 
+/** Specific bookings hidden from vendor-web and admin-web only (no DB deletes). */
+export const UI_HIDDEN_BOOKING_IDS: readonly string[] = [
+	'e77e3faa-9b90-4187-94d7-7e50c6ae3b73',
+];
+
 export const TEMPORARY_SUPPRESSED_VENDOR_IDS: readonly string[] = [
 	'191568e6-2139-4675-9cd4-adb95a27c8b5',
 	'426fb107-76cc-4b64-931a-ed2d924628e0',
@@ -44,16 +49,42 @@ export function getTemporaryVendorSuppressionParams(): {
 	};
 }
 
-/** SQL fragment: hide booking rows where vendor is suppressed and booking day (IST/coalesced) is on or before cutoff. */
+function sqlExcludeUiHiddenBookingIdsInline(bookingAlias: string): string | null {
+	if (UI_HIDDEN_BOOKING_IDS.length === 0) return null;
+	const literals = UI_HIDDEN_BOOKING_IDS.map((id) => `'${id}'`).join(', ');
+	return `NOT (${bookingAlias}.id = ANY(ARRAY[${literals}]::uuid[]))`;
+}
+
+/**
+ * SQL predicate: hide listed booking ids (inline) and optionally vendor+date suppression.
+ * Vendor/date bind params are optional; hidden booking ids need no params.
+ */
 export function sqlExcludeSuppressedBookingRows(
 	bookingAlias: string,
-	paramVendor: number,
-	paramDate: number,
+	paramVendor?: number,
+	paramDate?: number,
 ): string {
-	return `NOT (
+	const parts: string[] = [];
+	const hidden = sqlExcludeUiHiddenBookingIdsInline(bookingAlias);
+	if (hidden) parts.push(hidden);
+	if (paramVendor != null && paramDate != null) {
+		parts.push(`NOT (
     ${bookingAlias}.vendor_id = ANY($${paramVendor}::uuid[])
     AND COALESCE(${bookingAlias}.booking_date, (timezone('Asia/Kolkata', ${bookingAlias}.created_at))::date) <= $${paramDate}::date
-  )`;
+  )`);
+	}
+	if (parts.length === 0) return 'TRUE';
+	return parts.join(' AND ');
+}
+
+/** ` AND (...)` for booking queries; empty when nothing to exclude. */
+export function sqlAndExcludeSuppressedBookingRows(
+	bookingAlias: string,
+	paramVendor?: number,
+	paramDate?: number,
+): string {
+	const clause = sqlExcludeSuppressedBookingRows(bookingAlias, paramVendor, paramDate);
+	return clause === 'TRUE' ? '' : ` AND ${clause}`;
 }
 
 /**
@@ -138,12 +169,19 @@ function toBookingDateOnlyString(raw: unknown): string | null {
 	return `${y}-${m}-${day}`;
 }
 
+export function isUiHiddenBookingId(id: unknown): boolean {
+	if (id == null || id === '') return false;
+	return UI_HIDDEN_BOOKING_IDS.includes(String(id));
+}
+
 /** Hide vendor booking rows (used when data comes from KV/select without SQL suppression). */
 export function shouldHideBookingRowFromVendorUi(row: {
+	id?: string | null;
 	vendor_id?: string | null;
 	booking_date?: unknown;
 	created_at?: unknown;
 }): boolean {
+	if (isUiHiddenBookingId(row.id)) return true;
 	const sup = getTemporaryVendorSuppressionParams();
 	if (!sup || row.vendor_id == null || row.vendor_id === '') return false;
 	if (!sup.vendorIds.includes(String(row.vendor_id))) return false;
