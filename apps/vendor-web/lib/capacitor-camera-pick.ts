@@ -144,32 +144,52 @@ async function readGetPhotoToFile(photo: {
  * additional photos — gallery UI already supports incremental adds and this is the only way
  * to guarantee Android byte fidelity without adding `@capacitor/filesystem`.
  */
+export type CapacitorCameraPickResult = {
+  files: File[];
+  rejectedByAccept: boolean;
+  /** Base64 payloads for API JSON upload (same order as files). */
+  payloads?: { base64: string; fileName: string; mimeType: string }[];
+};
+
+async function ensureCameraPhotoPermissions(): Promise<void> {
+  try {
+    const current = await Camera.checkPermissions();
+    const needCamera = current.camera === 'prompt' || current.camera === 'denied';
+    const needPhotos = current.photos === 'prompt' || current.photos === 'denied';
+    if (needCamera || needPhotos) {
+      const result = await Camera.requestPermissions({
+        permissions: ['camera', 'photos'],
+      });
+      if (result.camera === 'denied' && result.photos === 'denied') {
+        throw new Error('Camera and photo library permission is required to upload images');
+      }
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes('permission')) {
+      throw e;
+    }
+    console.warn('[CameraPick] Permission check failed (continuing):', e);
+  }
+}
+
 export async function pickImageFilesWithCapacitorCamera(options: {
   accept: string;
   multiple: boolean;
-}): Promise<{ files: File[]; rejectedByAccept: boolean }> {
+}): Promise<CapacitorCameraPickResult> {
   assertCameraPlugin();
   if (!isImageOnlyFileAccept(options.accept)) {
     return { files: [], rejectedByAccept: false };
   }
 
-  const out: File[] = [];
+  await ensureCameraPhotoPermissions();
 
-  // Single, deterministic path: ask Camera plugin for base64 from the gallery. This bypasses
-  // every WebView byte-read path that has been failing on Android in this app.
+  const out: File[] = [];
+  const payloads: { base64: string; fileName: string; mimeType: string }[] = [];
+
+  // Prefer Prompt (camera or gallery) with Base64 so "Save/Done" on the native sheet always
+  // returns bytes through the bridge — not a 0-byte WebView fetch of content:// URIs.
   let photo;
   try {
-    photo = await Camera.getPhoto({
-      quality: 90,
-      allowEditing: false,
-      resultType: CameraResultType.Base64,
-      source: CameraSource.Photos,
-      correctOrientation: true,
-    });
-  } catch (primaryErr) {
-    // User dismissal / older device that can't drive CameraSource.Photos → fall back to Prompt
-    // (camera or gallery), still asking for Base64 so we get reliable bytes.
-    console.warn('[CameraPick] CameraSource.Photos failed, retrying with Prompt', primaryErr);
     photo = await Camera.getPhoto({
       quality: 90,
       allowEditing: false,
@@ -177,11 +197,26 @@ export async function pickImageFilesWithCapacitorCamera(options: {
       source: CameraSource.Prompt,
       correctOrientation: true,
     });
+  } catch (primaryErr) {
+    console.warn('[CameraPick] CameraSource.Prompt failed, retrying with Photos', primaryErr);
+    photo = await Camera.getPhoto({
+      quality: 90,
+      allowEditing: false,
+      resultType: CameraResultType.Base64,
+      source: CameraSource.Photos,
+      correctOrientation: true,
+    });
   }
 
   if (photo?.base64String) {
     const ext = (photo.format || 'jpeg').replace(/jpeg/i, 'jpg');
     const name = `image-${Date.now()}.${ext}`;
+    const mime = normalizeImageMime(photo.format || 'jpeg');
+    payloads.push({
+      base64: photo.base64String,
+      fileName: name,
+      mimeType: mime,
+    });
     out.push(
       await capacitorImageToFile(
         { base64String: photo.base64String, format: photo.format || 'jpeg' },
@@ -207,13 +242,19 @@ export async function pickImageFilesWithCapacitorCamera(options: {
   }
 
   const matched: File[] = [];
-  for (const f of out) {
+  const matchedPayloads: typeof payloads = [];
+  for (let i = 0; i < out.length; i++) {
+    const f = out[i];
     if (f.size > 0 && fileMatchesAccept(f, options.accept)) {
       matched.push(f);
+      if (payloads[i]) {
+        matchedPayloads.push(payloads[i]);
+      }
     }
   }
   return {
     files: matched,
+    payloads: matchedPayloads.length === matched.length ? matchedPayloads : undefined,
     rejectedByAccept: matched.length === 0 && out.length > 0,
   };
 }

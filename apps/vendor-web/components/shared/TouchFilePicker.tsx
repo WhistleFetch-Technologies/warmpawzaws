@@ -9,6 +9,7 @@ import {
   shouldUseCapawesomeFilePicker,
 } from '@/lib/capacitor';
 import { pickImageFilesWithCapacitorCamera } from '@/lib/capacitor-camera-pick';
+import { setPendingCameraUploadPayloads } from '@/lib/camera-upload-bridge';
 import { pickFilesWithCapawesome } from '@/lib/capacitor-file-pick';
 import { Capacitor } from '@capacitor/core';
 
@@ -36,31 +37,34 @@ function mergeRefs<T>(node: T | null, refs: Array<React.Ref<T> | undefined>) {
   });
 }
 
-function useShouldUseCapawesomePicker(): boolean {
-  const [ok, setOk] = React.useState(false);
+/** Sync check so Android never mounts the broken HTML `<input type="file">` on first paint. */
+function shouldUseAndroidCameraPathNow(accept: string): boolean {
+  try {
+    if (Capacitor.getPlatform() !== 'android' || !Capacitor.isNativePlatform()) {
+      return false;
+    }
+    return isImageOnlyFileAccept(accept) && isCapacitorCameraPluginAvailable();
+  } catch {
+    return false;
+  }
+}
+
+function useShouldUseCapawesomePicker(accept: string, androidCameraPath: boolean): boolean {
+  const [ok, setOk] = React.useState(() => {
+    if (androidCameraPath) return false;
+    return shouldUseCapawesomeFilePicker();
+  });
   React.useLayoutEffect(() => {
-    setOk(shouldUseCapawesomeFilePicker());
-  }, []);
+    setOk(androidCameraPath ? false : shouldUseCapawesomeFilePicker());
+  }, [androidCameraPath]);
   return ok;
 }
 
 /** When Capawesome FilePicker is not linked, Android WebView + `<input type="file">` is often broken; use @capacitor/camera for image accepts. */
 function useShouldUseAndroidCameraPath(accept: string): boolean {
-  const [ok, setOk] = React.useState(false);
+  const [ok, setOk] = React.useState(() => shouldUseAndroidCameraPathNow(accept));
   React.useLayoutEffect(() => {
-    try {
-      if (Capacitor.getPlatform() !== 'android' || !Capacitor.isNativePlatform()) {
-        setOk(false);
-        return;
-      }
-      if (!isImageOnlyFileAccept(accept) || !isCapacitorCameraPluginAvailable()) {
-        setOk(false);
-        return;
-      }
-      setOk(true);
-    } catch {
-      setOk(false);
-    }
+    setOk(shouldUseAndroidCameraPathNow(accept));
   }, [accept]);
   return ok;
 }
@@ -145,9 +149,9 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
       [ref]
     );
 
-    const capawesomeAvailable = useShouldUseCapawesomePicker();
-    const [capawesomeFailed, setCapawesomeFailed] = React.useState(false);
     const useAndroidCameraPath = useShouldUseAndroidCameraPath(accept);
+    const capawesomeAvailable = useShouldUseCapawesomePicker(accept, useAndroidCameraPath);
+    const [capawesomeFailed, setCapawesomeFailed] = React.useState(false);
     // Priority on Android for IMAGE-only picks: `@capacitor/camera` Base64 path. The Camera
     // plugin returns base64 bytes through the Capacitor bridge directly — no WebView
     // `fetch(content://…)` round-trip, which is what made Capawesome's picked files come back
@@ -175,8 +179,11 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
     );
 
     const dispatchPickedFiles = React.useCallback(
-      (files: File[]) => {
+      (files: File[], cameraPayloads?: { base64: string; fileName: string; mimeType: string }[]) => {
         if (files.length === 0) return;
+        if (cameraPayloads?.length) {
+          setPendingCameraUploadPayloads(cameraPayloads);
+        }
         try {
           if (typeof DataTransfer !== 'undefined') {
             const dt = new DataTransfer();
@@ -240,7 +247,7 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
             isCapacitorCameraPluginAvailable()
           ) {
             try {
-              const { files, rejectedByAccept: rej } = await pickImageFilesWithCapacitorCamera({
+              const { files, rejectedByAccept: rej, payloads } = await pickImageFilesWithCapacitorCamera({
                 accept,
                 multiple: !!multiple,
               });
@@ -250,7 +257,7 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
               }
               if (files.length > 0) {
                 console.log(`[TouchFilePicker] Camera fallback picked files=${files.length}`);
-                dispatchPickedFiles(files);
+                dispatchPickedFiles(files, payloads);
                 return;
               }
             } catch (camErr) {
@@ -275,7 +282,7 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
         }
         picking.current = true;
         try {
-          const { files, rejectedByAccept } = await pickImageFilesWithCapacitorCamera({
+          const { files, rejectedByAccept, payloads } = await pickImageFilesWithCapacitorCamera({
             accept,
             multiple: !!multiple,
           });
@@ -288,7 +295,7 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
               `[TouchFilePicker] Android camera picked files=${files.length}`,
               files.map((f) => ({ name: f.name, size: f.size, type: f.type }))
             );
-            dispatchPickedFiles(files);
+            dispatchPickedFiles(files, payloads);
             return;
           }
           // Camera returned no usable file (user dismissed). Try Capawesome once as a

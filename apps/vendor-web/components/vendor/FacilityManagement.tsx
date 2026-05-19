@@ -20,9 +20,14 @@ import {
   Trash2
 } from 'lucide-react';
 import { getAmenitiesForVendorType } from '@/lib/master-amenities';
-import { getApiBaseUrl } from '@/lib/api-config';
 import { toast } from 'sonner';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import { fileMatchesAccept } from '@/lib/capacitor-file-pick';
+import {
+  resolveFacilityGalleryVendorId,
+  uploadFacilityCenterPhotos,
+} from '@/lib/photo-upload-enhanced';
+import { takePendingCameraUploadPayloads } from '@/lib/camera-upload-bridge';
 import { SpecializationSelector } from './SpecializationSelector'; // ✅ NEW
 import { formatOperatingHours } from '@/lib/format-utils';
 
@@ -52,6 +57,7 @@ interface PhotoFile {
 }
 
 export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityManagementProps) {
+  const effectiveVendorId = resolveFacilityGalleryVendorId(vendorId);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -80,7 +86,7 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
     const loadFacilityData = async () => {
       try {
         setLoading(true);
-        const data = await apiClient.get(`/vendor/${vendorId}/facility`) as any;
+        const data = await apiClient.get(`/vendor/${effectiveVendorId}/facility`) as any;
 
         if (data && data.success && data.facility) {
           setFacility({
@@ -101,19 +107,23 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
     };
 
     loadFacilityData();
-  }, [vendorId]);
+  }, [effectiveVendorId]);
 
   // Handle file selection
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     
     // Validate file types first
-    const validFiles = files.filter(file => {
-      if (!file.type.startsWith('image/')) {
+    const validFiles = files.filter((file) => {
+      if (!fileMatchesAccept(file, 'image/*')) {
         toast.error(`${file.name} is not an image file`);
         return false;
       }
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+      if (file.size === 0) {
+        toast.error(`${file.name || 'Photo'} is empty. Please pick again.`);
+        return false;
+      }
+      if (file.size > 5 * 1024 * 1024) {
         toast.error(`${file.name} is too large. Max size is 5MB`);
         return false;
       }
@@ -137,75 +147,6 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
     setNewPhotos(prev => [...prev, ...newPhotoFiles]);
   };
 
-  // Helper function to upload facility photo with progress
-  const uploadFacilityPhotoWithProgress = async (
-    file: File,
-    vendorId: string,
-    onProgress: (progress: number) => void
-  ): Promise<{ success: boolean; publicUrl?: string; error?: string }> => {
-    return new Promise((resolve) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('userId', vendorId);
-      formData.append('userType', 'facility');
-      formData.append('folder', 'media');
-
-      const xhr = new XMLHttpRequest();
-      const apiBaseUrl = getApiBaseUrl();
-      const url = `${apiBaseUrl}/storage/upload-media`;
-
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-          const percentComplete = Math.round((e.loaded / e.total) * 100);
-          onProgress(percentComplete);
-        }
-      });
-
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const response = JSON.parse(xhr.responseText);
-            if (response.success && response.publicUrl) {
-              resolve({
-                success: true,
-                publicUrl: response.publicUrl,
-              });
-            } else {
-              resolve({
-                success: false,
-                error: response.error || 'Upload failed',
-              });
-            }
-          } catch (error) {
-            resolve({
-              success: false,
-              error: 'Failed to parse response',
-            });
-          }
-        } else {
-          resolve({
-            success: false,
-            error: `Upload failed with status ${xhr.status}`,
-          });
-        }
-      });
-
-      xhr.addEventListener('error', () => {
-        resolve({
-          success: false,
-          error: 'Network error during upload',
-        });
-      });
-
-      xhr.open('POST', url);
-      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
-      if (token) {
-        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-      }
-      xhr.send(formData);
-    });
-  };
-
   // Remove photo before upload
   const removePhoto = (index: number) => {
     const photo = newPhotos[index];
@@ -223,69 +164,43 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
 
   // Upload photos and save
   const handleSave = async () => {
+    const pendingPhotoCount = newPhotos.length;
     try {
       setSaving(true);
 
-      // Upload new photos if any with progress tracking
-      let uploadedUrls: string[] = [];
-      
-      if (newPhotos.length > 0) {
+      if (pendingPhotoCount > 0) {
         setUploadingPhotos(true);
         setUploadProgress(0);
-        
+        setUploadingPhotoIndex(0);
         try {
-          // Upload photos one by one with progress tracking
-          for (let i = 0; i < newPhotos.length; i++) {
-            setUploadingPhotoIndex(i);
-            const photo = newPhotos[i];
-            
-            // Create form data for single photo
-            const formData = new FormData();
-            formData.append('file', photo.file);
-            formData.append('userId', vendorId);
-            formData.append('userType', 'facility');
-            formData.append('folder', 'media');
-            
-            // Upload with progress using the generic upload function
-            // We'll use XMLHttpRequest directly for progress tracking
-            const uploadResult = await uploadFacilityPhotoWithProgress(
-              photo.file,
-              vendorId,
-              (progress) => {
-                // Calculate overall progress: (completed photos + current photo progress) / total
-                const overallProgress = Math.round(
-                  ((i * 100) + progress) / newPhotos.length
-                );
-                setUploadProgress(overallProgress);
-              }
-            );
-            
-            const result = uploadResult;
-            
-            if (result.success && result.publicUrl) {
-              uploadedUrls.push(result.publicUrl);
-            } else {
-              toast.error(`Failed to upload photo ${i + 1}: ${result.error || 'Unknown error'}`);
-            }
+          const files = newPhotos.map((p) => p.file);
+          await uploadFacilityCenterPhotos(effectiveVendorId, files, {
+            payloads: takePendingCameraUploadPayloads(),
+            onProgress: (pct) => setUploadProgress(pct),
+          });
+          for (const photo of newPhotos) {
+            URL.revokeObjectURL(photo.preview);
           }
-          
+          setNewPhotos([]);
+        } catch (error: unknown) {
+          console.error('Error uploading facility photos:', error);
+          toast.error(
+            error instanceof Error ? error.message : 'Failed to upload photos'
+          );
+          setSaving(false);
+          setUploadingPhotos(false);
+          setUploadProgress(0);
           setUploadingPhotoIndex(null);
-        } catch (error: any) {
-          console.error('Error uploading photos:', error);
-          toast.error(`Error uploading photos: ${error.message || 'Unknown error'}`);
+          return;
         } finally {
           setUploadingPhotos(false);
           setUploadProgress(0);
+          setUploadingPhotoIndex(null);
         }
       }
 
-      // Combine existing and new photo URLs
-      const allPhotos = [...facility.photos, ...uploadedUrls];
-
-      // Save facility data
-      const saveData = await apiClient.put<{ success?: boolean; error?: string }>(`/vendor/facility/${vendorId}`, {
+      const saveData = await apiClient.put<{ success?: boolean; error?: string }>(`/vendor/facility/${effectiveVendorId}`, {
         description: facility.description,
-        photos: allPhotos,
         address: facility.address,
         operatingHours: facility.operatingHours,
         amenities: facility.amenities,
@@ -294,13 +209,22 @@ export function FacilityManagement({ vendorId, vendorData, onBack }: FacilityMan
       });
 
       if (saveData.success) {
-        toast.success('Facility photos and description saved successfully!');
-        
-        // Clear the new photos and update existing
-        setNewPhotos([]);
-        setFacility(prev => ({
+        const refreshed = (await apiClient.get(`/vendor/${effectiveVendorId}/facility`)) as {
+          success?: boolean;
+          facility?: { photos?: string[] };
+        };
+        const refreshedPhotos =
+          refreshed?.success && refreshed.facility?.photos ? refreshed.facility.photos : facility.photos;
+
+        toast.success(
+          pendingPhotoCount > 0
+            ? 'Facility photos and description saved successfully!'
+            : 'Facility information saved successfully!'
+        );
+
+        setFacility((prev) => ({
           ...prev,
-          photos: allPhotos
+          photos: refreshedPhotos,
         }));
       } else {
         toast.error((saveData as any).error || 'Failed to save facility information');

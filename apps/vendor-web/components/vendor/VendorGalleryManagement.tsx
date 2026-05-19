@@ -8,6 +8,11 @@ import { VendorHeader } from '@/components/vendor/VendorHeader';
 import { Button } from '@/components/ui/button';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { fileMatchesAccept } from '@/lib/capacitor-file-pick';
+import {
+  resolveFacilityGalleryVendorId,
+  uploadFacilityCenterPhotos,
+} from '@/lib/photo-upload-enhanced';
+import { takePendingCameraUploadPayloads } from '@/lib/camera-upload-bridge';
 
 interface VendorGalleryManagementProps {
   vendorId: string;
@@ -18,6 +23,7 @@ const MAX_PHOTOS = 10;
 const MAX_FILE_MB = 5;
 
 export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManagementProps) {
+  const effectiveVendorId = resolveFacilityGalleryVendorId(vendorId);
   const [loading, setLoading] = useState(true);
   const [photos, setPhotos] = useState<string[]>([]);
   /** Same UX as before: empty state → "Get started" reveals the center photo manager */
@@ -26,7 +32,7 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
   const [deletingIndex, setDeletingIndex] = useState<number | null>(null);
 
   const loadPhotos = useCallback(async (): Promise<number> => {
-    const facilityData = (await apiClient.get(`/vendor/${vendorId}/facility`)) as {
+    const facilityData = (await apiClient.get(`/vendor/${effectiveVendorId}/facility`)) as {
       success?: boolean;
       facility?: { photos?: string[] };
     };
@@ -34,7 +40,7 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
     const cleaned = Array.isArray(list) ? list.filter(Boolean) : [];
     setPhotos(cleaned);
     return cleaned.length;
-  }, [vendorId]);
+  }, [effectiveVendorId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,7 +59,7 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
     return () => {
       cancelled = true;
     };
-  }, [vendorId, loadPhotos]);
+  }, [effectiveVendorId, loadPhotos]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -62,12 +68,15 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
     // Helpful Android diagnostics: name/size/type are the three things that confirm bytes survived
     // the Capawesome pick → File conversion. An entry with size 0 is the #1 cause of
     // "upload returns success but gallery stays empty".
-    if (files.length > 0) {
-      console.log(
-        '[GALLERY] Picked files:',
-        files.map((f) => ({ name: f.name, size: f.size, type: f.type }))
-      );
+    if (files.length === 0) {
+      toast.error('No photo was selected. Allow camera/photos permission for Warmpawz Vendor in Settings.');
+      return;
     }
+
+    console.log(
+      '[GALLERY] Picked files:',
+      files.map((f) => ({ name: f.name, size: f.size, type: f.type }))
+    );
 
     const valid = files.filter((file) => {
       // Use same rules as @capacitor/camera + Capawesome: Android often yields application/octet-stream
@@ -96,37 +105,52 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
 
     setUploading(true);
     const beforeCount = photos.length;
+    const cameraPayloads = takePendingCameraUploadPayloads();
+    if (!cameraPayloads?.length && valid.some((f) => f.size === 0)) {
+      toast.error('Photo could not be read on this device. Update the app or allow Photos permission.');
+      return;
+    }
     try {
-      const formData = new FormData();
-      valid.forEach((photo) => formData.append('photos', photo));
-
-      const uploadData = (await apiClient.post(`/vendor/facility/${vendorId}/upload-photos`, formData)) as {
-        success?: boolean;
-        error?: string;
-        photoUrls?: string[];
-        totalPhotos?: number;
-        uploadedCount?: number;
-      };
-      console.log('[GALLERY] Upload response:', uploadData);
-
-      if (!uploadData?.success) {
-        throw new Error(uploadData?.error || 'Upload failed');
+      const result = await uploadFacilityCenterPhotos(
+        effectiveVendorId,
+        cameraPayloads?.length ? [] : valid,
+        {
+        payloads: cameraPayloads,
+        onProgress:
+          (cameraPayloads?.length || valid.length) === 1
+            ? (pct) => console.log(`[GALLERY] Upload progress: ${pct}%`)
+            : undefined,
       }
+      );
+      console.log('[GALLERY] Upload response:', {
+        uploadedCount: result.uploadedCount,
+        displayUrls: result.displayUrls?.length,
+        vendorId: result.vendorId,
+        fileSizes: valid.map((f) => f.size),
+      });
 
-      // Backend may return success=true while skipping every file (e.g. 0-byte Android pick,
-      // S3 error per-file). Refuse the false "success" so the user is not misled.
-      const uploadedCount =
-        uploadData.uploadedCount ??
-        (Array.isArray(uploadData.photoUrls) ? uploadData.photoUrls.length : undefined);
-      if (uploadedCount === 0) {
-        throw new Error('No photos were saved. Please reopen the picker and try again.');
+      if (result.displayUrls?.length) {
+        setPhotos((prev) => [...prev, ...result.displayUrls!]);
+        const stored = result.uploadedCount ?? result.displayUrls.length;
+        toast.success(stored === 1 ? 'Photo uploaded' : `${stored} photos uploaded`);
+        return;
       }
 
       const newCount = await loadPhotos();
+      if (newCount <= beforeCount && (result.uploadedCount ?? 0) > 0) {
+        await new Promise((r) => setTimeout(r, 800));
+        const retryCount = await loadPhotos();
+        if (retryCount > beforeCount) {
+          toast.success(
+            result.uploadedCount === 1 ? 'Photo uploaded' : `${result.uploadedCount} photos uploaded`
+          );
+          return;
+        }
+      }
       if (newCount <= beforeCount) {
         throw new Error('Upload finished but the gallery did not update. Please retry.');
       }
-      const stored = uploadedCount ?? newCount - beforeCount;
+      const stored = result.uploadedCount ?? newCount - beforeCount;
       toast.success(stored === 1 ? 'Photo uploaded' : `${stored} photos uploaded`);
     } catch (err: unknown) {
       console.error('[GALLERY] Upload failed:', err);
@@ -140,7 +164,7 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
     const next = photos.filter((_, i) => i !== index);
     setDeletingIndex(index);
     try {
-      const res = (await apiClient.put(`/vendor/facility/${vendorId}`, { photos: next })) as {
+      const res = (await apiClient.put(`/vendor/facility/${effectiveVendorId}`, { photos: next })) as {
         success?: boolean;
         error?: string;
       };

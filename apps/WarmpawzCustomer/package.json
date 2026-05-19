@@ -10,7 +10,6 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@warmpawz/shared-types": "file:../../packages/shared-types",
     "@react-native-async-storage/async-storage": "^1.21.0",
     "@react-native-clipboard/clipboard": "^1.16.3",
     "@react-native-community/netinfo": "^11.0.0",
@@ -18,8 +17,10 @@
     "@react-navigation/native": "^6.1.9",
     "@react-navigation/native-stack": "^6.9.17",
     "@tanstack/react-query": "^5.17.0",
+    "@warmpawz/shared-types": "file:../../packages/shared-types",
     "date-fns": "^3.0.0",
     "expo": "~50.0.0",
+    "expo-device": "^55.0.17",
     "expo-image-picker": "~14.3.2",
     "expo-location": "~16.1.0",
     "expo-modules-core": "~1.11.0",
