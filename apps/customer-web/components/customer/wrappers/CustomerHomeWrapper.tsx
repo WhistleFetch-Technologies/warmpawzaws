@@ -1998,6 +1998,10 @@ export function CustomerHomeWrapper({
       />
     );
   if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} specialization={problemGridSpecialization} onBack={() => setCurrentScreen(vetClinicFromHome ? 'home' : 'vet')} onNavigate={(screen, data) => {
+    if (screen === 'purchase-package') {
+      handleVetNavigate(screen, data);
+      return;
+    }
     if (screen === 'vet-services-by-style') {
       setVetServiceData({
         ...(data || {}),
@@ -2031,6 +2035,10 @@ export function CustomerHomeWrapper({
     }
   }} />;
   if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen(vetServiceData?.clinicProfileBackScreen ?? 'vet-clinic-list')} onNavigate={(screen, data) => {
+    if (screen === 'purchase-package') {
+      handleVetNavigate(screen, data);
+      return;
+    }
     if (screen === 'appointment' || screen === 'vet-booking') {
       setVetServiceData({
         ...vetServiceData,
