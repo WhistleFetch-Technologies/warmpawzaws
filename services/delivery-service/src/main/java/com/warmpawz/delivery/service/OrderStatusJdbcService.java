@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -129,7 +131,10 @@ public class OrderStatusJdbcService {
 
 	/**
 	 * Idempotent meal vendor settlement — parity with {@code meal-order-settlement.ts}.
+	 * Runs in a new transaction so a settlement/schema failure cannot roll back delivery status updates
+	 * in the caller's webhook transaction.
 	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void ensureMealOrderSettlementOnDelivered(UUID mealOrderId) {
 		try {
 			List<java.util.Map<String, Object>> rows = jdbc.queryForList("SELECT * FROM meal_orders WHERE id = ?", mealOrderId);
