@@ -5017,6 +5017,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           servicesQuery += ` AND (
             (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
             OR (
+              LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%walker%'
+              AND LOWER(TRIM(COALESCE(vs.category, ''))) NOT LIKE '%vet%'
+            )
+            OR (
               vs.service_style = 'at_home'
               AND (
                 LOWER(COALESCE(vs.service_name, '')) LIKE '%dog%walk%'
@@ -5028,7 +5032,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               )
               AND (
                 TRIM(COALESCE(vs.category, '')) = ''
-                OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other']::text[])
+                OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other', 'general']::text[])
               )
             )
           )`;

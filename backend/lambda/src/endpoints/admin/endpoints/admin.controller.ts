@@ -36,7 +36,7 @@ import {
 } from '../../../utils/customer-booking-package-fields';
 import {
 	getTemporaryVendorSuppressionParams,
-	sqlExcludeSuppressedBookingRows,
+	sqlAndExcludeSuppressedBookingRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
 // ============================================================================
 // ADMIN HANDLERS
@@ -1605,10 +1605,13 @@ export function registerAdminEndpoints(app: Hono) {
       // For now, allow without auth for testing
       const sup = getTemporaryVendorSuppressionParams();
       let paramIdx = 1;
-      let suppressionClause = '';
       const filterParams: unknown[] = [];
+      const suppressionClause = sqlAndExcludeSuppressedBookingRows(
+        'b',
+        sup ? paramIdx : undefined,
+        sup ? paramIdx + 1 : undefined,
+      );
       if (sup) {
-        suppressionClause = ` AND ${sqlExcludeSuppressedBookingRows('b', paramIdx, paramIdx + 1)}`;
         filterParams.push(sup.vendorIds, sup.cutoffDateIst);
         paramIdx += 2;
       }

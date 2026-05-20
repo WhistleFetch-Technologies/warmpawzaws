@@ -39,6 +39,11 @@ import { BoardingVendorListView } from '../boarding/BoardingVendorListView';
 import { PetSittingVendorListView } from '../boarding/PetSittingVendorListView';
 import { BoardingVendorProfileView } from '../boarding/BoardingVendorProfileView';
 import { HomeServiceProviderProfile, SERVICE_CONFIGS } from '../home-services';
+import {
+  buildWalkerServiceDataForVendorPackagePurchase,
+  isVendorServicePackageRow,
+} from '@/lib/vendor-package-purchase-nav';
+import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
 import { PetSitterServiceRouter } from '../PetSitterServiceRouter';
 import { AdoptionServiceRouter } from '../AdoptionServiceRouter';
@@ -1834,10 +1839,13 @@ export function CustomerHomeWrapper({
   }
   // ✅ FIX: Walker booking flow – use WalkerBookingRouter (same pattern as vet/grooming/training)
   if (currentScreen === 'walker-booking') {
+    const walkerBookingVendorId =
+      String(walkerServiceData?.vendorId || '').trim() ||
+      pickWalkerVendorId((walkerServiceData?.walker || walkerServiceData || {}) as Record<string, unknown>);
     return (
       <WalkerBookingRouter
         phone={phone}
-        vendorId={walkerServiceData?.vendorId}
+        vendorId={walkerBookingVendorId || undefined}
         walker={walkerServiceData?.walker}
         selectedService={walkerServiceData?.serviceId}
         serviceId={walkerServiceData?.serviceId}
@@ -1876,12 +1884,52 @@ export function CustomerHomeWrapper({
         serviceType="walker"
         config={SERVICE_CONFIGS.walker}
         onBack={() => setCurrentScreen((walkerServiceData?.walkerProfileBackScreen as ScreenType) || 'walker')}
-        onSelectService={() => {
+        onOpenWalkServicesAndBundles={() => {
+          const resolvedVid =
+            String(vid || '').trim() ||
+            pickWalkerVendorId((walkerServiceData?.walker || {}) as Record<string, unknown>);
+          handleWalkerNavigate('walker-booking', {
+            vendorId: resolvedVid,
+            walker: walkerServiceData?.walker,
+            serviceType: 'walking',
+            serviceStyle: 'at_home',
+            walkerProfileBackScreen:
+              (walkerServiceData?.walkerProfileBackScreen as ScreenType) || 'walker',
+          });
+        }}
+        onSelectService={(service, rawRow) => {
+          if (rawRow && isVendorServicePackageRow(rawRow)) {
+            const pkgNav = buildWalkerServiceDataForVendorPackagePurchase({
+              vendorId: vid,
+              vendorName: String(
+                walkerServiceData?.walker?.name ??
+                  walkerServiceData?.walker?.businessName ??
+                  ''
+              ).trim() || undefined,
+              serviceRow: rawRow,
+              serviceTypeCategory: 'walking',
+              serviceStyle: 'at_home',
+            });
+            if (pkgNav) {
+              setWalkerServiceData((prev: any) => ({
+                ...(prev || {}),
+                ...pkgNav,
+                walker: prev?.walker ?? walkerServiceData?.walker,
+              }));
+              setCurrentScreen('purchase-package');
+              return;
+            }
+          }
           setWalkerServiceData((prev: any) => ({
             ...(prev || {}),
             vendorId: vid,
+            walker: prev?.walker ?? walkerServiceData?.walker,
             serviceType: 'walking',
             serviceStyle: 'at_home',
+            serviceId: service.id,
+            serviceName: service.name,
+            price: service.price,
+            duration: service.duration,
           }));
           setCurrentScreen('walker-booking');
         }}
@@ -1998,6 +2046,10 @@ export function CustomerHomeWrapper({
       />
     );
   if (currentScreen === 'vet-clinic-list') return <ClinicListView phone={phone} specialization={problemGridSpecialization} onBack={() => setCurrentScreen(vetClinicFromHome ? 'home' : 'vet')} onNavigate={(screen, data) => {
+    if (screen === 'purchase-package') {
+      handleVetNavigate(screen, data);
+      return;
+    }
     if (screen === 'vet-services-by-style') {
       setVetServiceData({
         ...(data || {}),
@@ -2031,6 +2083,10 @@ export function CustomerHomeWrapper({
     }
   }} />;
   if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen(vetServiceData?.clinicProfileBackScreen ?? 'vet-clinic-list')} onNavigate={(screen, data) => {
+    if (screen === 'purchase-package') {
+      handleVetNavigate(screen, data);
+      return;
+    }
     if (screen === 'appointment' || screen === 'vet-booking') {
       setVetServiceData({
         ...vetServiceData,

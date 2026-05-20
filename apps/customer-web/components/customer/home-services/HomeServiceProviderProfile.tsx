@@ -44,6 +44,7 @@ import {
   mergeCustomerVendorServicesPayload,
   type HomeServiceProfileService,
 } from '@/lib/customer-vendor-services-merge';
+import { rowQualifiesForWalkingModal } from '@/lib/walker-vendor-offerings';
 import {
   mergeCustomerFacilityPayload,
   mergeVendorPhotoFieldsForHero,
@@ -148,7 +149,9 @@ interface HomeServiceProviderProfileProps {
   serviceType: HomeServiceType;
   config: ServiceConfig;
   onBack: () => void;
-  onSelectService: () => void;
+  onSelectService: (service: HomeServiceProfileService, rawRow?: Record<string, unknown>) => void;
+  /** Walker: open booking flow “Choose a walk or bundle” (not embedded on profile). */
+  onOpenWalkServicesAndBundles?: () => void;
   onNavigate?: (screen: string, data?: any) => void;
   /**
    * When true, fixed CTA container uses `cw-fixed-above-customer-tabbar` so it sits above BottomNavigation.
@@ -164,6 +167,7 @@ export function HomeServiceProviderProfile({
   config,
   onBack,
   onSelectService,
+  onOpenWalkServicesAndBundles,
   onNavigate,
   fixedFooterAboveBottomNav = false,
 }: HomeServiceProviderProfileProps) {
@@ -176,7 +180,7 @@ export function HomeServiceProviderProfile({
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const tabsSectionRef = useRef<HTMLDivElement>(null);
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
-
+  const rawServiceRowsRef = useRef<Map<string, Record<string, unknown>>>(new Map());
   useEffect(() => {
     loadProviderDetails();
   }, [vendorId]);
@@ -184,6 +188,21 @@ export function HomeServiceProviderProfile({
   useEffect(() => {
     setSelectedServiceId(null);
   }, [vendorId]);
+
+  const openWalkServicesAndBundles = useCallback(() => {
+    onOpenWalkServicesAndBundles?.();
+  }, [onOpenWalkServicesAndBundles]);
+
+  const handleTabSelect = useCallback(
+    (tabId: TabType) => {
+      if (serviceType === 'walker' && tabId === 'services') {
+        openWalkServicesAndBundles();
+        return;
+      }
+      setActiveTab(tabId);
+    },
+    [serviceType, openWalkServicesAndBundles]
+  );
 
   useEffect(() => {
     if (!provider) return;
@@ -280,6 +299,18 @@ export function HomeServiceProviderProfile({
         console.log(`📦 [HOME-SERVICE-PROFILE] Found ${rawServices.length} raw services`);
       } catch (e) {
         console.log('No services found');
+      }
+      if (serviceType === 'walker') {
+        rawServices = rawServices.filter((row) =>
+          rowQualifiesForWalkingModal(row as Record<string, unknown>)
+        );
+      }
+      rawServiceRowsRef.current = new Map();
+      for (const row of rawServices) {
+        if (!row || typeof row !== 'object') continue;
+        const s = row as Record<string, unknown>;
+        const id = String(s.id ?? s.vendorServiceId ?? s.serviceId ?? s.service_id ?? '').trim();
+        if (id) rawServiceRowsRef.current.set(id, s);
       }
       const services = mapHomeServiceProfileServices(rawServices);
 
@@ -413,6 +444,10 @@ export function HomeServiceProviderProfile({
 
   const revealServicesAndScroll = useCallback(() => {
     if (!provider) return;
+    if (serviceType === 'walker') {
+      openWalkServicesAndBundles();
+      return;
+    }
     setActiveTab('services');
     if (provider.services.length === 1) {
       setSelectedServiceId(provider.services[0]!.id);
@@ -420,15 +455,20 @@ export function HomeServiceProviderProfile({
     requestAnimationFrame(() => {
       tabsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-  }, [provider]);
+  }, [provider, serviceType, openWalkServicesAndBundles]);
 
   const continueBookingDisabled = useMemo(() => {
-    if (!provider || activeTab !== 'services') return false;
+    if (!provider || activeTab !== 'services' || serviceType === 'walker') return false;
     const n = provider.services.length;
     if (n === 0) return true;
     if (n <= 1) return false;
     return !selectedServiceId;
-  }, [provider, activeTab, selectedServiceId]);
+  }, [
+    provider,
+    activeTab,
+    selectedServiceId,
+    serviceType,
+  ]);
 
   const heroPhotos = useMemo(
     () => (provider?.gallery ?? []).filter((u) => typeof u === 'string' && u.trim().length > 0),
@@ -641,7 +681,7 @@ export function HomeServiceProviderProfile({
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => handleTabSelect(tab.id)}
                   className={`flex-1 border-b-2 py-3 text-sm font-medium transition-colors ${
                     activeTab === tab.id
                       ? 'border-[#FF8C42] text-[#FF8C42]'
@@ -736,7 +776,7 @@ export function HomeServiceProviderProfile({
         )}
 
         {/* Services Tab */}
-        {activeTab === 'services' && (
+        {activeTab === 'services' && serviceType !== 'walker' && (
           <div className="space-y-3">
             {provider.services.length > 1 ? (
               <p className="rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-900">
@@ -922,7 +962,23 @@ export function HomeServiceProviderProfile({
         }`}
       >
         <div className="pointer-events-auto mx-auto w-full max-w-xs sm:max-w-sm">
-          {!provider || provider.services.length === 0 ? (
+          {!provider ? (
+            <Button
+              type="button"
+              disabled
+              className="h-12 min-h-12 w-full cursor-not-allowed rounded-full bg-gray-300 px-4 text-center text-base font-semibold text-white shadow-md"
+            >
+              Loading…
+            </Button>
+          ) : serviceType === 'walker' ? (
+            <Button
+              type="button"
+              onClick={openWalkServicesAndBundles}
+              className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-lg hover:bg-orange-600"
+            >
+              Book a walk or bundle
+            </Button>
+          ) : provider.services.length === 0 ? (
             <Button
               type="button"
               disabled
@@ -941,7 +997,12 @@ export function HomeServiceProviderProfile({
           ) : (
             <Button
               type="button"
-              onClick={() => onSelectService()}
+              onClick={() => {
+                if (!selectedServiceId || !provider) return;
+                const service = provider.services.find((s) => s.id === selectedServiceId);
+                if (!service) return;
+                onSelectService(service, rawServiceRowsRef.current.get(service.id));
+              }}
               disabled={continueBookingDisabled}
               className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-lg hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-md"
             >

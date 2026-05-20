@@ -24,7 +24,7 @@ import { resolveVendorId } from '../../../utils/vendor-resolve';
 import { requireAdminAuth } from './admin.controller';
 import {
 	getTemporaryVendorSuppressionParams,
-	sqlExcludeSuppressedBookingRows,
+	sqlAndExcludeSuppressedBookingRows,
 	sqlExcludeSuppressedVendorCreatedRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
 
@@ -572,7 +572,7 @@ export function registerAnalyticsEndpoints(app: Hono) {
 
       const sup = getTemporaryVendorSuppressionParams();
       const supParams = sup ? [sup.vendorIds, sup.cutoffDateIst] : [];
-      const bookingEx = sup ? ` AND (${sqlExcludeSuppressedBookingRows('b', 1, 2)})` : '';
+      const bookingEx = sqlAndExcludeSuppressedBookingRows('b', sup ? 1 : undefined, sup ? 2 : undefined);
       const paymentEx = sup ? ` AND (${sqlExcludeSuppressedVendorCreatedRows('p', 1, 2)})` : '';
       const orderEx = sup ? ` AND (${sqlExcludeSuppressedVendorCreatedRows('o', 1, 2)})` : '';
 
@@ -726,9 +726,11 @@ export function registerAnalyticsEndpoints(app: Hono) {
       const days = period === "7d" ? 7 : period === "30d" ? 30 : period === "90d" ? 90 : period === "1y" ? 365 : 30;
 
       const supCat = getTemporaryVendorSuppressionParams();
-      const catBookEx = supCat
-        ? ` AND (${sqlExcludeSuppressedBookingRows('b', 1, 2)})`
-        : '';
+      const catBookEx = sqlAndExcludeSuppressedBookingRows(
+        'b',
+        supCat ? 1 : undefined,
+        supCat ? 2 : undefined,
+      );
 
       // ✅ FIX: Changed vendor_roles to roles (vendors.role_id references roles.id)
       // ✅ FIX: Added is_deleted filter to exclude deleted vendors
