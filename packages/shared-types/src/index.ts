@@ -8,3 +8,4 @@ export * from './entities';
 export * from './customer-vendor-profile';
 export * from './customer-service-list';
 export * from './price-display';
+export * from './meal-delivery-status';

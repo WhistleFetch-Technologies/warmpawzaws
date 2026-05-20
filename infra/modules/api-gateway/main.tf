@@ -96,10 +96,13 @@ locals {
 
   delivery_java_route_defaults = [
     "ANY /delivery/{proxy+}",
+    "ANY /logistics/pidge/order/partial-delivery",
     "ANY /logistics/pidge/{proxy+}",
     # Meal Pidge dispatch (Lambda → Java or direct smoke via API Gateway when split is on)
     "ANY /logistics/meal/dispatch",
     "ANY /webhooks/pidge",
+    "ANY /webhooks/pidge/rider-task",
+    "ANY /webhooks/pidge/ticket",
     "ANY /admin/logistics/pidge/{proxy+}",
     # Smoke / docs (narrower than Lambda catch-all when split is enabled)
     "ANY /swagger-ui",

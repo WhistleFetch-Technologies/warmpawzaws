@@ -34,6 +34,14 @@ describe('booking/payment visibility guards', () => {
     expect(file).toContain("AND b.status <> 'pending_payment'");
   });
 
+  test('vendor/admin UI can hide specific booking ids', () => {
+    const file = read('backend/lambda/src/utils/temporary-vendor-ui-suppression.ts');
+    expect(file).toContain('UI_HIDDEN_BOOKING_IDS');
+    expect(file).toContain('e77e3faa-9b90-4187-94d7-7e50c6ae3b73');
+    expect(file).toContain('isUiHiddenBookingId');
+    expect(file).toContain('sqlAndExcludeSuppressedBookingRows');
+  });
+
   test('admin bookings/activity endpoints hide unpaid drafts', () => {
     const controller = read('backend/lambda/src/endpoints/admin/endpoints/admin.controller.ts');
     expect(controller).toContain("WHERE b.status <> 'pending_payment'");

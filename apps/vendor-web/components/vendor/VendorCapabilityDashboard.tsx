@@ -1173,10 +1173,12 @@ function ReviewsSection({ vendorId }: { vendorId: string }) {
 
   const loadReviewsStats = async () => {
     try {
-      const response = await apiClient.get<any>(`/reviews?vendorId=${vendorId}&limit=100`).catch(() => ({ reviews: [], averageRating: 0 }));
+      const response = await apiClient
+        .get<any>(`/reviews/vendor/${encodeURIComponent(vendorId)}?limit=100`)
+        .catch(() => ({ reviews: [], summary: { averageRating: 0 } }));
       setStats({
         total: response.reviews?.length || 0,
-        avgRating: response.averageRating || 0,
+        avgRating: response.summary?.averageRating ?? response.averageRating ?? 0,
       });
     } catch (err) {
       console.error('Error loading reviews stats:', err);

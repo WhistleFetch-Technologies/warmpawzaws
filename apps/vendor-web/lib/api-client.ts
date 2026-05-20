@@ -422,22 +422,68 @@ export class ApiClient {
   async post<T>(endpoint: string, data?: any): Promise<T> {
     // Handle FormData - don't stringify or set Content-Type header
     if (data instanceof FormData) {
+      // Re-resolve base URL at call time so deploy-time runtime config (and prod vs dev
+      // CloudFront host detection) always wins, even if `apiClient` was instantiated
+      // before runtime-config.js executed inside the Capacitor WebView.
+      const resolvedBaseUrl = getApiBaseUrl();
+      if (resolvedBaseUrl && resolvedBaseUrl !== this.baseUrl) {
+        this.baseUrl = resolvedBaseUrl;
+      }
+      if (!this.baseUrl) {
+        throw new Error('API_BASE_URL is not configured (runtime-config.js missing or empty).');
+      }
+
+      // Silently refresh Cognito access tokens (same as JSON requests) so a stale token does
+      // not 401 the multipart upload.
+      try {
+        const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
+        await refreshVendorTokensIfNeeded();
+      } catch {
+        /* non-blocking */
+      }
+
       const token = this.getAuthToken();
       const headers: Record<string, string> = {};
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
-      
+      if (UAT_MODE) {
+        headers['X-UAT-Mode'] = 'true';
+      }
+
+      const base = this.baseUrl.replace(/\/+$/, '');
+      const path = endpoint.replace(/^\/+/, '/');
+      const url = `${base}${path}`;
+
       // Don't set Content-Type for FormData - browser will set it with boundary
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      const response = await fetch(url, {
         method: 'POST',
         headers,
         body: data,
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-        throw new Error(error.error || error.message || `HTTP ${response.status}`);
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        // Mirror the nested-error parsing in `request()` so multipart failures surface a
+        // human message ("No photos provided", S3 errors, etc.) instead of "[object Object]".
+        let errorMessage = `HTTP ${response.status}`;
+        if (errorData?.error && typeof errorData.error === 'object') {
+          if (typeof errorData.error.details === 'string') {
+            errorMessage = errorData.error.details;
+          } else if (errorData.error.message) {
+            errorMessage = errorData.error.message;
+          } else {
+            errorMessage = JSON.stringify(errorData.error);
+          }
+        } else if (typeof errorData?.error === 'string') {
+          errorMessage = errorData.error;
+        } else if (typeof errorData?.message === 'string') {
+          errorMessage = errorData.message;
+        }
+        const err = new Error(errorMessage);
+        (err as any).statusCode = response.status;
+        (err as any).originalError = errorData;
+        throw err;
       }
 
       return response.json();
@@ -485,3 +531,211 @@ export class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+
+/** Auth headers for XHR multipart uploads (Capacitor Android: `fetch`+FormData often drops file bodies). */
+export function getVendorAuthHeadersForUpload(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (typeof window === 'undefined') return headers;
+  try {
+    const { getCognitoIdToken } = require('./cognito-auth');
+    const cognitoToken = getCognitoIdToken();
+    if (cognitoToken) {
+      headers['Authorization'] = `Bearer ${cognitoToken}`;
+      return headers;
+    }
+  } catch {
+    /* Cognito optional */
+  }
+  const token =
+    localStorage.getItem('vendorAuthToken') ||
+    localStorage.getItem('authToken') ||
+    localStorage.getItem('vendorSessionToken');
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (UAT_MODE) headers['X-UAT-Mode'] = 'true';
+  return headers;
+}
+
+export type MultipartUploadResponse = {
+  success?: boolean;
+  error?: string;
+  uploadedCount?: number;
+  photoUrls?: string[];
+  displayUrls?: string[];
+  vendorId?: string;
+  skipped?: string[];
+  attemptedCount?: number;
+};
+
+/**
+ * POST multipart FormData via XMLHttpRequest (reliable file bytes on Capacitor Android WebView).
+ */
+export async function postMultipartFormWithXhr(
+  endpoint: string,
+  formData: FormData,
+  options?: { onProgress?: (percent: number) => void }
+): Promise<MultipartUploadResponse> {
+  try {
+    const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
+    await refreshVendorTokensIfNeeded();
+  } catch {
+    /* non-blocking */
+  }
+
+  return new Promise((resolve, reject) => {
+    const base = getApiBaseUrl().replace(/\/+$/, '');
+    const path = endpoint.replace(/^\/+/, '/');
+    const url = `${base}${path}`;
+    const xhr = new XMLHttpRequest();
+
+    if (options?.onProgress) {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          options.onProgress!(Math.round((e.loaded / e.total) * 100));
+        }
+      });
+    }
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as MultipartUploadResponse);
+        } catch {
+          reject(new Error('Invalid server response'));
+        }
+        return;
+      }
+      try {
+        const err = JSON.parse(xhr.responseText) as MultipartUploadResponse;
+        reject(new Error(err.error || `Upload failed (${xhr.status})`));
+      } catch {
+        reject(new Error(`Upload failed (${xhr.status})`));
+      }
+    });
+
+    xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+    xhr.addEventListener('abort', () => reject(new Error('Upload cancelled')));
+
+    xhr.open('POST', url);
+    const authHeaders = getVendorAuthHeadersForUpload();
+    for (const [key, value] of Object.entries(authHeaders)) {
+      xhr.setRequestHeader(key, value);
+    }
+    xhr.send(formData);
+  });
+}
+
+/**
+ * POST JSON via native HTTP on Capacitor (large base64 bodies fail in Android WebView XHR).
+ * Falls back to XMLHttpRequest on web.
+ */
+export async function postJsonWithXhr<T extends MultipartUploadResponse = MultipartUploadResponse>(
+  endpoint: string,
+  body: unknown,
+  options?: { onProgress?: (percent: number) => void }
+): Promise<T> {
+  try {
+    const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
+    await refreshVendorTokensIfNeeded();
+  } catch {
+    /* non-blocking */
+  }
+
+  const base = getApiBaseUrl().replace(/\/+$/, '');
+  const path = endpoint.replace(/^\/+/, '/');
+  const url = `${base}${path}`;
+  const authHeaders = getVendorAuthHeadersForUpload();
+
+  if (typeof window !== 'undefined') {
+    try {
+      const { Capacitor, CapacitorHttp } = await import('@capacitor/core');
+      if (Capacitor.isNativePlatform()) {
+        options?.onProgress?.(5);
+        const response = await CapacitorHttp.post({
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            ...authHeaders,
+          },
+          data: body as Record<string, unknown>,
+        });
+        options?.onProgress?.(100);
+        const status = response.status ?? 0;
+        const raw = response.data;
+        const parsed =
+          typeof raw === 'string'
+            ? (JSON.parse(raw) as T)
+            : (raw as T);
+        if (status >= 200 && status < 300) {
+          return parsed;
+        }
+        const errMsg =
+          (parsed as MultipartUploadResponse)?.error || `Upload failed (${status})`;
+        throw new Error(errMsg);
+      }
+    } catch (nativeErr) {
+      if (
+        nativeErr instanceof Error &&
+        (nativeErr.message.includes('Upload failed') ||
+          nativeErr.message.includes('permission') ||
+          nativeErr.message.includes('No photos'))
+      ) {
+        throw nativeErr;
+      }
+      let onNativeShell = false;
+      try {
+        const { Capacitor } = await import('@capacitor/core');
+        onNativeShell = Capacitor.isNativePlatform();
+      } catch {
+        /* ignore */
+      }
+      if (onNativeShell) {
+        throw new Error(
+          'Upload failed in the app. Install the latest vendor APK (Play Store or debug build after cap sync), or use https://vendor.warmpawz.com in Chrome.'
+        );
+      }
+      console.warn('[postJsonWithXhr] CapacitorHttp failed, falling back to XHR:', nativeErr);
+    }
+  }
+
+  const payload = JSON.stringify(body);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+
+    if (options?.onProgress) {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          options.onProgress!(Math.round((e.loaded / e.total) * 100));
+        }
+      });
+    }
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as T);
+        } catch {
+          reject(new Error('Invalid server response'));
+        }
+        return;
+      }
+      try {
+        const err = JSON.parse(xhr.responseText) as MultipartUploadResponse;
+        reject(new Error(err.error || `Request failed (${xhr.status})`));
+      } catch {
+        reject(new Error(`Request failed (${xhr.status})`));
+      }
+    });
+
+    xhr.addEventListener('error', () => reject(new Error('Network error')));
+    xhr.addEventListener('abort', () => reject(new Error('Request cancelled')));
+
+    xhr.open('POST', url);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    for (const [key, value] of Object.entries(authHeaders)) {
+      xhr.setRequestHeader(key, value);
+    }
+    xhr.send(payload);
+  });
+}

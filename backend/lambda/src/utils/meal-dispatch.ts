@@ -1,6 +1,12 @@
 /**
  * Build & call the Java delivery-service to schedule a Pidge rider on the vendor "Start Preparing" click.
  *
+ * Logistics authority boundary:
+ * - Java delivery-service: Pidge create-order, POST /webhooks/pidge (status mapping, delivery_tracking +
+ *   meal_orders updates, delivered_at, settlement, idempotency), OTP / lifecycle APIs.
+ * - Lambda (this module): dispatch initiation only — assemble snapshot and POST meal dispatch to Java.
+ *   Do not implement Pidge webhook handling or duplicate delivery state transitions here.
+ *
  * Java owns Pidge create + delivery_tracking insert + the `/webhooks/pidge` ingress (single source of truth).
  * Lambda's job is just to assemble the snapshot from `meal_orders` + `meal_plans` + `vendors` + `customers`
  * and POST `{ mealOrderId, prepMinutes, expectedReadyAt, pidgePayload }` to:

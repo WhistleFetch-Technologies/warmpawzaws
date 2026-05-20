@@ -36,6 +36,7 @@ import { getDiscoveryRules } from '../../../lib/rule-engine';
 import {
   resolveCustomerMealPlanOrderDisplayTotals,
 } from '../../../utils/meal-order-pricing';
+import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '../../../utils/meal-delivery-effective-state';
 
 // ============================================================================
 // CUSTOMER HANDLERS
@@ -1696,11 +1697,10 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       let ordersResult: any;
       try {
         ordersResult = await query(
-        `SELECT 
+          `SELECT 
           mo.id,
           mo.order_number,
-          mo.status,
-          mo.tracking_status,
+          mo.status AS meal_order_status,
           mo.created_at,
           mo.delivery_address,
           mo.delivery_latitude,
@@ -1708,22 +1708,30 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           mo.estimated_delivery_time,
           mo.logistics_partner_id,
           v.business_name as vendor_name,
-          v.profile_photo as vendor_photo
+          v.profile_photo as vendor_photo,
+          dt_latest.delivery_tracking_status
         FROM meal_orders mo
         LEFT JOIN vendors v ON mo.vendor_id = v.id
+        LEFT JOIN LATERAL (
+          SELECT dt.status AS delivery_tracking_status
+          FROM delivery_tracking dt
+          WHERE dt.meal_order_id = mo.id
+          ORDER BY dt.updated_at DESC NULLS LAST, dt.created_at DESC
+          LIMIT 1
+        ) dt_latest ON TRUE
         WHERE mo.customer_id = $1
           AND mo.status NOT IN ('delivered', 'cancelled', 'refunded')
-          AND (mo.tracking_status IS NOT NULL OR mo.status IN ('preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'))
         ORDER BY mo.created_at DESC
-        LIMIT 10`,
-        [customer.id]
-      );
+        LIMIT 25`,
+          [customer.id],
+        );
       } catch (error: any) {
         console.warn('[meals/active] Error fetching orders (returning empty):', error?.message);
         return c.json({ success: true, orders: [] }, 200);
       }
 
-      const orders = ((ordersResult as any)?.rows || []).map((order: any) => {
+      const orders = ((ordersResult as any)?.rows || [])
+        .map((order: any) => {
         let deliveryAddress = order.delivery_address;
         try {
           if (typeof order.delivery_address === 'string') {
@@ -1732,20 +1740,27 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         } catch (_) {
           deliveryAddress = order.delivery_address;
         }
+        const moStatus = order.meal_order_status ?? order.status;
+        const dtStatus = order.delivery_tracking_status ?? null;
+        const effective = resolveEffectiveMealDeliveryState(moStatus, dtStatus);
+        if (isTerminalMealDeliveryState(effective)) {
+          return null;
+        }
         return {
           id: order.id,
           orderId: order.id,
           orderNumber: order.order_number,
           orderType: 'meal',
-          status: order.status,
-          trackingStatus: order.status,
+          status: effective,
+          trackingStatus: effective,
           vendorName: order.vendor_name,
           vendorPhoto: order.vendor_photo,
           deliveryAddress,
           estimatedDeliveryTime: order.estimated_delivery_time,
           createdAt: order.created_at,
         };
-      });
+      })
+        .filter(Boolean);
 
       return c.json({
         success: true,

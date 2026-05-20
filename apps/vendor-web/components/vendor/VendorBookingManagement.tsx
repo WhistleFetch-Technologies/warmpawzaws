@@ -107,6 +107,8 @@ interface VendorBookingManagementProps {
   embedded?: boolean;
   /** Set when opening `/bookings?walkSessions=1` from the walker dashboard tile. */
   walkSessionsFocus?: boolean;
+  /** Open appointment detail for this booking on load (e.g. from reviews "View booking"). */
+  initialOpenBookingId?: string;
 }
 
 interface Booking {
@@ -236,6 +238,7 @@ export function VendorBookingManagement({
   vendorName,
   embedded = false,
   walkSessionsFocus = false,
+  initialOpenBookingId,
 }: VendorBookingManagementProps) {
   const router = useRouter();
 
@@ -348,6 +351,35 @@ export function VendorBookingManagement({
   // ✅ Prescription Modal State
   const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
   const [prescriptionBookingId, setPrescriptionBookingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const bookingId = initialOpenBookingId?.trim();
+    if (!bookingId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = (await apiClient.get(
+          `/vendor/bookings/${encodeURIComponent(bookingId)}/details`
+        )) as { success?: boolean; booking?: { id?: string } };
+        if (cancelled) return;
+        if (response?.success || response?.booking?.id) {
+          setDetailBookingId(bookingId);
+          setShowAppointmentDetail(true);
+        } else {
+          toast.error('Booking not found or you do not have access');
+        }
+      } catch {
+        if (!cancelled) {
+          toast.error('Booking not found or you do not have access');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialOpenBookingId]);
 
   /**
    * Build time-slot chips purely from vendor availability API response.

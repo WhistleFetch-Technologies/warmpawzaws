@@ -7,8 +7,12 @@
  * - Shiprocket status updates
  * - Delhivery status updates
  * - Dunzo delivery updates
- * - Pidge store-channel: handled by Java delivery-service POST /webhooks/pidge (register that URL in Pidge).
- * 
+ *
+ * Pidge store-channel: DO NOT implement POST /webhooks/pidge here. The Java delivery-service is the sole
+ * logistics authority: it receives Pidge webhooks, maps statuses, updates delivery_tracking + meal_orders,
+ * settlement, idempotency, and OTP/lifecycle APIs. API Gateway routes /webhooks/pidge to Java (VPC link).
+ * This Lambda layer reads DB state for APIs/UI and triggers dispatch initiation only (see meal-dispatch.ts).
+ *
  * Also handles auto-shipment creation and notifications
  * 
  * Date: 2026-01-20
@@ -28,6 +32,7 @@ import {
   pidgeCreateOrder,
   extractPidgeOrderIdMap,
 } from '../lib/services/pidge-logistics';
+import { resolveEffectiveMealDeliveryState } from '../utils/meal-delivery-effective-state';
 
 // Status mappings for different partners
 const SHIPROCKET_STATUS_MAP: Record<string, string> = {
@@ -962,7 +967,27 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
         const tracking = await query(trackingSql, [order.id]).catch(() => ({ rows: [] }));
 
         const deliveryTracking = tracking.rows[0];
-        const displayStatus = order.status ?? order.order_status ?? 'pending';
+        const rawOrderStatus = order.status ?? order.order_status ?? 'pending';
+        const logisticsRaw = String(deliveryTracking?.status ?? '').trim();
+
+        let displayStatus: string = rawOrderStatus;
+        let trackingStatusOut: string;
+        if (deliveryTracking) {
+          trackingStatusOut =
+            deliveryTracking.status === 'heading_to_pickup' ? 'assigned' : deliveryTracking.status;
+        } else {
+          trackingStatusOut = 'pending_assignment';
+        }
+
+        // Meals: never let stale logistics rows override terminal meal_orders state (e.g. delivered).
+        if (orderType === 'meal') {
+          const effective = resolveEffectiveMealDeliveryState(rawOrderStatus, logisticsRaw);
+          displayStatus = effective;
+          if (effective === 'delivered' || effective === 'cancelled' || effective === 'failed') {
+            trackingStatusOut = effective === 'delivered' ? 'delivered' : effective;
+          }
+        }
+
         const mealDisplayTotals =
           orderType === 'meal'
             ? resolveCustomerMealPlanOrderDisplayTotals(order, null)
@@ -986,7 +1011,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           tracking: deliveryTracking ? {
             // ✅ FIX: Map backend status to frontend-expected status
             // 'heading_to_pickup' means rider is assigned and heading to vendor → map to 'assigned' for "Rider Assigned"
-            status: deliveryTracking.status === 'heading_to_pickup' ? 'assigned' : deliveryTracking.status,
+            status: trackingStatusOut,
             deliveryOtp: deliveryTracking.delivery_otp || null,
             deliveryPerson: {
               name: deliveryTracking.delivery_person_name,
@@ -1008,7 +1033,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           } : {
             // ✅ FIX: When no delivery_tracking exists, show "Finding Rider" (pending_assignment)
             // This matches the frontend's deliveryStatusSteps which expects 'pending_assignment' for "Finding Rider"
-            status: 'pending_assignment',
+            status: orderType === 'meal' ? trackingStatusOut : 'pending_assignment',
             deliveryOtp: null,
             deliveryPerson: null,
           },

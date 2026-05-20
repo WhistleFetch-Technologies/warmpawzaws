@@ -151,10 +151,23 @@ export function ServiceDashboardHeader({
   const IconComponent = ServiceIcon as LucideIcon;
   const isLucideIcon = typeof IconComponent === 'function' || (IconComponent && 'render' in IconComponent);
 
-  /** Never shrink below ~48px on md+ — wide phones/tablets still need status-bar clearance when env() is 0. */
-  const topPad = compact
-    ? 'pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))]'
-    : 'pt-[max(3.25rem,calc(env(safe-area-inset-top,0px)+1rem))]';
+  /**
+   * Top padding inside the orange header.
+   *
+   * IMPORTANT: applied via inline `style={{ paddingTop }}`, NOT a Tailwind
+   * arbitrary-value class. On Capacitor Android, Tailwind JIT classes for
+   * complex arbitrary values (with nested commas in `max(... , calc(...))`)
+   * have been observed to be missed by the JIT scanner or to lose to a
+   * cached CSS bundle in the WebView, leaving the back button under the
+   * status bar / camera punch-hole. An inline style sidesteps both issues:
+   * the paddingTop value is baked directly into the rendered HTML, so it
+   * cannot be cache-stripped and does not depend on Tailwind generating a
+   * matching class. The `max()` keeps the notch-aware fallback for iOS
+   * Safari / mobile Chrome where `env(safe-area-inset-top)` is populated.
+   */
+  const topPadStyle: React.CSSProperties = compact
+    ? { paddingTop: 'max(56px, calc(env(safe-area-inset-top, 0px) + 8px))' }
+    : { paddingTop: 'max(60px, calc(env(safe-area-inset-top, 0px) + 16px))' };
   const innerBottom = compact ? 'pb-3 md:pb-4' : 'pb-4 md:pb-6';
   const titleRowMb = compact ? 'mb-2 md:mb-3' : 'mb-3 md:mb-4';
   const iconBox = compact ? 'h-11 w-11' : 'h-14 w-14';
@@ -187,7 +200,8 @@ export function ServiceDashboardHeader({
         next section) — not border-radius on bottom corners, which looks “inward” / wrong direction.
       */}
       <div
-        className={`relative z-20 ${headerGradient || headerColor} text-white ${topPad} pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] pb-0`}
+        className={`relative z-20 ${headerGradient || headerColor} text-white pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] pb-0`}
+        style={topPadStyle}
       >
         <div className={innerShellClass}>
         {/* Profile-style header: X = home, Back = previous */}

@@ -36,7 +36,7 @@ import {
   digitsToRazorpayContactE164,
   RAZORPAY_PREFILL_EMAIL_FALLBACK,
   sanitizeRazorpayInstanceOptions,
-  getWarmpawzRazorpayStandardDisplayConfig,
+  getWarmpawzRazorpayUpiDisplayConfig,
 } from '@/lib/razorpay/razorpay-utils';
 import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
 import { confirmMealSubscriptionPayment } from '@/lib/meal-subscriptions-api';
@@ -3145,14 +3145,19 @@ export function UniversalPaymentPage({
           },
         },
       };
-      // Custom `display` block can surface QR-only UPI on desktop; when user prefills VPA use default layout + prefill (Razorpay Payment Link–style `prefill.vpa`).
+      // UPI display block (collect/intent/qr) + method.upi=true is what surfaces
+      // GPay/PhonePe/Paytm intents on Capacitor Android WebView. The legacy
+      // `banks` block hid UPI on many Android builds. When the user has
+      // pre-entered a VPA, fall back to default layout + `prefill.vpa` (Razorpay
+      // Payment Link–style) so collect runs straight through without the picker.
       if (!validPrefillVpa) {
-        options.config = getWarmpawzRazorpayStandardDisplayConfig();
+        options.config = getWarmpawzRazorpayUpiDisplayConfig();
+        options.method = { upi: true };
       }
       if (Object.keys(razorpayPrefill).length > 0) {
         options.prefill = razorpayPrefill;
       }
-      if (validPrefillVpa || (e164Contact && razorpayPrefill.email)) {
+      if (validPrefillVpa) {
         options.method = 'upi';
       }
 
@@ -3174,9 +3179,13 @@ export function UniversalPaymentPage({
           order_id: razorpayOrderId,
           ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
           theme: { color: '#FF8C42' },
-          // Keep parity with web `new Razorpay(options)` — bare payload hid UPI in prod (react-native-razorpay).
-          ...(!validPrefillVpa ? { config: getWarmpawzRazorpayStandardDisplayConfig() } : {}),
-          ...(validPrefillVpa || (e164Contact && razorpayPrefill.email) ? { method: 'upi' as const } : {}),
+          // Keep parity with web `new Razorpay(options)` — UPI display block
+          // (collect/intent/qr) + `method: { upi: true }` is what surfaces UPI
+          // on react-native-razorpay too. With a manual VPA, switch to single
+          // `method: 'upi'` + `prefill.vpa` for a straight collect flow.
+          ...(!validPrefillVpa
+            ? { config: getWarmpawzRazorpayUpiDisplayConfig(), method: { upi: true as const } }
+            : { method: 'upi' as const }),
         };
         try {
           const resultPromise = waitForWarmpawzNativeRazorpayResult();

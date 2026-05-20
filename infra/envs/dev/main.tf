@@ -226,7 +226,7 @@ module "lambda" {
 
   lambda_functions = {
     api-handler = {
-      handler                 = "index.handler"
+      handler                 = "handler.handler"
       runtime                 = "nodejs20.x"
       timeout                 = 60  # Increased from 30s to 60s to handle VPC cold starts and RDS scaling delays
       memory_size             = 1024  # Increased from 512 to reduce cold start time

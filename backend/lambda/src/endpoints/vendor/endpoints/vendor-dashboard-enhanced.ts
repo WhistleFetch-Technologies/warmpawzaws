@@ -25,7 +25,7 @@ import { backfillMissingVendorEarningsForVendorIds } from '../../../utils/vendor
 import {
   getTemporaryVendorSuppressionParams,
   shouldHideSettlementRowFromAdminUi,
-  sqlExcludeSuppressedBookingRows,
+  sqlAndExcludeSuppressedBookingRows,
   sqlExcludeSuppressedSettlementRows,
   sqlExcludeSuppressedVendorCreatedRows,
   sqlExcludeSuppressedVendorEarningsRows,
@@ -169,8 +169,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const startDateStr = startDate.toISOString().split('T')[0];
       const tb = getTemporaryVendorSuppressionParams();
-      const bookSupp1 = tb ? ` AND ${sqlExcludeSuppressedBookingRows('b', 3, 4)}` : '';
-      const bookSupp2 = tb ? ` AND ${sqlExcludeSuppressedBookingRows('b', 4, 5)}` : '';
+      const bookSupp1 = sqlAndExcludeSuppressedBookingRows('b', tb ? 3 : undefined, tb ? 4 : undefined);
+      const bookSupp2 = sqlAndExcludeSuppressedBookingRows('b', tb ? 4 : undefined, tb ? 5 : undefined);
       const bookSuppTail = tb ? [tb.vendorIds, tb.cutoffDateIst] : [];
       const bookings = vendorIds.length === 1
         ? await query(
@@ -353,12 +353,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const supMainTail = temporarySuppressionMain
         ? [temporarySuppressionMain.vendorIds, temporarySuppressionMain.cutoffDateIst]
         : [];
-      const mainStatFrag1 = temporarySuppressionMain
-        ? ` AND ${sqlExcludeSuppressedBookingRows('b', 3, 4)}`
-        : '';
-      const mainStatFrag2 = temporarySuppressionMain
-        ? ` AND ${sqlExcludeSuppressedBookingRows('b', 4, 5)}`
-        : '';
+      const mainStatFrag1 = sqlAndExcludeSuppressedBookingRows(
+        'b',
+        temporarySuppressionMain ? 3 : undefined,
+        temporarySuppressionMain ? 4 : undefined,
+      );
+      const mainStatFrag2 = sqlAndExcludeSuppressedBookingRows(
+        'b',
+        temporarySuppressionMain ? 4 : undefined,
+        temporarySuppressionMain ? 5 : undefined,
+      );
 
       // Get bookings stats (include both identity and vendor id so center/clinic bookings count)
       const [statsParam1, statsParam2] = vendorIds.length >= 2 ? [vendorIds[0], vendorIds[1]] : [vendorIds[0], vendorIds[0]];
@@ -405,12 +409,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         earningsFromTable = veRes.rows[0] || earningsFromTable;
       }
 
-      const bkFrag1 = temporarySuppressionMain
-        ? ` AND ${sqlExcludeSuppressedBookingRows('bk', 2, 3)}`
-        : '';
-      const bkFrag2 = temporarySuppressionMain
-        ? ` AND ${sqlExcludeSuppressedBookingRows('bk', 3, 4)}`
-        : '';
+      const bkFrag1 = sqlAndExcludeSuppressedBookingRows(
+        'bk',
+        temporarySuppressionMain ? 2 : undefined,
+        temporarySuppressionMain ? 3 : undefined,
+      );
+      const bkFrag2 = sqlAndExcludeSuppressedBookingRows(
+        'bk',
+        temporarySuppressionMain ? 3 : undefined,
+        temporarySuppressionMain ? 4 : undefined,
+      );
       const earningsQuery = vendorIds.length === 1
         ? `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND (settlement_status IS NULL OR settlement_status != 'settled') THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings bk WHERE bk.vendor_id = $1 AND bk.status = 'completed'${bkFrag1}`
         : `SELECT COALESCE(SUM(total_amount), 0) as earnings, COALESCE(SUM(CASE WHEN status = 'completed' AND (settlement_status IS NULL OR settlement_status != 'settled') THEN total_amount ELSE 0 END), 0) as pending_settlement FROM bookings bk WHERE (bk.vendor_id = $1 OR bk.vendor_id = $2) AND bk.status = 'completed'${bkFrag2}`;
@@ -455,12 +463,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       }
 
       const startDateStr = startDate.toISOString().split('T')[0];
-      const listSup1 = temporarySuppressionMain
-        ? ` AND ${sqlExcludeSuppressedBookingRows('b', 3, 4)}`
-        : '';
-      const listSup2 = temporarySuppressionMain
-        ? ` AND ${sqlExcludeSuppressedBookingRows('b', 4, 5)}`
-        : '';
+      const listSup1 = sqlAndExcludeSuppressedBookingRows(
+        'b',
+        temporarySuppressionMain ? 3 : undefined,
+        temporarySuppressionMain ? 4 : undefined,
+      );
+      const listSup2 = sqlAndExcludeSuppressedBookingRows(
+        'b',
+        temporarySuppressionMain ? 4 : undefined,
+        temporarySuppressionMain ? 5 : undefined,
+      );
 
       const bookingsQuery = vendorIds.length === 1
         ? `SELECT b.*,
@@ -620,7 +632,11 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       // Get bookings (use resolved vendor id)
       const analyticSup = getTemporaryVendorSuppressionParams();
-      const analyticBookFrag = analyticSup ? ` AND ${sqlExcludeSuppressedBookingRows('b', 3, 4)}` : '';
+      const analyticBookFrag = sqlAndExcludeSuppressedBookingRows(
+        'b',
+        analyticSup ? 3 : undefined,
+        analyticSup ? 4 : undefined,
+      );
       const bookings = await query(
         `SELECT * FROM bookings b
          WHERE b.vendor_id = $1 
@@ -1121,8 +1137,12 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
             AND b.status IN ('completed', 'confirmed', 'pending', 'cancelled')`;
         const fbParams: unknown[] = [vendorId];
         let fbP = 2;
+        fbSql += sqlAndExcludeSuppressedBookingRows(
+          'b',
+          txSupBk ? fbP : undefined,
+          txSupBk ? fbP + 1 : undefined,
+        );
         if (txSupBk) {
-          fbSql += `\n AND ${sqlExcludeSuppressedBookingRows('b', fbP, fbP + 1)}`;
           fbParams.push(txSupBk.vendorIds, txSupBk.cutoffDateIst);
           fbP += 2;
         }

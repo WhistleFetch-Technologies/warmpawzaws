@@ -19,10 +19,9 @@ import { WALKING_NEEDS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import {
-  mergeWalkerModalVendorOfferings,
+  fetchWalkerVendorCatalogMerged,
   firstServiceIdFromServicePackageRow,
   vendorServiceRowDedupeKey,
-  rowQualifiesForWalkingModal,
 } from '@/lib/walker-vendor-offerings';
 import {
   isVendorServicePackageRow,
@@ -435,50 +434,24 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     setWalkerPackagesList([]);
     try {
       // Phone: backend uses for package inclusions; query shape must not drop rows on miss.
-      const phoneQuery =
-        phone && phone.trim()
-          ? `customerPhone=${encodeURIComponent(phone)}&phone=${encodeURIComponent(phone)}`
-          : '';
-      const baseCustomerServices = `/customer/vendor/${encodeURIComponent(vid)}/services`;
-      const withWalkingCategory = phoneQuery
-        ? `${baseCustomerServices}?category=walking&${phoneQuery}`
-        : `${baseCustomerServices}?category=walking`;
-      const fullCatalog = phoneQuery ? `${baseCustomerServices}?${phoneQuery}` : baseCustomerServices;
-
-      /**
-       * `category=walking` in SQL only matches `vs.category` containing the substring "walking" (not "walk" or "General").
-       * Local DBs often differ from UAT, so we merge a second full-catalog call and keep walking-like rows in JS.
-       */
-      const [walkByCategoryRes, fullServicesRes, spRes] = await Promise.allSettled([
-        apiClient.get(withWalkingCategory) as Promise<Record<string, any>>,
-        apiClient.get(fullCatalog) as Promise<Record<string, any>>,
+      const [catalog, spRes] = await Promise.allSettled([
+        fetchWalkerVendorCatalogMerged((url) => apiClient.get(url), vid, phone),
         apiClient.get(`/vendor/${encodeURIComponent(vid)}/packages`) as Promise<{ packages?: any[] }>,
       ]);
 
-      const fromWalkingCategory: any[] =
-        walkByCategoryRes.status === 'fulfilled' ? mergeWalkerModalVendorOfferings(walkByCategoryRes.value) : [];
-      const fromFullFiltered: any[] =
-        fullServicesRes.status === 'fulfilled'
-          ? mergeWalkerModalVendorOfferings(fullServicesRes.value).filter((r) => rowQualifiesForWalkingModal(r))
-          : [];
-
       const vendorRows: any[] = [];
       const seen = new Set<string>();
-      for (let i = 0; i < fromWalkingCategory.length; i += 1) {
-        const r = fromWalkingCategory[i];
-        if (!r) continue;
-        const key = vendorServiceRowDedupeKey(r, i);
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        vendorRows.push(r);
-      }
-      for (let j = 0; j < fromFullFiltered.length; j += 1) {
-        const r = fromFullFiltered[j];
-        if (!r) continue;
-        const key = vendorServiceRowDedupeKey(r, 1000 + j);
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        vendorRows.push(r);
+      if (catalog.status === 'fulfilled') {
+        const { services, packages } = catalog.value;
+        const mergedCatalog = [...services, ...packages];
+        for (let i = 0; i < mergedCatalog.length; i += 1) {
+          const r = mergedCatalog[i];
+          if (!r) continue;
+          const key = vendorServiceRowDedupeKey(r, i);
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          vendorRows.push(r);
+        }
       }
 
       const tableRows: any[] =

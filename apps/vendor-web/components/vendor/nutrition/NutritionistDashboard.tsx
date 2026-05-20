@@ -6,6 +6,11 @@ import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { MealProductFormModal } from '@/components/vendor/nutrition/MealProductFormModal';
 import { useVendorWebSocket } from '@/hooks/useVendorWebSocket';
+import {
+  resolveEffectiveMealDeliveryState,
+  formatVendorMealDeliveryBadge,
+  type MealDeliveryEffective,
+} from '@warmpawz/shared-types';
 
 // 2D Sketch-style SVG Icons
 const Icons = {
@@ -143,6 +148,12 @@ interface MealOrder {
   subscription_booking_plan_kind?: string;
   subscription_booking_delivery_type?: string;
   subscription_monthly_delivery_frequency?: string;
+  /** When `pidge`, delivery milestones after kitchen ready come from webhooks (not vendor buttons). */
+  logistics_type?: string;
+  /** Latest delivery_tracking.status for this meal_order (API enriched). */
+  delivery_tracking_status?: string | null;
+  /** Resolved display status (order ∪ logistics precedence). */
+  effective_delivery_status?: MealDeliveryEffective;
 }
 
 interface NutritionistDashboardProps {
@@ -592,15 +603,23 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       case 'picked_up':
       case 'on_the_way': return 'bg-violet-50 text-violet-700 border-violet-200';
       case 'delivered': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'failed': return 'bg-red-50 text-red-800 border-red-200';
       case 'cancelled': return 'bg-red-50 text-red-700 border-red-200';
       default: return 'bg-slate-50 text-slate-700 border-slate-200';
     }
   };
 
   const renderMealOrderCard = (order: MealOrder) => {
+    const badgeCanon: MealDeliveryEffective =
+      order.effective_delivery_status ??
+      resolveEffectiveMealDeliveryState(
+        String(order.status || ''),
+        order.delivery_tracking_status != null ? String(order.delivery_tracking_status) : undefined,
+      );
     const prepOk = canStartPreparingForSchedule(order);
     const isParentSub = Boolean(order.subscription_vendor_parent_booking);
     const isSessionSub = isSubscriptionSessionRow(order);
+    const isPidgeLogistics = String(order.logistics_type || '').toLowerCase() === 'pidge';
     const vendorReadyStatuses = ['confirmed', 'accepted'];
     const sessionReadyForPrep =
       (isSessionSub || isParentSub) &&
@@ -626,8 +645,8 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 </p>
               </div>
             </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(order.status)}`}>
-              {order.status}
+            <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(badgeCanon)}`}>
+              {formatVendorMealDeliveryBadge(badgeCanon)}
             </span>
           </div>
         </div>
@@ -683,6 +702,13 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {isPidgeLogistics &&
+              ['preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'].includes(badgeCanon) && (
+                <p className="text-xs text-slate-600 w-full rounded-lg bg-sky-50 border border-sky-100 px-3 py-2">
+                  Pidge delivery: after &quot;Start preparing&quot;, pickup and delivery stages update automatically from
+                  Pidge — no need to notify logistics or mark delivered manually.
+                </p>
+              )}
             {order.status === 'paused' && (
               <p className="text-sm text-violet-800 w-full py-2 px-3 rounded-lg bg-violet-50 border border-violet-200">
                 Customer paused this subscription — resume on their app before preparing or dispatching.
@@ -853,7 +879,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 <span className="text-sm">Ready for Pickup</span>
               </button>
             )}
-            {order.status === 'ready_for_pickup' && (
+            {order.status === 'ready_for_pickup' && !isPidgeLogistics && (
               <>
                 <button
                   onClick={() => handleNotifyLogistics(order.id)}
@@ -870,7 +896,13 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 </button>
               </>
             )}
-            {(order.status === 'picked_up' || order.status === 'on_the_way' || order.status === 'dispatched') && (
+            {order.status === 'ready_for_pickup' && isPidgeLogistics && (
+              <p className="text-sm text-slate-600 w-full py-2 px-3 rounded-lg bg-slate-50 border border-slate-200">
+                Waiting for rider pickup — status updates when Pidge confirms pickup and delivery.
+              </p>
+            )}
+            {(order.status === 'picked_up' || order.status === 'on_the_way' || order.status === 'dispatched') &&
+              !isPidgeLogistics && (
               <button
                 onClick={() => handleUpdateOrderStatus(order.id, 'delivered')}
                 className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"

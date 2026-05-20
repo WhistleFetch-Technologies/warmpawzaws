@@ -3999,7 +3999,7 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
       const supBook = getTemporaryVendorSuppressionParams();
       const limIdx = paramIdx;
       const offIdx = paramIdx + 1;
-      let bookingSupSql = 'TRUE';
+      let bookingSupSql = sqlExcludeSuppressedBookingRows('b');
       const vendorListParams: unknown[] = [...params, limit, offset];
       if (supBook) {
         const sVend = paramIdx + 2;

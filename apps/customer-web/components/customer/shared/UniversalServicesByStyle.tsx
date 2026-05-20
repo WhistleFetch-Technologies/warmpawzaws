@@ -20,7 +20,9 @@ import { VendorHeroPhotoCarousel } from './VendorHeroPhotoCarousel';
 import {
   getWebGroomingTrainingEmbedVendorId,
   getWebVetDiscoveryChevronNavTarget,
+  getWebWalkerDiscoveryChevronNavTarget,
 } from '@/lib/customer-vendor-profile-navigation';
+import { toast } from 'sonner';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
@@ -630,6 +632,22 @@ export function UniversalServicesByStyle({
       onNavigate('grooming_embed_vendor_profile', {
         vendorId: getWebGroomingTrainingEmbedVendorId(row),
       });
+      return;
+    }
+    if (roleId === 'walker') {
+      const target = getWebWalkerDiscoveryChevronNavTarget({
+        provider: row,
+        providerDisplayName: provider.name,
+        serviceStyle: String(serviceStyle),
+        profileBackScreen,
+        specialization,
+      });
+      if (!target) {
+        toast.error('Profile unavailable — missing vendor id.');
+        return;
+      }
+      onNavigate(target.screen, target.data);
+      return;
     }
   };
 

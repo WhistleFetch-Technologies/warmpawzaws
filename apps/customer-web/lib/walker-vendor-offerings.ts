@@ -89,13 +89,12 @@ export function rowQualifiesForWalkingModal(s: Record<string, any> | null | unde
   if (c.includes('train') && !c.includes('walk')) return false;
   if (c.includes('vet') && !c.includes('walk')) return false;
   if (c.includes('walk') || c.includes('dog_walk') || c === 'walking' || c.includes('dog walking')) return true;
+  const n = String(s.name ?? s.service_name ?? s.serviceName ?? '').toLowerCase();
+  const nameLooksLikeWalk = /(walk|stroll|outing|dog park|park visit|leash|perimeter)/.test(n);
+  if (nameLooksLikeWalk && !n.includes('walk-in')) return true;
   const st = String(s.serviceStyle ?? s.service_style ?? (meta.serviceStyle as string) ?? '').toLowerCase();
   if (st === 'outdoor' || st === 'at_home' || st === 'home' || st === 'home_visit') return true;
-  if (!st) {
-    const n = String(s.name ?? s.service_name ?? s.serviceName ?? '').toLowerCase();
-    if (/(walk|stroll|outing|dog park|park visit|leash|perimeter)/.test(n)) return true;
-    return false;
-  }
+  if (!st) return false;
   return false;
 }
 
@@ -109,6 +108,82 @@ export function mergeWalkerModalVendorOfferings(svcRes: Record<string, any> | nu
   return mergeCustomerVendorServicesPayload(root);
 }
 
+export function isWalkerVendorServicePackageRow(
+  s: Record<string, any> | null | undefined
+): boolean {
+  if (!s) return false;
+  const meta =
+    s.metadata && typeof s.metadata === 'object' && !Array.isArray(s.metadata)
+      ? (s.metadata as Record<string, unknown>)
+      : undefined;
+  return Boolean(
+    s.isPackage ||
+      s.is_package ||
+      meta?.isPackage ||
+      meta?.type === 'package'
+  );
+}
+
+/** Split merged vendor rows for WalkerBookingRouter `{ services, packages }` payload. */
+export function splitWalkerVendorCatalogRows(rows: any[]): { services: any[]; packages: any[] } {
+  const services: any[] = [];
+  const packages: any[] = [];
+  for (const r of rows) {
+    if (!r || typeof r !== 'object') continue;
+    if (isWalkerVendorServicePackageRow(r as Record<string, any>)) packages.push(r);
+    else services.push(r);
+  }
+  return { services, packages };
+}
+
+/**
+ * Walker booking + modal parity: merge `category=walking` with full-catalog rows that qualify as walks.
+ * `category=walking` SQL matches `%walking%` in category text, not labels like "Dog Walker".
+ */
+export async function fetchWalkerVendorCatalogMerged(
+  get: (url: string) => Promise<unknown>,
+  vendorId: string,
+  phone?: string
+): Promise<{ services: any[]; packages: any[] }> {
+  const phoneQuery =
+    phone && phone.trim()
+      ? `customerPhone=${encodeURIComponent(phone)}&phone=${encodeURIComponent(phone)}`
+      : '';
+  const baseCustomerServices = `/customer/vendor/${encodeURIComponent(vendorId)}/services`;
+  const withWalkingCategory = phoneQuery
+    ? `${baseCustomerServices}?category=walking&${phoneQuery}`
+    : `${baseCustomerServices}?category=walking`;
+  const fullCatalog = phoneQuery ? `${baseCustomerServices}?${phoneQuery}` : baseCustomerServices;
+
+  const [fromWalkingCategory, fromFullRaw] = await Promise.all([
+    fetchVendorServicesRows(get, withWalkingCategory, vendorId),
+    fetchVendorServicesRows(get, fullCatalog, vendorId),
+  ]);
+
+  const fromFullFiltered: any[] = fromFullRaw.filter((r) => rowQualifiesForWalkingModal(r));
+
+  const merged: any[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < fromWalkingCategory.length; i += 1) {
+    const r = fromWalkingCategory[i];
+    if (!r) continue;
+    const key = vendorServiceRowDedupeKey(r, i);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(r);
+  }
+  for (let j = 0; j < fromFullFiltered.length; j += 1) {
+    const r = fromFullFiltered[j];
+    if (!r) continue;
+    const key = vendorServiceRowDedupeKey(r, 1000 + j);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(r);
+  }
+
+  return splitWalkerVendorCatalogRows(merged);
+}
+
 /** Router: merge services + packages, filter by selected walk style (at_home / outdoor / …). */
 export function getWalkerRouterOfferingsForStyle(
   svcRes: Record<string, any> | null | undefined,
@@ -117,6 +192,59 @@ export function getWalkerRouterOfferingsForStyle(
   if (!svcRes || typeof svcRes !== 'object') return [];
   const all = mergeCustomerVendorServicesPayload(svcRes);
   return all.filter((s) => walkerOfferingMatchesRouterStyle(s, bookingStyle));
+}
+
+/** Profile / walk picker: walk-like rows; optional strict style match for booking wizard. */
+export function getWalkerDisplayOfferings(
+  svcRes: Record<string, any> | null | undefined,
+  bookingStyle: string,
+  opts?: { requireStyleMatch?: boolean }
+): any[] {
+  if (!svcRes || typeof svcRes !== 'object') return [];
+  const requireStyle = opts?.requireStyleMatch !== false;
+  const all = mergeCustomerVendorServicesPayload(svcRes);
+  return all.filter((row) => {
+    if (!rowQualifiesForWalkingModal(row)) return false;
+    if (!requireStyle) return true;
+    return walkerOfferingMatchesRouterStyle(row, bookingStyle);
+  });
+}
+
+async function fetchVendorServicesRows(
+  get: (url: string) => Promise<unknown>,
+  customerUrl: string,
+  vendorId: string
+): Promise<any[]> {
+  const seen = new Set<string>();
+  const out: any[] = [];
+  const pushRows = (rows: any[], indexOffset = 0) => {
+    for (let i = 0; i < rows.length; i += 1) {
+      const r = rows[i];
+      if (!r) continue;
+      const key = vendorServiceRowDedupeKey(r, indexOffset + i);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(r);
+    }
+  };
+
+  try {
+    const res = (await get(customerUrl)) as Record<string, any>;
+    if (res?.success !== false) {
+      pushRows(mergeWalkerModalVendorOfferings(res));
+    }
+  } catch {
+    /* customer route may 404 when vendor is_offline — fall through to legacy */
+  }
+
+  try {
+    const legacy = (await get(`/vendor/${encodeURIComponent(vendorId)}/services`)) as Record<string, any>;
+    pushRows(mergeWalkerModalVendorOfferings(legacy), 5000);
+  } catch {
+    /* ignore */
+  }
+
+  return out;
 }
 
 export type WalkerServiceOption = {

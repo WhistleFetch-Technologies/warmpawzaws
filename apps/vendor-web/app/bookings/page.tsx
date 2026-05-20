@@ -10,6 +10,7 @@ function BookingsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const walkSessionsFocus = searchParams.get('walkSessions') === '1';
+  const openBookingId = searchParams.get('bookingId')?.trim() || undefined;
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
   const [vendorData, setVendorData] = useState<any>(null);
@@ -74,6 +75,7 @@ function BookingsPageContent() {
       <VendorBookingManagement
         embedded
         walkSessionsFocus={walkSessionsFocus}
+        initialOpenBookingId={openBookingId}
         vendorId={vendorId}
         vendorData={effectiveVendorData}
         onBack={handleBack}

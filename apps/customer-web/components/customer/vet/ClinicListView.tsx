@@ -21,7 +21,9 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
+  normalizeVendorServiceRowForPackage,
 } from '@/lib/vendor-package-purchase-nav';
+import { toast } from 'sonner';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
@@ -112,34 +114,43 @@ function isSoloVendor(p: any): boolean {
 }
 
 function mapApiServiceToRow(p: any, vendorId: string, index: number): ClinicServiceRow {
-  const vendorServiceId = p.id ?? p.vendor_service_id ?? `idx-${index}`;
+  const normalized = normalizeVendorServiceRowForPackage(p);
+  const vendorServiceId =
+    normalized.id ?? normalized.vendor_service_id ?? p.vendor_service_id ?? `idx-${index}`;
   const catalogServiceId =
-    (p.serviceId != null && String(p.serviceId)) || (p.service_id != null && String(p.service_id)) || null;
+    (normalized.serviceId != null && String(normalized.serviceId)) ||
+    (normalized.service_id != null && String(normalized.service_id)) ||
+    (p.serviceId != null && String(p.serviceId)) ||
+    (p.service_id != null && String(p.service_id)) ||
+    null;
   const stableKey = catalogServiceId ? `cat-${catalogServiceId}` : `vs-${vendorId}-${vendorServiceId}`;
-  const desc = pickBestVendorDescription(p);
-  const priceRaw = p.price ?? p.custom_price ?? p.base_price ?? p.amount ?? 0;
+  const desc = pickBestVendorDescription(normalized);
+  const priceRaw =
+    normalized.price ?? normalized.custom_price ?? normalized.base_price ?? normalized.amount ?? 0;
   const priceNum = typeof priceRaw === 'string' ? parseFloat(priceRaw) : Number(priceRaw);
   const price = Number.isFinite(priceNum) && !Number.isNaN(priceNum) ? priceNum : 0;
-  const durRaw = p.duration ?? p.durationMinutes ?? p.duration_minutes ?? 30;
+  const durRaw = normalized.duration ?? normalized.durationMinutes ?? normalized.duration_minutes ?? 30;
   const durNum = typeof durRaw === 'string' ? parseInt(durRaw, 10) : Number(durRaw);
   const duration = Number.isFinite(durNum) && durNum > 0 ? durNum : 30;
   const category =
-    (p.category && String(p.category)) ||
-    (p.category_name && String(p.category_name)) ||
-    (p.categorySlug && String(p.categorySlug)) ||
+    (normalized.category && String(normalized.category)) ||
+    (normalized.category_name && String(normalized.category_name)) ||
+    (normalized.categorySlug && String(normalized.categorySlug)) ||
     undefined;
   return {
     stableKey,
-    name: String(p.name || p.service_name || p.serviceName || p.display_name || 'Service'),
+    name: String(
+      normalized.name || normalized.service_name || normalized.serviceName || normalized.display_name || 'Service'
+    ),
     price,
     duration,
     description: desc || undefined,
     category,
     catalogServiceId,
     vendorServiceId,
-    isPackage: !!(p.isPackage ?? p.metadata?.isPackage),
-    packageDetails: p.packageDetails,
-    metadata: p.metadata,
+    isPackage: isVendorServicePackageRow(normalized),
+    packageDetails: normalized.packageDetails,
+    metadata: normalized.metadata,
   };
 }
 
@@ -437,7 +448,7 @@ export function ClinicListView({
   const handleBookService = (clinic: ClinicProvider, row: ClinicServiceRow) => {
     const vendorId = clinic.id;
     const serviceIdForBooking = row.catalogServiceId || String(row.vendorServiceId);
-    const serviceObj = {
+    const serviceObj = normalizeVendorServiceRowForPackage({
       id: String(row.vendorServiceId),
       serviceId: row.catalogServiceId,
       vendorServiceId: row.vendorServiceId,
@@ -447,12 +458,12 @@ export function ClinicListView({
       isPackage: row.isPackage,
       packageDetails: row.packageDetails,
       metadata: row.metadata,
-    };
-    if (isVendorServicePackageRow(serviceObj as Record<string, unknown>)) {
+    });
+    if (isVendorServicePackageRow(serviceObj)) {
       const nav = buildWalkerServiceDataForVendorPackagePurchase({
         vendorId: String(vendorId),
         vendorName: clinic.name,
-        serviceRow: serviceObj as Record<string, unknown>,
+        serviceRow: serviceObj,
         serviceTypeCategory: 'vet',
         serviceStyle: 'at_center',
       });
@@ -460,6 +471,8 @@ export function ClinicListView({
         onNavigate('purchase-package', nav);
         return;
       }
+      toast.error('Could not start package booking. Please try again or pick another service.');
+      return;
     }
     onNavigate('appointment', {
       clinicId: vendorId,
