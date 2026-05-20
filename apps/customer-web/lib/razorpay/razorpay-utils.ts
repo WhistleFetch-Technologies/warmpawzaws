@@ -10,6 +10,16 @@ export const RAZORPAY_PREFILL_EMAIL_FALLBACK = 'test@example.com';
 /**
  * Razorpay Standard Checkout: custom display so UPI is not QR-only (shows collect / VPA where Razorpay still offers it).
  * Pattern from https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/configure-payment-methods/sample-code/
+ *
+ * NOTE (Capacitor / Android WebView): a single `banks` block listing
+ * `{ method: 'upi' }` alongside other methods causes Razorpay to drop UPI on
+ * many Android WebView builds — UPI options disappear and only cards / wallets
+ * show. Prefer {@link getWarmpawzRazorpayUpiDisplayConfig} (UPI block with
+ * `flows: ['collect', 'intent', 'qr']`) plus `method: { upi: true }` for
+ * payment surfaces, same as `buildSanitizedStandardRazorpayCheckoutOptions`.
+ *
+ * Kept for any non-payment legacy callers (e.g. wallet-add fallbacks) that
+ * still need the old layout. Do not use for new code.
  */
 export function getWarmpawzRazorpayStandardDisplayConfig(): {
   display: {
@@ -35,6 +45,41 @@ export function getWarmpawzRazorpayStandardDisplayConfig(): {
       preferences: {
         show_default_blocks: false,
       },
+    },
+  };
+}
+
+/**
+ * UPI display block for Razorpay Standard Checkout.
+ *
+ * Required for Capacitor Android: `flows: ['collect', 'intent', 'qr']` keeps
+ * intent (GPay / PhonePe / Paytm app launch) visible alongside collect (VPA)
+ * and qr. Pair with `method: { upi: true }` on the checkout options. If the
+ * Android manifest is missing UPI `<queries>` (`upi://` scheme + UPI app
+ * packages), intent silently disappears even with this config.
+ */
+export function getWarmpawzRazorpayUpiDisplayConfig(): {
+  display: {
+    blocks: {
+      upi: {
+        name: string;
+        instruments: { method: 'upi'; flows: Array<'collect' | 'intent' | 'qr'> }[];
+      };
+    };
+    sequence: string[];
+    preferences: { show_default_blocks: boolean };
+  };
+} {
+  return {
+    display: {
+      blocks: {
+        upi: {
+          name: 'Pay using UPI',
+          instruments: [{ method: 'upi', flows: ['collect', 'intent', 'qr'] }],
+        },
+      },
+      sequence: ['block.upi'],
+      preferences: { show_default_blocks: true },
     },
   };
 }
@@ -237,9 +282,9 @@ export const openRazorpayCheckout: any = async (options: RazorpayCheckoutOptions
     description: options.description?.trim() ? options.description : 'Payment',
     order_id: options.orderId,
     handler: options.onSuccess,
-    config: getWarmpawzRazorpayStandardDisplayConfig(),
+    config: getWarmpawzRazorpayUpiDisplayConfig(),
+    method: { upi: true as const },
     ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
-    ...(e164 && email ? { method: 'upi' as const } : {}),
     theme: {
       color: '#FF8C42',
       // The orange "W Warmpawz" merchant toolbar that Razorpay renders above

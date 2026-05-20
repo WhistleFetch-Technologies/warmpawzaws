@@ -2,7 +2,11 @@ buildscript {
     ext {
         buildToolsVersion = "34.0.0"
         minSdkVersion = 21
-        compileSdkVersion = 35
+        // compileSdkVersion 34 (not 35): AGP 8.1.1 + JDK 21 fails to transform
+        // android-35 core-for-system-modules.jar via jlink (JdkImageTransform).
+        // Bumping compileSdk to 35 also requires AGP 8.6+. Stay on 34 until
+        // a coordinated AGP/JDK upgrade.
+        compileSdkVersion = 34
         targetSdkVersion = 34
         ndkVersion = "25.1.8937393"
         kotlinVersion = "1.8.0"
@@ -47,13 +51,17 @@ subprojects {
             // AndroidX core compatibility for compileSdk 34 and AGP 8.1.1
             force 'androidx.core:core:1.13.1'
             force 'androidx.core:core-ktx:1.13.1'
-            
+
             // Force soloader version (prevents Maven Central 403 issues in CI)
             force 'com.facebook.soloader:soloader:0.10.5'
-            
-            // Force Fresco version compatibility
-            force 'com.facebook.fresco:fresco:2.5.0'
-            force 'com.facebook.fresco:imagepipeline-okhttp3:2.5.0'
+
+            // NOTE: Do NOT force 'com.facebook.fresco:fresco' here. React Native
+            // 0.73's `react-android` AAR is compiled against Fresco 3.x and
+            // calls `ControllerListener2$Extras.obtainExtras(...PointF...Uri)`
+            // — an overload that does not exist in Fresco 2.5.0. Pinning Fresco
+            // to 2.5.0 makes the first <Image> mount throw NoSuchMethodError
+            // and crashes the app on the home / auth screen. Let Gradle pick
+            // whatever Fresco version RN 0.73 ships with.
         }
     }
 }
