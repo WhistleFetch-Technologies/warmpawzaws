@@ -843,24 +843,14 @@ async function resolveOneFacilityPhotoToPresignedUrl(
       (photoItem.includes('X-Amz') || photoItem.includes('AWSAccessKeyId'))
     ) {
       const urlParts = photoItem.split('?')[0];
-      if (urlParts.includes('vendors/') && urlParts.includes('/facility/')) {
-        const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
-        if (keyMatch && keyMatch[1]) {
-          fileKey = `vendors/${vendorId}/facility/${keyMatch[1]}`;
-        } else {
-          const vendorsIndex = urlParts.indexOf('vendors/');
-          if (vendorsIndex >= 0) {
-            fileKey = urlParts.substring(vendorsIndex);
-          }
-        }
+      const vendorsIndex = urlParts.indexOf('vendors/');
+      if (vendorsIndex >= 0) {
+        // Use the key embedded in the URL — do not rewrite to route param vendorId (may be identity id).
+        fileKey = urlParts.substring(vendorsIndex);
       }
     } else if (photoItem.startsWith('vendors/')) {
-      if (!fileKey.startsWith(`vendors/${vendorId}/`)) {
-        const keyParts = fileKey.split('/');
-        if (keyParts.length >= 3 && keyParts[0] === 'vendors') {
-          fileKey = `vendors/${vendorId}/${keyParts.slice(2).join('/')}`;
-        }
-      }
+      // Stored S3 key — use as-is (upload-photos writes vendors/{vendors.id}/facility/...).
+      fileKey = fileKey.split('?')[0].split('#')[0];
     } else if (photoItem.startsWith('http://') || photoItem.startsWith('https://')) {
       return photoItem;
     }
@@ -6384,8 +6374,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
   /**
    * POST /vendor/facility/:vendorId/upload-photos
-   * Upload facility photos for a vendor
-   * This endpoint was missing, causing 404 errors
+   * Upload facility photos for a vendor (multipart or JSON base64).
+   * Capacitor Android WebView often sends 0-byte multipart bodies; JSON base64 avoids that.
    */
   app.post("/vendor/facility/:vendorId/upload-photos", async (c) => {
     try {
@@ -6393,65 +6383,159 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       console.log(`📸 [FACILITY-PHOTOS] Uploading photos for vendor: ${vendorId}`);
 
-      // Resolve vendor (frontend may pass vendor_identity.id; data is stored by vendors.id)
       const vendor = await resolveVendorById(vendorId);
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       const actualVendorId = vendor.id;
 
-      // Parse the multipart form data
-      const formData = await c.req.formData();
-      const photos = formData.getAll('photos') as File[];
+      type IncomingPhoto = { buffer: Uint8Array; name: string; contentType: string };
+      const incoming: IncomingPhoto[] = [];
+      const skippedReasons: string[] = [];
+      const MAX_BYTES = 5 * 1024 * 1024;
 
-      if (!photos || photos.length === 0) {
-        return c.json({ error: 'No photos provided' }, 400);
+      const requestContentType = (c.req.header('content-type') || '').toLowerCase();
+      let attemptedCount = 0;
+
+      if (requestContentType.includes('application/json')) {
+        console.log(`📸 [FACILITY-PHOTOS] Parsing JSON/base64 body`);
+        const body = await c.req.json();
+        const items = Array.isArray(body?.photos) ? body.photos : [];
+        attemptedCount = items.length;
+        if (items.length === 0) {
+          return c.json({ error: 'No photos provided' }, 400);
+        }
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          try {
+            const raw =
+              typeof item?.base64 === 'string'
+                ? item.base64
+                : typeof item?.data === 'string'
+                  ? item.data
+                  : null;
+            if (!raw) {
+              skippedReasons.push(`photo[${i}]: missing base64`);
+              continue;
+            }
+            let base64String = raw.trim();
+            let contentType =
+              typeof item?.mimeType === 'string'
+                ? item.mimeType
+                : typeof item?.contentType === 'string'
+                  ? item.contentType
+                  : 'image/jpeg';
+            if (base64String.includes(',')) {
+              const parts = base64String.split(',');
+              base64String = parts[parts.length - 1] || '';
+              const mimeMatch = parts[0].match(/data:([^;]+);/i);
+              if (mimeMatch) contentType = mimeMatch[1];
+            }
+            const buf = Buffer.from(base64String, 'base64');
+            if (buf.length === 0) {
+              skippedReasons.push(`photo[${i}]: decoded 0 bytes`);
+              continue;
+            }
+            if (buf.length > MAX_BYTES) {
+              skippedReasons.push(`photo[${i}]: exceeds 5MB`);
+              continue;
+            }
+            const name =
+              typeof item?.fileName === 'string' && item.fileName
+                ? item.fileName
+                : `photo-${Date.now()}.jpg`;
+            incoming.push({ buffer: new Uint8Array(buf), name, contentType });
+          } catch (parseErr: any) {
+            skippedReasons.push(`photo[${i}]: ${parseErr?.message || parseErr}`);
+          }
+        }
+      } else {
+        console.log(`📸 [FACILITY-PHOTOS] Parsing multipart form`);
+        const formData = await c.req.formData();
+        const photos = formData.getAll('photos') as File[];
+        attemptedCount = photos?.length || 0;
+        if (!photos || photos.length === 0) {
+          return c.json({ error: 'No photos provided' }, 400);
+        }
+        for (const photo of photos) {
+          try {
+            const size = typeof (photo as any)?.size === 'number' ? (photo as any).size : 0;
+            if (!size) {
+              skippedReasons.push(`${photo.name || 'unnamed'}: 0 bytes (empty upload skipped)`);
+              continue;
+            }
+            const arrayBuffer = await photo.arrayBuffer();
+            const uint8Array = new Uint8Array(arrayBuffer);
+            if (uint8Array.byteLength === 0) {
+              skippedReasons.push(`${photo.name || 'unnamed'}: empty body after arrayBuffer()`);
+              continue;
+            }
+            if (uint8Array.byteLength > MAX_BYTES) {
+              skippedReasons.push(`${photo.name || 'unnamed'}: exceeds 5MB`);
+              continue;
+            }
+            incoming.push({
+              buffer: uint8Array,
+              name: photo.name || `photo-${Date.now()}.jpg`,
+              contentType: photo.type || 'image/jpeg',
+            });
+          } catch (photoError: any) {
+            skippedReasons.push(`${photo.name || 'unnamed'}: ${photoError?.message || photoError}`);
+          }
+        }
       }
 
-      console.log(`📸 [FACILITY-PHOTOS] Processing ${photos.length} photos`);
+      console.log(`📸 [FACILITY-PHOTOS] Processing ${incoming.length} photo(s) (${attemptedCount} attempted)`);
 
-      // Upload photos to S3
       const s3Upload: any = await import('@aws-sdk/client-s3');
-      const { S3Client, PutObjectCommand, GetObjectCommand } = s3Upload;
-      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      const { S3Client, PutObjectCommand } = s3Upload;
 
       const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
       const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
 
       const photoUrls: string[] = [];
-      const photoKeys: string[] = [];
 
-      for (const photo of photos) {
+      for (const photo of incoming) {
         try {
-          // Generate a unique filename
           const timestamp = Date.now();
-          const ext = photo.name.split('.').pop() || 'jpg';
+          const ext = photo.name.split('.').pop() || photo.contentType.split('/')[1] || 'jpg';
           const fileKey = `vendors/${actualVendorId}/facility/facility_${timestamp}_${Math.random().toString(36).substr(2, 9)}.${ext}`;
 
-          // Convert File to ArrayBuffer and upload to S3
-          const arrayBuffer = await photo.arrayBuffer();
-          const uint8Array = new Uint8Array(arrayBuffer);
+          await s3Client.send(
+            new PutObjectCommand({
+              Bucket: BUCKET_NAME,
+              Key: fileKey,
+              Body: photo.buffer,
+              ContentType: photo.contentType || 'image/jpeg',
+            })
+          );
 
-          await s3Client.send(new PutObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: fileKey,
-            Body: uint8Array,
-            ContentType: photo.type || 'image/jpeg',
-            // ✅ FIX: No ACL needed - bucket has public access blocked, we'll use presigned URLs
-          }));
-
-          // ✅ FIX: Store S3 key only (not URL) - we'll generate presigned URLs on-demand when retrieving
-          photoUrls.push(fileKey); // Store key, not URL
-          photoKeys.push(fileKey);
-
-          console.log(`📸 [FACILITY-PHOTOS] Uploaded to S3: ${fileKey}`);
+          photoUrls.push(fileKey);
+          console.log(`📸 [FACILITY-PHOTOS] Uploaded to S3: ${fileKey} (${photo.buffer.byteLength} bytes)`);
         } catch (photoError: any) {
+          const reason = `${photo.name || 'unnamed'}: ${photoError?.message || photoError}`;
           console.error(`❌ [FACILITY-PHOTOS] Error processing photo ${photo.name}:`, photoError);
-          // Continue with other photos
+          skippedReasons.push(reason);
         }
       }
 
-      // Update vendor metadata with new photos (use resolved vendor id)
+      if (photoUrls.length === 0) {
+        console.warn(
+          `⚠️ [FACILITY-PHOTOS] No photos uploaded for vendor ${actualVendorId} (attempted=${attemptedCount}, skipped=${skippedReasons.length})`
+        );
+        return c.json(
+          {
+            success: false,
+            error:
+              'No photos were saved. The selected file(s) appeared empty or could not be processed. Please re-pick the photos and try again.',
+            uploadedCount: 0,
+            attemptedCount,
+            skipped: skippedReasons,
+          },
+          400
+        );
+      }
+
       const existingMetadata = (vendor.metadata as any) || {};
       const existingPhotos = existingMetadata.facility_photos || [];
       const allPhotos = [...existingPhotos, ...photoUrls];
@@ -6468,10 +6552,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       console.log(`✅ [FACILITY-PHOTOS] Uploaded ${photoUrls.length} photos for vendor ${actualVendorId}`);
 
+      const displayUrls = await presignCustomerFacilityGalleryUrls(actualVendorId, photoUrls);
+
       return c.json({
         success: true,
-        photoUrls: photoUrls,
+        photoUrls,
+        displayUrls,
+        vendorId: actualVendorId,
         totalPhotos: allPhotos.length,
+        uploadedCount: photoUrls.length,
+        attemptedCount,
+        skipped: skippedReasons,
       });
     } catch (error: any) {
       console.error('Error uploading facility photos:', error);
