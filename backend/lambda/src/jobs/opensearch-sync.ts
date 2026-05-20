@@ -24,6 +24,12 @@ import {
   initializeAllIndexes,
   INDEXES,
 } from '../utils/opensearch-client';
+import { getVendorListingPhotoUrl } from '../utils/vendor-listing-photo';
+
+/**
+ * After changing listing photo resolution, run a full OpenSearch sync so indexed
+ * profile_image / vendor_profile_image fields include profile_photo_url and gallery URLs.
+ */
 
 // ============================================================================
 // TYPES
@@ -120,7 +126,12 @@ async function processEntityUpdate(message: SyncMessage) {
         document = data || (await fetchEntityFromDatabase(entity, entity_id));
       }
       if (document) {
-        const indexableDoc = transformForIndex(entity, document);
+        const indexableDoc =
+          entity === 'vendor'
+            ? await transformVendorForIndex(document)
+            : entity === 'service'
+              ? await transformServiceForIndex(document)
+              : transformForIndex(entity, document);
         await indexDocument(indexName, entity_id, indexableDoc);
       }
       break;
@@ -145,6 +156,9 @@ async function fetchVendorServiceForSearchIndex(vendorServiceId: string): Promis
             v.latitude as vendor_lat, v.longitude as vendor_lon, v.status as vendor_status,
             v.specialization as vendor_specialization, v.is_active as vendor_is_active,
             v.profile_image as vendor_profile_image,
+            v.profile_photo_url as vendor_profile_photo_url,
+            v.metadata as vendor_metadata,
+            v.vendor_type as vendor_vendor_type,
             v.address as vendor_address,
             v.landmark as vendor_landmark,
             v.pincode as vendor_pincode
@@ -213,6 +227,9 @@ async function syncServices() {
            v.latitude as vendor_lat, v.longitude as vendor_lon, v.status as vendor_status,
            v.specialization as vendor_specialization, v.is_active as vendor_is_active,
            v.profile_image as vendor_profile_image,
+           v.profile_photo_url as vendor_profile_photo_url,
+           v.metadata as vendor_metadata,
+           v.vendor_type as vendor_vendor_type,
            v.address as vendor_address,
            v.landmark as vendor_landmark,
            v.pincode as vendor_pincode,
@@ -234,11 +251,13 @@ async function syncServices() {
       )
   `);
 
-  const serviceRows = services.rows || [];
-  const documents = serviceRows.map((vs: any) => ({
-    id: vs.id,
-    document: transformForIndex('service', vs),
-  }));
+  const serviceRows = (services.rows || []) as Record<string, unknown>[];
+  const documents = await Promise.all(
+    serviceRows.map(async (vs) => ({
+      id: vs.id as string,
+      document: await transformServiceForIndex(vs),
+    }))
+  );
 
   if (documents.length > 0) {
     await bulkIndex(INDEXES.SERVICES, documents);
@@ -259,11 +278,16 @@ async function syncVendors() {
     WHERE v.status = 'active'
   `);
 
-  const vendorRows = Array.isArray(vendors) ? vendors : (vendors as any).rows || [];
-  const documents = vendorRows.map((vendor: any) => ({
-    id: vendor.id,
-    document: transformForIndex('vendor', vendor),
-  }));
+  const vendorRows = (Array.isArray(vendors) ? vendors : (vendors as { rows?: unknown[] }).rows || []) as Record<
+    string,
+    unknown
+  >[];
+  const documents = await Promise.all(
+    vendorRows.map(async (vendor) => ({
+      id: vendor.id as string,
+      document: await transformVendorForIndex(vendor),
+    }))
+  );
 
   if (documents.length > 0) {
     await bulkIndex(INDEXES.VENDORS, documents);
@@ -338,6 +362,36 @@ async function syncProblems() {
 // ============================================================================
 // DATA TRANSFORMATION
 // ============================================================================
+
+function vendorRowForListingPhoto(data: Record<string, unknown>): Record<string, unknown> {
+  return {
+    profile_photo_url: data.profile_photo_url ?? data.vendor_profile_photo_url,
+    profile_image: data.profile_image ?? data.vendor_profile_image,
+    metadata: data.metadata ?? data.vendor_metadata,
+    vendor_type: data.vendor_type ?? data.vendor_vendor_type,
+    logo_url: data.logo_url ?? data.vendor_logo_url,
+  };
+}
+
+async function transformVendorForIndex(data: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const base = transformForIndex('vendor', data);
+  const listingPhoto = await getVendorListingPhotoUrl(data);
+  return {
+    ...base,
+    profile_image: listingPhoto ?? base.profile_image ?? data.profile_photo_url ?? null,
+    profile_photo_url:
+      typeof data.profile_photo_url === 'string' ? data.profile_photo_url : null,
+  };
+}
+
+async function transformServiceForIndex(data: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const base = transformForIndex('service', data);
+  const listingPhoto = await getVendorListingPhotoUrl(vendorRowForListingPhoto(data));
+  return {
+    ...base,
+    vendor_profile_image: listingPhoto ?? base.vendor_profile_image ?? null,
+  };
+}
 
 function transformForIndex(entity: string, data: any): Record<string, any> {
   switch (entity) {
@@ -430,7 +484,8 @@ function transformForIndex(entity: string, data: any): Record<string, any> {
         service_styles: parseJsonArray(data.service_styles),
         rating: data.rating || 0,
         total_reviews: data.total_reviews || 0,
-        profile_image: data.profile_image ?? data.photo_url ?? null,
+        profile_image: data.profile_image ?? data.profile_photo_url ?? data.photo_url ?? null,
+        profile_photo_url: data.profile_photo_url ?? null,
         address: data.address,
         landmark: data.landmark ?? null,
         pincode: data.pincode ?? null,

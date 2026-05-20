@@ -125,7 +125,7 @@ function mapSearchApiToResults(response: any): SearchResult[] {
       reviewCount: parseInt(String(s.vendorReviewCount ?? s.total_reviews ?? 0), 10) || 0,
       city: s.city ?? '',
       price: parseFloat(s.price ?? s.base_price) || undefined,
-      imageUrl: profileImg || galleryImg,
+      imageUrl: profileImg ?? galleryImg,
       vendorOwnerId: String(s.vendorId ?? s.vendor_id ?? '').trim(),
       vendorBusinessName: headline,
       addressDisplay: formatVendorAddressLine({
@@ -218,6 +218,8 @@ function SearchContent() {
 
   /** Used only for distance labels; omit fake defaults — no distance until browser shares location. */
   const [userGeo, setUserGeo] = useState<{ lat: number; lng: number } | null>(null);
+  const userGeoRef = React.useRef(userGeo);
+  userGeoRef.current = userGeo;
 
   useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) return;
@@ -297,12 +299,8 @@ function SearchContent() {
     }
     let cancelled = false;
     (async () => {
-      const triggerJson = JSON.stringify(searchFetchTrigger);
-      const sameSearchAsLast = lastSearchTriggerRef.current === triggerJson;
-      lastSearchTriggerRef.current = triggerJson;
-      const quietGeoRefetch =
-        !!userGeo && sameSearchAsLast && apiResultsRef.current.length > 0;
-      setLoading(!quietGeoRefetch);
+      lastSearchTriggerRef.current = JSON.stringify(searchFetchTrigger);
+      setLoading(true);
       try {
         const params = new URLSearchParams();
         if (searchFetchTrigger.kind === 'keyword') {
@@ -314,9 +312,10 @@ function SearchContent() {
         } else {
           params.set('limit', '50');
         }
-        if (userGeo) {
-          params.set('userLat', String(userGeo.lat));
-          params.set('userLng', String(userGeo.lng));
+        const geo = userGeoRef.current;
+        if (geo) {
+          params.set('userLat', String(geo.lat));
+          params.set('userLng', String(geo.lng));
         }
         const response = await apiClient.get<any>(`/search?${params.toString()}`);
         if (cancelled) return;
@@ -362,7 +361,7 @@ function SearchContent() {
     return () => {
       cancelled = true;
     };
-  }, [searchFetchTrigger, vendorIdParam, userGeo]);
+  }, [searchFetchTrigger, vendorIdParam]);
 
   /** Keyword results loaded: keep localStorage context in sync when only the hub chip changes (no refetch). */
   useEffect(() => {
