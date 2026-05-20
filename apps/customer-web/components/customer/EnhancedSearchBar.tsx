@@ -5,6 +5,7 @@ import { Search, X, Clock, TrendingUp, MapPin, Star, ChevronRight, Trash2 } from
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
+import { pickProfileImageUrl, type SearchApiVendorRow } from '@/lib/search-vendor-display';
 
 interface SearchResult {
   id: string;
@@ -196,8 +197,8 @@ export function EnhancedSearchBar({
       });
 
       if (locForRequest) {
-        params.append('lat', locForRequest.lat.toString());
-        params.append('lng', locForRequest.lng.toString());
+        params.append('userLat', locForRequest.lat.toString());
+        params.append('userLng', locForRequest.lng.toString());
       }
 
       if (customerId) {
@@ -251,6 +252,7 @@ export function EnhancedSearchBar({
       // Add vendors
       const vendors = data.data?.vendors || data.vendors || [];
       vendors.forEach((vendor: any) => {
+        const photoUrl = pickProfileImageUrl(vendor as SearchApiVendorRow);
         transformedResults.push({
           id: vendor.id || vendor.vendorId,
           type: 'vendor',
@@ -263,7 +265,8 @@ export function EnhancedSearchBar({
             serviceType: vendor.category,
             description: vendor.specialization || vendor.description,
             rating: vendor.rating,
-            photoUrl: vendor.photoUrl || vendor.photo,
+            photoUrl,
+            imageUrl: photoUrl,
             city: vendor.city,
             state: vendor.state
           },
@@ -276,6 +279,12 @@ export function EnhancedSearchBar({
       // Add services
       const services = data.data?.services || data.services || [];
       services.forEach((service: any) => {
+        const vendorFacet: SearchApiVendorRow = {
+          ...service,
+          profileImage: service.vendorProfileImage ?? service.vendor_profile_image,
+          profile_image: service.vendor_profile_image ?? service.vendorProfileImage,
+        };
+        const photoUrl = pickProfileImageUrl(vendorFacet);
         transformedResults.push({
           id: service.id || service.serviceId,
           type: 'service',
@@ -287,6 +296,8 @@ export function EnhancedSearchBar({
             description: service.description,
             price: service.price,
             vendorId: service.vendorId,
+            photoUrl,
+            imageUrl: photoUrl,
             city: service.city,
             state: service.state
           },
@@ -496,9 +507,12 @@ export function EnhancedSearchBar({
                   <div className="w-12 h-12 rounded-lg bg-gradient-to-r from-orange-500 to-pink-500 overflow-hidden flex-shrink-0 flex items-center justify-center text-white font-semibold">
                     {result.data?.photoUrl || result.data?.imageUrl ? (
                       <img 
+                        key={result.data.photoUrl || result.data.imageUrl}
                         src={result.data.photoUrl || result.data.imageUrl} 
                         alt={String(result.data.name || result.data.businessName || 'Service')}
                         className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                        decoding="async"
                       />
                     ) : (
                       <span className="text-xl uppercase">

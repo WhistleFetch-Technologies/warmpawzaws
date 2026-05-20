@@ -66,6 +66,21 @@ export function vendorInitialsFromName(name: string): string {
 /** Raw vendor object from GET /search (camelCase from Lambda or legacy snake_case). */
 export type SearchApiVendorRow = Record<string, unknown>;
 
+/** Only values the browser can load in <img src> (not bare S3 keys). */
+export function isBrowserLoadableImageUrl(url: string): boolean {
+  const t = url.trim();
+  if (!t) return false;
+  if (/^https?:\/\//i.test(t)) return true;
+  if (t.startsWith('data:')) return true;
+  if (t.startsWith('/')) return true;
+  return false;
+}
+
+function normalizeProtocolRelative(url: string): string {
+  if (/^\/\//.test(url)) return `https:${url}`;
+  return url;
+}
+
 function pickFromMetadataUrls(v: SearchApiVendorRow): string | undefined {
   const meta = v.metadata ?? v.vendor_metadata ?? (v as any).meta;
   let obj = meta;
@@ -89,26 +104,31 @@ function pickFromMetadataUrls(v: SearchApiVendorRow): string | undefined {
   ];
   for (const k of keys) {
     const val = m[k];
-    if (typeof val === 'string' && val.trim()) return val.trim();
+    if (typeof val === 'string' && isBrowserLoadableImageUrl(val)) {
+      return normalizeProtocolRelative(val.trim());
+    }
   }
   return undefined;
 }
 
+/**
+ * Vendor/center avatar for search listings.
+ * Prefer GET /search enriched profileImage (fresh presigned HTTPS) over stale metadata keys/URLs.
+ */
 export function pickProfileImageUrl(v: SearchApiVendorRow): string | undefined {
-  const metaUrl = pickFromMetadataUrls(v);
-  const photos = v.photos;
-  let fromPhotos = '';
-  if (Array.isArray(photos)) {
-    const first = photos.find((p) => typeof p === 'string' && String(p).trim());
-    if (typeof first === 'string') fromPhotos = first.trim();
-  }
-  const direct = [
+  const apiResolved = [
     v.profileImage,
     v.profile_image,
-    v.photoUrl,
-    v.photo_url,
     v.vendorProfileImage,
     v.vendor_profile_image,
+  ]
+    .map((x) => (typeof x === 'string' ? x.trim() : ''))
+    .find(isBrowserLoadableImageUrl);
+  if (apiResolved) return normalizeProtocolRelative(apiResolved);
+
+  const direct = [
+    v.photoUrl,
+    v.photo_url,
     v.imageUrl,
     v.image_url,
     v.logo_url,
@@ -119,15 +139,25 @@ export function pickProfileImageUrl(v: SearchApiVendorRow): string | undefined {
     v.businessLogo,
     v.thumbnail_url,
     v.thumbnailUrl,
+    v.profilePhotoUrl,
+    v.profile_photo_url,
   ]
     .map((x) => (typeof x === 'string' ? x.trim() : ''))
-    .find(Boolean);
+    .find(isBrowserLoadableImageUrl);
+  if (direct) return normalizeProtocolRelative(direct);
 
-  let url = metaUrl || direct || fromPhotos || undefined;
-  if (url && /^\/\//.test(url)) {
-    return `https:${url}`;
+  const photos = v.photos;
+  if (Array.isArray(photos)) {
+    const first = photos.find(
+      (p) => typeof p === 'string' && isBrowserLoadableImageUrl(String(p))
+    );
+    if (typeof first === 'string') return normalizeProtocolRelative(first.trim());
   }
-  return url;
+
+  const metaUrl = pickFromMetadataUrls(v);
+  if (metaUrl) return metaUrl;
+
+  return undefined;
 }
 
 export function pickServiceListingImage(v: SearchApiVendorRow): string | undefined {

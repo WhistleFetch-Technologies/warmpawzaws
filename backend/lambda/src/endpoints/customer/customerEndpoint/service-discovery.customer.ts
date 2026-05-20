@@ -37,6 +37,10 @@ import {
   acceptableAvailabilityStylesForSlot,
   normalizeAvailabilityServiceStyle,
 } from '../../../utils/availability-service-styles';
+import {
+  vendorGalleryDrivesListingPhoto,
+  getVendorListingPhotoUrl,
+} from '../../../utils/vendor-listing-photo';
 
 export { getCustomerCoordinates, resolveCustomerIdFromPhone };
 
@@ -713,48 +717,6 @@ function sqlTrainingCategoryAliasOrVs(vsAlias = 'vs'): string {
 }
 
 // ✅ Using helper functions from constants/helper.ts instead of duplicate implementations
-
-/**
- * Center / business listings: gallery (metadata.facility_photos) is the source of truth for the public avatar.
- * Solo providers keep profile_photo_url as the primary headshot; gallery is supplementary.
- */
-function vendorGalleryDrivesListingPhoto(v: any): boolean {
-  const vt = String(v?.vendor_type ?? '').toLowerCase().trim();
-  return vt !== 'solo';
-}
-
-/**
- * Unified vendor photo URL: for business/center vendors, first facility gallery photo wins (same as former "center photo" in profile),
- * then profile_photo_url / profile_image / logo_url, then first facility photo as fallback for solo.
- * ✅ FIX: Regenerates pre-signed URLs on-demand to avoid 403 errors from expired URLs.
- * Use in all discovery endpoints so clinic/solo cards show photos consistently.
- */
-async function getVendorPhotoUrl(v: any): Promise<string | null> {
-  if (!v) return null;
-  let firstFacility: string | null = null;
-  try {
-    const meta = v.metadata;
-    const m = typeof meta === 'string' ? (meta ? JSON.parse(meta) : {}) : meta || {};
-    const photos = m?.facility_photos || m?.photos;
-    const first = Array.isArray(photos) && photos[0] ? String(photos[0]).trim() : '';
-    if (first) firstFacility = first;
-  } catch {
-    firstFacility = null;
-  }
-
-  if (firstFacility && vendorGalleryDrivesListingPhoto(v)) {
-    return await regeneratePresignedUrl(firstFacility);
-  }
-
-  const url = v.profile_photo_url || v.profile_image || v.logo_url || null;
-  if (url && String(url).trim()) {
-    return await regeneratePresignedUrl(url);
-  }
-  if (firstFacility) {
-    return await regeneratePresignedUrl(firstFacility);
-  }
-  return null;
-}
 
 /** Flatten metadata.gallery / facility_photos entries (strings or { url, key, … }). */
 function flattenMetadataGalleryItems(raw: unknown): string[] {
@@ -3093,7 +3055,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           photos = regeneratedPhotos.filter((url): url is string => url !== null && url !== undefined);
         } catch { }
 
-        const photoUrl = await getVendorPhotoUrl(vendor);
+        const photoUrl = await getVendorListingPhotoUrl(vendor);
         const prices = services.map((s: any) => s.price).filter((p: number) => p > 0);
         const priceMin = prices.length > 0 ? Math.min(...prices) : undefined;
         const priceMax = prices.length > 0 ? Math.max(...prices) : undefined;
@@ -5340,7 +5302,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           totalReviews: reviews.rows.length,
           operatingHours: safeParseOperatingHours(vendor.operating_hours),
           description: vendor.description || '',
-          photoUrl: await getVendorPhotoUrl(vendor),
+          photoUrl: await getVendorListingPhotoUrl(vendor),
           vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
           specializations: vendorSpecializations,
           serviceStyles: vendorServiceStyles,
@@ -5595,7 +5557,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vendorId: vendor.id,
             businessName: vendor.business_name,
             name: vendor.business_name || vendor.owner_name,
-            photoUrl: await getVendorPhotoUrl(vendor),
+            photoUrl: await getVendorListingPhotoUrl(vendor),
             rating: parseFloat(avgRating) || 0,
             reviewCount: parseInt(reviewCount) || 0,
             distanceKm,
@@ -5987,7 +5949,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           id: vendorId,
           vendorId,
           name: row.business_name || row.owner_name,
-          photoUrl: await getVendorPhotoUrl(row),
+          photoUrl: await getVendorListingPhotoUrl(row),
           rating,
           reviewCount,
           distance: distanceKm,
@@ -6096,7 +6058,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           phone: vendor.phone,
           email: vendor.email,
           /** Same as discovery /customer/vendor — solo providers often only have profile photo, not facility_photos */
-          photoUrl: await getVendorPhotoUrl(vendor),
+          photoUrl: await getVendorListingPhotoUrl(vendor),
           roleId: vendor.role_id, // ✅ FIX: Include roleId for CenterProfileManager
           role_id: vendor.role_id,
           boardingDisclaimer: boardingDisc.disclaimer,
@@ -6670,7 +6632,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           role: vendor.role_name,
           roleDisplayName: vendor.role_display_name,
           /** Presigned headshot / listing photo so customer profile hero matches discover-services cards */
-          photoUrl: await getVendorPhotoUrl(vendor),
+          photoUrl: await getVendorListingPhotoUrl(vendor),
         },
         facility: {
           address: vendor.address,
@@ -7300,7 +7262,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           photos = regeneratedPhotos.filter((url): url is string => url !== null && url !== undefined);
         } catch { /* non-fatal */ }
 
-        const photoUrl = await getVendorPhotoUrl(vendor);
+        const photoUrl = await getVendorListingPhotoUrl(vendor);
 
         const specBundle = vendorSpecBundleForByStyle.get(vendor.vendor_id);
         const specializations = specBundle?.displayLabels?.length ? specBundle.displayLabels : [];

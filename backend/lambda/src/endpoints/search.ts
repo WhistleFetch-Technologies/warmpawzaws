@@ -34,6 +34,7 @@ import {
   getSearchCategoryIlikePatterns,
   isHubBrowseCategoryOnly,
 } from '../utils/search-category-aliases';
+import { getVendorListingPhotoUrl } from '../utils/vendor-listing-photo';
 
 // Import OpenSearch client with fallback handling
 let openSearchClient: any = null;
@@ -83,6 +84,43 @@ function haversineDistanceKm(lat1: number, lon1: number, lat2: number, lon2: num
     Math.sin(dLat / 2) ** 2 +
     Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
   return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+/** Fill missing listing photos from RDS when OpenSearch index only has profile_image. */
+async function enrichSearchResultPhotos(
+  vendors: Array<{ id: string; profileImage?: string | null; vendorId?: string }>,
+  services: Array<{ vendorId?: string; vendorProfileImage?: string | null }>
+): Promise<void> {
+  const needsVendorIds = new Set<string>();
+  for (const v of vendors) {
+    if (v.id && !v.profileImage) needsVendorIds.add(v.id);
+  }
+  for (const s of services) {
+    if (s.vendorId && !s.vendorProfileImage) needsVendorIds.add(s.vendorId);
+  }
+  if (needsVendorIds.size === 0) return;
+
+  const { rows } = await query(`SELECT * FROM vendors WHERE id = ANY($1::uuid[])`, [[...needsVendorIds]]);
+  const photoById = new Map<string, string | null>();
+  await Promise.all(
+    rows.map(async (row: Record<string, unknown>) => {
+      const id = String(row.id);
+      photoById.set(id, await getVendorListingPhotoUrl(row));
+    })
+  );
+
+  for (const v of vendors) {
+    if (!v.profileImage && v.id) {
+      const url = photoById.get(v.id);
+      if (url) v.profileImage = url;
+    }
+  }
+  for (const s of services) {
+    if (!s.vendorProfileImage && s.vendorId) {
+      const url = photoById.get(s.vendorId);
+      if (url) s.vendorProfileImage = url;
+    }
+  }
 }
 
 // ============================================================================
@@ -176,7 +214,7 @@ class UniversalSearchHandler extends BaseHandler {
     const vendors: any[] = [];
     const services: any[] = [];
 
-    hits.forEach((hit: any) => {
+    hits.forEach((hit: { _index: string; _source: Record<string, unknown> }) => {
       const source = hit._source;
       if (hit._index.includes('vendors')) {
         const loc = source.location;
@@ -261,6 +299,8 @@ class UniversalSearchHandler extends BaseHandler {
         });
       }
     });
+
+    await enrichSearchResultPhotos(vendors, services);
 
     return this.success({
       query: searchQuery,
@@ -418,6 +458,9 @@ class UniversalSearchHandler extends BaseHandler {
         v.city,
         v.state,
         v.profile_image AS vendor_profile_image,
+        v.profile_photo_url AS vendor_profile_photo_url,
+        v.metadata AS vendor_metadata,
+        v.vendor_type AS vendor_vendor_type,
         v.address AS vendor_address,
         v.landmark AS vendor_landmark,
         v.pincode AS vendor_pincode,
@@ -486,9 +529,30 @@ class UniversalSearchHandler extends BaseHandler {
 
     const { rows: services } = await query(servicesQuery, serviceParams);
 
+    const vendorRows = await Promise.all(
+      vendors.map(async (v) => {
+        const profileImage = await getVendorListingPhotoUrl(v as Record<string, unknown>);
+        return { v, profileImage };
+      })
+    );
+
+    const serviceRows = await Promise.all(
+      services.map(async (s) => {
+        const vendorForPhoto: Record<string, unknown> = {
+          profile_photo_url: s.vendor_profile_photo_url,
+          profile_image: s.vendor_profile_image,
+          metadata: s.vendor_metadata,
+          vendor_type: s.vendor_vendor_type,
+          logo_url: s.vendor_logo_url ?? s.logo_url,
+        };
+        const vendorProfileImage = await getVendorListingPhotoUrl(vendorForPhoto);
+        return { s, vendorProfileImage };
+      })
+    );
+
     return this.success({
       query: searchQuery,
-      vendors: vendors.map(v => {
+      vendors: vendorRows.map(({ v, profileImage }) => {
         const vlat =
           v.latitude != null && String(v.latitude).trim() !== ''
             ? (() => {
@@ -516,7 +580,7 @@ class UniversalSearchHandler extends BaseHandler {
           state: v.state,
           rating: parseFloat(v.avg_rating) || 0,
           completedBookings: parseInt(v.completed_bookings) || 0,
-          profileImage: v.profile_image ?? null,
+          profileImage,
           address: v.address ?? null,
           landmark: v.landmark ?? null,
           pincode: v.pincode ?? null,
@@ -525,7 +589,7 @@ class UniversalSearchHandler extends BaseHandler {
           distanceKm,
         };
       }),
-      services: services.map(s => {
+      services: serviceRows.map(({ s, vendorProfileImage }) => {
         const svcVlat =
           s.vendor_latitude != null && String(s.vendor_latitude).trim() !== ''
             ? (() => {
@@ -557,7 +621,7 @@ class UniversalSearchHandler extends BaseHandler {
           category: s.category ?? s.search_role_name ?? null,
           serviceType: s.category ?? s.search_role_name ?? null,
           imageUrl: s.image_url ?? s.thumbnail_url ?? null,
-          vendorProfileImage: s.vendor_profile_image ?? null,
+          vendorProfileImage,
           vendorAddress: s.vendor_address ?? null,
           vendorLandmark: s.vendor_landmark ?? null,
           vendorPincode: s.vendor_pincode ?? null,
