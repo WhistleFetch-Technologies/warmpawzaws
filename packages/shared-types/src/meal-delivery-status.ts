@@ -1,6 +1,10 @@
 /**
  * Single precedence rules for meal hyperlocal delivery across customer + vendor surfaces.
  * Terminal meal order states must never be overridden by stale delivery_tracking rows.
+ *
+ * Pidge sandbox / dummy webhooks may send compound strings such as `fulfilled|ofd` — we split on `|`
+ * and derive the furthest meaningful logistics stage without treating early rider pool states
+ * (`pending_assignment`, …) as "ready for pickup".
  */
 
 export type MealDeliveryEffective =
@@ -14,43 +18,83 @@ export type MealDeliveryEffective =
   | 'cancelled'
   | 'failed';
 
-export function normalizeMealDeliveryToken(raw: string | null | undefined): string {
-  return String(raw ?? '')
+/** Split Pidge / sandbox compound statuses: `fulfilled|ofd`, `stg|picked_up`, etc. */
+export function splitMealStatusSegments(raw: string | null | undefined): string[] {
+  const s = String(raw ?? '')
     .trim()
     .toLowerCase()
     .replace(/-/g, '_');
+  if (!s) return [];
+  return s
+    .split('|')
+    .map((p) =>
+      p
+        .trim()
+        .replace(/-/g, '_')
+        .replace(/\s+/g, '_'),
+    )
+    .filter(Boolean);
+}
+
+export function normalizeMealDeliveryToken(raw: string | null | undefined): string {
+  const parts = splitMealStatusSegments(raw);
+  if (parts.length <= 1) {
+    return parts[0] ?? '';
+  }
+  /** For single-token APIs, join with _ so legacy equality on full string still works where needed */
+  return parts.join('_');
 }
 
 /**
- * Merge meal_orders.status with delivery_tracking.status using fixed priority:
+ * Merge meal_orders.status with delivery_tracking.status using fixed priority.
  * DELIVERED > FAILED/CANCELLED > OUT_FOR_DELIVERY > PICKED_UP > READY_FOR_PICKUP > PREPARING > CONFIRMED.
  *
- * Treat `fulfilled` (some partners) as delivered. Once delivered/cancelled/failed, logistics cannot regress UI.
+ * Treat `fulfilled` on the **order** row as delivered (legacy). For logistics, require an explicit
+ * `delivered` segment in compound strings so `fulfilled|ofd` does not jump to delivered.
  */
 export function resolveEffectiveMealDeliveryState(
   orderStatus: string | null | undefined,
   logisticsStatus: string | null | undefined,
 ): MealDeliveryEffective {
-  const o = normalizeMealDeliveryToken(orderStatus);
-  const l = normalizeMealDeliveryToken(logisticsStatus);
+  const orderSegs = splitMealStatusSegments(orderStatus);
+  const logSegs = splitMealStatusSegments(logisticsStatus);
+  const oJoined = orderSegs.join('_');
+  const lJoined = logSegs.join('_');
 
-  if (o === 'delivered' || l === 'delivered' || o === 'fulfilled') {
+  const hasCancelled = [...orderSegs, ...logSegs].some((s) => s === 'cancelled');
+  if (hasCancelled) return 'cancelled';
+
+  const hasFailed = [...orderSegs, ...logSegs].some((s) => s === 'failed');
+  if (hasFailed) return 'failed';
+
+  const hasDeliveredSegment = [...orderSegs, ...logSegs].some((s) =>
+    ['delivered', 'complete', 'completed'].includes(s),
+  );
+  if (hasDeliveredSegment) return 'delivered';
+
+  /** Whole-order legacy: meal_orders.status === fulfilled */
+  if (oJoined === 'fulfilled' || (orderSegs.length === 1 && orderSegs[0] === 'fulfilled')) {
     return 'delivered';
   }
-  if (o === 'cancelled' || l === 'cancelled') {
-    return 'cancelled';
+
+  /** Logistics-only terminal (some pipelines write fulfilled on tracking when complete) */
+  if (logSegs.some((s) => s === 'fulfilled') && logSegs.some((s) => s === 'delivered')) {
+    return 'delivered';
   }
-  if (o === 'failed' || l === 'failed') {
-    return 'failed';
+  if (lJoined === 'fulfilled' && !logSegs.includes('ofd') && !logSegs.includes('picked_up')) {
+    /** lone fulfilled on tracking — treat as delivered */
+    if (logSegs.length === 1) return 'delivered';
   }
 
   const tierOf = (token: string): number => {
     if (!token) return -1;
-    if (['on_the_way', 'nearby', 'out_for_delivery', 'started_for_delivery'].includes(token)) return 50;
-    if (token === 'picked_up') return 40;
-    if (['at_pickup'].includes(token)) return 38;
-    if (['heading_to_pickup', 'assigned'].includes(token)) return 35;
-    if (['pending_assignment'].includes(token)) return 33;
+    if (['on_the_way', 'nearby', 'out_for_delivery', 'started_for_delivery', 'ofd'].includes(token)) return 50;
+    if (token === 'picked_up') return 44;
+    if (['at_pickup'].includes(token)) return 42;
+    /** Rider en route to restaurant — must not collapse to "ready for pickup" */
+    if (['heading_to_pickup', 'assigned'].includes(token)) return 22;
+    if (['pending_assignment'].includes(token)) return 16;
+    /** Vendor handed off / partner labels — kitchen should already be at least ready */
     if (['ready_for_pickup', 'ready', 'dispatched'].includes(token)) return 30;
     if (token === 'preparing') return 20;
     if (['confirmed', 'accepted'].includes(token)) return 10;
@@ -58,18 +102,29 @@ export function resolveEffectiveMealDeliveryState(
     return 0;
   };
 
-  const t = Math.max(tierOf(o), tierOf(l));
+  const orderTier = Math.max(-1, ...orderSegs.map((s) => tierOf(s)));
+  const logisticsTier = Math.max(-1, ...logSegs.map((s) => tierOf(s)));
+  let t = Math.max(orderTier, logisticsTier);
+
+  /**
+   * Early rider pool / assignment must not outrank kitchen: cap logistics-driven tier to orderTier
+   * until the vendor row has at least reached "preparing" (20), except when logistics already proves
+   * handoff (picked_up, ofd, …).
+   */
+  if (orderTier < 20 && logisticsTier >= 16 && logisticsTier < 30) {
+    t = Math.max(orderTier, Math.min(logisticsTier, 18));
+  }
+
   if (t >= 50) return 'on_the_way';
-  if (t >= 40) return 'picked_up';
+  if (t >= 38) return 'picked_up';
   if (t >= 30) return 'ready_for_pickup';
-  return mapBelowReadyTier(t, o, l);
+  return mapBelowReadyTier(t, oJoined, lJoined);
 }
 
-function mapBelowReadyTier(tier: number, o: string, l: string): MealDeliveryEffective {
+function mapBelowReadyTier(tier: number, _o: string, _l: string): MealDeliveryEffective {
   if (tier >= 20) return 'preparing';
   if (tier >= 10) return 'confirmed';
   if (tier >= 5) return 'pending';
-  if (o || l) return 'pending';
   return 'pending';
 }
 

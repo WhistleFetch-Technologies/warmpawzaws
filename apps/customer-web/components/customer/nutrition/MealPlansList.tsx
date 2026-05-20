@@ -304,7 +304,7 @@ export function MealPlansList({
     <div className="mx-auto flex min-h-screen max-w-md flex-col bg-gray-50 pb-24">
       <div className="shrink-0 bg-[#FF8C42] px-6 pb-10 pt-12">
         <div className="flex items-center gap-4">
-          <button
+          <button 
             type="button"
             onClick={handleBackPress}
             className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30"

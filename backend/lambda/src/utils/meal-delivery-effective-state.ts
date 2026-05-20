@@ -14,37 +14,69 @@ export type MealDeliveryEffective =
   | 'cancelled'
   | 'failed';
 
-export function normalizeMealDeliveryToken(raw: string | null | undefined): string {
-  return String(raw ?? '')
+export function splitMealStatusSegments(raw: string | null | undefined): string[] {
+  const s = String(raw ?? '')
     .trim()
     .toLowerCase()
     .replace(/-/g, '_');
+  if (!s) return [];
+  return s
+    .split('|')
+    .map((p) =>
+      p
+        .trim()
+        .replace(/-/g, '_')
+        .replace(/\s+/g, '_'),
+    )
+    .filter(Boolean);
+}
+
+export function normalizeMealDeliveryToken(raw: string | null | undefined): string {
+  const parts = splitMealStatusSegments(raw);
+  if (parts.length <= 1) {
+    return parts[0] ?? '';
+  }
+  return parts.join('_');
 }
 
 export function resolveEffectiveMealDeliveryState(
   orderStatus: string | null | undefined,
   logisticsStatus: string | null | undefined,
 ): MealDeliveryEffective {
-  const o = normalizeMealDeliveryToken(orderStatus);
-  const l = normalizeMealDeliveryToken(logisticsStatus);
+  const orderSegs = splitMealStatusSegments(orderStatus);
+  const logSegs = splitMealStatusSegments(logisticsStatus);
+  const oJoined = orderSegs.join('_');
+  const lJoined = logSegs.join('_');
 
-  if (o === 'delivered' || l === 'delivered' || o === 'fulfilled') {
+  const hasCancelled = [...orderSegs, ...logSegs].some((s) => s === 'cancelled');
+  if (hasCancelled) return 'cancelled';
+
+  const hasFailed = [...orderSegs, ...logSegs].some((s) => s === 'failed');
+  if (hasFailed) return 'failed';
+
+  const hasDeliveredSegment = [...orderSegs, ...logSegs].some((s) =>
+    ['delivered', 'complete', 'completed'].includes(s),
+  );
+  if (hasDeliveredSegment) return 'delivered';
+
+  if (oJoined === 'fulfilled' || (orderSegs.length === 1 && orderSegs[0] === 'fulfilled')) {
     return 'delivered';
   }
-  if (o === 'cancelled' || l === 'cancelled') {
-    return 'cancelled';
+
+  if (logSegs.some((s) => s === 'fulfilled') && logSegs.some((s) => s === 'delivered')) {
+    return 'delivered';
   }
-  if (o === 'failed' || l === 'failed') {
-    return 'failed';
+  if (lJoined === 'fulfilled' && !logSegs.includes('ofd') && !logSegs.includes('picked_up')) {
+    if (logSegs.length === 1) return 'delivered';
   }
 
   const tierOf = (token: string): number => {
     if (!token) return -1;
-    if (['on_the_way', 'nearby', 'out_for_delivery', 'started_for_delivery'].includes(token)) return 50;
-    if (token === 'picked_up') return 40;
-    if (['at_pickup'].includes(token)) return 38;
-    if (['heading_to_pickup', 'assigned'].includes(token)) return 35;
-    if (['pending_assignment'].includes(token)) return 33;
+    if (['on_the_way', 'nearby', 'out_for_delivery', 'started_for_delivery', 'ofd'].includes(token)) return 50;
+    if (token === 'picked_up') return 44;
+    if (['at_pickup'].includes(token)) return 42;
+    if (['heading_to_pickup', 'assigned'].includes(token)) return 22;
+    if (['pending_assignment'].includes(token)) return 16;
     if (['ready_for_pickup', 'ready', 'dispatched'].includes(token)) return 30;
     if (token === 'preparing') return 20;
     if (['confirmed', 'accepted'].includes(token)) return 10;
@@ -52,18 +84,24 @@ export function resolveEffectiveMealDeliveryState(
     return 0;
   };
 
-  const t = Math.max(tierOf(o), tierOf(l));
+  const orderTier = Math.max(-1, ...orderSegs.map((s) => tierOf(s)));
+  const logisticsTier = Math.max(-1, ...logSegs.map((s) => tierOf(s)));
+  let t = Math.max(orderTier, logisticsTier);
+
+  if (orderTier < 20 && logisticsTier >= 16 && logisticsTier < 30) {
+    t = Math.max(orderTier, Math.min(logisticsTier, 18));
+  }
+
   if (t >= 50) return 'on_the_way';
-  if (t >= 40) return 'picked_up';
+  if (t >= 38) return 'picked_up';
   if (t >= 30) return 'ready_for_pickup';
-  return mapBelowReadyTier(t, o, l);
+  return mapBelowReadyTier(t, oJoined, lJoined);
 }
 
-function mapBelowReadyTier(tier: number, o: string, l: string): MealDeliveryEffective {
+function mapBelowReadyTier(tier: number, _o: string, _l: string): MealDeliveryEffective {
   if (tier >= 20) return 'preparing';
   if (tier >= 10) return 'confirmed';
   if (tier >= 5) return 'pending';
-  if (o || l) return 'pending';
   return 'pending';
 }
 

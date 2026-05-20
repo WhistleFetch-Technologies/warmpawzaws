@@ -11,6 +11,7 @@ import {
   MealPlanOrderTrackingUI,
   formatMealOrderDisplayId,
 } from '@/components/customer/tracking/MealPlanOrderTrackingUI';
+import { resolveEffectiveMealDeliveryState } from '@warmpawz/shared-types';
 
 interface DeliveryPerson {
   name: string;
@@ -154,12 +155,14 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
       'on_the_way',
       'nearby',
     ];
+    const deliveryEff = resolveEffectiveMealDeliveryState(order.status, logisticsStatus);
+    const isDelivered = deliveryEff === 'delivered';
     const riderActive =
-      !!logisticsStatus &&
-      logisticsStatus !== 'pending_assignment' &&
-      riderStatuses.includes(logisticsStatus);
-    const isDelivered =
-      order.status === 'delivered' || logisticsStatus === 'delivered';
+      deliveryEff === 'picked_up' ||
+      deliveryEff === 'on_the_way' ||
+      (!!logisticsStatus &&
+        logisticsStatus !== 'pending_assignment' &&
+        riderStatuses.includes(logisticsStatus));
     const otp = tracking?.deliveryOtp;
     const totalAmt =
       order.total_amount ?? order.totalAmount ?? order.total ?? order.amount;

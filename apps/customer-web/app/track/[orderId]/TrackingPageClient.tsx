@@ -11,6 +11,7 @@ import {
   MealPlanOrderTrackingUI,
   formatMealOrderDisplayId,
 } from '@/components/customer/tracking/MealPlanOrderTrackingUI';
+import { resolveEffectiveMealDeliveryState } from '@warmpawz/shared-types';
 
 interface TrackingData {
   success: boolean;
@@ -202,7 +203,11 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
   const steps = isHyperlocal ? deliveryStatusSteps : statusSteps;
   const trackingStatus = tracking.tracking?.status || (isHyperlocal ? 'pending_assignment' : 'pending');
   const currentStepIndex = getStatusIndex(trackingStatus, steps);
-  const isDelivered = tracking.tracking?.status === 'delivered' || tracking.order.status === 'delivered';
+  const mealDeliveryEff = resolveEffectiveMealDeliveryState(tracking.order.status, tracking.tracking?.status ?? null);
+  const isDelivered =
+    tracking.orderType === 'meal'
+      ? mealDeliveryEff === 'delivered'
+      : tracking.tracking?.status === 'delivered' || tracking.order.status === 'delivered';
 
   const mealBackHref =
     from === 'meal-plans'
@@ -217,11 +222,13 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
     const logisticsStatus = tracking.tracking?.status ?? null;
     const otp = tracking.tracking?.deliveryOtp;
     const riderActive =
-      logisticsStatus &&
-      logisticsStatus !== 'pending_assignment' &&
-      ['assigned', 'heading_to_pickup', 'at_pickup', 'picked_up', 'on_the_way', 'nearby'].includes(
-        logisticsStatus
-      );
+      mealDeliveryEff === 'picked_up' ||
+      mealDeliveryEff === 'on_the_way' ||
+      (!!logisticsStatus &&
+        logisticsStatus !== 'pending_assignment' &&
+        ['assigned', 'heading_to_pickup', 'at_pickup', 'picked_up', 'on_the_way', 'nearby'].includes(
+          logisticsStatus,
+        ));
 
     return (
       <MealPlanOrderTrackingUI

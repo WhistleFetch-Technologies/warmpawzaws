@@ -94,16 +94,18 @@ locals {
   api_gateway_execution_arn = var.existing_api_gateway_id != null ? data.aws_apigatewayv2_api.existing[0].execution_arn : aws_apigatewayv2_api.main[0].execution_arn
   api_gateway_api_endpoint = var.existing_api_gateway_id != null ? data.aws_apigatewayv2_api.existing[0].api_endpoint : aws_apigatewayv2_api.main[0].api_endpoint
 
+  # Java delivery-service owns Pidge webhooks + logistics/pidge/* (see Lambda comments: POST /webhooks/pidge is NOT in Hono).
+  # Do NOT add ANY /delivery/{proxy+} or broad ANY /admin/logistics/pidge/{proxy+} here — those paths are served by Lambda
+  # (delivery-tracking, delivery-otp, POST /admin/logistics/pidge/vendor-login, etc.).
   delivery_java_route_defaults = [
-    "ANY /delivery/{proxy+}",
     "ANY /logistics/pidge/order/partial-delivery",
     "ANY /logistics/pidge/{proxy+}",
     # Meal Pidge dispatch (Lambda → Java or direct smoke via API Gateway when split is on)
     "ANY /logistics/meal/dispatch",
+    # Required: Pidge posts main status events here (rider-task / ticket alone are not enough).
     "ANY /webhooks/pidge",
     "ANY /webhooks/pidge/rider-task",
     "ANY /webhooks/pidge/ticket",
-    "ANY /admin/logistics/pidge/{proxy+}",
     # Smoke / docs (narrower than Lambda catch-all when split is enabled)
     "ANY /swagger-ui",
     "ANY /swagger-ui/{proxy+}",

@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import { Check, Package, Truck, MapPin } from 'lucide-react';
 import {
   resolveEffectiveMealDeliveryState,
+  splitMealStatusSegments,
   type MealDeliveryEffective,
 } from '@warmpawz/shared-types';
 
@@ -36,27 +37,28 @@ export function mealKitchenProgress(
   const eff = resolveEffectiveMealDeliveryState(orderStatus, logisticsStatus);
   if (eff === 'cancelled') return { filled: 0, current: null };
   if (eff === 'failed') return { filled: 5, current: 5 };
-
-  const rankMap: Record<MealDeliveryEffective, number> = {
-    pending: 0,
-    confirmed: 1,
-    preparing: 2,
-    ready_for_pickup: 3,
-    picked_up: 4,
-    on_the_way: 5,
-    delivered: 6,
-    cancelled: 0,
-    failed: 5,
-  };
-
-  const r = rankMap[eff] ?? 0;
   if (eff === 'delivered') {
     return { filled: MEAL_TIMELINE_STEPS.length, current: null };
   }
 
-  const filled = r;
-  const current = filled < MEAL_TIMELINE_STEPS.length ? filled : null;
-  return { filled, current };
+  /**
+   * One "filled" unit = previous step completed with a check. `current` is the active step index.
+   * `confirmed` stays on step 0 (Order Confirmed) until the kitchen moves to preparing — it does not
+   * jump ahead just because a rider is being assigned (`pending_assignment` on tracking).
+   */
+  const progress: Record<
+    Exclude<MealDeliveryEffective, 'delivered' | 'cancelled' | 'failed'>,
+    { filled: number; current: number | null }
+  > = {
+    pending: { filled: 0, current: 0 },
+    confirmed: { filled: 0, current: 0 },
+    preparing: { filled: 1, current: 1 },
+    ready_for_pickup: { filled: 2, current: 2 },
+    picked_up: { filled: 3, current: 3 },
+    on_the_way: { filled: 4, current: 4 },
+  };
+
+  return progress[eff] ?? { filled: 0, current: 0 };
 }
 
 export function mealHeroHeadline(
@@ -68,14 +70,10 @@ export function mealHeroHeadline(
   if (eff === 'cancelled') return 'Cancelled';
   if (eff === 'failed') return 'Delivery issue — support will assist';
 
-  const ls = String(logisticsStatus || '')
-    .toLowerCase()
-    .trim();
-  if (ls && ls !== 'pending_assignment') {
-    if (ls === 'assigned') return 'Finding delivery partner…';
-    if (ls === 'heading_to_pickup') return 'Rider heading to pickup…';
-    if (ls === 'at_pickup') return 'Rider at pickup…';
-  }
+  const segs = splitMealStatusSegments(logisticsStatus);
+  if (segs.includes('pending_assignment')) return 'Finding delivery partner…';
+  if (segs.includes('assigned') || segs.includes('heading_to_pickup')) return 'Rider heading to pickup…';
+  if (segs.includes('at_pickup')) return 'Rider at pickup…';
 
   switch (eff) {
     case 'pending':

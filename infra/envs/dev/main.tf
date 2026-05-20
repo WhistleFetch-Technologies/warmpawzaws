@@ -263,7 +263,11 @@ module "lambda" {
     },
     var.uat_jwt_secret != "" ? { UAT_JWT_SECRET = var.uat_jwt_secret } : (
       length(data.aws_ssm_parameter.uat_jwt_secret) > 0 ? { UAT_JWT_SECRET = data.aws_ssm_parameter.uat_jwt_secret[0].value } : {}
-    )
+    ),
+    # Meal dispatch (Lambda) -> Java delivery-service internal ALB HTTP :80 (see meal-dispatch.ts)
+    local.delivery_stack_live ? {
+      DELIVERY_SERVICE_BASE_URL = "http://${module.delivery_service_ecs[0].internal_alb_dns_name}"
+    } : {}
   )
 
   secrets_arns = concat(
