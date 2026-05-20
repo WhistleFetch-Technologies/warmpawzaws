@@ -1,4 +1,7 @@
-import { applyHubCategoryFilter } from '../search-hub-category-filter';
+import {
+  applyHubCategoryFilter,
+  inferHubSlugFromSearchQuery,
+} from '../search-hub-category-filter';
 
 /**
  * NOTE: applyHubCategoryFilter is called ONLY for keyword+hub mode (q non-empty).
@@ -52,5 +55,42 @@ describe('applyHubCategoryFilter', () => {
   it('hub-only browse accepts catalog wellness vertical for nutritionist chip', () => {
     const rows = [{ type: 'vendor' as const, category: 'wellness', name: 'Holistic Pet Nutrition' }];
     expect(applyHubCategoryFilter(rows, 'nutritionist', '')).toHaveLength(1);
+  });
+});
+
+describe('inferHubSlugFromSearchQuery', () => {
+  it('infers walker from dog walker search text', () => {
+    expect(inferHubSlugFromSearchQuery('dog walker')).toBe('walker');
+  });
+});
+
+describe('applyHubCategoryFilter — null lat/lng walker parity', () => {
+  /**
+   * The backend excludes at_home (walker) vendors with null lat/lng when user
+   * coordinates are present (Fix 1: withinDiscoveryRadius atHome flag).  The
+   * client-side filter cannot re-add them; verify that a vendor row lacking a
+   * recognised walker category is also excluded by the category filter so no
+   * phantom walkers appear in search results even if somehow included by the API.
+   */
+  it('hub-only browse excludes walker vendor with no recognised category (mirrors backend null-coord exclusion)', () => {
+    // A vendor whose DB row had null lat/lng would have been stripped server-side.
+    // If such a row were returned, it would have no meaningful category token.
+    const rows = [
+      { type: 'vendor' as const, category: '', name: '' },
+      { type: 'vendor' as const, category: 'walker', name: 'Paws Walker' },
+    ];
+    const out = applyHubCategoryFilter(rows, 'walker', '');
+    // Empty-category row must be excluded in strict hub-browse mode.
+    expect(out.every((r) => r.category !== '')).toBe(true);
+    expect(out).toHaveLength(1);
+    expect(out[0].name).toBe('Paws Walker');
+  });
+
+  it('keyword mode cannot rescue a null-coord walker whose name gives no walk hint and category is wrong vertical', () => {
+    // A vendor with a non-walker category (e.g. from an unrelated vertical) must be
+    // excluded even in keyword mode — the client filter blocks wrong-vertical rows.
+    // Backend null-coord exclusion runs first; this client filter provides a second guard.
+    const rows = [{ type: 'vendor' as const, category: 'veterinary', name: 'ABC Services' }];
+    expect(applyHubCategoryFilter(rows, 'walker', 'dog walker')).toHaveLength(0);
   });
 });
