@@ -57,6 +57,31 @@ import {
   vendorBlockedMealStatusForPidge,
 } from '../utils/meal-order-vendor-delivery-guard';
 
+/** Never relax meal lead-time rules in production (even if BYPASS_24H_MEAL_VALIDATION is set). */
+function isMealOrderProductionEnvironment(): boolean {
+  const env = String(process.env.ENVIRONMENT || '').toLowerCase();
+  const stage = String(process.env.STAGE || '').toLowerCase();
+  return (
+    process.env.NODE_ENV === 'production' ||
+    env === 'prod' ||
+    env === 'production' ||
+    stage === 'prod' ||
+    stage === 'production'
+  );
+}
+
+/**
+ * Dev/UAT: set BYPASS_24H_MEAL_VALIDATION=true on the API Lambda to skip `lead_time_hours` checks
+ * for POST /meal/orders/create. No effect in production.
+ */
+function bypassMealLeadTimeValidationForDev(): boolean {
+  if (isMealOrderProductionEnvironment()) return false;
+  const v = String(process.env.BYPASS_24H_MEAL_VALIDATION || '')
+    .toLowerCase()
+    .trim();
+  return v === 'true' || v === '1' || v === 'yes';
+}
+
 async function mealOrdersTableColumns(): Promise<Set<string>> {
   try {
     const r = await query(
@@ -1133,7 +1158,8 @@ export function registerMealPlanEndpoints(app: Hono) {
       // Check lead time (when plan has lead_time_hours set)
       const leadTimeHours =
         plan.lead_time_hours != null ? Number(plan.lead_time_hours as number | string) : 0;
-      if (leadTimeHours > 0) {
+      const skipLeadTimeForDev = bypassMealLeadTimeValidationForDev();
+      if (!skipLeadTimeForDev && leadTimeHours > 0) {
         // ✅ FIX: Use the actual delivery datetime (date + slot time), not just date at midnight
         // This ensures the lead time is calculated correctly based on when delivery actually happens
         let deliveryDateTime: Date;

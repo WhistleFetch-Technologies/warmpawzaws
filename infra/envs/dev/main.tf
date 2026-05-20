@@ -242,6 +242,8 @@ module "lambda" {
     # AWS_REGION is reserved by Lambda runtime, cannot be set
     # Lambda functions automatically have AWS_REGION available
     UAT_MODE                    = "true"
+    # Skip meal_orders lead_time_hours validation on POST /meal/orders/create (dev testing only; ignored when ENVIRONMENT/STAGE is prod).
+    BYPASS_24H_MEAL_VALIDATION  = "true"
     NODE_ENV                    = "development"
     DB_HOST                     = module.rds.cluster_endpoint
     DB_NAME                     = module.rds.database_name
