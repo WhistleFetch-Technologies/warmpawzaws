@@ -5,17 +5,18 @@ import { TrendingUp, ChevronRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 
-interface TrendingProblem {
+export interface TrendingProblem {
   problemId: string;
   title: string;
   description: string;
   searchCount: number;
   trend: 'up' | 'down' | 'stable';
+  /** API field name; value is role_id (e.g. veterinarian, groomer). */
   category?: string;
 }
 
 interface TrendingProblemsProps {
-  onProblemSelect: (problemId: string, title: string) => void;
+  onProblemSelect: (problem: TrendingProblem) => void;
   limit?: number;
   className?: string;
 }
@@ -102,7 +103,7 @@ export function TrendingProblems({
         {trending.map((problem, index) => (
           <button
             key={problem.problemId}
-            onClick={() => onProblemSelect(problem.problemId, problem.title)}
+            onClick={() => onProblemSelect(problem)}
             className="w-full flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-orange-300 transition-all group"
           >
             {/* Rank */}

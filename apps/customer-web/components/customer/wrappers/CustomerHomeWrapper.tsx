@@ -4419,7 +4419,9 @@ export function CustomerHomeWrapper({
                 ]),
               ];
             }
-            return base.length ? base : ['veterinarian', 'groomer', 'trainer'];
+            if (base.length) return base;
+            const rid = String(selectedProblem.roleId || '').trim();
+            return rid ? [rid] : ['veterinarian'];
           })(),
           category: selectedProblem.category || selectedProblem.roleId || 'general',
         }}
