@@ -37,10 +37,17 @@ public class OrderStatusJdbcService {
 	}
 
 	public void updateMealOrderStatus(UUID orderId, String status) {
-		jdbc.update(
-				"UPDATE meal_orders SET status = ?, updated_at = NOW() WHERE id = ?",
-				status,
-				orderId);
+		if (status != null && "delivered".equalsIgnoreCase(status)) {
+			jdbc.update(
+					"UPDATE meal_orders SET status = ?, delivered_at = NOW(), updated_at = NOW() WHERE id = ?",
+					status,
+					orderId);
+		} else {
+			jdbc.update(
+					"UPDATE meal_orders SET status = ?, updated_at = NOW() WHERE id = ?",
+					status,
+					orderId);
+		}
 	}
 
 	public void updateMealOrderDelivered(UUID orderId) {

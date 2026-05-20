@@ -59,9 +59,13 @@ public class PidgeWebhookProcessingService {
 		PIDGE_FULFILLMENT_STATUS_MAP.put("DAMAGED", "damaged");
 	}
 
+	/**
+	 * Parent / sandbox order-level semantic (lowercase). Note: bare {@code fulfilled} is handled in
+	 * {@link #resolvePidgeStatus(String, String, String)} after composite {@code fulfilled|…} checks so
+	 * {@code fulfilled|delivered} never degrades to generic in_transit.
+	 */
 	private static final Map<String, String> PIDGE_PARENT_STATUS_MAP = Map.of(
 			"pending", "pending",
-			"fulfilled", "in_transit",
 			"completed", "delivered",
 			"cancelled", "cancelled");
 
@@ -99,14 +103,23 @@ public class PidgeWebhookProcessingService {
 		}
 
 		JsonNode fulfillment = payload.path("fulfillment");
-		String ffStatus = fulfillment.hasNonNull("status")
-				? fulfillment.get("status").asText().toUpperCase(Locale.ROOT)
-				: "";
+		String rawFfStatus = fulfillment.hasNonNull("status") ? fulfillment.get("status").asText() : "";
+		String ffStatus = rawFfStatus.isEmpty() ? "" : rawFfStatus.toUpperCase(Locale.ROOT);
 		String parentStatus = payload.hasNonNull("status")
 				? payload.get("status").asText().toLowerCase(Locale.ROOT)
 				: "";
+		String dummyStatus = payload.hasNonNull("dummy_status") ? payload.get("dummy_status").asText() : "";
 
-		String normalized = normalizePidgeStatus(ffStatus, parentStatus);
+		PidgeStatusResolution resolved = resolvePidgeStatus(rawFfStatus, parentStatus, dummyStatus);
+		String normalized = resolved.normalized();
+		log.info(
+				"[PIDGE WEBHOOK] status_resolve pidgeId={} incomingDummyStatus={} rawFulfillmentStatus={} parentStatus={} compositeKey={} normalizedInternal={}",
+				pidgeId,
+				dummyStatus,
+				rawFfStatus,
+				parentStatus,
+				resolved.compositeKey(),
+				normalized);
 
 		Optional<Map<String, Object>> returnLeg = pidgePartialDeliveryWebhookService.tryHandleReturnOrderWebhook(
 				pidgeId, ffStatus, payload);
@@ -163,7 +176,22 @@ public class PidgeWebhookProcessingService {
 		String riderName = extractRiderName(rider);
 		String riderPhone = extractRiderPhone(rider);
 
-		dt.setStatus(dtStatus);
+		boolean trackingDowngradeBlocked =
+				"delivered".equalsIgnoreCase(dt.getStatus()) && !"delivered".equalsIgnoreCase(dtStatus);
+		if (trackingDowngradeBlocked) {
+			log.info(
+					"[PIDGE WEBHOOK] skip_tracking_status_downgrade deliveryTrackingId={} keepingDbStatus=delivered attemptedNormalized={}",
+					dt.getId(),
+					normalized);
+		} else {
+			dt.setStatus(dtStatus);
+			if ("picked_up".equals(normalized)) {
+				dt.setPickedUpAt(Instant.now());
+			}
+			if ("delivered".equals(normalized)) {
+				dt.setDeliveredAt(Instant.now());
+			}
+		}
 		if (trackCode != null && !trackCode.isBlank()) {
 			dt.setTrackingUrl(trackCode);
 		}
@@ -177,12 +205,6 @@ public class PidgeWebhookProcessingService {
 			dt.setCurrentLat(BigDecimal.valueOf(lastLocation.get("latitude").asDouble()));
 			dt.setCurrentLng(BigDecimal.valueOf(lastLocation.get("longitude").asDouble()));
 		}
-		if ("picked_up".equals(normalized)) {
-			dt.setPickedUpAt(Instant.now());
-		}
-		if ("delivered".equals(normalized)) {
-			dt.setDeliveredAt(Instant.now());
-		}
 		dt.setUpdatedAt(Instant.now());
 		deliveryTrackingRepository.save(dt);
 
@@ -194,7 +216,7 @@ public class PidgeWebhookProcessingService {
 		}
 
 		String orderStatus = mapPidgeNormalizedToPharmacyMealOrderStatus(normalized);
-		if (hyperlocalOrderId != null && orderStatus != null) {
+		if (!trackingDowngradeBlocked && hyperlocalOrderId != null && orderStatus != null) {
 			if (dt.getPharmacyOrderId() != null) {
 				orderStatusJdbc.updatePharmacyOrderStatus(hyperlocalOrderId, orderStatus);
 			} else {
@@ -204,6 +226,13 @@ public class PidgeWebhookProcessingService {
 				}
 			}
 		}
+		log.info(
+				"[PIDGE WEBHOOK] persisted_hyperlocal deliveryTrackingId={} finalDeliveryTrackingStatus={} normalizedInternal={} mealOrderOrPharmacyId={} orderRowStatusUpdate={}",
+				dt.getId(),
+				dt.getStatus(),
+				normalized,
+				hyperlocalOrderId,
+				trackingDowngradeBlocked || orderStatus == null ? "skipped" : orderStatus);
 
 		return Map.of(
 				"success", true,
@@ -317,16 +346,65 @@ public class PidgeWebhookProcessingService {
 		return shipmentRepository.findById(ids.get(0));
 	}
 
-	private static String normalizePidgeStatus(String ffStatus, String parentStatus) {
-		if (ffStatus != null && !ffStatus.isEmpty()) {
-			String m = PIDGE_FULFILLMENT_STATUS_MAP.get(ffStatus);
+	/**
+	 * Resolves Pidge sandbox composites ({@code fulfilled|delivered}, etc.) and standard fulfillment enums.
+	 * <p>Order: most specific composite first, then {@link #PIDGE_FULFILLMENT_STATUS_MAP}, then bare
+	 * {@code fulfilled} → in_transit (never for {@code fulfilled|delivered}), then {@link #PIDGE_PARENT_STATUS_MAP}.
+	 */
+	public static PidgeStatusResolution resolvePidgeStatus(
+			String rawFulfillmentStatus, String parentStatus, String dummyStatus) {
+		String dummy = dummyStatus != null ? dummyStatus.trim().toLowerCase(Locale.ROOT) : "";
+		String parent = parentStatus != null ? parentStatus.trim().toLowerCase(Locale.ROOT) : "";
+		String rawFf = rawFulfillmentStatus != null ? rawFulfillmentStatus.trim().toLowerCase(Locale.ROOT) : "";
+
+		String composite = !dummy.isEmpty() ? dummy : "";
+		if (composite.isEmpty() && !rawFf.isEmpty() && rawFf.contains("|")) {
+			composite = rawFf;
+		}
+		if (composite.isEmpty() && !parent.isEmpty() && parent.contains("|")) {
+			composite = parent;
+		}
+
+		if ("fulfilled|delivered".equals(composite)) {
+			return new PidgeStatusResolution("delivered", composite);
+		}
+		if ("fulfilled|picked_up".equals(composite)) {
+			return new PidgeStatusResolution("picked_up", composite);
+		}
+		if ("fulfilled|on_the_way".equals(composite)) {
+			return new PidgeStatusResolution("in_transit", composite);
+		}
+		if (!composite.isEmpty() && composite.contains("|")) {
+			return new PidgeStatusResolution("unknown", composite);
+		}
+
+		String ffUpper = rawFf.isEmpty() ? "" : rawFulfillmentStatus.trim().toUpperCase(Locale.ROOT);
+		if (!ffUpper.isEmpty() && !rawFf.contains("|")) {
+			String m = PIDGE_FULFILLMENT_STATUS_MAP.get(ffUpper);
 			if (m != null) {
-				return m;
+				return new PidgeStatusResolution(m, "");
 			}
 		}
-		String p = PIDGE_PARENT_STATUS_MAP.get(parentStatus);
-		return p != null ? p : "unknown";
+
+		if ("fulfilled".equals(parent) || "fulfilled".equals(rawFf)) {
+			return new PidgeStatusResolution("in_transit", "fulfilled");
+		}
+
+		String p = PIDGE_PARENT_STATUS_MAP.get(parent);
+		if (p != null) {
+			return new PidgeStatusResolution(p, "");
+		}
+
+		String pRaw = PIDGE_PARENT_STATUS_MAP.get(rawFf);
+		if (pRaw != null) {
+			return new PidgeStatusResolution(pRaw, "");
+		}
+
+		return new PidgeStatusResolution("unknown", "");
 	}
+
+	/** Outcome of {@link #resolvePidgeStatus(String, String, String)} for logging and tests. */
+	public record PidgeStatusResolution(String normalized, String compositeKey) {}
 
 	private static String coercePidgeStatusForShipmentsTable(String status) {
 		Set<String> allowed = Set.of(
@@ -526,10 +604,17 @@ public class PidgeWebhookProcessingService {
 			BigDecimal riderLng,
 			String updateSource,
 			long eventTimestamp) {
-		String ffStatus = detail.hasNonNull("status")
-				? detail.get("status").asText().toUpperCase(Locale.ROOT)
-				: "";
-		String normalized = normalizePidgeStatus(ffStatus, "");
+		String rawDetailStatus = detail.hasNonNull("status") ? detail.get("status").asText() : "";
+		String dummyDetail = detail.hasNonNull("dummy_status") ? detail.get("dummy_status").asText() : "";
+		PidgeStatusResolution riderResolved = resolvePidgeStatus(rawDetailStatus, "", dummyDetail);
+		String normalized = riderResolved.normalized();
+		log.info(
+				"[PIDGE RIDER TASK] status_resolve fulfillmentId={} incomingDummyStatus={} rawDetailStatus={} compositeKey={} normalizedInternal={}",
+				textOrNull(detail, "id"),
+				dummyDetail,
+				rawDetailStatus,
+				riderResolved.compositeKey(),
+				normalized);
 
 		if (riderName != null && !riderName.isBlank()) {
 			dt.setDeliveryPersonName(riderName);
@@ -559,12 +644,21 @@ public class PidgeWebhookProcessingService {
 		}
 
 		String dtStatus = mapPidgeNormalizedToDeliveryTrackingStatus(normalized);
-		dt.setStatus(dtStatus);
-		if ("picked_up".equals(normalized) && dt.getPickedUpAt() == null) {
-			dt.setPickedUpAt(Instant.now());
-		}
-		if ("delivered".equals(normalized)) {
-			dt.setDeliveredAt(Instant.now());
+		boolean riderDowngradeBlocked =
+				"delivered".equalsIgnoreCase(dt.getStatus()) && !"delivered".equalsIgnoreCase(dtStatus);
+		if (riderDowngradeBlocked) {
+			log.info(
+					"[PIDGE RIDER TASK] skip_tracking_status_downgrade deliveryTrackingId={} keepingDbStatus=delivered attemptedNormalized={}",
+					dt.getId(),
+					normalized);
+		} else {
+			dt.setStatus(dtStatus);
+			if ("picked_up".equals(normalized) && dt.getPickedUpAt() == null) {
+				dt.setPickedUpAt(Instant.now());
+			}
+			if ("delivered".equals(normalized)) {
+				dt.setDeliveredAt(Instant.now());
+			}
 		}
 		dt.setMetadataJson(mergeRiderTaskMetadata(dt.getMetadataJson(), detail, updateSource, eventTimestamp));
 		dt.setUpdatedAt(Instant.now());
@@ -577,7 +671,7 @@ public class PidgeWebhookProcessingService {
 			hyperlocalOrderId = orderStatusJdbc.resolveMealOrderIdForSubscriptionDelivery(dt.getSubscriptionDeliveryId());
 		}
 		String orderStatus = mapPidgeNormalizedToPharmacyMealOrderStatus(normalized);
-		if (hyperlocalOrderId != null && orderStatus != null) {
+		if (!riderDowngradeBlocked && hyperlocalOrderId != null && orderStatus != null) {
 			if (dt.getPharmacyOrderId() != null) {
 				orderStatusJdbc.updatePharmacyOrderStatus(hyperlocalOrderId, orderStatus);
 			} else {
@@ -587,6 +681,13 @@ public class PidgeWebhookProcessingService {
 				}
 			}
 		}
+		log.info(
+				"[PIDGE RIDER TASK] persisted_order_detail deliveryTrackingId={} finalDeliveryTrackingStatus={} normalizedInternal={} mealOrderOrPharmacyId={} orderRowStatusUpdate={}",
+				dt.getId(),
+				dt.getStatus(),
+				normalized,
+				hyperlocalOrderId,
+				riderDowngradeBlocked || orderStatus == null ? "skipped" : orderStatus);
 	}
 
 	private String mergeRiderTaskMetadata(
