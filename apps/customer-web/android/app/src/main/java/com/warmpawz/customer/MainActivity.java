@@ -2,13 +2,15 @@ package com.warmpawz.customer;
 
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
-import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.getcapacitor.BridgeActivity;
@@ -16,81 +18,84 @@ import com.getcapacitor.BridgeActivity;
 /**
  * Two responsibilities:
  *
- * 1. **Status-bar layout (header fix).** Capacitor Android by default sets
- *    `WindowCompat.setDecorFitsSystemWindows(window, false)` — the WebView
- *    extends under the status bar / camera punch-hole. Unlike iOS, Android
- *    does NOT propagate the system bar inset to CSS `env(safe-area-inset-top)`,
- *    so a CSS-only top padding can never clear the status bar. We re-enable
- *    `setDecorFitsSystemWindows(true)` so the system status bar is rendered
- *    as its own opaque strip ABOVE the WebView, matching the BHIVE / "trusted
- *    business" reference look. We tint the status bar to the brand orange
- *    (#FF8C42) and force light status-bar icons so it visually flows into the
- *    Warmpawz header.
+ * 1. **Status-bar layout (header fix).** Razorpay Standard Checkout opens its
+ *    payment sheet inside a cross-origin iframe at `checkout.razorpay.com`,
+ *    which we cannot style from our domain. The orange "Warmpawz" merchant
+ *    toolbar at the top of that iframe was overlapping the system status bar
+ *    / camera punch-hole because the Capacitor WebView is laid out edge-to-
+ *    edge by default and Android does NOT propagate
+ *    `safe-area-inset-top` to CSS env() inside the WebView. We push the
+ *    WebView container down by the actual measured system-bar + display-
+ *    cutout inset using `OnApplyWindowInsetsListener`, then **consume** the
+ *    inset so child views (including the iframe) do not double-pad.
+ *    Status-bar background is painted brand orange (#FF8C42) so the system
+ *    strip flows visually into the page header below it.
  *
- * 2. **External UPI / mailto / tel scheme handoff.** Razorpay Standard
- *    Checkout fires `intent://...#Intent;scheme=upi;...;end` and `upi://`
- *    URLs to launch the user's UPI app (PhonePe / GPay / Paytm / BHIM). The
- *    default Capacitor WebViewClient treats those as page navigations and
- *    silently fails. We override `shouldOverrideUrlLoading` to hand any
- *    non-http scheme to the OS via `Intent.parseUri` + `startActivity`.
- *    Pairs with the {@code <queries>} block in AndroidManifest (Android 11+
- *    package visibility) and the {@code overrideUserAgent} in
- *    capacitor.config.json (Razorpay's UA sniffer drops UPI on
- *    `Android …; wv)` UAs).
+ * 2. **External UPI / mailto / tel scheme handoff.** Razorpay fires
+ *    `intent://...#Intent;scheme=upi;...;end` and `upi://` URLs to launch
+ *    the user's UPI app (PhonePe / GPay / Paytm / BHIM). The default
+ *    Capacitor WebViewClient treats those as page navigations and silently
+ *    fails. We override `shouldOverrideUrlLoading` to hand any non-http
+ *    scheme to the OS via `Intent.parseUri` + `startActivity`.
  */
 public class MainActivity extends BridgeActivity {
 
   private static final int STATUS_BAR_COLOR = 0xFFFF8C42; // brand orange
-  private static final boolean LIGHT_STATUS_BAR_ICONS = true; // dark icons over orange
 
   @Override
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
-    applyStatusBarLayout();
+
+    // Edge-to-edge layout: status bar paints over the WebView (so we get
+    // brand orange under the clock / battery), but we measure the inset
+    // and pad the WebView container so its content starts BELOW the
+    // status bar / camera punch-hole.
+    WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+    getWindow().setStatusBarColor(STATUS_BAR_COLOR);
+
+    final View decor = getWindow().getDecorView();
+    if (decor != null) {
+      // Light status-bar icons (dark icons on light bg). Brand orange is
+      // bright enough that dark icons read better than white ones.
+      new WindowInsetsControllerCompat(getWindow(), decor)
+          .setAppearanceLightStatusBars(true);
+    }
+
+    // Use the activity content view (R.id.content) — its child is the layout
+    // that hosts the Capacitor WebView. Padding the content view propagates
+    // to the WebView whether Capacitor wraps it in a CoordinatorLayout or
+    // a plain FrameLayout in the version we are on.
+    final View content = findViewById(android.R.id.content);
+    if (content != null) {
+      androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(content, (v, insets) -> {
+        int topInset = insets.getInsets(
+            WindowInsetsCompat.Type.systemBars()
+                | WindowInsetsCompat.Type.displayCutout()
+        ).top;
+        if (v instanceof ViewGroup) {
+          ViewGroup vg = (ViewGroup) v;
+          for (int i = 0; i < vg.getChildCount(); i++) {
+            View child = vg.getChildAt(i);
+            child.setPadding(
+                child.getPaddingLeft(), topInset,
+                child.getPaddingRight(), child.getPaddingBottom()
+            );
+          }
+        } else {
+          v.setPadding(v.getPaddingLeft(), topInset, v.getPaddingRight(), v.getPaddingBottom());
+        }
+        // Consume insets so descendants don't try to apply them again
+        // (otherwise the WebView itself would also pad and we'd double the gap).
+        return WindowInsetsCompat.CONSUMED;
+      });
+      androidx.core.view.ViewCompat.requestApplyInsets(content);
+    }
   }
 
   @Override
   public void onStart() {
     super.onStart();
-    applyStatusBarLayout();
     installRazorpayWebViewClient();
-  }
-
-  /**
-   * Make the system status bar its own strip above the WebView (no overlay) and
-   * paint it with the brand orange so the in-page header continues seamlessly
-   * into the system area.
-   */
-  private void applyStatusBarLayout() {
-    if (getWindow() == null) return;
-    // false = WebView does NOT extend under the system bars; status bar is a
-    // separate strip. This is the inverse of Capacitor's default and is what
-    // we want here because Android does not propagate inset to CSS env().
-    WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
-    getWindow().setStatusBarColor(STATUS_BAR_COLOR);
-    if (getWindow().getDecorView() != null) {
-      WindowInsetsControllerCompat controller =
-          new WindowInsetsControllerCompat(getWindow(), getWindow().getDecorView());
-      // setAppearanceLightStatusBars(true)  -> dark icons (for light status bar bg)
-      // setAppearanceLightStatusBars(false) -> light icons (for dark status bar bg)
-      controller.setAppearanceLightStatusBars(LIGHT_STATUS_BAR_ICONS);
-    }
-    // Apply a top inset listener on the WebView container so the WebView
-    // starts BELOW the status bar even though the window itself is still
-    // edge-to-edge (cleaner than `setDecorFitsSystemWindows(true)`, which
-    // breaks Razorpay CheckoutActivity on some OEMs).
-    if (getBridge() != null && getBridge().getWebView() != null) {
-      WebView webView = getBridge().getWebView();
-      androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(webView, (v, insets) -> {
-        int topInset = insets.getInsets(
-            androidx.core.view.WindowInsetsCompat.Type.systemBars()
-                | androidx.core.view.WindowInsetsCompat.Type.displayCutout()
-        ).top;
-        v.setPadding(v.getPaddingLeft(), topInset, v.getPaddingRight(), v.getPaddingBottom());
-        return insets;
-      });
-      androidx.core.view.ViewCompat.requestApplyInsets(webView);
-    }
   }
 
   private void installRazorpayWebViewClient() {
