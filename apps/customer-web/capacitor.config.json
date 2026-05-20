@@ -1,0 +1,13 @@
+{
+  "appId": "com.warmpawz.customer",
+  "appName": "Warmpawz Customer",
+  "webDir": "dist",
+  "server": {
+    "url": "https://customer.warmpawz.com",
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "overrideUserAgent": "Mozilla/5.0 (Linux; Android 14; iQOO Neo 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.91 Mobile Safari/537.36"
+  }
+}

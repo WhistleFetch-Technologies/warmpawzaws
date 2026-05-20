@@ -22,6 +22,11 @@ function pluginFileHasReadablePayload(f: PickedFromPlugin): boolean {
 /**
  * Coerce a Capawesome-picked file into a `File` for `FormData` / the rest of the app.
  * Uses `path` + `Capacitor.convertFileSrc` + `fetch` when `blob` is not present (Android/iOS native).
+ *
+ * IMPORTANT: throws when bytes are unavailable or zero-length so the caller can retry with
+ * `readData=true` (which forces the plugin to return base64). Previously a 0-byte blob from
+ * `convertFileSrc(content://…)` was silently wrapped in a `File` and shipped to the server,
+ * which is the main reason "upload succeeds but nothing appears in the gallery" on Android.
  */
 async function pickedToWebFile(
   f: PickedFromPlugin
@@ -39,6 +44,9 @@ async function pickedToWebFile(
       throw new Error(`Could not read picked file: ${f.name} (${res.status})`);
     }
     const blob = await res.blob();
+    if (blob.size === 0) {
+      throw new Error(`Picked file is empty (0 bytes): ${f.name}`);
+    }
     return new File([blob], f.name, { type: f.mimeType || blob.type || 'application/octet-stream' });
   }
   throw new Error('No data available for the picked file');
@@ -85,6 +93,13 @@ export type CapawesomePickResult = {
   files: File[];
   /** Picked file(s) did not match the `accept` string (e.g. PDF when only images were allowed). */
   rejectedByAccept: boolean;
+  /**
+   * Native picker returned entries but every one of them produced 0 bytes / unreadable
+   * data. The UI should toast a clear error instead of silently doing nothing — this is
+   * the Android content:// URI failure mode that previously looked like "tap done and
+   * the upload just disappears".
+   */
+  conversionFailed?: boolean;
 };
 
 /**
@@ -99,6 +114,28 @@ async function pickOnce(
     limit: wantMultiple ? 0 : 1,
     readData,
   });
+}
+
+/**
+ * Re-read a single picked entry's bytes WITHOUT re-opening the native picker. Used when
+ * `pickedToWebFile` produces 0 bytes (Android content://) — we call `FilePicker.readFile`
+ * to ask the plugin for the base64 payload directly. Returns null when the plugin doesn't
+ * expose `readFile` (older versions) or the path can't be resolved.
+ */
+async function readPickedEntryBytes(f: PickedFromPlugin): Promise<File | null> {
+  if (!f.path) return null;
+  const anyPicker = FilePicker as unknown as {
+    readFile?: (opts: { path: string }) => Promise<{ data: string }>;
+  };
+  if (typeof anyPicker.readFile !== 'function') return null;
+  try {
+    const res = await anyPicker.readFile({ path: f.path });
+    if (!res?.data) return null;
+    return base64ToFile(res.data, f.name, f.mimeType);
+  } catch (e) {
+    console.warn('[CapawesomePick] readFile fallback failed', f.name, e);
+    return null;
+  }
 }
 
 export async function pickFilesWithCapawesome(
@@ -122,14 +159,16 @@ export async function pickFilesWithCapawesome(
 
   const wantMultiple = options.multiple;
 
-  // v8: when `limit` is set, `types` can be ignored by the plugin. Prefer a broad native sheet,
-  // then filter with `fileMatchesAccept` to match the HTML `accept` attribute.
+  // On Android, force `readData: true` on the FIRST pick. Reading bytes via
+  // `convertFileSrc(content://…)` + `fetch` returns 0 bytes on a lot of devices/galleries,
+  // and re-prompting the user with a second picker (the previous fallback) is what made
+  // "tap done and nothing happens" the user-facing symptom. Asking the plugin for base64
+  // up front avoids the silent-empty case without re-opening the UI.
   let result: Awaited<ReturnType<typeof FilePicker.pickFiles>>;
   try {
-    result = await pickOnce(wantMultiple, false);
+    result = await pickOnce(wantMultiple, isAndroid);
   } catch (firstErr) {
-    // Some devices return no readable handles until readData=true.
-    if (isAndroid || !wantMultiple) {
+    if (!isAndroid && !wantMultiple) {
       try {
         result = await pickOnce(wantMultiple, true);
       } catch {
@@ -144,35 +183,57 @@ export async function pickFilesWithCapawesome(
     return { files: [], rejectedByAccept: false };
   }
 
-  // Android multi-pick may return entries with no blob/data/path when readData=false.
-  // Retry once with readData=true before failing conversion so upload can proceed.
-  if (isAndroid && wantMultiple) {
-    const unreadableCount = result.files.filter((f) => !pluginFileHasReadablePayload(f)).length;
-    console.log(
-      `[CapawesomePick] Android multi result: count=${result.files.length}, unreadable=${unreadableCount}, readData=false`
-    );
-    if (unreadableCount > 0) {
-      const retry = await pickOnce(true, true);
-      if (retry.files?.length) {
-        const retryUnreadable = retry.files.filter((f) => !pluginFileHasReadablePayload(f)).length;
-        console.log(
-          `[CapawesomePick] Android multi retry: count=${retry.files.length}, unreadable=${retryUnreadable}, readData=true`
-        );
-        result = retry;
-      }
-    }
-  }
+  console.log(
+    `[CapawesomePick] Pick result: count=${result.files.length}, platform=${Capacitor.getPlatform()}`
+  );
 
   const out: File[] = [];
   for (const f of result.files) {
-    const w = await pickedToWebFile(f);
-    if (fileMatchesAccept(w, options.accept)) {
-      out.push(w);
+    let webFile: File | null = null;
+    try {
+      webFile = await pickedToWebFile(f);
+      if (webFile.size === 0) {
+        webFile = null;
+        throw new Error(`Picked file is empty (0 bytes): ${f.name}`);
+      }
+    } catch (convErr) {
+      console.warn('[CapawesomePick] Primary conversion failed for entry', f.name, convErr);
+      // Quiet fallback: ask the plugin for the bytes by path — no native picker re-prompt.
+      const reread = await readPickedEntryBytes(f);
+      if (reread && reread.size > 0) {
+        console.log(`[CapawesomePick] Recovered ${f.name} via readFile (${reread.size} bytes)`);
+        webFile = reread;
+      }
     }
+    if (webFile && webFile.size > 0 && fileMatchesAccept(webFile, options.accept)) {
+      out.push(webFile);
+    }
+  }
+
+  if (out.length === 0) {
+    const rejectedByAccept = result.files.length > 0;
+    // Discriminate: did the native picker return entries we just couldn't read, or did
+    // every entry fail the `accept` filter? The caller toasts different messages.
+    let conversionFailed = false;
+    for (const f of result.files) {
+      const mime = (f.mimeType || '').toLowerCase();
+      const name = (f.name || '').toLowerCase();
+      const looksImage =
+        mime.startsWith('image/') || /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(name);
+      if (looksImage) {
+        conversionFailed = true;
+        break;
+      }
+    }
+    return {
+      files: [],
+      rejectedByAccept: rejectedByAccept && !conversionFailed,
+      conversionFailed,
+    };
   }
 
   return {
     files: out,
-    rejectedByAccept: out.length === 0 && result.files.length > 0,
+    rejectedByAccept: false,
   };
 }
