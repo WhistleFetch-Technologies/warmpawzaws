@@ -286,9 +286,19 @@ type VendorMealOrderBucket = 'past' | 'today' | 'upcoming';
 /** Active slice when viewing the Orders tab (stat cards act as filters). */
 type OrdersTabBucketFilter = VendorMealOrderBucket;
 
+function vendorMealEffectiveStatus(o: MealOrder): MealDeliveryEffective {
+  return (
+    o.effective_delivery_status ??
+    resolveEffectiveMealDeliveryState(
+      String(o.status || ''),
+      o.delivery_tracking_status != null ? String(o.delivery_tracking_status) : undefined,
+    )
+  );
+}
+
 function mealOrderBucket(o: MealOrder): VendorMealOrderBucket {
-  const st = String(o.status || '').toLowerCase();
-  if (st === 'delivered' || st === 'cancelled') return 'past';
+  const st = vendorMealEffectiveStatus(o);
+  if (st === 'delivered' || st === 'cancelled' || st === 'failed') return 'past';
   const sched = scheduledYmdForOrder(o);
   const today = ymdLocal(new Date());
   if (!sched) return 'today';
@@ -610,12 +620,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   };
 
   const renderMealOrderCard = (order: MealOrder) => {
-    const badgeCanon: MealDeliveryEffective =
-      order.effective_delivery_status ??
-      resolveEffectiveMealDeliveryState(
-        String(order.status || ''),
-        order.delivery_tracking_status != null ? String(order.delivery_tracking_status) : undefined,
-      );
+    const badgeCanon: MealDeliveryEffective = vendorMealEffectiveStatus(order);
     const prepOk = canStartPreparingForSchedule(order);
     const isParentSub = Boolean(order.subscription_vendor_parent_booking);
     const isSessionSub = isSubscriptionSessionRow(order);

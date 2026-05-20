@@ -40,6 +40,17 @@ import {
   shouldHideSettlementRowFromAdminUi,
   sqlExcludeSuppressedSettlementRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
+import { sumPendingDeliverySettlementNetPayout } from '../../../utils/meal-order-settlement';
+import {
+  fetchEligibleDeliverySettlementsForBatchPayout,
+  safeMoneyAmount as safeDeliveryMoney,
+} from '../../../utils/delivery-settlement-finance';
+
+function safeMoneyAmount(raw: unknown): number {
+  if (raw === null || raw === undefined || raw === '') return 0;
+  const n = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
 
 /** Bookings store `cancelled_by = 'provider'` when the vendor cancels; legacy rows may use `vendor`. */
 const CANCELLED_BY_VENDOR_SQL = `b.cancelled_by IN ('provider', 'vendor')`;
@@ -402,7 +413,7 @@ async function allocateVendorLedgerForPayoutAmount(vendorId: string, amount: num
 
   for (const row of settlementRows.rows || []) {
     if (remainingToAllocate <= 0) break;
-    const amt = parseFloat(String(row.amt || '0'));
+    const amt = safeMoneyAmount(row.amt);
     if (amt <= 0) continue;
     if (amt <= remainingToAllocate) {
       remainingToAllocate -= amt;
@@ -410,6 +421,27 @@ async function allocateVendorLedgerForPayoutAmount(vendorId: string, amount: num
         `UPDATE settlements SET status = 'processing', settlement_status = 'processing' WHERE id = $1`,
         [row.id]
       ).catch(() => {});
+    }
+  }
+
+  if (remainingToAllocate <= 0) return;
+
+  const deliveryRows = await query(
+    `SELECT id, net_payout FROM delivery_settlements
+     WHERE vendor_id = $1 AND LOWER(status) = 'pending'
+     ORDER BY COALESCE(order_delivered_at, created_at) ASC`,
+    [vendorId]
+  ).catch(() => ({ rows: [] as { id: string; net_payout?: string }[] }));
+
+  for (const row of deliveryRows.rows || []) {
+    if (remainingToAllocate <= 0) break;
+    const amt = safeMoneyAmount(row.net_payout);
+    if (amt <= 0) continue;
+    if (amt <= remainingToAllocate) {
+      remainingToAllocate -= amt;
+      await query(`UPDATE delivery_settlements SET status = 'processing' WHERE id = $1`, [row.id]).catch(
+        () => {}
+      );
     }
   }
 
@@ -903,6 +935,7 @@ export function registerSettlementEndpoints(app: Hono) {
             vendorSettlements[vendorId] = {
               vendorId,
               bookingIds: [],
+              deliverySettlementIds: [] as string[],
               totalAmount: 0,
               commissionAmount: 0,
               netAmount: 0,
@@ -919,6 +952,28 @@ export function registerSettlementEndpoints(app: Hono) {
           vendorSettlements[vendorId].totalAmount += bookingAmount;
           vendorSettlements[vendorId].commissionAmount += commissionAmount;
           vendorSettlements[vendorId].netAmount += netAmount;
+        }
+
+        // Eligible meal/pharmacy hyperlocal delivery_settlements (same tier hold as bookings)
+        const eligibleDeliveryRows = await fetchEligibleDeliverySettlementsForBatchPayout();
+        for (const ds of eligibleDeliveryRows) {
+          const vendorId = String(ds.vendor_id || '');
+          if (!vendorId) continue;
+          if (!vendorSettlements[vendorId]) {
+            vendorSettlements[vendorId] = {
+              vendorId,
+              bookingIds: [],
+              deliverySettlementIds: [] as string[],
+              totalAmount: 0,
+              commissionAmount: 0,
+              netAmount: 0,
+              penaltyDeductions: penaltiesByVendor[vendorId]?.penaltyAmount || 0,
+            };
+          }
+          vendorSettlements[vendorId].deliverySettlementIds.push(String(ds.id));
+          vendorSettlements[vendorId].totalAmount += safeDeliveryMoney(ds.order_amount);
+          vendorSettlements[vendorId].commissionAmount += safeDeliveryMoney(ds.commission_amount);
+          vendorSettlements[vendorId].netAmount += safeDeliveryMoney(ds.net_payout);
         }
 
         // Apply penalty deductions to net amount
@@ -962,12 +1017,25 @@ export function registerSettlementEndpoints(app: Hono) {
                 rules.autoPayout ? 'processing' : 'pending',
                 periodStart.toISOString().split('T')[0],
                 periodEnd.toISOString().split('T')[0],
-                settlement.bookingIds,
+                settlement.bookingIds?.length ? settlement.bookingIds : [],
               ]
             );
-            await client.query(`UPDATE bookings SET settled_at = NOW() WHERE id = ANY($1::uuid[])`, [
-              settlement.bookingIds,
-            ]);
+            if (settlement.bookingIds?.length) {
+              await client.query(`UPDATE bookings SET settled_at = NOW() WHERE id = ANY($1::uuid[])`, [
+                settlement.bookingIds,
+              ]);
+            }
+            if (settlement.deliverySettlementIds?.length) {
+              await client.query(
+                `UPDATE delivery_settlements
+                 SET status = 'processing',
+                     settlement_batch_id = $2::text,
+                     updated_at = NOW()
+                 WHERE id = ANY($1::uuid[])
+                   AND LOWER(COALESCE(status, '')) = 'pending'`,
+                [settlement.deliverySettlementIds, String(ins.rows[0].id)],
+              );
+            }
             return ins.rows[0];
           });
 
@@ -1129,8 +1197,9 @@ export function registerSettlementEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Bank account must be verified before requesting payout. Verify in Settings.' }, 400);
       }
 
-      // Get pending amount from BOTH settlements and vendor_earnings (align with frontend "Available for payout")
-      const [settlementsPendingRes, earningsPendingRes, payoutsHeldRes] = await Promise.all([
+      // Get pending amount from settlements, vendor_earnings, and meal/pharmacy delivery_settlements
+      const [settlementsPendingRes, earningsPendingRes, payoutsHeldRes, deliveryPendingAmount] =
+        await Promise.all([
         query(
           `SELECT COALESCE(SUM(COALESCE(net_amount, vendor_amount)), 0) as pending FROM settlements WHERE vendor_id = $1 AND (status = 'pending' OR settlement_status = 'pending')`,
           [vendorId]
@@ -1143,11 +1212,15 @@ export function registerSettlementEndpoints(app: Hono) {
           `SELECT COALESCE(SUM(amount), 0) as held FROM payouts WHERE vendor_id = $1 AND payout_status IN ('pending', 'scheduled', 'processing')`,
           [vendorId]
         ).catch(() => ({ rows: [{ held: '0' }] })),
+        sumPendingDeliverySettlementNetPayout([vendorId]),
       ]);
-      const settlementsPending = parseFloat(settlementsPendingRes.rows[0]?.pending || '0');
-      const earningsPending = parseFloat(earningsPendingRes.rows[0]?.pending || '0');
-      const heldInOpenPayouts = parseFloat(payoutsHeldRes.rows[0]?.held || '0');
-      const availableAmount = Math.max(0, settlementsPending + earningsPending - heldInOpenPayouts);
+      const settlementsPending = safeMoneyAmount(settlementsPendingRes.rows[0]?.pending);
+      const earningsPending = safeMoneyAmount(earningsPendingRes.rows[0]?.pending);
+      const heldInOpenPayouts = safeMoneyAmount(payoutsHeldRes.rows[0]?.held);
+      const availableAmount = Math.max(
+        0,
+        settlementsPending + earningsPending + safeMoneyAmount(deliveryPendingAmount) - heldInOpenPayouts,
+      );
       if (availableAmount < MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR) {
         return c.json({ success: false, error: MIN_VENDOR_PAYOUT_REQUEST_ERROR_MESSAGE }, 400);
       }

@@ -161,6 +161,13 @@ public class OrderStatusJdbcService {
 			double commissionRate = v.commissionRate();
 
 			double orderAmount = toDouble(rows.get(0).get("total_amount"));
+			if (!(orderAmount > 0)) {
+				orderAmount = toDouble(rows.get(0).get("subtotal"));
+			}
+			if (!(orderAmount > 0)) {
+				log.warn("[meal-order-settlement] Skip settlement for {}: no valid order amount", mealOrderId);
+				return;
+			}
 			double deliveryFee = toDouble(rows.get(0).get("delivery_fee"));
 			double platformFee = toDouble(rows.get(0).get("platform_fee"));
 			double convenienceFee = toDouble(rows.get(0).get("convenience_fee"));
@@ -250,17 +257,19 @@ public class OrderStatusJdbcService {
 		if (v == null) {
 			return 0.0;
 		}
+		double d;
 		if (v instanceof BigDecimal b) {
-			return b.doubleValue();
+			d = b.doubleValue();
+		} else if (v instanceof Number n) {
+			d = n.doubleValue();
+		} else {
+			try {
+				d = Double.parseDouble(String.valueOf(v).replace(",", ""));
+			} catch (NumberFormatException e) {
+				return 0.0;
+			}
 		}
-		if (v instanceof Number n) {
-			return n.doubleValue();
-		}
-		try {
-			return Double.parseDouble(String.valueOf(v).replace(",", ""));
-		} catch (NumberFormatException e) {
-			return 0.0;
-		}
+		return Double.isFinite(d) ? d : 0.0;
 	}
 
 	private record VendorSettlementContext(double commissionRate, String tierName, Object tierLevel) {}

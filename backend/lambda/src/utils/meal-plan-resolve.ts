@@ -419,3 +419,11 @@ export async function ensureMealPlanMirrorForProductCheckout(resolved: Record<st
     throw e;
   }
 }
+
+/** Human-readable catalog title from `meal_plans` or nutrition `products` row. */
+export async function resolveMealCatalogDisplayName(planId: string): Promise<string | null> {
+  const row = await resolveMealPlanOrProductById(planId);
+  if (!row) return null;
+  const name = String(row.plan_name ?? row.name ?? '').trim();
+  return name || null;
+}

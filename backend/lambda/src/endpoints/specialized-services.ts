@@ -55,6 +55,11 @@ import {
 import type { MealsPerDayPreset } from '../constants/meal-product-enums';
 import { formatMealProductZodError, parseMealProductRequest } from '../zodContracts/meal-product.contract';
 import { resolveEffectiveMealDeliveryState } from '../utils/meal-delivery-effective-state';
+import { resolveMealCatalogDisplayName } from '../utils/meal-plan-resolve';
+import {
+  backfillMissingMealDeliverySettlementsForVendorIds,
+  syncDeliveredMealOrdersFromTracking,
+} from '../utils/meal-order-settlement';
 
 /** Coerce DB/API money fields so vendor UI never receives NaN or bogus strings. */
 function safeMoney(v: unknown): number {
@@ -2518,8 +2523,14 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       // Add additional vendor IDs to the main list
       allVendorIds = [...allVendorIds, ...additionalVendorIds];
       console.log(`[meal-orders] Final vendor IDs including same business name: ${JSON.stringify(allVendorIds)}`);
+
+      await syncDeliveredMealOrdersFromTracking(allVendorIds);
+      await backfillMissingMealDeliverySettlementsForVendorIds(
+        allVendorIds,
+        '[MEAL-ORDERS-SETTLEMENT-BACKFILL]',
+      );
       
-      // ✅ CRITICAL FIX: If we still have no orders after all checks, 
+      // ✅ CRITICAL FIX: If we still have no orders after all checks,
       // query ALL meal orders and check if any have the same business name
       // This is a fallback to ensure we find orders even if vendor IDs don't match
       // We'll do this as a separate query after the main query if it returns 0 results
@@ -2983,6 +2994,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         let mealPlanRow: Record<string, unknown> | null = null;
         if (o.meal_plan_id) {
           try {
+            if (!mealName) {
+              mealName = (await resolveMealCatalogDisplayName(String(o.meal_plan_id))) ?? undefined;
+            }
             const mealPlanData = await query(
               `SELECT name, plan_name, price_per_meal, price FROM meal_plans WHERE id = $1 LIMIT 1`,
               [o.meal_plan_id]
@@ -2991,6 +3005,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               const row = mealPlanData.rows[0];
               mealName = mealName || row.name || row.plan_name;
               mealPlanRow = row as Record<string, unknown>;
+            }
+            if (!mealPlanRow) {
+              const prodData = await query(
+                `SELECT name, price FROM products WHERE id = $1
+                 AND category IN ('meal_plan', 'nutrition', 'food') LIMIT 1`,
+                [o.meal_plan_id],
+              ).catch(() => ({ rows: [] }));
+              if (prodData.rows.length > 0) {
+                const row = prodData.rows[0];
+                mealName = mealName || row.name;
+                mealPlanRow = { price_per_meal: row.price, price: row.price };
+              }
             }
           } catch (err) {
             console.warn(`[meal-orders] Error fetching meal plan data:`, err);

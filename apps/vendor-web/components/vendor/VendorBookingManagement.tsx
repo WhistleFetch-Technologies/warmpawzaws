@@ -775,8 +775,12 @@ export function VendorBookingManagement({
               ];
       }
       
-      // Prefer credited-at time so totals align with earnings APIs (booking_date can differ)
-      const transactions = (transactionsData?.transactions || transactionsData?.data || []).slice(0, 15).map((t: any) => {
+      // Prefer earnings API transactions (includes meal delivery settlements); fall back to /transactions
+      const txFromEarnings = totalData?.earnings?.transactions || monthData?.earnings?.transactions || [];
+      const txFromDedicated = transactionsData?.transactions || transactionsData?.data || [];
+      const txSource = txFromEarnings.length > 0 ? txFromEarnings : txFromDedicated;
+
+      const transactions = txSource.slice(0, 15).map((t: any) => {
         const credited =
           t.realizedAt ||
           t.realized_at ||

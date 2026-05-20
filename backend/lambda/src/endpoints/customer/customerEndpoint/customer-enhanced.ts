@@ -483,12 +483,21 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
 
       // 1. From meal_orders (MealOrderCheckout flow)
       const mealResult = await query(
-        `SELECT mo.*, mp.name as meal_plan_name, mp.plan_name as mp_plan_name,
-                mp.price_per_meal as mp_price_per_meal, mp.price as mp_legacy_price,
-                v.business_name as vendor_name,
-                p.name as pet_name
+        `SELECT mo.*,
+                COALESCE(
+                  NULLIF(TRIM(mp.name), ''),
+                  NULLIF(TRIM(mp.plan_name), ''),
+                  NULLIF(TRIM(prod.name), '')
+                ) AS meal_plan_name,
+                mp.plan_name AS mp_plan_name,
+                mp.price_per_meal AS mp_price_per_meal,
+                mp.price AS mp_legacy_price,
+                v.business_name AS vendor_name,
+                p.name AS pet_name
          FROM meal_orders mo
          LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
+         LEFT JOIN products prod ON prod.id = mo.meal_plan_id
+           AND prod.category IN ('meal_plan', 'nutrition', 'food')
          LEFT JOIN vendors v ON mo.vendor_id = v.id
          LEFT JOIN pets p ON mo.pet_id = p.id
          WHERE mo.customer_id = $1

@@ -23,6 +23,11 @@ import { isValidUUID } from '../../../types/entities';
 import { MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR } from '../../../lib/constants/vendor-payout';
 import { backfillMissingVendorEarningsForVendorIds } from '../../../utils/vendor-earnings-on-completion';
 import {
+  backfillMissingMealDeliverySettlementsForVendorIds,
+  sumPendingDeliverySettlementNetPayout,
+  sumTransferredDeliverySettlementNetPayout,
+} from '../../../utils/meal-order-settlement';
+import {
   getTemporaryVendorSuppressionParams,
   shouldHideSettlementRowFromAdminUi,
   sqlAndExcludeSuppressedBookingRows,
@@ -39,6 +44,13 @@ function mapDeliverySettlementLedgerStatus(raw: string | undefined | null): stri
   if (k === 'processing') return 'settled';
   if (k === 'failed') return 'cancelled';
   return 'pending';
+}
+
+/** Ignore NaN/null DB numerics so one bad settlement row cannot zero the whole earnings summary. */
+function safeMoneyAmount(raw: unknown): number {
+  if (raw === null || raw === undefined || raw === '') return 0;
+  const n = typeof raw === 'number' ? raw : parseFloat(String(raw).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : 0;
 }
 
 function buildDailyBreakdownLast7Days(
@@ -752,6 +764,10 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       );
 
       await backfillMissingVendorEarningsForVendorIds(vendorIdsForEarnings, '[EARNINGS-BACKFILL]');
+      await backfillMissingMealDeliverySettlementsForVendorIds(
+        vendorIdsForEarnings,
+        '[EARNINGS-MEAL-SETTLEMENT-BACKFILL]',
+      );
 
       // Calculate date range
       const now = new Date();
@@ -845,9 +861,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       };
 
       earnings.forEach((e: any) => {
-        const amount = parseFloat(e.amount || '0');
-        const commission = parseFloat(e.commission_amount || '0');
-        const total = parseFloat(e.total_amount || '0');
+        const amount = safeMoneyAmount(e.amount);
+        const commission = safeMoneyAmount(e.commission_amount);
+        const total = safeMoneyAmount(e.total_amount);
 
         summary.totalEarnings += amount;
         summary.totalCommission += commission;
@@ -870,9 +886,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         const ledgerStatus = mapDeliverySettlementLedgerStatus(ds.status);
         if (ledgerStatus === 'cancelled') return;
 
-        const amount = parseFloat(ds.net_payout || '0');
-        const commission = parseFloat(ds.commission_amount || '0');
-        const total = parseFloat(ds.order_amount || '0');
+        const amount = safeMoneyAmount(ds.net_payout);
+        const commission = safeMoneyAmount(ds.commission_amount);
+        const total = safeMoneyAmount(ds.order_amount);
 
         summary.totalEarnings += amount;
         summary.totalCommission += commission;
@@ -902,10 +918,10 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         bookingId: e.booking_id,
         bookingDate: e.booking_date,
         serviceName: e.service_name || 'Service',
-        amount: parseFloat(e.amount || '0'),
-        commission: parseFloat(e.commission_amount || '0'),
-        totalAmount: parseFloat(e.total_amount || '0'),
-        commissionRate: parseFloat(e.commission_rate || '0'),
+        amount: safeMoneyAmount(e.amount),
+        commission: safeMoneyAmount(e.commission_amount),
+        totalAmount: safeMoneyAmount(e.total_amount),
+        commissionRate: safeMoneyAmount(e.commission_rate),
         status: e.status,
         realizedAt: e.realized_at,
         paidOutAt: e.paid_out_at,
@@ -917,10 +933,10 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         bookingId: ds.meal_order_id || ds.pharmacy_order_id,
         bookingDate: ds.order_delivered_at || ds.created_at,
         serviceName: ds.meal_order_id ? 'Meal delivery' : ds.pharmacy_order_id ? 'Pharmacy delivery' : 'Delivery',
-        amount: parseFloat(ds.net_payout || '0'),
-        commission: parseFloat(ds.commission_amount || '0'),
-        totalAmount: parseFloat(ds.order_amount || '0'),
-        commissionRate: parseFloat(ds.commission_rate || '0'),
+        amount: safeMoneyAmount(ds.net_payout),
+        commission: safeMoneyAmount(ds.commission_amount),
+        totalAmount: safeMoneyAmount(ds.order_amount),
+        commissionRate: safeMoneyAmount(ds.commission_rate),
         status: mapDeliverySettlementLedgerStatus(ds.status),
         realizedAt: ds.order_delivered_at || ds.created_at,
         paidOutAt: ds.actual_payout_date || null,
@@ -1025,6 +1041,10 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       );
 
       await backfillMissingVendorEarningsForVendorIds(vendorIdsForTx, '[TRANSACTIONS-EARNINGS-BACKFILL]');
+      await backfillMissingMealDeliverySettlementsForVendorIds(
+        vendorIdsForTx,
+        '[TRANSACTIONS-MEAL-SETTLEMENT-BACKFILL]',
+      );
 
       // Calculate date range
       const now = new Date();
@@ -1175,6 +1195,65 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           };
         });
       }
+
+      // Meal/pharmacy hyperlocal delivery settlements (vendor_earnings only covers bookings)
+      const dsSql =
+        period === 'lifetime'
+          ? `SELECT ds.id, ds.meal_order_id, ds.pharmacy_order_id, ds.net_payout, ds.status,
+                    ds.order_delivered_at, ds.created_at, mo.order_number, c.full_name AS customer_name
+             FROM delivery_settlements ds
+             LEFT JOIN meal_orders mo ON ds.meal_order_id = mo.id
+             LEFT JOIN customers c ON mo.customer_id = c.id
+             WHERE ds.vendor_id = ANY($1::uuid[])
+             ORDER BY COALESCE(ds.order_delivered_at, ds.created_at) DESC`
+          : `SELECT ds.id, ds.meal_order_id, ds.pharmacy_order_id, ds.net_payout, ds.status,
+                    ds.order_delivered_at, ds.created_at, mo.order_number, c.full_name AS customer_name
+             FROM delivery_settlements ds
+             LEFT JOIN meal_orders mo ON ds.meal_order_id = mo.id
+             LEFT JOIN customers c ON mo.customer_id = c.id
+             WHERE ds.vendor_id = ANY($1::uuid[])
+               AND COALESCE(ds.order_delivered_at, ds.created_at) >= $2
+             ORDER BY COALESCE(ds.order_delivered_at, ds.created_at) DESC`;
+
+      const dsResult = await query(
+        dsSql,
+        period === 'lifetime' ? [vendorIdsForTx] : [vendorIdsForTx, startDate.toISOString()],
+      ).catch(() => ({ rows: [] }));
+
+      const deliveryTx = (dsResult.rows || []).map((ds: any) => {
+        const credited = ds.order_delivered_at || ds.created_at;
+        const svcName = ds.meal_order_id
+          ? `Meal delivery${ds.order_number ? ` · ${ds.order_number}` : ''}`
+          : ds.pharmacy_order_id
+            ? 'Pharmacy delivery'
+            : 'Delivery';
+        const ledgerStatus = mapDeliverySettlementLedgerStatus(ds.status);
+        return {
+          id: ds.id,
+          date: credited,
+          createdAt: credited,
+          created_at: credited,
+          realizedAt: credited,
+          realized_at: credited,
+          serviceName: svcName,
+          service: svcName,
+          customerName: ds.customer_name || 'Customer',
+          customer: ds.customer_name || 'Customer',
+          amount: safeMoneyAmount(ds.net_payout),
+          price: safeMoneyAmount(ds.net_payout),
+          status: ledgerStatus,
+          type: ds.meal_order_id ? 'meal_delivery' : 'pharmacy_delivery',
+          description: svcName,
+        };
+      });
+
+      transactions = [...transactions, ...deliveryTx]
+        .sort(
+          (a: any, b: any) =>
+            new Date(b.realizedAt || b.created_at || b.date || 0).getTime() -
+            new Date(a.realizedAt || a.created_at || a.date || 0).getTime(),
+        )
+        .slice(0, limit);
 
       return c.json({
         success: true,
@@ -1368,6 +1447,12 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const expandedCenter = await expandVendorIdsForEarningsContext(paramVendorId);
       for (const x of expandedCenter) vendorIdSet.add(x);
       const vendorIds = [...vendorIdSet];
+
+      await backfillMissingMealDeliverySettlementsForVendorIds(
+        vendorIds,
+        '[VENDOR-SETTLEMENTS-MEAL-BACKFILL]',
+      );
+
       const vendorIdArraySql = `ANY($1::uuid[])`;
       let whereClause = `s.vendor_id = ${vendorIdArraySql}`;
       const params: unknown[] = [vendorIds];
@@ -1411,7 +1496,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         ? [vendorIds, vendSetSup.vendorIds, vendSetSup.cutoffDateIst]
         : [vendorIds];
 
-      const [summaryResult, earningsPendingResult, payoutsResult] = await Promise.all([
+      const [summaryResult, earningsPendingResult, payoutsResult, deliveryPendingAmount, deliveryPaidOutAmount] =
+        await Promise.all([
         query(
           `SELECT 
              COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
@@ -1438,12 +1524,15 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
            LIMIT 30`,
           vendSetSup ? summaryAggParams : [vendorIds]
         ).catch(() => ({ rows: [] })),
+        sumPendingDeliverySettlementNetPayout(vendorIds),
+        sumTransferredDeliverySettlementNetPayout(vendorIds),
       ]);
 
       const summary = Array.isArray(summaryResult) ? summaryResult[0] : (summaryResult.rows || [{}])[0];
-      const earningsPending = parseFloat(earningsPendingResult.rows?.[0]?.pending || '0');
-      const settlementsPending = parseFloat(summary.pending_amount || '0');
-      const totalPendingAmount = settlementsPending + earningsPending;
+      const earningsPending = safeMoneyAmount(earningsPendingResult.rows?.[0]?.pending);
+      const settlementsPending = safeMoneyAmount(summary.pending_amount);
+      const totalPendingAmount =
+        settlementsPending + earningsPending + safeMoneyAmount(deliveryPendingAmount);
 
       const payoutRows = Array.isArray(payoutsResult) ? payoutsResult : payoutsResult.rows || [];
       /** Same net as POST /settlements/request — money already in a queued/processing payout is not requestable again */
@@ -1451,14 +1540,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       for (const pr of payoutRows) {
         const st = String(pr.payout_status || pr.status || '').toLowerCase().trim();
         if (st === 'pending' || st === 'scheduled' || st === 'processing') {
-          heldInOpenPayouts += parseFloat(pr.amount || '0');
+          heldInOpenPayouts += safeMoneyAmount(pr.amount);
         }
       }
       const availableForPayout = Math.max(0, Math.round((totalPendingAmount - heldInOpenPayouts) * 100) / 100);
+      const totalPaidOut =
+        safeMoneyAmount(summary.completed_amount) + safeMoneyAmount(deliveryPaidOutAmount);
 
       const payouts = payoutRows.map((p: any) => ({
         id: p.id,
-        amount: parseFloat(p.amount || '0'),
+        amount: safeMoneyAmount(p.amount),
         status: String(p.payout_status || p.status || '').trim() || 'unknown',
         razorpayPayoutId: p.razorpay_payout_id || null,
         settlementId: p.settlement_id || null,
@@ -1505,20 +1596,23 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         }),
         total: settlements.length,
         summary: {
-          pending: parseInt(summary.pending_count || '0'),
-          processing: parseInt(summary.processing_count || '0'),
-          completed: parseInt(summary.completed_count || '0'),
-          totalSettled: parseFloat(summary.completed_amount ?? summary.total_settled ?? '0'),
-          /** Gross: pending settlements + pending vendor_earnings (ignores in-flight payout rows) */
+          pending: parseInt(summary.pending_count || '0', 10),
+          processing: parseInt(summary.processing_count || '0', 10),
+          completed: parseInt(summary.completed_count || '0', 10),
+          totalSettled: totalPaidOut,
+          /** Gross: pending settlements + pending vendor_earnings + pending meal/pharmacy delivery (ignores in-flight payout rows) */
           pendingAmount: totalPendingAmount,
           /** Net amount vendor can request now — matches POST /settlements/request validation */
           availableForPayout,
           /** Minimum net available (INR) before POST /settlements/request is allowed */
           minPayoutRequestAmount: MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR,
           heldInOpenPayouts: Math.round(heldInOpenPayouts * 100) / 100,
-          processingAmount: parseFloat(summary.processing_amount || '0'),
-          completedAmount: parseFloat(summary.completed_amount || '0'),
-          totalTierDeductions: parseFloat(summary.total_tier_deductions || '0'),
+          processingAmount: safeMoneyAmount(summary.processing_amount),
+          completedAmount: totalPaidOut,
+          paidOut: totalPaidOut,
+          totalPaidOut,
+          deliveryPendingAmount: safeMoneyAmount(deliveryPendingAmount),
+          totalTierDeductions: safeMoneyAmount(summary.total_tier_deductions),
         },
       });
     } catch (error: any) {

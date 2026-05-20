@@ -25,6 +25,8 @@ type Row = {
   currency?: string;
   earnings_line_count: number;
   missing_earnings_booking_count: number;
+  delivery_settlement_line_count?: number;
+  missing_delivery_settlement_count?: number;
   bankName?: string | null;
   accountHolderName?: string | null;
   accountNumber?: string | null;
@@ -147,16 +149,19 @@ export function VendorDailyAccrualReport() {
       <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
         <p className="font-medium">IST calendar day accrual</p>
         <p className="mt-1 text-blue-800">
-          Gross / commission / net are summed from <code className="rounded bg-blue-100 px-1">vendor_earnings</code>{' '}
-          where <code className="rounded bg-blue-100 px-1">realized_at</code> falls in{' '}
-          <strong>[report date 00:00, next day 00:00) Asia/Kolkata</strong>. This is not the same window as{' '}
-          <code className="rounded bg-blue-100 px-1">POST /settlements/calculate-daily</code> (booking hold / payout
-          batch).
+          Gross / commission / net include <code className="rounded bg-blue-100 px-1">vendor_earnings</code> (
+          <code className="rounded bg-blue-100 px-1">realized_at</code>) and meal/pharmacy{' '}
+          <code className="rounded bg-blue-100 px-1">delivery_settlements</code> (
+          <code className="rounded bg-blue-100 px-1">order_delivered_at</code>) in{' '}
+          <strong>[report date 00:00, next day 00:00) Asia/Kolkata</strong>. EventBridge{' '}
+          <code className="rounded bg-blue-100 px-1">calculate-daily</code> batches eligible delivery rows into{' '}
+          <code className="rounded bg-blue-100 px-1">settlements</code> after the tier hold.
         </p>
         <p className="mt-2 text-blue-800">
-          <strong>Missing earnings</strong> counts completed bookings that day (IST via{' '}
-          <code className="rounded bg-blue-100 px-1">completed_at</code>) with no{' '}
-          <code className="rounded bg-blue-100 px-1">vendor_earnings</code> row.
+          <strong>Missing earnings</strong> = completed bookings that day with no{' '}
+          <code className="rounded bg-blue-100 px-1">vendor_earnings</code> row.{' '}
+          <strong>Missing delivery settlement</strong> = delivered meal orders that day with no{' '}
+          <code className="rounded bg-blue-100 px-1">delivery_settlements</code> row.
         </p>
       </div>
 
@@ -221,7 +226,9 @@ export function VendorDailyAccrualReport() {
               <th className="px-3 py-2 text-right font-medium text-gray-700">Commission</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Net</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Lines</th>
+              <th className="px-3 py-2 text-center font-medium text-gray-700">Delivery</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Missing VE</th>
+              <th className="px-3 py-2 text-center font-medium text-gray-700">Missing DS</th>
               <th className="px-3 py-2 text-left font-medium text-gray-700">Bank</th>
               <th className="px-3 py-2 text-left font-medium text-gray-700">IFSC</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Verified</th>
@@ -230,8 +237,8 @@ export function VendorDailyAccrualReport() {
           <tbody className="divide-y divide-gray-100">
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={10} className="px-3 py-8 text-center text-gray-500">
-                  No rows. Pick a date, run <strong>Compute</strong> (after migration 732), then <strong>Load</strong>.
+                <td colSpan={12} className="px-3 py-8 text-center text-gray-500">
+                  No rows. Pick a date, run <strong>Compute</strong> (requires migration 732 + 753), then <strong>Load</strong>.
                 </td>
               </tr>
             )}
@@ -249,7 +256,9 @@ export function VendorDailyAccrualReport() {
                   ₹{Number(r.net_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                 </td>
                 <td className="px-3 py-2 text-center">{r.earnings_line_count}</td>
+                <td className="px-3 py-2 text-center">{r.delivery_settlement_line_count ?? 0}</td>
                 <td className="px-3 py-2 text-center">{r.missing_earnings_booking_count}</td>
+                <td className="px-3 py-2 text-center">{r.missing_delivery_settlement_count ?? 0}</td>
                 <td className="px-3 py-2 max-w-[140px] truncate" title={r.bankName || ''}>
                   {r.bankName || '—'}
                 </td>
