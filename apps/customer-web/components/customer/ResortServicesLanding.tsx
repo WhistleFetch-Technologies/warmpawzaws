@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { aggregateAverageRatingStat, formatRatingNumberOrDash } from '@/lib/rating-display';
 
 interface ResortServicesLandingProps {
   phone: string;
@@ -31,23 +30,14 @@ export function ResortServicesLanding({ phone, onBack, onNavigate }: ResortServi
       const resortList = data.vendors || data.services || [];
       setResorts(resortList);
       
-      const rated = resortList.filter((r: any) => {
-        const rc = Number(r.reviewCount ?? r.reviews_count ?? r.totalReviews ?? 0) || 0;
-        const raw = r.rating != null ? Number(r.rating) : NaN;
-        return rc > 0 && Number.isFinite(raw) && raw > 0;
-      });
       setStats({
         activeResorts: resortList.length || 15,
         bookings: '2K+',
-        rating:
-          rated.length > 0
-            ? (rated.reduce((acc: number, r: any) => acc + Number(r.rating), 0) / rated.length).toFixed(1)
-            : '—',
       });
     } catch (error) {
       console.error('Error loading resorts:', error);
       setResorts([]);
-      setStats({ activeResorts: 15, bookings: '2K+', rating: '—' });
+      setStats({ activeResorts: 15, bookings: '2K+' });
     } finally {
       setLoading(false);
     }
@@ -98,25 +88,6 @@ export function ResortServicesLanding({ phone, onBack, onNavigate }: ResortServi
           <h1 className="text-2xl font-bold text-white">Pet Resorts</h1>
         </div>
 
-        {/* Stats Bar - Glassmorphism */}
-        {stats && (
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.activeResorts}+</div>
-               <div className="text-xs text-white/80">Resorts</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.bookings}</div>
-               <div className="text-xs text-white/80">Bookings</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="flex items-center gap-1 text-2xl font-bold text-white">
-                 {stats.rating} <Star className="w-4 h-4 fill-white" />
-               </div>
-               <div className="text-xs text-white/80">Rating</div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Main Content - White Card with Top Radius */}
@@ -226,9 +197,7 @@ export function ResortServicesLanding({ phone, onBack, onNavigate }: ResortServi
                         </span>
                         <span>•</span>
                         </>
-                          ) : (
-                        <span className="text-slate-400">No reviews yet</span>
-                          );
+                          ) : null;
                         })()}
                         <span>{resort.priceRange || '₹3,999/day'}</span>
                       </div>

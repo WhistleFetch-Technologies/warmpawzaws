@@ -13,6 +13,7 @@ import {
   buildBoardingBookPlanPayload,
 } from '@/lib/boarding-vendor-booking-utils';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 
 export type { BoardingPlanRow, BoardingListVendor } from '@/lib/boarding-vendor-discovery-map';
 
@@ -104,11 +105,7 @@ export function BoardingVendorListView({
     { id: 'price' as const, label: 'Price' },
   ];
 
-  const dashboardStats = [
-    { value: `${sortedVendors.length}+`, label: 'Centers', icon: <Home className="w-4 h-4" /> },
-    { value: '5K+', label: 'Stays' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   const subtitle = BOARDING_SERVICE_LABELS[serviceSlug];
 

@@ -30,7 +30,7 @@ import { apiClient } from '@/lib/api-client';
 import { resolveVendorProfilePhotoUrl } from '@/lib/vendor-display-media';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
-import { StarRating } from '@/components/customer/shared/StarRating';
+import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 
 interface ServiceConfig {
   roleId: string;
@@ -582,13 +582,16 @@ export function HomeServiceProviderListView({
                     </div>
 
                     {/* Rating & Reviews */}
-                    <div className="flex items-center gap-2 mb-2">
-                      <StarRating
-                        rating={provider.rating}
-                        reviewCount={provider.reviewCount}
-                        textClassName="text-xs text-gray-500"
-                      />
-                    </div>
+                    <VendorRatingDisplay
+                      row={{
+                        vendorId: provider.vendorId ?? provider.id,
+                        vendorRating: provider.rating,
+                        vendorReviewCount: provider.reviewCount,
+                      }}
+                      vendorId={String(provider.vendorId ?? provider.id ?? '')}
+                      className="mb-2"
+                      textClassName="text-xs text-gray-500"
+                    />
 
                     {/* Location & Distance */}
                     <div className="flex items-center gap-1 text-sm text-gray-500 mb-2">

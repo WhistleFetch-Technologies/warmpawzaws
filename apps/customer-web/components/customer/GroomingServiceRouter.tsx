@@ -26,6 +26,7 @@ import {
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import { problemIconTextColorToBgClass } from '@/lib/problem-grid-icon-bg';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 
 function DynamicProblemIcon({ iconName, iconColor }: { iconName?: string; iconColor?: string }) {
   if (!iconName || !(LucideIcons as any)[iconName]) {
@@ -255,32 +256,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     [groomingCenterBadgeText]
   );
 
-  const dashboardStats = useMemo(() => {
-    const n = vendors.length;
-    const withReviews = vendors.filter((v: { rating?: number; reviewCount?: number; review_count?: number }) => {
-      const c = Number(v.reviewCount ?? v.review_count ?? 0) || 0;
-      const r = Number(v.rating);
-      return c > 0 && Number.isFinite(r) && r > 0;
-    });
-    const rating =
-      withReviews.length > 0
-        ? (
-            withReviews.reduce((a, v) => a + Number(v.rating), 0) / withReviews.length
-          ).toFixed(1)
-        : '—';
-    const sessions = n > 0 ? `${Math.max(n * 25, 100)}+` : '0';
-    return [
-      { value: `${n}+`, label: 'Pros', icon: <Scissors className="w-4 h-4" /> },
-      { value: sessions, label: 'Sessions' },
-      { value: rating, label: 'Avg rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    ];
-  }, [
-    vendors,
-    groomingCenterCount,
-    groomingCenterLoading,
-    groomingCenterFetching,
-    groomingCenterError,
-  ]);
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   if (vendorsLoading) {
     return (
@@ -343,9 +319,7 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
                           </div>
                           <span>•</span>
                         </>
-                      ) : (
-                        <span className="text-slate-500">No reviews yet</span>
-                      )}
+                      ) : null}
                       <span>Last visit: {previousGroomer.lastVisit || '3 weeks ago'}</span>
                     </div>
                     <p className="text-xs text-slate-500 mt-1">

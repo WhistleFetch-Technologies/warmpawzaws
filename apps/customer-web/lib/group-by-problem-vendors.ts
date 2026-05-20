@@ -4,6 +4,7 @@
  */
 
 import { pickVendorPhotoFromRow } from './resolve-display-image-url';
+import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
 
 export interface ByProblemServiceRow {
   serviceId?: string;
@@ -69,8 +70,12 @@ export function groupByProblemRowsByVendor(rows: unknown[]): VendorGroupFromProb
     if (!vendorId) continue;
 
     const price = num(row.price, 0);
-    const rating = num(row.rating ?? row.vendorRating, 0);
-    const reviewCount = Math.round(num(row.reviewCount ?? row.vendorReviews, 0));
+    const ratingFields = applyResolvedRatingToStoredFields(
+      row as Record<string, unknown>,
+      vendorId
+    );
+    const rating = ratingFields.rating;
+    const reviewCount = ratingFields.review_count;
     const vendorName = String(row.vendorName || row.vendor_name || 'Service provider').trim() || 'Service provider';
     const rowPhoto = pickVendorPhotoFromRow(row as Record<string, unknown>);
     const distRaw = row.distance;
@@ -104,6 +109,10 @@ export function groupByProblemRowsByVendor(rows: unknown[]): VendorGroupFromProb
     }
     const g = map.get(vendorId)!;
     g.rows.push(row);
+    if (reviewCount > g.reviewCount || (rating > 0 && g.rating <= 0)) {
+      g.reviewCount = Math.max(g.reviewCount, reviewCount);
+      if (rating > 0) g.rating = rating;
+    }
     g.serviceCount += 1;
     g.minPrice = Math.min(g.minPrice, price);
     if (row.isInstantAvailable) g.isInstantAvailable = true;

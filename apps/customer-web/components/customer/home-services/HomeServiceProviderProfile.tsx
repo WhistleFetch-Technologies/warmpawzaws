@@ -16,6 +16,7 @@ import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { StarRating } from '../shared/StarRating';
+import { resolveVendorRating, vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
 import {
   Star,
   MapPin,
@@ -478,19 +479,32 @@ export function HomeServiceProviderProfile({
   const PlaceholderIcon = profileHeroPlaceholderIcon(serviceType);
   const dashboardStats = useMemo(() => {
     if (!provider) return [];
-    return [
-      { value: provider.rating.toFixed(1), label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-      { value: String(provider.reviewCount), label: 'Reviews' },
+    const vid = String(provider.vendorId ?? vendorId ?? '').trim();
+    const ratingStat = vendorRatingHeaderStat(
       {
-        value:
-          provider.serviceCount > 0
-            ? `${provider.serviceCount}+`
-            : String(Math.max(provider.services.length, 0)),
-        label: provider.serviceCount > 0 ? 'Bookings' : 'Services',
-        icon: <Users className="w-4 h-4" />,
+        vendorId: vid,
+        vendorRating: provider.rating,
+        vendorReviewCount: provider.reviewCount,
       },
-    ];
-  }, [provider]);
+      vid
+    );
+    const stats: Array<{ value: string; label: string; icon?: React.ReactNode }> = [];
+    if (ratingStat) {
+      stats.push({ ...ratingStat, icon: <Star className="w-4 h-4 fill-white" /> });
+    }
+    if (provider.reviewCount > 0) {
+      stats.push({ value: String(provider.reviewCount), label: 'Reviews' });
+    }
+    stats.push({
+      value:
+        provider.serviceCount > 0
+          ? `${provider.serviceCount}+`
+          : String(Math.max(provider.services.length, 0)),
+      label: provider.serviceCount > 0 ? 'Bookings' : 'Services',
+      icon: <Users className="w-4 h-4" />,
+    });
+    return stats;
+  }, [provider, vendorId]);
   const headerSubtitle = `${config.displayName} · ${config.priceUnit}`;
 
   const tabs: { id: TabType; label: string }[] = [
@@ -606,14 +620,23 @@ export function HomeServiceProviderProfile({
             </div>
 
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <div className="rounded-lg bg-orange-50 px-3 py-1.5">
-                <StarRating
-                  rating={provider.rating}
-                  reviewCount={provider.reviewCount}
-                  starsClassName="h-5 w-5"
-                  textClassName="text-sm text-gray-600"
-                />
-              </div>
+              {resolveVendorRating(
+                {
+                  vendorId: provider.vendorId,
+                  vendorRating: provider.rating,
+                  vendorReviewCount: provider.reviewCount,
+                },
+                { expectedVendorId: String(provider.vendorId ?? vendorId) }
+              ).shouldShowRating ? (
+                <div className="rounded-lg bg-orange-50 px-3 py-1.5">
+                  <StarRating
+                    rating={provider.rating}
+                    reviewCount={provider.reviewCount}
+                    starsClassName="h-5 w-5"
+                    textClassName="text-sm text-gray-600"
+                  />
+                </div>
+              ) : null}
               {provider.isVerified ? (
                 <span className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
                   <Shield className="h-3.5 w-3.5" aria-hidden />

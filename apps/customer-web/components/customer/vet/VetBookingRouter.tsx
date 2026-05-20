@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
@@ -948,18 +949,7 @@ export function VetBookingRouter({
 
   const vetProviderStatLabel =
     selectedServiceType === 'at_center' ? 'Clinics' : 'Vets';
-  const dashboardStats = useMemo(
-    () => [
-      {
-        value: vetProviderStatValue,
-        label: vetProviderStatLabel,
-        icon: <Stethoscope className="w-4 h-4" />,
-      },
-      { value: '1K+', label: 'Bookings' },
-      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    ],
-    [vetProviderStatValue, vetProviderStatLabel]
-  );
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   // Phase 1: Step indicators include Summary
   const getStepIndicators = (): StepInfo[] | undefined => {

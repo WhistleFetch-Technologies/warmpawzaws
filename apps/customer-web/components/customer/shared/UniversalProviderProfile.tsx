@@ -17,7 +17,7 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
-import { StarRating } from './StarRating';
+import { VendorRatingDisplay } from './VendorRatingDisplay';
 
 // ============================================================================
 // TYPES
@@ -563,14 +563,17 @@ export function UniversalProviderProfile({
 
             {/* Stats */}
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
-              <div className="text-center">
-                <StarRating
-                  rating={provider.rating}
-                  reviewCount={provider.reviewCount}
-                  starsClassName="w-4 h-4"
-                  textClassName="text-xs text-gray-500"
-                />
-              </div>
+              <VendorRatingDisplay
+                row={{
+                  vendorId: provider.vendorId ?? provider.id,
+                  vendorRating: provider.rating,
+                  vendorReviewCount: provider.reviewCount,
+                }}
+                vendorId={String(provider.vendorId ?? provider.id ?? '')}
+                className="text-center"
+                starsClassName="w-4 h-4"
+                textClassName="text-xs text-gray-500"
+              />
               <div className="text-center">
                 <div className="font-bold text-gray-900">{provider.experienceYears || 0}+</div>
                 <p className="text-xs text-gray-500">Years Exp</p>

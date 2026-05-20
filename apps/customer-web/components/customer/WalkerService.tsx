@@ -28,6 +28,7 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
 } from '@/lib/vendor-package-purchase-nav';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { formatExactCentreCount, formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 export interface WalkerPendingWalkSession {
@@ -598,16 +599,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     return () => window.clearTimeout(t);
   }, [pendingWalkSession]);
 
-  // Prepare stats for ServiceDashboardHeader
-  const dashboardStats = stats ? [
-    { value: `${stats.walkers}+`, label: 'Walkers' },
-    { value: stats.walks, label: 'Walks' },
-    { value: String(stats.rating), label: 'Rating' }
-  ] : [
-    { value: '30+', label: 'Walkers' },
-    { value: '2K+', label: 'Walks' },
-    { value: '—', label: 'Rating' }
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   return (
     <div className="min-h-screen bg-gray-50">

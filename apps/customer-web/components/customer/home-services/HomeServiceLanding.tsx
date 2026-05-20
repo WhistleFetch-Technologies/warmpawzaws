@@ -33,10 +33,9 @@ import {
   Home as HomeIcon
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { aggregateAverageRatingStat } from '@/lib/rating-display';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { SERVICE_CONFIGS, HomeServiceType } from './UniversalHomeServiceRouter';
-import { StarRating } from '../shared/StarRating';
+import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 
 // Map config roleId to roleId used in specialization_master applicable_roles
 const ROLE_ID_FOR_PROBLEM_GRID: Record<string, string> = {
@@ -173,17 +172,12 @@ export function HomeServiceLanding({
         const allProviders = Array.from(vendorMap.values());
         setFeaturedProviders(allProviders.slice(0, 5));
 
-        const rated = allProviders.filter((p: any) => p.reviewCount > 0 && p.rating > 0);
         setStats({
           activeProviders: allProviders.length || 50,
           sessions: '5K',
-          rating:
-            rated.length > 0
-              ? (rated.reduce((acc: number, p: any) => acc + p.rating, 0) / rated.length).toFixed(1)
-              : '—',
         });
       } catch (e) {
-        setStats({ activeProviders: 50, sessions: '5K', rating: '—' });
+        setStats({ activeProviders: 50, sessions: '5K' });
       }
 
       // Load previous providers for this customer
@@ -225,7 +219,7 @@ export function HomeServiceLanding({
       }
     } catch (error) {
       console.error('Error loading landing data:', error);
-      setStats({ activeProviders: 50, sessions: '5K', rating: '—' });
+      setStats({ activeProviders: 50, sessions: '5K' });
     } finally {
       setLoading(false);
     }
@@ -299,25 +293,6 @@ export function HomeServiceLanding({
           <h1 className="text-2xl font-bold text-white">{config.icon} {config.displayName}</h1>
         </div>
 
-        {/* Stats Bar - Glassmorphism (matches existing pattern) */}
-        {stats && (
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-              <div className="text-2xl font-bold text-white">{stats.activeProviders}+</div>
-              <div className="text-white/80 text-xs">Active Providers</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-              <div className="text-2xl font-bold text-white">{stats.sessions}+</div>
-              <div className="text-white/80 text-xs">Sessions Done</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-              <div className="flex items-center gap-1 text-2xl font-bold text-white">
-                {stats.rating} <Star className="w-4 h-4 fill-white" />
-              </div>
-              <div className="text-white/80 text-xs">Avg Rating</div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Main Content - White Background with Rounded Top (matches existing pattern) */}
@@ -412,9 +387,13 @@ export function HomeServiceLanding({
                     <div className="flex-1">
                       <h3 className="font-semibold mb-1">{provider.name || 'Provider'}</h3>
                       <div className="flex items-center gap-3 text-xs">
-                        <StarRating
-                          rating={provider.rating}
-                          reviewCount={provider.reviewCount}
+                        <VendorRatingDisplay
+                          row={{
+                            vendorId: provider.id,
+                            vendorRating: provider.rating,
+                            vendorReviewCount: provider.reviewCount,
+                          }}
+                          vendorId={String(provider.id ?? '')}
                           starsClassName="w-3 h-3"
                           textClassName="text-xs text-gray-500"
                         />
@@ -468,9 +447,13 @@ export function HomeServiceLanding({
                   </div>
                   <p className="text-sm font-medium text-gray-800 truncate text-center">{provider.name}</p>
                   <div className="flex items-center justify-center gap-1 mt-1">
-                    <StarRating
-                      rating={provider.rating}
-                      reviewCount={provider.reviewCount}
+                    <VendorRatingDisplay
+                      row={{
+                        vendorId: provider.id,
+                        vendorRating: provider.rating,
+                        vendorReviewCount: provider.reviewCount,
+                      }}
+                      vendorId={String(provider.id ?? '')}
                       starsClassName="w-3 h-3"
                       textClassName="text-xs text-gray-600"
                     />

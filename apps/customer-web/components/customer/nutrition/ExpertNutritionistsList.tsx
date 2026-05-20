@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Clock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { StarRating } from '@/components/customer/shared/StarRating';
+import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 import { apiClient } from '@/lib/api-client';
 import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
 import { formatRatingNumberOrDash } from '@/lib/rating-display';
@@ -139,9 +139,13 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
                         </h3>
                         
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mb-2">
-                          <StarRating
-                            rating={nutritionist.rating}
-                            reviewCount={nutritionist.reviewCount ?? nutritionist.review_count}
+                          <VendorRatingDisplay
+                            row={{
+                              vendorId: nutritionist.vendorId ?? nutritionist.id,
+                              vendorRating: nutritionist.rating,
+                              vendorReviewCount: nutritionist.reviewCount ?? nutritionist.review_count,
+                            }}
+                            vendorId={String(nutritionist.vendorId ?? nutritionist.id ?? '')}
                             starsClassName="w-3 h-3"
                             textClassName="text-xs text-slate-500"
                           />
