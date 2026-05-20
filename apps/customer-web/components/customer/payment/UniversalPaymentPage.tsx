@@ -32,6 +32,10 @@ import {
   waitForWarmpawzNativeRazorpayResult,
   WARMPAWZ_RAZORPAY_NATIVE_MSG,
 } from '@/lib/razorpay/native-webview-bridge';
+import {
+  buildRazorpayEcommerceCreateOrderPayload,
+  extractEcommerceOrderIdFromResponse,
+} from '@/lib/ecommerce/ecommerce-razorpay-payload';
 
 // Razorpay type declaration
 declare global {
@@ -1908,18 +1912,18 @@ export function UniversalPaymentPage({
           total: taxBreakdown.total,
         });
 
-        if (!orderRes.orderId && !orderRes.id) {
+        const extractedOrderId = extractEcommerceOrderIdFromResponse(orderRes);
+        if (!extractedOrderId) {
           throw new Error('Failed to create order');
         }
-        currentOrderId = orderRes.orderId || orderRes.id;
+        currentOrderId = extractedOrderId;
+      }
+
+      if (type === 'order' && !currentOrderId) {
+        throw new Error('Order was not created. Please try again.');
       }
 
       // Step 2: Create payment record (only when booking already exists)
-      // ✅ If booking creation is deferred, skip payment record creation here
-      if (type === 'order' && !currentOrderId) {
-        console.log('⚠️ Order payment - skipping payment record creation (order handles payment)');
-        // For orders, proceed directly to Razorpay
-      }
 
       // ✅ For bookings, only create payment record if booking already exists
       if (type === 'booking' && (!currentBookingId || bookingCreationDeferred)) {
@@ -2181,31 +2185,38 @@ export function UniversalPaymentPage({
         : finalAmount;
 
       let orderRes: any;
+      const razorpayCreateOrderBody =
+        type === 'order' && currentOrderId
+          ? buildRazorpayEcommerceCreateOrderPayload(
+              currentOrderId,
+              amountToCharge,
+              customerId
+            )
+          : {
+              bookingId:
+                flowType === 'tele-instant' || bookingCreationDeferred
+                  ? undefined
+                  : currentBookingId,
+              amount: amountToCharge,
+              customerId,
+              offerId: selectedRazorpayOffer?.id,
+              type:
+                flowType === 'tele-instant' || bookingCreationDeferred
+                  ? 'booking_prepaid'
+                  : undefined,
+              vendorId:
+                flowType === 'tele-instant' || bookingCreationDeferred ? vendorId : undefined,
+              ...(type === 'booking' && currentBookingId && useWallet
+                ? { useWallet: true, walletAmount: Math.round((walletAmount || 0) * 100) / 100 }
+                : {}),
+            };
       try {
-        orderRes = await apiClient.post<any>('/razorpay/create-order', {
-          // Instant tele: no booking until after payment; use booking_prepaid
-          bookingId:
-            type === 'order'
-              ? undefined
-              : flowType === 'tele-instant' || bookingCreationDeferred
-                ? undefined
-                : currentBookingId,
-          orderId: type === 'order' ? currentOrderId : undefined,
-          amount: amountToCharge,
-          customerId,
-          offerId: selectedRazorpayOffer?.id,
-          type:
-            type === 'order' && currentOrderId
-              ? 'ecommerce_order'
-              : flowType === 'tele-instant' || bookingCreationDeferred
-                ? 'booking_prepaid'
-                : undefined,
-          vendorId: (flowType === 'tele-instant' || bookingCreationDeferred) ? vendorId : undefined,
-          // Server debits wallet here if /payments/create was skipped (ensures wallet is always charged before Razorpay).
-          ...(type === 'booking' && currentBookingId && useWallet
-            ? { useWallet: true, walletAmount: Math.round((walletAmount || 0) * 100) / 100 }
-            : {}),
-        }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
+        orderRes = await apiClient.post<any>(
+          '/razorpay/create-order',
+          razorpayCreateOrderBody,
+          undefined,
+          45000
+        );
       } catch (orderError: any) {
         console.error('❌ [PAYMENT] Razorpay create-order API call failed:', {
           error: orderError.message,

@@ -15,6 +15,10 @@ import {
   EyeOff,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import {
+  EnhancedAddressAutocomplete,
+  type AddressComponents,
+} from '@/components/shared/EnhancedAddressAutocomplete';
 
 export type SellerSettingsHandle = {
   save: () => Promise<void>;
@@ -162,12 +166,20 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
               Business Address
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
+              <div className="md:col-span-2 overflow-visible">
                 <label className="block text-sm font-medium text-slate-700 mb-2">Street Address</label>
-                <input
+                <EnhancedAddressAutocomplete
                   value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                  onChange={(address: string, components?: AddressComponents) => {
+                    setFormData((prev) => ({
+                      ...prev,
+                      address,
+                      ...(components?.city != null && { city: components.city || '' }),
+                      ...(components?.state != null && { state: components.state || '' }),
+                      ...(components?.pincode != null && { pincode: components.pincode || '' }),
+                    }));
+                  }}
+                  placeholder="Search address, landmark, city..."
                 />
               </div>
               <div>
