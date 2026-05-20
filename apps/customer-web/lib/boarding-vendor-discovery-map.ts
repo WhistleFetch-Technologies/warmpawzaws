@@ -11,6 +11,7 @@ import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { pickProviderDistanceKm } from '@/lib/distance-display';
 import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
+import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
 
 export interface BoardingPlanRow {
   rowId: string;
@@ -359,12 +360,16 @@ export function buildBoardingVendorListFromRows(
             ? [String(service.name)]
             : [];
 
+      const ratingFields = applyResolvedRatingToStoredFields(
+        { ...service, vendorId, vendor_id: vendorId },
+        vendorId || groupKey
+      );
       vendorMap.set(groupKey, {
         id: vendorId || groupKey,
         name: venueName,
         address: resolveVendorAddress(service),
-        rating: parseFloat(String(service.vendorRating ?? service.rating ?? service.avgRating ?? '')) || 0,
-        review_count: parseInt(service.vendorReviewCount || service.reviewsCount || service.review_count || '0', 10),
+        rating: ratingFields.rating,
+        review_count: ratingFields.review_count,
         distance: distanceStr,
         distanceKm: distKm != null && Number.isFinite(distKm) ? distKm : null,
         timing,
@@ -389,6 +394,21 @@ export function buildBoardingVendorListFromRows(
       }
       v.planRows = mergePlanRows(v.planRows, fromNested);
       v.needsServiceFetch = v.planRows.length === 0;
+      const mergedRating = applyResolvedRatingToStoredFields(
+        { ...service, vendorId, vendor_id: vendorId },
+        vendorId || groupKey
+      );
+      if (mergedRating.review_count > v.review_count) {
+        v.review_count = mergedRating.review_count;
+        v.rating = mergedRating.rating;
+      } else if (
+        mergedRating.review_count > 0 &&
+        mergedRating.rating > 0 &&
+        v.rating <= 0
+      ) {
+        v.rating = mergedRating.rating;
+        v.review_count = mergedRating.review_count;
+      }
       if (v.distanceKm == null || !Number.isFinite(v.distanceKm)) {
         const fillKm = pickProviderDistanceKm(service);
         if (fillKm != null && Number.isFinite(fillKm)) {

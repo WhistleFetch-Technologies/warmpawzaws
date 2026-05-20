@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { filterVisibleCatalogRewards } from '@/lib/hidden-rewards-catalog';
 
 // ============================================================================
 // TYPES
@@ -105,7 +106,7 @@ export default function RewardsPage() {
   const normalizeRewards = (raw: any): RewardItem[] => {
     const data = raw?.rewards || raw?.catalog || raw || [];
     if (!Array.isArray(data)) return [];
-    return data.map((reward: any) => ({
+    const mapped = data.map((reward: any) => ({
       id: reward.id,
       name: reward.name,
       description: reward.description || '',
@@ -116,6 +117,7 @@ export default function RewardsPage() {
       stock: reward.stock ?? reward.stock_left,
       is_featured: Boolean(reward.is_featured ?? reward.featured ?? false),
     }));
+    return filterVisibleCatalogRewards(mapped);
   };
 
   const normalizeHistory = (raw: any): PointsHistory[] => {

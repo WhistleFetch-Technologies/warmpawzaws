@@ -42,11 +42,7 @@ export function PetCafeBookingFlow({ vendorId, customerPhone, onSuccess, onCance
   const [specialRequests, setSpecialRequests] = useState('');
   const [showPreReview, setShowPreReview] = useState(false);
 
-  const cafePrePaymentStats = [
-    { value: '—', label: 'Café', icon: <Star className="w-4 h-4 fill-white" /> },
-    { value: '1h+', label: 'Stays' },
-    { value: 'Pet', label: 'OK' },
-  ];
+  const cafePrePaymentStats: Array<{ value: string; label: string; icon?: React.ReactNode }> = [];
 
   useEffect(() => {
     loadTables();

@@ -16,7 +16,7 @@
 
 import { useState, useEffect } from 'react';
 import { ArrowLeft, MapPin, Phone, User, Building2, ChevronRight, Home, Video } from 'lucide-react';
-import { StarRating } from '@/components/customer/shared/StarRating';
+import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { formatRatingNumberOrDash } from '@/lib/rating-display';
@@ -278,9 +278,13 @@ export function EnhancedVendorDiscoveryByProblem({
                       
                       {/* Rating & Distance */}
                       <div className="flex items-center gap-2 mb-2 flex-wrap">
-                        <StarRating
-                          rating={result.rating}
-                          reviewCount={result.reviewCount ?? result.review_count}
+                        <VendorRatingDisplay
+                          row={{
+                            vendorId: result.vendorId ?? result.id,
+                            vendorRating: result.rating,
+                            vendorReviewCount: result.reviewCount ?? result.review_count,
+                          }}
+                          vendorId={String(result.vendorId ?? result.id ?? '')}
                           starsClassName="w-3.5 h-3.5"
                           textClassName="text-xs text-gray-600"
                         />

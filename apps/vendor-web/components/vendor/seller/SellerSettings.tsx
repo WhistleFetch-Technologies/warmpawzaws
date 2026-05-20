@@ -19,6 +19,7 @@ import {
   EnhancedAddressAutocomplete,
   type AddressComponents,
 } from '@/components/shared/EnhancedAddressAutocomplete';
+import { SellerSecuritySection } from './SellerSecuritySection';
 
 export type SellerSettingsHandle = {
   save: () => Promise<void>;
@@ -310,57 +311,11 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
 
       {/* Security Tab */}
       {activeTab === 'security' && (
-        <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm space-y-6">
-          <div className="flex items-center gap-4 p-4 bg-emerald-50 rounded-xl border border-emerald-200">
-            <div className="p-3 bg-emerald-100 rounded-full">
-              <Shield className="w-6 h-6 text-emerald-600" />
-            </div>
-            <div>
-              <p className="font-medium text-emerald-900">Your account is secured</p>
-              <p className="text-sm text-emerald-700">Phone verification is active</p>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <h4 className="font-semibold text-slate-900">Security Settings</h4>
-            
-            <div className="p-4 border border-slate-200 rounded-xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-slate-900">Phone Number</p>
-                  <p className="text-sm text-slate-500">{formData.phone || 'Not set'}</p>
-                </div>
-                <button className="px-4 py-2 border border-orange-200 text-orange-600 rounded-lg font-medium hover:bg-orange-50 transition-colors">
-                  Change
-                </button>
-              </div>
-            </div>
-
-            <div className="p-4 border border-slate-200 rounded-xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-slate-900">Two-Factor Authentication</p>
-                  <p className="text-sm text-slate-500">Add extra security to your account</p>
-                </div>
-                <button className="px-4 py-2 bg-orange-100 text-orange-600 rounded-lg font-medium hover:bg-orange-200 transition-colors">
-                  Enable
-                </button>
-              </div>
-            </div>
-
-            <div className="p-4 border border-slate-200 rounded-xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-slate-900">Login History</p>
-                  <p className="text-sm text-slate-500">View your recent login activity</p>
-                </div>
-                <button className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-50 transition-colors">
-                  View
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <SellerSecuritySection
+          sellerId={sellerId}
+          initialPhone={formData.phone}
+          onPhoneUpdated={(p) => setFormData((prev) => ({ ...prev, phone: p }))}
+        />
       )}
     </div>
   );

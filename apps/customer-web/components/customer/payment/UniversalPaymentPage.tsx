@@ -21,6 +21,7 @@ import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import {
   digitsToRazorpayContactE164,
   RAZORPAY_PREFILL_EMAIL_FALLBACK,
@@ -2818,15 +2819,6 @@ export function UniversalPaymentPage({
     ? 'cw-scroll-pad-tabbar-sticky-cta'
     : 'pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]';
 
-  const paymentStats = [
-    { value: formatPriceWithSymbol(displayAmount), label: 'Due' },
-    {
-      value: displayDuration != null && !Number.isNaN(Number(displayDuration)) ? `${displayDuration} min` : '—',
-      label: 'Duration',
-    },
-    { value: type === 'booking' ? 'Booking' : 'Order', label: 'Type' },
-  ];
-
   return (
     <div className="mx-auto flex h-[100dvh] min-h-0 w-full max-w-customer flex-col overflow-hidden bg-orange-50">
       {/* In-app payment summary (not Razorpay’s iframe). `compact` keeps safe-area without the 4rem mobile top pad. */}
@@ -2837,7 +2829,7 @@ export function UniversalPaymentPage({
         serviceSubtitle="Secure checkout"
         serviceIcon={Shield}
         iconColor="text-white"
-        stats={paymentStats}
+        stats={EMPTY_SERVICE_HEADER_STATS}
         onBack={onBack}
         showBackButton
         bottomEdge="sheet"

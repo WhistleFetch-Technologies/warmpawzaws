@@ -447,14 +447,9 @@ export function ShoppingCartView({
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900">{vendor.name}</h3>
-                      <div className="flex items-center gap-2 text-xs text-gray-600">
-                        <div className="flex items-center gap-1">
-                          <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                          <span>{formatRatingNumberOrDash(undefined)}</span>
-                        </div>
-                        <span>•</span>
-                        <span>0 reviews</span>
-                      </div>
+                      {vendor.deliveryTime ? (
+                        <p className="text-xs text-gray-600">{vendor.deliveryTime}</p>
+                      ) : null}
                     </div>
                   </div>
                   <div className="shrink-0 text-left sm:text-right">

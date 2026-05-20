@@ -20,7 +20,10 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
-import { StarRating } from '@/components/customer/shared/StarRating';
+import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
+import { vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -437,16 +440,18 @@ export function VetServicesByStyle({
     const specialization = facility?.specialization || vendor?.specialization || 'General Veterinary Care';
 
     // ✅ FIX: Prepare stats for ServiceDashboardHeader
-    const profileRc = profileProvider.reviewCount ?? 0;
-    const ratingHeaderStat =
-      profileRc > 0 && Number(profileProvider.rating) > 0
-        ? Number(profileProvider.rating).toFixed(1)
-        : '—';
-    const dashboardStats = [
-      { value: `${providers.length}+`, label: 'Vets' },
-      { value: '1K+', label: 'Bookings' },
-      { value: ratingHeaderStat, label: 'Rating' }
-    ];
+    const profileVendorId = String(
+      vendorId ?? profileProvider.id ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
+    ).trim();
+    const ratingHeaderStatEntry = vendorRatingHeaderStat(
+      {
+        vendorId: profileVendorId,
+        vendorRating: profileProvider.rating,
+        vendorReviewCount: profileProvider.reviewCount,
+      },
+      profileVendorId
+    );
+    const dashboardStats = ratingHeaderStatEntry ? [ratingHeaderStatEntry] : [];
 
     return (
       <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden bg-gray-50">
@@ -503,11 +508,14 @@ export function VetServicesByStyle({
             <div className="mb-4">
               <h1 className="text-2xl font-bold text-gray-900 mb-2">{providerName}</h1>
               
-              {/* Rating and Reviews */}
               <div className="flex items-center gap-3 mb-3 flex-wrap">
-                <StarRating
-                  rating={rating?.averageRating ?? profileProvider.rating}
-                  reviewCount={rating?.totalReviews ?? profileProvider.reviewCount}
+                <VendorRatingDisplay
+                  row={{
+                    vendorId: profileVendorId,
+                    vendorRating: rating?.averageRating ?? profileProvider.rating,
+                    vendorReviewCount: rating?.totalReviews ?? profileProvider.reviewCount,
+                  }}
+                  vendorId={profileVendorId}
                   starsClassName="h-5 w-5"
                   textClassName="text-sm text-gray-700"
                 />
@@ -949,11 +957,7 @@ export function VetServicesByStyle({
     return 'Professional pet healthcare';
   };
   
-  const listingStats = [
-    { value: `${providers.length}+`, label: 'Vets' },
-    { value: '1K+', label: 'Bookings' },
-    { value: '—', label: 'Rating' }
-  ];
+  const listingStats = EMPTY_SERVICE_HEADER_STATS;
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   return (

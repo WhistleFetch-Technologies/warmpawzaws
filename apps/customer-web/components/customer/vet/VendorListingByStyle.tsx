@@ -9,7 +9,7 @@ import { apiClient } from '@/lib/api-client';
 import { getWebCustomerVendorStyleListingNavTarget } from '@/lib/customer-vendor-profile-navigation';
 import { formatDistanceDisplay, pickProviderDistanceKm } from '@/lib/distance-display';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
-import { StarRating } from '../shared/StarRating';
+import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 // Simple debounce implementation
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
   let timeoutId: NodeJS.Timeout | null = null;
@@ -594,9 +594,13 @@ export function VendorListingByStyle({
                     )}
                     
                     <div className="flex items-center gap-2 text-sm flex-wrap">
-                      <StarRating
-                        rating={vendor.rating}
-                        reviewCount={vendor.reviewCount}
+                      <VendorRatingDisplay
+                        row={{
+                          vendorId: vendor.vendorId ?? vendor.id,
+                          vendorRating: vendor.rating,
+                          vendorReviewCount: vendor.reviewCount,
+                        }}
+                        vendorId={String(vendor.vendorId ?? vendor.id ?? '')}
                         textClassName="text-xs text-gray-500"
                       />
                       
