@@ -163,6 +163,11 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         return c.json({ success: false, error: 'vendor_earnings table not found' }, 503);
       }
 
+      const { recalculatePendingMealDeliverySettlements } = await import(
+        '../../../utils/meal-order-settlement'
+      );
+      const mealSettlementsRecalculated = await recalculatePendingMealDeliverySettlements();
+
       const upsertSql = `
         WITH bounds AS (
           SELECT
@@ -276,6 +281,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         timezone: 'Asia/Kolkata',
         anchor:
           'vendor_earnings.realized_at + delivery_settlements.order_delivered_at (gross/commission/net, IST day); booking/meal gap counts in same window',
+        mealSettlementsRecalculated,
         rowsUpserted: vendorIds.length,
       });
     } catch (error: any) {

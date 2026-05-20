@@ -160,12 +160,12 @@ public class OrderStatusJdbcService {
 			VendorSettlementContext v = loadVendorSettlementContext(vendorId);
 			double commissionRate = v.commissionRate();
 
-			double orderAmount = toDouble(rows.get(0).get("total_amount"));
-			if (!(orderAmount > 0)) {
-				orderAmount = toDouble(rows.get(0).get("subtotal"));
+			double vendorMealAmount = toDouble(rows.get(0).get("subtotal"));
+			if (!(vendorMealAmount > 0)) {
+				vendorMealAmount = toDouble(rows.get(0).get("total_amount"));
 			}
-			if (!(orderAmount > 0)) {
-				log.warn("[meal-order-settlement] Skip settlement for {}: no valid order amount", mealOrderId);
+			if (!(vendorMealAmount > 0)) {
+				log.warn("[meal-order-settlement] Skip settlement for {}: no valid vendor meal amount", mealOrderId);
 				return;
 			}
 			double deliveryFee = toDouble(rows.get(0).get("delivery_fee"));
@@ -177,9 +177,8 @@ public class OrderStatusJdbcService {
 			double logisticsCost =
 					"warmpawz".equalsIgnoreCase(logisticsType) ? toDouble(rows.get(0).get("logistics_cost")) : 0.0;
 
-			double commissionableAmount = orderAmount - deliveryFee - platformFee - convenienceFee;
-			long commissionAmount = Math.round(commissionableAmount * (commissionRate / 100.0));
-			long netPayout = Math.round(orderAmount - commissionAmount - platformFee - convenienceFee - logisticsCost);
+			long commissionAmount = Math.round(vendorMealAmount * (commissionRate / 100.0));
+			long netPayout = Math.round(vendorMealAmount - commissionAmount);
 
 			Integer tierLevelInt = null;
 			if (v.tierLevel() instanceof Number n) {
@@ -195,7 +194,7 @@ public class OrderStatusJdbcService {
 							""",
 					mealOrderId,
 					vendorId,
-					orderAmount,
+					vendorMealAmount,
 					deliveryFee,
 					platformFee,
 					convenienceFee,

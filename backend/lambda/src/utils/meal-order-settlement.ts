@@ -1,6 +1,6 @@
 /**
- * Meal order vendor settlement — mirrors pharmacy hyperlocal logic (tier commission,
- * platform/convenience exclusions). Idempotent per meal_order_id.
+ * Meal order vendor settlement — tier commission on vendor meal subtotal only.
+ * Customer-paid delivery/platform/convenience/GST are not deducted from vendor net.
  */
 import { insert, query } from '../database/rds-connection';
 import { syncCanonicalMealSubscriptionDeliveryWhenMealOrderDelivered } from './sync-canonical-delivery-from-meal-order';
@@ -23,6 +23,53 @@ function parseMealOrderPurchaseSnapshot(raw: unknown): Record<string, unknown> {
   }
   if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
   return {};
+}
+
+/** Vendor meal listing amount (commission base). Customer fees/GST are excluded. */
+export function resolveVendorMealListingAmount(order: Record<string, unknown>): number {
+  const snap = parseMealOrderPurchaseSnapshot(order.purchase_snapshot);
+  const isVendorSubscriptionParent = snap.subscriptionVendorBookingRole === 'parent';
+
+  if (isVendorSubscriptionParent) {
+    const sessions = Math.max(1, Number(snap.subscriptionTotalSessions) || 1);
+    const foodUpfront = safeMoney(order.subtotal ?? order.total_amount);
+    if (foodUpfront <= 0) return 0;
+    return Math.round((foodUpfront / sessions) * 100) / 100;
+  }
+
+  let vendorMealAmount = safeMoney(order.subtotal);
+  if (vendorMealAmount <= 0) vendorMealAmount = safeMoney(order.total_amount);
+  return vendorMealAmount;
+}
+
+export function computeMealVendorSettlementAmounts(
+  order: Record<string, unknown>,
+  commissionRate: number,
+): {
+  vendorMealAmount: number;
+  commissionAmount: number;
+  netPayout: number;
+  deliveryFee: number;
+  platformFee: number;
+  convenienceFee: number;
+  logisticsCost: number;
+} | null {
+  const vendorMealAmount = resolveVendorMealListingAmount(order);
+  if (vendorMealAmount <= 0) return null;
+
+  const rate = Number.isFinite(commissionRate) ? commissionRate : 15;
+  const commissionAmount = Math.round(vendorMealAmount * (rate / 100) * 100) / 100;
+  const netPayout = Math.round((vendorMealAmount - commissionAmount) * 100) / 100;
+
+  return {
+    vendorMealAmount,
+    commissionAmount,
+    netPayout,
+    deliveryFee: safeMoney(order.delivery_fee),
+    platformFee: safeMoney(order.platform_fee),
+    convenienceFee: safeMoney(order.convenience_fee),
+    logisticsCost: order.logistics_type === 'warmpawz' ? safeMoney(order.logistics_cost) : 0,
+  };
 }
 
 export async function ensureMealOrderSettlementOnDelivered(mealOrderId: string): Promise<void> {
@@ -68,51 +115,23 @@ export async function ensureMealOrderSettlementOnDelivered(mealOrderId: string):
       commissionRate = 15.0;
     }
 
-    const snap = parseMealOrderPurchaseSnapshot(order.purchase_snapshot);
-    const isVendorSubscriptionParent = snap.subscriptionVendorBookingRole === 'parent';
-
-    /** Parent row stores full customer checkout on total_amount; vendor commission uses meal (subtotal) only. */
-    let orderAmount = safeMoney(order.total_amount);
-    if (orderAmount <= 0) orderAmount = safeMoney(order.subtotal);
-    if (orderAmount <= 0) {
-      console.warn(`[meal-order-settlement] Skip settlement for ${mealOrderId}: no valid order amount`);
+    const amounts = computeMealVendorSettlementAmounts(order as Record<string, unknown>, commissionRate);
+    if (!amounts) {
+      console.warn(`[meal-order-settlement] Skip settlement for ${mealOrderId}: no valid vendor meal amount`);
       return;
     }
-    let deliveryFee = safeMoney(order.delivery_fee);
-    let platformFee = safeMoney(order.platform_fee);
-    let convenienceFee = safeMoney(order.convenience_fee);
-    let logisticsCost =
-      order.logistics_type === 'warmpawz' ? safeMoney(order.logistics_cost) : 0;
-
-    if (isVendorSubscriptionParent) {
-      const sessions = Math.max(1, Number(snap.subscriptionTotalSessions) || 1);
-      const foodUpfront = safeMoney(order.subtotal ?? order.total_amount);
-      if (foodUpfront <= 0) {
-        console.warn(`[meal-order-settlement] Skip subscription parent settlement for ${mealOrderId}: no food upfront`);
-        return;
-      }
-      orderAmount = Math.round((foodUpfront / sessions) * 100) / 100;
-      deliveryFee = 0;
-      platformFee = 0;
-      convenienceFee = 0;
-      logisticsCost = 0;
-    }
-
-    const commissionableAmount = orderAmount - deliveryFee - platformFee - convenienceFee;
-    const commissionAmount = Math.round(commissionableAmount * (commissionRate / 100));
-    const netPayout = orderAmount - commissionAmount - platformFee - convenienceFee - logisticsCost;
 
     await insert('delivery_settlements', {
       meal_order_id: mealOrderId,
       vendor_id: vendorId,
-      order_amount: orderAmount,
-      delivery_fee_collected: deliveryFee,
-      platform_fee: platformFee,
-      convenience_fee: convenienceFee,
+      order_amount: amounts.vendorMealAmount,
+      delivery_fee_collected: amounts.deliveryFee,
+      platform_fee: amounts.platformFee,
+      convenience_fee: amounts.convenienceFee,
       commission_rate: commissionRate,
-      commission_amount: commissionAmount,
-      logistics_cost: logisticsCost,
-      net_payout: netPayout,
+      commission_amount: amounts.commissionAmount,
+      logistics_cost: amounts.logisticsCost,
+      net_payout: amounts.netPayout,
       status: 'pending',
       order_delivered_at: new Date().toISOString(),
       tier_name: vendor?.tier_name || null,
@@ -120,10 +139,58 @@ export async function ensureMealOrderSettlementOnDelivered(mealOrderId: string):
     });
 
     console.log(
-      `💰 Meal settlement created for order ${mealOrderId}: ₹${netPayout} (${commissionRate}% commission)`,
+      `💰 Meal settlement created for order ${mealOrderId}: ₹${amounts.netPayout} (${commissionRate}% on meal ₹${amounts.vendorMealAmount})`,
     );
   } catch (error) {
     console.error('[meal-order-settlement] Error creating settlement:', error);
+  }
+}
+
+/** Recalculate pending meal delivery_settlements from meal_orders.subtotal (vendor listing). */
+export async function recalculatePendingMealDeliverySettlements(logPrefix = '[MEAL-SETTLEMENT-RECALC]'): Promise<number> {
+  try {
+    const rows = await query(
+      `SELECT ds.id::text AS settlement_id, ds.commission_rate, mo.*
+       FROM delivery_settlements ds
+       INNER JOIN meal_orders mo ON mo.id = ds.meal_order_id
+       WHERE ds.meal_order_id IS NOT NULL
+         AND LOWER(COALESCE(ds.status, '')) = 'pending'`,
+    );
+    let updated = 0;
+    for (const row of rows.rows || []) {
+      const rate = safeMoney((row as { commission_rate?: unknown }).commission_rate) || 15;
+      const amounts = computeMealVendorSettlementAmounts(row as Record<string, unknown>, rate);
+      if (!amounts) continue;
+      await query(
+        `UPDATE delivery_settlements
+         SET order_amount = $2,
+             commission_amount = $3,
+             net_payout = $4,
+             delivery_fee_collected = $5,
+             platform_fee = $6,
+             convenience_fee = $7,
+             logistics_cost = $8
+         WHERE id = $1::uuid`,
+        [
+          (row as { settlement_id: string }).settlement_id,
+          amounts.vendorMealAmount,
+          amounts.commissionAmount,
+          amounts.netPayout,
+          amounts.deliveryFee,
+          amounts.platformFee,
+          amounts.convenienceFee,
+          amounts.logisticsCost,
+        ],
+      );
+      updated += 1;
+    }
+    if (updated > 0) {
+      console.log(`${logPrefix} recalculated ${updated} pending meal delivery_settlements`);
+    }
+    return updated;
+  } catch (error) {
+    console.error(`${logPrefix} failed:`, error);
+    return 0;
   }
 }
 
