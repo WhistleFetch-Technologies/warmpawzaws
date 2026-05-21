@@ -24,11 +24,19 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { createHmac, randomUUID } from 'crypto';
 import { ensureVideoCallSessionsTable } from '../repository/repository.telecommunication';
-import { getMediaRegion, isWithinVideoCallWindow, vidcorId, calculateVendorEarnings } from '../constants/helpers';
+import { getMediaRegion, isWithinVideoCallWindow, vidcorId } from '../constants/helpers';
 import { BookingStatus, BookingPaymentStatus, isTeleServices, UserType } from 'src/endpoints/constants';
 import { createMettingID, createSingleToken, createTokens, vidlog, withChimeRetry } from '../../../aws/aws-Chime-service';
 import { pushNotificationService } from '../../../aws/aws-sns-notification-service';
 import { getRazorpayConfig } from 'src/utils/payments/razorpay-client';
+import {
+  completeTeleConsultation,
+  loadLatestSessionForBooking,
+  recordParticipantJoined,
+  recordParticipantLeft,
+  resolveCallTimerStateForBooking,
+  isParticipantPresent,
+} from '../../../utils/tele-completion-service';
 
 
 
@@ -38,6 +46,32 @@ import { getRazorpayConfig } from 'src/utils/payments/razorpay-client';
 
 /** Video call allowed whenever the appointment is not completed. No time-window restriction. */
 
+/** Persist real join attendance (idempotent). */
+async function trackParticipantJoined(
+  sessionId: string | undefined,
+  userType: string,
+  bookingId: string,
+  cid: string
+): Promise<void> {
+  if (!sessionId) return;
+  if (userType !== UserType.CUSTOMER && userType !== UserType.VENDOR) return;
+  await recordParticipantJoined(
+    sessionId,
+    userType as 'customer' | 'vendor',
+    bookingId,
+    cid
+  );
+}
+
+/** Every join success path must include server-backed callTimer (duration + pausable countdown). */
+async function buildJoinSuccessBody(
+  bookingId: string,
+  body: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const refreshedSession = await loadLatestSessionForBooking(bookingId);
+  const callTimer = await resolveCallTimerStateForBooking(bookingId, refreshedSession);
+  return { success: true, ...body, callTimer };
+}
 
 // ============================================================================
 // VIDEO CALL HANDLERS
@@ -513,17 +547,19 @@ class JoinMeetingHandler extends BaseHandler {
             return this.error('Meeting data invalid', 500);
           }
 
-          return this.success({
-            success: true,
-            meetingId: raceActiveSession.meeting_id,
-            meeting: {
-              MeetingId: meetingInfo.MeetingId,
-              MediaPlacement: meetingInfo.MediaPlacement,
-              MediaRegion: meetingInfo.MediaRegion,
-            },
-            attendee: raceAttendee,
-            session: { id: raceActiveSession.id, status: raceActiveSession.status },
-          });
+          await trackParticipantJoined(raceActiveSession.id, userType, bookingId, cid);
+          return this.success(
+            await buildJoinSuccessBody(bookingId, {
+              meetingId: raceActiveSession.meeting_id,
+              meeting: {
+                MeetingId: meetingInfo.MeetingId,
+                MediaPlacement: meetingInfo.MediaPlacement,
+                MediaRegion: meetingInfo.MediaRegion,
+              },
+              attendee: raceAttendee,
+              session: { id: raceActiveSession.id, status: raceActiveSession.status },
+            })
+          );
         }
 
         // Check for ANY existing session (completed/ended/cancelled) - UNIQUE(booking_id) means we must update, not insert
@@ -548,6 +584,15 @@ class JoinMeetingHandler extends BaseHandler {
             customer_join_token: null,
             vendor_attendee_id: null,
             vendor_join_token: null,
+            customer_joined_at: null,
+            vendor_joined_at: null,
+            customer_left_at: null,
+            vendor_left_at: null,
+            consultation_started_at: null,
+            call_timer_remaining_seconds: null,
+            call_timer_running_since: null,
+            overlap_segment_started_at: null,
+            overlap_duration_seconds: 0,
           };
           if (userType === UserType.CUSTOMER) {
             updateData.customer_attendee_id = newAttendee.AttendeeId;
@@ -606,17 +651,19 @@ class JoinMeetingHandler extends BaseHandler {
         }
 
         vidlog('join', 'create-on-join-success', { bookingId, meetingId: newMeetingId }, cid);
-        return this.success({
-          success: true,
-          meetingId: newMeetingId,
-          meeting: {
-            MeetingId: meetingResponse.Meeting.MeetingId,
-            MediaPlacement: meetingResponse.Meeting.MediaPlacement,
-            MediaRegion: meetingResponse.Meeting.MediaRegion,
-          },
-          attendee: newAttendee,
-          session: { id: session.id, status: session.status },
-        });
+        await trackParticipantJoined(session?.id, userType, bookingId, cid);
+        return this.success(
+          await buildJoinSuccessBody(bookingId, {
+            meetingId: newMeetingId,
+            meeting: {
+              MeetingId: meetingResponse.Meeting.MeetingId,
+              MediaPlacement: meetingResponse.Meeting.MediaPlacement,
+              MediaRegion: meetingResponse.Meeting.MediaRegion,
+            },
+            attendee: newAttendee,
+            session: { id: session.id, status: session.status },
+          })
+        );
       }
 
       const chimeClient = new ChimeSDKMeetingsClient({
@@ -679,17 +726,19 @@ class JoinMeetingHandler extends BaseHandler {
         }
         await update('video_call_sessions', { id: session.id }, updateData);
         await update('bookings', { id: bookingId }, { video_call_meeting_id: newMeetingId, video_call_started_at: new Date().toISOString() });
-        return this.success({
-          success: true,
-          meetingId: newMeetingId,
-          meeting: {
-            MeetingId: createResponse.Meeting.MeetingId,
-            MediaPlacement: createResponse.Meeting.MediaPlacement,
-            MediaRegion: createResponse.Meeting.MediaRegion,
-          },
-          attendee: newAttendee,
-          session: { id: session.id, status: session.status },
-        });
+        await trackParticipantJoined(session.id, userType, bookingId, cid);
+        return this.success(
+          await buildJoinSuccessBody(bookingId, {
+            meetingId: newMeetingId,
+            meeting: {
+              MeetingId: createResponse.Meeting.MeetingId,
+              MediaPlacement: createResponse.Meeting.MediaPlacement,
+              MediaRegion: createResponse.Meeting.MediaRegion,
+            },
+            attendee: newAttendee,
+            session: { id: session.id, status: session.status },
+          })
+        );
       }
 
       if (!meetingInfo || !meetingInfo.MediaPlacement) {
@@ -738,24 +787,26 @@ class JoinMeetingHandler extends BaseHandler {
       }
 
       vidlog('join', 'success', { bookingId, meetingId: session.meeting_id, participantType: userType }, cid);
-      return this.success({
-        success: true,
-        meetingId: session.meeting_id,
-        meeting: {
-          MeetingId: meetingInfo.MeetingId,
-          MediaPlacement: meetingInfo.MediaPlacement,
-          MediaRegion: meetingInfo.MediaRegion,
-        },
-        attendee: {
-          AttendeeId: attendee.AttendeeId,
-          JoinToken: attendee.JoinToken,
-          ExternalUserId: attendee.ExternalUserId,
-        },
-        session: {
-          id: session.id,
-          status: session.status,
-        },
-      });
+      await trackParticipantJoined(session.id, userType, bookingId, cid);
+      return this.success(
+        await buildJoinSuccessBody(bookingId, {
+          meetingId: session.meeting_id,
+          meeting: {
+            MeetingId: meetingInfo.MeetingId,
+            MediaPlacement: meetingInfo.MediaPlacement,
+            MediaRegion: meetingInfo.MediaRegion,
+          },
+          attendee: {
+            AttendeeId: attendee.AttendeeId,
+            JoinToken: attendee.JoinToken,
+            ExternalUserId: attendee.ExternalUserId,
+          },
+          session: {
+            id: session.id,
+            status: session.status,
+          },
+        })
+      );
     } catch (error: any) {
       // ✅ CRITICAL: If vendor was joining and something went wrong, ensure available_for_instant_tele stays false
       if (vendorIdForCleanup) {
@@ -804,166 +855,133 @@ class GetAttendeesHandler extends BaseHandler {
     }
 
     const session = activeSession as any;
+    const customerJoined =
+      isParticipantPresent(session, 'customer') ||
+      (!session.customer_left_at &&
+        !!(session.customer_attendee_id && session.customer_join_token));
+    const vendorJoined =
+      isParticipantPresent(session, 'vendor') ||
+      (!session.vendor_left_at &&
+        !!(session.vendor_attendee_id && session.vendor_join_token));
+    const callTimer = await resolveCallTimerStateForBooking(bookingId, session);
     return this.success({
       success: true,
-      customerJoined: !!(session.customer_attendee_id && session.customer_join_token),
-      vendorJoined: !!(session.vendor_attendee_id && session.vendor_join_token),
+      customerJoined,
+      vendorJoined,
       sessionEnded: false,
+      teleCompletionStatus: null,
+      callTimer,
+    });
+  }
+}
+
+class ParticipantLeftHandler extends BaseHandler {
+  async handle(context: HandlerContext): Promise<HandlerResponse> {
+    const bookingId = context.event.pathParameters?.bookingId;
+    const body = this.parseBody(context.event);
+    const participantType = (
+      body.participantType ?? body.participant_type ?? body.userType ?? body.user_type
+    )?.toLowerCase?.();
+
+    if (!bookingId) {
+      return this.error('Booking ID is required', 400);
+    }
+    if (!participantType || !['customer', 'vendor'].includes(participantType)) {
+      return this.error('participantType must be customer or vendor', 400);
+    }
+
+    const cid = vidcorId();
+    vidlog('participant-left', 'start', { bookingId, participantType }, cid);
+
+    const session = await loadLatestSessionForBooking(bookingId);
+    if (!session?.id) {
+      return this.error('No video session found for this booking', 404);
+    }
+
+    await recordParticipantLeft(
+      session.id,
+      participantType as 'customer' | 'vendor',
+      bookingId,
+      cid
+    );
+
+    const refreshedSession = await loadLatestSessionForBooking(bookingId);
+    const callTimer = await resolveCallTimerStateForBooking(bookingId, refreshedSession);
+
+    return this.success({
+      success: true,
+      message: 'Participant leave recorded — you can rejoin while time remains on the slot',
+      bookingId,
+      participantType,
+      callTimer,
+      canRejoin: callTimer.callRemainingSeconds > 0,
     });
   }
 }
 
 class EndMeetingHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
-    // Get booking ID from path parameters
     const bookingId = context.event.pathParameters?.bookingId;
     if (!bookingId) {
       return this.error('Booking ID is required', 400);
     }
 
-    // Generate correlation ID for logging
-    const cid = vidcorId();
-    vidlog('end-meeting', 'start', { bookingId }, cid);
+    const body = this.parseBody(context.event);
+    const participantTypeRaw = (
+      body.participantType ?? body.participant_type ?? body.userType ?? body.user_type
+    )?.toLowerCase?.();
+    const participantTypeEnding =
+      participantTypeRaw === 'customer' || participantTypeRaw === 'vendor'
+        ? (participantTypeRaw as 'customer' | 'vendor')
+        : undefined;
 
-    // End meeting session (include both 'active' and 'waiting' - call can end before both join)
+    const cid = vidcorId();
+    vidlog('end-meeting', 'start', { bookingId, participantTypeEnding }, cid);
+
     const allSessions = await select('video_call_sessions', { booking_id: bookingId });
     const sessions = (allSessions as any[]).filter(
       (s) => s.status === 'active' || s.status === 'waiting'
     );
 
-    if (sessions.length > 0) {
-      const session = sessions[0];
-      const startedAt = session.started_at ? new Date(session.started_at) : new Date();
-      const endedAt = new Date();
-      const duration = Math.floor((endedAt.getTime() - startedAt.getTime()) / 1000); // Duration in seconds
-
-      // Update video call session to completed
-      await update(
-        'video_call_sessions',
-        { id: session.id },
-        {
-          status: 'completed',
-          ended_at: endedAt,
-        }
-      );
-
-      // Update booking with video call end info
-      await update('bookings', { id: bookingId }, {
-        status: BookingStatus.COMPLETED,
-        completed_at: endedAt.toISOString(),
-        video_call_ended_at: endedAt.toISOString(),
-        video_call_duration: duration,
+    if (sessions.length === 0) {
+      // Idempotent: session already ended — return latest qualification if available
+      const bookingRows = await select('bookings', { id: bookingId });
+      const booking = bookingRows[0] as any;
+      vidlog('end-meeting', 'no-active-session', { bookingId }, cid);
+      return this.success({
+        message: 'Meeting ended',
+        qualified: booking?.tele_completion_status === 'qualified',
+        teleCompletionStatus: booking?.tele_completion_status ?? null,
+        bookingCompleted: booking?.status === 'completed',
+        overlapSeconds: null,
       });
-
-      //Create vendor_earnings for instant-tele bookings only
-      try {
-        // Fetch booking to check if it's instant-tele and get vendor/amount info
-        const bookingResult = await query(
-          `SELECT id, vendor_id, total_amount, is_instant_tele, service_type 
-           FROM bookings 
-           WHERE id = $1`,
-          [bookingId]
-        );
-
-        if (bookingResult.rows.length > 0) {
-          const booking = bookingResult.rows[0] as any;
-          console.log('[END-MEETING] Booking', booking);
-          // Check if this is an instant-tele booking using the new field
-          if (booking.is_instant_tele && booking.vendor_id) {
-
-            // Get commission rate for vendor
-            const tierResult = await query(
-              `SELECT vt.commission_rate
-               FROM vendors v
-               LEFT JOIN vendor_tiers vt ON vt.is_active = true 
-                 AND (TRIM(LOWER(v.tier)) = TRIM(LOWER(vt.tier_name)))
-               WHERE v.id = $1
-               LIMIT 1`,
-              [booking.vendor_id]
-            );
-
-            console.log('[END-MEETING] Vendor tier result', tierResult);
-            const commissionRate = tierResult.rows?.[0]?.commission_rate;
-            const finalCommissionRate = (commissionRate != null && !isNaN(Number(commissionRate)))
-              ? Number(commissionRate)
-              : 15;
-
-            // Calculate vendor earnings
-            const totalAmount = parseFloat(booking.total_amount || '0');
-            const { commissionAmount, vendorAmount } = calculateVendorEarnings(
-              finalCommissionRate,
-              totalAmount
-            );
-
-            // Check if vendor_earnings record already exists for this booking
-            const existingEarnings = await query(
-              `SELECT id FROM vendor_earnings WHERE booking_id = $1`,
-              [bookingId]
-            ).catch(() => ({ rows: [] }));
-
-            const existingRows = (existingEarnings as any).rows || [];
-
-            if (existingRows.length === 0 && vendorAmount > 0) {
-              await insert('vendor_earnings', {
-                vendor_id: booking.vendor_id,
-                booking_id: bookingId,
-                amount: vendorAmount,
-                commission_amount: commissionAmount,
-                total_amount: totalAmount,
-                commission_rate: finalCommissionRate,
-                status: 'pending',
-                realized_at: new Date().toISOString(),
-              });
-
-              vidlog('end-meeting', 'earnings-created', {
-                bookingId,
-                vendorId: booking.vendor_id,
-                vendorAmount,
-                commissionAmount
-              }, cid);
-
-              // Update vendor's total earnings and pending payout (non-critical)
-              await query(
-                `UPDATE vendors 
-                 SET pending_payout = COALESCE(pending_payout, 0) + $1,
-                     total_earnings = COALESCE(total_earnings, 0) + $1,
-                     updated_at = NOW()
-                 WHERE id = $2`,
-                [vendorAmount, booking.vendor_id]
-              ).catch((err: any) => {
-                vidlog('end-meeting', 'vendor-totals-update-failed', {
-                  vendorId: booking.vendor_id,
-                  error: err?.message
-                }, cid);
-              });
-            } else if (existingRows.length > 0) {
-              vidlog('end-meeting', 'earnings-already-exists', { bookingId }, cid);
-            }
-          }
-        }
-      } catch (earningsError: any) {
-        // Don't fail meeting end if earnings creation fails
-        vidlog('end-meeting', 'earnings-creation-failed', {
-          bookingId,
-          error: earningsError?.message
-        }, cid);
-        console.error('❌ [EARNINGS] Failed to create earnings for instant-tele booking:', earningsError);
-      }
-
-      // Set vendor available for instant tele when call ends
-      const vendorId = session.vendor_id ?? session.vendorId;
-      if (vendorId) {
-        try {
-          await update('vendors', { id: vendorId }, { available_for_instant_tele: true });
-          vidlog('end-meeting', 'vendor-available-set', { vendorId, bookingId }, cid);
-        } catch (vendorUpdateErr: any) {
-          vidlog('end-meeting', 'vendor-available-set-failed', { vendorId, error: vendorUpdateErr?.message }, cid);
-        }
-      }
     }
 
-    vidlog('end-meeting', 'success', { bookingId }, cid);
-    return this.success({ message: 'Meeting ended' });
+    const session = sessions[0];
+    const result = await completeTeleConsultation({
+      bookingId,
+      sessionId: session.id,
+      source: 'end_call',
+      participantTypeEnding,
+      correlationId: cid,
+      endSession: true,
+    });
+
+    vidlog('end-meeting', 'success', {
+      bookingId,
+      qualified: result.qualified,
+      teleCompletionStatus: result.teleCompletionStatus,
+      bookingCompleted: result.bookingCompleted,
+    }, cid);
+
+    return this.success({
+      message: 'Meeting ended',
+      qualified: result.qualified,
+      teleCompletionStatus: result.teleCompletionStatus,
+      bookingCompleted: result.bookingCompleted,
+      overlapSeconds: result.overlapSeconds,
+      userMessage: result.message,
+    });
   }
 }
 
@@ -1009,6 +1027,16 @@ export function registerVideoCallEndpoints(app: Hono) {
   const getAttendeesHandler = new GetAttendeesHandler();
   const joinHandler = new JoinMeetingHandler();
   const endHandler = new EndMeetingHandler();
+  const participantLeftHandler = new ParticipantLeftHandler();
+
+  app.post('/video-call/:bookingId/participant-left', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const event = createApiGatewayEvent(c.req, body);
+    event.pathParameters = { bookingId: c.req.param('bookingId') };
+    const context = createLambdaContext();
+    const result = await participantLeftHandler.execute(event, context);
+    return c.json(JSON.parse(result.body), result.statusCode);
+  });
 
   app.get('/video-call/:bookingId/attendees', async (c) => {
     const event = createApiGatewayEvent(c.req);
