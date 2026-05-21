@@ -100,8 +100,17 @@ export function dedupeSearchVendorAndServiceRows<
 }
 
 /**
- * Client-side chip filter for GET /search rows. Hub-only browse uses strict canonical category tokens only
- * (same idea as SQL hub browse). With a keyword query, legacy rows without category may still match via hints.
+ * Client-side chip filter for GET /search rows.
+ *
+ * Hub-only browse (no keyword) is a **pass-through**: GET /search and GET
+ * /customer/discover-services share the same SQL EXISTS + radius rules, so the
+ * backend already returns exactly the vendor/service set home shows. Re-filtering
+ * here based on the row's `category` column would diverge from home — e.g. home
+ * includes a vet_clinic vendor with a dog-walk service in the walker hub (via
+ * walkerCategoryDiscoveryOr); the client must not drop them.
+ *
+ * Keyword + hub mode keeps the legacy alias / name-hint filter so free-text
+ * search doesn't surface unrelated verticals when the user pinned a hub chip.
  */
 export function applyHubCategoryFilter<T extends HubFilterableResult>(
   results: T[],
@@ -109,15 +118,14 @@ export function applyHubCategoryFilter<T extends HubFilterableResult>(
   searchQuery: string
 ): T[] {
   if (!hubId) return results;
-  const allowed = normalizedAllowedTokens(hubId);
   const q = (searchQuery || '').trim();
-  const strictHubBrowse = !q;
+  if (!q) return results;
+  const allowed = normalizedAllowedTokens(hubId);
 
   return results.filter((r) => {
     const c = normalizeCategoryToken(r.category || '');
     if (c && allowed.has(c)) return true;
     if (c && !allowed.has(c)) return false;
-    if (strictHubBrowse) return false;
     if (!c && r.type === 'vendor' && hubMatchesSearchText(hubId, searchQuery)) return true;
     if (!c && hubMatchesResultName(hubId, r.name)) return true;
     return false;

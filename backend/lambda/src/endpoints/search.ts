@@ -36,6 +36,7 @@ import {
 import { getVendorListingPhotoUrl } from '../utils/vendor-listing-photo';
 import { haversineKm } from '../lib/utils/vendor-customer-distance';
 import {
+  acceptableStylesForService,
   applySearchDiscoveryParity,
   hubSlugToDiscoveryContext,
   resolveEffectiveSearchCategory,
@@ -104,6 +105,64 @@ async function enrichSearchResultPhotos(
       if (url) s.vendorProfileImage = url;
     }
   }
+}
+
+/**
+ * Post-parity gate: mirrors discover-services fetchServices + "if (services.length === 0) return null".
+ * Drops any vendor that has zero customer-listable services of the expected style for the active hub.
+ * Runs a single batched query rather than N per-vendor round-trips.
+ *
+ * sittingRelaxed mirrors discover-services for Pet Sitting: allows NULL is_enabled and NULL/empty
+ * service_style so solo sitters who haven't fully configured their catalog still appear.
+ */
+async function gateVendorsByListableService<T extends { id: string }>(
+  vendors: T[],
+  acceptableStyles: string[],
+  options?: { sittingRelaxed?: boolean }
+): Promise<T[]> {
+  if (vendors.length === 0 || acceptableStyles.length === 0) return vendors;
+  const sittingRelaxed = !!options?.sittingRelaxed;
+  const enabledPredicate = sittingRelaxed
+    ? '(vs.is_enabled = true OR vs.is_enabled IS NULL)'
+    : 'vs.is_enabled = true';
+  const stylePredicate = sittingRelaxed
+    ? `(vs.service_style = ANY($2::text[]) OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')`
+    : 'vs.service_style = ANY($2::text[])';
+  try {
+    const { rows } = await query(
+      `SELECT DISTINCT vs.vendor_id::text AS vendor_id
+       FROM vendor_services vs
+       WHERE vs.vendor_id = ANY($1::uuid[])
+         AND ${enabledPredicate}
+         AND (
+           vs.publish_status IS NULL
+           OR LOWER(TRIM(COALESCE(vs.publish_status::text, ''))) IN ('published', 'auto_published', 'draft')
+         )
+         AND ${stylePredicate}`,
+      [vendors.map((v) => v.id), acceptableStyles]
+    );
+    const qualifiedIds = new Set(rows.map((r: { vendor_id: string }) => r.vendor_id));
+    return vendors.filter((v) => qualifiedIds.has(v.id));
+  } catch (err) {
+    console.warn('gateVendorsByListableService query failed, skipping gate:', err);
+    return vendors;
+  }
+}
+
+/**
+ * After the vendor-listable-service gate drops a vendor, drop their orphan service rows too.
+ * Without this, services from gated-out vendors leak through as separate cards in /search
+ * (the customer-web dedupe only removes service rows whose vendor row is still present).
+ */
+function filterServicesToKeptVendors<S extends { vendorId?: string | null }>(
+  services: S[],
+  keptVendorIds: Set<string>
+): S[] {
+  return services.filter((s) => {
+    const vid = String(s.vendorId ?? '').trim();
+    if (!vid) return true;
+    return keptVendorIds.has(vid);
+  });
 }
 
 // ============================================================================
@@ -304,11 +363,22 @@ class UniversalSearchHandler extends BaseHandler {
       queryString: qs,
     });
 
+    let finalVendors = parity.vendors;
+    let finalServices = parity.services;
+    if (hubContext) {
+      const styles = acceptableStylesForService(hubContext.serviceStyle);
+      finalVendors = await gateVendorsByListableService(parity.vendors, styles, {
+        sittingRelaxed: !!hubContext.sittingDiscoveryRelaxed,
+      });
+      const keptIds = new Set(finalVendors.map((v) => String(v.id)));
+      finalServices = filterServicesToKeptVendors(parity.services, keptIds);
+    }
+
     return this.success({
       query: searchQuery,
-      vendors: parity.vendors,
-      services: parity.services,
-      total: parity.vendors.length + parity.services.length,
+      vendors: finalVendors,
+      services: finalServices,
+      total: finalVendors.length + finalServices.length,
       searchMethod: 'opensearch',
       discoveryParity: parity.discoveryApplied,
     });
@@ -390,6 +460,12 @@ class UniversalSearchHandler extends BaseHandler {
         sittingRelaxed: ctx?.sittingDiscoveryRelaxed,
         paramOffset: paramIndex,
         isAtCenter: ctx?.serviceStyle === 'at_center',
+        // Intentionally NOT setting strictHubBrowse: search must include the
+        // SAME vendors that discover-services (home) includes. discover uses the
+        // broad walkerCategoryDiscoveryOr (e.g. a vet/sitter with a dog-walk
+        // service appears in the walker hub); search must mirror that, then let
+        // radius/availability filters prune. Without parity here, search shows
+        // a different (smaller or larger) count than home for the same chip.
       });
       vendorsQuery += ` AND ${built.sql}`;
       vendorAvailabilitySql = built.availabilitySql;
@@ -620,11 +696,22 @@ class UniversalSearchHandler extends BaseHandler {
       queryString: qs,
     });
 
+    let finalVendors = parity.vendors;
+    let finalServices = parity.services;
+    if (hubContext) {
+      const styles = acceptableStylesForService(hubContext.serviceStyle);
+      finalVendors = await gateVendorsByListableService(parity.vendors, styles, {
+        sittingRelaxed: !!hubContext.sittingDiscoveryRelaxed,
+      });
+      const keptIds = new Set(finalVendors.map((v) => String(v.id)));
+      finalServices = filterServicesToKeptVendors(parity.services, keptIds);
+    }
+
     return this.success({
       query: searchQuery,
-      vendors: parity.vendors,
-      services: parity.services,
-      total: parity.vendors.length + parity.services.length,
+      vendors: finalVendors,
+      services: finalServices,
+      total: finalVendors.length + finalServices.length,
       searchMethod: 'sql-fallback',
       discoveryParity: parity.discoveryApplied,
     });

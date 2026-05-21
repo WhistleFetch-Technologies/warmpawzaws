@@ -4,93 +4,86 @@ import {
 } from '../search-hub-category-filter';
 
 /**
- * NOTE: applyHubCategoryFilter is called ONLY for keyword+hub mode (q non-empty).
- * For hub-only browse (q empty) the backend already filtered; page.tsx skips the
- * client re-filter and only runs dedup. Tests below reflect keyword+hub behaviour.
+ * applyHubCategoryFilter is a pass-through in hub-only browse (no keyword) so
+ * GET /search rendering matches GET /customer/discover-services exactly (the
+ * backend already filtered identically). In keyword+hub mode the filter still
+ * gates free-text matches to the active hub's category aliases / name hints.
+ *
+ * Regression: see "search shows 1 walker / home shows 2" — Bindushree (role
+ * vet_clinic, has a dog-walk service) is included by home via the broad
+ * walkerCategoryDiscoveryOr SQL branch; the client must not re-drop her.
  */
-describe('applyHubCategoryFilter', () => {
-  it('hub-only browse excludes veterinary vendors/services even when names imply behaviour/training', () => {
+describe('applyHubCategoryFilter — hub-only browse (no keyword) is pass-through', () => {
+  it('keeps vendors regardless of their primary category column (parity with home)', () => {
+    const rows = [
+      { type: 'vendor' as const, category: 'walker', name: 'Test Dog walker' },
+      // Mirrors Bindushree: vet_clinic role appears in walker hub because she
+      // has a walker-style service; SQL EXISTS already qualified her upstream.
+      { type: 'vendor' as const, category: 'vet_clinic', name: 'Bindushree M' },
+      { type: 'vendor' as const, category: '', name: 'Empty Cat Walker' },
+    ];
+    const out = applyHubCategoryFilter(rows, 'walker', '');
+    expect(out.map((r) => r.name).sort()).toEqual([
+      'Bindushree M',
+      'Empty Cat Walker',
+      'Test Dog walker',
+    ]);
+  });
+
+  it('keeps grooming and vet vendors in the walker hub when they came from upstream', () => {
+    const rows = [
+      { type: 'vendor' as const, category: 'grooming', name: 'Groom Plus' },
+      { type: 'vendor' as const, category: 'vet', name: 'City Vet' },
+    ];
+    expect(applyHubCategoryFilter(rows, 'walker', '')).toHaveLength(2);
+  });
+
+  it('returns the input unchanged for hub-only browse without filtering anything', () => {
+    const rows = [
+      { type: 'vendor' as const, category: 'pet_clinic', name: 'A' },
+      { type: 'service' as const, category: 'walker', name: 'B' },
+      { type: 'service' as const, category: 'grooming', name: 'C' },
+    ];
+    expect(applyHubCategoryFilter(rows, 'vet', '')).toEqual(rows);
+  });
+});
+
+describe('applyHubCategoryFilter — keyword + hub mode (free-text)', () => {
+  it('drops sibling-hub rows even with a keyword present', () => {
     const rows = [
       { type: 'vendor' as const, category: 'veterinary', name: 'City Vet Center' },
       { type: 'service' as const, category: 'veterinary', name: 'Behaviour Consultation' },
     ];
-    expect(applyHubCategoryFilter(rows, 'training', '')).toEqual([]);
+    expect(applyHubCategoryFilter(rows, 'training', 'train')).toEqual([]);
   });
 
-  it('hub-only browse keeps rows whose category is in the training alias set', () => {
+  it('keeps rows whose category is in the training alias set', () => {
     const rows = [
       { type: 'service' as const, category: 'training', name: 'Obedience' },
       { type: 'service' as const, category: 'behavioral', name: 'Manners' },
     ];
-    const out = applyHubCategoryFilter(rows, 'training', '');
+    const out = applyHubCategoryFilter(rows, 'training', 'dog training');
     expect(out).toHaveLength(2);
   });
 
-  it('keyword mode can still surface legacy vendors with empty category via hint text', () => {
+  it('surfaces legacy vendors with empty category via hint text', () => {
     const rows = [{ type: 'vendor' as const, category: '', name: 'Paws Dog Training' }];
     expect(applyHubCategoryFilter(rows, 'training', 'dog training')).toHaveLength(1);
   });
 
-  it('keyword mode excludes wrong vertical when category is set on the row', () => {
+  it('excludes wrong vertical when category is set on the row', () => {
     const rows = [{ type: 'vendor' as const, category: 'veterinary', name: 'We also train parrots' }];
     expect(applyHubCategoryFilter(rows, 'training', 'train parrots')).toEqual([]);
   });
 
-  it('hub-only browse excludes rows with empty category (client cannot infer hub)', () => {
-    expect(
-      applyHubCategoryFilter([{ type: 'vendor' as const, category: '', name: 'Mystery Vendor' }], 'nutritionist', '')
-    ).toHaveLength(0);
-  });
-
-  it('hub-only browse keeps vendor when listing category is role slug from API', () => {
-    expect(
-      applyHubCategoryFilter(
-        [{ type: 'vendor' as const, category: 'nutritionist_center', name: 'Test Center' }],
-        'nutritionist',
-        ''
-      )
-    ).toHaveLength(1);
-  });
-
-  it('hub-only browse accepts catalog wellness vertical for nutritionist chip', () => {
-    const rows = [{ type: 'vendor' as const, category: 'wellness', name: 'Holistic Pet Nutrition' }];
-    expect(applyHubCategoryFilter(rows, 'nutritionist', '')).toHaveLength(1);
+  it('keyword cannot rescue a walker whose name gives no walk hint and category is wrong vertical', () => {
+    const rows = [{ type: 'vendor' as const, category: 'veterinary', name: 'ABC Services' }];
+    expect(applyHubCategoryFilter(rows, 'walker', 'dog walker')).toHaveLength(0);
   });
 });
 
 describe('inferHubSlugFromSearchQuery', () => {
   it('infers walker from dog walker search text', () => {
     expect(inferHubSlugFromSearchQuery('dog walker')).toBe('walker');
-  });
-});
-
-describe('applyHubCategoryFilter — null lat/lng walker parity', () => {
-  /**
-   * The backend excludes at_home (walker) vendors with null lat/lng when user
-   * coordinates are present (Fix 1: withinDiscoveryRadius atHome flag).  The
-   * client-side filter cannot re-add them; verify that a vendor row lacking a
-   * recognised walker category is also excluded by the category filter so no
-   * phantom walkers appear in search results even if somehow included by the API.
-   */
-  it('hub-only browse excludes walker vendor with no recognised category (mirrors backend null-coord exclusion)', () => {
-    // A vendor whose DB row had null lat/lng would have been stripped server-side.
-    // If such a row were returned, it would have no meaningful category token.
-    const rows = [
-      { type: 'vendor' as const, category: '', name: '' },
-      { type: 'vendor' as const, category: 'walker', name: 'Paws Walker' },
-    ];
-    const out = applyHubCategoryFilter(rows, 'walker', '');
-    // Empty-category row must be excluded in strict hub-browse mode.
-    expect(out.every((r) => r.category !== '')).toBe(true);
-    expect(out).toHaveLength(1);
-    expect(out[0].name).toBe('Paws Walker');
-  });
-
-  it('keyword mode cannot rescue a null-coord walker whose name gives no walk hint and category is wrong vertical', () => {
-    // A vendor with a non-walker category (e.g. from an unrelated vertical) must be
-    // excluded even in keyword mode — the client filter blocks wrong-vertical rows.
-    // Backend null-coord exclusion runs first; this client filter provides a second guard.
-    const rows = [{ type: 'vendor' as const, category: 'veterinary', name: 'ABC Services' }];
-    expect(applyHubCategoryFilter(rows, 'walker', 'dog walker')).toHaveLength(0);
   });
 });

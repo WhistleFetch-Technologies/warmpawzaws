@@ -228,6 +228,12 @@ export type BuildDiscoveryVendorExistsOpts = {
   isAtCenter?: boolean;
   /** Listing discover-services: include training category_id OR branch. */
   includeTrainingCategoryIdOr?: boolean;
+  /**
+   * When true (hub chip browse with no keyword), suppress the broad walkerCategoryDiscoveryOr
+   * branch that lets vet/grooming/other-role vendors appear via walk-named services.
+   * Only vendors whose category/role actually matches the walker hub are returned.
+   */
+  strictHubBrowse?: boolean;
 };
 
 export type BuildDiscoveryVendorExistsResult = {
@@ -304,6 +310,7 @@ export async function buildDiscoveryVendorExistsSql(
 
   const walkerCategoryDiscoveryOr =
     !sittingDiscoveryRelaxed &&
+    !opts.strictHubBrowse &&
     catTextExact.some((c) => ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c))
       ? ` OR (
               ${vsAlias}.service_style = 'at_home'

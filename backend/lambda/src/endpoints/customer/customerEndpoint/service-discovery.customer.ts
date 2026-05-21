@@ -2595,6 +2595,25 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 AND COALESCE(vs.is_custom_service, false) = false
               )`
             : '';
+        // Mirror buildDiscoveryVendorExistsSql.sittingExcludeNonSittingSql so the sitter
+        // service fetch never returns walking / vet / grooming / training etc. services that
+        // the relaxed sitting bypass would otherwise allow through. Previously this constant
+        // was referenced below without being defined → ReferenceError → 500 on /discover-services
+        // for the sitting hub.
+        const sittingExcludeNonSittingSql = sittingDiscoveryRelaxed
+          ? `
+              AND NOT (
+                LOWER(TRIM(COALESCE(vs.category, ''))) = ANY(ARRAY[
+                  'walking','walker','dog_walker','dog walking','dog walker','dog_walking',
+                  'vet','veterinary','veterinarian','vet care','vet_care',
+                  'grooming','training','diagnostics','behaviourist','nutrition','daycare','transport'
+                ]::text[])
+                OR (
+                  LOWER(TRIM(COALESCE(vs.category, ''))) = 'boarding'
+                  AND COALESCE(vs.is_custom_service, false) = true
+                )
+              )`
+          : '';
         const sittingRelaxedFetchCategorySql =
           sitterRoleBypass && sittingDiscoveryRelaxed && (catTextExact.length + catUUIDs.length > 0)
             ? `
