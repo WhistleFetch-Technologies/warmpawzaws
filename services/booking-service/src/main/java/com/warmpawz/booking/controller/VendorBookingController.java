@@ -102,8 +102,9 @@ public class VendorBookingController {
     @Operation(summary = "Confirm a pending booking")
     public ResponseEntity<CommonResponse<BookingResponse>> confirm(
             @PathVariable UUID bookingId,
-            @RequestHeader("X-Vendor-Id") UUID vendorId
+            @AuthenticationPrincipal Jwt jwt
     ) {
+        UUID vendorId = JwtPrincipalUtil.extractUuid(jwt);
         BookingResponse response = bookingService.vendorConfirmBooking(bookingId, vendorId);
         return ResponseEntity.ok(CommonResponse.success(response, "Booking confirmed"));
     }
@@ -112,8 +113,9 @@ public class VendorBookingController {
     @Operation(summary = "Accept a pending booking")
     public ResponseEntity<CommonResponse<BookingResponse>> accept(
             @PathVariable UUID bookingId,
-            @RequestHeader("X-Vendor-Id") UUID vendorId
+            @AuthenticationPrincipal Jwt jwt
     ) {
+        UUID vendorId = JwtPrincipalUtil.extractUuid(jwt);
         BookingResponse response = bookingService.vendorAcceptBooking(bookingId, vendorId);
         return ResponseEntity.ok(CommonResponse.success(response, "Booking accepted"));
     }
@@ -122,9 +124,10 @@ public class VendorBookingController {
     @Operation(summary = "Reject a pending booking")
     public ResponseEntity<CommonResponse<BookingResponse>> reject(
             @PathVariable UUID bookingId,
-            @RequestHeader("X-Vendor-Id") UUID vendorId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestBody(required = false) Map<String, String> body
     ) {
+        UUID vendorId = JwtPrincipalUtil.extractUuid(jwt);
         String reason = body != null ? body.get("reason") : null;
         BookingResponse response = bookingService.vendorRejectBooking(bookingId, vendorId, reason);
         return ResponseEntity.ok(CommonResponse.success(response, "Booking rejected"));
@@ -134,9 +137,10 @@ public class VendorBookingController {
     @Operation(summary = "Cancel a booking (vendor)")
     public ResponseEntity<CommonResponse<BookingResponse>> cancel(
             @PathVariable UUID bookingId,
-            @RequestHeader("X-Vendor-Id") UUID vendorId,
+            @AuthenticationPrincipal Jwt jwt,
             @Valid @RequestBody VendorCancelBookingRequest request
     ) {
+        UUID vendorId = JwtPrincipalUtil.extractUuid(jwt);
         BookingResponse response = bookingService.vendorCancelBooking(bookingId, vendorId, request);
         return ResponseEntity.ok(CommonResponse.success(response, "Booking cancelled"));
     }
@@ -145,9 +149,10 @@ public class VendorBookingController {
     @Operation(summary = "Decline a pending booking")
     public ResponseEntity<CommonResponse<BookingResponse>> decline(
             @PathVariable UUID bookingId,
-            @RequestHeader("X-Vendor-Id") UUID vendorId,
+            @AuthenticationPrincipal Jwt jwt,
             @RequestBody(required = false) Map<String, String> body
     ) {
+        UUID vendorId = JwtPrincipalUtil.extractUuid(jwt);
         String reason = body != null ? body.get("reason") : null;
         BookingResponse response = bookingService.vendorDeclineBooking(bookingId, vendorId, reason);
         return ResponseEntity.ok(CommonResponse.success(response, "Booking declined"));

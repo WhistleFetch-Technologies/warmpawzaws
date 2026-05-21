@@ -1,11 +1,10 @@
 package com.warmpawz.booking.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sns.SnsClient;
 
 import java.math.BigDecimal;
@@ -15,7 +14,11 @@ import java.util.UUID;
 
 @Component
 @Slf4j
+@RequiredArgsConstructor
 public class SnsEventPublisher {
+
+    private final SnsClient snsClient;
+    private final ObjectMapper objectMapper;
 
     @Value("${app.sns.enabled:false}")
     private boolean snsEnabled;
@@ -25,12 +28,6 @@ public class SnsEventPublisher {
 
     @Value("${app.sns.booking-status-updated-topic-arn:}")
     private String bookingStatusUpdatedTopicArn;
-
-    @Value("${app.sns.region:ap-south-1}")
-    private String region;
-
-    private final ObjectMapper objectMapper =
-            new ObjectMapper().registerModule(new JavaTimeModule());
 
     public void publishBookingCreated(UUID bookingId, UUID customerId,
             UUID vendorId, String status, BigDecimal totalAmount) {
@@ -54,9 +51,6 @@ public class SnsEventPublisher {
                     )
             );
             String message = objectMapper.writeValueAsString(envelope);
-            SnsClient snsClient = SnsClient.builder()
-                    .region(Region.of(region))
-                    .build();
             snsClient.publish(r -> r.topicArn(bookingCreatedTopicArn).message(message));
             log.info("event=sns_published type=BOOKING_CREATED bookingId={}", bookingId);
         } catch (Exception ex) {
@@ -87,9 +81,6 @@ public class SnsEventPublisher {
                     )
             );
             String message = objectMapper.writeValueAsString(envelope);
-            SnsClient snsClient = SnsClient.builder()
-                    .region(Region.of(region))
-                    .build();
             snsClient.publish(r -> r.topicArn(bookingStatusUpdatedTopicArn).message(message));
             log.info("event=sns_published type=BOOKING_STATUS_UPDATED bookingId={} {}->{}",
                     bookingId, fromStatus, toStatus);

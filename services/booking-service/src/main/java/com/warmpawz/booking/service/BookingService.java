@@ -10,6 +10,7 @@ import com.warmpawz.booking.dto.request.VendorCancelBookingRequest;
 import com.warmpawz.booking.dto.request.VerifyOtpRequest;
 import com.warmpawz.booking.dto.response.AvailableSlotResponse;
 import com.warmpawz.booking.dto.response.BookingResponse;
+import com.warmpawz.booking.dto.response.CancelBookingResult;
 import com.warmpawz.booking.dto.response.OtpResponse;
 import com.warmpawz.booking.dto.response.RefundPreviewResponse;
 import com.warmpawz.booking.dto.response.ReschedulePolicyResponse;
@@ -38,9 +39,9 @@ public interface BookingService {
 
     BookingResponse updateBookingStatusForVendor(UUID bookingId, UUID vendorId, UpdateBookingStatusRequest request);
 
-    BookingResponse cancelBooking(UUID bookingId, CancelBookingRequest request);
+    CancelBookingResult cancelBooking(UUID bookingId, UUID customerId, CancelBookingRequest request);
 
-    BookingResponse rescheduleBooking(UUID bookingId, RescheduleBookingRequest request);
+    BookingResponse rescheduleBooking(UUID bookingId, UUID customerId, RescheduleBookingRequest request);
 
     List<BookingResponse> getFollowUpEligibleBookings(UUID customerId);
 
@@ -60,9 +61,9 @@ public interface BookingService {
 
     BookingResponse vendorDeclineBooking(UUID bookingId, UUID vendorId, String reason);
 
-    OtpResponse generateOtp(GenerateOtpRequest request);
+    OtpResponse generateOtp(GenerateOtpRequest request, UUID principalId);
 
-    BookingResponse verifyOtp(VerifyOtpRequest request);
+    BookingResponse verifyOtp(VerifyOtpRequest request, UUID vendorId);
 
     List<AvailableSlotResponse> getAvailableSlots(UUID vendorId, LocalDate date,
                                                     String serviceStyle, Integer durationMinutes);
@@ -71,9 +72,9 @@ public interface BookingService {
 
     ReschedulePolicyResponse getReschedulePolicy(UUID bookingId);
 
-    RefundPreviewResponse previewRefund(UUID bookingId);
+    RefundPreviewResponse previewRefund(UUID bookingId, UUID customerId);
 
-    RefundPreviewResponse previewRefund(UUID bookingId, String cancelledByType);
+    RefundPreviewResponse previewRefund(UUID bookingId, UUID customerId, String cancelledByType);
 
-    BookingResponse cancelBookingWithRefund(UUID bookingId, CancelBookingRequest request);
+    CancelBookingResult cancelBookingWithRefund(UUID bookingId, UUID customerId, CancelBookingRequest request);
 }

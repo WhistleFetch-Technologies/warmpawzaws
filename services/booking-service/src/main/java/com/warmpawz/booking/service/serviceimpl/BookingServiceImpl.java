@@ -9,7 +9,9 @@ import com.warmpawz.booking.dto.request.UpdateBookingStatusRequest;
 import com.warmpawz.booking.dto.request.VendorCancelBookingRequest;
 import com.warmpawz.booking.dto.request.VerifyOtpRequest;
 import com.warmpawz.booking.dto.response.AvailableSlotResponse;
+import com.warmpawz.booking.dto.response.BookingRefundInfo;
 import com.warmpawz.booking.dto.response.BookingResponse;
+import com.warmpawz.booking.dto.response.CancelBookingResult;
 import com.warmpawz.booking.dto.response.OtpResponse;
 import com.warmpawz.booking.dto.response.RefundPreviewResponse;
 import com.warmpawz.booking.dto.response.ReschedulePolicyResponse;
@@ -23,9 +25,13 @@ import com.warmpawz.booking.mapper.BookingMapper;
 import com.warmpawz.booking.repository.BookingRepository;
 import com.warmpawz.booking.repository.BookingServiceLineRepository;
 import com.warmpawz.booking.repository.BookingStatusHistoryRepository;
+import com.warmpawz.booking.service.BookingOtpProtection;
 import com.warmpawz.booking.service.BookingService;
+import com.warmpawz.booking.service.BookingCancelRefundService;
 import com.warmpawz.booking.service.RefundCalculationService;
-import com.warmpawz.booking.service.SnsEventPublisher;
+import com.warmpawz.booking.service.BookingEventPublisher;
+import com.warmpawz.booking.util.BookingOtpServiceTypes;
+import com.warmpawz.booking.util.BookingOtpUtil;
 import com.warmpawz.booking.util.BookingTimeUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,7 +55,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 
@@ -62,8 +67,10 @@ public class BookingServiceImpl implements BookingService {
     private final BookingRepository bookingRepository;
     private final BookingStatusHistoryRepository statusHistoryRepository;
     private final BookingServiceLineRepository serviceLineRepository;
-    private final SnsEventPublisher snsEventPublisher;
+    private final BookingEventPublisher bookingEventPublisher;
     private final RefundCalculationService refundCalculationService;
+    private final BookingCancelRefundService bookingCancelRefundService;
+    private final BookingOtpProtection bookingOtpProtection;
 
     /** Allowed transitions: from-status → set of valid to-statuses */
     private static final Map<String, Set<String>> ALLOWED_TRANSITIONS = Map.of(
@@ -206,13 +213,13 @@ public class BookingServiceImpl implements BookingService {
         booking.setLatitude(request.getLatitude());
         booking.setLongitude(request.getLongitude());
         booking.setBasePrice(request.getAmount() != null ? request.getAmount() : BigDecimal.ZERO);
-        booking.setDiscountAmount(BigDecimal.ZERO);
-        booking.setTaxAmount(BigDecimal.ZERO);
         booking.setTotalAmount(payableAmount);
         booking.setDurationMinutes(effectiveDuration);
         booking.setTotalDurationMinutes(effectiveDuration);
         booking.setPackagePurchaseId(request.getPackagePurchaseId());
-        booking.setIsPackageSession(request.getPackagePurchaseId() != null);
+        if (request.getPackagePurchaseId() != null) {
+            booking.setIsPackageSession(Boolean.TRUE);
+        }
         booking.setCheckOutDate(request.getCheckOutDate());
         if (request.getCheckOutTime() != null && !request.getCheckOutTime().isBlank()) {
             booking.setCheckOutTime(BookingTimeUtil.parseBookingTime(request.getCheckOutTime()));
@@ -247,7 +254,7 @@ public class BookingServiceImpl implements BookingService {
         log.info("event=booking_created bookingId={} customerId={} vendorId={} status={}",
                 saved.getId(), saved.getCustomerId(), saved.getVendorId(), saved.getStatus());
 
-        snsEventPublisher.publishBookingCreated(
+        bookingEventPublisher.publishBookingCreatedAfterCommit(
                 saved.getId(), saved.getCustomerId(), saved.getVendorId(),
                 saved.getStatus(), saved.getTotalAmount());
 
@@ -343,7 +350,7 @@ public class BookingServiceImpl implements BookingService {
 
         log.info("event=booking_status_updated bookingId={} from={} to={}", bookingId, currentStatus, newStatus);
 
-        snsEventPublisher.publishBookingStatusUpdated(
+        bookingEventPublisher.publishBookingStatusUpdatedAfterCommit(
                 updated.getId(), currentStatus, newStatus,
                 updated.getCustomerId(), updated.getVendorId());
 
@@ -351,54 +358,20 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
-    public BookingResponse cancelBooking(UUID bookingId, CancelBookingRequest request) {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new NotFoundException("Booking not found: " + bookingId));
-
-        String currentStatus = booking.getStatus();
-        Set<String> cancellableStatuses = Set.of(
-                BookingStatus.PENDING,
-                BookingStatus.PENDING_PAYMENT,
-                BookingStatus.CONFIRMED
-        );
-        if (!cancellableStatuses.contains(currentStatus)) {
-            throw new BadRequestException("Cannot cancel a booking that is " + currentStatus);
-        }
-
-        booking.setStatus(BookingStatus.CANCELLED);
-        booking.setCancellationReason(request.getReason());
-        booking.setCancelledAt(Instant.now());
-        Booking updated = bookingRepository.save(booking);
-
-        BookingStatusHistory history = new BookingStatusHistory();
-        history.setBookingId(updated.getId());
-        history.setFromStatus(currentStatus);
-        history.setToStatus(BookingStatus.CANCELLED);
-        history.setReason(request.getReason());
-        history.setChangedBy(request.getCustomerId());
-        history.setChangedByType("customer");
-        statusHistoryRepository.save(history);
-
-        log.warn("event=booking_cancelled bookingId={} reason={}", bookingId, request.getReason());
-
-        snsEventPublisher.publishBookingStatusUpdated(
-                updated.getId(), currentStatus, BookingStatus.CANCELLED,
-                updated.getCustomerId(), updated.getVendorId());
-
-        return BookingMapper.toBookingResponse(updated);
+    public CancelBookingResult cancelBooking(UUID bookingId, UUID customerId, CancelBookingRequest request) {
+        return cancelBookingInternal(bookingId, customerId, request);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public RefundPreviewResponse previewRefund(UUID bookingId) {
-        return previewRefund(bookingId, "customer");
+    public RefundPreviewResponse previewRefund(UUID bookingId, UUID customerId) {
+        return previewRefund(bookingId, customerId, "customer");
     }
 
     @Override
     @Transactional(readOnly = true)
-    public RefundPreviewResponse previewRefund(UUID bookingId, String cancelledByType) {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new NotFoundException("Booking not found: " + bookingId));
+    public RefundPreviewResponse previewRefund(UUID bookingId, UUID customerId, String cancelledByType) {
+        Booking booking = requireCustomerBooking(bookingId, customerId);
 
         if (NON_REFUNDABLE_STATUSES.contains(booking.getStatus())) {
             throw new BadRequestException("Booking cannot be refunded");
@@ -408,13 +381,16 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
-    public BookingResponse cancelBookingWithRefund(UUID bookingId, CancelBookingRequest request) {
+    public CancelBookingResult cancelBookingWithRefund(UUID bookingId, UUID customerId, CancelBookingRequest request) {
+        return cancelBookingInternal(bookingId, customerId, request);
+    }
+
+    private CancelBookingResult cancelBookingInternal(UUID bookingId, UUID customerId, CancelBookingRequest request) {
         if (request == null) {
             request = new CancelBookingRequest();
         }
 
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new NotFoundException("Booking not found: " + bookingId));
+        Booking booking = requireCustomerBooking(bookingId, customerId);
 
         String currentStatus = booking.getStatus();
         Set<String> cancellableStatuses = Set.of(
@@ -426,7 +402,7 @@ public class BookingServiceImpl implements BookingService {
             throw new BadRequestException("Cannot cancel a booking that is " + currentStatus);
         }
 
-        RefundPreviewResponse refund = refundCalculationService.calculateRefund(booking, "customer");
+        RefundPreviewResponse refundPreview = refundCalculationService.calculateRefund(booking, "customer");
 
         booking.setStatus(BookingStatus.CANCELLED);
         booking.setCancellationReason(request.getReason());
@@ -438,43 +414,45 @@ public class BookingServiceImpl implements BookingService {
         history.setFromStatus(currentStatus);
         history.setToStatus(BookingStatus.CANCELLED);
         history.setReason(request.getReason());
-        history.setChangedBy(request.getCustomerId());
+        history.setChangedBy(customerId.toString());
         history.setChangedByType("customer");
         statusHistoryRepository.save(history);
 
-        log.info("event=booking_cancelled_with_refund bookingId={} refundAmount={} refundPercentage={}",
-                bookingId, refund.getRefundAmount(), refund.getRefundPercentage());
+        log.info("event=booking_cancelled bookingId={} reason={} refundAmount={} refundPercentage={}",
+                bookingId, request.getReason(), refundPreview.getRefundAmount(), refundPreview.getRefundPercentage());
 
-        snsEventPublisher.publishBookingStatusUpdated(
+        bookingEventPublisher.publishBookingStatusUpdatedAfterCommit(
                 updated.getId(), currentStatus, BookingStatus.CANCELLED,
                 updated.getCustomerId(), updated.getVendorId());
 
-        return BookingMapper.toBookingResponse(updated);
+        BookingRefundInfo refundInfo = bookingCancelRefundService.processRefundAfterCancel(
+                updated, customerId, request, refundPreview);
+
+        return new CancelBookingResult(BookingMapper.toBookingResponse(updated), refundInfo);
     }
 
     @Override
-    public BookingResponse rescheduleBooking(UUID bookingId, RescheduleBookingRequest request) {
-        Booking original = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new NotFoundException("Booking not found: " + bookingId));
+    public BookingResponse rescheduleBooking(UUID bookingId, UUID customerId, RescheduleBookingRequest request) {
+        Booking booking = requireCustomerBooking(bookingId, customerId);
 
-        String currentStatus = original.getStatus();
-        Set<String> reschedulableStatuses = Set.of(
-                BookingStatus.PENDING,
-                BookingStatus.PENDING_PAYMENT,
-                BookingStatus.CONFIRMED
-        );
-        if (!reschedulableStatuses.contains(currentStatus)) {
+        String currentStatus = booking.getStatus();
+        if (!RESCHEDULABLE_STATUSES.contains(currentStatus)) {
             throw new BadRequestException("Cannot reschedule a booking that is " + currentStatus);
         }
 
-        int startMinutes = parseTimeToMinutes(request.getNewTime());
-        int effectiveDuration = original.getDurationMinutes() != null ? original.getDurationMinutes() : 30;
+        String reason = request.getReason() != null && !request.getReason().isBlank()
+                ? request.getReason()
+                : "Customer reschedule request";
+
+        LocalTime newTime = BookingTimeUtil.parseBookingTime(request.getNewTime());
+        int startMinutes = BookingTimeUtil.toMinutes(newTime);
+        int effectiveDuration = booking.getDurationMinutes() != null ? booking.getDurationMinutes() : 30;
         int endMinutes = startMinutes + effectiveDuration;
 
         List<Booking> slotConflicts = bookingRepository.findOverlappingBookings(
-                original.getVendorId(),
+                booking.getVendorId(),
                 request.getNewDate(),
-                original.getStaffId(),
+                booking.getStaffId(),
                 startMinutes,
                 endMinutes
         ).stream()
@@ -485,76 +463,44 @@ public class BookingServiceImpl implements BookingService {
             throw new ConflictException("The requested time slot is already booked");
         }
 
-        original.setStatus(BookingStatus.RESCHEDULED);
-        original.setRescheduleReason(request.getReason());
-        bookingRepository.save(original);
+        LocalDate oldDate = booking.getBookingDate();
+        LocalTime oldTime = booking.getBookingTime();
 
-        BookingStatusHistory oldHistory = new BookingStatusHistory();
-        oldHistory.setBookingId(original.getId());
-        oldHistory.setFromStatus(currentStatus);
-        oldHistory.setToStatus(BookingStatus.RESCHEDULED);
-        oldHistory.setReason(request.getReason());
-        oldHistory.setChangedByType("customer");
-        statusHistoryRepository.save(oldHistory);
+        booking.setBookingDate(request.getNewDate());
+        booking.setBookingTime(newTime);
+        booking.setRescheduleReason(reason);
+        booking.setRescheduledFromBookingId(bookingId);
 
-        Booking newBooking = new Booking();
-        newBooking.setCustomerId(original.getCustomerId());
-        newBooking.setCustomerPhone(original.getCustomerPhone());
-        newBooking.setVendorId(original.getVendorId());
-        newBooking.setServiceId(original.getServiceId());
-        newBooking.setStaffId(original.getStaffId());
-        newBooking.setPetId(original.getPetId());
-        newBooking.setBookingDate(request.getNewDate());
-        newBooking.setBookingTime(BookingTimeUtil.parseBookingTime(request.getNewTime()));
-        newBooking.setStatus(BookingStatus.CONFIRMED);
-        newBooking.setServiceType(original.getServiceType());
-        newBooking.setServiceStyle(original.getServiceStyle());
-        newBooking.setAddress(original.getAddress());
-        newBooking.setAddressLine1(original.getAddressLine1());
-        newBooking.setAddressLine2(original.getAddressLine2());
-        newBooking.setCity(original.getCity());
-        newBooking.setState(original.getState());
-        newBooking.setPincode(original.getPincode());
-        newBooking.setLatitude(original.getLatitude());
-        newBooking.setLongitude(original.getLongitude());
-        newBooking.setBasePrice(original.getBasePrice());
-        newBooking.setDiscountAmount(original.getDiscountAmount());
-        newBooking.setTaxAmount(original.getTaxAmount());
-        newBooking.setTotalAmount(original.getTotalAmount());
-        newBooking.setDurationMinutes(original.getDurationMinutes());
-        newBooking.setTotalDurationMinutes(original.getTotalDurationMinutes());
-        newBooking.setPackagePurchaseId(original.getPackagePurchaseId());
-        newBooking.setIsPackageSession(original.getIsPackageSession());
-        newBooking.setFlowVariant(original.getFlowVariant());
-        newBooking.setNotes(original.getNotes());
-        newBooking.setSubscriptionId(original.getSubscriptionId());
-        newBooking.setRescheduledFromBookingId(original.getId());
-        newBooking.setRescheduleReason(request.getReason());
-        Booking savedNew = bookingRepository.save(newBooking);
-
-        List<com.warmpawz.booking.entity.BookingService> originalServiceLines =
-                serviceLineRepository.findByBookingId(original.getId());
-        for (com.warmpawz.booking.entity.BookingService line : originalServiceLines) {
-            com.warmpawz.booking.entity.BookingService copy = new com.warmpawz.booking.entity.BookingService();
-            copy.setBookingId(savedNew.getId());
-            copy.setServiceId(line.getServiceId());
-            copy.setServiceName(line.getServiceName());
-            copy.setPrice(line.getPrice());
-            copy.setDurationMinutes(line.getDurationMinutes());
-            copy.setQuantity(line.getQuantity() != null ? line.getQuantity() : 1);
-            serviceLineRepository.save(copy);
+        if (booking.getCheckOutTime() != null) {
+            booking.setCheckOutTime(newTime.plusMinutes(effectiveDuration));
         }
 
-        BookingStatusHistory newHistory = new BookingStatusHistory();
-        newHistory.setBookingId(savedNew.getId());
-        newHistory.setFromStatus(null);
-        newHistory.setToStatus(BookingStatus.CONFIRMED);
-        newHistory.setReason("Rescheduled from " + original.getId());
-        newHistory.setChangedByType("customer");
-        statusHistoryRepository.save(newHistory);
+        String noteEntry = "Rescheduled: " + reason;
+        if (booking.getNotes() == null || booking.getNotes().isBlank()) {
+            booking.setNotes(noteEntry);
+        } else {
+            booking.setNotes(booking.getNotes() + " | " + noteEntry);
+        }
 
-        log.info("event=booking_rescheduled originalId={} newId={}", original.getId(), savedNew.getId());
-        return BookingMapper.toBookingResponse(savedNew);
+        Booking updated = bookingRepository.save(booking);
+
+        BookingStatusHistory history = new BookingStatusHistory();
+        history.setBookingId(updated.getId());
+        history.setFromStatus(currentStatus);
+        history.setToStatus(currentStatus);
+        history.setReason(String.format(
+                "Rescheduled to %s %s: %s", request.getNewDate(), request.getNewTime(), reason));
+        history.setChangedBy(customerId.toString());
+        history.setChangedByType("customer");
+        statusHistoryRepository.save(history);
+
+        bookingEventPublisher.publishBookingStatusUpdatedAfterCommit(
+                updated.getId(), currentStatus, currentStatus,
+                updated.getCustomerId(), updated.getVendorId());
+
+        log.info("event=booking_rescheduled bookingId={} oldDate={} oldTime={} newDate={} newTime={}",
+                bookingId, oldDate, oldTime, request.getNewDate(), request.getNewTime());
+        return BookingMapper.toBookingResponse(updated);
     }
 
     @Override
@@ -603,7 +549,7 @@ public class BookingServiceImpl implements BookingService {
         String previousStatus = booking.getStatus();
         BookingResponse response = transitionVendorPendingBooking(
                 bookingId, vendorId, BookingStatus.CONFIRMED, "vendor_confirmed_booking");
-        snsEventPublisher.publishBookingStatusUpdated(
+        bookingEventPublisher.publishBookingStatusUpdatedAfterCommit(
                 response.getId(), previousStatus, BookingStatus.CONFIRMED,
                 response.getCustomerId(), response.getVendorId());
         return response;
@@ -650,29 +596,35 @@ public class BookingServiceImpl implements BookingService {
     }
 
     @Override
-    public OtpResponse generateOtp(GenerateOtpRequest request) {
+    public OtpResponse generateOtp(GenerateOtpRequest request, UUID principalId) {
         Booking booking = bookingRepository.findById(request.getBookingId())
                 .orElseThrow(() -> new NotFoundException("Booking not found: " + request.getBookingId()));
+        requireBookingCustomerOrVendor(booking, principalId);
 
-        if ("tele".equals(booking.getServiceStyle())
-                || (request.getServiceStyle() != null && "tele".equals(request.getServiceStyle()))) {
-            throw new BadRequestException("OTP not required for tele bookings");
+        if (BookingOtpServiceTypes.isTeleBooking(booking, request.getServiceStyle())) {
+            throw new BadRequestException("OTP not required for tele consultations");
         }
 
-        String otp = String.format("%04d", new Random().nextInt(10000));
+        if (hasActiveOtp(booking)) {
+            log.info("event=otp_retrieved bookingId={}", booking.getId());
+            return new OtpResponse(booking.getId(), "Existing OTP retrieved", booking.getOtpExpiresAt());
+        }
+
+        bookingOtpProtection.assertGenerateAllowed(booking.getId());
+        String otp = BookingOtpUtil.generateOtpCode();
         booking.setOtpCode(otp);
         booking.setOtpExpiresAt(Instant.now().plus(24, ChronoUnit.HOURS));
         booking.setOtpVerified(false);
         bookingRepository.save(booking);
+        bookingOtpProtection.recordGenerate(booking.getId());
 
         log.info("event=otp_generated bookingId={}", booking.getId());
         return new OtpResponse(booking.getId(), "OTP generated", booking.getOtpExpiresAt());
     }
 
     @Override
-    public BookingResponse verifyOtp(VerifyOtpRequest request) {
-        Booking booking = bookingRepository.findById(request.getBookingId())
-                .orElseThrow(() -> new NotFoundException("Booking not found: " + request.getBookingId()));
+    public BookingResponse verifyOtp(VerifyOtpRequest request, UUID vendorId) {
+        Booking booking = requireVendorBooking(request.getBookingId(), vendorId);
 
         if (booking.getOtpCode() == null) {
             throw new BadRequestException("No OTP generated for this booking");
@@ -680,9 +632,17 @@ public class BookingServiceImpl implements BookingService {
         if (booking.getOtpExpiresAt() != null && Instant.now().isAfter(booking.getOtpExpiresAt())) {
             throw new BadRequestException("OTP has expired");
         }
-        if (!booking.getOtpCode().equals(request.getOtp())) {
+
+        bookingOtpProtection.assertVerifyAllowed(booking.getId());
+
+        String providedOtp = request.getOtp() != null ? request.getOtp().trim() : "";
+        String expectedOtp = booking.getOtpCode().trim();
+        if (!BookingOtpUtil.constantTimeEquals(expectedOtp, providedOtp)) {
+            bookingOtpProtection.recordFailedVerify(booking.getId(), booking.getOtpExpiresAt());
             throw new BadRequestException("Invalid OTP");
         }
+
+        bookingOtpProtection.resetVerifyAttempts(booking.getId());
 
         String previousStatus = booking.getStatus();
         booking.setOtpVerified(true);
@@ -872,6 +832,11 @@ public class BookingServiceImpl implements BookingService {
         return BookingMapper.toBookingResponse(updated);
     }
 
+    private Booking requireCustomerBooking(UUID bookingId, UUID customerId) {
+        return bookingRepository.findByIdAndCustomerId(bookingId, customerId)
+                .orElseThrow(() -> new NotFoundException("Booking not found: " + bookingId));
+    }
+
     private Booking requireVendorBooking(UUID bookingId, UUID vendorId) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new NotFoundException("Booking not found: " + bookingId));
@@ -879,6 +844,22 @@ public class BookingServiceImpl implements BookingService {
             throw new NotFoundException("Booking not found: " + bookingId);
         }
         return booking;
+    }
+
+    private void requireBookingCustomerOrVendor(Booking booking, UUID principalId) {
+        boolean customer = booking.getCustomerId().equals(principalId);
+        boolean vendor = booking.getVendorId().equals(principalId);
+        if (!customer && !vendor) {
+            throw new NotFoundException("Booking not found: " + booking.getId());
+        }
+    }
+
+    private static boolean hasActiveOtp(Booking booking) {
+        if (booking.getOtpCode() == null || booking.getOtpCode().isBlank()) {
+            return false;
+        }
+        Instant expiresAt = booking.getOtpExpiresAt();
+        return expiresAt == null || Instant.now().isBefore(expiresAt);
     }
 
     private void saveVendorStatusHistory(

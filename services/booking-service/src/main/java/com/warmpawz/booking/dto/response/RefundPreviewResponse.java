@@ -19,4 +19,5 @@ public class RefundPreviewResponse {
     private String refundMethod;
     private String policy;
     private String reason;
+    private Long hoursUntil;
 }

@@ -34,7 +34,7 @@ public class RefundCalculationService {
             return new RefundPreviewResponse(
                     booking.getId(), booking.getStatus(), totalAmount,
                     totalAmount, BigDecimal.ZERO, 100, "wallet", "full",
-                    "Full refund as vendor cancelled"
+                    "Full refund as vendor cancelled", 0L
             );
         }
 
@@ -42,7 +42,7 @@ public class RefundCalculationService {
             return new RefundPreviewResponse(
                     booking.getId(), booking.getStatus(), BigDecimal.ZERO,
                     BigDecimal.ZERO, BigDecimal.ZERO, 100, "wallet", "full",
-                    "No payment made"
+                    "No payment made", 0L
             );
         }
 
@@ -56,25 +56,25 @@ public class RefundCalculationService {
             if (hoursUntilBooking > 24) {
                 return new RefundPreviewResponse(booking.getId(), booking.getStatus(),
                         totalAmount, totalAmount, BigDecimal.ZERO, 100, "wallet",
-                        "full", "Full refund — cancelled more than 24 hours before");
+                        "full", "Full refund — cancelled more than 24 hours before", hoursUntilBooking);
             } else if (hoursUntilBooking >= 12) {
                 BigDecimal refund = totalAmount.multiply(new BigDecimal("0.50"))
                         .setScale(2, RoundingMode.HALF_UP);
                 BigDecimal deduction = totalAmount.subtract(refund);
                 return new RefundPreviewResponse(booking.getId(), booking.getStatus(),
                         totalAmount, refund, deduction, 50, "wallet",
-                        "partial_50", "50% refund — cancelled 12–24 hours before");
+                        "partial_50", "50% refund — cancelled 12–24 hours before", hoursUntilBooking);
             } else {
                 return new RefundPreviewResponse(booking.getId(), booking.getStatus(),
                         totalAmount, BigDecimal.ZERO, totalAmount, 0, "wallet",
-                        "no_refund", "No refund — cancelled less than 12 hours before");
+                        "no_refund", "No refund — cancelled less than 12 hours before", hoursUntilBooking);
             }
         } catch (Exception ex) {
             log.warn("event=refund_calc_failed bookingId={} error={}",
                     booking.getId(), ex.getMessage());
             return new RefundPreviewResponse(booking.getId(), booking.getStatus(),
                     totalAmount, totalAmount, BigDecimal.ZERO, 100, "wallet",
-                    "full", "Full refund (policy calculation error — defaulting to full)");
+                    "full", "Full refund (policy calculation error — defaulting to full)", 0L);
         }
     }
 
