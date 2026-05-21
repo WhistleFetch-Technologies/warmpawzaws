@@ -1517,6 +1517,10 @@ export function CustomerHomeWrapper({
         onNavigateHome={handleBack}
         onViewBooking={handleViewBooking}
         onViewMyPackages={() => router.push('/my-packages')}
+        onViewProfile={() => {
+          setUserSidebarOpen(false);
+          router.push('/profile');
+        }}
         onNavigate={handleAccountNavigate}
       />
     ) : null;
@@ -3397,7 +3401,7 @@ export function CustomerHomeWrapper({
             setCurrentScreen('shop');
           }}
           onNavigateHome={handleBack}
-          onCheckout={() => setCurrentScreen('checkout')}
+          onCheckout={() => router.push('/checkout')}
           onContinueShopping={() => {
             setShopReturnScreen((prev) => (prev != null ? prev : currentScreen));
             setCurrentScreen('shop');
@@ -4471,7 +4475,9 @@ export function CustomerHomeWrapper({
                 ]),
               ];
             }
-            return base.length ? base : ['veterinarian', 'groomer', 'trainer'];
+            if (base.length) return base;
+            const rid = String(selectedProblem.roleId || '').trim();
+            return rid ? [rid] : ['veterinarian'];
           })(),
           category: selectedProblem.category || selectedProblem.roleId || 'general',
         }}

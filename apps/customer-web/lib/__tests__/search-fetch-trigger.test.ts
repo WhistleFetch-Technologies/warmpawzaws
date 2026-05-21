@@ -27,13 +27,23 @@ describe('search hub chip filtering', () => {
     expect(applyHubCategoryFilter(results, '', '')).toHaveLength(4);
   });
 
-  it('applies alias-aware filtering for walker', () => {
-    const filtered = applyHubCategoryFilter(results, 'walker', '');
+  // Hub-only browse (no keyword) is now pass-through: the backend already
+  // returned exactly the set discover-services returns for the same chip, so
+  // the client must NOT re-filter or it will diverge from home.
+  it('hub-only browse returns the API rows unchanged for parity with home', () => {
+    expect(applyHubCategoryFilter(results, 'walker', '')).toEqual(results);
+    expect(applyHubCategoryFilter(results, 'vet', '')).toEqual(results);
+    expect(applyHubCategoryFilter(results, 'boarding', '')).toEqual(results);
+  });
+
+  // Keyword + hub still applies alias-aware filtering.
+  it('keyword + hub applies alias-aware filtering for walker', () => {
+    const filtered = applyHubCategoryFilter(results, 'walker', 'dog walk');
     expect(filtered).toEqual([results[0]]);
   });
 
-  it('applies alias-aware filtering for vet and boarding', () => {
-    expect(applyHubCategoryFilter(results, 'vet', '')).toEqual([results[2]]);
-    expect(applyHubCategoryFilter(results, 'boarding', '')).toEqual([results[1]]);
+  it('keyword + hub applies alias-aware filtering for vet and boarding', () => {
+    expect(applyHubCategoryFilter(results, 'vet', 'pet clinic')).toEqual([results[2]]);
+    expect(applyHubCategoryFilter(results, 'boarding', 'pet daycare')).toEqual([results[1]]);
   });
 });

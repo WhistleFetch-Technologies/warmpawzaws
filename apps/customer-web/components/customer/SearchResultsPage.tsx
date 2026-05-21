@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { SearchAutocomplete } from './SearchAutocomplete';
 import { SearchFilters, FilterValues } from './SearchFilters';
 import { formatDistanceDisplay } from '@/lib/distance-display';
-import { StarRating } from './shared/StarRating';
+import { VendorRatingDisplay } from './shared/VendorRatingDisplay';
 
 export function SearchResultsPage() {
   const [query, setQuery] = useState('');
@@ -114,9 +114,15 @@ export function SearchResultsPage() {
               {data.name || data.businessName}
             </h3>
 
-            <div className="mb-2">
-              <StarRating rating={data.rating} reviewCount={data.reviewCount} />
-            </div>
+            <VendorRatingDisplay
+              row={{
+                vendorId: data.id ?? data.vendorId,
+                vendorRating: data.rating,
+                vendorReviewCount: data.reviewCount,
+              }}
+              vendorId={String(data.id ?? data.vendorId ?? '')}
+              className="mb-2"
+            />
 
             {/* Details */}
             <div className="space-y-2 mb-3">

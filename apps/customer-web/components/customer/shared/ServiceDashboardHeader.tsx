@@ -172,7 +172,16 @@ export function ServiceDashboardHeader({
   const titleRowMb = compact ? 'mb-2 md:mb-3' : 'mb-3 md:mb-4';
   const iconBox = compact ? 'h-11 w-11' : 'h-14 w-14';
   const iconInner = compact ? 'w-6 h-6' : 'w-7 h-7';
-  const statGrid = compact ? 'mt-2 grid grid-cols-3 gap-1 sm:gap-1.5' : 'mt-4 grid grid-cols-3 gap-1.5 sm:gap-2';
+  const hasStats = stats.length > 0;
+  const statColClass =
+    stats.length <= 1
+      ? 'grid-cols-1'
+      : stats.length === 2
+        ? 'grid-cols-2'
+        : 'grid-cols-3';
+  const statGrid = compact
+    ? `mt-2 grid ${statColClass} gap-1 sm:gap-1.5`
+    : `mt-4 grid ${statColClass} gap-1.5 sm:gap-2`;
   const statCard = compact
     ? 'rounded-xl border border-white/30 bg-white/20 p-1.5 text-center backdrop-blur-md sm:p-2 w-full transition-opacity hover:bg-white/25 active:opacity-90'
     : 'rounded-2xl border border-white/30 bg-white/20 p-2 text-center backdrop-blur-md sm:p-3 w-full transition-opacity hover:bg-white/25 active:opacity-90';
@@ -182,14 +191,22 @@ export function ServiceDashboardHeader({
 
   /** Extra orange padding below stats before the sheet so the curve does not cut into stat chips. */
   const innerShellClass =
-    bottomEdge === 'sheet' && stats.length > 0
+    bottomEdge === 'sheet' && hasStats
       ? compact
         ? 'pb-5 md:pb-6'
         : 'pb-6 md:pb-8'
-      : innerBottom;
+      : bottomEdge === 'sheet' && !hasStats
+        ? compact
+          ? 'pb-4 md:pb-5'
+          : 'pb-5 md:pb-6'
+        : innerBottom;
 
-  /** Tighter overlap for `compact` (pre-payment / payment) so stat chips stay clear of the sheet. */
-  const sheetOverlapClass = compact ? '-mt-2' : '-mt-4';
+  /** Tighter overlap when there are no stat chips so the sheet sits closer to the title block. */
+  const sheetOverlapClass = !hasStats
+    ? '-mt-3'
+    : compact
+      ? '-mt-2'
+      : '-mt-4';
 
   return (
     <div
@@ -286,8 +303,8 @@ export function ServiceDashboardHeader({
           </div>
         )}
 
-        {/* Stats Cards - Frosted Effect */}
-        {stats.length > 0 && (
+        {/* Stats Cards - Frosted Effect (hidden on hubs until product re-enables) */}
+        {hasStats && (
           <div className={statGrid}>
             {stats.map((stat, index) => {
               const inner = (

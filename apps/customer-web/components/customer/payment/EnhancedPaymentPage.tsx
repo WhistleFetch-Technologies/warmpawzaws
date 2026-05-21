@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
+import { buildRazorpayEcommerceCreateOrderPayload } from '@/lib/ecommerce/ecommerce-razorpay-payload';
 
 // Razorpay type declaration
 declare global {
@@ -458,15 +459,21 @@ export function EnhancedPaymentPage({
       const amountToCharge = bookingCreationDeferred
         ? (requiredUpfrontAmount ?? finalAmount)
         : finalAmount;
-      const orderRes = await apiClient.post<any>('/razorpay/create-order', {
-        bookingId: bookingCreationDeferred ? undefined : currentBookingId,
-        orderId: currentOrderId,
-        amount: amountToCharge,
-        customerId,
-        offerId: selectedBankOffer?.id,
-        type: bookingCreationDeferred ? 'booking_prepaid' : undefined,
-        vendorId: bookingCreationDeferred ? items?.[0]?.vendorId : undefined,
-      });
+      const isShopOrder = (type === 'order' || type === 'cart') && !!currentOrderId;
+      if ((type === 'order' || type === 'cart') && !currentOrderId && !bookingCreationDeferred) {
+        throw new Error('Order was not created. Please try again.');
+      }
+      const razorpayCreateOrderBody = isShopOrder
+        ? buildRazorpayEcommerceCreateOrderPayload(currentOrderId!, amountToCharge, customerId)
+        : {
+            bookingId: bookingCreationDeferred ? undefined : currentBookingId,
+            amount: amountToCharge,
+            customerId,
+            offerId: selectedBankOffer?.id,
+            type: bookingCreationDeferred ? 'booking_prepaid' : undefined,
+            vendorId: bookingCreationDeferred ? items?.[0]?.vendorId : undefined,
+          };
+      const orderRes = await apiClient.post<any>('/razorpay/create-order', razorpayCreateOrderBody);
       
       if (!orderRes.orderId) {
         throw new Error('Failed to create payment order');

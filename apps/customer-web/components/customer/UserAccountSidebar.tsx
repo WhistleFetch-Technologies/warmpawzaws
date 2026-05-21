@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from 'react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { Button } from '@/components/ui/button';
 import { 
-  Camera, Edit2, Save, X, User, Calendar, 
-  MessageSquare, Heart, Settings, ChevronRight, Package, Package2,
+  User, Calendar, Edit2,
+  Heart, ChevronRight, Package, Package2,
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   ShoppingCart, Home as HomeIcon, FileText, Shield, AlertCircle, Mail,
   Trash2, Plus, Check, Wallet, ShoppingBag,
@@ -13,18 +13,11 @@ import {
 } from 'lucide-react';
 // Uses apiClient with Cognito auth
 import { apiClient, isUatMode } from '@/lib/api-client';
-import { urlCustomerAddressesByPhone } from '@/lib/customer-service-list-urls';
-import { stripDuplicatePincodeFromState } from '@/lib/address-field-sanitize';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
-import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { EnhancedAddressAutocomplete } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
-import { validateEmail } from '@/lib/validation';
 import { PresignableImage } from '@/components/shared/PresignableImage';
-import {
-  normalizeCustomerProfileFields,
-  overlayCustomerProfileAfterSave,
-  patchCustomerProfileKeysInLocalStorage,
-} from '@/lib/normalize-customer-profile-api';
+import { normalizeCustomerProfileFields } from '@/lib/normalize-customer-profile-api';
 import {
   inferCityStateFromCommaAddress,
   mergeStreetAddressLineOnly,
@@ -466,6 +459,8 @@ interface UserAccountSidebarProps {
   onViewWallet?: () => void;
   /** Full-page `/my-packages` (same pattern as wallet). */
   onViewMyPackages?: () => void;
+  /** Canonical `/profile` page — avoids duplicate inline profile editor in this sheet. */
+  onViewProfile?: () => void;
   onNavigate?: (path: string) => void;
 }
 
@@ -477,19 +472,17 @@ export function UserAccountSidebar({
   onViewAppointments,
   onViewWallet,
   onViewMyPackages,
+  onViewProfile,
   onNavigate,
 }: UserAccountSidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeView, setActiveView] = useState<
-    'menu' | 'profile' | 'bookings' | 'cart' | 'saved' | 'addresses' | 'payments' | 'notifications' | 'help'
+    'menu' | 'bookings' | 'cart' | 'saved' | 'addresses' | 'payments' | 'notifications' | 'help'
   >('menu');
   
-  // Profile states
+  // Profile summary for header (full edit lives at /profile)
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [originalProfile, setOriginalProfile] = useState<UserProfile | null>(null);
-  const [editMode, setEditMode] = useState(false);
   const [photoPreview, setPhotoPreview] = useState<string>('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Bookings states
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -541,12 +534,12 @@ export function UserAccountSidebar({
   const [loadingNotifications, setLoadingNotifications] = useState(true);
   
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setTimeout(() => setIsOpen(true), 50);
     loadProfile();
+    loadBookings();
     try {
       const v = sessionStorage.getItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
       if (v === 'bookings') {
@@ -596,7 +589,6 @@ export function UserAccountSidebar({
         const houseNo = String(raw.houseNo ?? raw.house_no ?? '').trim();
         const floor = String(raw.floor ?? '').trim();
         const { city: ic, state: ist } = inferCityStateFromCommaAddress(addressLine);
-        const rawState = (ist ?? base.state ?? '').trim();
         const next: UserProfile = {
           firstName: base.firstName,
           lastName: base.lastName,
@@ -607,131 +599,17 @@ export function UserAccountSidebar({
           houseNo,
           floor,
           city: ic ?? base.city,
-          state: stripDuplicatePincodeFromState(rawState, base.pincode),
+          state: ist ?? base.state,
           photo: base.photo,
         };
         setProfile(next);
         setPhotoPreview(base.photo);
-        setOriginalProfile({ ...next });
       }
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
       setLoading(false);
     }
-  };
-
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && profile) {
-      // Check file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Image size should be less than 5MB');
-        return;
-      }
-      
-      // Show preview immediately
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-      
-      // Upload to S3
-      try {
-        setSaving(true);
-        const { uploadCustomerPhoto } = await import('@/lib/photo-upload');
-        const result = await uploadCustomerPhoto(file, phone);
-        
-        if (result.success && result.publicUrl) {
-          setProfile({ ...profile, photo: result.publicUrl });
-          console.log('✅ Customer photo uploaded to S3:', result.publicUrl);
-        } else {
-          console.error('Failed to upload photo:', result.error);
-          // Fallback to base64 if S3 upload fails
-          const base64Reader = new FileReader();
-          base64Reader.onloadend = () => {
-            setProfile({ ...profile, photo: base64Reader.result as string });
-          };
-          base64Reader.readAsDataURL(file);
-        }
-      } catch (error) {
-        console.error('Error uploading photo to S3:', error);
-        // Fallback to base64
-        const base64Reader = new FileReader();
-        base64Reader.onloadend = () => {
-          setProfile({ ...profile, photo: base64Reader.result as string });
-        };
-        base64Reader.readAsDataURL(file);
-      } finally {
-        setSaving(false);
-      }
-    }
-  };
-
-  const handleSaveProfile = async () => {
-    if (!profile) return;
-
-    if (!profile.firstName || !profile.lastName || !profile.email || !profile.address || !profile.pincode) {
-      alert('Please fill in all required fields');
-      return;
-    }
-
-    if (!profile.houseNo?.trim()) {
-      alert('Please enter House No / Flat No');
-      return;
-    }
-
-    if (!validateEmail(profile.email)) {
-      alert('Please enter a valid email address');
-      return;
-    }
-
-    if (!/^\d{6}$/.test(profile.pincode)) {
-      alert('Please enter a valid 6-digit pincode');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const addr = profile.address.trim();
-      const { city: inferredCity, state: inferredState } = inferCityStateFromCommaAddress(addr);
-      const cityResolved = (profile.city?.trim() || inferredCity || '').trim();
-      const stateResolved = (profile.state?.trim() || inferredState || '').trim();
-      const payload: UserProfile = {
-        ...profile,
-        address: addr,
-        city: cityResolved || profile.city,
-        state: stateResolved || profile.state,
-        houseNo: profile.houseNo.trim(),
-        floor: (profile.floor || '').trim(),
-      };
-      await apiClient.post(`/customer/profile?phone=${encodeURIComponent(phone)}`, { phone: phone, profile: payload });
-      patchCustomerProfileKeysInLocalStorage({
-        pincode: payload.pincode,
-        address: payload.address,
-        city: payload.city,
-        state: payload.state,
-      });
-      alert('✅ Profile updated successfully!');
-      await loadProfile();
-      setProfile((prev) => overlayCustomerProfileAfterSave(prev, payload));
-      setOriginalProfile((prev) => overlayCustomerProfileAfterSave(prev, payload));
-      setEditMode(false);
-    } catch (error: any) {
-      console.error('Error saving profile:', error);
-      alert(`❌ Error saving profile: ${error?.message || 'Network error. Please try again.'}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleCancelEdit = () => {
-    if (originalProfile) {
-      setProfile(originalProfile);
-      setPhotoPreview(originalProfile.photo || '');
-    }
-    setEditMode(false);
   };
 
   const handleLogout = () => {
@@ -839,7 +717,7 @@ export function UserAccountSidebar({
     try {
       setLoadingAddresses(true);
       const result = await apiClient.get<{ addresses?: Address[] }>(
-        urlCustomerAddressesByPhone(phone)
+        `/customer/addresses?phone=${encodeURIComponent(phone)}`
       );
       setAddresses(result.addresses || []);
     } catch (error) {
@@ -1180,7 +1058,6 @@ export function UserAccountSidebar({
     }
     if (activeView !== 'menu') {
       setActiveView('menu');
-      setEditMode(false);
       setShowAddressForm(false);
       setShowPaymentForm(false);
       setEditingAddress(null);
@@ -1212,7 +1089,13 @@ export function UserAccountSidebar({
   const completedBookings = bookings.filter(b => b.status === 'completed');
 
   const menuItems = [
-    { icon: User, label: 'My Profile', color: 'from-blue-100 to-blue-200 text-blue-600', view: 'profile' as const },
+    {
+      icon: User,
+      label: 'My Profile',
+      color: 'from-blue-100 to-blue-200 text-blue-600',
+      action: 'profile' as const,
+      isExternal: true,
+    },
     {
       icon: Package2,
       label: 'My packages',
@@ -1295,7 +1178,10 @@ export function UserAccountSidebar({
                   onClick={() => {
                     if (isComingSoon) return;
                     if (item.isExternal) {
-                      if (item.action === 'appointments' && onViewAppointments) {
+                      if (item.action === 'profile') {
+                        if (onViewProfile) onViewProfile();
+                        handleClose();
+                      } else if (item.action === 'appointments' && onViewAppointments) {
                         onViewAppointments();
                         handleClose();
                       } else if (item.action === 'my-packages' && onViewMyPackages) {
@@ -1363,271 +1249,6 @@ export function UserAccountSidebar({
                 </div>
                 <ChevronRight className="w-5 h-5 text-red-400" />
               </button>
-            </div>
-          )}
-
-          {/* Profile View */}
-          {activeView === 'profile' && (
-            <div className="p-5 pb-32">
-              <h3 className="text-2xl font-bold text-gray-800 mb-6">My Profile</h3>
-              
-              {loading ? (
-                <div className="text-center py-20">
-                  <div className="w-14 h-14 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto"></div>
-                </div>
-              ) : !profile ? (
-                <p className="text-center text-gray-600 py-20">Profile not found</p>
-              ) : (
-                <>
-                  {/* Edit/Save Buttons */}
-                  <div className="flex justify-end mb-6">
-                    {editMode ? (
-                      <div className="flex gap-3 w-full">
-                        <Button
-                          onClick={handleCancelEdit}
-                          variant="outline"
-                          className="flex-1 h-12 gap-2"
-                        >
-                          <X className="w-5 h-5" />
-                          Cancel
-                        </Button>
-                        <Button
-                          onClick={handleSaveProfile}
-                          disabled={saving}
-                          className="flex-1 h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white gap-2"
-                        >
-                          {saving ? (
-                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          ) : (
-                            <Save className="w-5 h-5" />
-                          )}
-                          Save
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button
-                        onClick={() => setEditMode(true)}
-                        variant="outline"
-                        className="h-12 gap-2 px-6"
-                      >
-                        <Edit2 className="w-5 h-5" />
-                        Edit Profile
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Photo */}
-                  <div className="flex flex-col items-center mb-10">
-                    <div className="relative">
-                      <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-200 border-4 border-white shadow-lg">
-                        {photoPreview ? (
-                          <PresignableImage src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <User className="w-16 h-16 text-gray-400" />
-                          </div>
-                        )}
-                      </div>
-                      {editMode && (
-                        <>
-                          <button
-                            onClick={() => fileInputRef.current?.click()}
-                            className="absolute bottom-0 right-0 w-12 h-12 bg-[#FF8C42] rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform"
-                          >
-                            <Camera className="w-6 h-6 text-white" />
-                          </button>
-                          <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept="image/*"
-                            onChange={handlePhotoUpload}
-                            className="hidden"
-                          />
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Profile Fields */}
-                  <div className="space-y-5">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-2.5">First Name</label>
-                        {editMode ? (
-                          <input
-                            type="text"
-                            value={profile.firstName}
-                            onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
-                            className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
-                          />
-                        ) : (
-                          <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.firstName || '-'}</p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-2.5">Last Name</label>
-                        {editMode ? (
-                          <input
-                            type="text"
-                            value={profile.lastName}
-                            onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
-                            className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
-                          />
-                        ) : (
-                          <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.lastName || '-'}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-2.5">Phone Number</label>
-                      <p className="text-black font-medium px-4 py-3.5 bg-gray-100 rounded-xl">{profile.phone}</p>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-2.5">Email</label>
-                      {editMode ? (
-                        <input
-                          type="email"
-                          value={profile.email}
-                          onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
-                        />
-                      ) : (
-                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.email || '-'}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-2.5">Address</label>
-                      {editMode ? (
-                        <>
-                          <EnhancedAddressAutocomplete
-                            value={profile.address}
-                            onChange={(address: string, components?: AddressComponents) => {
-                              setProfile((prev) => {
-                                const updated: UserProfile = { ...prev, address };
-                                if (components?.pincode) {
-                                  updated.pincode = components.pincode;
-                                }
-                                if (components?.city) {
-                                  updated.city = components.city;
-                                }
-                                const pin = updated.pincode;
-                                if (components?.state) {
-                                  updated.state = stripDuplicatePincodeFromState(components.state, pin);
-                                }
-                                return updated;
-                              });
-                            }}
-                            placeholder="Search address, landmark, city..."
-                            className="w-full"
-                            required
-                          />
-                          <p className="text-xs text-gray-500 mt-1.5">
-                            Type to search for your address, landmark or area
-                          </p>
-                        </>
-                      ) : (
-                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl whitespace-pre-wrap">
-                          {profile.address || '-'}
-                        </p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2.5">
-                        House No / Flat No <span className="text-red-500">*</span>
-                      </label>
-                      {editMode ? (
-                        <input
-                          type="text"
-                          value={profile.houseNo}
-                          onChange={(e) => setProfile({ ...profile, houseNo: e.target.value })}
-                          placeholder="e.g., A-101, Flat 12B"
-                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
-                        />
-                      ) : (
-                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
-                          {profile.houseNo?.trim() || '—'}
-                        </p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2.5">Floor</label>
-                      {editMode ? (
-                        <input
-                          type="text"
-                          value={profile.floor}
-                          onChange={(e) => setProfile({ ...profile, floor: e.target.value })}
-                          placeholder="e.g., 1st Floor"
-                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
-                        />
-                      ) : (
-                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
-                          {profile.floor?.trim() || '—'}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-2.5">City</label>
-                        {editMode ? (
-                          <input
-                            type="text"
-                            value={profile.city || ''}
-                            onChange={(e) => setProfile({ ...profile, city: e.target.value })}
-                            placeholder="City"
-                            className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
-                          />
-                        ) : (
-                          <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
-                            {profile.city?.trim() || '—'}
-                          </p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-2.5">State</label>
-                        {editMode ? (
-                          <input
-                            type="text"
-                            value={profile.state || ''}
-                            onChange={(e) => setProfile({ ...profile, state: e.target.value })}
-                            placeholder="State"
-                            className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
-                          />
-                        ) : (
-                          <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">
-                            {profile.state?.trim() || '—'}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 mb-2.5">Pincode</label>
-                      {editMode ? (
-                        <input
-                          type="text"
-                          value={profile.pincode}
-                          onChange={(e) =>
-                            setProfile({
-                              ...profile,
-                              pincode: e.target.value.replace(/\D/g, '').slice(0, 6),
-                            })
-                          }
-                          maxLength={6}
-                          className="w-full px-4 py-3.5 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
-                        />
-                      ) : (
-                        <p className="text-black font-medium px-4 py-3.5 bg-gray-50 rounded-xl">{profile.pincode || '-'}</p>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
             </div>
           )}
 
@@ -2498,7 +2119,7 @@ function AddressForm({ address, onSave, onCancel }: {
     phone: address?.phone || '',
     addressLine1: address?.addressLine1 || '',
     city: address?.city || '',
-    state: stripDuplicatePincodeFromState(address?.state, address?.pincode) || '',
+    state: address?.state || '',
     pincode: address?.pincode || '',
     houseNo: address?.houseNo || '',
     floor: address?.floor || '',
@@ -2565,7 +2186,7 @@ function AddressForm({ address, onSave, onCancel }: {
               ...prev,
               addressLine1: street.trim() || locality,
               city: city,
-              state: stripDuplicatePincodeFromState(state, pincode),
+              state: state,
               pincode: pincode
             }));
 
@@ -2690,24 +2311,25 @@ function AddressForm({ address, onSave, onCancel }: {
         <EnhancedAddressAutocomplete
           value={formData.addressLine1}
           onChange={(address: string, components?: AddressComponents) => {
-            setFormData((prev) => {
-              const next = { ...prev, addressLine1: address };
-              if (!components) return next;
-              if (components.city && !prev.city) {
-                next.city = components.city;
+            setFormData(prev => ({ ...prev, addressLine1: address }));
+            
+            // Auto-populate city, state, pincode from Google Maps
+            if (components) {
+              const updates: any = {};
+              if (components.city && !formData.city) {
+                updates.city = components.city;
               }
-              if (components.state && !prev.state) {
-                next.state = components.state;
+              if (components.state && !formData.state) {
+                updates.state = components.state;
               }
-              if (components.pincode && !prev.pincode) {
-                next.pincode = components.pincode;
+              if (components.pincode && !formData.pincode) {
+                updates.pincode = components.pincode;
               }
-              const pin = next.pincode || components.pincode;
-              if (next.state && pin) {
-                next.state = stripDuplicatePincodeFromState(next.state, pin);
+
+              if (Object.keys(updates).length > 0) {
+                setFormData(prev => ({ ...prev, ...updates }));
               }
-              return next;
-            });
+            }
           }}
           placeholder="Search address, landmark, city..."
           className="w-full"

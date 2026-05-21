@@ -88,8 +88,10 @@ else
 fi
 RESOLVED_API_BASE_URL="${RESOLVED_API_BASE_URL%/}"
 
-# Customer marketplace toggle (default off). Resolve here so the build picks it
-# up from the env, and the deploy-time runtime-config.js stays consistent.
+# Customer marketplace toggle (shop / cart / wishlist / shop orders / checkout).
+# Hard-off everywhere until launch — both dev and prod default to disabled so the
+# customer-facing app shows "Coming Soon" surfaces. Opt in for an internal beta by
+# exporting CUSTOMER_ECOMMERCE_ENABLED=true before running the deploy script.
 CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-false}"
 if [ "$CEE_RAW" = "true" ] || [ "$CEE_RAW" = "1" ]; then
   CEE_JS="true"

@@ -25,12 +25,14 @@ import {
 } from '@/lib/vendor-package-purchase-nav';
 import { toast } from 'sonner';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { pickProviderDistanceKm } from '@/lib/distance-display';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
-import { StarRating } from '../shared/StarRating';
+import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
+import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
 
 interface ClinicListViewProps {
   phone: string;
@@ -176,12 +178,13 @@ function mapByStyleProvider(p: any): ClinicProvider | null {
     p.vendorLocation?.address ||
     [p.city, p.pincode].filter(Boolean).join(', ') ||
     'Location available on booking';
+  const ratingFields = applyResolvedRatingToStoredFields({ ...p, vendorId: id, id }, id);
   return {
     id,
     name: cleanProviderName(p.name || p.vendorName || p.businessName || 'Veterinary Clinic'),
     address,
-    rating: Number(p.rating ?? 0) || 0,
-    review_count: Number(p.reviewCount ?? p.review_count ?? 0) || 0,
+    rating: ratingFields.rating,
+    review_count: ratingFields.review_count,
     distanceKm: (() => {
       if (p.distance != null && p.distance !== '') {
         const n = Number(p.distance);
@@ -319,11 +322,13 @@ export function ClinicListView({
             service.address ||
             `${service.city || ''}${service.city ? ', ' : ''}${service.pincode || ''}`.trim() ||
             'Location available on booking',
-          rating: parseFloat(service.vendorRating || service.rating || service.avgRating || '0') || 0,
-          review_count: parseInt(
-            String(service.vendorReviewCount || service.reviewsCount || service.review_count || '0'),
-            10
-          ),
+          ...(() => {
+            const rf = applyResolvedRatingToStoredFields(
+              { ...service, vendorId, vendor_id: vendorId },
+              vendorId
+            );
+            return { rating: rf.rating, review_count: rf.review_count };
+          })(),
           distanceKm: (() => {
             if (service.distance != null) {
               const n = Number(service.distance);
@@ -409,8 +414,7 @@ export function ClinicListView({
                     v.address ||
                     `${v.city || ''}${v.city ? ', ' : ''}${v.pincode || ''}`.trim() ||
                     'Location available on booking',
-                  rating: parseFloat(v.rating || v.avgRating || '0') || 0,
-                  review_count: parseInt(String(v.reviewCount || v.review_count || '0'), 10),
+                  ...applyResolvedRatingToStoredFields({ ...v, vendorId: id, id }, id),
                   distanceKm: null,
                   timing: v.timing || v.businessHours || '9 AM - 8 PM',
                   photo: v.photo || v.businessPhoto || v.vendorPhoto,
@@ -546,11 +550,7 @@ export function ClinicListView({
     return Math.min(...c.services.map((s) => s.price));
   };
 
-  const dashboardStats = [
-    { value: String(filteredClinics.length), label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
-    { value: '1K+', label: 'Bookings' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   return (
     <div className="mx-auto flex min-h-screen min-h-[100dvh] w-full max-w-customer flex-col bg-gray-50">
@@ -680,9 +680,16 @@ export function ClinicListView({
                           </div>
                         )}
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <StarRating
-                            rating={clinic.rating}
-                            reviewCount={clinic.review_count}
+                          <VendorRatingDisplay
+                            row={{
+                              vendorId: clinic.id,
+                              id: clinic.id,
+                              rating: clinic.rating,
+                              vendorRating: clinic.rating,
+                              review_count: clinic.review_count,
+                              vendorReviewCount: clinic.review_count,
+                            }}
+                            vendorId={String(clinic.id ?? '')}
                             textClassName="text-xs text-gray-500"
                           />
                           {clinic.distanceKm != null && (

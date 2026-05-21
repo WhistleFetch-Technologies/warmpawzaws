@@ -249,19 +249,13 @@ export function ResortBoardingBookingEnhanced(props: ResortBoardingBookingEnhanc
     : 0;
   const totalAmount = calculateTotal();
 
-  const resortReviewStats = [
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    { value: '5★', label: 'Stay' },
-    { value: '24/7', label: 'Care' },
-  ];
-
   if (showReview) {
     return (
       <PrePaymentBookingReview
         title="Review Booking"
         subtitle="Confirm your reservation"
         headerIcon={Home}
-        stats={resortReviewStats}
+        stats={[]}
         headerColor="bg-gradient-to-r from-orange-500 to-orange-600"
         onBack={() => setShowReview(false)}
         lead={

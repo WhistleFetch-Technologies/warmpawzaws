@@ -398,10 +398,31 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
-      // Calculate amounts
-      const shippingAmount = subtotal > 499 ? 0 : 49;
-      const taxAmount = subtotal * 0.18;
-      const totalAmount = subtotal + shippingAmount;
+      const bodyShipping =
+        orderData.shippingFee ?? orderData.shipping_fee ?? orderData.shipping_amount;
+      const bodyTax = orderData.taxAmount ?? orderData.tax_amount;
+      const bodyDiscount = orderData.discountAmount ?? orderData.discount_amount ?? 0;
+      const bodyTotal = orderData.totalAmount ?? orderData.total_amount;
+
+      const shippingAmount =
+        bodyShipping != null && Number.isFinite(Number(bodyShipping))
+          ? Number(bodyShipping)
+          : subtotal > 499
+            ? 0
+            : 49;
+      const taxAmount =
+        bodyTax != null && Number.isFinite(Number(bodyTax)) && Number(bodyTax) >= 0
+          ? Number(bodyTax)
+          : subtotal * 0.18;
+      const discountAmount =
+        bodyDiscount != null && Number.isFinite(Number(bodyDiscount)) && Number(bodyDiscount) >= 0
+          ? Number(bodyDiscount)
+          : 0;
+      const recomputedTotal = subtotal + shippingAmount + taxAmount - discountAmount;
+      const totalAmount =
+        bodyTotal != null && Number.isFinite(Number(bodyTotal)) && Number(bodyTotal) > 0
+          ? Number(bodyTotal)
+          : recomputedTotal;
 
       const order = {
         id: orderId,
@@ -414,7 +435,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         subtotal: subtotal,
         shipping_amount: shippingAmount,
         tax_amount: taxAmount,
-        discount_amount: 0,
+        discount_amount: discountAmount,
         total_amount: totalAmount,
         shipping_address: shippingAddress.line1 || '',
         shipping_city: shippingAddress.city || '',
@@ -427,6 +448,16 @@ export function registerEcommerceEndpoints(app: Hono) {
 
       try {
         await insert('orders', order);
+        for (const item of orderItems) {
+          await insert('order_items', {
+            order_id: orderId,
+            product_id: item.product_id,
+            name: item.product_name || 'Product',
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            total_price: item.total,
+          });
+        }
       } catch (e: any) {
         // Handle table not existing or other errors
         if (e.message?.includes('relation "orders" does not exist') || e.code === '42P01') {

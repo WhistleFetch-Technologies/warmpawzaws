@@ -490,11 +490,7 @@ export function SunsetBookingRouter({
     );
   };
 
-  const sunsetPrePaymentStats = [
-    { value: '200+', label: 'Families' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    { value: 'Trusted', label: 'Care' },
-  ];
+  const sunsetPrePaymentStats: Array<{ value: string; label: string }> = [];
 
   return (
     <div className="min-h-screen bg-white max-w-md mx-auto">

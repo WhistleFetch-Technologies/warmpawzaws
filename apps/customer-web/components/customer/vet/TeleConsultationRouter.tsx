@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
 import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { InstantTeleQueue } from '../InstantTele/InstantTeleQueue';
 
@@ -113,11 +114,7 @@ interface ModeSelectionProps {
 
 function ModeSelection({ onSelectScheduled, onSelectInstant, onBack }: ModeSelectionProps) {
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: '24/7', label: 'Available', icon: <Clock className="w-4 h-4" /> },
-    { value: '<5min', label: 'Avg Wait' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -243,11 +240,7 @@ function InstantVendorList({ vendors, loading, onSelectVendor, onBack }: Instant
     )
     : vendors;
 
-  const dashboardStats = [
-    { value: vendors.length.toString(), label: 'Available now' },
-    { value: '<5min', label: 'Connect' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   return (
     <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
@@ -336,11 +329,7 @@ interface InstantServiceSelectionProps {
 }
 
 function InstantServiceSelection({ phone, services, loading, onSelectService, onBack }: InstantServiceSelectionProps) {
-  const dashboardStats = [
-    { value: '24/7', label: 'Available', icon: <Clock className="w-4 h-4" /> },
-    { value: `${services.length}`, label: 'Services' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   return (
     <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
@@ -433,11 +422,7 @@ interface InstantPetSelectionProps {
 }
 
 function InstantPetSelection({ phone, selectedService, pets, loading, onSelectPet, onAddPet, onBack }: InstantPetSelectionProps) {
-  const dashboardStats = [
-    { value: '24/7', label: 'Available', icon: <Clock className="w-4 h-4" /> },
-    { value: `₹${selectedService.price}`, label: 'Price' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   return (
     <div className="min-h-screen bg-gray-50 max-w-customer mx-auto">
@@ -700,10 +685,7 @@ function CallingVendorScreen({
         serviceSubtitle={`${vendorName} - ${serviceName}`}
         serviceIcon={Phone}
         iconColor="text-white"
-        stats={[
-          { value: `₹${servicePrice}`, label: 'Price' },
-          { value: formatTime(elapsedSeconds), label: 'Elapsed' },
-        ]}
+        stats={EMPTY_SERVICE_HEADER_STATS}
         onBack={onCancel}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
@@ -1259,10 +1241,7 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
             serviceSubtitle={`${selectedInstantVendor.vendorName} - ${selectedService.name}`}
             serviceIcon={Clock}
             iconColor="text-white"
-            stats={[
-              { value: `₹${selectedService.price}`, label: 'Price' },
-              { value: `${selectedService.duration}m`, label: 'Duration' },
-            ]}
+            stats={EMPTY_SERVICE_HEADER_STATS}
             onBack={handleBack}
             showBackButton={true}
             headerColor="bg-[#FF8C42]"

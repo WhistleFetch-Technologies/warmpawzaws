@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { getRoleConfig, RoleId } from './roleConfig';
 import { ServiceDashboardHeader, StepInfo } from './ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { formatPriceWithSymbol, catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { safeNumber } from '@/lib/validation';
@@ -877,15 +878,7 @@ export function UniversalBookingRouter({
   const headerInfo = getHeaderInfo();
   const HeaderIcon = headerInfo.icon;
 
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = useMemo(
-    () => [
-      { value: providerStatValue, label: providerStatLabel },
-      { value: '1K+', label: 'Bookings' },
-      { value: '—', label: 'Rating' }
-    ],
-    [providerStatValue, providerStatLabel]
-  );
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   // Phase 1: Step indicators include summary (staff skipped)
   const getStepIndicators = (): StepInfo[] | undefined => {

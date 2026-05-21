@@ -464,22 +464,23 @@ export function CommunicationHub({
   // ============================================================================
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 sm:items-center sm:p-4">
-      <div className="flex h-[92dvh] max-h-[92dvh] w-full max-w-customer flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:h-[85vh] sm:max-h-[85vh] sm:max-w-2xl sm:rounded-2xl">
+    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 sm:items-center sm:p-4 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
+      <div className="flex h-[min(92dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] max-h-[92dvh] w-full max-w-customer flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl sm:h-[85vh] sm:max-h-[85vh] sm:max-w-2xl sm:rounded-2xl min-h-0">
         
-        {/* Header */}
-        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center">
-              <User className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-white">{otherUserName}</h2>
-              <div className="flex items-center gap-2 text-white/80 text-sm">
-                {booking?.serviceName && <span>{booking.serviceName}</span>}
+        {/* Sticky header + status banners */}
+        <div className="sticky top-0 z-10 shrink-0 bg-white">
+        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 rounded-full flex items-center justify-center shrink-0">
+                <User className="w-5 h-5 text-white" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-base sm:text-lg font-bold text-white truncate">{otherUserName}</h2>
+                <div className="flex items-center gap-2 text-white/80 text-xs sm:text-sm truncate">
+                  {booking?.serviceName && <span className="truncate">{booking.serviceName}</span>}
+                </div>
               </div>
             </div>
-          </div>
           <div className="flex items-center gap-2">
             {/* Rule 2: Video from chat - when onStartVideoCall provided, create + notify vendor (WhatsApp-like) then navigate */}
             {(onNavigate || onStartVideoCall) && booking && ['confirmed', 'in_progress', 'active', 'scheduled'].includes(booking.status || '') && (
@@ -501,8 +502,10 @@ export function CommunicationHub({
               </button>
             )}
             <button
+              type="button"
               onClick={onClose}
-              className="p-2 hover:bg-white/20 rounded-full transition-colors"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-white/20 rounded-full transition-colors shrink-0 touch-manipulation"
+              aria-label="Close chat"
             >
               <X className="w-5 h-5 text-white" />
             </button>
@@ -547,9 +550,10 @@ export function CommunicationHub({
             </button>
           </div>
         )}
+        </div>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 bg-gray-50">
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">

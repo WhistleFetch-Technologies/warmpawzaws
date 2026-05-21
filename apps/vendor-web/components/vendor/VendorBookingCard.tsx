@@ -16,7 +16,12 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
-import { getVendorRoleId, hasVendorRole } from '@/lib/vendor-utils';
+import {
+  getVendorRoleId,
+  hasVendorRole,
+  isVendorTeleConsultationBooking,
+  resolveVendorBookingId,
+} from '@/lib/vendor-utils';
 
 interface BookingCardProps {
   booking: any;
@@ -190,11 +195,11 @@ export function VendorBookingCard({
                 className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
               >
                 <CheckCircle className="w-4 h-4" />
-                {booking.communicationType === 'video' ? 'Mark Complete' : 'Complete with OTP'}
+                {isVendorTeleConsultationBooking(booking) ? 'Mark Complete' : 'Complete with OTP'}
               </button>
               <p className="text-xs text-gray-500 mt-1 text-center">
-                {booking.communicationType === 'video' 
-                  ? 'Tele consultation - No OTP required' 
+                {isVendorTeleConsultationBooking(booking)
+                  ? 'Tele consultation - complete after the video call'
                   : 'Ask customer for 4-digit OTP to complete'}
               </p>
             </div>
@@ -211,10 +216,11 @@ export function VendorBookingCard({
       {/* ✅ NEW: Action Buttons Row - Chat, Prescription, Call */}
       <div className="mt-3 pt-3 border-t border-gray-100 flex gap-2 flex-wrap">
         {/* Call Button - TELE ONLY */}
-        {booking.communicationType === 'video' && booking.serviceType === 'tele' && booking.status !== 'completed' && (
+        {isVendorTeleConsultationBooking(booking) && booking.status !== 'completed' && (
           <button
+            type="button"
             onClick={() => {
-              const bid = booking.bookingId || booking.id;
+              const bid = resolveVendorBookingId(booking);
               const params = new URLSearchParams();
               if (bid) params.set('bookingId', bid);
               if (vendorId) params.set('vendorId', vendorId);

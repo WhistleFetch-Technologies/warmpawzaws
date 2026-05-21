@@ -16,37 +16,27 @@ import { toast } from 'sonner';
 import { AddPaymentMethodModal } from './AddPaymentMethodModal';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
-import {
-  apiClient,
-  beginForcedLogoutSuppression,
-  endForcedLogoutSuppression,
-  getApiBaseUrl,
-} from '@/lib/api-client';
-import {
-  urlCustomerAddressesByPhone,
-  urlCustomerPetsByCustomerId,
-  urlCustomerPetsByPhonePath,
-  urlCustomerPetsByPhoneQuery,
-} from '@/lib/customer-service-list-urls';
+import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import {
   digitsToRazorpayContactE164,
   RAZORPAY_PREFILL_EMAIL_FALLBACK,
   sanitizeRazorpayInstanceOptions,
   getWarmpawzRazorpayUpiDisplayConfig,
 } from '@/lib/razorpay/razorpay-utils';
-import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
-import { confirmMealSubscriptionPayment } from '@/lib/meal-subscriptions-api';
-import { CustomerWalletApply } from './CustomerWalletApply';
-import { MealSubscriptionPaymentSummary, type MealSubscriptionSummaryLine } from './MealSubscriptionPaymentSummary';
 import {
   isWarmpawzCustomerNativeWebView,
   waitForWarmpawzNativeRazorpayResult,
   WARMPAWZ_RAZORPAY_NATIVE_MSG,
 } from '@/lib/razorpay/native-webview-bridge';
+import {
+  buildRazorpayEcommerceCreateOrderPayload,
+  extractEcommerceOrderIdFromResponse,
+} from '@/lib/ecommerce/ecommerce-razorpay-payload';
 
 // Razorpay type declaration
 declare global {
@@ -59,46 +49,9 @@ interface UniversalPaymentPageProps {
   // Booking/Order details
   bookingId?: string;
   orderId?: string;
-  type: 'booking' | 'order' | 'meal_subscription' | 'meal_one_time';
+  type: 'booking' | 'order';
 
-  /** Canonical meal subscription id (pending_payment) when type === 'meal_subscription'. */
-  mealSubscriptionId?: string;
-  /** Extra lines under plan title (sessions, cadence, first delivery, etc.). */
-  mealSubscriptionSummaryLines?: MealSubscriptionSummaryLine[];
-  /** Taxable food subtotal (pre-GST) for meal subscription pay — CGST/SGST/IGST on this line only. */
-  mealPlanFoodTaxableInr?: number;
-  /** `service_categories.id` UUID for meal_plan_food GST row (from pricing snapshot / order-preview). */
-  mealPlanGstCatalogCategoryId?: string;
-  /** Non-food fees included in subscription upfront (platform, convenience, delivery). */
-  mealSubscriptionFeeTotals?: {
-    platformFee: number;
-    convenienceFee: number;
-    deliveryFee: number;
-  };
-  /** When `/tax/calculate` fails, use GST % from subscription pricing_snapshot (same source as signup preview). */
-  mealSubscriptionGstFallbackPct?: { food: number; delivery: number };
-
-  /** One-time meal checkout: create order + Razorpay after universal pay (same UX as subscription pay). */
-  mealOneTimeDraft?: {
-    mealPlanId: string;
-    customerId?: string;
-    customerPhone: string;
-    vendorId: string;
-    quantity: number;
-    petId?: string;
-    specialInstructions?: string;
-    deliveryAddress: Record<string, unknown>;
-    scheduledDeliveryDate: string;
-    scheduledDeliverySlot: { start: string; end: string };
-    logisticsType?: string;
-    foodSubtotalInr: number;
-    foodGstPct: number;
-    deliveryGstPct?: number;
-    mealPlanGstCatalogCategoryId?: string;
-    deliveryFeeInr: number;
-    platformFeeInr: number;
-    convenienceFeeInr: number;
-  };
+  // Service/Product details
   serviceId?: string;
   productId?: string;
   serviceName?: string;
@@ -335,13 +288,6 @@ export function UniversalPaymentPage({
   bookingId,
   orderId,
   type,
-  mealSubscriptionId,
-  mealSubscriptionSummaryLines,
-  mealPlanFoodTaxableInr,
-  mealPlanGstCatalogCategoryId,
-  mealSubscriptionFeeTotals,
-  mealSubscriptionGstFallbackPct,
-  mealOneTimeDraft,
   serviceId,
   productId,
   serviceName,
@@ -381,17 +327,6 @@ export function UniversalPaymentPage({
   onPaymentAbandoned,
 }: UniversalPaymentPageProps) {
   const router = useRouter();
-
-  // Defense-in-depth: while the payment page is mounted, transient 401s from any
-  // best-effort helper endpoint (pets, addresses, wallet, refund policy, etc.) must
-  // never hard-redirect the user to /auth. Silent refresh still runs; truly critical
-  // calls (`/bookings/create`, `/razorpay/create-order`, `/razorpay/verify-payment`,
-  // `/payments/create`) keep throwing ApiError and surface an in-page error toast.
-  useEffect(() => {
-    beginForcedLogoutSuppression();
-    return () => endForcedLogoutSuppression();
-  }, []);
-
   // State
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -424,21 +359,16 @@ export function UniversalPaymentPage({
   const [paymentPolicies, setPaymentPolicies] = useState<Record<string, { title: string; description: string; details?: string[] }> | null>(null);
   const [refundPolicySummary, setRefundPolicySummary] = useState<string | null>(null);
 
-  const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdown>(() => {
-    const meal = type === 'meal_subscription' || type === 'meal_one_time';
-    return {
-      subtotal: meal ? 0 : baseAmount,
-      cgst: 0,
-      sgst: 0,
-      igst: 0,
-      totalTax: 0,
-      total: meal ? 0 : baseAmount,
-      taxRate: meal ? 0 : 18,
-      isInterState: false,
-    };
+  const [taxBreakdown, setTaxBreakdown] = useState<TaxBreakdown>({
+    subtotal: baseAmount,
+    cgst: 0,
+    sgst: 0,
+    igst: 0,
+    totalTax: 0,
+    total: baseAmount,
+    taxRate: 18,
+    isInterState: false,
   });
-  /** Meal payable uses `/tax/calculate` grand total + platform/convenience (delivery is inside GST lines). */
-  const [mealTaxReady, setMealTaxReady] = useState(false);
 
   const [platformFees, setPlatformFees] = useState<PlatformFees>({
     platformFee: 0,
@@ -482,224 +412,6 @@ export function UniversalPaymentPage({
     [baseAmount, priceIncludesTax]
   );
 
-  const runMealCheckoutTaxAndFees = useCallback(async () => {
-    if (type !== 'meal_subscription' && type !== 'meal_one_time') return;
-
-    setMealTaxReady(false);
-
-    const addr =
-      type === 'meal_one_time' && mealOneTimeDraft
-        ? {
-            state: String((mealOneTimeDraft.deliveryAddress as { state?: string })?.state || '').trim(),
-            city: String((mealOneTimeDraft.deliveryAddress as { city?: string })?.city || '').trim(),
-            pincode: String((mealOneTimeDraft.deliveryAddress as { pincode?: string })?.pincode || '').trim(),
-          }
-        : {
-            state: String((selectedAddress || address)?.state || '').trim(),
-            city: String((selectedAddress || address)?.city || '').trim(),
-            pincode: String((selectedAddress || address)?.pincode || '').trim(),
-          };
-
-    const foodAmt =
-      type === 'meal_one_time' && mealOneTimeDraft
-        ? Number(mealOneTimeDraft.foodSubtotalInr)
-        : Number(mealPlanFoodTaxableInr ?? 0);
-    let catId =
-      type === 'meal_one_time' && mealOneTimeDraft
-        ? String(mealOneTimeDraft.mealPlanGstCatalogCategoryId || '').trim()
-        : String(mealPlanGstCatalogCategoryId || '').trim();
-    if (!catId) catId = 'nutritionist';
-
-    const deliveryFeeForTax =
-      type === 'meal_one_time' && mealOneTimeDraft
-        ? Number(mealOneTimeDraft.deliveryFeeInr) || 0
-        : type === 'meal_subscription' && mealSubscriptionFeeTotals
-          ? Number(mealSubscriptionFeeTotals.deliveryFee) || 0
-          : 0;
-
-    if (type === 'meal_subscription' && mealSubscriptionFeeTotals) {
-      const p = mealSubscriptionFeeTotals;
-      const t =
-        (Number(p.platformFee) || 0) +
-        (Number(p.convenienceFee) || 0) +
-        (Number(p.deliveryFee) || 0);
-      setPlatformFees({
-        platformFee: Number(p.platformFee) || 0,
-        convenienceFee: Number(p.convenienceFee) || 0,
-        deliveryFee: Number(p.deliveryFee) || 0,
-        packagingFee: 0,
-        total: Math.round(t * 100) / 100,
-      });
-    } else if (type === 'meal_one_time' && mealOneTimeDraft) {
-      const d = mealOneTimeDraft;
-      const t = d.platformFeeInr + d.convenienceFeeInr + d.deliveryFeeInr;
-      setPlatformFees({
-        platformFee: d.platformFeeInr,
-        convenienceFee: d.convenienceFeeInr,
-        deliveryFee: d.deliveryFeeInr,
-        packagingFee: 0,
-        total: Math.round(t * 100) / 100,
-      });
-    } else {
-      setPlatformFees({ platformFee: 0, convenienceFee: 0, deliveryFee: 0, packagingFee: 0, total: 0 });
-    }
-
-    if (!(foodAmt > 0.009)) {
-      setTaxBreakdown({
-        subtotal: 0,
-        cgst: 0,
-        sgst: 0,
-        igst: 0,
-        totalTax: 0,
-        total: 0,
-        taxRate: 0,
-        isInterState: false,
-      });
-      setMealTaxReady(true);
-      return;
-    }
-
-    try {
-      const mealTaxItems: Record<string, unknown>[] = [
-        {
-          id: 'meal-plan-food',
-          type: 'service',
-          catalogCategoryId: catId,
-          gstApplicationScope: 'meal_plan_food',
-          amount: foodAmt,
-          quantity: 1,
-          category: 'nutrition',
-        },
-      ];
-      if (deliveryFeeForTax > 0.009) {
-        mealTaxItems.push({
-          id: 'meal-plan-delivery',
-          type: 'service',
-          catalogCategoryId: catId,
-          gstApplicationScope: 'meal_plan_delivery',
-          amount: deliveryFeeForTax,
-          quantity: 1,
-          category: 'nutrition',
-        });
-      }
-
-      const taxRes = await apiClient.post<any>('/tax/calculate', {
-        items: mealTaxItems,
-        vendorId,
-        customerId,
-        customerPhone,
-        customerLocation:
-          addr.state || addr.city || addr.pincode
-            ? { state: addr.state || undefined, city: addr.city || undefined, pincode: addr.pincode || undefined }
-            : undefined,
-      }, undefined, undefined, { suppressForcedLogout: true });
-
-      if (taxCalculateResponseHasPayload(taxRes)) {
-        const cgst = taxRes.totalCGST || 0;
-        const sgst = taxRes.totalSGST || 0;
-        const igst = taxRes.totalIGST || 0;
-        const totalTax = taxRes.totalTax ?? cgst + sgst + igst;
-        const exclusiveSub = Number(taxRes.totalAmount);
-        const taxableForLabel = Number.isFinite(exclusiveSub) ? exclusiveSub : foodAmt;
-        const foodLine = Array.isArray(taxRes.items)
-          ? taxRes.items.find(
-              (it: { id?: string; itemId?: string }) =>
-                it.id === 'meal-plan-food' || it.itemId === 'meal-plan-food',
-            )
-          : undefined;
-        const rawRate = Number(
-          (foodLine as { taxRate?: number; gstRate?: number } | undefined)?.taxRate ??
-            (foodLine as { gstRate?: number } | undefined)?.gstRate ??
-            taxRes.items?.[0]?.taxRate ??
-            taxRes.items?.[0]?.gstRate,
-        );
-        const draftFoodPct =
-          type === 'meal_one_time' && mealOneTimeDraft ? Number(mealOneTimeDraft.foodGstPct) : NaN;
-        const subscriptionFoodPctDisplay =
-          type === 'meal_subscription' && mealSubscriptionGstFallbackPct
-            ? Number(mealSubscriptionGstFallbackPct.food)
-            : NaN;
-        const taxRate = Number.isFinite(rawRate)
-          ? rawRate
-          : Number.isFinite(draftFoodPct)
-            ? Math.min(100, Math.max(0, draftFoodPct))
-            : Number.isFinite(subscriptionFoodPctDisplay)
-              ? Math.min(100, Math.max(0, subscriptionFoodPctDisplay))
-              : 0;
-        const interState =
-          typeof taxRes.isInterState === 'boolean' ? taxRes.isInterState : igst > 0.009;
-        const grand = Number(taxRes.grandTotal);
-        const totalPay = Number.isFinite(grand) ? grand : taxableForLabel + totalTax;
-
-        setTaxBreakdown({
-          subtotal: taxableForLabel,
-          cgst,
-          sgst,
-          igst,
-          totalTax,
-          total: totalPay,
-          taxRate,
-          isInterState: interState,
-          taxDetails: taxRes.breakdown || [],
-        });
-        setMealTaxReady(true);
-        return;
-      }
-    } catch (e) {
-      console.error('Meal checkout tax error:', e);
-    }
-
-    const draftFoodPctCatch =
-      type === 'meal_one_time' && mealOneTimeDraft ? Number(mealOneTimeDraft.foodGstPct) : NaN;
-    const subscriptionFoodPct =
-      type === 'meal_subscription' && mealSubscriptionGstFallbackPct
-        ? Number(mealSubscriptionGstFallbackPct.food)
-        : NaN;
-    const fallbackRate = Number.isFinite(draftFoodPctCatch)
-      ? Math.min(100, Math.max(0, draftFoodPctCatch))
-      : Number.isFinite(subscriptionFoodPct)
-        ? Math.min(100, Math.max(0, subscriptionFoodPct))
-        : 0;
-    const taxable = foodAmt;
-    const totalTax = (taxable * fallbackRate) / 100;
-    const deliveryPctFallback =
-      type === 'meal_one_time' &&
-      mealOneTimeDraft &&
-      typeof mealOneTimeDraft.deliveryGstPct === 'number'
-        ? mealOneTimeDraft.deliveryGstPct
-        : type === 'meal_subscription' && mealSubscriptionGstFallbackPct
-          ? Number(mealSubscriptionGstFallbackPct.delivery)
-          : 0;
-    const deliveryTax =
-      deliveryFeeForTax > 0.009
-        ? Math.round(((deliveryFeeForTax * deliveryPctFallback) / 100) * 100) / 100
-        : 0;
-    const combinedTax = Math.round((totalTax + deliveryTax) * 100) / 100;
-    setTaxBreakdown({
-      subtotal: taxable,
-      cgst: combinedTax / 2,
-      sgst: combinedTax / 2,
-      igst: 0,
-      totalTax: combinedTax,
-      total: taxable + deliveryFeeForTax + combinedTax,
-      taxRate: fallbackRate,
-      isInterState: false,
-    });
-    setMealTaxReady(true);
-  }, [
-    type,
-    mealOneTimeDraft,
-    mealPlanFoodTaxableInr,
-    mealPlanGstCatalogCategoryId,
-    mealSubscriptionFeeTotals,
-    mealSubscriptionGstFallbackPct,
-    vendorId,
-    customerId,
-    customerPhone,
-    selectedAddress,
-    address,
-  ]);
-
   const calculateTax = useCallback(async () => {
     const catalogServiceId = resolvedServiceId || serviceId;
     const addr = selectedAddress || address;
@@ -737,7 +449,7 @@ export function UniversalPaymentPage({
         customerPhone,
         customerLocation,
         bookingId: type === 'booking' ? bookingId : undefined,
-      }, undefined, undefined, { suppressForcedLogout: true });
+      });
 
       if (taxCalculateResponseHasPayload(taxRes)) {
         const cgst = taxRes.totalCGST || 0;
@@ -807,11 +519,6 @@ export function UniversalPaymentPage({
     if (!isWarmpawzCustomerNativeWebView()) {
       loadRazorpayScript();
     }
-    if (type === 'meal_subscription' || type === 'meal_one_time') {
-      void runMealCheckoutTaxAndFees();
-      loadPaymentAndRefundPolicies();
-      return;
-    }
     calculateTax();
     loadPromotions();
     loadRazorpayOffers();
@@ -832,12 +539,6 @@ export function UniversalPaymentPage({
     productId,
     customerAddrStateForTax,
     calculateTax,
-    runMealCheckoutTaxAndFees,
-    mealPlanFoodTaxableInr,
-    mealPlanGstCatalogCategoryId,
-    mealSubscriptionFeeTotals,
-    mealSubscriptionGstFallbackPct,
-    mealOneTimeDraft,
   ]);
 
   // Check if customer has active subscription that covers this booking
@@ -856,7 +557,7 @@ export function UniversalPaymentPage({
           serviceId: resolvedServiceId || serviceId,
           serviceStyle,
           category,
-        }, undefined, undefined, { suppressForcedLogout: true });
+        });
 
         if (coverageRes.success && coverageRes.covered) {
           console.log('✅ [SUBSCRIPTION] Booking covered by subscription:', coverageRes.subscription);
@@ -908,15 +609,9 @@ export function UniversalPaymentPage({
     (async () => {
       try {
         let list: { id: string; name: string }[] = [];
-        // suppressForcedLogout: pet-picker lookups are best-effort. A 401 here (often
-        // because the customer ID UUID isn't yet reconciled) must not boot the user mid-pay.
         if (customerId) {
           try {
-            const res = await apiClient.get<unknown>(
-              urlCustomerPetsByCustomerId(customerId),
-              undefined,
-              { suppressForcedLogout: true }
-            );
+            const res = await apiClient.get<unknown>(`/customer/${customerId}/pets`);
             list = petsListForPaymentPicker(res);
           } catch {
             list = [];
@@ -925,9 +620,7 @@ export function UniversalPaymentPage({
         if (!cancelled && list.length === 0 && customerPhone) {
           try {
             const byQuery = await apiClient.get<unknown>(
-              urlCustomerPetsByPhoneQuery(customerPhone),
-              undefined,
-              { suppressForcedLogout: true }
+              `/customer/pets?phone=${encodeURIComponent(customerPhone)}`
             );
             list = petsListForPaymentPicker(byQuery);
           } catch {
@@ -937,9 +630,7 @@ export function UniversalPaymentPage({
         if (!cancelled && list.length === 0 && customerPhone) {
           try {
             const byPath = await apiClient.get<unknown>(
-              urlCustomerPetsByPhonePath(customerPhone),
-              undefined,
-              { suppressForcedLogout: true }
+              `/customer/pets/${encodeURIComponent(customerPhone)}`
             );
             list = petsListForPaymentPicker(byPath);
           } catch {
@@ -1012,9 +703,7 @@ export function UniversalPaymentPage({
 
         for (const endpoint of endpoints) {
           try {
-            // suppressForcedLogout: vendor service catalogue lookup is best-effort and several
-            // of these endpoints legitimately 401 for some vendors — must not boot the user.
-            vendorServicesRes = await apiClient.get<any>(endpoint, undefined, { suppressForcedLogout: true });
+            vendorServicesRes = await apiClient.get<any>(endpoint);
             // Check if response has services in any format
             if (vendorServicesRes?.allServices ||
               vendorServicesRes?.services ||
@@ -1260,12 +949,7 @@ export function UniversalPaymentPage({
 
   const loadAddresses = async () => {
     try {
-      // suppressForcedLogout: address list is best-effort; user can still pay if it fails.
-      const data = await apiClient.get<any>(
-        urlCustomerAddressesByPhone(customerPhone),
-        undefined,
-        { suppressForcedLogout: true }
-      );
+      const data = await apiClient.get<any>(`/customer/addresses?phone=${encodeURIComponent(customerPhone)}`);
       const addressList = data.addresses || [];
       setAddresses(addressList);
 
@@ -1290,14 +974,11 @@ export function UniversalPaymentPage({
 
       // Load wallet balance
       try {
-        const walletRes = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`, undefined, { suppressForcedLogout: true });
+        const walletRes = await apiClient.get<any>(`/customer/wallet?phone=${encodeURIComponent(customerPhone)}`);
         if (walletRes.wallet) {
           setWallet(walletRes.wallet);
           const bal = Number(walletRes.wallet.balance ?? 0);
           if (type === 'booking' && Number.isFinite(bal) && bal > 0.009) {
-            setUseWallet(true);
-          }
-          if (type === 'meal_subscription' && Number.isFinite(bal) && bal > 0.009) {
             setUseWallet(true);
           }
         }
@@ -1307,7 +988,7 @@ export function UniversalPaymentPage({
 
       // Load saved payment methods
       try {
-        const methodsRes = await apiClient.get<any>(`/customer/payment-methods?phone=${encodeURIComponent(customerPhone)}`, undefined, { suppressForcedLogout: true });
+        const methodsRes = await apiClient.get<any>(`/customer/payment-methods?phone=${encodeURIComponent(customerPhone)}`);
         if (methodsRes.methods) {
           setSavedMethods(methodsRes.methods);
           const defaultMethod = methodsRes.methods.find((m: SavedPaymentMethod) => m.isDefault);
@@ -1340,7 +1021,7 @@ export function UniversalPaymentPage({
       if (selectedServiceIds.length > 0) params.set('selectedServiceIds', selectedServiceIds.join(','));
 
       // Load applicable promotions (public endpoint – no admin auth required)
-      const promoRes = await apiClient.get<any>(`/promotions/applicable?${params.toString()}`, undefined, { suppressForcedLogout: true });
+      const promoRes = await apiClient.get<any>(`/promotions/applicable?${params.toString()}`);
 
       if (promoRes.success && promoRes.promotions) {
         const raw = promoRes.promotions as any[];
@@ -1390,9 +1071,7 @@ export function UniversalPaymentPage({
     try {
       // Load Razorpay offers (card offers, cashback, etc.)
       const offersRes = await apiClient.get<any>(
-        `/razorpay/offers?amount=${baseAmount}`,
-        undefined,
-        { suppressForcedLogout: true }
+        `/razorpay/offers?amount=${baseAmount}`
       );
 
       if (offersRes.success && offersRes.offers) {
@@ -1407,9 +1086,7 @@ export function UniversalPaymentPage({
     try {
       const catParam = category != null && String(category).trim() !== '' ? `&category=${encodeURIComponent(String(category).trim())}` : '';
       const feesRes = await apiClient.get<any>(
-        `/config/fees?amount=${baseAmount}&type=${type}&serviceStyle=${encodeURIComponent(serviceStyle || '')}${catParam}`,
-        undefined,
-        { suppressForcedLogout: true }
+        `/config/fees?amount=${baseAmount}&type=${type}&serviceStyle=${encodeURIComponent(serviceStyle || '')}${catParam}`
       );
 
       if (!feesRes?.success) {
@@ -1502,9 +1179,7 @@ export function UniversalPaymentPage({
     try {
       const serviceType = type === 'booking' ? 'booking' : (category || 'default');
       const policiesRes = await apiClient.get<{ success?: boolean; policies?: Record<string, { title: string; description: string; details?: string[] }> }>(
-        `/config/policies?service_type=${encodeURIComponent(serviceType)}&policies=payment,cancellation,refund`,
-        undefined,
-        { suppressForcedLogout: true }
+        `/config/policies?service_type=${encodeURIComponent(serviceType)}&policies=payment,cancellation,refund`
       );
       if (policiesRes?.policies && typeof policiesRes.policies === 'object') {
         setPaymentPolicies(policiesRes.policies);
@@ -1514,9 +1189,7 @@ export function UniversalPaymentPage({
     }
     try {
       const refundRes = await apiClient.get<{ success?: boolean; policy?: { refundPercentages?: Array<{ withinHours: number; percentage: number }>; cancellationWindowHours?: number } }>(
-        `/customer/refund-policy?vendorId=${encodeURIComponent(vendorId || '')}&serviceId=${encodeURIComponent(serviceId || '')}`,
-        undefined,
-        { suppressForcedLogout: true }
+        `/customer/refund-policy?vendorId=${encodeURIComponent(vendorId || '')}&serviceId=${encodeURIComponent(serviceId || '')}`
       );
       if (refundRes?.policy?.refundPercentages?.length) {
         const parts = refundRes.policy.refundPercentages
@@ -1664,24 +1337,10 @@ export function UniversalPaymentPage({
   const finalTax = taxBreakdown.totalTax; // Or recalculate on discounted amount
   const totalAfterDiscounts = subtotalAfterDiscounts + finalTax + platformFees.total;
 
-  const isMealPay = type === 'meal_subscription' || type === 'meal_one_time';
-  /** After `/tax/calculate`: grand total for food+delivery+GST lines only — add platform & convenience once (not `platformFees.total`, which includes delivery). */
-  const resolvedMealPayTotal = isMealPay
-    ? mealTaxReady
-      ? Math.round((taxBreakdown.total + platformFees.platformFee + platformFees.convenienceFee) * 100) / 100
-      : Number(baseAmount)
-    : NaN;
-  const walletCapBase = isMealPay
-    ? Math.max(0, resolvedMealPayTotal - razorpayOfferDiscount)
-    : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount);
-  const walletAmount = useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
+  const walletAmount = useWallet && wallet ? Math.min(wallet.balance, totalAfterDiscounts - razorpayOfferDiscount) : 0;
 
   // ✅ NEW: If subscription covers this booking, final amount is 0
-  const finalAmount = subscriptionCovered
-    ? 0
-    : isMealPay
-      ? Math.max(0, resolvedMealPayTotal - razorpayOfferDiscount - walletAmount)
-      : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
+  const finalAmount = subscriptionCovered ? 0 : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
 
   const effectivePetsForPicker = petSwitcherPets ?? fetchedPetsForPicker;
   const effectivePetId = onPetSwitcherChange ? petId : (localPetSelection?.id ?? petId);
@@ -1709,173 +1368,6 @@ export function UniversalPaymentPage({
     setProcessing(true);
 
     try {
-      if (type === 'meal_one_time' && mealOneTimeDraft) {
-        await loadRazorpayScript();
-        const d = mealOneTimeDraft;
-        const cid = d.customerId || customerId;
-        let amountInRupeesForGateway = finalAmount;
-        if (!(amountInRupeesForGateway > 0.009)) {
-          toast.error('Nothing to pay');
-          setProcessing(false);
-          return;
-        }
-        const rz = await apiClient.post<any>('/meal/orders/create-razorpay-order', {
-          amountInRupees: amountInRupeesForGateway,
-          notes: {
-            customerId: cid,
-            mealPlanId: d.mealPlanId,
-            vendorId: d.vendorId,
-            kind: 'meal_one_time',
-          },
-        });
-        if (!rz?.razorpayOrderId) {
-          throw new Error(rz?.error || 'Failed to create payment order');
-        }
-        const createRes = await apiClient.post<any>('/meal/orders/create', {
-          customerId: cid,
-          customerPhone: cid ? undefined : d.customerPhone || customerPhone,
-          mealPlanId: d.mealPlanId,
-          petId: d.petId,
-          quantity: d.quantity,
-          purchaseType: 'ONE_TIME',
-          specialInstructions: d.specialInstructions,
-          deliveryAddress: d.deliveryAddress,
-          scheduledDeliveryDate: d.scheduledDeliveryDate,
-          scheduledDeliverySlot: d.scheduledDeliverySlot,
-          logisticsType: d.logisticsType || 'warmpawz',
-          razorpayOrderId: rz.razorpayOrderId,
-        });
-        const order = createRes?.order || createRes;
-        const orderId = order?.id as string | undefined;
-        if (!orderId) throw new Error('Order created but ID missing');
-        const keyId = rz.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY;
-        if (!keyId) {
-          toast.error('Payment gateway not configured');
-          setProcessing(false);
-          return;
-        }
-        const checkoutEmailArg =
-          (customerEmail && customerEmail.trim()) || RAZORPAY_PREFILL_EMAIL_FALLBACK;
-        const options = buildSanitizedStandardRazorpayCheckoutOptions({
-          key: keyId,
-          amountPaise: Math.max(1, Math.round(Number(rz.amount))),
-          currency: rz.currency || 'INR',
-          name: 'Warmpawz',
-          description: `Meal plan: ${serviceName || 'Order'}`,
-          order_id: rz.razorpayOrderId,
-          customerPhone: d.customerPhone || customerPhone,
-          customerEmail: checkoutEmailArg,
-          includeInstrumentBlocks: true,
-          handler: async (response: any) => {
-            try {
-              await apiClient.post(`/meal/orders/${orderId}/confirm-payment`, {
-                razorpayPaymentId: response.razorpay_payment_id,
-                razorpaySignature: response.razorpay_signature,
-              });
-              toast.success('Order confirmed!');
-              onSuccess(orderId);
-            } catch (err: any) {
-              toast.error(err?.message || 'Payment confirmation failed');
-            } finally {
-              setProcessing(false);
-            }
-          },
-          theme: { color: '#FF8C42' },
-          modal: {
-            ondismiss: () => setProcessing(false),
-          },
-        });
-        const razorpay = new (window as any).Razorpay(options);
-        razorpay.open();
-        return;
-      }
-
-      if (type === 'meal_subscription' && mealSubscriptionId && customerId) {
-        await loadRazorpayScript();
-        const idempotent = `mealw-${mealSubscriptionId}-${Date.now().toString(36)}`;
-        let amountInRupeesForGateway = finalAmount;
-        if (useWallet && walletAmount > 0.009) {
-          const wd = await apiClient.post<any>(`/meal/subscriptions/${mealSubscriptionId}/wallet-debit`, {
-            customerId,
-            amountInRupees: Math.round(walletAmount * 100) / 100,
-            idempotencyKey: idempotent,
-          });
-          if (!wd?.success) {
-            throw new Error(wd?.error || 'Wallet debit failed');
-          }
-          const rem = Number(wd.remainderInRupees);
-          if (Number.isFinite(rem)) {
-            amountInRupeesForGateway = Math.max(0, Math.round(rem * 100) / 100);
-          }
-        }
-        if (amountInRupeesForGateway > 0.009) {
-          const rz = await apiClient.post<any>('/meal/orders/create-razorpay-order', {
-            amountInRupees: amountInRupeesForGateway,
-            notes: {
-              customerId,
-              mealSubscriptionId,
-              kind: 'meal_subscription',
-            },
-          });
-          if (!rz?.razorpayOrderId) {
-            throw new Error(rz?.error || 'Failed to create payment order');
-          }
-          const attach = await apiClient.post<any>(`/meal/subscriptions/${mealSubscriptionId}/checkout-order`, {
-            customerId,
-            razorpayOrderId: rz.razorpayOrderId,
-          });
-          if (!attach?.success) {
-            throw new Error(attach?.error || 'Could not link checkout order');
-          }
-          const keyId = rz.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY;
-          if (!keyId) {
-            toast.error('Payment gateway not configured');
-            setProcessing(false);
-            return;
-          }
-          const checkoutEmailArg =
-            (customerEmail && customerEmail.trim()) || RAZORPAY_PREFILL_EMAIL_FALLBACK;
-          const options = buildSanitizedStandardRazorpayCheckoutOptions({
-            key: keyId,
-            amountPaise: Math.max(1, Math.round(Number(rz.amount))),
-            currency: rz.currency || 'INR',
-            name: 'Warmpawz',
-            description: `Meal subscription — ${serviceName || 'Plan'}`,
-            order_id: rz.razorpayOrderId,
-            customerPhone,
-            customerEmail: checkoutEmailArg,
-            includeInstrumentBlocks: true,
-            handler: async (response: any) => {
-              try {
-                await confirmMealSubscriptionPayment(
-                  mealSubscriptionId,
-                  customerId,
-                  response.razorpay_payment_id,
-                );
-                toast.success('Subscription payment confirmed!');
-                onSuccess(mealSubscriptionId);
-              } catch (err: any) {
-                toast.error(err?.message || 'Payment confirmation failed');
-              } finally {
-                setProcessing(false);
-              }
-            },
-            theme: { color: '#FF8C42' },
-            modal: {
-              ondismiss: () => setProcessing(false),
-            },
-          });
-          const razorpay = new (window as any).Razorpay(options);
-          razorpay.open();
-          return;
-        }
-        await confirmMealSubscriptionPayment(mealSubscriptionId, customerId, undefined);
-        toast.success('Subscription paid from wallet!');
-        onSuccess(mealSubscriptionId);
-        setProcessing(false);
-        return;
-      }
-
       let bookingCreationDeferred = false;
       let deferredBookingPayload: Record<string, unknown> | null = null;
       let requiredUpfrontAmount: number | null = null;
@@ -2185,10 +1677,10 @@ export function UniversalPaymentPage({
         let resolvedCustomerId = customerId;
         if (!resolvedCustomerId && customerPhone) {
           try {
-            const byPhoneRes = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`, undefined, { suppressForcedLogout: true }) as any;
+            const byPhoneRes = await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`) as any;
             resolvedCustomerId = byPhoneRes?.customer?.id ?? byPhoneRes?.id;
             if (!resolvedCustomerId) {
-              const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(customerPhone)}`, undefined, { suppressForcedLogout: true }) as any;
+              const profileRes = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(customerPhone)}`) as any;
               const profile = profileRes?.profile ?? profileRes;
               resolvedCustomerId = profile?.id ?? profile?.customerId;
             }
@@ -2207,7 +1699,7 @@ export function UniversalPaymentPage({
         // Get customer name from profile
         let customerNameValue = '';
         try {
-          const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(customerPhone)}`, undefined, { suppressForcedLogout: true }) as any;
+          const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(customerPhone)}`) as any;
           if (profileResponse?.profile || profileResponse) {
             const profile = profileResponse.profile || profileResponse;
             customerNameValue = profile.name || profile.fullName || '';
@@ -2246,7 +1738,6 @@ export function UniversalPaymentPage({
           bookingTime: normalizedBookingTime, // ✅ Format: HH:MM or HH:MM:SS
           serviceType: serviceTypeValue, // ✅ Required enum
           amount: taxBreakdown.total, // ✅ Number (schema allows >= 0)
-          totalAmount: taxBreakdown.total, // Java booking-service uses this for pending_payment vs confirmed
           ...(couponDiscount + (appliedPromotion?.discountAmount || 0) > 0
             ? {
                 discountAmount: couponDiscount + (appliedPromotion?.discountAmount || 0),
@@ -2422,18 +1913,18 @@ export function UniversalPaymentPage({
           total: taxBreakdown.total,
         });
 
-        if (!orderRes.orderId && !orderRes.id) {
+        const extractedOrderId = extractEcommerceOrderIdFromResponse(orderRes);
+        if (!extractedOrderId) {
           throw new Error('Failed to create order');
         }
-        currentOrderId = orderRes.orderId || orderRes.id;
+        currentOrderId = extractedOrderId;
+      }
+
+      if (type === 'order' && !currentOrderId) {
+        throw new Error('Order was not created. Please try again.');
       }
 
       // Step 2: Create payment record (only when booking already exists)
-      // ✅ If booking creation is deferred, skip payment record creation here
-      if (type === 'order' && !currentOrderId) {
-        console.log('⚠️ Order payment - skipping payment record creation (order handles payment)');
-        // For orders, proceed directly to Razorpay
-      }
 
       // ✅ For bookings, only create payment record if booking already exists
       if (type === 'booking' && (!currentBookingId || bookingCreationDeferred)) {
@@ -2695,21 +2186,38 @@ export function UniversalPaymentPage({
         : finalAmount;
 
       let orderRes: any;
+      const razorpayCreateOrderBody =
+        type === 'order' && currentOrderId
+          ? buildRazorpayEcommerceCreateOrderPayload(
+              currentOrderId,
+              amountToCharge,
+              customerId
+            )
+          : {
+              bookingId:
+                flowType === 'tele-instant' || bookingCreationDeferred
+                  ? undefined
+                  : currentBookingId,
+              amount: amountToCharge,
+              customerId,
+              offerId: selectedRazorpayOffer?.id,
+              type:
+                flowType === 'tele-instant' || bookingCreationDeferred
+                  ? 'booking_prepaid'
+                  : undefined,
+              vendorId:
+                flowType === 'tele-instant' || bookingCreationDeferred ? vendorId : undefined,
+              ...(type === 'booking' && currentBookingId && useWallet
+                ? { useWallet: true, walletAmount: Math.round((walletAmount || 0) * 100) / 100 }
+                : {}),
+            };
       try {
-        orderRes = await apiClient.post<any>('/razorpay/create-order', {
-          // Instant tele: no booking until after payment; use booking_prepaid
-          bookingId: (flowType === 'tele-instant' || bookingCreationDeferred) ? undefined : currentBookingId,
-          orderId: currentOrderId,
-          amount: amountToCharge,
-          customerId,
-          offerId: selectedRazorpayOffer?.id,
-          type: (flowType === 'tele-instant' || bookingCreationDeferred) ? 'booking_prepaid' : undefined,
-          vendorId: (flowType === 'tele-instant' || bookingCreationDeferred) ? vendorId : undefined,
-          // Server debits wallet here if /payments/create was skipped (ensures wallet is always charged before Razorpay).
-          ...(type === 'booking' && currentBookingId && useWallet
-            ? { useWallet: true, walletAmount: Math.round((walletAmount || 0) * 100) / 100 }
-            : {}),
-        }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
+        orderRes = await apiClient.post<any>(
+          '/razorpay/create-order',
+          razorpayCreateOrderBody,
+          undefined,
+          45000
+        );
       } catch (orderError: any) {
         console.error('❌ [PAYMENT] Razorpay create-order API call failed:', {
           error: orderError.message,
@@ -2815,12 +2323,8 @@ export function UniversalPaymentPage({
         typeof customerEmail === 'string' && customerEmail.includes('@') ? customerEmail.trim() : undefined;
       if (!resolvedCheckoutEmail && customerPhone) {
         try {
-          // suppressForcedLogout: profile lookup is only for Razorpay email prefill — a 401
-          // here must not interrupt the in-flight payment (we already have enough to charge).
           const profileResponse = (await apiClient.get(
-            `/customer/profile?phone=${encodeURIComponent(customerPhone)}`,
-            undefined,
-            { suppressForcedLogout: true }
+            `/customer/profile?phone=${encodeURIComponent(customerPhone)}`
           )) as any;
           const profile = profileResponse?.profile ?? profileResponse;
           const em = profile?.email;
@@ -3046,13 +2550,8 @@ export function UniversalPaymentPage({
 
         let st: string | undefined;
         let paymentStRaw: string | undefined;
-        // suppressForcedLogout: dismiss-handler booking lookups are best-effort. A 401 here
-        // (e.g. token rotation during the Razorpay modal) must not boot the user — we still
-        // need to attempt the cancel below to release the slot.
         try {
-          const detail = await apiClient.get(`/bookings/${bid}${qstr}`, undefined, {
-            suppressForcedLogout: true,
-          });
+          const detail = (await apiClient.get(`/bookings/${bid}${qstr}`)) as any;
           const b = pickBooking(detail);
           st =
             b?.status ??
@@ -3064,9 +2563,7 @@ export function UniversalPaymentPage({
             detail?.data?.booking?.payment_status;
         } catch {
           try {
-            const detail2 = await apiClient.get(`/customer/bookings/${bid}${qstr}`, undefined, {
-              suppressForcedLogout: true,
-            });
+            const detail2 = (await apiClient.get(`/customer/bookings/${bid}${qstr}`)) as any;
             const b2 = pickBooking(detail2);
             st =
               b2?.status ??
@@ -3092,21 +2589,12 @@ export function UniversalPaymentPage({
 
         if (!skipCancel) {
           try {
-            // suppressForcedLogout: slot-release cancel is a cleanup side-effect after the
-            // user closed Razorpay. A transient 401 here must not redirect them away from
-            // the payment page — let them retry the booking instead.
-            await apiClient.post(
-              `/bookings/${bid}/cancel`,
-              {
-                reason: 'Payment abandoned',
-                cancellationReason: 'Payment abandoned',
-                ...(cid ? { customerId: cid } : {}),
-                ...(phoneDigits.length >= 10 ? { phone: phoneDigits } : {}),
-              },
-              undefined,
-              undefined,
-              { suppressForcedLogout: true }
-            );
+            await apiClient.post(`/bookings/${bid}/cancel`, {
+              reason: 'Payment abandoned',
+              cancellationReason: 'Payment abandoned',
+              ...(cid ? { customerId: cid } : {}),
+              ...(phoneDigits.length >= 10 ? { phone: phoneDigits } : {}),
+            });
             toast.info('Payment cancelled. Your time slot has been released.');
           } catch (e: any) {
             console.warn('[PAYMENT] Release slot (cancel booking) failed:', e);
@@ -3312,12 +2800,9 @@ export function UniversalPaymentPage({
     || firstServiceFromArray?.name || firstServiceFromArray?.serviceName
     || 'Service';
   const displayDescription = serviceDescription || firstServiceFromArray?.description || '';
-  const displayAmount = isMealPay
-    ? resolvedMealPayTotal
-    : Number(baseAmount) ||
-      (effectiveSelectedServices
-        ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.price) || 0), 0)
-        : 0);
+  const displayAmount = Number(baseAmount) || (effectiveSelectedServices
+    ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.price) || 0), 0)
+    : 0);
   const displayDuration = (duration != null && (typeof duration !== 'string' || duration !== ''))
     ? Number(duration)
     : (effectiveSelectedServices
@@ -3334,15 +2819,6 @@ export function UniversalPaymentPage({
     ? 'cw-scroll-pad-tabbar-sticky-cta'
     : 'pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]';
 
-  const paymentStats = [
-    { value: formatPriceWithSymbol(displayAmount), label: 'Due' },
-    {
-      value: displayDuration != null && !Number.isNaN(Number(displayDuration)) ? `${displayDuration} min` : '—',
-      label: 'Duration',
-    },
-    { value: type === 'meal_subscription' || type === 'meal_one_time' ? 'Meal plan' : type === 'booking' ? 'Booking' : 'Order', label: 'Type' },
-  ];
-
   return (
     <div className="mx-auto flex h-[100dvh] min-h-0 w-full max-w-customer flex-col overflow-hidden bg-orange-50">
       {/* In-app payment summary (not Razorpay’s iframe). `compact` keeps safe-area without the 4rem mobile top pad. */}
@@ -3353,7 +2829,7 @@ export function UniversalPaymentPage({
         serviceSubtitle="Secure checkout"
         serviceIcon={Shield}
         iconColor="text-white"
-        stats={paymentStats}
+        stats={EMPTY_SERVICE_HEADER_STATS}
         onBack={onBack}
         showBackButton
         bottomEdge="sheet"
@@ -3451,15 +2927,6 @@ export function UniversalPaymentPage({
           </Card>
         )}
 
-        {type === 'meal_subscription' || type === 'meal_one_time' ? (
-          <MealSubscriptionPaymentSummary
-            planTitle={String(serviceName || productName || 'Meal plan')}
-            vendorName={String(vendorName || '')}
-            lines={mealSubscriptionSummaryLines || []}
-            totalInr={resolvedMealPayTotal}
-          />
-        ) : (
-          <>
         {/* Booking/Order Summary - Universal display for all service booking flows */}
         <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="text-lg font-bold text-gray-900 mb-4">
@@ -3559,11 +3026,9 @@ export function UniversalPaymentPage({
             </div>
           )}
         </Card>
-          </>
-        )}
 
         {/* Promotions & Spotlight Offers */}
-        {type !== 'meal_subscription' && type !== 'meal_one_time' && promotions.length > 0 && (
+        {promotions.length > 0 && (
           <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
@@ -3604,7 +3069,6 @@ export function UniversalPaymentPage({
         )}
 
         {/* Coupon Section */}
-        {type !== 'meal_subscription' && type !== 'meal_one_time' && (
         <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
@@ -3661,10 +3125,9 @@ export function UniversalPaymentPage({
             </button>
           )}
         </Card>
-        )}
 
         {/* Razorpay Offers */}
-        {type !== 'meal_subscription' && type !== 'meal_one_time' && razorpayOffers.length > 0 && (
+        {razorpayOffers.length > 0 && (
           <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center gap-2 mb-3">
               <Gift className="w-5 h-5 text-blue-500" />
@@ -3703,12 +3166,37 @@ export function UniversalPaymentPage({
 
         {/* Wallet Section */}
         {wallet && wallet.balance > 0 && (
-          <CustomerWalletApply
-            wallet={wallet}
-            useWallet={useWallet}
-            onToggleUseWallet={() => setUseWallet(!useWallet)}
-            walletAmountApplied={walletAmount}
-          />
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <button
+              onClick={() => setUseWallet(!useWallet)}
+              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${useWallet ? 'border-green-500 bg-green-50' : 'border-gray-200'
+                }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${useWallet ? 'bg-green-100' : 'bg-orange-100'
+                  }`}>
+                  <Wallet className={`w-5 h-5 ${useWallet ? 'text-green-600' : 'text-[#FF8C42]'}`} />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-gray-900">Warmpawz Wallet</p>
+                  <p className="text-sm text-gray-500">
+                    Balance: ₹{wallet.balance.toFixed(2)}
+                    {wallet.loyaltyPoints && ` • ${wallet.loyaltyPoints} points`}
+                  </p>
+                </div>
+              </div>
+              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${useWallet ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300'
+                }`}>
+                {useWallet && <CheckCircle2 className="w-4 h-4" />}
+              </div>
+            </button>
+            {useWallet && (
+              <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
+                <CheckCircle2 className="w-4 h-4" />
+                ₹{walletAmount.toFixed(2)} will be deducted from wallet
+              </p>
+            )}
+          </Card>
         )}
 
         {/* Price Breakdown */}
@@ -3811,7 +3299,7 @@ export function UniversalPaymentPage({
               </div>
             )}
 
-            {platformFees.deliveryFee > 0 && type !== 'meal_subscription' && type !== 'meal_one_time' && (
+            {platformFees.deliveryFee > 0 && (
               <div className="flex justify-between text-gray-600">
                 <span className="flex items-center gap-1">
                   Delivery Fee

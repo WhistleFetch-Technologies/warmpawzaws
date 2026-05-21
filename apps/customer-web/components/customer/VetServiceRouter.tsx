@@ -12,6 +12,7 @@ import { ProblemGridSection, VET_PROBLEMS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { StandardizedFooter } from './shared/StandardizedFooter';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
@@ -418,28 +419,7 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
 
   const openVetCenterProfile = openVetProviderProfile;
 
-  const dashboardStats = useMemo(() => {
-    const n = vendors.length;
-    const rating = n > 0 ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1) : '—';
-    const clinicSt =
-      vetClinicCountLoading || vetClinicCountFetching
-        ? 'loading'
-        : vetClinicCountError
-          ? 'error'
-          : 'success';
-    const clinicsStat = formatDiscoveryCountStat(vetClinicCount, clinicSt);
-    return [
-      { value: clinicsStat, label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
-      { value: String(n), label: 'Featured' },
-      { value: rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    ];
-  }, [
-    vendors,
-    vetClinicCount,
-    vetClinicCountLoading,
-    vetClinicCountFetching,
-    vetClinicCountError,
-  ]);
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   if (vendorsLoading) {
     return (

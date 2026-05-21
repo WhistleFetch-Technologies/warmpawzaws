@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { formatDistanceDisplay } from '@/lib/distance-display';
-import { StarRating } from './StarRating';
+import { VendorRatingDisplay } from './VendorRatingDisplay';
 
 interface SponsoredProvider {
   id: string;
@@ -159,9 +159,13 @@ export function SponsoredProviderCard({
               <p className="text-white/80 text-sm">{provider.adCreative.subtitle}</p>
             )}
             <div className="flex items-center gap-3 mt-1 text-sm text-white/90">
-              <StarRating
-                rating={provider.rating}
-                reviewCount={provider.reviewCount}
+              <VendorRatingDisplay
+                row={{
+                  vendorId: provider.vendorId ?? provider.id,
+                  vendorRating: provider.rating,
+                  vendorReviewCount: provider.reviewCount,
+                }}
+                vendorId={String(provider.vendorId ?? provider.id ?? '')}
                 starsClassName="w-4 h-4"
                 textClassName="text-sm text-white/90"
               />
@@ -238,9 +242,13 @@ export function SponsoredProviderCard({
 
           {/* Stats Row */}
           <div className="flex items-center gap-3 text-xs text-gray-500 mt-2">
-            <StarRating
-              rating={provider.rating}
-              reviewCount={provider.reviewCount}
+            <VendorRatingDisplay
+              row={{
+                vendorId: provider.vendorId ?? provider.id,
+                vendorRating: provider.rating,
+                vendorReviewCount: provider.reviewCount,
+              }}
+              vendorId={String(provider.vendorId ?? provider.id ?? '')}
               starsClassName="w-3 h-3"
               textClassName="text-xs text-gray-500"
             />
@@ -368,9 +376,13 @@ export function TopProvidersSection({
             <div className="p-2">
               <h4 className="font-semibold text-xs text-gray-900 truncate">{provider.name}</h4>
               <div className="flex items-center gap-1 mt-1">
-                <StarRating
-                  rating={provider.rating}
-                  reviewCount={provider.reviewCount}
+                <VendorRatingDisplay
+                  row={{
+                    vendorId: provider.vendorId ?? provider.id,
+                    vendorRating: provider.rating,
+                    vendorReviewCount: provider.reviewCount,
+                  }}
+                  vendorId={String(provider.vendorId ?? provider.id ?? '')}
                   starsClassName="w-3 h-3"
                   textClassName="text-xs text-gray-600"
                 />

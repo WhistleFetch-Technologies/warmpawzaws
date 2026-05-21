@@ -16,6 +16,7 @@ import { formatLocalDateYYYYMMDD, parseYYYYMMDDToLocalDate } from '@/lib/local-c
 import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
@@ -714,18 +715,7 @@ export function TrainingBookingRouter({
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
   const trainingProviderStatLabel =
     selectedServiceType === 'at_center' ? 'Centres' : 'Trainers';
-  const dashboardStats = useMemo(
-    () => [
-      {
-        value: trainingProviderStatValue,
-        label: trainingProviderStatLabel,
-        icon: <GraduationCap className="w-4 h-4" />,
-      },
-      { value: '800+', label: 'Sessions' },
-      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    ],
-    [trainingProviderStatValue, trainingProviderStatLabel]
-  );
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   const getHeaderSubtitle = () =>
     trainer?.name ? `Book with ${trainer.name}` : 'Book your training session';

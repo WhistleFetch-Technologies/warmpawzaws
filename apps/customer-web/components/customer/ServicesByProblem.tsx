@@ -12,7 +12,7 @@ import {
   type VendorGroupFromProblem,
 } from '@/lib/group-by-problem-vendors';
 import { pickVendorPhotoFromRow } from '@/lib/resolve-display-image-url';
-import { StarRating } from './shared/StarRating';
+import { VendorRatingDisplay } from './shared/VendorRatingDisplay';
 
 interface Service {
   serviceId: string;
@@ -239,9 +239,16 @@ export function ServicesByProblem({
                       {vendor.specializations.length > 0 ? ` · ${vendor.specializations.slice(0, 2).join(', ')}` : ''}
                     </p>
                     <div className="flex items-center gap-4 text-sm text-gray-500">
-                      <StarRating
-                        rating={vendor.rating}
-                        reviewCount={vendor.reviewCount}
+                      <VendorRatingDisplay
+                        row={{
+                          vendorId: vendor.vendorId,
+                          id: vendor.vendorId,
+                          rating: vendor.rating,
+                          vendorRating: vendor.vendorRating ?? vendor.rating,
+                          review_count: vendor.reviewCount,
+                          vendorReviewCount: vendor.reviewCount,
+                        }}
+                        vendorId={String(vendor.vendorId ?? '')}
                         textClassName="text-xs text-gray-500"
                       />
                       <span className="flex items-center gap-1">

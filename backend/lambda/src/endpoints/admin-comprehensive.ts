@@ -881,7 +881,8 @@ class GetVendorDetailsHandler extends BaseHandler {
             'createdAt', b.created_at
           ) ORDER BY b.created_at DESC), '[]'::json)
           FROM (SELECT * FROM bookings WHERE vendor_id = v.id ORDER BY created_at DESC LIMIT 10) b
-          LEFT JOIN vendor_services vs ON vs.service_id = b.service_id AND vs.vendor_id = b.vendor_id
+          LEFT JOIN vendor_services vs ON vs.vendor_id = b.vendor_id
+            AND (vs.service_id = b.service_id OR vs.id = b.service_id)
           LEFT JOIN services s ON s.id = b.service_id
           LEFT JOIN customers c ON c.id = b.customer_id) as recent_orders
         FROM vendors v
