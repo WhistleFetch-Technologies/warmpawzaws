@@ -1,1 +1,11 @@
+com\warmpawz\booking\controller\BookingControllerCustomerAuthTest.class
+com\warmpawz\booking\service\BookingServiceImplRescheduleTest.class
+com\warmpawz\booking\controller\VendorBookingControllerTest.class
+com\warmpawz\booking\service\BookingServiceImplCancelRefundTest.class
+com\warmpawz\booking\service\BookingCancelRefundServiceTest.class
+com\warmpawz\booking\entity\BookingEntityPersistenceTest.class
+com\warmpawz\booking\service\SnsEventPublisherTest.class
 com\warmpawz\booking\ApplicationTests.class
+com\warmpawz\booking\util\BookingOtpUtilTest.class
+com\warmpawz\booking\controller\BookingOtpControllerTest.class
+com\warmpawz\booking\service\BookingServiceImplOtpTest.class
