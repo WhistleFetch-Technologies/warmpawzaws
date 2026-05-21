@@ -564,6 +564,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             onClose={() => setUserSidebarOpen(false)}
             onViewBooking={handleViewBooking}
             onViewMyPackages={() => router.push('/my-packages')}
+            onViewProfile={() => {
+              setUserSidebarOpen(false);
+              router.push('/profile');
+            }}
             onNavigate={handleAccountNavigate}
           />
         )}

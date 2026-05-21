@@ -473,7 +473,7 @@ export async function resolveSearchUserCoords(
   return { lat, lng };
 }
 
-function filterSearchResultsByHubCategory<T extends SearchVendorRow, S extends SearchServiceRow>(
+export function filterSearchResultsByHubCategory<T extends SearchVendorRow, S extends SearchServiceRow>(
   vendors: T[],
   services: S[],
   hubSlug: string,
@@ -483,11 +483,16 @@ function filterSearchResultsByHubCategory<T extends SearchVendorRow, S extends S
   const q = (searchQuery || '').trim();
   const strictHubBrowse = !q;
 
+  // Strict hub-browse trusts upstream SQL EXISTS / OpenSearch terms (which gate on
+  // vendor_services.category). When the vendor's primary `vendors.category` column
+  // is empty but they passed upstream, treat as pass — only reject when a category
+  // is explicitly set AND it's outside the hub aliases. Keyword search keeps the
+  // legacy name-hint fallback for legacy rows.
   const vendorOk = (category: string | null | undefined, businessName?: string | null) => {
     const c = normalizeCategoryToken(category || '');
     if (c && allowed.has(c)) return true;
     if (c && !allowed.has(c)) return false;
-    if (strictHubBrowse) return false;
+    if (strictHubBrowse) return true;
     return hubMatchesResultName(hubSlug, businessName || undefined, searchQuery);
   };
 
@@ -562,6 +567,12 @@ export async function applySearchDiscoveryParity<T extends SearchVendorRow, S ex
     vendorRadiusById,
   });
 
+  // Keyword + hub mode: the app-level category filter still helps disambiguate
+  // free-text searches that drag in wrong-vertical vendors via business name
+  // matching. Hub-only browse trusts the upstream SQL/OpenSearch gate (which
+  // mirrors discover-services), so re-filtering here would diverge from home —
+  // e.g. home includes a vet vendor with a dog-walk service in the walker hub
+  // (via walkerCategoryDiscoveryOr), and we want search to show the same set.
   const hubBrowseOnly = !(opts.searchQuery || '').trim();
   if (effectiveCategory && !hubBrowseOnly) {
     filtered = filterSearchResultsByHubCategory(
