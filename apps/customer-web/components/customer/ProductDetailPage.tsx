@@ -31,6 +31,8 @@ import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
 import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
+import { resolveVendorIdFromProduct } from '@/lib/ecommerce/seller-promotions';
+import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import { toast } from 'sonner';
 
 interface ProductDetailPageProps {
@@ -389,6 +391,12 @@ export function ProductDetailPage({
               </>
             )}
           </div>
+
+          <SellerProductPromotions
+            vendorId={resolveVendorIdFromProduct(product)}
+            vendorName={product.vendor_name || product.vendor?.name}
+            className="px-4"
+          />
 
           {/* Tax Info */}
           <div className="flex items-center gap-2 text-xs text-gray-500">
