@@ -198,8 +198,8 @@ export default function SetPasswordPage() {
     <div className="min-h-screen flex justify-center bg-[#FF8C42]">
       <div className="w-full max-w-md min-h-screen flex flex-col bg-[#FF8C42]">
         <div
-          className="px-6 pb-12 pt-12 flex flex-col items-center"
-          style={{ paddingTop: 'max(2rem, env(safe-area-inset-top))' }}
+          className="px-6 pb-12 cw-header-safe-top flex flex-col items-center"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
         >
           <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center shadow-xl mb-4 p-2">
             <img src="/logo.png" alt="Warmpawz" className="w-full h-full object-contain" />

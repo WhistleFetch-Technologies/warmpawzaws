@@ -137,7 +137,7 @@ function ServiceStyleSelector({
   return (
     <div className="mx-auto min-h-screen w-full max-w-customer bg-[#FF8C42]">
       {/* Header - Matching Customer Home Design */}
-      <div className="px-4 pt-12 pb-8">
+      <div className="px-4 cw-header-safe-top pb-8">
         {/* Back Button */}
         <button
           onClick={onBack}
@@ -269,7 +269,7 @@ function TeleModeSelector({ problemTitle, onSelectInstant, onSelectScheduled, on
   return (
     <div className="mx-auto min-h-screen w-full max-w-customer bg-[#FF8C42]">
       {/* Header - Matching Customer Home Design */}
-      <div className="px-4 pt-12 pb-8">
+      <div className="px-4 cw-header-safe-top pb-8">
         {/* Back Button */}
         <button
           onClick={onBack}

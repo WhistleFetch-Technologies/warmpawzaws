@@ -60,7 +60,7 @@ export function BreederCatalogView(props: BreederCatalogViewProps) {
     <div className="min-h-screen bg-[#FF8C42] pb-24">
       <div className="max-w-md mx-auto min-h-screen">
         {/* Header with ORANGE solid theme matching BreederServicesLanding */}
-        <div className="px-6 pt-12 pb-6">
+        <div className="px-6 cw-header-safe-top pb-6">
           <div className="flex items-center gap-4 mb-6">
             <button 
               onClick={props.onBack}
