@@ -21,17 +21,22 @@ import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import {
   digitsToRazorpayContactE164,
   RAZORPAY_PREFILL_EMAIL_FALLBACK,
   sanitizeRazorpayInstanceOptions,
-  getWarmpawzRazorpayStandardDisplayConfig,
+  getWarmpawzRazorpayUpiDisplayConfig,
 } from '@/lib/razorpay/razorpay-utils';
 import {
   isWarmpawzCustomerNativeWebView,
   waitForWarmpawzNativeRazorpayResult,
   WARMPAWZ_RAZORPAY_NATIVE_MSG,
 } from '@/lib/razorpay/native-webview-bridge';
+import {
+  buildRazorpayEcommerceCreateOrderPayload,
+  extractEcommerceOrderIdFromResponse,
+} from '@/lib/ecommerce/ecommerce-razorpay-payload';
 
 // Razorpay type declaration
 declare global {
@@ -1908,18 +1913,18 @@ export function UniversalPaymentPage({
           total: taxBreakdown.total,
         });
 
-        if (!orderRes.orderId && !orderRes.id) {
+        const extractedOrderId = extractEcommerceOrderIdFromResponse(orderRes);
+        if (!extractedOrderId) {
           throw new Error('Failed to create order');
         }
-        currentOrderId = orderRes.orderId || orderRes.id;
+        currentOrderId = extractedOrderId;
+      }
+
+      if (type === 'order' && !currentOrderId) {
+        throw new Error('Order was not created. Please try again.');
       }
 
       // Step 2: Create payment record (only when booking already exists)
-      // ✅ If booking creation is deferred, skip payment record creation here
-      if (type === 'order' && !currentOrderId) {
-        console.log('⚠️ Order payment - skipping payment record creation (order handles payment)');
-        // For orders, proceed directly to Razorpay
-      }
 
       // ✅ For bookings, only create payment record if booking already exists
       if (type === 'booking' && (!currentBookingId || bookingCreationDeferred)) {
@@ -2181,21 +2186,38 @@ export function UniversalPaymentPage({
         : finalAmount;
 
       let orderRes: any;
+      const razorpayCreateOrderBody =
+        type === 'order' && currentOrderId
+          ? buildRazorpayEcommerceCreateOrderPayload(
+              currentOrderId,
+              amountToCharge,
+              customerId
+            )
+          : {
+              bookingId:
+                flowType === 'tele-instant' || bookingCreationDeferred
+                  ? undefined
+                  : currentBookingId,
+              amount: amountToCharge,
+              customerId,
+              offerId: selectedRazorpayOffer?.id,
+              type:
+                flowType === 'tele-instant' || bookingCreationDeferred
+                  ? 'booking_prepaid'
+                  : undefined,
+              vendorId:
+                flowType === 'tele-instant' || bookingCreationDeferred ? vendorId : undefined,
+              ...(type === 'booking' && currentBookingId && useWallet
+                ? { useWallet: true, walletAmount: Math.round((walletAmount || 0) * 100) / 100 }
+                : {}),
+            };
       try {
-        orderRes = await apiClient.post<any>('/razorpay/create-order', {
-          // Instant tele: no booking until after payment; use booking_prepaid
-          bookingId: (flowType === 'tele-instant' || bookingCreationDeferred) ? undefined : currentBookingId,
-          orderId: currentOrderId,
-          amount: amountToCharge,
-          customerId,
-          offerId: selectedRazorpayOffer?.id,
-          type: (flowType === 'tele-instant' || bookingCreationDeferred) ? 'booking_prepaid' : undefined,
-          vendorId: (flowType === 'tele-instant' || bookingCreationDeferred) ? vendorId : undefined,
-          // Server debits wallet here if /payments/create was skipped (ensures wallet is always charged before Razorpay).
-          ...(type === 'booking' && currentBookingId && useWallet
-            ? { useWallet: true, walletAmount: Math.round((walletAmount || 0) * 100) / 100 }
-            : {}),
-        }, undefined, 45000); // ✅ FIX: 45 second timeout for payment operations
+        orderRes = await apiClient.post<any>(
+          '/razorpay/create-order',
+          razorpayCreateOrderBody,
+          undefined,
+          45000
+        );
       } catch (orderError: any) {
         console.error('❌ [PAYMENT] Razorpay create-order API call failed:', {
           error: orderError.message,
@@ -2529,7 +2551,7 @@ export function UniversalPaymentPage({
         let st: string | undefined;
         let paymentStRaw: string | undefined;
         try {
-          const detail = await apiClient.get(`/bookings/${bid}${qstr}`);
+          const detail = (await apiClient.get(`/bookings/${bid}${qstr}`)) as any;
           const b = pickBooking(detail);
           st =
             b?.status ??
@@ -2541,7 +2563,7 @@ export function UniversalPaymentPage({
             detail?.data?.booking?.payment_status;
         } catch {
           try {
-            const detail2 = await apiClient.get(`/customer/bookings/${bid}${qstr}`);
+            const detail2 = (await apiClient.get(`/customer/bookings/${bid}${qstr}`)) as any;
             const b2 = pickBooking(detail2);
             st =
               b2?.status ??
@@ -2611,14 +2633,19 @@ export function UniversalPaymentPage({
           },
         },
       };
-      // Custom `display` block can surface QR-only UPI on desktop; when user prefills VPA use default layout + prefill (Razorpay Payment Link–style `prefill.vpa`).
+      // UPI display block (collect/intent/qr) + method.upi=true is what surfaces
+      // GPay/PhonePe/Paytm intents on Capacitor Android WebView. The legacy
+      // `banks` block hid UPI on many Android builds. When the user has
+      // pre-entered a VPA, fall back to default layout + `prefill.vpa` (Razorpay
+      // Payment Link–style) so collect runs straight through without the picker.
       if (!validPrefillVpa) {
-        options.config = getWarmpawzRazorpayStandardDisplayConfig();
+        options.config = getWarmpawzRazorpayUpiDisplayConfig();
+        options.method = { upi: true };
       }
       if (Object.keys(razorpayPrefill).length > 0) {
         options.prefill = razorpayPrefill;
       }
-      if (validPrefillVpa || (e164Contact && razorpayPrefill.email)) {
+      if (validPrefillVpa) {
         options.method = 'upi';
       }
 
@@ -2640,9 +2667,13 @@ export function UniversalPaymentPage({
           order_id: razorpayOrderId,
           ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
           theme: { color: '#FF8C42' },
-          // Keep parity with web `new Razorpay(options)` — bare payload hid UPI in prod (react-native-razorpay).
-          ...(!validPrefillVpa ? { config: getWarmpawzRazorpayStandardDisplayConfig() } : {}),
-          ...(validPrefillVpa || (e164Contact && razorpayPrefill.email) ? { method: 'upi' as const } : {}),
+          // Keep parity with web `new Razorpay(options)` — UPI display block
+          // (collect/intent/qr) + `method: { upi: true }` is what surfaces UPI
+          // on react-native-razorpay too. With a manual VPA, switch to single
+          // `method: 'upi'` + `prefill.vpa` for a straight collect flow.
+          ...(!validPrefillVpa
+            ? { config: getWarmpawzRazorpayUpiDisplayConfig(), method: { upi: true as const } }
+            : { method: 'upi' as const }),
         };
         try {
           const resultPromise = waitForWarmpawzNativeRazorpayResult();
@@ -2788,15 +2819,6 @@ export function UniversalPaymentPage({
     ? 'cw-scroll-pad-tabbar-sticky-cta'
     : 'pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]';
 
-  const paymentStats = [
-    { value: formatPriceWithSymbol(displayAmount), label: 'Due' },
-    {
-      value: displayDuration != null && !Number.isNaN(Number(displayDuration)) ? `${displayDuration} min` : '—',
-      label: 'Duration',
-    },
-    { value: type === 'booking' ? 'Booking' : 'Order', label: 'Type' },
-  ];
-
   return (
     <div className="mx-auto flex h-[100dvh] min-h-0 w-full max-w-customer flex-col overflow-hidden bg-orange-50">
       {/* In-app payment summary (not Razorpay’s iframe). `compact` keeps safe-area without the 4rem mobile top pad. */}
@@ -2807,7 +2829,7 @@ export function UniversalPaymentPage({
         serviceSubtitle="Secure checkout"
         serviceIcon={Shield}
         iconColor="text-white"
-        stats={paymentStats}
+        stats={EMPTY_SERVICE_HEADER_STATS}
         onBack={onBack}
         showBackButton
         bottomEdge="sheet"

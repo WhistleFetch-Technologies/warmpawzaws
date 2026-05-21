@@ -205,69 +205,7 @@ export function registerReviewEndpoints(app: Hono) {
     }
   });
 
-  /**
-   * GET /reviews/vendor/:vendorId
-   * Get reviews for a vendor
-   */
-  app.get("/reviews/vendor/:vendorId", async (c) => {
-    try {
-      const { vendorId } = c.req.param();
-      const limit = parseInt(c.req.query('limit') || '20');
-      const offset = parseInt(c.req.query('offset') || '0');
-
-      const reviews = await query(
-        `SELECT r.*, 
-                c.full_name as customer_name,
-                c.profile_photo_url as customer_photo,
-                sv.name as service_name,
-                b.booking_date
-         FROM reviews r
-         LEFT JOIN customers c ON r.customer_id = c.id
-         LEFT JOIN bookings b ON r.booking_id = b.id
-         LEFT JOIN services sv ON b.service_id = sv.id
-         WHERE r.vendor_id = $1
-         ORDER BY r.created_at DESC
-         LIMIT $2 OFFSET $3`,
-        [vendorId, limit, offset]
-      );
-
-      // Get aggregates
-      const aggregates = await query(
-        `SELECT 
-           COUNT(*) as total,
-           AVG(rating) as average,
-           COUNT(*) FILTER (WHERE rating = 5) as five_star,
-           COUNT(*) FILTER (WHERE rating = 4) as four_star,
-           COUNT(*) FILTER (WHERE rating = 3) as three_star,
-           COUNT(*) FILTER (WHERE rating = 2) as two_star,
-           COUNT(*) FILTER (WHERE rating = 1) as one_star
-         FROM reviews WHERE vendor_id = $1`,
-        [vendorId]
-      );
-
-      const agg = (aggregates as any).rows[0] || {};
-
-      return c.json({
-        success: true,
-        reviews: (reviews as any).rows || [],
-        aggregates: {
-          total: parseInt(agg.total || '0'),
-          average: parseFloat(agg.average || '0').toFixed(1),
-          distribution: {
-            5: parseInt(agg.five_star || '0'),
-            4: parseInt(agg.four_star || '0'),
-            3: parseInt(agg.three_star || '0'),
-            2: parseInt(agg.two_star || '0'),
-            1: parseInt(agg.one_star || '0'),
-          },
-        },
-      });
-
-    } catch (error: any) {
-      console.error('Error fetching vendor reviews:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
+  // GET /reviews/vendor/:vendorId — implemented in reviews-enhanced.ts (presigned photos, camelCase fields).
 
   /**
    * GET /reviews/staff/:staffId

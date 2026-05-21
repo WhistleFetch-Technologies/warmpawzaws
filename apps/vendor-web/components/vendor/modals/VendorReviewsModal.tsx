@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { useVendorChromeScrollLock } from '@/hooks/useVendorChromeScrollLock';
 import { Star, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
@@ -13,78 +14,21 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import {
+  type VendorReviewItem,
+  normalizeVendorReview,
+  formatReviewDate,
+  vendorReviewsApiPath,
+} from '@/lib/vendor-review-utils';
+import { navigateToVendorBookingFromReview } from '@/lib/vendor-review-booking-nav';
+import { ReviewPhotoGallery } from '@/components/vendor/reviews/ReviewPhotoGallery';
 
-export interface VendorReviewItem {
-  id: string;
-  customer_id: string;
-  vendor_id: string;
-  service_id?: string;
-  booking_id?: string;
-  rating: number;
-  comment?: string;
-  images?: string[];
-  is_approved: boolean;
-  created_at: string;
-  customer_name?: string;
-  vendor_name?: string;
-}
+export type { VendorReviewItem };
 
 interface VendorReviewsModalProps {
   vendorId: string;
   open: boolean;
   onClose: () => void;
-}
-
-/** Maps GET /reviews/vendor/:id payloads (legacy rows or enhanced camelCase). */
-function normalizeVendorReview(r: Record<string, unknown>): VendorReviewItem {
-  const comment =
-    (typeof r.comment === 'string' ? r.comment : undefined) ??
-    (typeof r.review === 'string' ? r.review : undefined);
-  const customer_name =
-    (typeof r.customer_name === 'string' ? r.customer_name : undefined) ??
-    (typeof r.customerName === 'string' ? r.customerName : undefined);
-  const created_at =
-    (typeof r.created_at === 'string' ? r.created_at : undefined) ??
-    (typeof r.createdAt === 'string' ? r.createdAt : undefined) ??
-    new Date().toISOString();
-  const booking_id =
-    (typeof r.booking_id === 'string' ? r.booking_id : undefined) ??
-    (typeof r.bookingId === 'string' ? r.bookingId : undefined);
-
-  return {
-    id: String(r.id ?? ''),
-    customer_id: String(r.customer_id ?? r.customerId ?? ''),
-    vendor_id: String(r.vendor_id ?? r.vendorId ?? ''),
-    service_id:
-      typeof r.service_id === 'string'
-        ? r.service_id
-        : typeof r.serviceId === 'string'
-          ? r.serviceId
-          : undefined,
-    booking_id,
-    rating: typeof r.rating === 'number' ? r.rating : Number(r.rating) || 0,
-    comment,
-    images: Array.isArray(r.images) ? (r.images as string[]) : undefined,
-    is_approved:
-      typeof r.is_approved === 'boolean'
-        ? r.is_approved
-        : typeof r.isApproved === 'boolean'
-          ? r.isApproved
-          : true,
-    created_at,
-    customer_name,
-    vendor_name:
-      (typeof r.vendor_name === 'string' ? r.vendor_name : undefined) ??
-      (typeof r.vendorName === 'string' ? r.vendorName : undefined),
-  };
-}
-
-function formatReviewDate(dateString: string) {
-  return new Date(dateString).toLocaleDateString('en-IN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
 }
 
 function StarRow({ rating }: { rating: number }) {
@@ -101,22 +45,25 @@ function StarRow({ rating }: { rating: number }) {
 }
 
 export function VendorReviewsModal({ vendorId, open, onClose }: VendorReviewsModalProps) {
+  const router = useRouter();
   const [reviews, setReviews] = useState<VendorReviewItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<VendorReviewItem | null>(null);
+  const [openingBooking, setOpeningBooking] = useState(false);
 
   const loadReviews = useCallback(async () => {
     if (!vendorId) return;
     try {
       setLoading(true);
       const response = (await apiClient.get<{ reviews?: Record<string, unknown>[] }>(
-        `/reviews/vendor/${encodeURIComponent(vendorId)}?limit=100`
+        vendorReviewsApiPath(vendorId)
       )) as { reviews?: Record<string, unknown>[] };
       const raw = response.reviews ?? [];
       setReviews(raw.map((row) => normalizeVendorReview(row)));
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('[VendorReviewsModal]', e);
-      toast.error(e?.message || 'Failed to load reviews');
+      const message = e && typeof e === 'object' && 'message' in e ? String((e as { message: string }).message) : 'Failed to load reviews';
+      toast.error(message);
       setReviews([]);
     } finally {
       setLoading(false);
@@ -134,6 +81,15 @@ export function VendorReviewsModal({ vendorId, open, onClose }: VendorReviewsMod
 
   const avg =
     reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
+
+  const handleViewBooking = async (bookingId?: string) => {
+    setOpeningBooking(true);
+    try {
+      await navigateToVendorBookingFromReview(router, bookingId);
+    } finally {
+      setOpeningBooking(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -183,6 +139,9 @@ export function VendorReviewsModal({ vendorId, open, onClose }: VendorReviewsMod
                       {selected.customer_name || 'Customer'}
                     </p>
                     <p className="text-xs text-gray-500">{formatReviewDate(selected.created_at)}</p>
+                    {selected.service_name ? (
+                      <p className="mt-0.5 truncate text-xs text-gray-600">{selected.service_name}</p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
@@ -196,23 +155,18 @@ export function VendorReviewsModal({ vendorId, open, onClose }: VendorReviewsMod
               ) : (
                 <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500">No written comment.</p>
               )}
-              {selected.images && selected.images.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {selected.images.map((src, i) => (
-                    <img
-                      key={i}
-                      src={src}
-                      alt=""
-                      className="h-20 w-20 rounded-lg border border-gray-100 object-cover"
-                    />
-                  ))}
-                </div>
-              )}
-              {selected.booking_id && (
-                <Button variant="outline" size="sm" className="w-full sm:w-auto" asChild>
-                  <a href={`/bookings/${selected.booking_id}`}>View booking</a>
+              <ReviewPhotoGallery photos={selected.photos} variant="grid" />
+              {selected.booking_id ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  disabled={openingBooking}
+                  onClick={() => handleViewBooking(selected.booking_id)}
+                >
+                  {openingBooking ? 'Opening…' : 'View booking'}
                 </Button>
-              )}
+              ) : null}
             </div>
           ) : reviews.length === 0 ? (
             <div className="flex flex-col items-center py-10 text-center">
@@ -242,9 +196,14 @@ export function VendorReviewsModal({ vendorId, open, onClose }: VendorReviewsMod
                         <StarRow rating={r.rating} />
                       </div>
                       <p className="mt-0.5 text-xs text-gray-500">{formatReviewDate(r.created_at)}</p>
-                      {r.comment && (
+                      {r.comment ? (
                         <p className="mt-1 line-clamp-2 text-xs text-gray-600">{r.comment}</p>
-                      )}
+                      ) : null}
+                      {r.photos.length > 0 ? (
+                        <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                          <ReviewPhotoGallery photos={r.photos} variant="row" />
+                        </div>
+                      ) : null}
                     </div>
                     <ChevronRight className="mt-2 h-4 w-4 shrink-0 text-gray-400" aria-hidden />
                   </button>

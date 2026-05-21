@@ -24,7 +24,7 @@ import { EnhancedSearchBar } from '../EnhancedSearchBar';
 import { ProblemGridNavigation } from '../ProblemGridNavigation';
 import { ForYouSection } from '../ForYouSection';
 import { ServicesByProblem } from '../ServicesByProblem';
-import { TrendingProblems } from '../TrendingProblems';
+import { TrendingProblems, type TrendingProblem } from '../TrendingProblems';
 import { WalletIcon } from '../WalletIcon';
 import { CustomerNotificationModal } from '../CustomerNotificationModal';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
@@ -196,6 +196,19 @@ function snapCustomerAiFabToRight(ny: number): { x: number; y: number } {
     x: snapX,
     y: Math.max(minY, Math.min(maxY, ny)),
   };
+}
+
+/** Trending API `category` is role_id; map to problem-grid category slug. */
+function trendingRoleIdToCategorySlug(roleId: string): string {
+  const r = roleId.toLowerCase();
+  if (r.includes('groom')) return 'grooming';
+  if (r.includes('train')) return 'training';
+  if (r.includes('walk')) return 'walker';
+  if (r.includes('board')) return 'boarding';
+  if (r.includes('behav')) return 'behavioral';
+  if (r.includes('nutrition')) return 'nutrition';
+  if (r.includes('vet')) return 'vet';
+  return 'vet';
 }
 
 export function CustomerHomeComplete({
@@ -2841,8 +2854,22 @@ export function CustomerHomeComplete({
           />
           <div className="mt-4 pt-4 border-t border-gray-100">
             <TrendingProblems
-              onProblemSelect={(problemId, title) => {
-                handleNavigation('services_by_problem', { problemId, problemTitle: title });
+              onProblemSelect={(item: TrendingProblem) => {
+                const roleId = (item.category || 'veterinarian').trim();
+                const category = trendingRoleIdToCategorySlug(roleId);
+                handleNavigation('services_by_problem', {
+                  problemId: item.problemId,
+                  problemTitle: item.title,
+                  roleId,
+                  category,
+                  problem: {
+                    problemId: item.problemId,
+                    title: item.title,
+                    name: item.title,
+                    roleId,
+                    category,
+                  },
+                });
               }}
               limit={5}
             />

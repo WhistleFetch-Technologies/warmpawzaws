@@ -572,7 +572,9 @@ export function UniversalHomeServiceRouter({
         serviceType={serviceType}
         config={config}
         onBack={handleBack}
-        onSelectService={() => setCurrentStep('select_service')}
+        onSelectService={() => {
+          setCurrentStep('select_service');
+        }}
         onNavigate={onNavigate}
       />
     );

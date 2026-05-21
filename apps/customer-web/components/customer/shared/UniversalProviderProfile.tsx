@@ -17,7 +17,7 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
-import { StarRating } from './StarRating';
+import { VendorRatingDisplay } from './VendorRatingDisplay';
 
 // ============================================================================
 // TYPES
@@ -207,6 +207,8 @@ export function UniversalProviderProfile({
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   const [notes, setNotes] = useState('');
   const [customerId, setCustomerId] = useState<string | null>(null);
+
+  const showFacilitiesAmenitiesOnAbout = !(category === 'vet' && serviceStyle === 'at_home');
 
   // When returning from address book with a selected address, pre-select it
   useEffect(() => {
@@ -556,24 +558,22 @@ export function UniversalProviderProfile({
                   <p className="text-sm text-gray-500 truncate">{provider.qualifications}</p>
                 )}
                 
-                {provider.specialization && (
-                  <Badge className="bg-purple-100 text-purple-700 text-xs mt-1">
-                    {provider.specialization}
-                  </Badge>
-                )}
               </div>
             </div>
 
             {/* Stats */}
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
-              <div className="text-center">
-                <StarRating
-                  rating={provider.rating}
-                  reviewCount={provider.reviewCount}
-                  starsClassName="w-4 h-4"
-                  textClassName="text-xs text-gray-500"
-                />
-              </div>
+              <VendorRatingDisplay
+                row={{
+                  vendorId: provider.vendorId ?? provider.id,
+                  vendorRating: provider.rating,
+                  vendorReviewCount: provider.reviewCount,
+                }}
+                vendorId={String(provider.vendorId ?? provider.id ?? '')}
+                className="text-center"
+                starsClassName="w-4 h-4"
+                textClassName="text-xs text-gray-500"
+              />
               <div className="text-center">
                 <div className="font-bold text-gray-900">{provider.experienceYears || 0}+</div>
                 <p className="text-xs text-gray-500">Years Exp</p>
@@ -930,17 +930,18 @@ export function UniversalProviderProfile({
                   </Card>
                 )}
 
-                {/* Amenities Section */}
-                <Card className="p-4">
-                  <h3 className="font-medium mb-3 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-orange-500" />
-                    Facilities & Amenities
-                  </h3>
-                  <AmenitiesSection
-                    amenities={provider.amenities || []}
-                    compact={true}
-                  />
-                </Card>
+                {showFacilitiesAmenitiesOnAbout && (
+                  <Card className="p-4">
+                    <h3 className="font-medium mb-3 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-orange-500" />
+                      Facilities & Amenities
+                    </h3>
+                    <AmenitiesSection
+                      amenities={provider.amenities || []}
+                      compact={true}
+                    />
+                  </Card>
+                )}
               </div>
             )}
 

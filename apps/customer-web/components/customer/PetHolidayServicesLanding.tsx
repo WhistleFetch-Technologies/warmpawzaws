@@ -31,23 +31,14 @@ export function PetHolidayServicesLanding({ phone, onBack, onNavigate }: PetHoli
       const packageList = data.vendors || data.services || data.packages || [];
       setHolidayPackages(packageList);
       
-      const rated = packageList.filter((p: any) => {
-        const rc = Number(p.reviewCount ?? p.reviews_count ?? p.totalReviews ?? 0) || 0;
-        const raw = p.rating != null ? Number(p.rating) : NaN;
-        return rc > 0 && Number.isFinite(raw) && raw > 0;
-      });
       setStats({
         activePackages: packageList.length || 30,
         bookings: '800+',
-        rating:
-          rated.length > 0
-            ? (rated.reduce((acc: number, p: any) => acc + Number(p.rating), 0) / rated.length).toFixed(1)
-            : '—',
       });
     } catch (error) {
       console.error('Error loading holiday packages:', error);
       setHolidayPackages([]);
-      setStats({ activePackages: 30, bookings: '800+', rating: '—' });
+      setStats({ activePackages: 30, bookings: '800+' });
     } finally {
       setLoading(false);
     }
@@ -86,25 +77,6 @@ export function PetHolidayServicesLanding({ phone, onBack, onNavigate }: PetHoli
           <h1 className="text-2xl font-bold text-white">Pet Holidays</h1>
         </div>
 
-        {/* Stats Bar - Glassmorphism */}
-        {stats && (
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.activePackages}+</div>
-               <div className="text-xs text-white/80">Packages</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.bookings}</div>
-               <div className="text-xs text-white/80">Bookings</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="flex items-center gap-1 text-2xl font-bold text-white">
-                 {stats.rating} <Star className="w-4 h-4 fill-white" />
-               </div>
-               <div className="text-xs text-white/80">Rating</div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Main Content - White Card with Top Radius */}

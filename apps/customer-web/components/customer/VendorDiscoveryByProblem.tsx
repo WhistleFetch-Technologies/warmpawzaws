@@ -15,7 +15,7 @@ import { apiClient } from '@/lib/api-client';
 import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { formatDistanceDisplay } from '@/lib/distance-display';
-import { StarRating } from '@/components/customer/shared/StarRating';
+import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 
 interface VendorDiscoveryByProblemProps {
   roleId: string;
@@ -566,9 +566,13 @@ function VendorCard({
               {vendor.businessName || vendor.fullName}
             </h3>
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <StarRating
-                rating={vendor.rating}
-                reviewCount={vendor.reviewCount ?? vendor.review_count}
+              <VendorRatingDisplay
+                row={{
+                  vendorId: vendor.vendorId ?? vendor.id,
+                  vendorRating: vendor.rating,
+                  vendorReviewCount: vendor.reviewCount ?? vendor.review_count,
+                }}
+                vendorId={String(vendor.vendorId ?? vendor.id ?? '')}
                 starsClassName="w-3.5 h-3.5"
                 textClassName="text-xs text-gray-600"
               />

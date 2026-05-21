@@ -3,6 +3,8 @@
  * for consistent “featured vendor” cards across service hubs.
  */
 
+import { resolveVendorRatingForCard } from '@/lib/resolve-vendor-rating';
+
 export type FeaturedProviderCategory =
   | 'boarding'
   | 'sitting'
@@ -210,11 +212,12 @@ export function normalizeDiscoveryProvider(
       photoUrl = str((p0 as { url?: unknown }).url);
   }
 
-  const ratingRaw =
-    num(r.rating) ?? num(r.vendorRating) ?? num(r.vendor_rating) ?? 0;
-  const rating = ratingRaw != null && ratingRaw > 0 ? ratingRaw : 0;
-
-  const reviewCount = reviewCountFromRaw(r);
+  const ratingResolved = resolveVendorRatingForCard(r, id);
+  const rating =
+    ratingResolved.shouldShowRating && ratingResolved.average != null
+      ? ratingResolved.average
+      : 0;
+  const reviewCount = ratingResolved.reviewCount;
 
   const distanceKm = num(r.distance) ?? num(r.distanceKm) ?? num(r.distance_km);
 

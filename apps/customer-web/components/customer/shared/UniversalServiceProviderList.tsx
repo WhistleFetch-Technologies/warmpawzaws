@@ -15,9 +15,10 @@ import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords'
 import { toast } from 'sonner';
 import { SponsoredProviderCard, TopProvidersSection } from './SponsoredProviderCard';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
-import { StarRating } from './StarRating';
+import { VendorRatingDisplay } from './VendorRatingDisplay';
 
 // ============================================================================
 // TYPES
@@ -417,18 +418,17 @@ function ProviderCard({ provider, serviceStyle, showPriceDisclaimer = false, isP
                 Package available
               </Badge>
             )}
-            {provider.specialization && !provider.bestForProblem && (
-              <Badge className="bg-purple-100 text-purple-700 text-xs">
-                {provider.specialization}
-              </Badge>
-            )}
           </div>
 
           {/* Stats Row */}
           <div className="flex items-center gap-3 text-xs text-gray-500 mb-2">
-            <StarRating
-              rating={provider.rating}
-              reviewCount={provider.reviewCount}
+            <VendorRatingDisplay
+              row={{
+                vendorId: provider.vendorId ?? provider.id,
+                vendorRating: provider.rating,
+                vendorReviewCount: provider.reviewCount,
+              }}
+              vendorId={String(provider.vendorId ?? provider.id ?? '')}
               starsClassName="w-3 h-3"
               textClassName="text-xs text-gray-500"
             />
@@ -808,17 +808,13 @@ export function UniversalServiceProviderList({
   };
   const CategoryIcon = getCategoryIcon();
 
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: `${filteredProviders.length}+`, label: category === 'vet' ? 'Vets' : 'Providers', icon: <CategoryIcon className="w-4 h-4" /> },
-    { value: '1K+', label: 'Bookings' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   return (
-    <div className="min-h-screen bg-gray-50 max-w-md mx-auto">
+    <div className="mx-auto flex min-h-screen w-full max-w-customer flex-col bg-gray-50">
       {/*HEADER SECTION*/}
       <ServiceDashboardHeader
+        fullWidth
         serviceName={title || styleConfig.label}
         serviceSubtitle={subtitle}
         serviceIcon={getCategoryIcon()}
@@ -827,10 +823,11 @@ export function UniversalServiceProviderList({
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-white"
       />
 
-      {/*MAIN CONTENT SECTION*/}
-      <div className="px-4 pt-2 pb-8">
+      {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
+      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 pb-8 sm:rounded-t-[2rem]">
         {/*FILTER SECTION STARTS*/}
         {showProblemFilter && categoryProblems.length > 0 && (
           <div className="mb-4">

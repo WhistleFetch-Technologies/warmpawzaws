@@ -19,16 +19,17 @@ import { WALKING_NEEDS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import {
-  mergeWalkerModalVendorOfferings,
+  fetchWalkerVendorCatalogMerged,
   firstServiceIdFromServicePackageRow,
   vendorServiceRowDedupeKey,
-  rowQualifiesForWalkingModal,
 } from '@/lib/walker-vendor-offerings';
 import {
   isVendorServicePackageRow,
   buildWalkerServiceDataForVendorPackagePurchase,
 } from '@/lib/vendor-package-purchase-nav';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { formatExactCentreCount, formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 export interface WalkerPendingWalkSession {
@@ -181,6 +182,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     phone,
     serviceStyle: 'at_home',
     category: 'walker',
+    roleId: 'walker',
   });
 
   useEffect(() => {
@@ -256,28 +258,11 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
   /** Drop stale async results when a newer search/load started. */
   const loadWalkersGenRef = useRef(0);
 
+  /** Same coord order as search tab / useHubVendorDiscovery (profile → localStorage → GPS). */
   const getLocationQuerySuffix = useCallback(async (): Promise<string> => {
-    try {
-      const lat = typeof localStorage !== 'undefined' && localStorage.getItem('customer_latitude');
-      const lng = typeof localStorage !== 'undefined' && localStorage.getItem('customer_longitude');
-      if (lat && lng) return `&latitude=${lat}&longitude=${lng}`;
-    } catch (_) {}
-    if (typeof phone !== 'undefined' && phone) {
-      try {
-        const profileRes = (await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`)) as any;
-        const profile = profileRes?.profile || profileRes;
-        if (profile?.latitude != null && profile?.longitude != null) {
-          return `&latitude=${encodeURIComponent(String(profile.latitude))}&longitude=${encodeURIComponent(String(profile.longitude))}`;
-        }
-      } catch (_) {}
-    }
-    if (typeof navigator !== 'undefined' && navigator.geolocation) {
-      try {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
-        });
-        return `&latitude=${encodeURIComponent(String(pos.coords.latitude))}&longitude=${encodeURIComponent(String(pos.coords.longitude))}`;
-      } catch (_) {}
+    const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
+    if (latitude != null && longitude != null) {
+      return `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
     }
     return '';
   }, [phone]);
@@ -434,50 +419,24 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     setWalkerPackagesList([]);
     try {
       // Phone: backend uses for package inclusions; query shape must not drop rows on miss.
-      const phoneQuery =
-        phone && phone.trim()
-          ? `customerPhone=${encodeURIComponent(phone)}&phone=${encodeURIComponent(phone)}`
-          : '';
-      const baseCustomerServices = `/customer/vendor/${encodeURIComponent(vid)}/services`;
-      const withWalkingCategory = phoneQuery
-        ? `${baseCustomerServices}?category=walking&${phoneQuery}`
-        : `${baseCustomerServices}?category=walking`;
-      const fullCatalog = phoneQuery ? `${baseCustomerServices}?${phoneQuery}` : baseCustomerServices;
-
-      /**
-       * `category=walking` in SQL only matches `vs.category` containing the substring "walking" (not "walk" or "General").
-       * Local DBs often differ from UAT, so we merge a second full-catalog call and keep walking-like rows in JS.
-       */
-      const [walkByCategoryRes, fullServicesRes, spRes] = await Promise.allSettled([
-        apiClient.get(withWalkingCategory) as Promise<Record<string, any>>,
-        apiClient.get(fullCatalog) as Promise<Record<string, any>>,
+      const [catalog, spRes] = await Promise.allSettled([
+        fetchWalkerVendorCatalogMerged((url) => apiClient.get(url), vid, phone),
         apiClient.get(`/vendor/${encodeURIComponent(vid)}/packages`) as Promise<{ packages?: any[] }>,
       ]);
 
-      const fromWalkingCategory: any[] =
-        walkByCategoryRes.status === 'fulfilled' ? mergeWalkerModalVendorOfferings(walkByCategoryRes.value) : [];
-      const fromFullFiltered: any[] =
-        fullServicesRes.status === 'fulfilled'
-          ? mergeWalkerModalVendorOfferings(fullServicesRes.value).filter((r) => rowQualifiesForWalkingModal(r))
-          : [];
-
       const vendorRows: any[] = [];
       const seen = new Set<string>();
-      for (let i = 0; i < fromWalkingCategory.length; i += 1) {
-        const r = fromWalkingCategory[i];
-        if (!r) continue;
-        const key = vendorServiceRowDedupeKey(r, i);
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        vendorRows.push(r);
-      }
-      for (let j = 0; j < fromFullFiltered.length; j += 1) {
-        const r = fromFullFiltered[j];
-        if (!r) continue;
-        const key = vendorServiceRowDedupeKey(r, 1000 + j);
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        vendorRows.push(r);
+      if (catalog.status === 'fulfilled') {
+        const { services, packages } = catalog.value;
+        const mergedCatalog = [...services, ...packages];
+        for (let i = 0; i < mergedCatalog.length; i += 1) {
+          const r = mergedCatalog[i];
+          if (!r) continue;
+          const key = vendorServiceRowDedupeKey(r, i);
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          vendorRows.push(r);
+        }
       }
 
       const tableRows: any[] =
@@ -625,16 +584,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     return () => window.clearTimeout(t);
   }, [pendingWalkSession]);
 
-  // Prepare stats for ServiceDashboardHeader
-  const dashboardStats = stats ? [
-    { value: `${stats.walkers}+`, label: 'Walkers' },
-    { value: stats.walks, label: 'Walks' },
-    { value: String(stats.rating), label: 'Rating' }
-  ] : [
-    { value: '30+', label: 'Walkers' },
-    { value: '2K+', label: 'Walks' },
-    { value: '—', label: 'Rating' }
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   return (
     <div className="min-h-screen bg-gray-50">

@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Coffee, ArrowLeft, Star, Sparkles, ChevronRight, MapPin } from 'lucide-react';
+import { Coffee, ArrowLeft, Sparkles, ChevronRight, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
-import { StarRating } from '@/components/customer/shared/StarRating';
+import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 
 interface PetCafeServicesLandingProps {
   phone: string;
@@ -51,28 +51,14 @@ export function PetCafeServicesLanding({ phone, onBack, onNavigate }: PetCafeSer
       const uniqueCafes = Array.from(uniqueVendors.values());
       setCafes(uniqueCafes);
       
-      const withReviews = uniqueCafes.filter((c: any) => {
-        const rc = Number(c.vendorReviewCount ?? c.review_count ?? 0) || 0;
-        const r = Number(c.vendorRating ?? c.rating);
-        return rc > 0 && Number.isFinite(r) && r > 0;
-      });
-      const avgRating =
-        withReviews.length > 0
-          ? (
-              withReviews.reduce((acc: number, c: any) => acc + Number(c.vendorRating ?? c.rating), 0) /
-              withReviews.length
-            ).toFixed(1)
-          : null;
-
       setStats({
         activeCafes: uniqueCafes.length || 0,
         reservations: '3K+',
-        rating: avgRating,
       });
     } catch (error: any) {
       console.error('Error loading cafes:', error);
       setCafes([]);
-      setStats({ activeCafes: 0, reservations: '3K+', rating: null });
+      setStats({ activeCafes: 0, reservations: '3K+' });
       // ✅ FIX: Show error toast for API failures (toast is not imported, but error is handled)
       console.warn('Failed to load cafes. Please try again.');
     } finally {
@@ -102,25 +88,6 @@ export function PetCafeServicesLanding({ phone, onBack, onNavigate }: PetCafeSer
           <h1 className="text-2xl font-bold text-white">Pet Cafes</h1>
         </div>
 
-        {/* Stats Bar - Glassmorphism */}
-        {stats && (
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.activeCafes}+</div>
-               <div className="text-xs text-white/80">Cafes</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.reservations}</div>
-               <div className="text-xs text-white/80">Reservations</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="flex items-center gap-1 text-2xl font-bold text-white">
-                 {stats.rating != null ? stats.rating : '—'} {stats.rating != null ? <Star className="w-4 h-4 fill-white" /> : null}
-               </div>
-               <div className="text-xs text-white/80">Avg rating</div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Main Content - White Card with Top Radius */}
@@ -188,9 +155,13 @@ export function PetCafeServicesLanding({ phone, onBack, onNavigate }: PetCafeSer
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 truncate">{cafe.businessName || `Pet Cafe ${index}`}</h3>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mt-1">
-                        <StarRating
-                          rating={cafe.vendorRating}
-                          reviewCount={cafe.vendorReviewCount}
+                        <VendorRatingDisplay
+                          row={{
+                            vendorId: cafe.id ?? cafe.vendorId,
+                            vendorRating: cafe.vendorRating,
+                            vendorReviewCount: cafe.vendorReviewCount,
+                          }}
+                          vendorId={String(cafe.id ?? cafe.vendorId ?? '')}
                           starsClassName="w-3 h-3"
                           textClassName="text-xs text-slate-500"
                         />

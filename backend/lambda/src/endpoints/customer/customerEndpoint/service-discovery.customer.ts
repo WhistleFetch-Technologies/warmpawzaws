@@ -34,9 +34,24 @@ import {
 import { sqlPackagePurchaseActiveForListing } from '../../../utils/package-session-eligibility';
 import { DistanceResolver, haversineKm, formatDistanceKm } from '../../../lib/utils/vendor-customer-distance';
 import {
+  buildDiscoveryVendorExistsSql,
+  sqlVendorAvailabilityOrNotConfigured,
+  sqlVendorDiscoverableStatus,
+  sqlVendorOnlineForCustomerDiscovery,
+  sqlVendorServiceDiscoverable,
+  TRAINING_HUB_ROLE_SQL_IN_LIST,
+  BEHAVIOR_HUB_ROLE_SQL_IN_LIST,
+  catTextRequestsBehaviorHub,
+  sqlTrainingCategoryAliasOrVs,
+} from '../../../lib/discovery-vendor-query';
+import {
   acceptableAvailabilityStylesForSlot,
   normalizeAvailabilityServiceStyle,
 } from '../../../utils/availability-service-styles';
+import {
+  vendorGalleryDrivesListingPhoto,
+  getVendorListingPhotoUrl,
+} from '../../../utils/vendor-listing-photo';
 
 export { getCustomerCoordinates, resolveCustomerIdFromPhone };
 
@@ -570,72 +585,12 @@ function vendorServicePackagePresentationForCustomer(
   return { isPackage: true, packageDetails };
 }
 
-/**
- * SQL predicate: vendor row is eligible for customer-facing discovery.
- * Case-insensitive status; solo providers may remain `pending` until fully approved.
- */
-function sqlVendorDiscoverableStatus(vAlias = 'v'): string {
-  return `(
-    LOWER(TRIM(COALESCE(${vAlias}.status::text, ''))) IN ('approved', 'active', 'activated')
-    OR (
-      LOWER(TRIM(COALESCE(${vAlias}.status::text, ''))) = 'pending'
-      AND LOWER(TRIM(COALESCE(${vAlias}.vendor_type::text, ''))) = 'solo'
-    )
-  )`;
-}
-
 /** PG/client may return boolean or 't'/'f'. Unknown/null → treat as online (do not hide vendors). */
 function vendorRowIsOnline(isOnline: unknown): boolean {
   if (isOnline === false || isOnline === 'f' || isOnline === 'false' || isOnline === 0 || isOnline === '0') {
     return false;
   }
   return true;
-}
-
-/** Hide vendor from all customer discovery when they went offline (is_online = false). NULL → treat as online. */
-function sqlVendorOnlineForCustomerDiscovery(vAlias = 'v'): string {
-  return `COALESCE(${vAlias}.is_online, true) = true`;
-}
-
-/**
- * SQL predicate: vendor_services row is discoverable (enabled + publish state).
- * Includes `draft` when enabled — new vendors often save as draft before explicit publish;
- * aligns with getDiscoverableRoleNames() which already counts draft for role discovery.
- */
-function sqlVendorServiceDiscoverable(vsAlias = 'vs', allowNullEnabled = false): string {
-  const enabled = allowNullEnabled
-    ? `(${vsAlias}.is_enabled = true OR ${vsAlias}.is_enabled IS NULL)`
-    : `${vsAlias}.is_enabled = true`;
-  const pub = `(
-    ${vsAlias}.publish_status IS NULL
-    OR LOWER(TRIM(COALESCE(${vsAlias}.publish_status::text, ''))) IN ('published', 'auto_published', 'draft')
-  )`;
-  return `(${enabled}) AND ${pub}`;
-}
-
-/**
- * Vendor has at least one active vendor_availability_v2 row, OR has no VA2 schedule yet.
- * We do NOT filter VA2 rows by service_type: many clinics only save one style on the calendar
- * (e.g. at_center) while legitimately offering tele/at_home via vendor_services. The parent query
- * already requires matching enabled vendor_services for the requested style; the slots API still
- * enforces per-style capacity when booking.
- */
-function sqlVendorAvailabilityOrNotConfigured(vAlias = 'v'): string {
-  return `(
-    EXISTS (
-      SELECT 1
-      FROM vendor_availability_v2 va
-      WHERE
-        (va.vendor_id = ${vAlias}.id OR va.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = ${vAlias}.id OR phone = ${vAlias}.phone))
-        AND COALESCE(va.is_available, true) = true
-    )
-    OR NOT EXISTS (
-      SELECT 1
-      FROM vendor_availability_v2 va0
-      WHERE va0.vendor_id = ${vAlias}.id
-         OR va0.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = ${vAlias}.id OR phone = ${vAlias}.phone)
-    )
-  )`;
 }
 
 /** `roles.name` values for the customer Training hub (trainers + behaviorists). */
@@ -652,8 +607,6 @@ const TRAINING_HUB_ROLE_NAMES_LOWER: readonly string[] = [
   'behaviourist_solo',
   'behaviourist_center',
 ];
-
-const TRAINING_HUB_ROLE_SQL_IN_LIST = TRAINING_HUB_ROLE_NAMES_LOWER.map((n) => `'${n}'`).join(', ');
 
 function vendorRoleIsTrainingHub(name: string | null | undefined): boolean {
   if (!name) return false;
@@ -676,85 +629,12 @@ const BEHAVIOR_HUB_ROLE_NAMES_LOWER: readonly string[] = [
   'pet_behaviorist',
 ];
 
-const BEHAVIOR_HUB_ROLE_SQL_IN_LIST = BEHAVIOR_HUB_ROLE_NAMES_LOWER.map((n) => `'${n}'`).join(', ');
-
 function vendorRoleIsBehaviorHub(name: string | null | undefined): boolean {
   if (!name) return false;
   return BEHAVIOR_HUB_ROLE_NAMES_LOWER.includes(String(name).toLowerCase().trim());
 }
 
-/** True when discovery `catTextExact` is the Behavioral hub (distinct from general `training`). */
-function catTextRequestsBehaviorHub(catTextExact: string[]): boolean {
-  return catTextExact.some((c) => {
-    const x = String(c).toLowerCase().trim();
-    return (
-      x === 'behaviourist' ||
-      x === 'behaviorist' ||
-      x === 'behavior' ||
-      x === 'behavioral' ||
-      x === 'behaviour' ||
-      x === 'behavioural' ||
-      x === 'pet_behaviourist' ||
-      x === 'dog_behaviourist' ||
-      x.includes('behaviou')
-    );
-  });
-}
-
-/** SQL: `vs.category` text that should match customer ?category=training (e.g. Behavioral). */
-function sqlTrainingCategoryAliasOrVs(vsAlias = 'vs'): string {
-  return `(
-        LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) IN (
-          'behavioral','behaviour','behavioural','behaviourist','behavior','behavior_modification'
-        )
-        OR LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) LIKE '%behavior%'
-        OR LOWER(TRIM(COALESCE(${vsAlias}.category, ''))) LIKE '%behaviour%'
-      )`;
-}
-
 // ✅ Using helper functions from constants/helper.ts instead of duplicate implementations
-
-/**
- * Center / business listings: gallery (metadata.facility_photos) is the source of truth for the public avatar.
- * Solo providers keep profile_photo_url as the primary headshot; gallery is supplementary.
- */
-function vendorGalleryDrivesListingPhoto(v: any): boolean {
-  const vt = String(v?.vendor_type ?? '').toLowerCase().trim();
-  return vt !== 'solo';
-}
-
-/**
- * Unified vendor photo URL: for business/center vendors, first facility gallery photo wins (same as former "center photo" in profile),
- * then profile_photo_url / profile_image / logo_url, then first facility photo as fallback for solo.
- * ✅ FIX: Regenerates pre-signed URLs on-demand to avoid 403 errors from expired URLs.
- * Use in all discovery endpoints so clinic/solo cards show photos consistently.
- */
-async function getVendorPhotoUrl(v: any): Promise<string | null> {
-  if (!v) return null;
-  let firstFacility: string | null = null;
-  try {
-    const meta = v.metadata;
-    const m = typeof meta === 'string' ? (meta ? JSON.parse(meta) : {}) : meta || {};
-    const photos = m?.facility_photos || m?.photos;
-    const first = Array.isArray(photos) && photos[0] ? String(photos[0]).trim() : '';
-    if (first) firstFacility = first;
-  } catch {
-    firstFacility = null;
-  }
-
-  if (firstFacility && vendorGalleryDrivesListingPhoto(v)) {
-    return await regeneratePresignedUrl(firstFacility);
-  }
-
-  const url = v.profile_photo_url || v.profile_image || v.logo_url || null;
-  if (url && String(url).trim()) {
-    return await regeneratePresignedUrl(url);
-  }
-  if (firstFacility) {
-    return await regeneratePresignedUrl(firstFacility);
-  }
-  return null;
-}
 
 /** Flatten metadata.gallery / facility_photos entries (strings or { url, key, … }). */
 function flattenMetadataGalleryItems(raw: unknown): string[] {
@@ -843,24 +723,14 @@ async function resolveOneFacilityPhotoToPresignedUrl(
       (photoItem.includes('X-Amz') || photoItem.includes('AWSAccessKeyId'))
     ) {
       const urlParts = photoItem.split('?')[0];
-      if (urlParts.includes('vendors/') && urlParts.includes('/facility/')) {
-        const keyMatch = urlParts.match(/vendors\/[^/]+\/facility\/(.+)$/);
-        if (keyMatch && keyMatch[1]) {
-          fileKey = `vendors/${vendorId}/facility/${keyMatch[1]}`;
-        } else {
-          const vendorsIndex = urlParts.indexOf('vendors/');
-          if (vendorsIndex >= 0) {
-            fileKey = urlParts.substring(vendorsIndex);
-          }
-        }
+      const vendorsIndex = urlParts.indexOf('vendors/');
+      if (vendorsIndex >= 0) {
+        // Use the key embedded in the URL — do not rewrite to route param vendorId (may be identity id).
+        fileKey = urlParts.substring(vendorsIndex);
       }
     } else if (photoItem.startsWith('vendors/')) {
-      if (!fileKey.startsWith(`vendors/${vendorId}/`)) {
-        const keyParts = fileKey.split('/');
-        if (keyParts.length >= 3 && keyParts[0] === 'vendors') {
-          fileKey = `vendors/${vendorId}/${keyParts.slice(2).join('/')}`;
-        }
-      }
+      // Stored S3 key — use as-is (upload-photos writes vendors/{vendors.id}/facility/...).
+      fileKey = fileKey.split('?')[0].split('#')[0];
     } else if (photoItem.startsWith('http://') || photoItem.startsWith('https://')) {
       return photoItem;
     }
@@ -1626,245 +1496,15 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
   const customerLat = opts.latitude ? parseFloat(opts.latitude) : null;
   const customerLng = opts.longitude ? parseFloat(opts.longitude) : null;
 
-  const isUuid = (s?: string) =>
-    !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
-  const rawCategoryKeys: string[] = [];
-  if (category) rawCategoryKeys.push(String(category));
-  if (roleId) rawCategoryKeys.push(String(roleId));
-  if (category && category.toLowerCase() === 'vet') {
-    rawCategoryKeys.push('vet care', 'veterinary', 'veterinarian');
-  }
-  const catTextExact: string[] = rawCategoryKeys.filter((k) => !isUuid(k)).map((k) => k.toLowerCase());
-  const catTextLike: string[] = catTextExact.map((k) => `%${k}%`);
-  const catUUIDs: string[] = rawCategoryKeys.filter((k) => isUuid(k));
-  const isVetCategoryDiscovery = catTextExact.some((c) =>
-    ['vet', 'vet care', 'veterinary', 'veterinarian'].includes(c)
-  );
-
-  const sittingDiscoveryRelaxed = Boolean(
-    catTextExact.some((c) =>
-      ['sitting', 'pet_sitter', 'sitter', 'sitter_solo'].includes(c)
-    ) ||
-      (Boolean(roleId) &&
-        ['pet_sitter', 'sitter', 'sitter_solo', 'pet_sitter_solo', 'pet_sitter_saas'].includes(
-          String(roleId).toLowerCase().replace(/-/g, '_')
-        ))
-  );
-
-  const boardingDiscoverySearch =
-    catTextExact.some((c) => ['boarding', 'pet_boarding'].includes(c)) ||
-    (roleId &&
-      ['pet_boarding', 'boarding'].includes(String(roleId).toLowerCase().replace(/-/g, '_')));
-
-  const nutritionDiscoverySearch =
-    catTextExact.some(
-      (c) =>
-        ['nutrition', 'nutritionist', 'pet_nutritionist', 'pet nutritionist'].includes(c) ||
-        c.includes('nutritionist') ||
-        c === 'pet nutrition' ||
-        (c.length >= 8 && c.startsWith('nutrition'))
-    ) ||
-    (roleId &&
-      ['pet_nutritionist', 'nutritionist', 'nutritionist_center', 'nutritionist_solo'].includes(
-        String(roleId).toLowerCase().replace(/-/g, '_')
-      ));
-
-  /** Must match GET /customer/discover-services (see trainingRoleUncategorizedOr in that handler). */
-  const trainingDiscoverySearchCount =
-    !sittingDiscoveryRelaxed && catTextExact.some((c) => c === 'training' || c.includes('training'));
-
-  const behaviorHubDiscoverySearchCount =
-    !sittingDiscoveryRelaxed && catTextRequestsBehaviorHub(catTextExact);
-
-  const trainingRoleUncategorizedOrCount =
-    trainingDiscoverySearchCount
-      ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST}))`
-      : '';
-
-  const trainingRoleCenterBypassOrCount =
-    trainingDiscoverySearchCount
-      ? ` OR LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})`
-      : '';
-
-  const trainingCategoryAliasVendorOrCount = trainingDiscoverySearchCount
-    ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
-    : '';
-
-  const behaviorRoleUncategorizedOrCount =
-    behaviorHubDiscoverySearchCount
-      ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST}))`
-      : '';
-
-  const behaviorCategoryAliasVendorOrCount = behaviorHubDiscoverySearchCount
-    ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}`
-    : '';
-
-  const behaviorTrainingCategoryVendorOrCount =
-    behaviorHubDiscoverySearchCount
-      ? ` OR (
-              LOWER(TRIM(COALESCE(vs.category, ''))) = 'training'
-              AND LOWER(TRIM(COALESCE(r.name, ''))) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST})
-            )`
-      : '';
-
-  const walkerCategoryDiscoveryOr =
-    !sittingDiscoveryRelaxed &&
-    catTextExact.some((c) => ['walker', 'walking', 'dog_walker', 'pet_walker'].includes(c))
-      ? ` OR (
-              vs.service_style = 'at_home'
-              AND (
-                LOWER(COALESCE(vs.service_name, '')) LIKE '%dog%walk%'
-                OR LOWER(COALESCE(vs.service_name, '')) LIKE '%pet%walk%'
-                OR (
-                  LOWER(COALESCE(vs.service_name, '')) LIKE '%walk%'
-                  AND LOWER(COALESCE(vs.service_name, '')) NOT LIKE '%walk-in%'
-                )
-              )
-              AND (
-                TRIM(COALESCE(vs.category, '')) = ''
-                OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other']::text[])
-              )
-            )`
-      : '';
-
-  const hasVsCategoryIdDiscover = await columnExists('vendor_services', 'category_id');
-  let boardingCustomCategoryIdOrSql = '';
-  if (boardingDiscoverySearch && hasVsCategoryIdDiscover) {
-    const slugRes = await query(
-      `SELECT id::text FROM service_categories
-           WHERE COALESCE(is_active, true) = true
-             AND (
-               LOWER(TRIM(category_id)) = ANY($1::text[])
-               OR LOWER(TRIM(name)) = ANY($1::text[])
-             )`,
-      [['boarding', 'pet_boarding', 'pet boarding']]
-    ).catch(() => ({ rows: [] as { id: string }[] }));
-    const ids = (slugRes.rows || []).map((r: any) => r?.id).filter(Boolean);
-    const UUID_RE =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const clean = ids.filter((id: string) => UUID_RE.test(String(id).trim()));
-    if (clean.length > 0) {
-      const uuidList = clean.map((id) => `'${String(id).trim()}'::uuid`).join(', ');
-      boardingCustomCategoryIdOrSql = `
-                OR (
-                  COALESCE(vs.is_custom_service, false) = true
-                  AND vs.category_id IS NOT NULL
-                  AND vs.category_id = ANY(ARRAY[${uuidList}]::uuid[])
-                )`;
-    }
-  }
-
-  const availabilityRequiredSql = sittingDiscoveryRelaxed
-    ? ''
-    : `
-          AND ${sqlVendorAvailabilityOrNotConfigured('v')}`;
-
-  const sittingCatalogBoardingNonCustomOr = sittingDiscoveryRelaxed
-    ? `OR (
-                LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'
-                AND COALESCE(vs.is_custom_service, false) = false
-              )`
-    : '';
-
-  const sittingCategoryTypoOr = sittingDiscoveryRelaxed
-    ? `OR (
-                LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%sitt%'
-                AND LOWER(TRIM(COALESCE(vs.category, ''))) NOT LIKE '%babysitt%'
-              )`
-    : '';
-
-  const sittingRoleUncategorizedOr = sittingDiscoveryRelaxed
-    ? `OR (
-                TRIM(COALESCE(vs.category, '')) = ''
-                AND COALESCE(vs.is_custom_service, false) = false
-                AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_sitter','sitter','sitter_solo','pet_sitter_solo','pet_sitter_saas')
-              )`
-    : '';
-
-  const sittingCustomNameOr = sittingDiscoveryRelaxed
-    ? `OR (
-                COALESCE(vs.is_custom_service, false) = true
-                AND LOWER(TRIM(COALESCE(vs.service_name, ''))) LIKE '%sitt%'
-                AND LOWER(TRIM(COALESCE(vs.service_name, ''))) NOT LIKE '%babysitt%'
-              )`
-    : '';
-
-  const sittingExcludeNonSittingSql = sittingDiscoveryRelaxed
-    ? `
-              AND NOT (
-                LOWER(TRIM(COALESCE(vs.category, ''))) = ANY(ARRAY[
-                  'walking','walker','dog_walker','dog walking','dog walker','dog_walking',
-                  'vet','veterinary','veterinarian','vet care','vet_care',
-                  'grooming','training','diagnostics','behaviourist','nutrition','daycare','transport'
-                ]::text[])
-                OR (
-                  LOWER(TRIM(COALESCE(vs.category, ''))) = 'boarding'
-                  AND COALESCE(vs.is_custom_service, false) = true
-                )
-              )`
-    : '';
-
-  const boardingRoleUncategorizedOr =
-    !sittingDiscoveryRelaxed && boardingDiscoverySearch
-      ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
-      : '';
-
-  const nutritionRoleUncategorizedOr =
-    !sittingDiscoveryRelaxed && nutritionDiscoverySearch
-      ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_nutritionist','nutritionist','nutritionist_center','nutritionist_solo'))`
-      : '';
-
-  const vetCategoryEmptyOr =
-    !sittingDiscoveryRelaxed && isVetCategoryDiscovery
-      ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
-      : '';
-
-  const vendorServiceCategorySql =
-    catTextExact.length + catUUIDs.length > 0
-      ? sittingDiscoveryRelaxed
-        ? `
-              AND (
-                ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}
-                ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
-                ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
-                ${sittingCatalogBoardingNonCustomOr}
-                ${sittingCategoryTypoOr}
-                ${sittingRoleUncategorizedOr}
-                ${sittingCustomNameOr}
-              )
-              ${sittingExcludeNonSittingSql}`
-        : `
-              AND (
-                ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}
-                ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
-                ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
-                ${boardingRoleUncategorizedOr}
-                ${nutritionRoleUncategorizedOr}
-                ${trainingRoleUncategorizedOrCount}
-                ${trainingRoleCenterBypassOrCount}
-                ${trainingCategoryAliasVendorOrCount}
-                ${behaviorRoleUncategorizedOrCount}
-                ${behaviorCategoryAliasVendorOrCount}
-                ${behaviorTrainingCategoryVendorOrCount}
-                ${walkerCategoryDiscoveryOr}
-                ${vetCategoryEmptyOr}
-                ${boardingCustomCategoryIdOrSql}
-              )`
-      : '';
-
-  const vendorVsDiscoverSql = sqlVendorServiceDiscoverable('vs', sittingDiscoveryRelaxed);
-  const vendorVsStyleSql = sittingDiscoveryRelaxed
-    ? `(vs.service_style = ANY($1::text[]) OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')`
-    : 'vs.service_style = ANY($1::text[])';
-
-  const vendorParams: any[] =
-    catTextExact.length + catUUIDs.length > 0
-      ? catTextExact.length > 0
-        ? catUUIDs.length > 0
-          ? [acceptableStyles, catTextExact, catTextLike, catUUIDs]
-          : [acceptableStyles, catTextExact, catTextLike]
-        : [acceptableStyles, [], [], catUUIDs]
-      : [acceptableStyles];
+  const vendorExists = await buildDiscoveryVendorExistsSql({
+    category,
+    roleId,
+    serviceStyle: serviceStyleNorm,
+    paramOffset: 1,
+    forVendorCount: true,
+  });
+  const { sittingDiscoveryRelaxed } = vendorExists.keys;
+  const vendorParams: any[] = [...vendorExists.params];
 
   const specKeysCount = await resolveSpecializationDiscoveryKeys((opts.specialization || '').trim());
   let specializationCountFragment = '';
@@ -1889,15 +1529,8 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
           AND ${sqlVendorDiscoverableStatus('v')}
           AND ${sqlVendorOnlineForCustomerDiscovery('v')}
           ${specializationCountFragment}
-          AND EXISTS (
-            SELECT 1
-            FROM vendor_services vs
-            WHERE vs.vendor_id = v.id
-              AND ${vendorVsDiscoverSql}
-              AND ${vendorVsStyleSql}
-              ${vendorServiceCategorySql}
-          )
-          ${availabilityRequiredSql}
+          AND ${vendorExists.sql}
+          ${vendorExists.availabilitySql}
       `;
 
   const vendorRows = await query(vendorListSql, vendorParams);
@@ -2962,6 +2595,25 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
                 AND COALESCE(vs.is_custom_service, false) = false
               )`
             : '';
+        // Mirror buildDiscoveryVendorExistsSql.sittingExcludeNonSittingSql so the sitter
+        // service fetch never returns walking / vet / grooming / training etc. services that
+        // the relaxed sitting bypass would otherwise allow through. Previously this constant
+        // was referenced below without being defined → ReferenceError → 500 on /discover-services
+        // for the sitting hub.
+        const sittingExcludeNonSittingSql = sittingDiscoveryRelaxed
+          ? `
+              AND NOT (
+                LOWER(TRIM(COALESCE(vs.category, ''))) = ANY(ARRAY[
+                  'walking','walker','dog_walker','dog walking','dog walker','dog_walking',
+                  'vet','veterinary','veterinarian','vet care','vet_care',
+                  'grooming','training','diagnostics','behaviourist','nutrition','daycare','transport'
+                ]::text[])
+                OR (
+                  LOWER(TRIM(COALESCE(vs.category, ''))) = 'boarding'
+                  AND COALESCE(vs.is_custom_service, false) = true
+                )
+              )`
+          : '';
         const sittingRelaxedFetchCategorySql =
           sitterRoleBypass && sittingDiscoveryRelaxed && (catTextExact.length + catUUIDs.length > 0)
             ? `
@@ -3103,7 +2755,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           photos = regeneratedPhotos.filter((url): url is string => url !== null && url !== undefined);
         } catch { }
 
-        const photoUrl = await getVendorPhotoUrl(vendor);
+        const photoUrl = await getVendorListingPhotoUrl(vendor);
         const prices = services.map((s: any) => s.price).filter((p: number) => p > 0);
         const priceMin = prices.length > 0 ? Math.min(...prices) : undefined;
         const priceMax = prices.length > 0 ? Math.max(...prices) : undefined;
@@ -3153,154 +2805,16 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
         };
       };
 
-      // 4) Vendor SQL: VA2 gate (sitting + training hubs skip — solo sitters/trainers often have published
-      // services but empty or all-disabled calendars; booking still uses slots API.)
-      const availabilityRequiredSql =
-        sittingDiscoveryRelaxed || trainingDiscoverySearch || behaviorHubDiscoverySearch
-          ? ''
-          : `
-          AND ${sqlVendorAvailabilityOrNotConfigured('v')}`;
-
-      /**
-       * Catalog historically used `boarding` for some at_home sitting products. Only treat **non-custom**
-       * `boarding` rows as sitting — custom services tagged Boarding belong in the Boarding hub, not Pet Sitting.
-       */
-      const sittingCatalogBoardingNonCustomOr =
-        sittingDiscoveryRelaxed
-          ? `OR (
-                LOWER(TRIM(COALESCE(vs.category,''))) = 'boarding'
-                AND COALESCE(vs.is_custom_service, false) = false
-              )`
-          : '';
-      /** Accept common sitter category typos like "pet sittier" while still excluding unrelated categories below. */
-      const sittingCategoryTypoOr =
-        sittingDiscoveryRelaxed
-          ? `OR (
-                LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%sitt%'
-                AND LOWER(TRIM(COALESCE(vs.category, ''))) NOT LIKE '%babysitt%'
-              )`
-          : '';
-      /** Keep legacy non-custom sitter rows visible when category is blank on sitter-role accounts. */
-      const sittingRoleUncategorizedOr =
-        sittingDiscoveryRelaxed
-          ? `OR (
-                TRIM(COALESCE(vs.category, '')) = ''
-                AND COALESCE(vs.is_custom_service, false) = false
-                AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_sitter','sitter','sitter_solo','pet_sitter_solo','pet_sitter_saas')
-              )`
-          : '';
-      /** Include custom sitter services even when vendor entered non-standard category text. */
-      const sittingCustomNameOr =
-        sittingDiscoveryRelaxed
-          ? `OR (
-                COALESCE(vs.is_custom_service, false) = true
-                AND LOWER(TRIM(COALESCE(vs.service_name, ''))) LIKE '%sitt%'
-                AND LOWER(TRIM(COALESCE(vs.service_name, ''))) NOT LIKE '%babysitt%'
-              )`
-          : '';
-
-      /** Pet Sitting hub: never surface walker / vet / grooming / custom-boarding rows even if vendor is a sitter. */
-      const sittingExcludeNonSittingSql = sittingDiscoveryRelaxed
-        ? `
-              AND NOT (
-                LOWER(TRIM(COALESCE(vs.category, ''))) = ANY(ARRAY[
-                  'walking','walker','dog_walker','dog walking','dog walker','dog_walking',
-                  'vet','veterinary','veterinarian','vet care','vet_care',
-                  'grooming','training','diagnostics','behaviourist','nutrition','daycare','transport'
-                ]::text[])
-                OR (
-                  LOWER(TRIM(COALESCE(vs.category, ''))) = 'boarding'
-                  AND COALESCE(vs.is_custom_service, false) = true
-                )
-              )`
-        : '';
-
-      const boardingRoleUncategorizedOr =
-        !sittingDiscoveryRelaxed && boardingDiscoverySearch
-          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('boarding', 'pet_boarding'))`
-          : '';
-
-      const nutritionRoleUncategorizedOr =
-        !sittingDiscoveryRelaxed && nutritionDiscoverySearch
-          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN ('pet_nutritionist','nutritionist','nutritionist_center','nutritionist_solo'))`
-          : '';
-      const trainingRoleUncategorizedOr =
-        !sittingDiscoveryRelaxed && trainingDiscoverySearch
-          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST}))`
-          : '';
-      // Role-based bypass: show all at_center services for training center vendors even
-      // when their services are mis-categorized (e.g. vendor set category='Boarding').
-      const trainingRoleCenterBypassOr =
-        !sittingDiscoveryRelaxed && trainingDiscoverySearch && isAtCenter
-          ? ` OR LOWER(COALESCE(TRIM(r.name), '')) IN (${TRAINING_HUB_ROLE_SQL_IN_LIST})`
-          : '';
-      const trainingCategoryAliasVendorOr =
-        !sittingDiscoveryRelaxed && trainingDiscoverySearch ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}` : '';
-      const behaviorRoleUncategorizedOr =
-        !sittingDiscoveryRelaxed && behaviorHubDiscoverySearch
-          ? ` OR (LOWER(COALESCE(TRIM(vs.category), '')) = '' AND LOWER(COALESCE(TRIM(r.name), '')) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST}))`
-          : '';
-      const behaviorCategoryAliasVendorOr =
-        !sittingDiscoveryRelaxed && behaviorHubDiscoverySearch ? ` OR ${sqlTrainingCategoryAliasOrVs('vs')}` : '';
-      const behaviorTrainingCategoryVendorOr =
-        !sittingDiscoveryRelaxed && behaviorHubDiscoverySearch
-          ? ` OR (
-              LOWER(TRIM(COALESCE(vs.category, ''))) = 'training'
-              AND LOWER(TRIM(COALESCE(r.name, ''))) IN (${BEHAVIOR_HUB_ROLE_SQL_IN_LIST})
-            )`
-          : '';
-      const vetCategoryEmptyOr =
-        !sittingDiscoveryRelaxed && isVetCategoryDiscovery
-          ? ` OR (TRIM(COALESCE(vs.category, '')) = '' AND v.role_id IN (SELECT id FROM roles WHERE LOWER(TRIM(COALESCE(name, ''))) IN ('vet_clinic', 'veterinarian', 'vet_solo', 'vet')))`
-          : '';
-
-      const vendorServiceCategorySql =
-        catTextExact.length + catUUIDs.length > 0
-          ? sittingDiscoveryRelaxed
-            ? `
-              AND (
-                ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}
-                ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
-                ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
-                ${sittingCatalogBoardingNonCustomOr}
-                ${sittingCategoryTypoOr}
-                ${sittingRoleUncategorizedOr}
-                ${sittingCustomNameOr}
-              )
-              ${sittingExcludeNonSittingSql}`
-            : `
-              AND (
-                ${catTextExact.length > 0 ? `LOWER(COALESCE(vs.category,'')) = ANY($2::text[]) OR LOWER(COALESCE(vs.category,'')) LIKE ANY($3::text[])` : `FALSE`}
-                ${catTextExact.length > 0 && catUUIDs.length > 0 ? ` OR ` : ``}
-                ${catUUIDs.length > 0 ? `COALESCE(vs.category,'') = ANY($4::text[])` : ``}
-                ${boardingRoleUncategorizedOr}
-                ${nutritionRoleUncategorizedOr}
-                ${trainingRoleUncategorizedOr}
-                ${trainingRoleCenterBypassOr}
-                ${trainingCategoryAliasVendorOr}
-                ${behaviorRoleUncategorizedOr}
-                ${behaviorCategoryAliasVendorOr}
-                ${behaviorTrainingCategoryVendorOr}
-                ${walkerCategoryDiscoveryOr}
-                ${vetCategoryEmptyOr}
-                ${boardingCustomCategoryIdOrSql}
-                ${trainingCustomCategoryIdOrSql}
-              )`
-          : '';
-
-      const vendorVsDiscoverSql = sqlVendorServiceDiscoverable('vs', sittingDiscoveryRelaxed);
-      const vendorVsStyleSql = sittingDiscoveryRelaxed
-        ? `(vs.service_style = ANY($1::text[]) OR vs.service_style IS NULL OR TRIM(COALESCE(vs.service_style, '')) = '')`
-        : 'vs.service_style = ANY($1::text[])';
-
-      const vendorParamsDiscover: any[] =
-        (catTextExact.length + catUUIDs.length > 0)
-          ? (catTextExact.length > 0
-            ? (catUUIDs.length > 0
-              ? [acceptableStyles, catTextExact, catTextLike, catUUIDs]
-              : [acceptableStyles, catTextExact, catTextLike])
-            : [acceptableStyles, [], [], catUUIDs])
-          : [acceptableStyles];
+      const vendorExistsDiscover = await buildDiscoveryVendorExistsSql({
+        category,
+        roleId,
+        serviceStyle: serviceStyleNormDiscover,
+        sittingRelaxed: sittingDiscoveryRelaxed,
+        paramOffset: 1,
+        isAtCenter,
+        forVendorCount: false,
+      });
+      const vendorParamsDiscover: any[] = [...vendorExistsDiscover.params];
 
       const specKeysDiscover = await resolveSpecializationDiscoveryKeys(specializationFilterDiscover);
       let specializationDiscoverFragment = '';
@@ -3333,15 +2847,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           AND ${sqlVendorDiscoverableStatus('v')}
           AND ${sqlVendorOnlineForCustomerDiscovery('v')}
           ${specializationDiscoverFragment}
-          AND EXISTS (
-            SELECT 1
-            FROM vendor_services vs
-            WHERE vs.vendor_id = v.id
-              AND ${vendorVsDiscoverSql}
-              AND ${vendorVsStyleSql}
-              ${vendorServiceCategorySql}
-          )
-          ${availabilityRequiredSql}
+          AND ${vendorExistsDiscover.sql}
+          ${vendorExistsDiscover.availabilitySql}
         ORDER BY v.id, avg_rating DESC NULLS LAST
         LIMIT ${maxResults}
       `;
@@ -5017,6 +4524,10 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           servicesQuery += ` AND (
             (LOWER(COALESCE(vs.category, '')) = LOWER($${catParam}) OR LOWER(COALESCE(vs.category, '')) LIKE '%' || LOWER($${catParam}) || '%')
             OR (
+              LOWER(TRIM(COALESCE(vs.category, ''))) LIKE '%walker%'
+              AND LOWER(TRIM(COALESCE(vs.category, ''))) NOT LIKE '%vet%'
+            )
+            OR (
               vs.service_style = 'at_home'
               AND (
                 LOWER(COALESCE(vs.service_name, '')) LIKE '%dog%walk%'
@@ -5028,7 +4539,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
               )
               AND (
                 TRIM(COALESCE(vs.category, '')) = ''
-                OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other']::text[])
+                OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other', 'general']::text[])
               )
             )
           )`;
@@ -5346,7 +4857,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           totalReviews: reviews.rows.length,
           operatingHours: safeParseOperatingHours(vendor.operating_hours),
           description: vendor.description || '',
-          photoUrl: await getVendorPhotoUrl(vendor),
+          photoUrl: await getVendorListingPhotoUrl(vendor),
           vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
           specializations: vendorSpecializations,
           serviceStyles: vendorServiceStyles,
@@ -5601,7 +5112,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
             vendorId: vendor.id,
             businessName: vendor.business_name,
             name: vendor.business_name || vendor.owner_name,
-            photoUrl: await getVendorPhotoUrl(vendor),
+            photoUrl: await getVendorListingPhotoUrl(vendor),
             rating: parseFloat(avgRating) || 0,
             reviewCount: parseInt(reviewCount) || 0,
             distanceKm,
@@ -5993,7 +5504,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           id: vendorId,
           vendorId,
           name: row.business_name || row.owner_name,
-          photoUrl: await getVendorPhotoUrl(row),
+          photoUrl: await getVendorListingPhotoUrl(row),
           rating,
           reviewCount,
           distance: distanceKm,
@@ -6102,7 +5613,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           phone: vendor.phone,
           email: vendor.email,
           /** Same as discovery /customer/vendor — solo providers often only have profile photo, not facility_photos */
-          photoUrl: await getVendorPhotoUrl(vendor),
+          photoUrl: await getVendorListingPhotoUrl(vendor),
           roleId: vendor.role_id, // ✅ FIX: Include roleId for CenterProfileManager
           role_id: vendor.role_id,
           boardingDisclaimer: boardingDisc.disclaimer,
@@ -6380,8 +5891,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
   /**
    * POST /vendor/facility/:vendorId/upload-photos
-   * Upload facility photos for a vendor
-   * This endpoint was missing, causing 404 errors
+   * Upload facility photos for a vendor (multipart or JSON base64).
+   * Capacitor Android WebView often sends 0-byte multipart bodies; JSON base64 avoids that.
    */
   app.post("/vendor/facility/:vendorId/upload-photos", async (c) => {
     try {
@@ -6389,65 +5900,159 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       console.log(`📸 [FACILITY-PHOTOS] Uploading photos for vendor: ${vendorId}`);
 
-      // Resolve vendor (frontend may pass vendor_identity.id; data is stored by vendors.id)
       const vendor = await resolveVendorById(vendorId);
       if (!vendor) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
       const actualVendorId = vendor.id;
 
-      // Parse the multipart form data
-      const formData = await c.req.formData();
-      const photos = formData.getAll('photos') as File[];
+      type IncomingPhoto = { buffer: Uint8Array; name: string; contentType: string };
+      const incoming: IncomingPhoto[] = [];
+      const skippedReasons: string[] = [];
+      const MAX_BYTES = 5 * 1024 * 1024;
 
-      if (!photos || photos.length === 0) {
-        return c.json({ error: 'No photos provided' }, 400);
+      const requestContentType = (c.req.header('content-type') || '').toLowerCase();
+      let attemptedCount = 0;
+
+      if (requestContentType.includes('application/json')) {
+        console.log(`📸 [FACILITY-PHOTOS] Parsing JSON/base64 body`);
+        const body = await c.req.json();
+        const items = Array.isArray(body?.photos) ? body.photos : [];
+        attemptedCount = items.length;
+        if (items.length === 0) {
+          return c.json({ error: 'No photos provided' }, 400);
+        }
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          try {
+            const raw =
+              typeof item?.base64 === 'string'
+                ? item.base64
+                : typeof item?.data === 'string'
+                  ? item.data
+                  : null;
+            if (!raw) {
+              skippedReasons.push(`photo[${i}]: missing base64`);
+              continue;
+            }
+            let base64String = raw.trim();
+            let contentType =
+              typeof item?.mimeType === 'string'
+                ? item.mimeType
+                : typeof item?.contentType === 'string'
+                  ? item.contentType
+                  : 'image/jpeg';
+            if (base64String.includes(',')) {
+              const parts = base64String.split(',');
+              base64String = parts[parts.length - 1] || '';
+              const mimeMatch = parts[0].match(/data:([^;]+);/i);
+              if (mimeMatch) contentType = mimeMatch[1];
+            }
+            const buf = Buffer.from(base64String, 'base64');
+            if (buf.length === 0) {
+              skippedReasons.push(`photo[${i}]: decoded 0 bytes`);
+              continue;
+            }
+            if (buf.length > MAX_BYTES) {
+              skippedReasons.push(`photo[${i}]: exceeds 5MB`);
+              continue;
+            }
+            const name =
+              typeof item?.fileName === 'string' && item.fileName
+                ? item.fileName
+                : `photo-${Date.now()}.jpg`;
+            incoming.push({ buffer: new Uint8Array(buf), name, contentType });
+          } catch (parseErr: any) {
+            skippedReasons.push(`photo[${i}]: ${parseErr?.message || parseErr}`);
+          }
+        }
+      } else {
+        console.log(`📸 [FACILITY-PHOTOS] Parsing multipart form`);
+        const formData = await c.req.formData();
+        const photos = formData.getAll('photos') as File[];
+        attemptedCount = photos?.length || 0;
+        if (!photos || photos.length === 0) {
+          return c.json({ error: 'No photos provided' }, 400);
+        }
+        for (const photo of photos) {
+          try {
+            const size = typeof (photo as any)?.size === 'number' ? (photo as any).size : 0;
+            if (!size) {
+              skippedReasons.push(`${photo.name || 'unnamed'}: 0 bytes (empty upload skipped)`);
+              continue;
+            }
+            const arrayBuffer = await photo.arrayBuffer();
+            const uint8Array = new Uint8Array(arrayBuffer);
+            if (uint8Array.byteLength === 0) {
+              skippedReasons.push(`${photo.name || 'unnamed'}: empty body after arrayBuffer()`);
+              continue;
+            }
+            if (uint8Array.byteLength > MAX_BYTES) {
+              skippedReasons.push(`${photo.name || 'unnamed'}: exceeds 5MB`);
+              continue;
+            }
+            incoming.push({
+              buffer: uint8Array,
+              name: photo.name || `photo-${Date.now()}.jpg`,
+              contentType: photo.type || 'image/jpeg',
+            });
+          } catch (photoError: any) {
+            skippedReasons.push(`${photo.name || 'unnamed'}: ${photoError?.message || photoError}`);
+          }
+        }
       }
 
-      console.log(`📸 [FACILITY-PHOTOS] Processing ${photos.length} photos`);
+      console.log(`📸 [FACILITY-PHOTOS] Processing ${incoming.length} photo(s) (${attemptedCount} attempted)`);
 
-      // Upload photos to S3
       const s3Upload: any = await import('@aws-sdk/client-s3');
-      const { S3Client, PutObjectCommand, GetObjectCommand } = s3Upload;
-      const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+      const { S3Client, PutObjectCommand } = s3Upload;
 
       const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
       const BUCKET_NAME = process.env.S3_UPLOADS_BUCKET || 'warmpawz-dev-uploads';
 
       const photoUrls: string[] = [];
-      const photoKeys: string[] = [];
 
-      for (const photo of photos) {
+      for (const photo of incoming) {
         try {
-          // Generate a unique filename
           const timestamp = Date.now();
-          const ext = photo.name.split('.').pop() || 'jpg';
+          const ext = photo.name.split('.').pop() || photo.contentType.split('/')[1] || 'jpg';
           const fileKey = `vendors/${actualVendorId}/facility/facility_${timestamp}_${Math.random().toString(36).substr(2, 9)}.${ext}`;
 
-          // Convert File to ArrayBuffer and upload to S3
-          const arrayBuffer = await photo.arrayBuffer();
-          const uint8Array = new Uint8Array(arrayBuffer);
+          await s3Client.send(
+            new PutObjectCommand({
+              Bucket: BUCKET_NAME,
+              Key: fileKey,
+              Body: photo.buffer,
+              ContentType: photo.contentType || 'image/jpeg',
+            })
+          );
 
-          await s3Client.send(new PutObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: fileKey,
-            Body: uint8Array,
-            ContentType: photo.type || 'image/jpeg',
-            // ✅ FIX: No ACL needed - bucket has public access blocked, we'll use presigned URLs
-          }));
-
-          // ✅ FIX: Store S3 key only (not URL) - we'll generate presigned URLs on-demand when retrieving
-          photoUrls.push(fileKey); // Store key, not URL
-          photoKeys.push(fileKey);
-
-          console.log(`📸 [FACILITY-PHOTOS] Uploaded to S3: ${fileKey}`);
+          photoUrls.push(fileKey);
+          console.log(`📸 [FACILITY-PHOTOS] Uploaded to S3: ${fileKey} (${photo.buffer.byteLength} bytes)`);
         } catch (photoError: any) {
+          const reason = `${photo.name || 'unnamed'}: ${photoError?.message || photoError}`;
           console.error(`❌ [FACILITY-PHOTOS] Error processing photo ${photo.name}:`, photoError);
-          // Continue with other photos
+          skippedReasons.push(reason);
         }
       }
 
-      // Update vendor metadata with new photos (use resolved vendor id)
+      if (photoUrls.length === 0) {
+        console.warn(
+          `⚠️ [FACILITY-PHOTOS] No photos uploaded for vendor ${actualVendorId} (attempted=${attemptedCount}, skipped=${skippedReasons.length})`
+        );
+        return c.json(
+          {
+            success: false,
+            error:
+              'No photos were saved. The selected file(s) appeared empty or could not be processed. Please re-pick the photos and try again.',
+            uploadedCount: 0,
+            attemptedCount,
+            skipped: skippedReasons,
+          },
+          400
+        );
+      }
+
       const existingMetadata = (vendor.metadata as any) || {};
       const existingPhotos = existingMetadata.facility_photos || [];
       const allPhotos = [...existingPhotos, ...photoUrls];
@@ -6464,10 +6069,17 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
 
       console.log(`✅ [FACILITY-PHOTOS] Uploaded ${photoUrls.length} photos for vendor ${actualVendorId}`);
 
+      const displayUrls = await presignCustomerFacilityGalleryUrls(actualVendorId, photoUrls);
+
       return c.json({
         success: true,
-        photoUrls: photoUrls,
+        photoUrls,
+        displayUrls,
+        vendorId: actualVendorId,
         totalPhotos: allPhotos.length,
+        uploadedCount: photoUrls.length,
+        attemptedCount,
+        skipped: skippedReasons,
       });
     } catch (error: any) {
       console.error('Error uploading facility photos:', error);
@@ -6575,7 +6187,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           role: vendor.role_name,
           roleDisplayName: vendor.role_display_name,
           /** Presigned headshot / listing photo so customer profile hero matches discover-services cards */
-          photoUrl: await getVendorPhotoUrl(vendor),
+          photoUrl: await getVendorListingPhotoUrl(vendor),
         },
         facility: {
           address: vendor.address,
@@ -7205,7 +6817,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           photos = regeneratedPhotos.filter((url): url is string => url !== null && url !== undefined);
         } catch { /* non-fatal */ }
 
-        const photoUrl = await getVendorPhotoUrl(vendor);
+        const photoUrl = await getVendorListingPhotoUrl(vendor);
 
         const specBundle = vendorSpecBundleForByStyle.get(vendor.vendor_id);
         const specializations = specBundle?.displayLabels?.length ? specBundle.displayLabels : [];

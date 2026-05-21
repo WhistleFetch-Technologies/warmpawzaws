@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { formatAverageForDisplay } from '@/lib/rating-display';
 import { toast } from 'sonner';
-import { StarRating } from './shared/StarRating';
+import { VendorRatingDisplay } from './shared/VendorRatingDisplay';
 
 interface VendorProfileDetailProps {
   vendorId: string;
@@ -136,9 +136,17 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
             </div>
             <div className="flex-1 min-w-0">
               <h2 className="text-xl font-bold text-gray-900 mb-1">{vendorName}</h2>
-              <div className="flex items-center gap-2 mb-2">
-                <StarRating rating={averageRating} reviewCount={totalReviews} />
-              </div>
+              <VendorRatingDisplay
+                row={{
+                  vendorId,
+                  vendorRating: averageRating,
+                  vendorReviewCount: totalReviews,
+                  averageRating,
+                  reviewCount: totalReviews,
+                }}
+                vendorId={vendorId}
+                className="mb-2"
+              />
               {vendor.address && (
                 <div className="flex items-center gap-1 text-sm text-gray-600">
                   <MapPin className="w-4 h-4" />

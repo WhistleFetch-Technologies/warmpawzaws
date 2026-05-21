@@ -21,14 +21,18 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
+  normalizeVendorServiceRowForPackage,
 } from '@/lib/vendor-package-purchase-nav';
+import { toast } from 'sonner';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { pickProviderDistanceKm } from '@/lib/distance-display';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
-import { StarRating } from '../shared/StarRating';
+import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
+import { applyResolvedRatingToStoredFields } from '@/lib/resolve-vendor-rating';
 
 interface ClinicListViewProps {
   phone: string;
@@ -112,34 +116,43 @@ function isSoloVendor(p: any): boolean {
 }
 
 function mapApiServiceToRow(p: any, vendorId: string, index: number): ClinicServiceRow {
-  const vendorServiceId = p.id ?? p.vendor_service_id ?? `idx-${index}`;
+  const normalized = normalizeVendorServiceRowForPackage(p);
+  const vendorServiceId =
+    normalized.id ?? normalized.vendor_service_id ?? p.vendor_service_id ?? `idx-${index}`;
   const catalogServiceId =
-    (p.serviceId != null && String(p.serviceId)) || (p.service_id != null && String(p.service_id)) || null;
+    (normalized.serviceId != null && String(normalized.serviceId)) ||
+    (normalized.service_id != null && String(normalized.service_id)) ||
+    (p.serviceId != null && String(p.serviceId)) ||
+    (p.service_id != null && String(p.service_id)) ||
+    null;
   const stableKey = catalogServiceId ? `cat-${catalogServiceId}` : `vs-${vendorId}-${vendorServiceId}`;
-  const desc = pickBestVendorDescription(p);
-  const priceRaw = p.price ?? p.custom_price ?? p.base_price ?? p.amount ?? 0;
+  const desc = pickBestVendorDescription(normalized);
+  const priceRaw =
+    normalized.price ?? normalized.custom_price ?? normalized.base_price ?? normalized.amount ?? 0;
   const priceNum = typeof priceRaw === 'string' ? parseFloat(priceRaw) : Number(priceRaw);
   const price = Number.isFinite(priceNum) && !Number.isNaN(priceNum) ? priceNum : 0;
-  const durRaw = p.duration ?? p.durationMinutes ?? p.duration_minutes ?? 30;
+  const durRaw = normalized.duration ?? normalized.durationMinutes ?? normalized.duration_minutes ?? 30;
   const durNum = typeof durRaw === 'string' ? parseInt(durRaw, 10) : Number(durRaw);
   const duration = Number.isFinite(durNum) && durNum > 0 ? durNum : 30;
   const category =
-    (p.category && String(p.category)) ||
-    (p.category_name && String(p.category_name)) ||
-    (p.categorySlug && String(p.categorySlug)) ||
+    (normalized.category && String(normalized.category)) ||
+    (normalized.category_name && String(normalized.category_name)) ||
+    (normalized.categorySlug && String(normalized.categorySlug)) ||
     undefined;
   return {
     stableKey,
-    name: String(p.name || p.service_name || p.serviceName || p.display_name || 'Service'),
+    name: String(
+      normalized.name || normalized.service_name || normalized.serviceName || normalized.display_name || 'Service'
+    ),
     price,
     duration,
     description: desc || undefined,
     category,
     catalogServiceId,
     vendorServiceId,
-    isPackage: !!(p.isPackage ?? p.metadata?.isPackage),
-    packageDetails: p.packageDetails,
-    metadata: p.metadata,
+    isPackage: isVendorServicePackageRow(normalized),
+    packageDetails: normalized.packageDetails,
+    metadata: normalized.metadata,
   };
 }
 
@@ -165,12 +178,13 @@ function mapByStyleProvider(p: any): ClinicProvider | null {
     p.vendorLocation?.address ||
     [p.city, p.pincode].filter(Boolean).join(', ') ||
     'Location available on booking';
+  const ratingFields = applyResolvedRatingToStoredFields({ ...p, vendorId: id, id }, id);
   return {
     id,
     name: cleanProviderName(p.name || p.vendorName || p.businessName || 'Veterinary Clinic'),
     address,
-    rating: Number(p.rating ?? 0) || 0,
-    review_count: Number(p.reviewCount ?? p.review_count ?? 0) || 0,
+    rating: ratingFields.rating,
+    review_count: ratingFields.review_count,
     distanceKm: (() => {
       if (p.distance != null && p.distance !== '') {
         const n = Number(p.distance);
@@ -308,11 +322,13 @@ export function ClinicListView({
             service.address ||
             `${service.city || ''}${service.city ? ', ' : ''}${service.pincode || ''}`.trim() ||
             'Location available on booking',
-          rating: parseFloat(service.vendorRating || service.rating || service.avgRating || '0') || 0,
-          review_count: parseInt(
-            String(service.vendorReviewCount || service.reviewsCount || service.review_count || '0'),
-            10
-          ),
+          ...(() => {
+            const rf = applyResolvedRatingToStoredFields(
+              { ...service, vendorId, vendor_id: vendorId },
+              vendorId
+            );
+            return { rating: rf.rating, review_count: rf.review_count };
+          })(),
           distanceKm: (() => {
             if (service.distance != null) {
               const n = Number(service.distance);
@@ -398,8 +414,7 @@ export function ClinicListView({
                     v.address ||
                     `${v.city || ''}${v.city ? ', ' : ''}${v.pincode || ''}`.trim() ||
                     'Location available on booking',
-                  rating: parseFloat(v.rating || v.avgRating || '0') || 0,
-                  review_count: parseInt(String(v.reviewCount || v.review_count || '0'), 10),
+                  ...applyResolvedRatingToStoredFields({ ...v, vendorId: id, id }, id),
                   distanceKm: null,
                   timing: v.timing || v.businessHours || '9 AM - 8 PM',
                   photo: v.photo || v.businessPhoto || v.vendorPhoto,
@@ -437,7 +452,7 @@ export function ClinicListView({
   const handleBookService = (clinic: ClinicProvider, row: ClinicServiceRow) => {
     const vendorId = clinic.id;
     const serviceIdForBooking = row.catalogServiceId || String(row.vendorServiceId);
-    const serviceObj = {
+    const serviceObj = normalizeVendorServiceRowForPackage({
       id: String(row.vendorServiceId),
       serviceId: row.catalogServiceId,
       vendorServiceId: row.vendorServiceId,
@@ -447,12 +462,12 @@ export function ClinicListView({
       isPackage: row.isPackage,
       packageDetails: row.packageDetails,
       metadata: row.metadata,
-    };
-    if (isVendorServicePackageRow(serviceObj as Record<string, unknown>)) {
+    });
+    if (isVendorServicePackageRow(serviceObj)) {
       const nav = buildWalkerServiceDataForVendorPackagePurchase({
         vendorId: String(vendorId),
         vendorName: clinic.name,
-        serviceRow: serviceObj as Record<string, unknown>,
+        serviceRow: serviceObj,
         serviceTypeCategory: 'vet',
         serviceStyle: 'at_center',
       });
@@ -460,6 +475,8 @@ export function ClinicListView({
         onNavigate('purchase-package', nav);
         return;
       }
+      toast.error('Could not start package booking. Please try again or pick another service.');
+      return;
     }
     onNavigate('appointment', {
       clinicId: vendorId,
@@ -533,15 +550,12 @@ export function ClinicListView({
     return Math.min(...c.services.map((s) => s.price));
   };
 
-  const dashboardStats = [
-    { value: String(filteredClinics.length), label: 'Clinics', icon: <Building2 className="w-4 h-4" /> },
-    { value: '1K+', label: 'Bookings' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="mx-auto flex min-h-screen min-h-[100dvh] w-full max-w-customer flex-col bg-gray-50">
       <ServiceDashboardHeader
+        fullWidth
         serviceName="Veterinary Clinic"
         serviceSubtitle="Find a veterinary clinic near you"
         serviceIcon={Stethoscope}
@@ -550,9 +564,11 @@ export function ClinicListView({
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-white"
       />
 
-      <div className="max-w-customer mx-auto px-4 pt-4 pb-36">
+      {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
+      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 pb-36 sm:rounded-t-[2rem]">
         <div className="relative mb-4">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
           <input
@@ -664,9 +680,16 @@ export function ClinicListView({
                           </div>
                         )}
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
-                          <StarRating
-                            rating={clinic.rating}
-                            reviewCount={clinic.review_count}
+                          <VendorRatingDisplay
+                            row={{
+                              vendorId: clinic.id,
+                              id: clinic.id,
+                              rating: clinic.rating,
+                              vendorRating: clinic.rating,
+                              review_count: clinic.review_count,
+                              vendorReviewCount: clinic.review_count,
+                            }}
+                            vendorId={String(clinic.id ?? '')}
                             textClassName="text-xs text-gray-500"
                           />
                           {clinic.distanceKm != null && (
@@ -740,59 +763,59 @@ export function ClinicListView({
                             return (
                               <div
                                 key={service.stableKey}
-                                className="bg-white rounded-lg p-4 shadow-sm border border-gray-100 space-y-2"
+                                className="bg-white rounded-lg p-4 shadow-sm border border-gray-100"
                               >
-                                {/* Row 1: name + package badge (left) | price (right) */}
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                                    <h5 className="min-w-0 flex-1 truncate font-medium text-gray-900 leading-5">
-                                      {service.name}
-                                    </h5>
-                                    {isPackage && (
-                                      <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
-                                        Package
-                                      </span>
+                                {/* Row 1: name + package badge (left) | price + note (right) */}
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-start gap-2">
+                                      <h5 className="min-w-0 flex-1 font-semibold text-gray-900 text-[15px] leading-snug">
+                                        {service.name}
+                                      </h5>
+                                      {isPackage && (
+                                        <span className="mt-0.5 px-2 py-0.5 text-xs font-semibold rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                                          Package
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Row 2: description */}
+                                    {descTrim ? (
+                                      <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+                                        <ServiceDescriptionInline
+                                          description={descTrim}
+                                          title={service.name}
+                                          className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
+                                          dialogHint="Full description from the clinic (vendor-provided)"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <p className="mt-1.5 text-gray-400 text-sm line-clamp-2 italic">
+                                        Professional in-clinic care — tap Book Now to continue.
+                                      </p>
                                     )}
                                   </div>
+
                                   <div className="shrink-0 text-right">
                                     <div className="text-lg font-bold text-[#FF8C42] tabular-nums">
                                       {formatPriceWithSymbol(service.price)}
                                     </div>
-                                    <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{INDICATIVE_PRICING_NOTE}</p>
+                                    <p className="mt-0.5 text-[11px] leading-4 text-gray-500 max-w-[9rem]">{INDICATIVE_PRICING_NOTE}</p>
                                   </div>
                                 </div>
 
-                                {/* Row 2: description full width */}
-                                {descTrim ? (
-                                  <div onClick={(e) => e.stopPropagation()}>
-                                    <ServiceDescriptionInline
-                                      description={descTrim}
-                                      title={service.name}
-                                      className="m-0 text-sm leading-5 text-gray-500 line-clamp-3"
-                                      dialogHint="Full description from the clinic (vendor-provided)"
-                                    />
-                                  </div>
-                                ) : (
-                                  <p className="text-gray-400 text-sm line-clamp-2 italic">
-                                    Professional in-clinic care — tap Book Now to continue.
-                                  </p>
-                                )}
-
                                 {/* Row 3: badges (left) | Book Now (right) */}
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge variant="outline" className="text-xs shrink-0">
-                                      <Clock className="w-3 h-3 mr-1" />
-                                      {service.duration} mins
-                                    </Badge>
-                                    <Badge variant="secondary" className="text-xs shrink-0 max-w-full">
-                                      {service.category || 'Veterinary'}
-                                    </Badge>
+                                <div className="flex items-center justify-between gap-2 mt-3">
+                                  <div className="flex items-center gap-1.5 text-sm text-gray-500">
+                                    <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                    <span>{service.duration} mins</span>
+                                    <span className="text-gray-300">·</span>
+                                    <span>{service.category || 'Vet Care'}</span>
                                   </div>
                                   <Button
                                     type="button"
                                     size="sm"
-                                    className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 min-w-[7rem]"
+                                    className="bg-[#FF8C42] hover:bg-[#E67A35] text-white shrink-0 rounded-full px-5"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleBookService(clinic, service);

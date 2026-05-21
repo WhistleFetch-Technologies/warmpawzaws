@@ -24,6 +24,7 @@ import { fetchPetSitterHubRows } from "@/lib/pet-sitter-hub-fetch";
 import { pickCustomerVendorAccountId } from "@warmpawz/shared-types";
 import { minPriceForVendor } from "@/lib/boarding-vendor-booking-utils";
 import type { BoardingListVendor, BoardingPlanRow } from "@/lib/boarding-vendor-discovery-map";
+import { EMPTY_SERVICE_HEADER_STATS } from "@/lib/service-header-stats";
 import type { BoardingServiceSlug } from "@/lib/boarding-service-types";
 import { HUB_SERVICE_ICON_WRAP } from "@/lib/hub-service-option-styles";
 
@@ -219,27 +220,7 @@ export function PetSitterServiceRouter({
     scrollToFeatured();
   };
 
-  const headerStats = useMemo(() => {
-    const n = vendors.length;
-    const rated = vendors.filter(
-      (v: any) =>
-        (Number(v.reviewCount ?? v.totalReviews ?? 0) || 0) > 0 &&
-        Number(v.rating) > 0
-    );
-    const rating =
-      rated.length > 0
-        ? (rated.reduce((a, v) => a + Number(v.rating), 0) / rated.length).toFixed(1)
-        : "—";
-    return [
-      { value: `${n > 0 ? n : 12}+`, label: "Sitters" },
-      { value: "8K+", label: "Visits" },
-      {
-        value: rating,
-        label: "Rating",
-        icon: <Star className="h-4 w-4 fill-current" />,
-      },
-    ];
-  }, [vendors]);
+  const headerStats = EMPTY_SERVICE_HEADER_STATS;
 
   if (vendorsLoading) {
     return (

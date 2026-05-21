@@ -22,6 +22,7 @@ import {
   playtimeLabel,
   type BoardingIntakeV1Payload,
 } from '@/lib/boarding-intake-notes';
+import { getVendorBookingVenuePillLabel } from '@/lib/vendor-utils';
 
 // Dynamically import PrescriptionDocument for A4 view
 const PrescriptionDocument = dynamic(() => import('./PrescriptionDocument'), {
@@ -53,6 +54,8 @@ interface Booking {
   petAge: string;
   location: string;
   serviceType: string;
+  /** Where the service happens — at_home | at_center | tele (from API). */
+  serviceStyle?: string;
   serviceName: string;
   status: string;
   date: string;
@@ -336,6 +339,13 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           rawBooking.service_name ||
           'Service',
         serviceType: rawBooking.serviceStyle || rawBooking.serviceType || 'at_center',
+        serviceStyle: String(
+          rawBooking.serviceStyle ||
+            rawBooking.service_style ||
+            rawBooking.service?.serviceStyle ||
+            rawBooking.service?.service_style ||
+            ''
+        ).trim(),
         // ✅ FIX: Build location from detailed address → API location → customer/vendor address fallback
         location: rawBooking.customerAddressDetails?.formattedAddress || rawBooking.location || rawBooking.customerAddress || rawBooking.vendorAddress || 
           (rawBooking.serviceStyle === 'at_home' || rawBooking.serviceType === 'at_home' ? 'Home Visit' : 'At Clinic'),
@@ -1454,12 +1464,23 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
           <div className="flex-1 overflow-y-auto bg-gray-50">
             {activeTab === 'details' && (
               <div className="p-4 space-y-4">
-                {/* Status Badge */}
-                <div className="flex items-center justify-between">
-                  <div className={`px-4 py-2 rounded-lg border inline-block ${getStatusColor(booking.status)}`}>
-                    <span className="text-sm font-medium capitalize">{booking.status.replace('_', ' ')}</span>
+                {/* Status + venue (home / clinic / tele) */}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <div
+                      className={`px-4 py-2 rounded-lg border inline-block shrink-0 ${getStatusColor(booking.status)}`}
+                    >
+                      <span className="text-sm font-medium capitalize">
+                        {booking.status.replace('_', ' ')}
+                      </span>
+                    </div>
+                    <div className="px-4 py-2 rounded-lg border inline-block shrink-0 bg-violet-50 text-violet-800 border-violet-200">
+                      <span className="text-sm font-medium">
+                        {getVendorBookingVenuePillLabel(booking)}
+                      </span>
+                    </div>
                   </div>
-                  
+
                   {/* ✅ ACTION BUTTONS based on status */}
                   {booking.status === 'confirmed' && !isPackageCanonicalParentRow && (
                     // ✅ FIXED: Tele consultations don't require OTP - complete via prescription or video call end
@@ -1468,7 +1489,10 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                         onClick={async () => {
                           try {
                             setProcessing(true);
-                            await apiClient.post(`/vendor/bookings/${bookingId}/complete`, { vendorId: vendorData?.id });
+                            await apiClient.post(`/vendor/bookings/${bookingId}/complete`, {
+                              vendorId: vendorData?.id,
+                              otp: null,
+                            });
                             toast.success('Tele consultation marked as complete');
                             loadAppointmentDetails();
                             onRefresh?.();
@@ -1519,7 +1543,10 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                         onClick={async () => {
                           try {
                             setProcessing(true);
-                            await apiClient.post(`/vendor/bookings/${bookingId}/complete`, { vendorId: vendorData?.id });
+                            await apiClient.post(`/vendor/bookings/${bookingId}/complete`, {
+                              vendorId: vendorData?.id,
+                              otp: null,
+                            });
                             toast.success('Consultation completed successfully');
                             loadAppointmentDetails();
                             onRefresh?.();
@@ -2552,10 +2579,14 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
 
       {/* ✅ CRITICAL FIX: GPS Tracking Modal with Map View */}
       {showTrackingModal && (
-        <div className="fixed inset-0 bg-black/60 z-[70] flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 bg-black/60 z-[70] flex items-end sm:items-center justify-center p-0 sm:p-4 pt-[env(safe-area-inset-top,0px)]">
+          <div
+            className="bg-white rounded-t-3xl sm:rounded-2xl w-full max-w-2xl flex flex-col shadow-2xl overflow-hidden min-h-0
+              h-[min(90dvh,calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-4px))]
+              max-h-[min(90dvh,calc(100dvh-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px)-4px))]"
+          >
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200 shrink-0 pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
                   <Navigation className="w-6 h-6 text-green-600 animate-pulse" />
@@ -2573,12 +2604,11 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               </button>
             </div>
             
-            {/* ✅ CRITICAL FIX: Map View */}
-            <div className="flex-1 relative min-h-[400px] bg-gray-100">
-              <div 
+            {/* Map — capped height so footer + action bar always fit on screen */}
+            <div className="relative bg-gray-100 flex-1 min-h-[140px] max-h-[30dvh] sm:max-h-[36dvh] sm:min-h-[200px]">
+              <div
                 ref={mapRef}
-                className="w-full h-full"
-                style={{ minHeight: '400px' }}
+                className="absolute inset-0 w-full h-full"
               />
               {!window.google?.maps && (
                 <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
@@ -2590,8 +2620,12 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
               )}
             </div>
             
-            {/* Info Panel */}
-            <div className="p-4 border-t border-gray-200 space-y-3">
+            {/* Footer: scroll address blocks only; actions pinned above home indicator */}
+            <div className="shrink-0 border-t border-gray-200 flex flex-col min-h-0 bg-white">
+              <div
+                className="overflow-y-auto overscroll-contain px-4 py-3 space-y-3 min-h-0 max-h-[min(34dvh,260px)]
+                  pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]"
+              >
               {/* Current Location */}
               <div className="bg-gray-50 rounded-xl p-3">
                 <div className="flex items-center justify-between mb-1">
@@ -2660,10 +2694,17 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                   )}
                 </div>
               )}
-              
-              {/* Actions */}
-              <div className="flex gap-3">
+              </div>
+
+              {/* Pinned action bar — never inside scroll; safe-area on iOS/Android */}
+              <div
+                className="shrink-0 border-t border-gray-100 bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.06)]
+                  px-4 pt-3 pb-[max(1rem,calc(0.75rem+env(safe-area-inset-bottom,0px)))]
+                  pl-[max(1rem,env(safe-area-inset-left,0px))] pr-[max(1rem,env(safe-area-inset-right,0px))]"
+              >
+              <div className="flex flex-col sm:flex-row gap-2.5 sm:gap-3 w-full">
                 <button
+                  type="button"
                   onClick={async () => {
                     if (currentLocation) {
                       // ✅ CRITICAL FIX: Use booking coordinates (priority) or destinationLocation from tracking
@@ -2734,28 +2775,29 @@ export function AppointmentDetailModal({ bookingId, vendorData, onClose, onRefre
                       }
                     }
                   }}
-                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                  className="flex-1 w-full min-h-[48px] py-3 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 touch-manipulation"
                 >
-                  <MapPin className="w-4 h-4" />
-                  Open in Maps
+                  <MapPin className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Open in Maps</span>
                 </button>
                 <button
+                  type="button"
                   onClick={handleArrived}
                   disabled={processing}
-                  className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium flex items-center justify-center gap-2"
+                  className="flex-1 w-full min-h-[48px] py-3 px-3 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2 touch-manipulation disabled:opacity-60"
                 >
                   {processing ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
                   ) : (
-                    <CheckCircle2 className="w-4 h-4" />
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
                   )}
-                  I've Arrived
+                  <span className="truncate">I&apos;ve Arrived</span>
                 </button>
               </div>
-              
-              <p className="text-xs text-center text-gray-400">
-                GPS tracking will automatically stop when you mark as arrived
+              <p className="text-[11px] text-center text-gray-400 mt-2 leading-snug px-1">
+                GPS tracking stops when you mark as arrived
               </p>
+              </div>
             </div>
           </div>
         </div>

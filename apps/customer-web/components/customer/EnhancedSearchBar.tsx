@@ -5,6 +5,16 @@ import { Search, X, Clock, TrendingUp, MapPin, Star, ChevronRight, Trash2 } from
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
+import { pickProfileImageUrl, type SearchApiVendorRow } from '@/lib/search-vendor-display';
+import {
+  appendDiscoverRoleParams,
+  buildSearchDiscoveryQueryParams,
+} from '@/lib/search-discovery-params';
+import {
+  applyHubCategoryFilter,
+  dedupeSearchVendorAndServiceRows,
+  inferHubSlugFromSearchQuery,
+} from '@/lib/search-hub-category-filter';
 
 interface SearchResult {
   id: string;
@@ -187,17 +197,31 @@ export function EnhancedSearchBar({
 
   const performSearch = async (searchQuery: string) => {
     const reqId = ++searchRequestSeqRef.current;
-    const locForRequest = userLocationRef.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({
         q: searchQuery,
-        limit: '30'
+        limit: '30',
       });
 
-      if (locForRequest) {
-        params.append('lat', locForRequest.lat.toString());
-        params.append('lng', locForRequest.lng.toString());
+      const inferredHub = inferHubSlugFromSearchQuery(searchQuery);
+      if (inferredHub) {
+        params.set('category', inferredHub);
+        appendDiscoverRoleParams(params, inferredHub);
+      }
+
+      const discoveryParams = await buildSearchDiscoveryQueryParams();
+      discoveryParams.forEach((value, key) => params.set(key, value));
+
+      const locLat = params.get('userLat');
+      const locLng = params.get('userLng');
+      if (locLat && locLng) {
+        const lat = parseFloat(locLat);
+        const lng = parseFloat(locLng);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          userLocationRef.current = { lat, lng };
+          setUserLocation({ lat, lng });
+        }
       }
 
       if (customerId) {
@@ -251,6 +275,7 @@ export function EnhancedSearchBar({
       // Add vendors
       const vendors = data.data?.vendors || data.vendors || [];
       vendors.forEach((vendor: any) => {
+        const photoUrl = pickProfileImageUrl(vendor as SearchApiVendorRow);
         transformedResults.push({
           id: vendor.id || vendor.vendorId,
           type: 'vendor',
@@ -263,7 +288,8 @@ export function EnhancedSearchBar({
             serviceType: vendor.category,
             description: vendor.specialization || vendor.description,
             rating: vendor.rating,
-            photoUrl: vendor.photoUrl || vendor.photo,
+            photoUrl,
+            imageUrl: photoUrl,
             city: vendor.city,
             state: vendor.state
           },
@@ -276,6 +302,12 @@ export function EnhancedSearchBar({
       // Add services
       const services = data.data?.services || data.services || [];
       services.forEach((service: any) => {
+        const vendorFacet: SearchApiVendorRow = {
+          ...service,
+          profileImage: service.vendorProfileImage ?? service.vendor_profile_image,
+          profile_image: service.vendor_profile_image ?? service.vendorProfileImage,
+        };
+        const photoUrl = pickProfileImageUrl(vendorFacet);
         transformedResults.push({
           id: service.id || service.serviceId,
           type: 'service',
@@ -287,6 +319,8 @@ export function EnhancedSearchBar({
             description: service.description,
             price: service.price,
             vendorId: service.vendorId,
+            photoUrl,
+            imageUrl: photoUrl,
             city: service.city,
             state: service.state
           },
@@ -296,12 +330,52 @@ export function EnhancedSearchBar({
         });
       });
       
-      // Fallback to old format if available
+      let finalResults = transformedResults;
+      if (inferredHub && finalResults.length > 0) {
+        finalResults = finalResults.filter((r) =>
+          applyHubCategoryFilter(
+            [
+              {
+                type: r.type,
+                category: String(r.category || r.data?.serviceType || ''),
+                name: String(r.data?.name || r.data?.businessName || ''),
+              },
+            ],
+            inferredHub,
+            searchQuery
+          ).length > 0
+        );
+      }
+
+      finalResults = dedupeSearchVendorAndServiceRows(
+        finalResults.map((r) => ({
+          ...r,
+          vendorOwnerId:
+            r.type === 'service' ? String(r.data?.vendorId || '').trim() || undefined : undefined,
+        }))
+      );
+
+      // Walker service screen lists vendors only — avoid vendor + walk service double-count.
+      if (inferredHub === 'walker') {
+        const vendorHits = finalResults.filter((r) => r.type === 'vendor');
+        if (vendorHits.length > 0) {
+          finalResults = vendorHits;
+        } else {
+          const seenVendor = new Set<string>();
+          finalResults = finalResults.filter((r) => {
+            const vid = String(r.data?.vendorId || '').trim();
+            if (!vid || seenVendor.has(vid)) return false;
+            seenVendor.add(vid);
+            return true;
+          });
+        }
+      }
+
       const oldResults = data.data?.results || data.results || [];
-      if (transformedResults.length === 0) {
+      if (finalResults.length === 0) {
         setResults(oldResults);
       } else {
-        setResults(transformedResults);
+        setResults(finalResults);
       }
     } catch (error) {
       console.error('Error performing search:', error);
@@ -496,9 +570,12 @@ export function EnhancedSearchBar({
                   <div className="w-12 h-12 rounded-lg bg-gradient-to-r from-orange-500 to-pink-500 overflow-hidden flex-shrink-0 flex items-center justify-center text-white font-semibold">
                     {result.data?.photoUrl || result.data?.imageUrl ? (
                       <img 
+                        key={result.data.photoUrl || result.data.imageUrl}
                         src={result.data.photoUrl || result.data.imageUrl} 
                         alt={String(result.data.name || result.data.businessName || 'Service')}
                         className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                        decoding="async"
                       />
                     ) : (
                       <span className="text-xl uppercase">

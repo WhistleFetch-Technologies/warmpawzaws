@@ -9,6 +9,7 @@ import {
   shouldUseCapawesomeFilePicker,
 } from '@/lib/capacitor';
 import { pickImageFilesWithCapacitorCamera } from '@/lib/capacitor-camera-pick';
+import { setPendingCameraUploadPayloads } from '@/lib/camera-upload-bridge';
 import { pickFilesWithCapawesome } from '@/lib/capacitor-file-pick';
 import { Capacitor } from '@capacitor/core';
 
@@ -36,31 +37,34 @@ function mergeRefs<T>(node: T | null, refs: Array<React.Ref<T> | undefined>) {
   });
 }
 
-function useShouldUseCapawesomePicker(): boolean {
-  const [ok, setOk] = React.useState(false);
+/** Sync check so Android never mounts the broken HTML `<input type="file">` on first paint. */
+function shouldUseAndroidCameraPathNow(accept: string): boolean {
+  try {
+    if (Capacitor.getPlatform() !== 'android' || !Capacitor.isNativePlatform()) {
+      return false;
+    }
+    return isImageOnlyFileAccept(accept) && isCapacitorCameraPluginAvailable();
+  } catch {
+    return false;
+  }
+}
+
+function useShouldUseCapawesomePicker(accept: string, androidCameraPath: boolean): boolean {
+  const [ok, setOk] = React.useState(() => {
+    if (androidCameraPath) return false;
+    return shouldUseCapawesomeFilePicker();
+  });
   React.useLayoutEffect(() => {
-    setOk(shouldUseCapawesomeFilePicker());
-  }, []);
+    setOk(androidCameraPath ? false : shouldUseCapawesomeFilePicker());
+  }, [androidCameraPath]);
   return ok;
 }
 
 /** When Capawesome FilePicker is not linked, Android WebView + `<input type="file">` is often broken; use @capacitor/camera for image accepts. */
 function useShouldUseAndroidCameraPath(accept: string): boolean {
-  const [ok, setOk] = React.useState(false);
+  const [ok, setOk] = React.useState(() => shouldUseAndroidCameraPathNow(accept));
   React.useLayoutEffect(() => {
-    try {
-      if (Capacitor.getPlatform() !== 'android' || !Capacitor.isNativePlatform()) {
-        setOk(false);
-        return;
-      }
-      if (!isImageOnlyFileAccept(accept) || !isCapacitorCameraPluginAvailable()) {
-        setOk(false);
-        return;
-      }
-      setOk(true);
-    } catch {
-      setOk(false);
-    }
+    setOk(shouldUseAndroidCameraPathNow(accept));
   }, [accept]);
   return ok;
 }
@@ -145,11 +149,16 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
       [ref]
     );
 
-    const capawesomeAvailable = useShouldUseCapawesomePicker();
-    const [capawesomeFailed, setCapawesomeFailed] = React.useState(false);
     const useAndroidCameraPath = useShouldUseAndroidCameraPath(accept);
-    // On Android image-only accepts, prefer Camera/gallery plugin path first.
-    const useCapawesomePath = capawesomeAvailable && !capawesomeFailed && !useAndroidCameraPath;
+    const capawesomeAvailable = useShouldUseCapawesomePicker(accept, useAndroidCameraPath);
+    const [capawesomeFailed, setCapawesomeFailed] = React.useState(false);
+    // Priority on Android for IMAGE-only picks: `@capacitor/camera` Base64 path. The Camera
+    // plugin returns base64 bytes through the Capacitor bridge directly — no WebView
+    // `fetch(content://…)` round-trip, which is what made Capawesome's picked files come back
+    // as 0-byte blobs on real devices ("tap Done → photo never appears in gallery"). Capawesome
+    // is still used for non-image picks (PDFs, docs) and on non-Android platforms.
+    const useCapawesomePath =
+      capawesomeAvailable && !capawesomeFailed && !useAndroidCameraPath;
 
     const picking = React.useRef(false);
 
@@ -170,8 +179,11 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
     );
 
     const dispatchPickedFiles = React.useCallback(
-      (files: File[]) => {
+      (files: File[], cameraPayloads?: { base64: string; fileName: string; mimeType: string }[]) => {
         if (files.length === 0) return;
+        if (cameraPayloads?.length) {
+          setPendingCameraUploadPayloads(cameraPayloads);
+        }
         try {
           if (typeof DataTransfer !== 'undefined') {
             const dt = new DataTransfer();
@@ -203,7 +215,7 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
         }
         picking.current = true;
         try {
-          const { files, rejectedByAccept } = await pickFilesWithCapawesome({
+          const { files, rejectedByAccept, conversionFailed } = await pickFilesWithCapawesome({
             accept,
             multiple: !!multiple,
           });
@@ -211,10 +223,20 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
             toast.error('Please choose a file that matches the allowed types for this field.');
             return;
           }
+          if (conversionFailed) {
+            // Android content:// URI returned 0 bytes — previously the picker silently
+            // discarded the selection (looks like "tap done, nothing happens"). Tell the
+            // user so they can retry or pick from a different gallery source.
+            toast.error('Could not read the selected photo. Please try a different photo or tap upload again.');
+            return;
+          }
           if (files.length === 0) {
             return;
           }
-          console.log(`[TouchFilePicker] Capawesome picked files=${files.length}`);
+          console.log(
+            `[TouchFilePicker] Capawesome picked files=${files.length}`,
+            files.map((f) => ({ name: f.name, size: f.size, type: f.type }))
+          );
           dispatchPickedFiles(files);
         } catch (err) {
           console.error('[TouchFilePicker] Capawesome file pick failed.', err);
@@ -225,7 +247,7 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
             isCapacitorCameraPluginAvailable()
           ) {
             try {
-              const { files, rejectedByAccept: rej } = await pickImageFilesWithCapacitorCamera({
+              const { files, rejectedByAccept: rej, payloads } = await pickImageFilesWithCapacitorCamera({
                 accept,
                 multiple: !!multiple,
               });
@@ -235,7 +257,7 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
               }
               if (files.length > 0) {
                 console.log(`[TouchFilePicker] Camera fallback picked files=${files.length}`);
-                dispatchPickedFiles(files);
+                dispatchPickedFiles(files, payloads);
                 return;
               }
             } catch (camErr) {
@@ -260,7 +282,7 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
         }
         picking.current = true;
         try {
-          const { files, rejectedByAccept } = await pickImageFilesWithCapacitorCamera({
+          const { files, rejectedByAccept, payloads } = await pickImageFilesWithCapacitorCamera({
             accept,
             multiple: !!multiple,
           });
@@ -268,19 +290,67 @@ export const TouchFilePicker = React.forwardRef<HTMLInputElement, TouchFilePicke
             toast.error('Please choose a file that matches the allowed types for this field.');
             return;
           }
-          if (files.length === 0) {
+          if (files.length > 0) {
+            console.log(
+              `[TouchFilePicker] Android camera picked files=${files.length}`,
+              files.map((f) => ({ name: f.name, size: f.size, type: f.type }))
+            );
+            dispatchPickedFiles(files, payloads);
             return;
           }
-          console.log(`[TouchFilePicker] Android camera picked files=${files.length}`);
-          dispatchPickedFiles(files);
+          // Camera returned no usable file (user dismissed). Try Capawesome once as a
+          // secondary path in case the device's Camera plugin can't drive the gallery.
+          if (capawesomeAvailable) {
+            console.log('[TouchFilePicker] Camera returned empty; trying Capawesome fallback');
+            try {
+              const cap = await pickFilesWithCapawesome({ accept, multiple: !!multiple });
+              if (cap.rejectedByAccept) {
+                toast.error('Please choose a file that matches the allowed types for this field.');
+                return;
+              }
+              if (cap.conversionFailed) {
+                toast.error('Could not read the selected photo. Please try a different photo.');
+                return;
+              }
+              if (cap.files.length > 0) {
+                console.log(
+                  `[TouchFilePicker] Capawesome (fallback) picked files=${cap.files.length}`,
+                  cap.files.map((f) => ({ name: f.name, size: f.size, type: f.type }))
+                );
+                dispatchPickedFiles(cap.files);
+                return;
+              }
+            } catch (capErr) {
+              console.warn('[TouchFilePicker] Capawesome fallback also failed.', capErr);
+            }
+          }
         } catch (err) {
-          console.error('[TouchFilePicker] Android Camera pick failed; falling back to file input if possible.', err);
+          console.error('[TouchFilePicker] Android Camera pick failed; trying Capawesome fallback.', err);
+          if (capawesomeAvailable) {
+            try {
+              const cap = await pickFilesWithCapawesome({ accept, multiple: !!multiple });
+              if (cap.rejectedByAccept) {
+                toast.error('Please choose a file that matches the allowed types for this field.');
+                return;
+              }
+              if (cap.conversionFailed) {
+                toast.error('Could not read the selected photo. Please try a different photo.');
+                return;
+              }
+              if (cap.files.length > 0) {
+                dispatchPickedFiles(cap.files);
+                return;
+              }
+            } catch (capErr) {
+              console.error('[TouchFilePicker] Capawesome fallback also failed.', capErr);
+            }
+          }
           toast.error('Could not open the photo picker. Try again or update the app.');
         } finally {
           picking.current = false;
         }
       },
-      [accept, disabled, dispatchPickedFiles, multiple]
+      [accept, capawesomeAvailable, disabled, dispatchPickedFiles, multiple]
     );
 
     const visual = (

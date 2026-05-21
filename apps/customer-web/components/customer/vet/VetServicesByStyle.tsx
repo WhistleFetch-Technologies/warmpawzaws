@@ -20,7 +20,10 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
-import { StarRating } from '@/components/customer/shared/StarRating';
+import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
+import { vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -437,24 +440,27 @@ export function VetServicesByStyle({
     const specialization = facility?.specialization || vendor?.specialization || 'General Veterinary Care';
 
     // ✅ FIX: Prepare stats for ServiceDashboardHeader
-    const profileRc = profileProvider.reviewCount ?? 0;
-    const ratingHeaderStat =
-      profileRc > 0 && Number(profileProvider.rating) > 0
-        ? Number(profileProvider.rating).toFixed(1)
-        : '—';
-    const dashboardStats = [
-      { value: `${providers.length}+`, label: 'Vets' },
-      { value: '1K+', label: 'Bookings' },
-      { value: ratingHeaderStat, label: 'Rating' }
-    ];
+    const profileVendorId = String(
+      vendorId ?? profileProvider.id ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
+    ).trim();
+    const ratingHeaderStatEntry = vendorRatingHeaderStat(
+      {
+        vendorId: profileVendorId,
+        vendorRating: profileProvider.rating,
+        vendorReviewCount: profileProvider.reviewCount,
+      },
+      profileVendorId
+    );
+    const dashboardStats = ratingHeaderStatEntry ? [ratingHeaderStatEntry] : [];
 
     return (
-      <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden border-black/[0.04] bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] sm:border-x sm:shadow-[0_0_48px_rgba(0,0,0,0.06)]">
+      <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden bg-gray-50">
         {/*
           Same as CustomerHomeComplete: `rounded-t-[24px] -mt-3` on the block below a flat
           orange header so the “bow” is the rounded top of the next surface (image here, white on home).
         */}
         <ServiceDashboardHeader
+          fullWidth
           className="!z-0 isolation-auto"
           serviceName={providerName}
           serviceSubtitle={specialization}
@@ -502,11 +508,14 @@ export function VetServicesByStyle({
             <div className="mb-4">
               <h1 className="text-2xl font-bold text-gray-900 mb-2">{providerName}</h1>
               
-              {/* Rating and Reviews */}
               <div className="flex items-center gap-3 mb-3 flex-wrap">
-                <StarRating
-                  rating={rating?.averageRating ?? profileProvider.rating}
-                  reviewCount={rating?.totalReviews ?? profileProvider.reviewCount}
+                <VendorRatingDisplay
+                  row={{
+                    vendorId: profileVendorId,
+                    vendorRating: rating?.averageRating ?? profileProvider.rating,
+                    vendorReviewCount: rating?.totalReviews ?? profileProvider.reviewCount,
+                  }}
+                  vendorId={profileVendorId}
                   starsClassName="h-5 w-5"
                   textClassName="text-sm text-gray-700"
                 />
@@ -948,16 +957,13 @@ export function VetServicesByStyle({
     return 'Professional pet healthcare';
   };
   
-  const listingStats = [
-    { value: `${providers.length}+`, label: 'Vets' },
-    { value: '1K+', label: 'Bookings' },
-    { value: '—', label: 'Rating' }
-  ];
+  const listingStats = EMPTY_SERVICE_HEADER_STATS;
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   return (
-    <div className="mx-auto min-h-[100dvh] min-h-screen w-full max-w-customer overflow-x-hidden border-black/[0.04] bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] sm:border-x sm:shadow-[0_0_48px_rgba(0,0,0,0.06)]">
+    <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden bg-gray-50">
       <ServiceDashboardHeader
+        fullWidth
         serviceName={getServiceTitle()}
         serviceSubtitle={getServiceSubtitle()}
         serviceIcon={Stethoscope}
@@ -966,10 +972,13 @@ export function VetServicesByStyle({
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
+        sheetToneClass="bg-white"
       />
 
+      {/* Unified body panel — matches Pet Boarding pattern (one continuous white surface, no gray gaps) */}
+      <div className="flex-1 -mt-4 rounded-t-[1.75rem] bg-white sm:rounded-t-[2rem]">
       {/* Info section */}
-      <div className="w-full px-4 sm:px-6 pt-4 pb-2 bg-white">
+      <div className="w-full px-4 sm:px-6 pt-6 pb-2">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 bg-orange-100 rounded-2xl flex items-center justify-center">
             {getStyleIcon()}
@@ -1233,6 +1242,7 @@ export function VetServicesByStyle({
             })}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

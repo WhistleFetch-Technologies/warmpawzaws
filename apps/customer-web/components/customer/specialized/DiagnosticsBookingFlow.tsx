@@ -6,6 +6,7 @@ import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { TestTube, Calendar, Clock, FileText, Truck, CreditCard, Home, Building2, MapPin, CheckCircle2, Plus } from 'lucide-react';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { AddAddressModal } from '../shared/AddAddressModal';
 import { toast } from 'sonner';
 import {
@@ -500,12 +501,7 @@ export function DiagnosticsBookingFlow({ vendorId, customerPhone, packageHint, o
     }
   };
 
-  // Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: `${tests.length}+`, label: 'Tests' },
-    { value: '1K+', label: 'Bookings' },
-    { value: '—', label: 'Rating' }
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   if (loading) {
     return (

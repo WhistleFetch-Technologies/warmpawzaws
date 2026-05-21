@@ -2,7 +2,7 @@
  * HomeServiceProviderProfile — home-service vendor profile (walker, sitter, grooming, etc.)
  *
  * Vet-style layout: ServiceDashboardHeader, hero carousel, overlapping identity card,
- * phased CTA (“Select Services to Book” → Services emphasis → “Continue to book” → onSelectService).
+ * Services tab: tap-to-select list + “Continue to book”; other tabs show “Select Services to Book” to jump to Services.
  * Fixed at bottom with no full-width bar — only the pill button. Set fixedFooterAboveBottomNav when this
  * view is inside CustomerScreenWrapper so the CTA clears BottomNavigation (globals token).
  */
@@ -16,6 +16,7 @@ import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { StarRating } from '../shared/StarRating';
+import { resolveVendorRating, vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
 import {
   Star,
   MapPin,
@@ -39,7 +40,12 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
-import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import {
+  mapHomeServiceProfileServices,
+  mergeCustomerVendorServicesPayload,
+  type HomeServiceProfileService,
+} from '@/lib/customer-vendor-services-merge';
+import { rowQualifiesForWalkingModal } from '@/lib/walker-vendor-offerings';
 import {
   mergeCustomerFacilityPayload,
   mergeVendorPhotoFieldsForHero,
@@ -122,17 +128,8 @@ interface ProviderDetails {
   operatingHours: { [key: string]: { open: string; close: string } };
   coordinates: { lat: number; lng: number };
   gallery: string[];
-  services: Service[];
+  services: HomeServiceProfileService[];
   reviews: Review[];
-}
-
-interface Service {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  duration: number;
-  category: string;
 }
 
 interface Review {
@@ -153,7 +150,9 @@ interface HomeServiceProviderProfileProps {
   serviceType: HomeServiceType;
   config: ServiceConfig;
   onBack: () => void;
-  onSelectService: () => void;
+  onSelectService: (service: HomeServiceProfileService, rawRow?: Record<string, unknown>) => void;
+  /** Walker: open booking flow “Choose a walk or bundle” (not embedded on profile). */
+  onOpenWalkServicesAndBundles?: () => void;
   onNavigate?: (screen: string, data?: any) => void;
   /**
    * When true, fixed CTA container uses `cw-fixed-above-customer-tabbar` so it sits above BottomNavigation.
@@ -169,6 +168,7 @@ export function HomeServiceProviderProfile({
   config,
   onBack,
   onSelectService,
+  onOpenWalkServicesAndBundles,
   onNavigate,
   fixedFooterAboveBottomNav = false,
 }: HomeServiceProviderProfileProps) {
@@ -180,17 +180,37 @@ export function HomeServiceProviderProfile({
   const [showGallery, setShowGallery] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const tabsSectionRef = useRef<HTMLDivElement>(null);
-  const [profileBookingPhase, setProfileBookingPhase] = useState<'intro' | 'picking'>('intro');
   const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
-
+  const rawServiceRowsRef = useRef<Map<string, Record<string, unknown>>>(new Map());
   useEffect(() => {
     loadProviderDetails();
   }, [vendorId]);
 
   useEffect(() => {
-    setProfileBookingPhase('intro');
     setSelectedServiceId(null);
   }, [vendorId]);
+
+  const openWalkServicesAndBundles = useCallback(() => {
+    onOpenWalkServicesAndBundles?.();
+  }, [onOpenWalkServicesAndBundles]);
+
+  const handleTabSelect = useCallback(
+    (tabId: TabType) => {
+      if (serviceType === 'walker' && tabId === 'services') {
+        openWalkServicesAndBundles();
+        return;
+      }
+      setActiveTab(tabId);
+    },
+    [serviceType, openWalkServicesAndBundles]
+  );
+
+  useEffect(() => {
+    if (!provider) return;
+    if (provider.services.length === 1) {
+      setSelectedServiceId(provider.services[0]!.id);
+    }
+  }, [provider]);
 
   const loadProviderDetails = async () => {
     try {
@@ -264,7 +284,7 @@ export function HomeServiceProviderProfile({
       const lng = lngRaw != null && lngRaw !== '' ? Number(lngRaw) : NaN;
 
       // Load services (prefer customer endpoint so only published + vendor price)
-      let services: any[] = [];
+      let rawServices: unknown[] = [];
       try {
         let servicesData: any;
         try {
@@ -273,14 +293,27 @@ export function HomeServiceProviderProfile({
           servicesData = await apiClient.get<{ services: any[] }>(`/vendor/${vendorId}/services`);
         }
         if (servicesData?.services && Array.isArray(servicesData.services)) {
-          services = mergeCustomerVendorServicesPayload(servicesData);
+          rawServices = mergeCustomerVendorServicesPayload(servicesData);
         } else if (Array.isArray(servicesData)) {
-          services = servicesData;
+          rawServices = servicesData;
         }
-        console.log(`📦 [HOME-SERVICE-PROFILE] Found ${services.length} services`);
+        console.log(`📦 [HOME-SERVICE-PROFILE] Found ${rawServices.length} raw services`);
       } catch (e) {
         console.log('No services found');
       }
+      if (serviceType === 'walker') {
+        rawServices = rawServices.filter((row) =>
+          rowQualifiesForWalkingModal(row as Record<string, unknown>)
+        );
+      }
+      rawServiceRowsRef.current = new Map();
+      for (const row of rawServices) {
+        if (!row || typeof row !== 'object') continue;
+        const s = row as Record<string, unknown>;
+        const id = String(s.id ?? s.vendorServiceId ?? s.serviceId ?? s.service_id ?? '').trim();
+        if (id) rawServiceRowsRef.current.set(id, s);
+      }
+      const services = mapHomeServiceProfileServices(rawServices);
 
       // Load reviews
       let reviews: any[] = [];
@@ -412,25 +445,31 @@ export function HomeServiceProviderProfile({
 
   const revealServicesAndScroll = useCallback(() => {
     if (!provider) return;
-    setProfileBookingPhase('picking');
+    if (serviceType === 'walker') {
+      openWalkServicesAndBundles();
+      return;
+    }
     setActiveTab('services');
-    const svc = provider.services;
-    if (svc.length === 1) {
-      setSelectedServiceId(svc[0]!.id);
-    } else {
-      setSelectedServiceId(null);
+    if (provider.services.length === 1) {
+      setSelectedServiceId(provider.services[0]!.id);
     }
     requestAnimationFrame(() => {
       tabsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-  }, [provider]);
+  }, [provider, serviceType, openWalkServicesAndBundles]);
 
   const continueBookingDisabled = useMemo(() => {
-    if (!provider || profileBookingPhase !== 'picking') return false;
+    if (!provider || activeTab !== 'services' || serviceType === 'walker') return false;
     const n = provider.services.length;
+    if (n === 0) return true;
     if (n <= 1) return false;
     return !selectedServiceId;
-  }, [provider, profileBookingPhase, selectedServiceId]);
+  }, [
+    provider,
+    activeTab,
+    selectedServiceId,
+    serviceType,
+  ]);
 
   const heroPhotos = useMemo(
     () => (provider?.gallery ?? []).filter((u) => typeof u === 'string' && u.trim().length > 0),
@@ -440,19 +479,32 @@ export function HomeServiceProviderProfile({
   const PlaceholderIcon = profileHeroPlaceholderIcon(serviceType);
   const dashboardStats = useMemo(() => {
     if (!provider) return [];
-    return [
-      { value: provider.rating.toFixed(1), label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-      { value: String(provider.reviewCount), label: 'Reviews' },
+    const vid = String(provider.vendorId ?? vendorId ?? '').trim();
+    const ratingStat = vendorRatingHeaderStat(
       {
-        value:
-          provider.serviceCount > 0
-            ? `${provider.serviceCount}+`
-            : String(Math.max(provider.services.length, 0)),
-        label: provider.serviceCount > 0 ? 'Bookings' : 'Services',
-        icon: <Users className="w-4 h-4" />,
+        vendorId: vid,
+        vendorRating: provider.rating,
+        vendorReviewCount: provider.reviewCount,
       },
-    ];
-  }, [provider]);
+      vid
+    );
+    const stats: Array<{ value: string; label: string; icon?: React.ReactNode }> = [];
+    if (ratingStat) {
+      stats.push({ ...ratingStat, icon: <Star className="w-4 h-4 fill-white" /> });
+    }
+    if (provider.reviewCount > 0) {
+      stats.push({ value: String(provider.reviewCount), label: 'Reviews' });
+    }
+    stats.push({
+      value:
+        provider.serviceCount > 0
+          ? `${provider.serviceCount}+`
+          : String(Math.max(provider.services.length, 0)),
+      label: provider.serviceCount > 0 ? 'Bookings' : 'Services',
+      icon: <Users className="w-4 h-4" />,
+    });
+    return stats;
+  }, [provider, vendorId]);
   const headerSubtitle = `${config.displayName} · ${config.priceUnit}`;
 
   const tabs: { id: TabType; label: string }[] = [
@@ -568,14 +620,23 @@ export function HomeServiceProviderProfile({
             </div>
 
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <div className="rounded-lg bg-orange-50 px-3 py-1.5">
-                <StarRating
-                  rating={provider.rating}
-                  reviewCount={provider.reviewCount}
-                  starsClassName="h-5 w-5"
-                  textClassName="text-sm text-gray-600"
-                />
-              </div>
+              {resolveVendorRating(
+                {
+                  vendorId: provider.vendorId,
+                  vendorRating: provider.rating,
+                  vendorReviewCount: provider.reviewCount,
+                },
+                { expectedVendorId: String(provider.vendorId ?? vendorId) }
+              ).shouldShowRating ? (
+                <div className="rounded-lg bg-orange-50 px-3 py-1.5">
+                  <StarRating
+                    rating={provider.rating}
+                    reviewCount={provider.reviewCount}
+                    starsClassName="h-5 w-5"
+                    textClassName="text-sm text-gray-600"
+                  />
+                </div>
+              ) : null}
               {provider.isVerified ? (
                 <span className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
                   <Shield className="h-3.5 w-3.5" aria-hidden />
@@ -643,7 +704,7 @@ export function HomeServiceProviderProfile({
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => handleTabSelect(tab.id)}
                   className={`flex-1 border-b-2 py-3 text-sm font-medium transition-colors ${
                     activeTab === tab.id
                       ? 'border-[#FF8C42] text-[#FF8C42]'
@@ -738,9 +799,9 @@ export function HomeServiceProviderProfile({
         )}
 
         {/* Services Tab */}
-        {activeTab === 'services' && (
+        {activeTab === 'services' && serviceType !== 'walker' && (
           <div className="space-y-3">
-            {profileBookingPhase === 'picking' && provider.services.length > 1 ? (
+            {provider.services.length > 1 ? (
               <p className="rounded-lg bg-orange-50 px-3 py-2 text-sm text-orange-900">
                 Tap a service to select it, then use{' '}
                 <span className="font-medium text-gray-900">Continue to book</span> below.
@@ -752,51 +813,52 @@ export function HomeServiceProviderProfile({
               </div>
             ) : (
               provider.services.map((service) => (
-                <div
+                <button
                   key={service.id}
-                  role={profileBookingPhase === 'picking' ? 'button' : undefined}
-                  tabIndex={profileBookingPhase === 'picking' ? 0 : undefined}
-                  onClick={() => {
-                    if (profileBookingPhase === 'picking') setSelectedServiceId(service.id);
-                  }}
-                  onKeyDown={(e) => {
-                    if (profileBookingPhase !== 'picking') return;
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      setSelectedServiceId(service.id);
-                    }
-                  }}
-                  className={`rounded-xl border bg-white p-4 shadow-sm transition-all ${
-                    profileBookingPhase === 'picking' ? 'cursor-pointer hover:border-orange-300' : ''
-                  } ${
-                    profileBookingPhase === 'picking' && selectedServiceId === service.id
-                      ? 'border-2 border-orange-600 ring-2 ring-orange-100'
-                      : 'border border-gray-100'
+                  type="button"
+                  aria-pressed={selectedServiceId === service.id}
+                  onClick={() => setSelectedServiceId(service.id)}
+                  className={`w-full rounded-xl border-2 bg-white p-4 text-left shadow-sm transition-colors hover:border-orange-300 ${
+                    selectedServiceId === service.id
+                      ? 'border-orange-600 bg-orange-50/50 ring-2 ring-orange-100'
+                      : 'border-gray-100'
                   }`}
                 >
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex-1">
-                      <h4 className="font-medium text-gray-800">{service.name}</h4>
-                      {service.description?.trim() && (
-                        <div onClick={(e) => e.stopPropagation()} className="mt-1">
-                          <ServiceDescriptionInline
-                            description={service.description}
-                            title={service.name}
-                            className="m-0 text-sm leading-5 text-gray-500"
-                          />
-                        </div>
-                      )}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h4
+                        className={`font-medium ${
+                          selectedServiceId === service.id ? 'text-orange-900' : 'text-gray-800'
+                        }`}
+                      >
+                        {service.name}
+                      </h4>
+                      {service.description ? (
+                        <ServiceDescriptionInline
+                          description={service.description}
+                          title={service.name}
+                          expandInDialog={false}
+                          className="m-0 mt-1 text-sm leading-5 text-gray-500"
+                        />
+                      ) : null}
                     </div>
-                    <div className="text-right ml-4">
-                      <span className="text-lg font-bold" style={{ color: config.primaryColor }}>
+                    <div className="shrink-0 text-right">
+                      <span
+                        className={`text-lg font-bold tabular-nums ${
+                          selectedServiceId === service.id ? 'text-orange-700' : ''
+                        }`}
+                        style={
+                          selectedServiceId === service.id ? undefined : { color: config.primaryColor }
+                        }
+                      >
                         ₹{service.price}
                       </span>
-                      {service.duration > 0 && (
+                      {service.duration > 0 ? (
                         <p className="text-xs text-gray-500">{service.duration} min</p>
-                      )}
+                      ) : null}
                     </div>
                   </div>
-                </div>
+                </button>
               ))
             )}
           </div>
@@ -923,7 +985,31 @@ export function HomeServiceProviderProfile({
         }`}
       >
         <div className="pointer-events-auto mx-auto w-full max-w-xs sm:max-w-sm">
-          {profileBookingPhase === 'intro' ? (
+          {!provider ? (
+            <Button
+              type="button"
+              disabled
+              className="h-12 min-h-12 w-full cursor-not-allowed rounded-full bg-gray-300 px-4 text-center text-base font-semibold text-white shadow-md"
+            >
+              Loading…
+            </Button>
+          ) : serviceType === 'walker' ? (
+            <Button
+              type="button"
+              onClick={openWalkServicesAndBundles}
+              className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-lg hover:bg-orange-600"
+            >
+              Book a walk or bundle
+            </Button>
+          ) : provider.services.length === 0 ? (
+            <Button
+              type="button"
+              disabled
+              className="h-12 min-h-12 w-full cursor-not-allowed rounded-full bg-gray-300 px-4 text-center text-base font-semibold text-white shadow-md"
+            >
+              No services listed
+            </Button>
+          ) : activeTab !== 'services' ? (
             <Button
               type="button"
               onClick={revealServicesAndScroll}
@@ -934,7 +1020,12 @@ export function HomeServiceProviderProfile({
           ) : (
             <Button
               type="button"
-              onClick={() => onSelectService()}
+              onClick={() => {
+                if (!selectedServiceId || !provider) return;
+                const service = provider.services.find((s) => s.id === selectedServiceId);
+                if (!service) return;
+                onSelectService(service, rawServiceRowsRef.current.get(service.id));
+              }}
               disabled={continueBookingDisabled}
               className="h-12 min-h-12 w-full rounded-full bg-orange-500 px-4 text-center text-base font-semibold text-white shadow-lg hover:bg-orange-600 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:shadow-md"
             >

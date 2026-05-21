@@ -699,6 +699,9 @@ export const EnhancedSearchApi = {
     category?: string;
     sortBy?: 'relevance' | 'price_low' | 'price_high' | 'rating';
     limit?: number;
+    userLat?: number;
+    userLng?: number;
+    customerPhone?: string;
   }) => {
     const sp = new URLSearchParams();
     const q = (params.query || '').trim();
@@ -707,6 +710,15 @@ export const EnhancedSearchApi = {
     if (hasCategory) sp.set('category', params.category!);
     if (params.limit != null) sp.set('limit', String(params.limit));
     else sp.set('limit', '50');
+    if (params.userLat != null && Number.isFinite(params.userLat)) {
+      sp.set('userLat', String(params.userLat));
+    }
+    if (params.userLng != null && Number.isFinite(params.userLng)) {
+      sp.set('userLng', String(params.userLng));
+    }
+    if (params.customerPhone?.trim()) {
+      sp.set('customerPhone', params.customerPhone.trim());
+    }
     if (!q && !hasCategory) {
       return { services: [] as any[] };
     }

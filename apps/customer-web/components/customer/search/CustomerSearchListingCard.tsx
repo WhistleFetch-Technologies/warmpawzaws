@@ -65,9 +65,12 @@ export function CustomerSearchListingCard({
       <div className="relative flex h-32 items-center justify-center bg-gradient-to-br from-orange-100 to-amber-100">
         {showImage ? (
           <img
+            key={imageUrl}
             src={imageUrl}
             alt={title}
             className="absolute inset-0 h-full w-full object-cover"
+            referrerPolicy="no-referrer"
+            decoding="async"
             onError={() => setImageFailed(true)}
           />
         ) : (

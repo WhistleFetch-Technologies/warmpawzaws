@@ -13,8 +13,10 @@ import {
   parseSlotsSnapshotJson,
 } from '../../utils/ai/ai-booking-wizard-slots';
 import {
+  inferVisitStyleFromMessage,
   interpretActionsToPatch,
   parseInterpretActionsFromModelJson,
+  visitStyleAssistantMessage,
 } from '../../utils/ai/ai-booking-wizard-interpret';
 import { getBedrockConfig, invokeBedrock } from '../../utils/bedrock-client';
 import { withRetry } from '../../utils/error-recovery';
@@ -683,6 +685,38 @@ export function registerAIBookingWizardSessionEndpoints(app: Hono) {
       if (!row) return c.json({ success: false, error: 'Not found' }, 404);
       if (!assertSessionAccess(row, body, c)) return c.json({ success: false, error: 'Forbidden' }, 403);
       if (isExpiredRow(row)) return c.json({ success: false, error: 'Session expired' }, 410);
+
+      const keywordStyle = inferVisitStyleFromMessage(message);
+      if (keywordStyle) {
+        const stylePatch = interpretActionsToPatch([
+          { type: 'setServiceStyle', serviceStyle: keywordStyle },
+        ]);
+        const expectedVersionKw = Number(row.version);
+        const updKw = await query(
+          `UPDATE ai_booking_wizard_sessions SET
+             service_style = COALESCE($1, service_style),
+             vendor_service_id = NULL,
+             booking_date = NULL,
+             slot_time = NULL,
+             version = version + 1,
+             status = 'draft',
+             updated_at = NOW()
+           WHERE id::text = $2 AND version = $3 AND expires_at > NOW()
+           RETURNING *`,
+          [stylePatch.service_style ?? null, id, expectedVersionKw]
+        ).catch(() => ({ rows: [] as WizardRow[] }));
+
+        const updatedKw = updKw.rows?.[0];
+        if (updatedKw) {
+          return c.json({
+            success: true,
+            usedBedrock: false,
+            assistantMessage: visitStyleAssistantMessage(keywordStyle),
+            appliedActions: [{ type: 'setServiceStyle', serviceStyle: keywordStyle }],
+            draft: rowToDraft(updatedKw),
+          });
+        }
+      }
 
       const cfg = await getBedrockConfig();
       if (!cfg) {

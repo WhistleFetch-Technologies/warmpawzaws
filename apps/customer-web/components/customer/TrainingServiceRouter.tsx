@@ -10,6 +10,7 @@ import { TRAINING_GOALS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
@@ -186,28 +187,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     [trainingCenterBadgeText]
   );
 
-  const dashboardStats = useMemo(() => {
-    const n = vendors.length;
-    const rating = n > 0 ? (vendors.reduce((a, v) => a + v.rating, 0) / n).toFixed(1) : '—';
-    const centreSt =
-      trainingCenterLoading || trainingCenterFetching
-        ? 'loading'
-        : trainingCenterError
-          ? 'error'
-          : 'success';
-    const centresStat = formatDiscoveryCountStat(trainingCenterCount, centreSt);
-    return [
-      { value: centresStat, label: 'Centres', icon: <Building2 className="w-4 h-4" /> },
-      { value: String(n), label: 'Featured' },
-      { value: rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    ];
-  }, [
-    vendors,
-    trainingCenterCount,
-    trainingCenterLoading,
-    trainingCenterFetching,
-    trainingCenterError,
-  ]);
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   if (vendorsLoading) {
     return (
@@ -221,6 +201,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     <div className="min-h-screen bg-gray-50">
       {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
       <ServiceDashboardHeader
+        fullWidth
         serviceName="Training Services"
         serviceSubtitle="Professional pet training"
         serviceIcon={GraduationCap}
@@ -233,7 +214,7 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       />
 
       {/* Main Content */}
-      <div className="max-w-md mx-auto -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 sm:rounded-t-[2rem]">
+      <div className="mx-auto w-full max-w-customer -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 sm:rounded-t-[2rem]">
         <div className="space-y-8">
 
           {/* Phase 1: Book again with previous trainer */}

@@ -135,7 +135,7 @@ function ServiceStyleSelector({
   const availableStyles = styles.filter(s => s.available);
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto">
+    <div className="mx-auto min-h-screen w-full max-w-customer bg-[#FF8C42]">
       {/* Header - Matching Customer Home Design */}
       <div className="px-4 pt-12 pb-8">
         {/* Back Button */}
@@ -267,7 +267,7 @@ interface TeleModeSelectorProps {
 
 function TeleModeSelector({ problemTitle, onSelectInstant, onSelectScheduled, onBack }: TeleModeSelectorProps) {
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto">
+    <div className="mx-auto min-h-screen w-full max-w-customer bg-[#FF8C42]">
       {/* Header - Matching Customer Home Design */}
       <div className="px-4 pt-12 pb-8">
         {/* Back Button */}

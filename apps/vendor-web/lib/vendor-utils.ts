@@ -82,6 +82,93 @@ export function getServiceStyleDisplayName(style: string): string {
 }
 
 /**
+ * Pill label for vendor booking details (next to status): Home Service | Clinic Visit | Tele.
+ * Prefers explicit style fields; only treats `serviceType` as a style when it looks like one
+ * (so e.g. vet_care does not become a venue label).
+ */
+export function getVendorBookingVenuePillLabel(bookingLike: {
+  serviceStyle?: string | null;
+  service_style?: string | null;
+  serviceType?: string | null;
+  communicationType?: string | null;
+  service?: { service_style?: string; serviceStyle?: string } | null;
+}): string {
+  if (String(bookingLike.communicationType || '').toLowerCase() === 'video') {
+    return 'Tele';
+  }
+
+  let raw = String(
+    bookingLike.serviceStyle ||
+      bookingLike.service_style ||
+      bookingLike.service?.service_style ||
+      bookingLike.service?.serviceStyle ||
+      ''
+  ).trim();
+
+  if (!raw) {
+    const st = String(bookingLike.serviceType || '').toLowerCase().trim();
+    const looksLikeStyle =
+      [
+        'tele',
+        'video_consultation',
+        'at_home',
+        'at_center',
+        'at_clinic',
+        'at_vendor',
+        'clinic',
+        'home_visit',
+        'home_service',
+        'hybrid',
+        'online',
+      ].includes(st) ||
+      st.includes('tele') ||
+      st.includes('video');
+    if (looksLikeStyle) raw = st;
+  }
+
+  const norm = normalizeServiceStyle(raw || undefined);
+  if (norm === 'tele') return 'Tele';
+  if (norm === 'at_home') return 'Home Service';
+  return 'Clinic Visit';
+}
+
+/** Tele / video consultation — used for OTP skip and POST /vendor/bookings/:id/complete. */
+export function isVendorTeleConsultationBooking(bookingLike: {
+  serviceType?: string | null;
+  service_type?: string | null;
+  service_style?: string | null;
+  serviceStyle?: string | null;
+  communicationType?: string | null;
+}): boolean {
+  if (String(bookingLike.communicationType || '').toLowerCase() === 'video') {
+    return true;
+  }
+  const st = String(
+    bookingLike.serviceType ||
+      bookingLike.service_type ||
+      bookingLike.service_style ||
+      bookingLike.serviceStyle ||
+      ''
+  )
+    .toLowerCase()
+    .trim();
+  return (
+    st === 'tele' ||
+    st === 'video_consultation' ||
+    st === 'tele_consultation' ||
+    st === 'teleconsultation' ||
+    st.includes('tele')
+  );
+}
+
+export function resolveVendorBookingId(bookingLike: {
+  id?: string | null;
+  bookingId?: string | null;
+}): string {
+  return String(bookingLike.bookingId || bookingLike.id || '').trim();
+}
+
+/**
  * Check if vendor has specific role
  */
 export function hasVendorRole(

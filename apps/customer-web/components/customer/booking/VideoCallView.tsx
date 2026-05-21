@@ -29,7 +29,7 @@ interface ChatMessage {
 export function VideoCallView({ 
   bookingId, 
   participantType,
-  vendorName = 'Doctor',
+  vendorName = 'Service Provider',
   serviceName = 'Tele Consultation',
   onEndCall 
 }: VideoCallViewProps) {

@@ -15,14 +15,19 @@
  * ============================================================================
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Star, X, Send, ThumbsUp, Clock, Heart, 
-  Sparkles, Shield, MessageSquare, Loader2, Check
+  Sparkles, Shield, MessageSquare, Loader2, Check, ImagePlus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
+
+const MAX_REVIEW_PHOTOS = 6;
+
+type ReviewPhotoSlot = { previewUrl: string; storageKey: string };
 
 interface RatingReviewPopupProps {
   isOpen: boolean;
@@ -125,6 +130,9 @@ export function RatingReviewPopup({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [reviewPhotos, setReviewPhotos] = useState<ReviewPhotoSlot[]>([]);
+  const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -154,6 +162,44 @@ export function RatingReviewPopup({
         ? prev.filter(t => t !== tagId)
         : [...prev, tagId]
     );
+  };
+
+  const removeReviewPhoto = (index: number) => {
+    setReviewPhotos((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleReviewPhotoFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+
+    const room = MAX_REVIEW_PHOTOS - reviewPhotos.length;
+    if (room <= 0) {
+      toast.error(`You can add up to ${MAX_REVIEW_PHOTOS} photos`);
+      return;
+    }
+
+    setUploadingPhotos(true);
+    try {
+      for (const file of files.slice(0, room)) {
+        const res = await uploadCustomerPhotoWithProgress(file, customerPhone, {
+          verifyUpload: false,
+        });
+        const previewUrl = (res.url || res.publicUrl || '').trim();
+        const storageKey = res.fileName?.trim();
+        if (!res.success || !previewUrl || !storageKey) {
+          toast.error(res.error || 'Photo upload failed');
+          continue;
+        }
+        setReviewPhotos((prev) => {
+          if (prev.length >= MAX_REVIEW_PHOTOS) return prev;
+          if (prev.some((p) => p.storageKey === storageKey)) return prev;
+          return [...prev, { previewUrl, storageKey }];
+        });
+      }
+    } finally {
+      setUploadingPhotos(false);
+    }
   };
 
   const getRatingLabel = (r: number) => {
@@ -187,6 +233,7 @@ export function RatingReviewPopup({
         review: review.trim(),
         tags: selectedTags,
         serviceStyle,
+        photos: reviewPhotos.map((p) => p.storageKey),
       });
 
       persistSubmittedReviewBookingId(bookingId);
@@ -338,6 +385,58 @@ export function RatingReviewPopup({
             </p>
           </div>
 
+          <div className="mb-4">
+            <label className="block text-sm text-gray-600 mb-2">
+              Add photos (optional)
+            </label>
+            <p className="text-xs text-gray-400 mb-3">
+              Up to {MAX_REVIEW_PHOTOS} images after your visit.
+            </p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif"
+              multiple
+              className="hidden"
+              onChange={handleReviewPhotoFiles}
+            />
+            <div className="flex flex-wrap gap-2">
+              {reviewPhotos.map((entry, idx) => (
+                <div
+                  key={entry.storageKey}
+                  className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-50"
+                >
+                  <img src={entry.previewUrl} alt="" className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeReviewPhoto(idx)}
+                    className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+                    aria-label="Remove photo"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {reviewPhotos.length < MAX_REVIEW_PHOTOS && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingPhotos}
+                  className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 text-gray-500 transition-colors hover:border-[#FF8C42] hover:text-[#FF8C42] disabled:opacity-50"
+                >
+                  {uploadingPhotos ? (
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  ) : (
+                    <>
+                      <ImagePlus className="h-6 w-6" />
+                      <span className="text-[10px] font-medium">Add</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Privacy note */}
           <p className="text-center text-xs text-gray-400 mt-2 pb-1">
             Your review will be displayed publicly to help other pet parents
@@ -355,7 +454,7 @@ export function RatingReviewPopup({
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={rating === 0 || submitting}
+            disabled={rating === 0 || submitting || uploadingPhotos}
             className="flex-1 bg-[#FF8C42] hover:bg-[#E67A35]"
           >
             {submitting ? (
