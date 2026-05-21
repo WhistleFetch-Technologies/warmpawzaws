@@ -162,11 +162,11 @@ export function ServiceDashboardHeader({
    * status bar / camera punch-hole. An inline style sidesteps both issues:
    * the paddingTop value is baked directly into the rendered HTML, so it
    * cannot be cache-stripped and does not depend on Tailwind generating a
-   * matching class. Uses env(safe-area-inset-top) when set; Capacitor Android
-   * already offsets the WebView below the status bar (no large min padding).
+   * matching class. Non-compact headers use env-only top pad (home / service hubs).
+   * `compact` is used on payment / Razorpay flows — keep legacy min padding unchanged.
    */
   const topPadStyle: React.CSSProperties = compact
-    ? { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)' }
+    ? { paddingTop: 'max(56px, calc(env(safe-area-inset-top, 0px) + 8px))' }
     : { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' };
   const innerBottom = compact ? 'pb-3 md:pb-4' : 'pb-4 md:pb-6';
   const titleRowMb = compact ? 'mb-2 md:mb-3' : 'mb-3 md:mb-4';
