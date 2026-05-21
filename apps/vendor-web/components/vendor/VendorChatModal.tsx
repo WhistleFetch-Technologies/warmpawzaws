@@ -511,8 +511,9 @@ export function VendorChatModal({
     <div className="fixed inset-0 bg-black/60 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4 pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full max-w-2xl h-[min(85dvh,calc(100dvh-env(safe-area-inset-top)-env(safe-area-inset-bottom)))] max-h-[100dvh] flex flex-col shadow-2xl overflow-hidden min-h-0">
         
-        {/* Header — stack on very narrow widths; safe-area + 44px tap targets */}
-        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] py-3 sm:py-4 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-5 sm:pr-5 shrink-0">
+        <div className="sticky top-0 z-10 shrink-0 bg-white">
+        {/* Header — safe-area + 44px tap targets (iOS/Android) */}
+        <div className="bg-gradient-to-r from-[#FF8C42] to-[#FF6B1A] py-3 sm:py-4 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-5 sm:pr-5">
           <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
               <div className="w-9 h-9 sm:w-10 sm:h-10 bg-white/20 rounded-full flex items-center justify-center shrink-0">
@@ -565,9 +566,9 @@ export function VendorChatModal({
           </div>
         </div>
 
-        {/* Package utilization banner - show sessions left / validity for package bookings */}
+        {/* Package utilization banner */}
         {packageUtilization && (packageUtilization.totalSessions != null || packageUtilization.isUnlimited) && (
-          <div className="px-3 sm:px-4 py-2.5 bg-purple-50 border-b border-purple-100 flex items-start sm:items-center gap-2 text-xs sm:text-sm text-purple-800 min-w-0">
+          <div className="px-3 sm:px-4 py-2.5 bg-purple-50 border-b border-purple-100 flex items-start sm:items-center gap-2 text-xs sm:text-sm text-purple-800 min-w-0 shrink-0">
             <Package className="w-4 h-4 flex-shrink-0 mt-0.5 sm:mt-0" />
             <span className="min-w-0 break-words">
               {packageUtilization.isUnlimited
@@ -604,9 +605,10 @@ export function VendorChatModal({
             )}
           </div>
         )}
+        </div>
 
         {/* Messages Area */}
-        <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 bg-gray-50">
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-center">

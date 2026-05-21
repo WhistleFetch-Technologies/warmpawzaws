@@ -77,6 +77,37 @@ export function visitStyleChangeMessage(style: BookingServiceStyleKey): string {
   return 'Switched to **in-clinic** visit. Pick a service below, then choose a date that has openings.';
 }
 
+/** Bot lines that only guide the in-chat booking wizard (hidden after payment). */
+export function isBookingWizardPickPrompt(content: string): boolean {
+  const t = content.trim();
+  if (!t) return false;
+  if (isBookingThankYouMessage(t)) return false;
+  return (
+    /\bpick a \*\*visit type\*\*/i.test(t) ||
+    /\bpick a service below\b/i.test(t) ||
+    /\bpick an in-clinic\b/i.test(t) ||
+    /\bpick a home-visit\b/i.test(t) ||
+    /\bpick a tele\b/i.test(t) ||
+    /^pick a date below\b/i.test(t) ||
+    /\bthen a service, date, and time\b/i.test(t) ||
+    /\bthen choose a date and time\b/i.test(t) ||
+    /\bthen a date and time\./i.test(t) ||
+    /\bpick a service below, then choose a date\b/i.test(t) ||
+    /\buse the chips below for date and time\b/i.test(t) ||
+    /\bupdated your booking draft\b/i.test(t) ||
+    /\bno \*\*.+\*\* services for this provider\b/i.test(t)
+  );
+}
+
+export function bookingThankYouBotContent(vendorName: string): string {
+  const v = vendorName.trim() || 'your provider';
+  return `**${v}**\n\nYour service is booked. Thank you!`;
+}
+
+export function isBookingThankYouMessage(content: string): boolean {
+  return /\byour service is booked\. thank you!/i.test(content.trim());
+}
+
 const SESSION_TTL_MS = 30 * 60 * 1000;
 
 export type PersistedAiChatSession = {
@@ -89,6 +120,7 @@ export type PersistedAiChatSession = {
   bookingDraft: unknown | null;
   wizardStep: string;
   wizardCategory: string;
+  bookedVendorName: string | null;
   lastBookingUrl: string | null;
   lastBookingQuery: string;
 };

@@ -27,8 +27,10 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import {
   appendHintStepsToMessage,
   buildBookingAssistButtonActions,
+  bookingThankYouBotContent,
   clearPersistedAiChatSession,
   inferVisitStyleFromText,
+  isBookingWizardPickPrompt,
   isWhitelistedAction,
   loadPersistedAiChatSession,
   normalizeActionKey,
@@ -57,7 +59,7 @@ type BookingSuggestedProvider = {
   distanceKm?: number;
 };
 
-type WizardFsmStep = 'assist' | 'serviceType' | 'service' | 'date' | 'slot' | 'review';
+type WizardFsmStep = 'assist' | 'serviceType' | 'service' | 'date' | 'slot' | 'review' | 'booked';
 
 type SessionDraft = {
   id: string;
@@ -307,12 +309,15 @@ export function AIChatbotWidget({
     setBookingSessionId(null);
     setBookingDraft(null);
     setWizardStep('assist');
+    setBookedVendorName(null);
+    selectedVendorNameRef.current = null;
     lastBookingUrlRef.current = null;
     lastBookingQueryRef.current = '';
   }, [customerId, customerPhone]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastBookingQueryRef = useRef('');
+  const selectedVendorNameRef = useRef<string | null>(null);
   const [bookingSessionId, setBookingSessionId] = useState<string | null>(null);
   const [bookingDraft, setBookingDraft] = useState<SessionDraft | null>(null);
   const [wizardStep, setWizardStep] = useState<WizardFsmStep>('assist');
@@ -330,7 +335,38 @@ export function AIChatbotWidget({
   const [wizardAvailableDates, setWizardAvailableDates] = useState<string[]>([]);
   const [wizardDatesLoading, setWizardDatesLoading] = useState(false);
   const [paymentHandoff, setPaymentHandoff] = useState<Record<string, unknown> | null>(null);
+  const [bookedVendorName, setBookedVendorName] = useState<string | null>(null);
   const sessionRestoredRef = useRef(false);
+
+  const finalizeBookingAfterPayment = useCallback((vendorName?: string) => {
+    const vendorLabel =
+      (vendorName || selectedVendorNameRef.current || bookedVendorName || '').trim() || 'your provider';
+    selectedVendorNameRef.current = vendorLabel;
+    setBookedVendorName(vendorLabel);
+    setWizardStep('booked');
+    setPaymentHandoff(null);
+    setWizardBusy(false);
+    setMessages((prev) => {
+      const withoutPicks = prev.filter(
+        (m) => !(m.type === 'bot' && m.intent === 'booking' && isBookingWizardPickPrompt(m.content))
+      );
+      const thankYouContent = bookingThankYouBotContent(vendorLabel);
+      if (withoutPicks.some((m) => m.type === 'bot' && m.content === thankYouContent)) {
+        return withoutPicks;
+      }
+      return [
+        ...withoutPicks,
+        {
+          id: `bot-booked-${Date.now()}`,
+          type: 'bot' as const,
+          content: thankYouContent,
+          timestamp: new Date().toISOString(),
+          intent: 'booking',
+        },
+      ];
+    });
+    toast.success('Booking confirmed');
+  }, [bookedVendorName]);
 
   const persistChatState = useCallback(() => {
     if (botEntry === 'choose' && messages.length === 0) return;
@@ -345,6 +381,7 @@ export function AIChatbotWidget({
         bookingDraft,
         wizardStep,
         wizardCategory,
+        bookedVendorName,
         lastBookingUrl: lastBookingUrlRef.current,
         lastBookingQuery: lastBookingQueryRef.current,
       },
@@ -360,6 +397,7 @@ export function AIChatbotWidget({
     bookingDraft,
     wizardStep,
     wizardCategory,
+    bookedVendorName,
     customerId,
     customerPhone,
   ]);
@@ -393,6 +431,24 @@ export function AIChatbotWidget({
     }
     setWizardStep((saved.wizardStep as WizardFsmStep) || 'assist');
     setWizardCategory(normalizeWizardCategory(saved.wizardCategory));
+    const restoredVendor =
+      typeof saved.bookedVendorName === 'string' && saved.bookedVendorName.trim()
+        ? saved.bookedVendorName.trim()
+        : null;
+    if (restoredVendor) {
+      setBookedVendorName(restoredVendor);
+      selectedVendorNameRef.current = restoredVendor;
+    } else if (saved.wizardStep === 'booked' && Array.isArray(saved.messages)) {
+      const thankYou = (saved.messages as Message[]).findLast(
+        (m) => m.type === 'bot' && typeof m.content === 'string' && /\byour service is booked/i.test(m.content)
+      );
+      const match = thankYou?.content?.match(/^\*\*(.+?)\*\*/);
+      if (match?.[1]) {
+        const name = match[1].trim();
+        setBookedVendorName(name);
+        selectedVendorNameRef.current = name;
+      }
+    }
     lastBookingUrlRef.current = saved.lastBookingUrl;
     lastBookingQueryRef.current = saved.lastBookingQuery || '';
   }, [customerId, customerPhone]);
@@ -417,6 +473,8 @@ export function AIChatbotWidget({
       setWizardAvailableDates([]);
       setWizardDatesLoading(false);
       setPaymentHandoff(null);
+      setBookedVendorName(null);
+      selectedVendorNameRef.current = null;
     }
   }, [mode]);
 
@@ -447,7 +505,7 @@ export function AIChatbotWidget({
 
   const pickWizardServiceType = useCallback(
     async (key: BookingServiceStyleKey) => {
-      if (!bookingSessionId || !bookingDraft) return;
+      if (wizardStep === 'booked' || !bookingSessionId || !bookingDraft) return;
       const filtered = servicesFilteredByBookingStyleKey(wizardVendorServicesAll, key);
       if (filtered.length === 0) {
         toast.error('No services for that visit type.');
@@ -488,11 +546,12 @@ export function AIChatbotWidget({
         setWizardBusy(false);
       }
     },
-    [bookingSessionId, bookingDraft, wizardVendorServicesAll, patchBookingDraft]
+    [bookingSessionId, bookingDraft, wizardVendorServicesAll, patchBookingDraft, wizardStep]
   );
 
   const applyVisitStyleFromChat = useCallback(
     async (messageText: string): Promise<boolean> => {
+      if (wizardStep === 'booked') return false;
       const style = inferVisitStyleFromText(messageText);
       if (!style || !bookingSessionId || !bookingDraft) return false;
       const filtered = servicesFilteredByBookingStyleKey(wizardVendorServicesAll, style);
@@ -544,11 +603,13 @@ export function AIChatbotWidget({
         setWizardBusy(false);
       }
     },
-    [bookingSessionId, bookingDraft, wizardVendorServicesAll, patchBookingDraft]
+    [bookingSessionId, bookingDraft, wizardVendorServicesAll, patchBookingDraft, wizardStep]
   );
 
   const handlePickSuggestedProvider = useCallback(
     async (p: BookingSuggestedProvider) => {
+      selectedVendorNameRef.current = p.businessName?.trim() || null;
+      setBookedVendorName(null);
       setMode('booking');
       setWizardStep('serviceType');
       setWizardDate(null);
@@ -660,7 +721,7 @@ export function AIChatbotWidget({
 
   /** Only show calendar chips for days that have at least one open slot (next 21 days). */
   useEffect(() => {
-    if (mode !== 'booking' || wizardStep !== 'date') {
+    if (wizardStep === 'booked' || mode !== 'booking' || wizardStep !== 'date') {
       setWizardAvailableDates([]);
       setWizardDatesLoading(false);
       return;
@@ -732,7 +793,7 @@ export function AIChatbotWidget({
 
   useEffect(() => {
     if (mode !== 'booking') return;
-    if (wizardStep !== 'slot') return;
+    if (wizardStep === 'booked' || wizardStep !== 'slot') return;
     if (!wizardDate || !bookingDraft?.vendorId || !bookingDraft.vendorServiceId) return;
 
     let cancelled = false;
@@ -884,6 +945,9 @@ export function AIChatbotWidget({
           setWizardCategory(normalizeWizardCategory(inferred));
         }
 
+        if (wizardStep === 'booked') {
+          return;
+        }
         if (bookingSessionId && wizardStep !== 'assist') {
           if (await applyVisitStyleFromChat(messageText)) {
             return;
@@ -1410,7 +1474,21 @@ export function AIChatbotWidget({
         <div ref={messagesEndRef} />
       </div>
 
-      {mode === 'booking' && bookingSessionId && bookingDraft && (
+      {mode === 'booking' && wizardStep === 'booked' && bookedVendorName ? (
+        <div className="shrink-0 border-t border-green-100 bg-green-50/60 px-3 py-3 space-y-2 text-xs">
+          <p className="font-semibold text-gray-900">{bookedVendorName}</p>
+          <p className="text-gray-700 leading-snug">Your service is booked. Thank you!</p>
+          <button
+            type="button"
+            onClick={() => goTo('/bookings')}
+            className="w-full px-3 py-2 rounded-lg border border-[#FF8C42] bg-white text-[#E85D04] text-xs font-semibold hover:bg-orange-50"
+          >
+            View my bookings
+          </button>
+        </div>
+      ) : null}
+
+      {mode === 'booking' && bookingSessionId && bookingDraft && wizardStep !== 'booked' && (
         <div className="shrink-0 border-t border-orange-100 bg-orange-50/40 px-3 py-2 space-y-2 text-xs">
           <div className="flex items-center justify-between gap-2">
             <span className="font-semibold text-gray-800">In-chat booking</span>
@@ -1696,6 +1774,8 @@ export function AIChatbotWidget({
                     }
                     const up = prep.universalPaymentProps as Record<string, unknown>;
                     up.category = paymentCategoryLabel(wizardCategory);
+                    const vn = String(up.vendorName || selectedVendorNameRef.current || '').trim();
+                    if (vn) selectedVendorNameRef.current = vn;
                     setPaymentHandoff(up);
                   } catch (e: any) {
                     toast.error(e?.message || 'Could not prepare payment');
@@ -1721,11 +1801,12 @@ export function AIChatbotWidget({
             {...(paymentHandoff as any)}
             onBack={() => setPaymentHandoff(null)}
             onSuccess={() => {
-              toast.success('Booking confirmed');
-              setPaymentHandoff(null);
-              clearPersistedAiChatSession(customerId, customerPhone);
-              closeWidget();
-              goTo('/bookings');
+              const vn = String(
+                (paymentHandoff as { vendorName?: string })?.vendorName ||
+                  selectedVendorNameRef.current ||
+                  ''
+              ).trim();
+              finalizeBookingAfterPayment(vn || undefined);
             }}
           />
         </div>
