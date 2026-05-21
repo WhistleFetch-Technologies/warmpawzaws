@@ -33,7 +33,7 @@
       // Intentionally NOT setting apiBaseUrl - use NEXT_PUBLIC_API_BASE_URL from .env.local
       uatMode: true,
       environment: 'development',
-      customerEcommerceEnabled: false
+      customerEcommerceEnabled: true
     };
     console.log('🔧 Runtime config loaded (localhost - using env var for API URL):', window.__WARMPAWZ_RUNTIME_CONFIG__);
     return;
@@ -54,7 +54,7 @@
       apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
       uatMode: true,
       environment: 'development',
-      customerEcommerceEnabled: false
+      customerEcommerceEnabled: true
     },
     // You can extend mappings here if needed, e.g. stage.customer.warmpawz.com
   };

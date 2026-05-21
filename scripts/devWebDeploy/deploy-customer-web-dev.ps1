@@ -14,7 +14,7 @@ param(
     [string]$ApiGatewayEndpoint = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
     [switch]$DeployOnly,
     [switch]$SkipInvalidation,
-    # Shop/cart/wishlist/orders OFF by default for dev; pass -CustomerEcommerceEnabled to turn on.
+    # Shop/cart/wishlist/orders ON by default for dev; pass -CustomerEcommerceDisabled to turn off.
     [switch]$CustomerEcommerceEnabled,
     [switch]$CustomerEcommerceDisabled
 )
@@ -92,13 +92,7 @@ if (!(Test-Path $customerWebDir)) {
 }
 
 Set-Location $customerWebDir
-$customerEcommerceJs = if ($CustomerEcommerceDisabled) {
-    'false'
-} elseif ($CustomerEcommerceEnabled) {
-    'true'
-} else {
-    'false'
-}
+$customerEcommerceJs = if ($CustomerEcommerceDisabled) { 'false' } else { 'true' }
 
 Write-Host "Step 3: Building customer-web..." -ForegroundColor Yellow
 Write-Host "  Directory: $customerWebDir" -ForegroundColor Gray
