@@ -11,6 +11,7 @@ import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { RateServiceModal } from '../RateServiceModal'; // ✅ NEW: Import for rating modal
 import { ServiceDashboardHeader, StepInfo } from '../shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
@@ -861,18 +862,7 @@ export function GroomingBookingRouter({
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
   const groomingProviderStatLabel =
     selectedServiceType === 'at_center' ? 'Salons' : 'Groomers';
-  const dashboardStats = useMemo(
-    () => [
-      {
-        value: groomingProviderStatValue,
-        label: groomingProviderStatLabel,
-        icon: <Scissors className="w-4 h-4" />,
-      },
-      { value: '1K+', label: 'Bookings' },
-      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    ],
-    [groomingProviderStatValue, groomingProviderStatLabel]
-  );
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   // ✅ FIX: Prepare step indicators for header
   const getStepIndicators = (): StepInfo[] | undefined => {

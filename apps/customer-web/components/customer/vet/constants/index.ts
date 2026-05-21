@@ -12,5 +12,4 @@ export const dashboardStatsIcons = {
 export const dashboardStats = [
     { value: '24/7', label: 'Available', icon: 'clock' },
     { value: '<5min', label: 'Avg Wait' },
-    { value: '—', label: 'Rating', icon: 'star' }
 ];

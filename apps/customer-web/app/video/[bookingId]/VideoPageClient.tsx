@@ -202,9 +202,21 @@ export function VideoPageClient({ bookingId: bookingIdProp }: VideoPageClientPro
           bookingId={bookingId}
           participantType="customer"
           participantId={participantId}
-          vendorName={bookingData?.vendorName || bookingData?.staffName || 'Service Provider'}
-          customerName={bookingData?.customerName || 'Customer'}
-          serviceName={bookingData?.serviceName || 'Tele Consultation'}
+          vendorName={
+            bookingData?.vendor?.businessName ||
+            bookingData?.vendor?.business_name ||
+            bookingData?.vendorName ||
+            bookingData?.vendor_name ||
+            bookingData?.staffName ||
+            'Service Provider'
+          }
+          customerName={bookingData?.customerName || bookingData?.customer_name || 'Customer'}
+          serviceName={
+            bookingData?.service?.name ||
+            bookingData?.serviceName ||
+            bookingData?.service_name ||
+            'Tele Consultation'
+          }
           onEndCall={(duration) => {
             console.log('Call ended, duration:', duration);
             router.push('/');

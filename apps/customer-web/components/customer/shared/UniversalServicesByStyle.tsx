@@ -13,6 +13,7 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { getRoleConfig, RoleId, ServiceStyle } from './roleConfig';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
@@ -35,6 +36,7 @@ import {
   hasRatings,
   normalizeRatingCount,
 } from '@/lib/rating-display';
+import { resolveVendorRating, vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -855,23 +857,37 @@ export function UniversalServicesByStyle({
     const description = vendor?.description || facility?.description || `${providerName} provides professional ${config.category} services.`;
     const specializationText = facility?.specialization || vendor?.specialization || specialization || `General ${config.roleName} Care`;
 
+    const profileVendorId = String(
+      vendorId ?? profileProvider.id ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
+    ).trim();
     const profileReviewTotal = normalizeRatingCount(
       rating?.totalReviews ?? profileProvider.reviewCount
     );
     const profileAvgRaw = rating?.averageRating ?? profileProvider.rating;
     const profileRatingLabel = getAverageRatingLabel(profileAvgRaw, profileReviewTotal);
-    const showProfileRatingPill = hasRatings(profileReviewTotal);
-    const ratingHeaderStat =
-      showProfileRatingPill && Number(profileProvider.rating) > 0
-        ? Number(profileProvider.rating).toFixed(1)
-        : '—';
+    const profileRatingResolved = resolveVendorRating(
+      {
+        vendorId: profileVendorId,
+        vendorRating: profileAvgRaw,
+        vendorReviewCount: profileReviewTotal,
+        averageRating: rating?.averageRating,
+      },
+      { expectedVendorId: profileVendorId }
+    );
+    const showProfileRatingPill = profileRatingResolved.shouldShowRating;
+    const ratingHeaderStatEntry = vendorRatingHeaderStat(
+      {
+        vendorId: profileVendorId,
+        vendorRating: profileAvgRaw,
+        vendorReviewCount: profileReviewTotal,
+        averageRating: rating?.averageRating,
+      },
+      profileVendorId
+    );
 
-    // ✅ FIX: Prepare stats for ServiceDashboardHeader
-    const dashboardStats = [
-      { value: `${providers.length}+`, label: 'Providers', icon: <RoleIcon className="w-4 h-4" /> },
-      { value: '1K+', label: 'Bookings' },
-      { value: ratingHeaderStat, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-    ];
+    const dashboardStats = ratingHeaderStatEntry
+      ? [{ ...ratingHeaderStatEntry, icon: <Star className="w-4 h-4 fill-white" /> }]
+      : [];
 
     return (
       <div className="min-h-screen bg-gray-50 relative overflow-hidden">
@@ -926,9 +942,8 @@ export function UniversalServicesByStyle({
             <div className="mb-4">
               <h1 className="text-2xl font-bold text-gray-900 mb-2">{providerName}</h1>
               
-              {/* Rating and Reviews */}
+              {showProfileRatingPill ? (
               <div className="flex items-center gap-3 mb-3">
-                {showProfileRatingPill ? (
                 <div className="flex items-center gap-1.5 bg-orange-50 px-3 py-1.5 rounded-lg">
                   <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
                   <span className="font-bold text-lg text-gray-900">
@@ -938,16 +953,6 @@ export function UniversalServicesByStyle({
                     ({profileReviewTotal} {profileReviewTotal === 1 ? 'review' : 'reviews'})
                   </span>
                 </div>
-                ) : (
-                <div className="flex flex-wrap items-center gap-2 text-gray-500">
-                  <div className="flex items-center gap-0.5">
-                    {[1, 2, 3, 4, 5].map((s) => (
-                      <Star key={s} className="w-4 h-4 text-slate-200" />
-                    ))}
-                  </div>
-                  <span className="text-sm">No customer reviews</span>
-                </div>
-                )}
                 
                 {facility?.isPremium && (
                   <span className="px-2.5 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold flex items-center gap-1">
@@ -962,6 +967,7 @@ export function UniversalServicesByStyle({
                   </span>
                 )}
               </div>
+              ) : null}
 
               {/* Service Type Badge */}
               <div className="flex items-center gap-2 mb-3">
@@ -1389,21 +1395,7 @@ export function UniversalServicesByStyle({
 
   // Listing View Mode (when vendorId not provided or multiple providers)
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const ratedForListing = providers.filter(
-    (p) => p.reviewCount > 0 && Number(p.rating) > 0
-  );
-  const listingRatingStat =
-    ratedForListing.length > 0
-      ? (
-          ratedForListing.reduce((a, p) => a + Number(p.rating), 0) /
-          ratedForListing.length
-        ).toFixed(1)
-      : '—';
-  const listingStats = [
-    { value: `${providers.length}+`, label: config.roleName === 'Veterinarian' ? 'Vets' : config.roleName === 'Groomer' ? 'Pros' : 'Providers' },
-    { value: '1K+', label: 'Bookings' },
-    { value: listingRatingStat, label: 'Rating' }
-  ];
+  const listingStats = EMPTY_SERVICE_HEADER_STATS;
 
   const getServiceSubtitle = () => {
     if (serviceStyle === 'at_center') return config.styleDescriptions.at_center;

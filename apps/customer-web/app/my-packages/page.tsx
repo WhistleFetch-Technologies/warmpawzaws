@@ -13,6 +13,7 @@ import {
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import { apiClient } from '@/lib/api-client';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
 
 /**
  * Viewport-bound column so `flex-1 min-h-0 overflow-y-auto` gets a real height and scrolls.
@@ -25,6 +26,7 @@ const SHELL_CLASS =
 
 function MyPackagesPageInner() {
   const router = useRouter();
+  const { accountSidebar, handleTabbedBottomNav, openAccountMenu } = useCustomerAccountSidebarHost();
   const [phone, setPhone] = useState<string | null>(null);
   const [rows, setRows] = useState<MyPackageSummaryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,13 +88,10 @@ function MyPackagesPageInner() {
           </div>
           <BottomNavigation
             currentScreen="my-packages"
-            onNavigate={(screen) => {
-              if (screen === 'home') router.push('/');
-              else if (screen === 'cart') router.push('/cart');
-              else if (screen === 'my-bookings') router.push('/bookings');
-              else if (screen === 'profile') router.push('/profile');
-            }}
+            onNavigate={handleTabbedBottomNav}
+            onProfileClick={openAccountMenu}
           />
+          {accountSidebar}
         </div>
       </div>
     );
@@ -116,13 +115,10 @@ function MyPackagesPageInner() {
 
         <BottomNavigation
           currentScreen="my-packages"
-          onNavigate={(screen) => {
-            if (screen === 'home') router.push('/');
-            else if (screen === 'cart') router.push('/cart');
-            else if (screen === 'my-bookings') router.push('/bookings');
-            else if (screen === 'profile') router.push('/profile');
-          }}
+          onNavigate={handleTabbedBottomNav}
+          onProfileClick={openAccountMenu}
         />
+        {accountSidebar}
       </div>
     </div>
   );

@@ -30,7 +30,7 @@
   // The getApiBaseUrl() function in api-client.ts will use NEXT_PUBLIC_API_BASE_URL
   if (isLocalhost) {
     window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-      // Intentionally NOT setting apiBaseUrl - let env var (http://localhost:3000) be used
+      // Intentionally NOT setting apiBaseUrl - use NEXT_PUBLIC_API_BASE_URL from .env.local
       uatMode: true,
       environment: 'development',
       customerEcommerceEnabled: false

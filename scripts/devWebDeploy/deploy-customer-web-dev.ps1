@@ -14,9 +14,8 @@ param(
     [string]$ApiGatewayEndpoint = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
     [switch]$DeployOnly,
     [switch]$SkipInvalidation,
-    # Pass -CustomerEcommerceEnabled to turn shop/cart/wishlist/orders ON for this deploy (default off).
+    # Shop/cart/wishlist/orders OFF by default for dev; pass -CustomerEcommerceEnabled to turn on.
     [switch]$CustomerEcommerceEnabled,
-    # Kept for compatibility: forces ecommerce off even if -CustomerEcommerceEnabled is also passed.
     [switch]$CustomerEcommerceDisabled
 )
 
@@ -93,8 +92,17 @@ if (!(Test-Path $customerWebDir)) {
 }
 
 Set-Location $customerWebDir
+$customerEcommerceJs = if ($CustomerEcommerceDisabled) {
+    'false'
+} elseif ($CustomerEcommerceEnabled) {
+    'true'
+} else {
+    'false'
+}
+
 Write-Host "Step 3: Building customer-web..." -ForegroundColor Yellow
 Write-Host "  Directory: $customerWebDir" -ForegroundColor Gray
+Write-Host "  Customer ecommerce: $customerEcommerceJs" -ForegroundColor Gray
 
 # Build the app (skip if DeployOnly is set and dist exists)
 if ($DeployOnly -and (Test-Path "dist")) {
@@ -109,6 +117,9 @@ if ($DeployOnly -and (Test-Path "dist")) {
     
     Write-Host "  Running: npm run build" -ForegroundColor Gray
     $env:NODE_ENV = "production"
+    $env:NEXT_PUBLIC_ENVIRONMENT = "development"
+    $env:NEXT_PUBLIC_API_BASE_URL = $ApiGatewayEndpoint
+    $env:NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED = $customerEcommerceJs
     # Run via cmd so Next.js warnings on stderr do not trigger Stop on NativeCommandError
     $buildProc = Start-Process -FilePath "cmd.exe" `
         -ArgumentList "/c", "npm run build" `
@@ -133,7 +144,6 @@ Write-Host "Step 4: Injecting runtime configuration..." -ForegroundColor Yellow
 $distPath = Join-Path $customerWebDir "dist"
 $runtimeConfigPath = Join-Path $distPath "runtime-config.js"
 
-$customerEcommerceJs = if ($CustomerEcommerceDisabled) { 'false' } elseif ($CustomerEcommerceEnabled) { 'true' } else { 'false' }
 $runtimeConfigContent = (@'
 // Runtime Configuration for Warmpawz customer-web
 // Injected at deployment time with dev API Gateway endpoint

@@ -544,12 +544,7 @@ export function NutritionistBookingRouter({
       (s: any) => normalizeToBookingStyle(s.serviceStyle ?? s.service_style) === selectedServiceType
     );
 
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: '45+', label: 'Experts' },
-    { value: '1.5K+', label: 'Consultations' },
-    { value: '—', label: 'Rating' }
-  ];
+  const dashboardStats: Array<{ value: string; label: string }> = [];
 
   const getServiceTitle = () => {
     if (nutritionist?.name) return `Book with ${nutritionist.name}`;

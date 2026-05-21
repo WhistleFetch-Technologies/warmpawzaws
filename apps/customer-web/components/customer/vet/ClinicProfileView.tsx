@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { formatAverageForDisplay } from '@/lib/rating-display';
+import { vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
@@ -235,16 +236,26 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
     );
   }
 
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
+  const clinicVendorId = String(clinic.vendor_id ?? clinic.vendorId ?? clinicId ?? '').trim();
+  const ratingStat = vendorRatingHeaderStat(
+    {
+      vendorId: clinicVendorId,
+      vendorRating: clinic.rating,
+      review_count: clinic.review_count,
+    },
+    clinicVendorId
+  );
   const rc = Number(clinic.review_count ?? 0) || 0;
-  const avg =
-    clinic.rating != null && rc > 0 && Number.isFinite(Number(clinic.rating))
-      ? Number(clinic.rating).toFixed(1)
-      : '—';
   const dashboardStats = [
-    { value: avg, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    { value: `${rc}`, label: 'Reviews' },
-    { value: clinic.services?.length ? `${clinic.services.length}` : '10+', label: 'Services', icon: <Stethoscope className="w-4 h-4" /> }
+    ...(ratingStat
+      ? [{ ...ratingStat, icon: <Star className="w-4 h-4 fill-white" /> }]
+      : []),
+    ...(rc > 0 ? [{ value: `${rc}`, label: 'Reviews' }] : []),
+    {
+      value: clinic.services?.length ? `${clinic.services.length}` : '10+',
+      label: 'Services',
+      icon: <Stethoscope className="w-4 h-4" />,
+    },
   ];
 
   return (

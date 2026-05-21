@@ -9,6 +9,7 @@ import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
 import { toast } from 'sonner';
 import { useProblemGridByRole } from '../useProblemGridByRole';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { NUTRITIONIST_NEEDS } from '../ProblemGridSection';
 import { serviceTypes } from './constants';
 import { NutritionistServicesLandingProps } from './constants/interface';
@@ -59,28 +60,14 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
       const nutritionistList = await fetchMergedNutritionProviders({ customerPhone: phone });
       setNutritionists(nutritionistList);
 
-      const withReviews = nutritionistList.filter((n: any) => {
-        const c = Number(n.reviewCount ?? n.review_count ?? 0);
-        const r = Number(n.rating);
-        return c > 0 && Number.isFinite(r) && r > 0;
-      });
-      const avgFromReviews =
-        withReviews.length > 0
-          ? (
-              withReviews.reduce((acc: number, n: any) => acc + Number(n.rating), 0) /
-              withReviews.length
-            ).toFixed(1)
-          : null;
-
       setStats({
         activeNutritionists: nutritionistList.length || 0,
         consultations: '1.5K+',
-        rating: avgFromReviews,
       });
     } catch (error) {
       console.error('Error loading nutritionists:', error);
       setNutritionists([]);
-      setStats({ activeNutritionists: 0, consultations: '1.5K+', rating: null });
+      setStats({ activeNutritionists: 0, consultations: '1.5K+' });
     } finally {
       setLoading(false);
     }
@@ -119,21 +106,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     }
   };
 
-  //---------------------------Basics----------------------------------//
-  const dashboardStats = stats
-    ? [
-        { value: `${stats.activeNutritionists}+`, label: 'Experts' },
-        { value: stats.consultations, label: 'Consultations' },
-        {
-          value: stats.rating != null ? stats.rating : '—',
-          label: 'Avg rating',
-        },
-      ]
-    : [
-        { value: '—', label: 'Experts' },
-        { value: '1.5K+', label: 'Consultations' },
-        { value: '—', label: 'Avg rating' },
-      ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
 
   //---------------------------render----------------------------------//
@@ -156,11 +129,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
           serviceSubtitle="Expert nutrition consultation"
           serviceIcon={Apple}
           iconColor="text-white"
-          stats={[
-            { value: '45+', label: 'Experts' },
-            { value: '1.5K+', label: 'Consultations' },
-            { value: '—', label: 'Rating' }
-          ]}
+          stats={[]}
           onBack={onBack}
           showBackButton={true}
           headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"

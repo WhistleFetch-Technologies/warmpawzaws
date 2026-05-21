@@ -10,13 +10,16 @@ import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebGroomingTrainingEmbedVendorId } from '@/lib/customer-vendor-profile-navigation';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
-import { StarRating } from '@/components/customer/shared/StarRating';
+import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
+import { vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
+import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
@@ -140,18 +143,7 @@ export function GroomingServicesByStyle({
 
   const groomingSalonStatLabel = serviceStyle === 'at_center' ? 'Salons' : 'Pros';
 
-  const dashboardStats = useMemo(
-    () => [
-      {
-        value: groomingSalonStatValue,
-        label: groomingSalonStatLabel,
-        icon: <Scissors className="w-4 h-4" />,
-      },
-      { value: '1K+', label: 'Bookings' },
-      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    ],
-    [groomingSalonStatValue, groomingSalonStatLabel]
-  );
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   const getServiceTitle = () => {
     if (serviceStyle === 'at_center') return 'Grooming Center';
@@ -645,12 +637,20 @@ export function GroomingServicesByStyle({
     const phoneNumber = vendor?.phone || facility?.phone || profileProvider.phone || '';
     const description = vendor?.description || facility?.description || `${salonName} is a professional pet grooming salon offering premium grooming services.`;
 
-    // ✅ FIX: Prepare stats for ServiceDashboardHeader
-    const profileDashboardStats = [
-      { value: groomingSalonStatValue, label: groomingSalonStatLabel, icon: <Scissors className="w-4 h-4" /> },
-      { value: '1K+', label: 'Bookings' },
-      { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-    ];
+    const profileVendorId = String(
+      vendorId ?? profileProvider.id ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
+    ).trim();
+    const profileRatingStat = vendorRatingHeaderStat(
+      {
+        vendorId: profileVendorId,
+        vendorRating: rating?.averageRating ?? profileProvider.rating,
+        vendorReviewCount: rating?.totalReviews ?? profileProvider.reviewCount,
+      },
+      profileVendorId
+    );
+    const profileDashboardStats = profileRatingStat
+      ? [{ ...profileRatingStat, icon: <Star className="w-4 h-4 fill-white" /> }]
+      : [];
     
     const getServiceTitle = () => {
       if (serviceStyle === 'at_center') return 'Grooming Center';
@@ -712,9 +712,13 @@ export function GroomingServicesByStyle({
               
               {/* Rating and Reviews */}
               <div className="flex items-center gap-3 mb-3 flex-wrap">
-                <StarRating
-                  rating={rating?.averageRating ?? profileProvider.rating}
-                  reviewCount={rating?.totalReviews ?? profileProvider.reviewCount}
+                <VendorRatingDisplay
+                  row={{
+                    vendorId: profileVendorId,
+                    vendorRating: rating?.averageRating ?? profileProvider.rating,
+                    vendorReviewCount: rating?.totalReviews ?? profileProvider.reviewCount,
+                  }}
+                  vendorId={profileVendorId}
                   starsClassName="h-5 w-5"
                   textClassName="text-sm text-gray-700"
                 />

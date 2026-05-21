@@ -33,8 +33,11 @@ import { getApiBaseUrl, getAuthHeaders } from '@/lib/api-config';
 import { setHomeServiceTrackingReturnHref } from '@/lib/vendor-live-tracker-nav';
 import { bookingNeedsWalkLiveTracker } from '@/lib/vendor-walk-live-tracker';
 import { isPackageSessionOneStarted } from '@/lib/vendor-package-parent-decline';
+import {
+  isVendorTeleConsultationBooking,
+  resolveVendorBookingId,
+} from '@/lib/vendor-utils';
 import { VendorChatModal } from './VendorChatModal';
-import { VendorTeleConsultationFlow } from './VendorTeleConsultationFlow';
 import { AppointmentDetailModal } from './AppointmentDetailModal';
 import { PrescriptionHistoryModal } from './PrescriptionHistoryModal';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
@@ -341,8 +344,6 @@ export function VendorBookingManagement({
   const [chatBooking, setChatBooking] = useState<Booking | null>(null);
   
   // ✅ Video Call Modal State
-  const [showVideoCall, setShowVideoCall] = useState(false);
-  const [videoBooking, setVideoBooking] = useState<Booking | null>(null);
   
   // ✅ Appointment Detail Modal State
   const [showAppointmentDetail, setShowAppointmentDetail] = useState(false);
@@ -1058,9 +1059,9 @@ export function VendorBookingManagement({
         router.push(`/bookings/home-service?bookingId=${encodeURIComponent(id)}`);
       }
       return;
-    } else if (booking.communicationType === 'video') {
-      // For tele consultations, complete without OTP
-      handleCompleteWithoutOTP(booking);
+    } else if (isVendorTeleConsultationBooking(booking)) {
+      // For tele consultations, complete without OTP (POST /vendor/bookings/:id/complete)
+      void handleCompleteWithoutOTP(booking);
     } else {
       // For regular in-person services, show OTP modal to complete
       setShowOTPModal(true);
@@ -1117,22 +1118,29 @@ export function VendorBookingManagement({
   
   // Complete booking without OTP (for tele consultations)
   const handleCompleteWithoutOTP = async (booking: Booking) => {
+    const bid = resolveVendorBookingId(booking);
+    if (!bid) {
+      toast.error('Missing booking id');
+      return;
+    }
     try {
       setCompletingBooking(true);
-      
-      const data = await apiClient.post(`/vendor/bookings/${booking.id}/complete`, { vendorId, otp: null }) as any;
-      
-      // data already available
-      
-      if (data && data.success) {
-        alert('✅ Booking completed successfully!');
-        loadBookings(); // Reload bookings
+
+      const data = (await apiClient.post(`/vendor/bookings/${bid}/complete`, {
+        vendorId: vendorData?.id || vendorId,
+        otp: null,
+      })) as { success?: boolean; error?: string; message?: string };
+
+      if (data?.success !== false) {
+        toast.success(data?.message || 'Booking completed successfully!');
+        loadBookings();
       } else {
-        alert(`❌ Error: ${data.error || 'Failed to complete booking'}`);
+        toast.error(data?.error || 'Failed to complete booking');
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error completing booking:', error);
-      alert('❌ Error completing booking. Please try again.');
+      const msg = error instanceof Error ? error.message : 'Failed to complete booking';
+      toast.error(msg);
     } finally {
       setCompletingBooking(false);
     }
@@ -1497,7 +1505,9 @@ export function VendorBookingManagement({
                           return (
                             <div className="mt-3 space-y-2">
                               {!isPackageSessionBooking && declineBtn}
-                              {booking.status === 'confirmed' && (
+                              {(booking.status === 'confirmed' ||
+                                (isVendorTeleConsultationBooking(booking) &&
+                                  (booking.status === 'in_progress' || booking.status === 'active'))) && (
                                 <>
                                   <button
                                     type="button"
@@ -1509,11 +1519,13 @@ export function VendorBookingManagement({
                                     className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                                   >
                                     <CheckCircle className="w-4 h-4" />
-                                    {booking.communicationType === 'video' ? 'Mark Complete' : 'Complete with OTP'}
+                                    {isVendorTeleConsultationBooking(booking)
+                                      ? 'Mark Complete'
+                                      : 'Complete with OTP'}
                                   </button>
                                   <p className="text-xs text-gray-500 mt-1 text-center">
-                                    {booking.communicationType === 'video'
-                                      ? 'Tele consultation - No OTP required'
+                                    {isVendorTeleConsultationBooking(booking)
+                                      ? 'Tele consultation - complete after the video call'
                                       : 'Ask customer for 4-digit OTP to complete'}
                                   </p>
                                 </>
@@ -1538,11 +1550,13 @@ export function VendorBookingManagement({
                               className="w-full px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                             >
                               <CheckCircle className="w-4 h-4" />
-                              {booking.communicationType === 'video' ? 'Mark Complete' : 'Complete with OTP'}
+                              {isVendorTeleConsultationBooking(booking)
+                                ? 'Mark Complete'
+                                : 'Complete with OTP'}
                             </button>
                             <p className="text-xs text-gray-500 mt-1 text-center">
-                              {booking.communicationType === 'video'
-                                ? 'Tele consultation - No OTP required'
+                              {isVendorTeleConsultationBooking(booking)
+                                ? 'Tele consultation - complete after the video call'
                                 : 'Ask customer for 4-digit OTP to complete'}
                             </p>
                           </div>
@@ -1575,12 +1589,19 @@ export function VendorBookingManagement({
                           </button>
                         )}
                         {/* Video Call Button - TELE ONLY */}
-                        {booking.communicationType === 'video' && booking.serviceType === 'tele' && booking.status !== 'completed' && (
+                        {isVendorTeleConsultationBooking(booking) && booking.status !== 'completed' && (
                           <button
+                            type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setVideoBooking(booking);
-                              setShowVideoCall(true);
+                              const bid = resolveVendorBookingId(booking);
+                              if (!bid) {
+                                toast.error('Missing booking id');
+                                return;
+                              }
+                              const params = new URLSearchParams();
+                              params.set('bookingId', bid);
+                              router.push(`/video?${params.toString()}`);
                             }}
                             className="flex-1 min-w-[100px] py-2 px-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
                           >
@@ -2219,21 +2240,6 @@ export function VendorBookingManagement({
           </div>
         );
       })()}
-      
-      {/* VIDEO CALL MODAL */}
-      {showVideoCall && videoBooking && (
-        <VendorTeleConsultationFlow
-          vendorId={vendorId}
-          vendorData={vendorData}
-          bookingData={videoBooking}
-          onBack={() => {
-            setShowVideoCall(false);
-            setVideoBooking(null);
-            // Refresh bookings
-            loadBookings();
-          }}
-        />
-      )}
       
       {/* CHAT MODAL */}
       {showChatModal && chatBooking && (

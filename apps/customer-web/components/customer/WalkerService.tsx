@@ -28,6 +28,8 @@ import {
   buildWalkerServiceDataForVendorPackagePurchase,
 } from '@/lib/vendor-package-purchase-nav';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
+import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { formatExactCentreCount, formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
 export interface WalkerPendingWalkSession {
@@ -180,6 +182,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     phone,
     serviceStyle: 'at_home',
     category: 'walker',
+    roleId: 'walker',
   });
 
   useEffect(() => {
@@ -255,28 +258,11 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
   /** Drop stale async results when a newer search/load started. */
   const loadWalkersGenRef = useRef(0);
 
+  /** Same coord order as search tab / useHubVendorDiscovery (profile → localStorage → GPS). */
   const getLocationQuerySuffix = useCallback(async (): Promise<string> => {
-    try {
-      const lat = typeof localStorage !== 'undefined' && localStorage.getItem('customer_latitude');
-      const lng = typeof localStorage !== 'undefined' && localStorage.getItem('customer_longitude');
-      if (lat && lng) return `&latitude=${lat}&longitude=${lng}`;
-    } catch (_) {}
-    if (typeof phone !== 'undefined' && phone) {
-      try {
-        const profileRes = (await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`)) as any;
-        const profile = profileRes?.profile || profileRes;
-        if (profile?.latitude != null && profile?.longitude != null) {
-          return `&latitude=${encodeURIComponent(String(profile.latitude))}&longitude=${encodeURIComponent(String(profile.longitude))}`;
-        }
-      } catch (_) {}
-    }
-    if (typeof navigator !== 'undefined' && navigator.geolocation) {
-      try {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 300000 });
-        });
-        return `&latitude=${encodeURIComponent(String(pos.coords.latitude))}&longitude=${encodeURIComponent(String(pos.coords.longitude))}`;
-      } catch (_) {}
+    const { latitude, longitude } = await resolveCustomerDiscoveryCoords(phone);
+    if (latitude != null && longitude != null) {
+      return `&latitude=${encodeURIComponent(latitude)}&longitude=${encodeURIComponent(longitude)}`;
     }
     return '';
   }, [phone]);
@@ -598,16 +584,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
     return () => window.clearTimeout(t);
   }, [pendingWalkSession]);
 
-  // Prepare stats for ServiceDashboardHeader
-  const dashboardStats = stats ? [
-    { value: `${stats.walkers}+`, label: 'Walkers' },
-    { value: stats.walks, label: 'Walks' },
-    { value: String(stats.rating), label: 'Rating' }
-  ] : [
-    { value: '30+', label: 'Walkers' },
-    { value: '2K+', label: 'Walks' },
-    { value: '—', label: 'Rating' }
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   return (
     <div className="min-h-screen bg-gray-50">

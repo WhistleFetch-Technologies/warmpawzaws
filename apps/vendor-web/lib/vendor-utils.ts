@@ -132,6 +132,42 @@ export function getVendorBookingVenuePillLabel(bookingLike: {
   return 'Clinic Visit';
 }
 
+/** Tele / video consultation — used for OTP skip and POST /vendor/bookings/:id/complete. */
+export function isVendorTeleConsultationBooking(bookingLike: {
+  serviceType?: string | null;
+  service_type?: string | null;
+  service_style?: string | null;
+  serviceStyle?: string | null;
+  communicationType?: string | null;
+}): boolean {
+  if (String(bookingLike.communicationType || '').toLowerCase() === 'video') {
+    return true;
+  }
+  const st = String(
+    bookingLike.serviceType ||
+      bookingLike.service_type ||
+      bookingLike.service_style ||
+      bookingLike.serviceStyle ||
+      ''
+  )
+    .toLowerCase()
+    .trim();
+  return (
+    st === 'tele' ||
+    st === 'video_consultation' ||
+    st === 'tele_consultation' ||
+    st === 'teleconsultation' ||
+    st.includes('tele')
+  );
+}
+
+export function resolveVendorBookingId(bookingLike: {
+  id?: string | null;
+  bookingId?: string | null;
+}): string {
+  return String(bookingLike.bookingId || bookingLike.id || '').trim();
+}
+
 /**
  * Check if vendor has specific role
  */

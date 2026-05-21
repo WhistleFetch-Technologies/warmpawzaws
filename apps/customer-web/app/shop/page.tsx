@@ -935,8 +935,8 @@ export default function ShopPage() {
                         <p className="text-sm text-slate-500">Pay when you receive your order</p>
                       </div>
                     </label>
-                    <label 
-                      onClick={() => setShowPaymentPage(true)}
+                    <label
+                      onClick={() => router.push('/checkout')}
                       className="flex items-center gap-4 p-4 border-2 border-orange-500 rounded-xl cursor-pointer bg-orange-50 hover:bg-orange-100 transition"
                     >
                       <input type="radio" name="payment" className="w-5 h-5 text-orange-500" />

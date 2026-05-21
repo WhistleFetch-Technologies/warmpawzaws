@@ -34,7 +34,8 @@ import { apiClient } from '@/lib/api-client';
 import { formatCustomerApiFailure } from '@/lib/format-customer-api-failure';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
-import { StarRating } from './shared/StarRating';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
+import { VendorRatingDisplay } from './shared/VendorRatingDisplay';
 import { toast } from 'sonner';
 
 interface DiagnosticsServicesLandingProps {
@@ -422,19 +423,7 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
     );
   }
 
-  // Prepare stats for ServiceDashboardHeader
-  const dashboardStats = stats ? [
-    {
-      value: stats.activeCenters === 0 ? '0' : `${stats.activeCenters}+`,
-      label: 'Labs',
-    },
-    { value: stats.tests, label: 'Tests' },
-    { value: String(stats.rating), label: 'Rating' },
-  ] : [
-    { value: '15+', label: 'Labs' },
-    { value: '500+', label: 'Tests' },
-    { value: '—', label: 'Rating' }
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   const categoriesToShow =
     testCategories.length > 0
@@ -754,9 +743,13 @@ export function DiagnosticsServicesLanding({ phone, onBack, onNavigate }: Diagno
                         </div>
                         <p className="text-xs text-gray-500 truncate mt-1">{center.address}</p>
                         <div className="flex items-center gap-3 text-xs mt-1">
-                          <StarRating
-                            rating={center.rating}
-                            reviewCount={center.reviewCount}
+                          <VendorRatingDisplay
+                            row={{
+                              vendorId: center.id,
+                              vendorRating: center.rating,
+                              vendorReviewCount: center.reviewCount,
+                            }}
+                            vendorId={String(center.id ?? '')}
                             starsClassName="w-3 h-3"
                             textClassName="text-xs text-gray-500"
                           />

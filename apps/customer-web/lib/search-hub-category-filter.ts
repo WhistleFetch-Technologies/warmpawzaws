@@ -66,9 +66,51 @@ function hubMatchesResultName(hubId: string, name: string | undefined): boolean 
 
 export type HubFilterableResult = { type: string; category: string; name?: string };
 
+const HUB_INFER_ORDER = [
+  'nutritionist',
+  'pharmacy',
+  'grooming',
+  'training',
+  'boarding',
+  'walker',
+  'resort',
+  'cafe',
+  'vet',
+] as const;
+
+/** Infer search hub chip from free-text (e.g. "dog walker" → walker) for discovery parity on /search. */
+export function inferHubSlugFromSearchQuery(searchQuery: string): string | null {
+  const q = (searchQuery || '').trim();
+  if (!q) return null;
+  for (const hub of HUB_INFER_ORDER) {
+    if (hubMatchesSearchText(hub, q)) return hub;
+  }
+  if (hubMatchesSearchText('nutrition', q)) return 'nutritionist';
+  return null;
+}
+
+/** One card per vendor when both vendor + service rows are returned from GET /search. */
+export function dedupeSearchVendorAndServiceRows<
+  T extends { type: string; id: string; vendorOwnerId?: string },
+>(results: T[]): T[] {
+  const vendorRowIds = new Set(results.filter((r) => r.type === 'vendor').map((r) => r.id));
+  return results.filter(
+    (r) => r.type === 'vendor' || !(r.vendorOwnerId && vendorRowIds.has(r.vendorOwnerId))
+  );
+}
+
 /**
- * Client-side chip filter for GET /search rows. Hub-only browse uses strict canonical category tokens only
- * (same idea as SQL hub browse). With a keyword query, legacy rows without category may still match via hints.
+ * Client-side chip filter for GET /search rows.
+ *
+ * Hub-only browse (no keyword) is a **pass-through**: GET /search and GET
+ * /customer/discover-services share the same SQL EXISTS + radius rules, so the
+ * backend already returns exactly the vendor/service set home shows. Re-filtering
+ * here based on the row's `category` column would diverge from home — e.g. home
+ * includes a vet_clinic vendor with a dog-walk service in the walker hub (via
+ * walkerCategoryDiscoveryOr); the client must not drop them.
+ *
+ * Keyword + hub mode keeps the legacy alias / name-hint filter so free-text
+ * search doesn't surface unrelated verticals when the user pinned a hub chip.
  */
 export function applyHubCategoryFilter<T extends HubFilterableResult>(
   results: T[],
@@ -76,15 +118,14 @@ export function applyHubCategoryFilter<T extends HubFilterableResult>(
   searchQuery: string
 ): T[] {
   if (!hubId) return results;
-  const allowed = normalizedAllowedTokens(hubId);
   const q = (searchQuery || '').trim();
-  const strictHubBrowse = !q;
+  if (!q) return results;
+  const allowed = normalizedAllowedTokens(hubId);
 
   return results.filter((r) => {
     const c = normalizeCategoryToken(r.category || '');
     if (c && allowed.has(c)) return true;
     if (c && !allowed.has(c)) return false;
-    if (strictHubBrowse) return false;
     if (!c && r.type === 'vendor' && hubMatchesSearchText(hubId, searchQuery)) return true;
     if (!c && hubMatchesResultName(hubId, r.name)) return true;
     return false;
