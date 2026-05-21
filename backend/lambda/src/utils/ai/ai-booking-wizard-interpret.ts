@@ -136,6 +136,38 @@ export type SessionPatchFields = {
   staff_id?: string | null;
 };
 
+/** Deterministic visit-type switch from chat (before Bedrock interpret). */
+export function inferVisitStyleFromMessage(message: string): 'at_center' | 'at_home' | 'tele' | null {
+  const m = String(message || '')
+    .toLowerCase()
+    .trim();
+  if (!m) return null;
+  if (/\b(tele|video\s*consult|online\s*consult|virtual\s*visit|video\s*call)\b/.test(m)) {
+    return 'tele';
+  }
+  if (/\b(home\s*visit|at\s*home|home\s*service|visit\s*at\s*home)\b/.test(m)) {
+    return 'at_home';
+  }
+  if (
+    /\b(clinic\s*visit|in[- ]?clinic|at\s*(the\s*)?clinic|at\s*center|at\s*centre|office\s*visit|in\s*person)\b/.test(
+      m
+    )
+  ) {
+    return 'at_center';
+  }
+  return null;
+}
+
+export function visitStyleAssistantMessage(style: 'at_center' | 'at_home' | 'tele'): string {
+  if (style === 'tele') {
+    return 'Switched to tele / video visit. Pick a service, then a date with openings.';
+  }
+  if (style === 'at_home') {
+    return 'Switched to home visit. Pick a service, then a date with openings.';
+  }
+  return 'Switched to in-clinic visit. Pick a service, then a date with openings.';
+}
+
 export function interpretActionsToPatch(actions: InterpretAction[]): SessionPatchFields {
   const patch: SessionPatchFields = {};
   for (const a of actions) {
