@@ -2,7 +2,12 @@
  * Enhanced Photo Upload Utility for Vendor Web with Progress Tracking and Validation
  */
 
-import { apiClient, postJsonWithXhr } from './api-client';
+import {
+  apiClient,
+  getApiBaseUrl,
+  getVendorAuthHeadersForUpload,
+  type MultipartUploadResponse,
+} from './api-client';
 import { fileMatchesAccept } from '@/lib/capacitor-file-pick';
 
 export interface PhotoUploadOptions {
@@ -201,26 +206,15 @@ function mimeForFacilityPhoto(file: File): string {
   return map[ext] || 'image/jpeg';
 }
 
-/** Read image bytes as raw base64 (no data: prefix) for JSON upload on native WebViews. */
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== 'string') {
-        reject(new Error('Could not read photo data'));
-        return;
-      }
-      const comma = result.indexOf(',');
-      const base64 = comma >= 0 ? result.slice(comma + 1) : result;
-      if (!base64) {
-        reject(new Error('Photo data was empty'));
-        return;
-      }
-      resolve(base64);
-    };
-    reader.onerror = () => reject(new Error('Could not read photo from device'));
-    reader.readAsDataURL(file);
+/** Build a `File` from Camera bridge base64 (same bytes as customer `FormData` upload path). */
+function facilityPayloadToFile(payload: FacilityCenterPhotoPayload): File {
+  const binary = atob(payload.base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new File([bytes], payload.fileName, {
+    type: payload.mimeType || 'image/jpeg',
   });
 }
 
@@ -261,6 +255,62 @@ function parseFacilityUploadResponse(uploadData: {
 const facilityUploadPath = (vendorId: string) =>
   `/vendor/facility/${encodeURIComponent(vendorId)}/upload-photos`;
 
+/**
+ * Same transport as customer profile upload (`uploadWithXHR` in customer photo-upload-enhanced):
+ * FormData body, raw XMLHttpRequest, auth headers set manually (no fetch / CapacitorHttp).
+ */
+async function uploadFacilityFormDataWithXHR(
+  endpoint: string,
+  formData: FormData,
+  onProgress?: (progress: number) => void
+): Promise<MultipartUploadResponse> {
+  try {
+    const { refreshVendorTokensIfNeeded } = await import('./cognito-auth');
+    await refreshVendorTokensIfNeeded();
+  } catch {
+    /* non-blocking */
+  }
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const url = `${getApiBaseUrl().replace(/\/+$/, '')}${endpoint.replace(/^\/+/, '/')}`;
+
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable && onProgress) {
+        const percentComplete = Math.round((e.loaded / e.total) * 90) + 10;
+        onProgress(percentComplete);
+      }
+    });
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as MultipartUploadResponse);
+        } catch {
+          reject(new Error('Failed to parse upload response'));
+        }
+        return;
+      }
+      try {
+        const err = JSON.parse(xhr.responseText) as MultipartUploadResponse;
+        reject(new Error(err.error || `Upload failed with status ${xhr.status}`));
+      } catch {
+        reject(new Error(`Upload failed with status ${xhr.status}`));
+      }
+    });
+
+    xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
+    xhr.addEventListener('abort', () => reject(new Error('Upload was cancelled')));
+
+    xhr.open('POST', url);
+    const authHeaders = getVendorAuthHeadersForUpload();
+    for (const [key, value] of Object.entries(authHeaders)) {
+      xhr.setRequestHeader(key, value);
+    }
+    xhr.send(formData);
+  });
+}
+
 export type FacilityCenterPhotoPayload = {
   base64: string;
   fileName: string;
@@ -269,8 +319,8 @@ export type FacilityCenterPhotoPayload = {
 
 /**
  * Upload center gallery photos (Dashboard → Gallery → Center photos).
- * Always JSON base64 — multipart FormData is unreliable on Capacitor Android WebView.
- * Pass `payloads` from Camera.getPhoto base64 to skip File round-trips.
+ * Uses FormData + XMLHttpRequest (same pattern as customer profile/pet uploads).
+ * When `payloads` are set from @capacitor/camera, they are converted to `File` before upload.
  */
 export async function uploadFacilityCenterPhotos(
   vendorId: string,
@@ -279,6 +329,7 @@ export async function uploadFacilityCenterPhotos(
     onProgress?: (percent: number) => void;
     /** Raw base64 from @capacitor/camera (one entry per file, same order). */
     payloads?: FacilityCenterPhotoPayload[];
+    maxRetries?: number;
   }
 ): Promise<FacilityCenterPhotosUploadResult> {
   const safeId = resolveFacilityGalleryVendorId(vendorId);
@@ -291,40 +342,80 @@ export async function uploadFacilityCenterPhotos(
 
   const endpoint = facilityUploadPath(safeId);
 
-  const photos: FacilityCenterPhotoPayload[] = [];
+  const uploadFiles: File[] = [];
   if (options?.payloads?.length) {
-    photos.push(...options.payloads);
-  } else if (files.length) {
+    for (const payload of options.payloads) {
+      if (!payload.base64?.length) {
+        throw new Error(`${payload.fileName || 'Photo'} is empty on this device`);
+      }
+      const file = facilityPayloadToFile(payload);
+      if (file.size === 0) {
+        throw new Error(`${payload.fileName || 'Photo'} is empty on this device`);
+      }
+      uploadFiles.push(file);
+    }
+  } else {
     for (const file of files) {
       if (file.size === 0) {
         throw new Error(`${file.name || 'Photo'} is empty on this device`);
       }
-      photos.push({
-        base64: await readFileAsBase64(file),
-        fileName: file.name || `photo-${Date.now()}.jpg`,
-        mimeType: mimeForFacilityPhoto(file),
-      });
+      uploadFiles.push(
+        file.type && file.type !== 'application/octet-stream'
+          ? file
+          : new File([file], file.name || `photo-${Date.now()}.jpg`, {
+              type: mimeForFacilityPhoto(file),
+            })
+      );
     }
   }
-  if (!photos.length) {
+
+  if (!uploadFiles.length) {
     throw new Error('No photo data to upload');
   }
 
   console.log(
-    '[GALLERY] Uploading via JSON base64:',
-    photos.map((p) => ({ name: p.fileName, b64Len: p.base64.length, mime: p.mimeType, vendorId: safeId }))
+    '[GALLERY] Uploading via FormData multipart (XHR):',
+    uploadFiles.map((f) => ({ name: f.name, size: f.size, type: f.type, vendorId: safeId }))
   );
 
-  const uploadData = await postJsonWithXhr(endpoint, { photos }, options);
-  const parsed = parseFacilityUploadResponse(uploadData);
-  if (parsed.vendorId && typeof window !== 'undefined' && parsed.vendorId !== localStorage.getItem('vendorId')) {
-    localStorage.setItem('vendorId', parsed.vendorId);
-  }
-  return parsed;
-}
+  const maxRetries = options?.maxRetries ?? 3;
+  let lastError: Error | undefined;
 
-/** @deprecated Use uploadFacilityCenterPhotos */
-export const uploadFacilityCenterPhotosViaMultipartXhr = uploadFacilityCenterPhotos;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      if (options?.onProgress) {
+        options.onProgress(10);
+      }
+
+      const formData = new FormData();
+      for (const file of uploadFiles) {
+        formData.append('photos', file, file.name);
+      }
+
+      const uploadData = await uploadFacilityFormDataWithXHR(endpoint, formData, options?.onProgress);
+
+      if (options?.onProgress) {
+        options.onProgress(100);
+      }
+      const parsed = parseFacilityUploadResponse(uploadData);
+      if (
+        parsed.vendorId &&
+        typeof window !== 'undefined' &&
+        parsed.vendorId !== localStorage.getItem('vendorId')
+      ) {
+        localStorage.setItem('vendorId', parsed.vendorId);
+      }
+      return parsed;
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < maxRetries - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (attempt + 1)));
+      }
+    }
+  }
+
+  throw lastError ?? new Error('Upload failed after retries');
+}
 
 /**
  * Upload to S3 using presigned URL with progress tracking
