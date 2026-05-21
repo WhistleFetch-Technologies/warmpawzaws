@@ -19,6 +19,12 @@ export async function triggerAutoShipment(orderId: string, orderType: string): P
         return;
       }
       order = orders[0];
+      if (order.order_status === 'pending') {
+        console.log(
+          `[AUTO-SHIPMENT] Ecommerce order ${orderId} is pending vendor confirmation — skipping`
+        );
+        return;
+      }
       await select('order_items', { order_id: orderId });
       vendorId = order.vendor_id;
     } else if (orderType === 'pharmacy') {
