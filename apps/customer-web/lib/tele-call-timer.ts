@@ -1,10 +1,5 @@
-export const CHAT_TOPIC = 'chat-message';
-export const TYPING_TOPIC = 'typing-indicator';
-export const CALL_ENDED_TOPIC = 'call-ended';
-export const MEDIA_STATE_TOPIC = 'call-media-state';
 /** Fallback when API timer is unavailable (matches backend default). */
 export const DEFAULT_CALL_SLOT_SECONDS = 30 * 60;
-export const MESSAGE_LIFETIME_MS = 300000; // 5 minutes
 
 export interface CallTimerPayload {
   serviceDurationMinutes?: number;
@@ -14,6 +9,7 @@ export interface CallTimerPayload {
   consultationActive?: boolean;
   timerPaused?: boolean;
   timerRunningSince?: string | null;
+  /** DB base when timer is running (not the live remaining value). */
   timerBaseSeconds?: number | null;
 }
 
@@ -22,6 +18,7 @@ export function computeClientCallRemaining(
   serviceDurationSeconds: number,
   opts: {
     timerRunningSince?: string | null;
+    /** When running: base at run start. When paused: absolute seconds left. */
     timerBaseSeconds?: number | null;
     timerPaused?: boolean;
   } = {}

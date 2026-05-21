@@ -12,7 +12,9 @@ export function clampPlannedServiceDurationMinutes(minutes: number): number {
  */
 export async function resolvePlannedServiceDurationMinutesFromBookingId(bookingId: string): Promise<number> {
   const br = await query(
-    `SELECT vendor_id, service_id, NULLIF(duration, 0)::numeric AS duration_nz, NULLIF(total_duration_minutes, 0)::numeric AS total_dur_nz
+    `SELECT vendor_id, service_id,
+            NULLIF(duration_minutes, 0)::numeric AS duration_nz,
+            NULLIF(total_duration_minutes, 0)::numeric AS total_dur_nz
      FROM bookings WHERE id = $1::uuid LIMIT 1`,
     [bookingId]
   ).catch(() => ({ rows: [] as any[] }));
@@ -57,7 +59,7 @@ export async function resolvePlannedServiceDurationMinutesFromBookingId(bookingI
         LIMIT 1),
        (SELECT sc.duration_minutes::numeric FROM service_catalog sc WHERE sc.id = b.service_id LIMIT 1),
        (SELECT s.duration_minutes::numeric FROM services s WHERE s.id = b.service_id LIMIT 1),
-       NULLIF(b.duration, 0)::numeric,
+       NULLIF(b.duration_minutes, 0)::numeric,
        NULLIF(b.total_duration_minutes, 0)::numeric,
        30
      ) AS minutes

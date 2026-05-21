@@ -22,6 +22,11 @@ import { geocodeAddress } from '../lib/utils/geocode';
 import { resolveVendorId } from '../utils/vendor-resolve';
 import { bookingUsesDedicatedEndSessionOtp, ensureDedicatedEndSessionOtp } from '../lib/booking-dedicated-end-otp';
 import { getVendorCommissionRate, isCanonicalPackageParentBooking } from '../utils/vendor-commission-rate';
+import {
+  completeTeleConsultation,
+  loadLatestSessionForBooking,
+  validateTeleVendorCompleteEligibility,
+} from '../utils/tele-completion-service';
 
 /**
  * Helper function to get the correct OTP for a booking based on action and service type
@@ -174,60 +179,41 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
                                   booking.service_style === 'tele';
       
       if (isTeleConsultation) {
-        const updated = await update('bookings',
-          { id: bookingId },
-          {
-            status: 'completed',
-            completed_at: new Date().toISOString(),
-          }
-        );
-
-        console.log(`✅ [COMPLETE-BOOKING] Tele consultation completed without OTP (prescription/call ended)`);
-        
-        // ✅ Create vendor_earnings for tele consultation (regardless of payment status — handles COD/pending)
-        if (!isCanonicalPackageParentBooking(booking)) {
-          try {
-            const commissionRate = await getVendorCommissionRate(booking.vendor_id);
-            const totalAmount = parseFloat(booking.total_amount || '0');
-            const commissionAmount = Math.round((totalAmount * commissionRate / 100) * 100) / 100;
-            const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
-
-            const existingEarnings = await query(
-              `SELECT id FROM vendor_earnings WHERE booking_id = $1`,
-              [bookingId]
-            ).catch(() => ({ rows: [] }));
-
-            const existingRows = (existingEarnings as any).rows || [];
-
-            if (existingRows.length === 0 && vendorAmount > 0) {
-              await insert('vendor_earnings', {
-                vendor_id: booking.vendor_id,
-                booking_id: bookingId,
-                amount: vendorAmount,
-                commission_amount: commissionAmount,
-                total_amount: totalAmount,
-                commission_rate: commissionRate,
-                status: 'pending',
-                realized_at: new Date().toISOString(),
-              });
-              console.log(`✅ [EARNINGS] Created vendor_earnings for tele booking ${bookingId}: vendor gets ₹${vendorAmount}`);
-
-              // Update vendor totals (non-critical)
-              await query(
-                `UPDATE vendors 
-               SET pending_payout = COALESCE(pending_payout, 0) + $1,
-                   total_earnings = COALESCE(total_earnings, 0) + $1,
-                   updated_at = NOW()
-               WHERE id = $2`,
-                [vendorAmount, booking.vendor_id]
-              ).catch((err: any) => console.warn('[EARNINGS] vendor totals update:', err?.message));
-            }
-          } catch (error: any) {
-            console.error('❌ [EARNINGS] Failed to create earnings for tele consultation:', error);
-          }
+        const eligibility = await validateTeleVendorCompleteEligibility(bookingId);
+        if (!eligibility.eligible) {
+          console.log(`⚠️ [COMPLETE-BOOKING] Tele completion rejected for ${bookingId}: ${eligibility.error}`);
+          return c.json({ error: eligibility.error || 'Consultation does not meet completion requirements.' }, 400);
         }
 
-        return c.json({ success: true, booking: updated[0], message: 'Tele consultation completed successfully!' });
+        const session = await loadLatestSessionForBooking(bookingId);
+        if (!session?.id) {
+          return c.json({ error: 'Cannot complete consultation because no video session was found.' }, 400);
+        }
+
+        const result = await completeTeleConsultation({
+          bookingId,
+          sessionId: session.id,
+          source: 'vendor_complete',
+          participantTypeEnding: 'vendor',
+          endSession: true,
+        });
+
+        if (!result.qualified && !result.alreadyCompleted) {
+          return c.json({
+            error: result.message || 'Cannot complete consultation because minimum consultation duration was not met.',
+          }, 400);
+        }
+
+        const updated = await select('bookings', { id: bookingId });
+        console.log(`✅ [COMPLETE-BOOKING] Tele consultation completed via vendor action (qualified=${result.qualified})`);
+
+        return c.json({
+          success: true,
+          booking: updated[0],
+          message: 'Tele consultation completed successfully!',
+          teleCompletionStatus: result.teleCompletionStatus,
+          overlapSeconds: result.overlapSeconds,
+        });
       }
 
       // Verify OTP for in-person services
