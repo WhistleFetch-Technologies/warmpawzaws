@@ -7,6 +7,7 @@ import { query } from '../database/rds-connection';
 import { getDiscoveryRules, type DiscoveryRuleSet } from './rule-engine';
 import { expandSearchCategoryNormalizedTokens } from '../utils/search-category-aliases';
 import { normalizeCategoryToken } from '@warmpawz/service-launch-mappings';
+import { DistanceResolver } from './utils/vendor-customer-distance';
 
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -290,16 +291,38 @@ function withinDiscoveryRadius(opts: {
   distanceKm: number | null;
   capKm: number;
   sittingRelaxed: boolean;
-  /** true for at_home service style: vendors with no stored coordinates are excluded */
-  atHome?: boolean;
 }): boolean {
-  if (opts.distanceKm == null) {
-    // at_home vendors without coordinates cannot be verified to be within radius —
-    // exclude them to match discover-services DistanceResolver geocoding behaviour.
-    // Non-at_home styles (at_center, tele) keep the relaxed pass-through.
-    return !opts.atHome;
-  }
+  if (opts.distanceKm == null) return true;
   return opts.distanceKm <= opts.capKm;
+}
+
+/** Geocode vendors without lat/lng before radius filter — same as discover-services enrichVendor. */
+export async function enrichSearchVendorsWithDistance<T extends SearchVendorRow>(
+  vendors: T[],
+  userCoords: { lat: number; lng: number } | null,
+  customerApproximate = false
+): Promise<T[]> {
+  if (!userCoords) return vendors;
+  const resolver = new DistanceResolver(
+    userCoords.lat,
+    userCoords.lng,
+    customerApproximate,
+    false
+  );
+  return Promise.all(
+    vendors.map(async (v) => {
+      const dist = await resolver.resolve({
+        id: v.id,
+        latitude: v.latitude,
+        longitude: v.longitude,
+        address: (v as { address?: string }).address,
+        city: (v as { city?: string }).city,
+        state: (v as { state?: string }).state,
+        pincode: (v as { pincode?: string }).pincode,
+      });
+      return { ...v, distanceKm: dist?.km ?? v.distanceKm ?? null };
+    })
+  );
 }
 
 /**
@@ -355,7 +378,6 @@ export function filterSearchResultsByDiscoveryRules<T extends SearchVendorRow, S
           distanceKm: v.distanceKm ?? null,
           capKm: cap,
           sittingRelaxed: !!opts.hub.sittingDiscoveryRelaxed,
-          atHome: true,
         });
       });
       if (within.length > 0) {
@@ -376,7 +398,6 @@ export function filterSearchResultsByDiscoveryRules<T extends SearchVendorRow, S
               distanceKm: v.distanceKm ?? null,
               capKm: effectiveMaxKm,
               sittingRelaxed: !!opts.hub.sittingDiscoveryRelaxed,
-              atHome: false,
             })
           );
           if (within.length > 0) {
@@ -433,74 +454,6 @@ export function sqlVendorAvailabilityForSearch(vAlias = 'v'): string {
       WHERE va0.vendor_id = ${vAlias}.id
          OR va0.vendor_id IN (SELECT id FROM vendor_identity WHERE vendor_id = ${vAlias}.id OR phone = ${vAlias}.phone)
     )
-  )`;
-}
-
-/**
- * Hub browse EXISTS: requires BOTH style AND category in the same vendor_services row.
- * Mirrors discover-services fetchServices/vendorServiceCategorySql — no role-name bypass.
- * Walker gets an extra service-name fallback for multi-role vendors (walkerCategoryDiscoveryOr).
- */
-export function sqlHubBrowseServiceExistsWithCategory(
-  vAlias: string,
-  styles: string[],
-  categoryTokens: string[],
-  paramIndexStyles: number,
-  paramIndexTokens: number,
-  hubSlug: string
-): string {
-  const c = (hubSlug || '').trim().toLowerCase().replace(/-/g, '_');
-
-  const walkerNameFallback =
-    c === 'walker' || c === 'walking' || c === 'walk'
-      ? `
-      OR (
-        vscat.service_style = 'at_home'
-        AND (
-          LOWER(COALESCE(vscat.service_name, '')) LIKE '%dog%walk%'
-          OR LOWER(COALESCE(vscat.service_name, '')) LIKE '%pet%walk%'
-          OR (
-            LOWER(COALESCE(vscat.service_name, '')) LIKE '%walk%'
-            AND LOWER(COALESCE(vscat.service_name, '')) NOT LIKE '%walk-in%'
-          )
-        )
-        AND (
-          TRIM(COALESCE(vscat.category, '')) = ''
-          OR LOWER(COALESCE(vscat.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other']::text[])
-        )
-      )`
-      : '';
-
-  return `EXISTS (
-    SELECT 1 FROM vendor_services vscat
-    WHERE vscat.vendor_id = ${vAlias}.id
-      AND vscat.is_enabled = true
-      AND vscat.publish_status IN ('published', 'auto_published')
-      AND vscat.service_style = ANY($${paramIndexStyles}::text[])
-      AND (
-        LOWER(REGEXP_REPLACE(TRIM(COALESCE(vscat.category, '')), '[[:space:]-]+', '_', 'g')) = ANY($${paramIndexTokens}::text[])
-        ${walkerNameFallback}
-      )
-  )`;
-}
-
-/** SQL fragment for hub browse: vendor must have a published service in acceptable styles. */
-export function sqlHubServiceStyleExists(
-  vAlias: string,
-  styles: string[],
-  paramIndex: number,
-  sittingRelaxed = false,
-  vsAlias = 'vs_hub'
-): string {
-  const styleSql = sittingRelaxed
-    ? `(${vsAlias}.service_style = ANY($${paramIndex}::text[]) OR ${vsAlias}.service_style IS NULL OR TRIM(COALESCE(${vsAlias}.service_style, '')) = '')`
-    : `${vsAlias}.service_style = ANY($${paramIndex}::text[])`;
-  return `EXISTS (
-    SELECT 1 FROM vendor_services ${vsAlias}
-    WHERE ${vsAlias}.vendor_id = ${vAlias}.id
-      AND ${vsAlias}.is_enabled = true
-      AND ${vsAlias}.publish_status IN ('published', 'auto_published')
-      AND ${styleSql}
   )`;
 }
 
@@ -596,8 +549,10 @@ export async function applySearchDiscoveryParity<T extends SearchVendorRow, S ex
   ];
   const vendorRadiusById = await loadVendorRadiusMetaByIds(vendorIds);
 
+  const vendorsEnriched = await enrichSearchVendorsWithDistance(opts.vendors, userCoords);
+
   let filtered = filterSearchResultsByDiscoveryRules({
-    vendors: opts.vendors,
+    vendors: vendorsEnriched,
     services: opts.services,
     userCoords,
     hub,
@@ -607,7 +562,8 @@ export async function applySearchDiscoveryParity<T extends SearchVendorRow, S ex
     vendorRadiusById,
   });
 
-  if (effectiveCategory) {
+  const hubBrowseOnly = !(opts.searchQuery || '').trim();
+  if (effectiveCategory && !hubBrowseOnly) {
     filtered = filterSearchResultsByHubCategory(
       filtered.vendors,
       filtered.services,

@@ -66,6 +66,39 @@ function hubMatchesResultName(hubId: string, name: string | undefined): boolean 
 
 export type HubFilterableResult = { type: string; category: string; name?: string };
 
+const HUB_INFER_ORDER = [
+  'nutritionist',
+  'pharmacy',
+  'grooming',
+  'training',
+  'boarding',
+  'walker',
+  'resort',
+  'cafe',
+  'vet',
+] as const;
+
+/** Infer search hub chip from free-text (e.g. "dog walker" → walker) for discovery parity on /search. */
+export function inferHubSlugFromSearchQuery(searchQuery: string): string | null {
+  const q = (searchQuery || '').trim();
+  if (!q) return null;
+  for (const hub of HUB_INFER_ORDER) {
+    if (hubMatchesSearchText(hub, q)) return hub;
+  }
+  if (hubMatchesSearchText('nutrition', q)) return 'nutritionist';
+  return null;
+}
+
+/** One card per vendor when both vendor + service rows are returned from GET /search. */
+export function dedupeSearchVendorAndServiceRows<
+  T extends { type: string; id: string; vendorOwnerId?: string },
+>(results: T[]): T[] {
+  const vendorRowIds = new Set(results.filter((r) => r.type === 'vendor').map((r) => r.id));
+  return results.filter(
+    (r) => r.type === 'vendor' || !(r.vendorOwnerId && vendorRowIds.has(r.vendorOwnerId))
+  );
+}
+
 /**
  * Client-side chip filter for GET /search rows. Hub-only browse uses strict canonical category tokens only
  * (same idea as SQL hub browse). With a keyword query, legacy rows without category may still match via hints.

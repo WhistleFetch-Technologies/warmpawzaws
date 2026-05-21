@@ -9,6 +9,7 @@ import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { buildSearchFetchTrigger } from '@/lib/search-fetch-trigger';
 import { applyHubCategoryFilter } from '@/lib/search-hub-category-filter';
+import { formatCustomerApiError } from '@/lib/format-api-error';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
 import { ServiceEvents } from '@/components/customer/ServiceEvents';
 import { CustomerSearchListingCard } from '@/components/customer/search/CustomerSearchListingCard';
@@ -21,6 +22,11 @@ import {
   pickVendorLatLng,
   type SearchApiVendorRow,
 } from '@/lib/search-vendor-display';
+import {
+  appendDiscoverRoleParams,
+  buildSearchDiscoveryQueryParams,
+} from '@/lib/search-discovery-params';
+import { dedupeSearchVendorAndServiceRows } from '@/lib/search-hub-category-filter';
 
 interface SearchResult {
   id: string;
@@ -205,50 +211,32 @@ function SearchContent() {
     // keyword mode (where the backend returned the full unfiltered set).
     const filtered = (hub && q) ? applyHubCategoryFilter(apiResults, hub, q) : apiResults;
 
-    // Deduplicate: if a vendor row is present, its services are reachable by clicking the
-    // vendor card. Suppress service rows from the same vendor to prevent the same business
-    // appearing N+1 times (once as vendor + once per service).
-    const vendorRowIds = new Set(
-      filtered.filter(r => r.type === 'vendor').map(r => r.id)
-    );
-    return filtered.filter(
-      r => r.type === 'vendor' || !(r.vendorOwnerId && vendorRowIds.has(r.vendorOwnerId))
-    );
+    return dedupeSearchVendorAndServiceRows(filtered);
   }, [apiResults, query, category]);
 
-  /** Used only for distance labels; omit fake defaults — no distance until browser shares location. */
+  /** Same coord order as discover-services (profile → localStorage → GPS). */
   const [userGeo, setUserGeo] = useState<{ lat: number; lng: number } | null>(null);
-  const userGeoRef = React.useRef(userGeo);
-  userGeoRef.current = userGeo;
+  const [discoveryCoordsReady, setDiscoveryCoordsReady] = useState(false);
 
   useEffect(() => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
-    const tryHigh = () =>
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setUserGeo({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        },
-        () =>
-          navigator.geolocation.getCurrentPosition(
-            (pos) =>
-              setUserGeo({
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-              }),
-            () => setUserGeo(null),
-            {
-              maximumAge: 300_000,
-              timeout: 25_000,
-              enableHighAccuracy: true,
-            }
-          ),
-        {
-          maximumAge: 120_000,
-          timeout: 20_000,
-          enableHighAccuracy: false,
+    let cancelled = false;
+    (async () => {
+      const discoveryParams = await buildSearchDiscoveryQueryParams();
+      if (cancelled) return;
+      const latRaw = discoveryParams.get('userLat');
+      const lngRaw = discoveryParams.get('userLng');
+      if (latRaw && lngRaw) {
+        const lat = parseFloat(latRaw);
+        const lng = parseFloat(lngRaw);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          setUserGeo({ lat, lng });
         }
-      );
-    tryHigh();
+      }
+      setDiscoveryCoordsReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const displayedWithDistance = useMemo(() => {
@@ -303,19 +291,22 @@ function SearchContent() {
       setLoading(true);
       try {
         const params = new URLSearchParams();
+        const discoveryParams = await buildSearchDiscoveryQueryParams();
+        discoveryParams.forEach((value, key) => params.set(key, value));
         if (searchFetchTrigger.kind === 'keyword') {
           params.set('q', searchFetchTrigger.q);
           params.set('limit', '50');
+          const hub = categoryRef.current.trim();
+          if (hub) {
+            params.set('category', hub);
+            appendDiscoverRoleParams(params, hub);
+          }
         } else if (searchFetchTrigger.kind === 'hub') {
           params.set('category', searchFetchTrigger.c);
+          appendDiscoverRoleParams(params, searchFetchTrigger.c);
           params.set('limit', '50');
         } else {
           params.set('limit', '50');
-        }
-        const geo = userGeoRef.current;
-        if (geo) {
-          params.set('userLat', String(geo.lat));
-          params.set('userLng', String(geo.lng));
         }
         const response = await apiClient.get<any>(`/search?${params.toString()}`);
         if (cancelled) return;
@@ -351,7 +342,7 @@ function SearchContent() {
       } catch (err: any) {
         if (!cancelled) {
           console.error('Search error:', err);
-          setError(err.message || 'Search failed');
+          setError(formatCustomerApiError(err.message || 'Search failed'));
           setApiResults([]);
         }
       } finally {
@@ -361,7 +352,7 @@ function SearchContent() {
     return () => {
       cancelled = true;
     };
-  }, [searchFetchTrigger, vendorIdParam]);
+  }, [searchFetchTrigger, vendorIdParam, discoveryCoordsReady]);
 
   /** Keyword results loaded: keep localStorage context in sync when only the hub chip changes (no refetch). */
   useEffect(() => {

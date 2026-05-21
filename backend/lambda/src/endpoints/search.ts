@@ -30,23 +30,25 @@ import { isValidUUID } from '../types/entities';
 import {
   expandSearchCategoryForOpenSearch,
   expandSearchCategoryForSql,
-  expandSearchCategoryNormalizedTokens,
   getSearchCategoryIlikePatterns,
   isHubBrowseCategoryOnly,
 } from '../utils/search-category-aliases';
 import { getVendorListingPhotoUrl } from '../utils/vendor-listing-photo';
 import { haversineKm } from '../lib/utils/vendor-customer-distance';
 import {
-  acceptableStylesForService,
   applySearchDiscoveryParity,
   hubSlugToDiscoveryContext,
   resolveEffectiveSearchCategory,
   resolveSearchUserCoords,
-  sqlHubBrowseServiceExistsWithCategory,
-  sqlHubServiceStyleExists,
-  sqlVendorAvailabilityForSearch,
   vendorRowIsOnline,
 } from '../lib/search-discovery-parity';
+import {
+  buildDiscoveryVendorExistsSql,
+  sqlVendorAvailabilityOrNotConfigured,
+  sqlVendorDiscoverableStatus,
+  sqlVendorOnlineForCustomerDiscovery,
+  sqlVendorServiceDiscoverable,
+} from '../lib/discovery-vendor-query';
 
 // Import OpenSearch client with fallback handling
 let openSearchClient: any = null;
@@ -332,33 +334,27 @@ class UniversalSearchHandler extends BaseHandler {
     // Criteria: active+approved, has at least 1 enabled+published service, has schedule.
     // Geo is optional at SQL fetch time; when hub + coords are present, post-fetch parity
     // removes out-of-radius vendors (same as discover-services), not only distanceKm labels.
+    let vendorAvailabilitySql = isBrowseAll
+      ? ''
+      : `AND ${sqlVendorAvailabilityOrNotConfigured('v')}`;
+
     let vendorsQuery = `
       SELECT v.*, 
              (SELECT rn.name FROM roles rn WHERE rn.id = v.role_id LIMIT 1) AS search_role_name,
              (SELECT COUNT(*) FROM bookings b WHERE b.vendor_id = v.id AND b.status = 'completed') as completed_bookings,
              (SELECT AVG(rating) FROM reviews r WHERE r.vendor_id = v.id) as avg_rating
       FROM vendors v
+      LEFT JOIN roles r ON v.role_id = r.id
       WHERE v.is_active = true 
-        AND v.status = 'approved'
-        AND COALESCE(v.is_online, true) = true
-        AND EXISTS (
-          SELECT 1 FROM vendor_services vs 
-          WHERE vs.vendor_id = v.id 
-            AND vs.is_enabled = true 
-            AND vs.publish_status IN ('published', 'auto_published')
-        )
-        AND (
-          $1::boolean = true
-          OR ${sqlVendorAvailabilityForSearch('v')}
-        )
+        AND ${sqlVendorDiscoverableStatus('v')}
+        AND ${sqlVendorOnlineForCustomerDiscovery('v')}
     `;
 
-    const params: any[] = [isBrowseAll];
-    let paramIndex = 2;
+    const params: any[] = [];
+    let paramIndex = 1;
 
     const keywordTokens = searchQuery.trim() ? searchTokens(searchQuery) : [];
     const hubBrowseOnly = isHubBrowseCategoryOnly(category, searchQuery);
-    const normalizedHubTokens = hubBrowseOnly ? expandSearchCategoryNormalizedTokens(category) : [];
 
     // Keyword: each token must match vendor fields OR any listable published service on that vendor.
     for (const token of keywordTokens) {
@@ -369,8 +365,7 @@ class UniversalSearchHandler extends BaseHandler {
         EXISTS (
           SELECT 1 FROM vendor_services vs_kw
           WHERE vs_kw.vendor_id = v.id
-            AND vs_kw.is_enabled = true
-            AND vs_kw.publish_status IN ('published', 'auto_published')
+            AND ${sqlVendorServiceDiscoverable('vs_kw', false)}
             AND (
               vs_kw.service_name ILIKE $${paramIndex}
               OR COALESCE(vs_kw.custom_description, '') ILIKE $${paramIndex}
@@ -385,46 +380,28 @@ class UniversalSearchHandler extends BaseHandler {
 
     const vendorCategoryValues = expandSearchCategoryForSql(category);
     const vendorIlikePatterns = hubBrowseOnly ? [] : getSearchCategoryIlikePatterns(category);
-    if (hubBrowseOnly && normalizedHubTokens.length && hubContext) {
-      // Combined style+category in one EXISTS — mirrors discover-services vendor_services check.
-      // No category-only OR fallback: discover-services never matches vendors purely on
-      // vendors.category; it requires a proper vendor_services EXISTS.
-      const styles = acceptableStylesForService(hubContext.serviceStyle);
-      vendorsQuery += ` AND ${sqlHubBrowseServiceExistsWithCategory('v', styles, normalizedHubTokens, paramIndex, paramIndex + 1, hubContext.discoverCategory)}`;
-      params.push(styles, normalizedHubTokens);
-      paramIndex += 2;
-      // Role filter: mirrors discover-services resolveTargetRolesForDiscovery — only return
-      // vendors whose registered role matches the hub's expected role.
-      if (hubContext.roleId) {
-        vendorsQuery += ` AND EXISTS (
-          SELECT 1 FROM roles rn
-          WHERE rn.id = v.role_id
-            AND LOWER(rn.name) = $${paramIndex}
-        )`;
-        params.push(hubContext.roleId.toLowerCase());
-        paramIndex++;
-      }
-    } else if (hubBrowseOnly && normalizedHubTokens.length) {
-      vendorsQuery += ` AND (
-        EXISTS (
-          SELECT 1 FROM vendor_services vscat
-          WHERE vscat.vendor_id = v.id
-            AND vscat.is_enabled = true
-            AND vscat.publish_status IN ('published', 'auto_published')
-            AND LOWER(REGEXP_REPLACE(TRIM(COALESCE(vscat.category, '')), '[[:space:]-]+', '_', 'g')) = ANY($${paramIndex}::text[])
-        )
-        OR (
-          v.category IS NOT NULL
-          AND LOWER(REGEXP_REPLACE(TRIM(COALESCE(v.category, '')), '[[:space:]-]+', '_', 'g')) = ANY($${paramIndex}::text[])
-        )
-        OR EXISTS (
-          SELECT 1 FROM roles r_hub
-          WHERE r_hub.id = v.role_id
-            AND LOWER(REGEXP_REPLACE(TRIM(COALESCE(r_hub.name, '')), '[[:space:]-]+', '_', 'g')) = ANY($${paramIndex}::text[])
-        )
-      )`;
-      params.push(normalizedHubTokens);
-      paramIndex += 1;
+
+    const appendDiscoveryExists = async (discoverCategory: string, discoverRoleId?: string) => {
+      const ctx = hubSlugToDiscoveryContext(discoverCategory);
+      const built = await buildDiscoveryVendorExistsSql({
+        category: discoverCategory,
+        roleId: discoverRoleId ?? qs?.roleId?.trim() ?? ctx?.roleId,
+        serviceStyle: ctx?.serviceStyle ?? 'at_center',
+        sittingRelaxed: ctx?.sittingDiscoveryRelaxed,
+        paramOffset: paramIndex,
+        isAtCenter: ctx?.serviceStyle === 'at_center',
+      });
+      vendorsQuery += ` AND ${built.sql}`;
+      vendorAvailabilitySql = built.availabilitySql;
+      params.push(...built.params);
+      paramIndex += built.params.length;
+    };
+
+    if (hubBrowseOnly && category) {
+      await appendDiscoveryExists(
+        hubContext?.discoverCategory ?? category,
+        hubContext?.roleId
+      );
     } else if (vendorCategoryValues.length || vendorIlikePatterns.length) {
       const exactArr = vendorCategoryValues.length ? vendorCategoryValues : ['__no_match__'];
       const ilikeArr = vendorIlikePatterns.length ? vendorIlikePatterns : ['__no_match__'];
@@ -460,18 +437,19 @@ class UniversalSearchHandler extends BaseHandler {
       paramIndex++;
     }
 
-    if (hubContext && !hubBrowseOnly) {
-      // For keyword searches with hub context, still filter by service style
-      const styles = acceptableStylesForService(hubContext.serviceStyle);
-      vendorsQuery += ` AND ${sqlHubServiceStyleExists('v', styles, paramIndex, !!hubContext.sittingDiscoveryRelaxed)}`;
-      params.push(styles);
-      paramIndex++;
+    if (hubContext && !hubBrowseOnly && category) {
+      await appendDiscoveryExists(
+        hubContext.discoverCategory,
+        hubContext.roleId
+      );
     }
 
+    vendorsQuery += `${vendorAvailabilitySql}`;
     vendorsQuery += ` ORDER BY avg_rating DESC NULLS LAST, completed_bookings DESC LIMIT $${paramIndex}`;
     params.push(limit);
 
     const { rows: vendors } = await query(vendorsQuery, params);
+    const vendorIdsForServices = vendors.map((v: { id: string }) => v.id);
 
     // ✅ SQL: Search services
     // ✅ LIVE STATUS FILTER: Only show services from live-eligible vendors
@@ -494,14 +472,13 @@ class UniversalSearchHandler extends BaseHandler {
         (SELECT rn.name FROM roles rn WHERE rn.id = v.role_id LIMIT 1) AS search_role_name
       FROM vendor_services vs
       JOIN vendors v ON vs.vendor_id = v.id
-      WHERE vs.publish_status IN ('published', 'auto_published')
-        AND vs.is_enabled = true
+      WHERE ${sqlVendorServiceDiscoverable('vs', !!hubContext?.sittingDiscoveryRelaxed)}
         AND v.is_active = true
-        AND v.status = 'approved'
-        AND COALESCE(v.is_online, true) = true
+        AND ${sqlVendorDiscoverableStatus('v')}
+        AND ${sqlVendorOnlineForCustomerDiscovery('v')}
         AND (
           $1::boolean = true
-          OR ${sqlVendorAvailabilityForSearch('v')}
+          OR ${sqlVendorAvailabilityOrNotConfigured('v')}
         )
     `;
 
@@ -519,63 +496,19 @@ class UniversalSearchHandler extends BaseHandler {
       serviceParamIndex++;
     }
 
-    const serviceCategoryValues = expandSearchCategoryForSql(category);
-    const serviceIlikePatterns = hubBrowseOnly ? [] : getSearchCategoryIlikePatterns(category);
-    if (hubBrowseOnly && normalizedHubTokens.length && hubContext) {
-      // Hub browse: require matching category AND style in the same service row — no role bypass
-      const styles = acceptableStylesForService(hubContext.serviceStyle);
-      const walkerNameFallback =
-        hubContext.discoverCategory === 'walker'
-          ? `
-        OR (
-          vs.service_style = 'at_home'
-          AND (
-            LOWER(COALESCE(vs.service_name, '')) LIKE '%dog%walk%'
-            OR LOWER(COALESCE(vs.service_name, '')) LIKE '%pet%walk%'
-            OR (
-              LOWER(COALESCE(vs.service_name, '')) LIKE '%walk%'
-              AND LOWER(COALESCE(vs.service_name, '')) NOT LIKE '%walk-in%'
-            )
-          )
-          AND (
-            TRIM(COALESCE(vs.category, '')) = ''
-            OR LOWER(COALESCE(vs.category, '')) = ANY(ARRAY['vet', 'veterinarian', 'veterinary', 'vet care', 'grooming', 'other']::text[])
-          )
-        )`
-          : '';
-      servicesQuery += ` AND vs.service_style = ANY($${serviceParamIndex}::text[])
-        AND (
-          LOWER(REGEXP_REPLACE(TRIM(COALESCE(vs.category, '')), '[[:space:]-]+', '_', 'g')) = ANY($${serviceParamIndex + 1}::text[])
-          ${walkerNameFallback}
-        )`;
-      serviceParams.push(styles, normalizedHubTokens);
-      serviceParamIndex += 2;
-    } else if (hubBrowseOnly && normalizedHubTokens.length) {
-      const exactSvcArr = serviceCategoryValues.length ? serviceCategoryValues : ['__no_match__'];
-      const ilikeSvcArr = serviceIlikePatterns.length ? serviceIlikePatterns : ['__no_match__'];
-      servicesQuery += ` AND (
-        LOWER(TRIM(COALESCE(vs.category, ''))) = ANY($${serviceParamIndex}::text[])
-        OR vs.category ILIKE ANY($${serviceParamIndex + 1}::text[])
-        OR vs.service_name ILIKE ANY($${serviceParamIndex + 1}::text[])
-        OR COALESCE(vs.sub_category, '') ILIKE ANY($${serviceParamIndex + 1}::text[])
-      )`;
-      serviceParams.push(exactSvcArr);
-      serviceParams.push(ilikeSvcArr);
-      serviceParamIndex += 2;
-    }
-
-    if (hubContext && !hubBrowseOnly) {
-      // For keyword searches with a hub context, still filter by service style
-      const styles = acceptableStylesForService(hubContext.serviceStyle);
-      servicesQuery += ` AND vs.service_style = ANY($${serviceParamIndex}::text[])`;
-      serviceParams.push(styles);
+    if ((hubBrowseOnly || (hubContext && category)) && vendorIdsForServices.length > 0) {
+      servicesQuery += ` AND v.id = ANY($${serviceParamIndex}::uuid[])`;
+      serviceParams.push(vendorIdsForServices);
       serviceParamIndex++;
     }
 
     servicesQuery += ` LIMIT $${serviceParamIndex}`;
     serviceParams.push(limit);
 
-    const { rows: services } = await query(servicesQuery, serviceParams);
+    const { rows: services } =
+      (hubBrowseOnly || (hubContext && category)) && vendorIdsForServices.length === 0
+        ? { rows: [] as Record<string, unknown>[] }
+        : await query(servicesQuery, serviceParams);
 
     const vendorRows = await Promise.all(
       vendors.map(async (v) => {

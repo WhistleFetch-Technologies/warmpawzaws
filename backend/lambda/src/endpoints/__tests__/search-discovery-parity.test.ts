@@ -1,13 +1,27 @@
+jest.mock('../../lib/utils/vendor-customer-distance', () => ({
+  DistanceResolver: class {
+    async resolve() {
+      return null;
+    }
+  },
+  haversineKm: () => 0,
+  formatDistanceKm: () => '0 km',
+}));
+
 import {
   acceptableStylesForService,
+  enrichSearchVendorsWithDistance,
   filterSearchResultsByDiscoveryRules,
   hubSlugToDiscoveryContext,
   inferHubSlugFromSearchQuery,
   parseUserCoordsFromSearchQuery,
-  sqlHubBrowseServiceExistsWithCategory,
   vendorHomeServiceRadiusKm,
   vendorRowIsOnline,
 } from '../../lib/search-discovery-parity';
+import {
+  buildDiscoveryVendorExistsSql,
+  resolveDiscoveryCategoryKeys,
+} from '../../lib/discovery-vendor-query';
 import type { DiscoveryRuleSet } from '../../lib/rule-engine';
 
 const defaultRules: DiscoveryRuleSet = {
@@ -165,11 +179,7 @@ describe('filterSearchResultsByDiscoveryRules', () => {
     expect(out.map((v) => v.id)).toEqual(['ok']);
   });
 
-  it('excludes at_home walker vendor with null lat/lng when user coords provided', () => {
-    // Vendors without stored coordinates bypass the haversine calculation, leaving
-    // distanceKm = null.  For at_home (walker/sitter) services this means we cannot
-    // confirm the vendor is within the customer's radius, so they must be excluded —
-    // matching discover-services DistanceResolver geocoding behaviour.
+  it('includes at_home walker with null distance (discover parity)', () => {
     const vendors = [
       { id: 'has-loc', latitude: 12.901, longitude: 77.601, distanceKm: 2 },
       { id: 'no-loc', latitude: null, longitude: null, distanceKm: null },
@@ -186,7 +196,8 @@ describe('filterSearchResultsByDiscoveryRules', () => {
       rules: defaultRules,
       vendorRadiusById,
     });
-    expect(out.map((v) => v.id)).toEqual(['has-loc']);
+    expect(out.map((v) => v.id)).toContain('has-loc');
+    expect(out.map((v) => v.id)).toContain('no-loc');
   });
 
   it('does NOT exclude at_center vendor with null lat/lng (relaxed for non-at_home)', () => {
@@ -203,30 +214,67 @@ describe('filterSearchResultsByDiscoveryRules', () => {
       rules: { ...defaultRules, discovery_radius_km: 50 },
       vendorRadiusById: new Map(),
     });
-    // Both vendors should pass: the one in range, and the one with unknown distance
-    // (at_center services keep the relaxed null-distance pass-through).
     expect(out.map((v) => v.id)).toContain('has-loc');
     expect(out.map((v) => v.id)).toContain('no-loc');
   });
 });
 
-describe('sqlHubBrowseServiceExistsWithCategory', () => {
-  it('walker SQL includes walkerCategoryDiscoveryOr (service_name fallback)', () => {
-    const sql = sqlHubBrowseServiceExistsWithCategory('v', ['at_home'], ['walker', 'pet_walker'], 1, 2, 'walker');
+describe('buildDiscoveryVendorExistsSql', () => {
+  it('walker SQL includes walkerCategoryDiscoveryOr (service_name fallback)', async () => {
+    const { sql } = await buildDiscoveryVendorExistsSql({
+      category: 'walker',
+      roleId: 'pet_walker',
+      serviceStyle: 'at_home',
+      paramOffset: 1,
+    });
     expect(sql).toContain('%walk%');
-    expect(sql).toContain('service_style = ANY($1');
-    expect(sql).toContain('= ANY($2');
+    expect(sql).toContain('at_home');
+    expect(sql).not.toContain('LOWER(rn.name)');
+    expect(sql).not.toContain("= 'walker'");
   });
 
-  it('grooming SQL has no walker name fallback', () => {
-    const sql = sqlHubBrowseServiceExistsWithCategory('v', ['at_center'], ['grooming', 'pet_groomer'], 1, 2, 'grooming');
-    expect(sql).not.toContain('%walk%');
-    expect(sql).toContain('service_style = ANY($1');
+  it('vet category includes empty-category vet role OR', async () => {
+    const { sql } = await buildDiscoveryVendorExistsSql({
+      category: 'vet',
+      serviceStyle: 'at_center',
+      paramOffset: 1,
+    });
+    expect(sql).toContain('vet_clinic');
+    expect(sql).toContain("TRIM(COALESCE(vs.category, '')) = ''");
   });
 
-  it('SQL does NOT contain role bypass', () => {
-    const sql = sqlHubBrowseServiceExistsWithCategory('v', ['at_home'], ['walker'], 1, 2, 'walker');
-    expect(sql).not.toContain('role_id');
-    expect(sql).not.toContain('roles r_hub');
+  it('training category includes training role uncategorized OR', async () => {
+    const { sql } = await buildDiscoveryVendorExistsSql({
+      category: 'training',
+      serviceStyle: 'at_center',
+      paramOffset: 1,
+      isAtCenter: true,
+    });
+    expect(sql).toContain('trainer_center');
+    expect(sql).toContain('behavioral');
+  });
+
+  it('boarding discovery can include category_id OR fragment', async () => {
+    const { sql } = await buildDiscoveryVendorExistsSql({
+      category: 'boarding',
+      roleId: 'pet_boarding',
+      serviceStyle: 'at_center',
+      paramOffset: 1,
+    });
+    expect(sql).toContain('pet_boarding');
+    expect(sql).toMatch(/category_id|boarding/);
+  });
+
+  it('resolveDiscoveryCategoryKeys treats pet_walker role as walker hub keys', () => {
+    const keys = resolveDiscoveryCategoryKeys({ category: 'walker', roleId: 'pet_walker' });
+    expect(keys.catTextExact).toEqual(expect.arrayContaining(['walker', 'pet_walker']));
+  });
+});
+
+describe('enrichSearchVendorsWithDistance', () => {
+  it('returns vendors unchanged when user coords missing', async () => {
+    const vendors = [{ id: 'a', latitude: null, longitude: null }];
+    const out = await enrichSearchVendorsWithDistance(vendors, null);
+    expect(out).toEqual(vendors);
   });
 });
