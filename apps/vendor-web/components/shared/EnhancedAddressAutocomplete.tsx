@@ -29,11 +29,14 @@ interface EnhancedAddressAutocompleteProps {
   className?: string;
   required?: boolean;
   disabled?: boolean;
+  /** Google only honors the first type when an array is passed. Omit for POIs/landmarks (e.g. "bhive"). */
   types?: string[];
   componentRestrictions?: {
     country?: string | string[];
   };
 }
+
+const PREDICT_DEBOUNCE_MS = 280;
 
 /** 6-digit postal code: prefer Places `postal_code`, else parse from formatted text (common for India when component is missing). */
 function resolvePincodeFromPlace(
@@ -60,7 +63,7 @@ export function EnhancedAddressAutocomplete({
   className = '',
   required = false,
   disabled = false,
-  types = ['address'],
+  types,
   componentRestrictions = { country: 'in' },
 }: EnhancedAddressAutocompleteProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -209,6 +212,16 @@ export function EnhancedAddressAutocomplete({
     }
   };
 
+  // Re-run search when Maps becomes ready (user may have typed before script loaded)
+  useEffect(() => {
+    if (!isLoaded || !inputRef.current) return;
+    const q = inputRef.current.value.trim();
+    if (q.length >= 2) {
+      const t = window.setTimeout(() => searchPredictions(q), 0);
+      return () => window.clearTimeout(t);
+    }
+  }, [isLoaded]);
+
   // Click outside to close dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -226,47 +239,71 @@ export function EnhancedAddressAutocomplete({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Search for predictions as user types
-  const searchPredictions = (query: string) => {
+  // Search for predictions as user types (broader match when `types` omitted — POIs like "bhive")
+  const searchPredictions = (query: string, typesOverride?: string[] | null) => {
     if (!autocompleteServiceRef.current) {
-      // Try to initialize services if not ready
       const win = window as any;
       if (win.google?.maps?.places && !autocompleteServiceRef.current) {
         initServices();
-        // Retry after a short delay
         setTimeout(() => {
           if (autocompleteServiceRef.current && query.length >= 2) {
-            searchPredictions(query);
+            searchPredictions(query, typesOverride);
           }
         }, 100);
       }
       return;
     }
 
-    if (query.length < 2) {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
       setPredictions([]);
       setShowSuggestions(false);
       return;
     }
 
+    const effectiveTypes =
+      typesOverride === null
+        ? undefined
+        : typesOverride !== undefined
+          ? typesOverride
+          : types;
+
+    const request: {
+      input: string;
+      componentRestrictions: typeof componentRestrictions;
+      types?: string[];
+    } = {
+      input: trimmed,
+      componentRestrictions,
+    };
+    if (effectiveTypes?.length) {
+      request.types = effectiveTypes;
+    }
+
     try {
       autocompleteServiceRef.current.getPlacePredictions(
-        {
-          input: query,
-          types,
-          componentRestrictions,
-        },
+        request,
         (results: any[], status: any) => {
-          if (status === window.google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-            setPredictions(results.slice(0, 5)); // Limit to 5 suggestions
+          const PS = window.google.maps.places.PlacesServiceStatus;
+          const ok = status === PS.OK && results && results.length > 0;
+
+          if (ok) {
+            setPredictions(results.slice(0, 8));
             setShowSuggestions(true);
-          } else {
-            setPredictions([]);
-            setShowSuggestions(false);
+            return;
           }
+
+          // Restricted type (e.g. address-only) often misses establishments — retry without types
+          if (effectiveTypes?.length) {
+            searchPredictions(trimmed, null);
+            return;
+          }
+
+          setPredictions([]);
+          setShowSuggestions(trimmed.length >= 2);
         }
       );
-    } catch (error) {
+    } catch {
       setPredictions([]);
       setShowSuggestions(false);
     }
@@ -282,22 +319,20 @@ export function EnhancedAddressAutocomplete({
     }
 
     debounceRef.current = setTimeout(() => {
-      // Ensure services are initialized
       if (!autocompleteServiceRef.current) {
         const win = window as any;
         if (win.google?.maps?.places) {
           initServices();
         }
       }
-      
-      // Search if services are ready
-      if (autocompleteServiceRef.current && newValue.length >= 2) {
+
+      if (autocompleteServiceRef.current && newValue.trim().length >= 2) {
         searchPredictions(newValue);
-      } else if (newValue.length < 2) {
+      } else if (newValue.trim().length < 2) {
         setPredictions([]);
         setShowSuggestions(false);
       }
-    }, 300);
+    }, PREDICT_DEBOUNCE_MS);
   };
 
   // Handle place selection
@@ -357,11 +392,19 @@ export function EnhancedAddressAutocomplete({
           const pin = resolvePincodeFromPlace(rawPostal, formattedAddress, predictionDescription);
           if (pin) components.pincode = pin;
 
+          if (!components.street?.trim()) {
+            components.street =
+              components.landmark ||
+              predictionDescription.split(',')[0]?.trim() ||
+              formattedAddress;
+          }
+
           return components;
         };
 
         const components = parseAddressComponents(place.address_components, prediction.description);
-        onChange(formattedAddress, components);
+        const displayAddress = components.street?.trim() || formattedAddress;
+        onChange(displayAddress, components);
       }
     );
   };

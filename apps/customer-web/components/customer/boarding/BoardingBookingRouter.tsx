@@ -33,6 +33,7 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import { BookingConfirmationPage } from '../payment/BookingConfirmationPage';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { serviceOptionColorChipClass } from '@/lib/hub-service-option-styles';
 
 interface BoardingBookingRouterProps {
@@ -1505,20 +1506,7 @@ export function BoardingBookingRouter({
     );
   }
 
-  const dateSummaryValue =
-    !checkInDate
-      ? '—'
-      : isPetSitting && sittingSameDay
-        ? `${checkInDate} · ${checkInTime}–${checkOutTime}`
-        : checkInDate && checkOutDate
-          ? `${checkInDate} ${checkInTime} → ${checkOutDate} ${checkOutTime}`
-          : `${checkInDate} → ${checkOutDate || '—'}`;
-
-  const boardingStats = [
-    { value: selectedServiceOption?.name || flowTitle, label: 'Type', icon: (isPetSitting ? <Home className="w-4 h-4" /> : <Building2 className="w-4 h-4" />) },
-    { value: dateSummaryValue, label: 'Dates' },
-    { value: selectedPet?.name || '—', label: 'Pet', icon: <Dog className="w-4 h-4" /> }
-  ];
+  const boardingStats = EMPTY_SERVICE_HEADER_STATS;
   const stepLabels = isPetSitting
     ? ['Service', 'Dates', 'Pet', 'Payment']
     : ['Service', 'Dates', 'Pet', 'Intake', 'Payment'];

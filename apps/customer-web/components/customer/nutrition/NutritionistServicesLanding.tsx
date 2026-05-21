@@ -9,10 +9,11 @@ import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
 import { toast } from 'sonner';
 import { useProblemGridByRole } from '../useProblemGridByRole';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { NUTRITIONIST_NEEDS } from '../ProblemGridSection';
 import { serviceTypes, MEAL_PLANS_COMING_SOON } from './constants';
 import { NutritionistServicesLandingProps } from './constants/interface';
-import { StarRating } from '@/components/customer/shared/StarRating';
+import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 
 
 
@@ -56,28 +57,14 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
       const nutritionistList = await fetchMergedNutritionProviders({ customerPhone: phone });
       setNutritionists(nutritionistList);
 
-      const withReviews = nutritionistList.filter((n: any) => {
-        const c = Number(n.reviewCount ?? n.review_count ?? 0);
-        const r = Number(n.rating);
-        return c > 0 && Number.isFinite(r) && r > 0;
-      });
-      const avgFromReviews =
-        withReviews.length > 0
-          ? (
-              withReviews.reduce((acc: number, n: any) => acc + Number(n.rating), 0) /
-              withReviews.length
-            ).toFixed(1)
-          : null;
-
       setStats({
         activeNutritionists: nutritionistList.length || 0,
         consultations: '1.5K+',
-        rating: avgFromReviews,
       });
     } catch (error) {
       console.error('Error loading nutritionists:', error);
       setNutritionists([]);
-      setStats({ activeNutritionists: 0, consultations: '1.5K+', rating: null });
+      setStats({ activeNutritionists: 0, consultations: '1.5K+' });
     } finally {
       setLoading(false);
     }
@@ -114,21 +101,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     }
   };
 
-  //---------------------------Basics----------------------------------//
-  const dashboardStats = stats
-    ? [
-        { value: `${stats.activeNutritionists}+`, label: 'Experts' },
-        { value: stats.consultations, label: 'Consultations' },
-        {
-          value: stats.rating != null ? stats.rating : '—',
-          label: 'Avg rating',
-        },
-      ]
-    : [
-        { value: '—', label: 'Experts' },
-        { value: '1.5K+', label: 'Consultations' },
-        { value: '—', label: 'Avg rating' },
-      ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
 
   //---------------------------render----------------------------------//
@@ -151,11 +124,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
           serviceSubtitle="Expert nutrition consultation"
           serviceIcon={Apple}
           iconColor="text-white"
-          stats={[
-            { value: '45+', label: 'Experts' },
-            { value: '1.5K+', label: 'Consultations' },
-            { value: '—', label: 'Rating' }
-          ]}
+          stats={[]}
           onBack={onBack}
           showBackButton={true}
           headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
@@ -370,9 +339,13 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-slate-900 truncate">{nutritionist.businessName || nutritionist.name || `Nutritionist ${index}`}</h3>
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 mt-1">
-                        <StarRating
-                          rating={nutritionist.rating}
-                          reviewCount={nutritionist.reviewCount ?? nutritionist.review_count}
+                        <VendorRatingDisplay
+                          row={{
+                            vendorId: nutritionist.vendorId ?? nutritionist.id,
+                            vendorRating: nutritionist.rating,
+                            vendorReviewCount: nutritionist.reviewCount ?? nutritionist.review_count,
+                          }}
+                          vendorId={String(nutritionist.vendorId ?? nutritionist.id ?? '')}
                           starsClassName="w-3 h-3"
                           textClassName="text-xs text-slate-500"
                         />

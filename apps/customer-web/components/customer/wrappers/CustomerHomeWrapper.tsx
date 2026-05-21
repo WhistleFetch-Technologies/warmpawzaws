@@ -3345,7 +3345,7 @@ export function CustomerHomeWrapper({
             setCurrentScreen('shop');
           }}
           onNavigateHome={handleBack}
-          onCheckout={() => setCurrentScreen('checkout')}
+          onCheckout={() => router.push('/checkout')}
           onContinueShopping={() => {
             setShopReturnScreen((prev) => (prev != null ? prev : currentScreen));
             setCurrentScreen('shop');

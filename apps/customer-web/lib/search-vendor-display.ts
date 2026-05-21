@@ -5,6 +5,7 @@
  */
 
 import type { UniversalVendorCardVendor } from '@/components/customer/UniversalVendorCard';
+import { toUniversalVendorCardRating } from '@/lib/resolve-vendor-rating';
 
 const toNum = (v: unknown): number | null => {
   if (v == null || v === '') return null;
@@ -223,13 +224,21 @@ export function searchVendorToUniversalVendorCard(row: {
   distanceKm?: number | null;
 }): UniversalVendorCardVendor {
   const distance = row.distanceKm != null && Number.isFinite(row.distanceKm) ? row.distanceKm : undefined;
+  const ratingFields = toUniversalVendorCardRating(
+    {
+      vendorId: row.vendorId,
+      vendorRating: row.rating,
+      vendorReviewCount: row.reviewCount,
+      review_count: row.reviewCount,
+    },
+    row.vendorId
+  );
 
   return {
     id: row.vendorId,
     vendorId: row.vendorId,
     vendorName: row.headline,
-    vendorRating: row.rating,
-    vendorReviewCount: row.reviewCount,
+    ...ratingFields,
     vendorLocation: row.addressDisplay,
     vendorProfileImage: row.imageUrl,
     serviceName: row.serviceDisplayName,

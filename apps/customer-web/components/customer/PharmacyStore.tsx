@@ -9,6 +9,7 @@ import { apiClient } from '@/lib/api-client';
 import { useCart } from '@/context/CartContext';
 import { toast } from 'sonner';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 
 interface PharmacyStoreProps {
   phone?: string;
@@ -134,12 +135,7 @@ export function PharmacyStore({ phone, onBack, onNavigate }: PharmacyStoreProps)
     );
   }
 
-  // ✅ FIX: Prepare stats for ServiceDashboardHeader
-  const dashboardStats = [
-    { value: `${stats.totalMedicines}+`, label: 'Medicines', icon: <Pill className="w-4 h-4" /> },
-    { value: `${stats.orders}+`, label: 'Orders' },
-    { value: `${stats.rating}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24 max-w-md mx-auto">

@@ -24,6 +24,7 @@ import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-servic
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { StarRating } from '../shared/StarRating';
+import { resolveVendorRating, vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
 import {
   normalizeBoardingServiceSlug,
   boardingSlugMatchesText,
@@ -290,9 +291,21 @@ export function BoardingVendorProfileView({
     );
   }
 
+  const profileVendorId = String(vendor.id ?? vendor.vendorId ?? '').trim();
+  const ratingStat = vendorRatingHeaderStat(
+    {
+      vendorId: profileVendorId,
+      vendorRating: vendor.rating,
+      review_count: vendor.review_count,
+    },
+    profileVendorId
+  );
+  const reviewCount = Number(vendor.review_count ?? 0) || 0;
   const dashboardStats = [
-    { value: `${vendor.rating?.toFixed(1) || '—'}`, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    { value: `${vendor.review_count || 0}`, label: 'Reviews' },
+    ...(ratingStat
+      ? [{ ...ratingStat, icon: <Star className="w-4 h-4 fill-white" /> }]
+      : []),
+    ...(reviewCount > 0 ? [{ value: `${reviewCount}`, label: 'Reviews' }] : []),
     {
       value: `${publishedPlans.length || '—'}`,
       label: 'Plans',
@@ -347,14 +360,23 @@ export function BoardingVendorProfileView({
             <h1 className="mb-3 text-2xl font-bold text-gray-900">{vendor.name}</h1>
 
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <div className="rounded-lg bg-orange-50 px-3 py-1.5">
-                <StarRating
-                  rating={vendor.rating}
-                  reviewCount={vendor.review_count}
-                  starsClassName="h-5 w-5"
-                  textClassName="text-sm text-gray-600"
-                />
-              </div>
+              {resolveVendorRating(
+                {
+                  vendorId: profileVendorId,
+                  vendorRating: vendor.rating,
+                  review_count: vendor.review_count,
+                },
+                { expectedVendorId: profileVendorId }
+              ).shouldShowRating ? (
+                <div className="rounded-lg bg-orange-50 px-3 py-1.5">
+                  <StarRating
+                    rating={vendor.rating}
+                    reviewCount={vendor.review_count}
+                    starsClassName="h-5 w-5"
+                    textClassName="text-sm text-gray-600"
+                  />
+                </div>
+              ) : null}
               {vendor.isVerified ? (
                 <span className="flex items-center gap-1 rounded-full bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-700">
                   <Shield className="h-3.5 w-3.5" aria-hidden />

@@ -9,7 +9,7 @@ import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { formatOperatingHours } from '@/lib/format-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
-import { StarRating } from '../shared/StarRating';
+import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 
 interface VetCenterProfileViewProps {
   phone: string;
@@ -200,9 +200,13 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
               <p className="text-sm text-gray-600 mb-0">{facility.address || center.address}</p>
               
               <div className="flex items-center gap-3">
-                <StarRating
-                  rating={rating?.averageRating}
-                  reviewCount={rating?.totalReviews}
+                <VendorRatingDisplay
+                  row={{
+                    vendorId: centerId,
+                    vendorRating: rating?.averageRating,
+                    vendorReviewCount: rating?.totalReviews,
+                  }}
+                  vendorId={centerId}
                   starsClassName="w-5 h-5"
                   textClassName="text-sm text-gray-600"
                 />

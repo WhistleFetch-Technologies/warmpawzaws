@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { trackClick } from '@/lib/analytics';
 import { StarRating } from '@/components/customer/shared/StarRating';
+import { resolveVendorRatingForCard } from '@/lib/resolve-vendor-rating';
 
 // ✅ FIX: Add promotion type for vendor discounts display
 interface VendorPromotion {
@@ -91,7 +92,17 @@ export function UniversalVendorCard({
   showActionButtons = true,
   showPriceRow = true,
 }: UniversalVendorCardProps) {
-  const reviewCount = vendor.vendorReviewCount ?? 0;
+  const vendorId = String(vendor.vendorId || vendor.id || '').trim();
+  const ratingResolved = resolveVendorRatingForCard(
+    {
+      vendorId,
+      vendorRating: vendor.vendorRating,
+      vendorReviewCount: vendor.vendorReviewCount,
+      review_count: vendor.vendorReviewCount,
+      rating: vendor.vendorRating,
+    },
+    vendorId || undefined
+  );
   const location = vendor.vendorLocation || 'Location not specified';
   const profileImage = vendor.vendorProfileImage || vendor.photoUrl;
   const [listingImageFailed, setListingImageFailed] = useState(false);
@@ -277,12 +288,14 @@ export function UniversalVendorCard({
           
           {/* Rating, Reviews & Service Style */}
           <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <StarRating
-              rating={vendor.vendorRating}
-              reviewCount={reviewCount}
-              starsClassName="h-3.5 w-3.5"
-              textClassName="text-sm text-gray-600"
-            />
+            {ratingResolved.shouldShowRating ? (
+              <StarRating
+                rating={ratingResolved.average}
+                reviewCount={ratingResolved.reviewCount}
+                starsClassName="h-3.5 w-3.5"
+                textClassName="text-sm text-gray-600"
+              />
+            ) : null}
             {showEnrichedData && vendor.completedBookings && vendor.completedBookings > 0 && (
               <>
                 <span className="text-gray-400">•</span>

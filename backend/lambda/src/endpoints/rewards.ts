@@ -20,6 +20,7 @@ import { select, insert, update, query, withTransaction } from '../database/rds-
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { fixRewardCatalogTextFields } from '../utils/fix-rupee-mojibake';
 import { isValidUUID } from '../types/entities';
+import { isHiddenLegacyCatalogReward } from '../lib/hidden-rewards-catalog';
 
 /** When `customer_loyalty_points` counters are NULL/stale, derive lifetime stats from the ledger. */
 async function loyaltyLedgerLifetimeTotals(
@@ -454,7 +455,9 @@ export function registerRewardsEndpoints(app: Hono) {
            ORDER BY display_order ASC, points_cost ASC`
       );
 
-      const rows = (rewards.rows || []).map((r) => fixRewardCatalogTextFields(r));
+      const rows = (rewards.rows || [])
+        .map((r) => fixRewardCatalogTextFields(r))
+        .filter((r) => !isHiddenLegacyCatalogReward(String(r.id)));
 
       return c.json({
         success: true,
@@ -488,6 +491,9 @@ export function registerRewardsEndpoints(app: Hono) {
       }
       if (!isValidUUID(String(rewardId))) {
         return c.json({ error: 'rewardId must be a valid catalog reward UUID' }, 400);
+      }
+      if (isHiddenLegacyCatalogReward(String(rewardId))) {
+        return c.json({ error: 'This reward is not available' }, 404);
       }
       if (points == null || !Number.isFinite(Number(points)) || Number(points) < 1) {
         return c.json({ error: 'points must be a positive number' }, 400);

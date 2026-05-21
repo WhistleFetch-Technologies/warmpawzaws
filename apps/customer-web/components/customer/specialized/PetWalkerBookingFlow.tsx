@@ -30,11 +30,7 @@ export function PetWalkerBookingFlow({ vendorId, customerPhone, onSuccess, onCan
   const walkTypeLabel =
     walkType === 'long' ? 'Long walk' : walkType === 'exercise' ? 'Exercise walk' : 'Regular walk';
 
-  const walkerPrePaymentStats = [
-    { value: '5★', label: 'Walks', icon: <Star className="w-4 h-4 fill-white" /> },
-    { value: '30+', label: 'Min' },
-    { value: '1+', label: 'Pets' },
-  ];
+  const walkerPrePaymentStats: Array<{ value: string; label: string; icon?: React.ReactNode }> = [];
 
   const calculatePrice = (): number => {
     const basePrice = 200;

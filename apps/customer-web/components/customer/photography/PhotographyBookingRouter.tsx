@@ -486,11 +486,7 @@ export function PhotographyBookingRouter({
     );
   };
 
-  const photographyPrePaymentStats = [
-    { value: '80+', label: 'Sessions' },
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    { value: 'Pro', label: 'Gear' },
-  ];
+  const photographyPrePaymentStats: Array<{ value: string; label: string }> = [];
 
   return (
     <div>

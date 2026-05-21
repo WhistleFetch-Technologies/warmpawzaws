@@ -2,20 +2,40 @@
 
 import { MyBookings } from '@/components/customer/booking/MyBookings';
 import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 function BookingsPageInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const reviewBookingId = searchParams.get('reviewBookingId');
   const [phone, setPhone] = useState<string | null>(null);
+  const [sessionChecked, setSessionChecked] = useState(false);
 
   useEffect(() => {
     const storedPhone = localStorage.getItem('customerPhone');
     setPhone(storedPhone);
+    setSessionChecked(true);
   }, []);
 
+  useEffect(() => {
+    if (sessionChecked && !phone) {
+      router.replace('/auth');
+    }
+  }, [sessionChecked, phone, router]);
+
+  if (!sessionChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-orange-50/40">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto mb-4" />
+          <p className="text-gray-600">Loading…</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!phone) {
-    return <div>Loading...</div>;
+    return null;
   }
 
   return (

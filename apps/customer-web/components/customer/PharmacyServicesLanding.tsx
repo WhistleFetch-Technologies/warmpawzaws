@@ -26,12 +26,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
-import {
-  aggregateAverageRatingStat,
-  formatRatingNumberOrDash,
-  headerRatingStatValue,
-} from '@/lib/rating-display';
-
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 interface PharmacyServicesLandingProps {
   phone: string;
   onBack: () => void;
@@ -81,20 +76,14 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
         const allPharmacies = Array.from(vendorMap.values());
         setFeaturedPharmacies(allPharmacies.slice(0, 5));
         
-        const rated = allPharmacies.filter((p: any) => p.completedOrders > 0 && p.rating > 0);
         setStats({
           activePharmacies: allPharmacies.length || 25,
           orders: '50K+',
-          rating:
-            rated.length > 0
-              ? (rated.reduce((acc: number, p: any) => acc + p.rating, 0) / rated.length).toFixed(1)
-              : '—',
         });
       } else {
         setStats({
           activePharmacies: 25,
           orders: '50K+',
-          rating: '—'
         });
       }
     } catch (error) {
@@ -102,7 +91,6 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
       setStats({
         activePharmacies: 25,
         orders: '50K+',
-        rating: '—'
       });
     } finally {
       setLoading(false);
@@ -117,16 +105,7 @@ export function PharmacyServicesLanding({ phone, onBack, onNavigate }: PharmacyS
     );
   }
 
-  // Prepare stats for ServiceDashboardHeader
-  const dashboardStats = stats ? [
-    { value: `${stats.activePharmacies}+`, label: 'Pharmacies' },
-    { value: stats.orders, label: 'Orders' },
-    { value: String(stats.rating), label: 'Rating' }
-  ] : [
-    { value: '25+', label: 'Pharmacies' },
-    { value: '50K+', label: 'Orders' },
-    { value: '—', label: 'Rating' }
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   return (
     <div className="min-h-screen bg-gray-50">

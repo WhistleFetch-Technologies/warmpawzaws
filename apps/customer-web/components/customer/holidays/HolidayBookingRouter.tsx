@@ -249,11 +249,7 @@ export function HolidayBookingRouter({
     return basePrice * nights + (petCount * 500 * nights); // Additional pet charges
   };
 
-  const holidayPrePaymentStats = [
-    { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-    { value: '10k+', label: 'Stays' },
-    { value: 'Pet', label: 'OK' },
-  ];
+  const holidayPrePaymentStats: Array<{ value: string; label: string }> = [];
 
   const getHolidayPackageIconAndStyle = (pkg: typeof selectedPackage) => {
     if (!pkg) {

@@ -3,7 +3,7 @@
 import { Clock, MapPin } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import type { FeaturedProvider } from '@/lib/featured-provider';
-import { StarRating } from './StarRating';
+import { VendorRatingDisplay } from './VendorRatingDisplay';
 
 export interface FeaturedProviderCardProps {
   provider: FeaturedProvider;
@@ -64,9 +64,13 @@ export function FeaturedProviderCard({
           {provider.subtitle}
         </p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-          <StarRating
-            rating={provider.rating}
-            reviewCount={provider.reviewCount}
+          <VendorRatingDisplay
+            row={{
+              vendorId: provider.vendorId ?? provider.id,
+              vendorRating: provider.rating,
+              vendorReviewCount: provider.reviewCount,
+            }}
+            vendorId={String(provider.vendorId ?? provider.id ?? '')}
             starsClassName="h-3 w-3"
             textClassName="text-xs text-gray-500"
           />

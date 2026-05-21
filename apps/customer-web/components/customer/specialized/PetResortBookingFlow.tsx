@@ -41,11 +41,7 @@ export function PetResortBookingFlow({ vendorId, customerPhone, onSuccess, onCan
   const [specialRequests, setSpecialRequests] = useState('');
   const [showPreReview, setShowPreReview] = useState(false);
 
-  const resortPrePaymentStats = [
-    { value: '—', label: 'Stays', icon: <Star className="w-4 h-4 fill-white" /> },
-    { value: '5★', label: 'Rooms' },
-    { value: '24/7', label: 'Care' },
-  ];
+  const resortPrePaymentStats: Array<{ value: string; label: string; icon?: React.ReactNode }> = [];
 
   useEffect(() => {
     if (checkInDate && checkOutDate) {
