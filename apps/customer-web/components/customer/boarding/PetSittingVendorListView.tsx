@@ -11,6 +11,7 @@ import { ServiceDashboardHeader } from "../shared/ServiceDashboardHeader";
 import { StandardizedFooter } from "../shared/StandardizedFooter";
 import { minPriceForVendor } from "@/lib/boarding-vendor-booking-utils";
 import type { BoardingListVendor, BoardingPlanRow } from "@/lib/boarding-vendor-discovery-map";
+import { EMPTY_SERVICE_HEADER_STATS } from "@/lib/service-header-stats";
 import { pickCustomerVendorAccountId } from "@warmpawz/shared-types";
 
 const HUB_SLUG = "all" as const;
@@ -124,11 +125,7 @@ export function PetSittingVendorListView({
     { id: "price" as const, label: "Price" },
   ];
 
-  const dashboardStats = [
-    { value: `${sortedVendors.length > 0 ? sortedVendors.length : 0}+`, label: "Sitters", icon: <Home className="h-4 w-4" /> },
-    { value: "8K+", label: "Visits" },
-    { value: "—", label: "Rating", icon: <Star className="h-4 w-4 fill-white" /> },
-  ];
+  const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
   const handleBack = () => {
     if (onBack) onBack();

@@ -18,6 +18,7 @@ import {
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import { HUB_SERVICE_ICON_WRAP } from '@/lib/hub-service-option-styles';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 
 interface BoardingServiceRouterProps {
   phone: string;
@@ -169,21 +170,7 @@ export function BoardingServiceRouter({ phone, onBack, onViewBooking, onNavigate
     [onNavigate, router]
   );
 
-  const boardingStats = useMemo(() => {
-    const rated = vendors.filter(
-      (v) => typeof v.rating === 'number' && Number.isFinite(v.rating) && v.rating > 0
-    );
-    const rating =
-      rated.length > 0
-        ? (rated.reduce((acc, v) => acc + v.rating, 0) / rated.length).toFixed(1)
-        : '—';
-    const n = vendors.length;
-    return [
-      { value: `${n > 0 ? n : 35}+`, label: 'Facilities' },
-      { value: '5K+', label: 'Happy Pets' },
-      { value: rating, label: 'Rating', icon: <Star className="w-4 h-4 fill-current" /> },
-    ];
-  }, [vendors]);
+  const boardingStats = EMPTY_SERVICE_HEADER_STATS;
 
   const handleCheckAvailability = async (facilityId: string) => {
     try {

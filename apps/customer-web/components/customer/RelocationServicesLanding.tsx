@@ -5,7 +5,6 @@ import { ArrowLeft, Plane, Star, Sparkles, ChevronRight, Package, Truck, Shield 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
-import { averageStarDisplayFromNumbers, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { toast } from 'sonner';
 
 interface RelocationServicesLandingProps {
@@ -86,25 +85,6 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
           <h1 className="text-2xl font-bold text-white">Pet Relocation</h1>
         </div>
 
-        {/* Stats Bar - Glassmorphism */}
-        {stats && (
-          <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.activeServices}+</div>
-               <div className="text-xs text-white/80">Services</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="text-2xl font-bold text-white">{stats.relocations}</div>
-               <div className="text-xs text-white/80">Relocations</div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-2xl p-3 min-w-[100px] border border-white/10">
-               <div className="flex items-center gap-1 text-2xl font-bold text-white">
-                 {stats.rating} <Star className="w-4 h-4 fill-white" />
-               </div>
-               <div className="text-xs text-white/80">Rating</div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Main Content - White Card with Top Radius */}

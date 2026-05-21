@@ -5,6 +5,7 @@ import { Award } from 'lucide-react';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId, isCustomerDatabaseUuid } from '@/lib/customer-id-storage';
+import { filterVisibleCatalogRewards } from '@/lib/hidden-rewards-catalog';
 
 /**
  * Phone for `/customer/by-phone` — matches MyBookings / api-client fallbacks.
@@ -215,12 +216,12 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
         Array.isArray((rewardsBody as any)?.rewards) ||
         Array.isArray((rewardsBody as any)?.catalog)
       ) {
-        setRewards(
+        const catalogRaw =
           (rewardsBody as any)?.rewards ||
-            (rewardsBody as any)?.catalog ||
-            (Array.isArray(rewardsBody) ? rewardsBody : []) ||
-            []
-        );
+          (rewardsBody as any)?.catalog ||
+          (Array.isArray(rewardsBody) ? rewardsBody : []) ||
+          [];
+        setRewards(filterVisibleCatalogRewards(Array.isArray(catalogRaw) ? catalogRaw : []));
       }
 
       const historyRaw = unwrapApiBody(historyRes) ?? historyRes;

@@ -261,10 +261,6 @@ async function syncDefaultCustomerAddressFromProfile(
     if (Number.isFinite(rowLat) && Number.isFinite(rowLng)) {
       setParts.push(`coordinates = $${p++}::jsonb`);
       params.push(JSON.stringify({ lat: rowLat, lng: rowLng }));
-      setParts.push(`latitude = $${p++}`);
-      params.push(rowLat);
-      setParts.push(`longitude = $${p++}`);
-      params.push(rowLng);
     }
 
     params.push(targetId);
@@ -301,8 +297,6 @@ async function syncDefaultCustomerAddressFromProfile(
     state: state || '—',
     pincode,
     coordinates: insCoords,
-    latitude: Number.isFinite(insLat) ? insLat : null,
-    longitude: Number.isFinite(insLng) ? insLng : null,
     is_default: true,
     house_no: opts?.updateHouseNo ? opts.houseNo ?? null : customerRow?.house_no ?? null,
     floor: opts?.updateFloor ? opts.floor ?? null : customerRow?.floor ?? null,

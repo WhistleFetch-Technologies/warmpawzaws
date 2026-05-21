@@ -20,7 +20,7 @@ import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
 import type { BoardingListVendor, BoardingPlanRow } from '@/lib/boarding-vendor-discovery-map';
 import { minPriceForVendor, priceForCard } from '@/lib/boarding-vendor-booking-utils';
 import { formatDistanceDisplay } from '@/lib/distance-display';
-import { StarRating } from '../shared/StarRating';
+import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
 import { isVendorServicePackageRow } from '@/lib/vendor-package-purchase-nav';
 
 export interface BoardingVendorExpandableCardProps {
@@ -160,9 +160,17 @@ export function BoardingVendorExpandableCard({
               </div>
             )}
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <StarRating
-                rating={v.rating}
-                reviewCount={v.review_count}
+              <VendorRatingDisplay
+                row={{
+                  ...(v.raw as Record<string, unknown>),
+                  id: v.id,
+                  rating: v.rating,
+                  review_count: v.review_count,
+                  vendorReviewCount: v.review_count,
+                }}
+                vendorId={String(
+                  pickCustomerVendorAccountId((v.raw || {}) as Record<string, unknown>) || v.id
+                )}
                 textClassName="text-xs text-gray-500"
               />
               {formatDistanceDisplay(v as any) && (

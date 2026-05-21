@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
 import Link from 'next/link';
-import { Key, Eye, EyeOff, Copy, Check, Phone, User, AlertCircle } from 'lucide-react';
+import { Key, Eye, EyeOff, Copy, Check, Phone, User, AlertCircle, Package } from 'lucide-react';
 import { toast } from 'sonner';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { goBackOrReplace } from '@/lib/go-back-or-replace';
 
 // ============================================================================
 // TYPES
@@ -46,7 +48,31 @@ interface TrackingInfo {
 
 export default function TrackingContent() {
   const params = useParams();
+  const router = useRouter();
   const orderId = params.id as string;
+
+  // Marketplace is hidden until launch — also block deep-linked shop-order tracking URLs.
+  if (!isCustomerEcommerceEnabled()) {
+    return (
+      <div className="relative flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
+        <button
+          type="button"
+          onClick={() => goBackOrReplace(router, '/')}
+          className="absolute left-4 top-4 rounded-lg bg-white/90 p-2 shadow-sm"
+          aria-label="Back"
+        >
+          <Package className="h-5 w-5 text-gray-700" />
+        </button>
+        <div className="max-w-sm rounded-2xl bg-white p-8 text-center shadow-lg">
+          <Package className="mx-auto mb-4 h-16 w-16 text-orange-200" />
+          <h2 className="mb-2 text-xl font-bold text-gray-800">Coming soon</h2>
+          <p className="text-gray-500">
+            Shop order tracking will be available once the Warmpawz marketplace launches.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const [tracking, setTracking] = useState<TrackingInfo | null>(null);
   const [loading, setLoading] = useState(true);

@@ -15,8 +15,7 @@ import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { formatDistanceDisplay } from '@/lib/distance-display';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
-import { getAggregatedRatingFromServices } from '@/lib/aggregated-service-rating';
-
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 interface Service {
   id: string;
   serviceName: string;
@@ -123,11 +122,6 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
     q.isLoading || q.isFetching ? ('loading' as const) : q.isError ? ('error' as const) : ('success' as const);
 
   const serviceConfig = useMemo(() => {
-    const ratingStatValue = getAggregatedRatingFromServices(services, {
-      category,
-      roleId,
-      serviceStyle,
-    });
     const isAtCenter = serviceStyle === 'at_center';
     const isAtHome = serviceStyle === 'at_home';
 
@@ -139,11 +133,7 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
           name: 'Grooming Services',
           subtitle: 'Find grooming for your pet',
           icon: Scissors,
-          stats: [
-            { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
-            { value: '1K+', label: 'Bookings' },
-            { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-          ],
+          stats: EMPTY_SERVICE_HEADER_STATS,
         };
       }
       if (isAtHome) {
@@ -153,11 +143,7 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
           name: 'At Home Grooming',
           subtitle: 'Groomer comes to you',
           icon: Scissors,
-          stats: [
-            { value: v, label: 'Pros', icon: <Building2 className="w-4 h-4" /> },
-            { value: '1K+', label: 'Bookings' },
-            { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-          ],
+          stats: [{ value: v, label: 'Pros', icon: <Building2 className="w-4 h-4" /> }],
         };
       }
       const st = discoveryQueryState(groomingCenterDiscovery);
@@ -166,11 +152,7 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
         name: isAtCenter ? 'Grooming Center' : 'Grooming',
         subtitle: isAtCenter ? 'Visit our grooming centers' : 'Browse grooming centers',
         icon: Scissors,
-        stats: [
-          { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
-          { value: '1K+', label: 'Bookings' },
-          { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-        ]
+        stats: EMPTY_SERVICE_HEADER_STATS,
       };
     }
 
@@ -182,11 +164,7 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
           name: 'Training Services',
           subtitle: 'Training options for your pet',
           icon: GraduationCap,
-          stats: [
-            { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
-            { value: '800+', label: 'Sessions' },
-            { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-          ],
+          stats: EMPTY_SERVICE_HEADER_STATS,
         };
       }
       if (isAtHome) {
@@ -196,11 +174,7 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
           name: 'At Home Training',
           subtitle: 'Trainer comes to you',
           icon: GraduationCap,
-          stats: [
-            { value: v, label: 'Trainers', icon: <Building2 className="w-4 h-4" /> },
-            { value: '800+', label: 'Sessions' },
-            { value: ratingStatValue, label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> },
-          ],
+          stats: EMPTY_SERVICE_HEADER_STATS,
         };
       }
       const st = discoveryQueryState(trainingCenterDiscovery);
@@ -209,22 +183,14 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
         name: isAtCenter ? 'Training Center' : 'Training',
         subtitle: isAtCenter ? 'Visit our training centers' : 'Browse training centers',
         icon: GraduationCap,
-        stats: [
-          { value: v, label: 'Centers', icon: <Building2 className="w-4 h-4" /> },
-          { value: '800+', label: 'Sessions' },
-          { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-        ]
+        stats: EMPTY_SERVICE_HEADER_STATS,
       };
     }
     return {
       name: 'Browse Services',
       subtitle: 'Find the best services for your pet',
       icon: Building2,
-      stats: [
-        { value: '100+', label: 'Services' },
-        { value: '5K+', label: 'Bookings' },
-        { value: '—', label: 'Rating', icon: <Star className="w-4 h-4 fill-white" /> }
-      ]
+      stats: EMPTY_SERVICE_HEADER_STATS,
     };
   }, [
     services,

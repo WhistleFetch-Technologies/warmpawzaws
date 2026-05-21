@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo, useCallback, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useMemo, useCallback, useTransition, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { 
   Plus, 
   Minus, 
@@ -32,9 +32,13 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
-import { calculateTax } from '@/lib/tax-system';
 import { formatRatingNumberOrDash } from '@/lib/rating-display';
-import { cartItemsToTaxableItems } from '@/lib/tax-system/taxCalculatorUtils';
+import {
+  computeCartPricing,
+  persistPricingOptionsForCheckout,
+  VENDOR_DELIVERY_CONFIG,
+  type CartPricingCoupon,
+} from '@/lib/ecommerce/cart-pricing';
 import { CartPromotionsBanner } from './shared/CartPromotionsBanner';
 import { CartPromotionResult } from '@/lib/promotions-engine';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
@@ -46,19 +50,11 @@ interface ShoppingCartViewProps {
   onNavigateHome?: () => void;
   onCheckout: () => void;
   onContinueShopping: () => void;
+  /** `shell` = bottom nav clearance; `standalone` = `/cart` route without tab bar */
+  variant?: 'shell' | 'standalone';
 }
 
-interface Coupon {
-  id: string;
-  code: string;
-  type: 'percentage' | 'fixed' | 'delivery';
-  value: number;
-  minOrder: number;
-  maxDiscount?: number;
-  vendorId?: string;
-  description: string;
-  expiryDate?: string;
-}
+type Coupon = CartPricingCoupon;
 
 interface SavedItem {
   id: string;
@@ -106,22 +102,18 @@ const availableCoupons: Coupon[] = [
   },
 ];
 
-// Mock vendor data - in production this would come from your backend
-const vendorData: Record<
-  string,
-  { name: string; rating?: number; reviews: number; deliveryTime: string; freeDeliveryMin: number }
-> = {
-  vendor1: { name: 'PawSome Pets Store', reviews: 0, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
-  vendor2: { name: 'Pet Paradise', reviews: 0, deliveryTime: '1-2 days', freeDeliveryMin: 799 },
-  vendor3: { name: 'Furry Friends Shop', reviews: 0, deliveryTime: '3-4 days', freeDeliveryMin: 1200 },
-  default: { name: 'Warmpawz Store', reviews: 0, deliveryTime: '2-3 days', freeDeliveryMin: 999 },
-};
-
 /** Cart "Choose Delivery Speed" UI. Totals still use standard (₹60) fee when hidden. */
 const SHOW_CART_DELIVERY_SPEED_PICKER = false;
 
-export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinueShopping }: ShoppingCartViewProps) {
+export function ShoppingCartView({
+  onBack,
+  onNavigateHome,
+  onCheckout,
+  onContinueShopping,
+  variant = 'shell',
+}: ShoppingCartViewProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { cart, updateQuantity, removeFromCart, addToCart, itemCount } = useCart();
   const [isCheckoutPending, startCheckoutTransition] = useTransition();
 
@@ -180,67 +172,19 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
     [cart]
   );
 
-  const getVendorTotal = useCallback((vendorItems: typeof cart) => {
-    return vendorItems.reduce((total, item) => total + item.price * item.quantity, 0);
-  }, []);
-
-  const calculateDeliveryFee = useCallback(
-    (vendorId: string, vendorTotal: number) => {
-      const vendor = vendorData[vendorId] || vendorData['default'];
-      const hasDeliveryFreeCoupon = appliedCoupons.some((c) => c.type === 'delivery');
-      if (hasDeliveryFreeCoupon || vendorTotal >= vendor.freeDeliveryMin) return 0;
-      if (selectedDelivery === 'express') return 150;
-      if (selectedDelivery === 'scheduled') return 80;
-      return 60;
-    },
-    [selectedDelivery, appliedCoupons]
+  const pricing = useMemo(
+    () =>
+      computeCartPricing(cart, {
+        appliedCoupons,
+        deliverySpeed: selectedDelivery,
+        giftWrap,
+        productProtection,
+        itemCount,
+      }),
+    [cart, appliedCoupons, selectedDelivery, giftWrap, productProtection, itemCount]
   );
 
-  const cartTotal = useMemo(
-    () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
-    [cart]
-  );
-
-  const discount = useMemo(() => {
-    let totalDiscount = 0;
-    appliedCoupons.forEach((coupon) => {
-      if (coupon.type === 'percentage') {
-        const d = (cartTotal * coupon.value) / 100;
-        totalDiscount += coupon.maxDiscount ? Math.min(d, coupon.maxDiscount) : d;
-      } else if (coupon.type === 'fixed') {
-        totalDiscount += coupon.value;
-      }
-    });
-    return totalDiscount;
-  }, [appliedCoupons, cartTotal]);
-
-  const deliveryFees = useMemo(() => {
-    return Object.keys(itemsByVendor).reduce((total, vendorId) => {
-      return total + calculateDeliveryFee(vendorId, getVendorTotal(itemsByVendor[vendorId]));
-    }, 0);
-  }, [itemsByVendor, calculateDeliveryFee, getVendorTotal]);
-
-  const giftWrapFee = giftWrap ? itemCount * 25 : 0;
-  const protectionFee = productProtection ? cartTotal * 0.02 : 0;
-
-  const subtotalForTax = cartTotal - discount;
-  const taxAmount = useMemo(() => {
-    const taxableItems = cartItemsToTaxableItems(cart);
-    const divisor = cartTotal > 0 ? cartTotal : 1;
-    const adjusted = taxableItems.map((item) => ({
-      ...item,
-      amount:
-        (item.amount * (item.quantity || 1) - (discount * (item.amount * (item.quantity || 1))) / divisor) /
-        (item.quantity || 1),
-    }));
-    const result = calculateTax(adjusted);
-    return result.total;
-  }, [cart, cartTotal, discount]);
-
-  const totalAmount = useMemo(
-    () => subtotalForTax + deliveryFees + giftWrapFee + protectionFee + taxAmount,
-    [subtotalForTax, deliveryFees, giftWrapFee, protectionFee, taxAmount]
-  );
+  const totalAmount = pricing.total;
 
   const cartHeaderStats = useMemo(() => {
     const vendorCount = Object.keys(itemsByVendor).length;
@@ -251,8 +195,27 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
     ];
   }, [itemCount, itemsByVendor, totalAmount]);
 
+  const handleProceedToCheckout = useCallback(() => {
+    persistPricingOptionsForCheckout({
+      appliedCoupons,
+      deliverySpeed: selectedDelivery,
+      giftWrap,
+      productProtection,
+      itemCount,
+    });
+    onCheckout();
+  }, [appliedCoupons, selectedDelivery, giftWrap, productProtection, itemCount, onCheckout]);
+
+  useEffect(() => {
+    if (variant !== 'standalone' || searchParams.get('buynow') !== '1' || cart.length === 0) return;
+    const t = window.setTimeout(() => {
+      document.getElementById('cart-order-summary')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 200);
+    return () => clearTimeout(t);
+  }, [variant, searchParams, cart.length]);
+
   const handleApplyCoupon = (coupon: Coupon) => {
-    if (cartTotal < coupon.minOrder) {
+    if (pricing.lineSubtotal < coupon.minOrder) {
       alert(`Minimum order of ₹${coupon.minOrder} required for this coupon`);
       return;
     }
@@ -350,9 +313,15 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
     );
   }
 
-  /* Bottom nav (~5.5rem) + compact checkout bar (~4.25rem) + safe area — scroll clearance only */
+  const checkoutBarBottom =
+    variant === 'shell'
+      ? 'calc(5.5rem + env(safe-area-inset-bottom, 0px))'
+      : 'env(safe-area-inset-bottom, 0px)';
+
   const scrollBottomPad =
-    'pb-[calc(5.5rem+4.5rem+env(safe-area-inset-bottom,0px)+12px)]';
+    variant === 'shell'
+      ? 'pb-[calc(5.5rem+4.5rem+env(safe-area-inset-bottom,0px)+12px)]'
+      : 'pb-[calc(4.5rem+env(safe-area-inset-bottom,0px)+12px)]';
 
   return (
     <div className="relative w-full max-w-customer mx-auto min-h-0">
@@ -461,10 +430,11 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
 
         {/* Cart Items by Vendor */}
         {Object.entries(itemsByVendor).map(([vendorId, vendorItems]) => {
-          const vendor = vendorData[vendorId] || vendorData['default'];
-          const vendorTotal = getVendorTotal(vendorItems);
-          const vendorDeliveryFee = calculateDeliveryFee(vendorId, vendorTotal);
-          const freeDeliveryRemaining = vendor.freeDeliveryMin - vendorTotal;
+          const vendor = VENDOR_DELIVERY_CONFIG[vendorId] || VENDOR_DELIVERY_CONFIG.default;
+          const vendorRow = pricing.byVendor.find((v) => v.vendorId === vendorId);
+          const vendorTotal = vendorRow?.subtotal ?? 0;
+          const vendorDeliveryFee = vendorRow?.deliveryFee ?? 0;
+          const freeDeliveryRemaining = vendorRow?.freeDeliveryGap ?? 0;
 
           return (
             <div key={vendorId} className="bg-white mb-3 border-b-4 border-gray-100">
@@ -477,14 +447,9 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900">{vendor.name}</h3>
-                      <div className="flex items-center gap-2 text-xs text-gray-600">
-                        <div className="flex items-center gap-1">
-                          <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                          <span>{formatRatingNumberOrDash(vendor.rating)}</span>
-                        </div>
-                        <span>•</span>
-                        <span>{vendor.reviews.toLocaleString()} reviews</span>
-                      </div>
+                      {vendor.deliveryTime ? (
+                        <p className="text-xs text-gray-600">{vendor.deliveryTime}</p>
+                      ) : null}
                     </div>
                   </div>
                   <div className="shrink-0 text-left sm:text-right">
@@ -699,7 +664,7 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
         </div>
 
         {/* Coupons Section */}
-        <div className="bg-white mt-3 p-4">
+        <div id="cart-order-summary" className="bg-white mt-3 p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
               <Percent className="w-5 h-5 text-[#FF8C42]" />
@@ -798,7 +763,7 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
       {/* Compact checkout bar — fixed above bottom nav; short bar so main content stays visible while scrolling */}
       <div
         className="fixed left-0 right-0 z-40 mx-auto w-full max-w-md border-t border-gray-200 bg-white/95 shadow-[0_-4px_24px_rgba(0,0,0,0.06)] backdrop-blur-sm supports-[backdrop-filter]:bg-white/90"
-        style={{ bottom: 'calc(5.5rem + env(safe-area-inset-bottom, 0px))' }}
+        style={{ bottom: checkoutBarBottom }}
       >
         <div className="flex items-center gap-3 px-4 py-3">
           <div className="min-w-0 shrink-0">
@@ -808,7 +773,7 @@ export function ShoppingCartView({ onBack, onNavigateHome, onCheckout, onContinu
           <Button
             type="button"
             disabled={isCheckoutPending}
-            onClick={() => startCheckoutTransition(() => onCheckout())}
+            onClick={() => startCheckoutTransition(() => handleProceedToCheckout())}
             className="h-12 min-w-0 flex-1 bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] text-sm font-semibold text-white shadow-md hover:from-[#FF7A2A] hover:to-[#FF5A8D] disabled:opacity-70 sm:text-base"
           >
             {isCheckoutPending ? (

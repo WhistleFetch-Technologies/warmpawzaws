@@ -30,6 +30,7 @@ import { logBookingStatusChange } from '../../../utils/audit-log';
 import { notifyBookingCreated } from '../../../utils/booking-notifications';
 import { PaymentTransactionStatus, BookingPaymentStatus } from '../../constants';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
+import { triggerAutoShipment } from '../../../utils/logistics/trigger-auto-shipment';
 
 // Razorpay configuration is imported from utils
 
@@ -173,6 +174,7 @@ function normalizeCreateOrderRequestBody(raw: unknown): Record<string, any> {
     const t = b.type.trim().toLowerCase().replace(/-/g, '_');
     if (t === 'wallet_topup' || t === 'wallet') b.type = 'wallet_topup';
     else if (t === 'pharmacy_order') b.type = 'pharmacy_order';
+    else if (t === 'ecommerce_order' || t === 'ecommerce' || t === 'shop_order') b.type = 'ecommerce_order';
     else if (t === 'diagnostics') b.type = 'diagnostics';
     else if (t === 'booking_prepaid') b.type = 'booking_prepaid';
   }
@@ -182,8 +184,16 @@ function normalizeCreateOrderRequestBody(raw: unknown): Record<string, any> {
       : '';
   const amtNum =
     b.amount != null && b.amount !== '' ? Number(b.amount) : NaN;
+  const normalizedType =
+    typeof b.type === 'string' ? String(b.type).trim().toLowerCase().replace(/-/g, '_') : '';
   const hasPharmacyOrder =
-    b.orderId != null && String(b.orderId).trim() !== '';
+    normalizedType === 'pharmacy_order' &&
+    b.orderId != null &&
+    String(b.orderId).trim() !== '';
+  const hasEcommerceOrder =
+    normalizedType === 'ecommerce_order' &&
+    b.orderId != null &&
+    String(b.orderId).trim() !== '';
   const hasVendor = b.vendorId != null && String(b.vendorId).trim() !== '';
   const hasBooking =
     b.bookingId != null && String(b.bookingId).trim() !== '';
@@ -194,6 +204,7 @@ function normalizeCreateOrderRequestBody(raw: unknown): Record<string, any> {
     amtNum > 0 &&
     !hasBooking &&
     !hasPharmacyOrder &&
+    !hasEcommerceOrder &&
     !hasVendor
   ) {
     b.type = 'wallet_topup';
@@ -209,15 +220,19 @@ class CreateRazorpayOrderHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
       const body = normalizeCreateOrderRequestBody(this.parseBody(context.event));
-      const { bookingId, orderId: pharmacyOrderId, amount, currency = 'INR', customerId, vendorId, type } = body;
+      const { bookingId, orderId: requestOrderId, amount, currency = 'INR', customerId, vendorId, type } = body;
 
       const isPharmacyOrder = type === 'pharmacy_order';
+      const isEcommerceOrder = type === 'ecommerce_order';
+      const pharmacyOrderId = isPharmacyOrder ? String(requestOrderId || '').trim() : '';
+      const ecommerceOrderId = isEcommerceOrder ? String(requestOrderId || '').trim() : '';
       const isDiagnosticsOrder = type === 'diagnostics';
       const isBookingPrepaid = type === 'booking_prepaid';
       const isWalletTopupExplicit = type === 'wallet_topup';
       // Minimal/legacy payloads: amount + customerId without booking/pharmacy (matches old customer-web body)
       const isWalletTopupInferred =
         !isPharmacyOrder &&
+        !isEcommerceOrder &&
         !isDiagnosticsOrder &&
         !isBookingPrepaid &&
         !isWalletTopupExplicit &&
@@ -227,11 +242,16 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         customerId !== '' &&
         amount != null &&
         !bookingId &&
-        !pharmacyOrderId;
+        !pharmacyOrderId &&
+        !ecommerceOrderId;
       const isWalletTopup = isWalletTopupExplicit || isWalletTopupInferred;
       if (isPharmacyOrder) {
         if (!pharmacyOrderId || amount == null) {
           return this.error('orderId and amount are required for pharmacy_order', 400);
+        }
+      } else if (isEcommerceOrder) {
+        if (!ecommerceOrderId || amount == null) {
+          return this.error('orderId and amount are required for ecommerce_order', 400);
         }
       } else if (isBookingPrepaid) {
         const missing = ['amount', 'customerId', 'vendorId'].filter((f) => !body[f]);
@@ -265,7 +285,16 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         }
       }
 
-      console.log('[RAZORPAY-CREATE-ORDER] Starting order creation:', { type: type || 'booking', bookingId, pharmacyOrderId, amount, customerId });
+      console.log('[RAZORPAY-CREATE-ORDER] Starting order creation:', {
+        type: type || 'booking',
+        bookingId,
+        pharmacyOrderId,
+        ecommerceOrderId,
+        amount,
+        customerId,
+      });
+
+      let chargeAmount = Number(amount);
 
       let config: any;
       try {
@@ -333,6 +362,77 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         const shortId = String(pharmacyOrderId).replace(/-/g, '').substring(0, 32);
         receipt = `po_${shortId}`;
         notes = { pharmacyOrderId: String(pharmacyOrderId), customerId: customerIdFinal, vendorId: vendorIdFinal };
+      } else if (isEcommerceOrder) {
+        const orderResult = await Promise.race([
+          select('orders', { id: ecommerceOrderId }),
+          new Promise<any[]>((_, reject) => setTimeout(() => reject(new Error('Query timeout')), 5000)),
+        ]);
+        if (!orderResult || orderResult.length === 0) {
+          return this.error('Order not found', 404);
+        }
+        const shopOrder = orderResult[0];
+        const payStatus = String(shopOrder.payment_status || 'pending').toLowerCase();
+        if (payStatus === 'paid' || payStatus === 'completed') {
+          return this.error('Order is already paid', 400);
+        }
+        const pm = String(shopOrder.payment_method || '').toLowerCase();
+        if (pm === 'cod' || pm === 'cash_on_delivery') {
+          return this.error('This order uses cash on delivery; online payment is not required.', 400);
+        }
+
+        if (customerId) {
+          const resolvedId = await resolveCustomerId(customerId);
+          if (resolvedId) {
+            customerIdFinal = resolvedId;
+            if (
+              shopOrder.customer_id &&
+              String(shopOrder.customer_id) !== String(customerIdFinal)
+            ) {
+              return this.error('Order does not belong to this customer', 403);
+            }
+          } else {
+            customerIdFinal = shopOrder.customer_id;
+            console.warn('[RAZORPAY-CREATE-ORDER] Could not resolve customerId from phone, using order.customer_id');
+          }
+        } else {
+          customerIdFinal = shopOrder.customer_id;
+        }
+
+        if (!customerIdFinal) {
+          return this.error('customerId is required for ecommerce_order', 400);
+        }
+
+        vendorIdFinal = shopOrder.vendor_id || '';
+        if (vendorIdFinal) {
+          const vendorResult = await select('vendors', { id: vendorIdFinal });
+          vendor = vendorResult.length > 0 ? vendorResult[0] : null;
+        } else {
+          vendor = null;
+        }
+
+        chargeAmount = Math.round((parseFloat(String(shopOrder.total_amount ?? 0)) || 0) * 100) / 100;
+        if (chargeAmount <= 0) {
+          return this.error('Invalid order total for ecommerce_order', 400);
+        }
+        if (amount != null) {
+          const clientAmt = Number(amount);
+          if (Number.isFinite(clientAmt) && Math.abs(clientAmt - chargeAmount) > 0.01) {
+            console.warn('[RAZORPAY-CREATE-ORDER] Client amount differs from order total', {
+              clientAmt,
+              chargeAmount,
+              ecommerceOrderId,
+            });
+          }
+        }
+
+        const shortId = String(ecommerceOrderId).replace(/-/g, '').substring(0, 32);
+        receipt = `eco_${shortId}`;
+        notes = {
+          orderId: String(ecommerceOrderId),
+          order_type: 'ecommerce',
+          customerId: customerIdFinal,
+          vendorId: vendorIdFinal || '',
+        };
       } else if (isDiagnosticsOrder) {
         // ✅ FIX: Resolve customerId from phone number if needed
         if (customerId) {
@@ -451,6 +551,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         booking &&
         bookingId &&
         !isPharmacyOrder &&
+        !isEcommerceOrder &&
         !isDiagnosticsOrder &&
         !isBookingPrepaid &&
         !isWalletTopup &&
@@ -538,10 +639,11 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         booking &&
         bookingId &&
         !isPharmacyOrder &&
+        !isEcommerceOrder &&
         !isDiagnosticsOrder &&
         !isBookingPrepaid &&
         !isWalletTopup &&
-        Number(amount) < 0.01
+        chargeAmount < 0.01
       ) {
         const paidCheck = await query(
           `SELECT payment_status::text AS ps FROM bookings WHERE id = $1::uuid LIMIT 1`,
@@ -560,7 +662,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
       }
 
       const orderData: any = {
-        amount: Math.round(Number(amount) * 100),
+        amount: Math.round(Number(chargeAmount) * 100),
         currency: currency,
         receipt,
         notes,
@@ -577,14 +679,16 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         } catch (error) {
           tierCommission = DEFAULT_COMMISSION_RATE;
         }
-        const amt = Number(amount);
+        const amt = Number(chargeAmount);
         const commissionAmount = Math.round((amt * tierCommission / 100) * 100);
         const vendorShare = Math.round(amt * 100) - commissionAmount;
         const transferNotes = isPharmacyOrder
           ? { pharmacy_order_id: String(pharmacyOrderId), vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
-          : isDiagnosticsOrder
-            ? { type: 'diagnostics', vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
-            : { booking_id: bookingId, vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() };
+          : isEcommerceOrder
+            ? { order_id: String(ecommerceOrderId), vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
+            : isDiagnosticsOrder
+              ? { type: 'diagnostics', vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() }
+              : { booking_id: bookingId, vendor_id: vendorIdFinal, commission_rate: tierCommission.toString() };
         orderData.transfers = [
           {
             account: vendor.razorpay_account_id,
@@ -629,8 +733,35 @@ class CreateRazorpayOrderHandler extends BaseHandler {
         await query(
           `INSERT INTO payments (booking_id, pharmacy_order_id, customer_id, vendor_id, razorpay_order_id, amount, currency, payment_method, payment_status)
            VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8)`,
-          [pharmacyOrderId, customerIdFinal, vendorIdFinal, razorpayOrder.id, Number(amount), currency, 'razorpay', 'pending']
+          [pharmacyOrderId, customerIdFinal, vendorIdFinal, razorpayOrder.id, Number(chargeAmount), currency, 'razorpay', 'pending']
         );
+      } else if (isEcommerceOrder) {
+        const existingPayment = await query(
+          `SELECT id FROM payments WHERE order_id = $1::uuid AND payment_status = 'pending' AND razorpay_order_id IS NULL ORDER BY created_at DESC LIMIT 1`,
+          [ecommerceOrderId]
+        );
+
+        if (existingPayment.rows.length > 0) {
+          console.log(
+            `[RAZORPAY-CREATE-ORDER] Reusing existing orphan payment ${existingPayment.rows[0].id} for order ${ecommerceOrderId}`
+          );
+          await query(
+            `UPDATE payments SET razorpay_order_id = $1, amount = $2, currency = $3, updated_at = NOW() WHERE id = $4`,
+            [razorpayOrder.id, Number(chargeAmount), currency, existingPayment.rows[0].id]
+          );
+        } else {
+          await insert('payments', {
+            booking_id: null,
+            order_id: ecommerceOrderId,
+            customer_id: customerIdFinal,
+            vendor_id: vendorIdFinal || null,
+            razorpay_order_id: razorpayOrder.id,
+            amount: Number(chargeAmount),
+            currency: currency,
+            payment_method: 'razorpay',
+            payment_status: 'pending',
+          });
+        }
       } else if (isDiagnosticsOrder) {
         // Diagnostics: pay-first — persist payments row (booking_id set on POST /bookings/create after verify).
         await insert('payments', {
@@ -678,7 +809,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
           console.log(`[RAZORPAY-CREATE-ORDER] Reusing existing orphan payment ${existingPayment.rows[0].id} for booking ${bookingId}`);
           await query(
             `UPDATE payments SET razorpay_order_id = $1, amount = $2, currency = $3, updated_at = NOW() WHERE id = $4`,
-            [razorpayOrder.id, Number(amount), currency, existingPayment.rows[0].id]
+            [razorpayOrder.id, Number(chargeAmount), currency, existingPayment.rows[0].id]
           );
         } else {
           await insert('payments', {
@@ -686,7 +817,7 @@ class CreateRazorpayOrderHandler extends BaseHandler {
             customer_id: customerIdFinal,
             vendor_id: vendorIdFinal,
             razorpay_order_id: razorpayOrder.id,
-            amount: Number(amount),
+            amount: Number(chargeAmount),
             currency: currency,
             payment_method: 'razorpay',
             payment_status: 'pending',
@@ -773,41 +904,47 @@ class VerifyPaymentHandler extends BaseHandler {
           generated: generatedSignature.substring(0, 10) + '...'
         });
 
-        // ✅ ROLLBACK: Delete booking and payment if payment verification fails
+        // ✅ ROLLBACK: booking delete or ecommerce cancel + remove payment row
         try {
           await withTransaction(async (client) => {
             const { rows: payments } = await client.query(
-              `SELECT booking_id FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
+              `SELECT booking_id, order_id FROM payments WHERE razorpay_order_id = $1 FOR UPDATE`,
               [razorpay_order_id]
             );
 
-            if (payments.length > 0 && payments[0].booking_id) {
-              // Delete booking (rollback)
-              await client.query(
-                `DELETE FROM bookings WHERE id = $1`,
-                [payments[0].booking_id]
-              );
-              console.log('[PAYMENT-VERIFY] ❌ Payment failed - booking rolled back:', payments[0].booking_id);
+            if (payments.length > 0) {
+              const row = payments[0];
+              if (row.order_id && !row.booking_id) {
+                await client.query(
+                  `UPDATE orders SET
+                    order_status = 'cancelled',
+                    payment_status = 'failed',
+                    cancelled_at = COALESCE(cancelled_at, NOW()),
+                    updated_at = NOW()
+                  WHERE id = $1::uuid AND order_status = 'pending'`,
+                  [row.order_id]
+                );
+                console.log('[PAYMENT-VERIFY] ❌ Payment failed - ecommerce order cancelled:', row.order_id);
+              } else if (row.booking_id) {
+                await client.query(`DELETE FROM bookings WHERE id = $1`, [row.booking_id]);
+                console.log('[PAYMENT-VERIFY] ❌ Payment failed - booking rolled back:', row.booking_id);
+              }
             }
 
-            // Delete payment record
-            await client.query(
-              `DELETE FROM payments WHERE razorpay_order_id = $1`,
-              [razorpay_order_id]
-            );
+            await client.query(`DELETE FROM payments WHERE razorpay_order_id = $1`, [razorpay_order_id]);
             console.log('[PAYMENT-VERIFY] ❌ Payment failed - payment record deleted');
           });
         } catch (rollbackError: any) {
           console.error('[PAYMENT-VERIFY] Error during rollback:', rollbackError);
-          // Continue to return error even if rollback fails
         }
 
-        return this.error('Invalid payment signature. Booking has been cancelled.', 400);
+        return this.error('Invalid payment signature. Payment could not be verified.', 400);
       }
 
       // ✅ Payment signature is valid - update booking and payment status
       let bookingToNotify: string | null = null;
       let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
+      let ecommerceOrderForShipment: string | null = null;
 
       const result = await withTransaction(async (client) => {
         // ✅ SQL: Look up payment record with FOR UPDATE lock
@@ -824,6 +961,7 @@ class VerifyPaymentHandler extends BaseHandler {
         const payment = payments[0];
         const bookingId = payment.booking_id;
         const pharmacyOrderId = payment.pharmacy_order_id;
+        const ecommerceOrderId = payment.order_id;
 
         // Update payment status
         await client.query(
@@ -893,6 +1031,43 @@ class VerifyPaymentHandler extends BaseHandler {
             orderId: razorpay_order_id,
             bookingId: null,
             pharmacyOrderId: pharmacyOrderId,
+            customerId: payment.customer_id,
+            totalAmount: Number(payment.amount ?? 0),
+          };
+        }
+
+        if (ecommerceOrderId) {
+          console.log('[PAYMENT-VERIFY] ✅ Processing ecommerce order payment:', {
+            ecommerceOrderId,
+            razorpay_payment_id,
+            orderId: razorpay_order_id,
+          });
+
+          const updateResult = await client.query(
+            `UPDATE orders SET
+              payment_status = 'paid',
+              order_status = 'confirmed',
+              payment_id = $2,
+              updated_at = NOW()
+            WHERE id = $1::uuid
+            RETURNING id, payment_status, order_status`,
+            [ecommerceOrderId, payment.id]
+          );
+
+          if (updateResult.rows.length === 0) {
+            console.error('[PAYMENT-VERIFY] ❌ Ecommerce order not found:', ecommerceOrderId);
+            throw new Error(`Order ${ecommerceOrderId} not found`);
+          }
+
+          ecommerceOrderForShipment = String(ecommerceOrderId);
+
+          return {
+            success: true,
+            message: 'Payment verified successfully',
+            paymentId: razorpay_payment_id,
+            orderId: razorpay_order_id,
+            bookingId: null,
+            ecommerceOrderId: String(ecommerceOrderId),
             customerId: payment.customer_id,
             totalAmount: Number(payment.amount ?? 0),
           };
@@ -1096,6 +1271,12 @@ class VerifyPaymentHandler extends BaseHandler {
         await notifyBookingCreated(bookingToNotify, context.requestId);
       }
 
+      if (ecommerceOrderForShipment) {
+        triggerAutoShipment(ecommerceOrderForShipment, 'ecommerce').catch((e) =>
+          console.error('[PAYMENT-VERIFY] Auto-shipment trigger failed:', e)
+        );
+      }
+
       return this.success(result);
     } catch (error: any) {
       console.error('[PAYMENT-VERIFY] Verification error:', error);
@@ -1124,10 +1305,20 @@ class VerifyPaymentHandler extends BaseHandler {
 
           // Try to update the booking too (best-effort)
           const { rows: paymentRows } = await query(
-            `SELECT booking_id FROM payments WHERE razorpay_order_id = $1 LIMIT 1`,
+            `SELECT booking_id, order_id FROM payments WHERE razorpay_order_id = $1 LIMIT 1`,
             [orderId]
           );
-          if (paymentRows.length > 0 && paymentRows[0].booking_id) {
+          if (paymentRows.length > 0 && paymentRows[0].order_id && !paymentRows[0].booking_id) {
+            await query(
+              `UPDATE orders SET
+                payment_status = 'paid',
+                order_status = CASE WHEN order_status = 'pending' THEN 'confirmed' ELSE order_status END,
+                updated_at = NOW()
+              WHERE id = $1::uuid AND payment_status != 'paid'`,
+              [paymentRows[0].order_id]
+            );
+            console.log('[PAYMENT-VERIFY] ⚠️ Best-effort ecommerce order update:', paymentRows[0].order_id);
+          } else if (paymentRows.length > 0 && paymentRows[0].booking_id) {
             await query(
               `UPDATE bookings SET 
                 payment_status = 'paid',
@@ -1196,6 +1387,7 @@ class RazorpayWebhookHandler extends BaseHandler {
       let paymentRecord: any = null;
       let bookingToNotify: string | null = null;
       let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
+      let ecommerceOrderForShipment: string | null = null;
 
       // ✅ FIX: Use transaction with fallback lookup (razorpay_payment_id → razorpay_order_id)
       // Previously only looked up by razorpay_payment_id, which is NULL until verify-payment runs.
@@ -1275,6 +1467,19 @@ class RazorpayWebhookHandler extends BaseHandler {
             [razorpayPaymentId, paymentRecord.pharmacy_order_id]
           );
         }
+
+        if (paymentRecord.order_id && !paymentRecord.booking_id && !paymentRecord.pharmacy_order_id) {
+          await client.query(
+            `UPDATE orders SET
+              payment_status = 'paid',
+              order_status = 'confirmed',
+              payment_id = COALESCE(payment_id, $2),
+              updated_at = NOW()
+            WHERE id = $1::uuid AND payment_status != 'paid'`,
+            [paymentRecord.order_id, paymentRecord.id]
+          );
+          ecommerceOrderForShipment = String(paymentRecord.order_id);
+        }
       });
 
       // Post-transaction: logging, notifications, settlements
@@ -1321,52 +1526,75 @@ class RazorpayWebhookHandler extends BaseHandler {
           console.error('Failed to queue automatic settlement from webhook:', error);
         }
       }
+
+      if (ecommerceOrderForShipment) {
+        triggerAutoShipment(ecommerceOrderForShipment, 'ecommerce').catch((e) =>
+          console.error('[RAZORPAY-WEBHOOK] Auto-shipment trigger failed:', e)
+        );
+      }
     } else if (event === 'payment.failed') {
       const payment = payload_data.payment.entity;
-      
-      // ✅ FIX: Use transaction to ensure atomicity when cancelling booking
+      const failedRazorpayOrderId = payment.order_id;
+
       await withTransaction(async (client) => {
-        // Update payment status
         await client.query(
           `UPDATE payments SET 
             payment_status = 'failed',
             failure_reason = $1,
             updated_at = NOW()
-          WHERE razorpay_payment_id = $2`,
-          [payment.error_description || 'Payment failed', payment.id]
+          WHERE razorpay_payment_id = $2 OR razorpay_order_id = $3`,
+          [
+            payment.error_description || 'Payment failed',
+            payment.id,
+            failedRazorpayOrderId || null,
+          ]
         );
 
-        // Get payment with booking_id
         const { rows: payments } = await client.query(
-          `SELECT booking_id FROM payments WHERE razorpay_payment_id = $1 FOR UPDATE`,
-          [payment.id]
+          `SELECT booking_id, order_id FROM payments
+           WHERE razorpay_payment_id = $1 OR razorpay_order_id = $2
+           FOR UPDATE`,
+          [payment.id, failedRazorpayOrderId || null]
         );
 
-        if (payments.length > 0 && payments[0].booking_id) {
-          const bookingId = payments[0].booking_id;
-          
-          // ✅ FIX: Cancel booking if payment_status is not 'paid' and status is 'pending' or 'pending_payment'
-          // This ensures slot is released when payment fails
-          const { rows: bookingRows } = await client.query(
-            `SELECT status, payment_status FROM bookings WHERE id = $1 FOR UPDATE`,
-            [bookingId]
-          );
-          
-          if (bookingRows.length > 0) {
-            const booking = bookingRows[0];
-            // ✅ FIX: Check for both 'pending' and 'pending_payment' status (booking is created with 'pending')
-            if (booking.payment_status !== 'paid' && 
-                (booking.status === 'pending' || booking.status === 'pending_payment')) {
-              await client.query(
-                `UPDATE bookings SET 
-                  status = 'cancelled', 
-                  payment_status = 'failed',
-                  cancelled_at = NOW(),
-                  updated_at = NOW()
-                WHERE id = $1`,
-                [bookingId]
-              );
-              console.log('[PAYMENT-FAILED] ✅ Booking cancelled and slot released:', bookingId);
+        if (payments.length > 0) {
+          const row = payments[0];
+          if (row.order_id && !row.booking_id) {
+            await client.query(
+              `UPDATE orders SET
+                order_status = 'cancelled',
+                payment_status = 'failed',
+                cancelled_at = COALESCE(cancelled_at, NOW()),
+                updated_at = NOW()
+              WHERE id = $1::uuid AND order_status = 'pending' AND payment_status != 'paid'`,
+              [row.order_id]
+            );
+            console.log('[PAYMENT-FAILED] ✅ Ecommerce order cancelled:', row.order_id);
+          } else if (row.booking_id) {
+            const bookingId = row.booking_id;
+
+            const { rows: bookingRows } = await client.query(
+              `SELECT status, payment_status FROM bookings WHERE id = $1 FOR UPDATE`,
+              [bookingId]
+            );
+
+            if (bookingRows.length > 0) {
+              const booking = bookingRows[0];
+              if (
+                booking.payment_status !== 'paid' &&
+                (booking.status === 'pending' || booking.status === 'pending_payment')
+              ) {
+                await client.query(
+                  `UPDATE bookings SET 
+                    status = 'cancelled', 
+                    payment_status = 'failed',
+                    cancelled_at = NOW(),
+                    updated_at = NOW()
+                  WHERE id = $1`,
+                  [bookingId]
+                );
+                console.log('[PAYMENT-FAILED] ✅ Booking cancelled and slot released:', bookingId);
+              }
             }
           }
         }

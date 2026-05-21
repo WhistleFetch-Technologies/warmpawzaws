@@ -69,6 +69,10 @@ import {
   handleVendorForgotPasswordVerifyOtp,
   handleVendorForgotPasswordReset,
 } from '../../lib/services/auth/vendor-forgot-password';
+import {
+  recordVendorLoginEvent,
+  clientIpFromHeaders,
+} from '../../lib/services/vendor-security-service';
 
 /**
  * When `isUatRelaxedAuthContext(headers)` is true, this value skips password-hash checks for
@@ -1102,6 +1106,20 @@ class VerifyOtpHandlerEnhanced extends BaseHandlerEnhanced {
         console.warn(`[AUTH] ⚠️ Generated fallback userData for role: ${role}`);
       }
 
+      if (
+        role === 'vendor' &&
+        userId &&
+        !String(userId).startsWith('temp_') &&
+        isValidUUID(userId)
+      ) {
+        const hdrsVendorOtp = this.getHeaders(context.event);
+        recordVendorLoginEvent(userId, {
+          ip: clientIpFromHeaders(hdrsVendorOtp),
+          userAgent: hdrsVendorOtp['user-agent'] || hdrsVendorOtp['User-Agent'],
+          method: 'otp',
+        }).catch(() => {});
+      }
+
       let cognitoTokens: CognitoTokens;
       try {
         cognitoTokens = await issueAuthTokensAfterOtp({
@@ -1413,6 +1431,11 @@ class VendorPasswordLoginHandler extends BaseHandlerEnhanced {
           last_login_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         });
+        recordVendorLoginEvent(userId, {
+          ip: clientIpFromHeaders(hdrsVendor),
+          userAgent: hdrsVendor['user-agent'] || hdrsVendor['User-Agent'],
+          method: 'password',
+        }).catch(() => {});
       } catch (loginUpdateErr: any) {
         console.warn('[AUTH] Vendor login last_login_at update skipped:', loginUpdateErr?.message);
       }
