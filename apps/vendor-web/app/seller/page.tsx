@@ -250,6 +250,7 @@ export default function SellerPage() {
           <div className="px-4 py-4 sm:px-6 sm:py-6">
             <SellerHubMainPanels
               activeTab={activeTab}
+              onTabChange={setActiveTab}
               vendorData={vendorData}
               settingsRef={settingsRef}
               inventoryRef={inventoryRef}

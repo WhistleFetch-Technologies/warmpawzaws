@@ -21,6 +21,8 @@ import { apiClient } from '@/lib/api-client';
 interface SellerDashboardProps {
   sellerId: string;
   sellerName: string;
+  /** Switches Seller Hub to the Orders tab (no full page reload). */
+  onViewAllOrders?: () => void;
 }
 
 /** Normalized dashboard metrics for the seller UI */
@@ -96,7 +98,7 @@ function emptyMetrics(commissionRate = 15): SellerDashboardMetrics {
   };
 }
 
-export function SellerDashboard({ sellerId, sellerName }: SellerDashboardProps) {
+export function SellerDashboard({ sellerId, sellerName, onViewAllOrders }: SellerDashboardProps) {
   const [metrics, setMetrics] = useState<SellerDashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
@@ -402,9 +404,15 @@ export function SellerDashboard({ sellerId, sellerName }: SellerDashboardProps) 
             <h2 className="text-xl font-bold text-slate-900">Recent Orders</h2>
             <p className="text-sm text-slate-500 mt-1">Latest orders from your store</p>
           </div>
-          <button className="text-sm text-orange-600 hover:text-orange-700 font-semibold hover:underline">
-            View All Orders →
-          </button>
+          {onViewAllOrders ? (
+            <button
+              type="button"
+              onClick={onViewAllOrders}
+              className="text-sm text-orange-600 hover:text-orange-700 font-semibold hover:underline"
+            >
+              View All Orders →
+            </button>
+          ) : null}
         </div>
         <div className="divide-y divide-slate-100">
           {recentOrders.length === 0 ? (
