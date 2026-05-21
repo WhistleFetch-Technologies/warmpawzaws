@@ -155,3 +155,29 @@ export function formatVendorMealDeliveryBadge(status: MealDeliveryEffective): st
 export function isTerminalMealDeliveryState(status: MealDeliveryEffective): boolean {
   return status === 'delivered' || status === 'cancelled' || status === 'failed';
 }
+
+/** Rider card / live enrichment only during active delivery phases (Pidge + internal). */
+export function shouldShowDeliveryRider(logisticsStatus: string | null | undefined): boolean {
+  const segs = splitMealStatusSegments(logisticsStatus);
+  const active = new Set([
+    'heading_to_pickup',
+    'at_pickup',
+    'picked_up',
+    'on_the_way',
+    'nearby',
+  ]);
+  return segs.some((s) => active.has(s));
+}
+
+/** Customer-facing delivery headline from raw logistics status (not effective kitchen state). */
+export function mealRiderDeliveryMessage(logisticsStatus: string | null | undefined): string | null {
+  const segs = splitMealStatusSegments(logisticsStatus);
+  if (segs.includes('nearby')) return 'Arriving soon';
+  if (segs.includes('on_the_way') || segs.includes('ofd') || segs.includes('out_for_delivery')) {
+    return 'Out for delivery';
+  }
+  if (segs.includes('picked_up')) return 'Your order has been picked up';
+  if (segs.includes('heading_to_pickup')) return 'Delivery partner assigned';
+  if (segs.includes('at_pickup')) return 'Rider at pickup';
+  return null;
+}

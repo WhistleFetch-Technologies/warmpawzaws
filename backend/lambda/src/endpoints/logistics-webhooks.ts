@@ -24,6 +24,7 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
 import { resolveCustomerMealPlanOrderDisplayTotals } from '../utils/meal-order-pricing';
 import { resolveMealOrderIdForSubscriptionDelivery } from '../utils/resolve-meal-order-for-subscription-delivery';
+import { applyLiveTrackingEnrichmentForCustomer } from '../utils/delivery-tracking-enrichment';
 import { logisticsPartnerService } from '../lib/services/logistics-partner-service';
 import {
   getPidgeCredentials,
@@ -973,8 +974,11 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
         let displayStatus: string = rawOrderStatus;
         let trackingStatusOut: string;
         if (deliveryTracking) {
+          const rawDtStatus = deliveryTracking.status;
           trackingStatusOut =
-            deliveryTracking.status === 'heading_to_pickup' ? 'assigned' : deliveryTracking.status;
+            orderType === 'pharmacy' && rawDtStatus === 'heading_to_pickup'
+              ? 'assigned'
+              : rawDtStatus;
         } else {
           trackingStatusOut = 'pending_assignment';
         }
@@ -995,6 +999,50 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
         const displayTotalAmount =
           mealDisplayTotals != null ? mealDisplayTotals.total : order.total_amount;
 
+        let trackingPayload: Record<string, unknown> | null = deliveryTracking
+          ? {
+              status: trackingStatusOut,
+              deliveryOtp: deliveryTracking.delivery_otp || null,
+              deliveryPerson: {
+                name: deliveryTracking.delivery_person_name,
+                phone: deliveryTracking.delivery_person_phone,
+                photo: deliveryTracking.delivery_person_photo,
+                vehicleNumber: deliveryTracking.vehicle_number,
+              },
+              currentLocation: deliveryTracking.current_lat
+                ? {
+                    lat: parseFloat(deliveryTracking.current_lat),
+                    lng: parseFloat(deliveryTracking.current_lng),
+                  }
+                : null,
+              eta: deliveryTracking.eta_to_delivery_minutes,
+              etaMinutes: deliveryTracking.eta_to_delivery_minutes,
+              distanceRemaining: deliveryTracking.distance_remaining_km,
+              assignedAt: deliveryTracking.assigned_at,
+              pickedUpAt: deliveryTracking.picked_up_at,
+              deliveredAt: deliveryTracking.delivered_at,
+              trackingUrl: deliveryTracking.tracking_url,
+              locationHistory: deliveryTracking.location_history?.slice(0, 20) || [],
+              logistics_partner: deliveryTracking.logistics_partner,
+            }
+          : {
+              status: orderType === 'meal' ? trackingStatusOut : 'pending_assignment',
+              deliveryOtp: null,
+              deliveryPerson: null,
+            };
+
+        if (deliveryTracking && (orderType === 'meal' || orderType === 'pharmacy')) {
+          const enriched = await applyLiveTrackingEnrichmentForCustomer(
+            orderType,
+            String(order.id),
+            trackingPayload,
+            deliveryTracking.logistics_partner
+          );
+          if (enriched) {
+            trackingPayload = enriched;
+          }
+        }
+
         return c.json({
           success: true,
           orderType,
@@ -1008,35 +1056,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
             createdAt: order.created_at,
             created_at: order.created_at,
           },
-          tracking: deliveryTracking ? {
-            // ✅ FIX: Map backend status to frontend-expected status
-            // 'heading_to_pickup' means rider is assigned and heading to vendor → map to 'assigned' for "Rider Assigned"
-            status: trackingStatusOut,
-            deliveryOtp: deliveryTracking.delivery_otp || null,
-            deliveryPerson: {
-              name: deliveryTracking.delivery_person_name,
-              phone: deliveryTracking.delivery_person_phone,
-              photo: deliveryTracking.delivery_person_photo,
-              vehicleNumber: deliveryTracking.vehicle_number,
-            },
-            currentLocation: deliveryTracking.current_lat ? {
-              lat: parseFloat(deliveryTracking.current_lat),
-              lng: parseFloat(deliveryTracking.current_lng),
-            } : null,
-            eta: deliveryTracking.eta_to_delivery_minutes,
-            distanceRemaining: deliveryTracking.distance_remaining_km,
-            assignedAt: deliveryTracking.assigned_at,
-            pickedUpAt: deliveryTracking.picked_up_at,
-            deliveredAt: deliveryTracking.delivered_at,
-            trackingUrl: deliveryTracking.tracking_url,
-            locationHistory: deliveryTracking.location_history?.slice(0, 20) || [],
-          } : {
-            // ✅ FIX: When no delivery_tracking exists, show "Finding Rider" (pending_assignment)
-            // This matches the frontend's deliveryStatusSteps which expects 'pending_assignment' for "Finding Rider"
-            status: orderType === 'meal' ? trackingStatusOut : 'pending_assignment',
-            deliveryOtp: null,
-            deliveryPerson: null,
-          },
+          tracking: trackingPayload,
         });
       }
     } catch (error: any) {

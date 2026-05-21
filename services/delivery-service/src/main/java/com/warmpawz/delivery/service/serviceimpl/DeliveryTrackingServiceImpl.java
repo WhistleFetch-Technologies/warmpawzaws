@@ -9,6 +9,7 @@ import com.warmpawz.delivery.repository.DeliveryLocationHistoryRepository;
 import com.warmpawz.delivery.repository.DeliveryTrackingRepository;
 import com.warmpawz.delivery.service.DeliveryTrackingService;
 import com.warmpawz.delivery.service.OrderStatusJdbcService;
+import com.warmpawz.delivery.tracking.DeliveryTrackingEnrichmentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -34,6 +35,7 @@ public class DeliveryTrackingServiceImpl implements DeliveryTrackingService {
 	private final CourierPartnerRepository courierPartnerRepository;
 	private final OrderStatusJdbcService orderStatusJdbc;
 	private final JdbcTemplate jdbc;
+	private final DeliveryTrackingEnrichmentService trackingEnrichmentService;
 
 	@Override
 	@Transactional
@@ -169,28 +171,9 @@ public class DeliveryTrackingServiceImpl implements DeliveryTrackingService {
 						"lng", rs.getBigDecimal("lng"),
 						"recorded_at", rs.getTimestamp("recorded_at") != null ? rs.getTimestamp("recorded_at").toInstant().toString() : null),
 				trackingId);
-		return Map.of(
-				"success", true,
-				"tracking", Map.of(
-						"id", t.getId(),
-						"status", t.getStatus(),
-						"deliveryPerson", Map.of(
-								"name", nullable(t.getDeliveryPersonName()),
-								"phone", nullable(t.getDeliveryPersonPhone()),
-								"photo", nullable(t.getDeliveryPersonPhoto()),
-								"vehicleNumber", nullable(t.getVehicleNumber())),
-						"currentLocation", t.getCurrentLat() != null ? Map.of(
-								"lat", t.getCurrentLat(),
-								"lng", t.getCurrentLng(),
-								"updatedAt", t.getLastLocationUpdate() != null ? t.getLastLocationUpdate().toString() : null) : null,
-						"eta", t.getEtaToDeliveryMinutes(),
-						"distanceRemaining", t.getDistanceRemainingKm(),
-						"timestamps", Map.of(
-								"assigned", t.getAssignedAt() != null ? t.getAssignedAt().toString() : null,
-								"reachedPickup", t.getReachedPickupAt() != null ? t.getReachedPickupAt().toString() : null,
-								"pickedUp", t.getPickedUpAt() != null ? t.getPickedUpAt().toString() : null,
-								"delivered", t.getDeliveredAt() != null ? t.getDeliveredAt().toString() : null)),
-				"locationHistory", rows);
+		Map<String, Object> tracking = buildTrackingPayload(t);
+		trackingEnrichmentService.enrichIfApplicable(t).ifPresent(en -> trackingEnrichmentService.mergeIntoTrackingMap(tracking, en));
+		return Map.of("success", true, "tracking", tracking, "locationHistory", rows);
 	}
 
 	@Override
@@ -203,16 +186,9 @@ public class DeliveryTrackingServiceImpl implements DeliveryTrackingService {
 			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Tracking not found");
 		}
 		DeliveryTracking t = list.get(0);
-		return Map.of("success", true, "tracking", Map.of(
-				"id", t.getId(),
-				"status", t.getStatus(),
-				"deliveryPerson", Map.of(
-						"name", nullable(t.getDeliveryPersonName()),
-						"phone", nullable(t.getDeliveryPersonPhone()),
-						"photo", nullable(t.getDeliveryPersonPhoto()),
-						"vehicleNumber", nullable(t.getVehicleNumber())),
-				"currentLocation", t.getCurrentLat() != null ? Map.of("lat", t.getCurrentLat(), "lng", t.getCurrentLng()) : null,
-				"eta", t.getEtaToDeliveryMinutes()));
+		Map<String, Object> tracking = buildTrackingPayload(t);
+		trackingEnrichmentService.enrichIfApplicable(t).ifPresent(en -> trackingEnrichmentService.mergeIntoTrackingMap(tracking, en));
+		return Map.of("success", true, "tracking", tracking);
 	}
 
 	@Override
@@ -405,6 +381,45 @@ public class DeliveryTrackingServiceImpl implements DeliveryTrackingService {
 
 	private static String nullable(String s) {
 		return s != null ? s : "";
+	}
+
+	private Map<String, Object> buildTrackingPayload(DeliveryTracking t) {
+		Map<String, Object> deliveryPerson = new LinkedHashMap<>();
+		deliveryPerson.put("name", nullable(t.getDeliveryPersonName()));
+		deliveryPerson.put("phone", nullable(t.getDeliveryPersonPhone()));
+		deliveryPerson.put("photo", nullable(t.getDeliveryPersonPhoto()));
+		deliveryPerson.put("vehicleNumber", nullable(t.getVehicleNumber()));
+
+		Map<String, Object> tracking = new LinkedHashMap<>();
+		tracking.put("id", t.getId());
+		tracking.put("status", t.getStatus());
+		tracking.put("logisticsPartner", nullable(t.getLogisticsPartner()));
+		tracking.put("deliveryPerson", deliveryPerson);
+		if (t.getCurrentLat() != null && t.getCurrentLng() != null) {
+			Map<String, Object> currentLocation = new LinkedHashMap<>();
+			currentLocation.put("lat", t.getCurrentLat());
+			currentLocation.put("lng", t.getCurrentLng());
+			if (t.getLastLocationUpdate() != null) {
+				currentLocation.put("updatedAt", t.getLastLocationUpdate().toString());
+			}
+			tracking.put("currentLocation", currentLocation);
+			tracking.put("location", Map.of(
+					"latitude", t.getCurrentLat().doubleValue(),
+					"longitude", t.getCurrentLng().doubleValue()));
+		}
+		if (t.getEtaToDeliveryMinutes() != null) {
+			tracking.put("eta", t.getEtaToDeliveryMinutes());
+			tracking.put("etaMinutes", t.getEtaToDeliveryMinutes());
+		}
+		tracking.put("distanceRemaining", t.getDistanceRemainingKm());
+		tracking.put("deliveryOtp", t.getDeliveryOtp());
+		tracking.put("trackingUrl", t.getTrackingUrl());
+		tracking.put("timestamps", Map.of(
+				"assigned", t.getAssignedAt() != null ? t.getAssignedAt().toString() : null,
+				"reachedPickup", t.getReachedPickupAt() != null ? t.getReachedPickupAt().toString() : null,
+				"pickedUp", t.getPickedUpAt() != null ? t.getPickedUpAt().toString() : null,
+				"delivered", t.getDeliveredAt() != null ? t.getDeliveredAt().toString() : null));
+		return tracking;
 	}
 
 	private static Map<String, Object> entityToMap(DeliveryTracking t) {

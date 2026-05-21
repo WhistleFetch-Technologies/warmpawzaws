@@ -11,7 +11,10 @@ import {
   MealPlanOrderTrackingUI,
   formatMealOrderDisplayId,
 } from '@/components/customer/tracking/MealPlanOrderTrackingUI';
-import { resolveEffectiveMealDeliveryState } from '@warmpawz/shared-types';
+import {
+  resolveEffectiveMealDeliveryState,
+  shouldShowDeliveryRider,
+} from '@warmpawz/shared-types';
 
 interface DeliveryPerson {
   name: string;
@@ -59,7 +62,7 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
 
   useEffect(() => {
     loadOrderAndTracking();
-    const interval = setInterval(loadOrderAndTracking, 5000); // Poll every 5 seconds
+    const interval = setInterval(loadOrderAndTracking, 18000);
     return () => clearInterval(interval);
   }, [orderId]);
 
@@ -147,22 +150,18 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
 
   if (orderType === 'meal') {
     const logisticsStatus = tracking?.status ?? null;
-    const riderStatuses = [
-      'assigned',
-      'heading_to_pickup',
-      'at_pickup',
-      'picked_up',
-      'on_the_way',
-      'nearby',
-    ];
     const deliveryEff = resolveEffectiveMealDeliveryState(order.status, logisticsStatus);
     const isDelivered = deliveryEff === 'delivered';
     const riderActive =
       deliveryEff === 'picked_up' ||
       deliveryEff === 'on_the_way' ||
-      (!!logisticsStatus &&
-        logisticsStatus !== 'pending_assignment' &&
-        riderStatuses.includes(logisticsStatus));
+      shouldShowDeliveryRider(logisticsStatus);
+    const riderName =
+      tracking?.rider?.name?.trim() || tracking?.deliveryPerson?.name?.trim() || '';
+    const riderPhone =
+      tracking?.rider?.phone?.trim() || tracking?.deliveryPerson?.phone?.trim() || '';
+    const showRiderCard =
+      !isDelivered && shouldShowDeliveryRider(logisticsStatus) && Boolean(riderName);
     const otp = tracking?.deliveryOtp;
     const totalAmt =
       order.total_amount ?? order.totalAmount ?? order.total ?? order.amount;
@@ -206,11 +205,11 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
             ) : undefined
           }
           deliveryPartnerCard={
-            tracking?.deliveryPerson && !isDelivered ? (
+            showRiderCard ? (
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100/80">
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-gradient-to-br from-emerald-100 to-teal-50 rounded-full flex items-center justify-center text-teal-700 text-xl font-bold shrink-0">
-                    {tracking.deliveryPerson.photo ? (
+                    {tracking?.deliveryPerson?.photo ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
                         src={tracking.deliveryPerson.photo}
@@ -218,25 +217,29 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
                         className="w-full h-full rounded-full object-cover"
                       />
                     ) : (
-                      tracking.deliveryPerson.name?.charAt(0) || 'D'
+                      riderName.charAt(0) || 'D'
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900">{tracking.deliveryPerson.name}</p>
+                    <p className="font-semibold text-gray-900">{riderName}</p>
                     <p className="text-sm text-gray-500">
-                      {(tracking.deliveryPerson as { vehicle_number?: string }).vehicle_number ||
-                        tracking.deliveryPerson.vehicleNumber ||
+                      {tracking?.rider?.vehicleType ||
+                        (tracking?.deliveryPerson as { vehicleType?: string })?.vehicleType ||
+                        (tracking?.deliveryPerson as { vehicle_number?: string })?.vehicle_number ||
+                        tracking?.deliveryPerson?.vehicleNumber ||
                         'Delivery partner'}
                     </p>
                   </div>
                   <div className="flex gap-2 shrink-0">
+                    {riderPhone ? (
                     <a
-                      href={`tel:${tracking.deliveryPerson.phone}`}
+                      href={`tel:${riderPhone}`}
                       className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center"
                       aria-label="Call delivery partner"
                     >
                       <Phone className="w-5 h-5 text-green-600" />
                     </a>
+                    ) : null}
                     <button
                       type="button"
                       className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center"

@@ -5,6 +5,7 @@ import { Check, Package, Truck, MapPin } from 'lucide-react';
 import {
   resolveEffectiveMealDeliveryState,
   splitMealStatusSegments,
+  mealRiderDeliveryMessage,
   type MealDeliveryEffective,
 } from '@warmpawz/shared-types';
 
@@ -70,10 +71,12 @@ export function mealHeroHeadline(
   if (eff === 'cancelled') return 'Cancelled';
   if (eff === 'failed') return 'Delivery issue — support will assist';
 
+  const riderMsg = mealRiderDeliveryMessage(logisticsStatus);
+  if (riderMsg) return riderMsg;
+
   const segs = splitMealStatusSegments(logisticsStatus);
   if (segs.includes('pending_assignment')) return 'Finding delivery partner…';
-  if (segs.includes('assigned') || segs.includes('heading_to_pickup')) return 'Rider heading to pickup…';
-  if (segs.includes('at_pickup')) return 'Rider at pickup…';
+  if (segs.includes('assigned')) return 'Rider heading to pickup…';
 
   switch (eff) {
     case 'pending':

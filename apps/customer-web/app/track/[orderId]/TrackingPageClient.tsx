@@ -11,7 +11,10 @@ import {
   MealPlanOrderTrackingUI,
   formatMealOrderDisplayId,
 } from '@/components/customer/tracking/MealPlanOrderTrackingUI';
-import { resolveEffectiveMealDeliveryState } from '@warmpawz/shared-types';
+import {
+  resolveEffectiveMealDeliveryState,
+  shouldShowDeliveryRider,
+} from '@warmpawz/shared-types';
 
 interface TrackingData {
   success: boolean;
@@ -47,9 +50,17 @@ interface TrackingData {
       phone: string;
       photo?: string;
       vehicleNumber?: string;
+      vehicleType?: string;
+    };
+    rider?: {
+      name?: string;
+      phone?: string;
+      vehicleType?: string;
+      vehicleNumber?: string;
     };
     deliveryOtp?: string | null;
     eta?: number;
+    etaMinutes?: number;
     distanceRemaining?: number;
     locationHistory?: Array<{ lat: number; lng: number; time: string }>;
   } | null;
@@ -113,7 +124,7 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
       if (tracking?.tracking?.status && !['delivered', 'cancelled', 'returned'].includes(tracking.tracking.status)) {
         loadTracking(true);
       }
-    }, 30000);
+    }, 18000);
 
     return () => clearInterval(interval);
   }, [resolvedOrderId, phone]);
@@ -224,11 +235,18 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
     const riderActive =
       mealDeliveryEff === 'picked_up' ||
       mealDeliveryEff === 'on_the_way' ||
-      (!!logisticsStatus &&
-        logisticsStatus !== 'pending_assignment' &&
-        ['assigned', 'heading_to_pickup', 'at_pickup', 'picked_up', 'on_the_way', 'nearby'].includes(
-          logisticsStatus,
-        ));
+      shouldShowDeliveryRider(logisticsStatus);
+    const riderName =
+      tracking.tracking?.rider?.name?.trim() ||
+      tracking.tracking?.deliveryPerson?.name?.trim() ||
+      '';
+    const riderPhone =
+      tracking.tracking?.rider?.phone?.trim() ||
+      tracking.tracking?.deliveryPerson?.phone?.trim() ||
+      '';
+    const showRiderCard =
+      !isDelivered && shouldShowDeliveryRider(logisticsStatus) && Boolean(riderName);
+    const etaMinutes = tracking.tracking?.etaMinutes ?? tracking.tracking?.eta;
 
     return (
       <MealPlanOrderTrackingUI
@@ -278,11 +296,11 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
           ) : undefined
         }
         deliveryPartnerCard={
-          tracking.tracking?.deliveryPerson ? (
+          showRiderCard ? (
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100/80">
               <div className="flex items-center gap-4">
                 <div className="w-14 h-14 bg-gradient-to-br from-emerald-100 to-teal-50 rounded-full flex items-center justify-center shrink-0">
-                  {tracking.tracking.deliveryPerson.photo ? (
+                  {tracking.tracking?.deliveryPerson?.photo ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
                       src={tracking.tracking.deliveryPerson.photo}
@@ -294,24 +312,33 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900">{tracking.tracking.deliveryPerson.name}</p>
+                  <p className="font-semibold text-gray-900">{riderName}</p>
                   <p className="text-sm text-gray-500">
-                    {tracking.tracking.deliveryPerson.vehicleNumber || 'Delivery partner'}
+                    {[
+                      tracking.tracking?.rider?.vehicleType ||
+                        tracking.tracking?.deliveryPerson?.vehicleType,
+                      tracking.tracking?.rider?.vehicleNumber ||
+                        tracking.tracking?.deliveryPerson?.vehicleNumber,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ') || 'Delivery partner'}
                   </p>
                 </div>
-                <a
-                  href={`tel:${tracking.tracking.deliveryPerson.phone}`}
-                  className="p-3 bg-green-100 text-green-600 rounded-xl hover:bg-green-200 transition shrink-0"
-                  aria-label="Call delivery partner"
-                >
-                  <Phone className="w-5 h-5" />
-                </a>
+                {riderPhone ? (
+                  <a
+                    href={`tel:${riderPhone}`}
+                    className="p-3 bg-green-100 text-green-600 rounded-xl hover:bg-green-200 transition shrink-0"
+                    aria-label="Call delivery partner"
+                  >
+                    <Phone className="w-5 h-5" />
+                  </a>
+                ) : null}
               </div>
-              {tracking.tracking.eta ? (
+              {etaMinutes != null && Number.isFinite(Number(etaMinutes)) ? (
                 <div className="mt-4 flex items-center gap-3 p-3 bg-teal-50 rounded-xl border border-teal-100">
                   <Clock className="w-5 h-5 text-teal-600 shrink-0" />
                   <p className="text-sm font-medium text-teal-900">
-                    Arriving in ~{tracking.tracking.eta} minutes
+                    Arriving in ~{etaMinutes} minutes
                   </p>
                 </div>
               ) : null}
