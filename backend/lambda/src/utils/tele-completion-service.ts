@@ -176,21 +176,22 @@ export async function resolveCallTimerStateForBooking(
   const serviceDurationSeconds = serviceDurationMinutes * 60;
   const bothPresent = session ? areBothParticipantsPresent(session) : false;
   const runningSince = session ? parseTs(session.call_timer_running_since) : null;
-  const timerBaseSeconds =
-    session?.call_timer_remaining_seconds != null
-      ? Math.max(0, Number(session.call_timer_remaining_seconds))
-      : null;
-  const consultationStartedAt =
-    parseTs(session?.consultation_started_at) ??
-    (session && bothPresent
-      ? runningSince ??
-        (() => {
+  const bothJoinedAt =
+    session && bothPresent
+      ? (() => {
           const c = parseTs(session.customer_joined_at);
           const v = parseTs(session.vendor_joined_at);
           if (!c || !v) return null;
           return new Date(Math.max(c.getTime(), v.getTime()));
         })()
-      : null);
+      : null;
+  const effectiveRunningSince = runningSince ?? bothJoinedAt;
+  const timerBaseSeconds =
+    session?.call_timer_remaining_seconds != null
+      ? Math.max(0, Number(session.call_timer_remaining_seconds))
+      : null;
+  const consultationStartedAt =
+    parseTs(session?.consultation_started_at) ?? bothJoinedAt ?? effectiveRunningSince;
 
   return {
     serviceDurationMinutes,
@@ -199,8 +200,13 @@ export async function resolveCallTimerStateForBooking(
     callRemainingSeconds: computePausableCallRemaining(session, serviceDurationSeconds, now),
     consultationActive: bothPresent,
     timerPaused: !bothPresent,
-    timerRunningSince: bothPresent && runningSince ? runningSince.toISOString() : null,
-    timerBaseSeconds,
+    timerRunningSince:
+      bothPresent && effectiveRunningSince ? effectiveRunningSince.toISOString() : null,
+    timerBaseSeconds:
+      timerBaseSeconds ??
+      (bothPresent && effectiveRunningSince
+        ? computePausableCallRemaining(session, serviceDurationSeconds, now)
+        : null),
   };
 }
 

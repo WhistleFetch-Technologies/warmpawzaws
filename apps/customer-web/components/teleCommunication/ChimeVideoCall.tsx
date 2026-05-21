@@ -450,16 +450,23 @@ export function ChimeVideoCall({
     callSlotSecondsRef.current = slot;
     timerPausedRef.current = !!callTimer.timerPaused;
 
-    const running = !callTimer.timerPaused && !!callTimer.timerRunningSince;
+    const running =
+      !callTimer.timerPaused &&
+      (!!callTimer.timerRunningSince ||
+        !!callTimer.consultationStartedAt ||
+        !!callTimer.consultationActive);
 
     if (running) {
-      if (callTimer.timerRunningSince) {
-        consultationStartedAtRef.current = callTimer.timerRunningSince;
-      }
+      timerPausedRef.current = false;
+      consultationStartedAtRef.current =
+        callTimer.timerRunningSince ??
+        callTimer.consultationStartedAt ??
+        consultationStartedAtRef.current;
       if (callTimer.timerBaseSeconds != null) {
         timerBaseSecondsRef.current = callTimer.timerBaseSeconds;
       } else if (timerBaseSecondsRef.current == null) {
-        timerBaseSecondsRef.current = slot;
+        timerBaseSecondsRef.current =
+          callTimer.callRemainingSeconds != null ? callTimer.callRemainingSeconds : slot;
       }
     } else {
       consultationStartedAtRef.current = null;
@@ -553,7 +560,7 @@ export function ChimeVideoCall({
       // Start polling for attendee status
       startStatusPolling();
 
-      if (response.callTimer?.consultationActive && response.callTimer?.timerRunningSince) {
+      if (response.callTimer?.consultationActive && !response.callTimer?.timerPaused) {
         startCallTimer();
       }
 
@@ -1004,9 +1011,10 @@ export function ChimeVideoCall({
 
           if (response.customerJoined && response.vendorJoined) {
             setStatus((prev) => (prev === 'waiting' || prev === 'connecting' ? 'active' : prev));
-            if (response.callTimer?.consultationActive && response.callTimer?.timerRunningSince) {
+            const ct = response.callTimer;
+            if (ct && !ct.timerPaused && (ct.callRemainingSeconds ?? 0) > 0) {
               startCallTimer();
-            } else if (response.callTimer?.timerPaused) {
+            } else if (ct?.timerPaused) {
               if (callTimerRef.current) {
                 clearInterval(callTimerRef.current);
                 callTimerRef.current = null;

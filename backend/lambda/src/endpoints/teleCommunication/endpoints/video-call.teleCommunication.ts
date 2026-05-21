@@ -63,6 +63,16 @@ async function trackParticipantJoined(
   );
 }
 
+/** Every join success path must include server-backed callTimer (duration + pausable countdown). */
+async function buildJoinSuccessBody(
+  bookingId: string,
+  body: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const refreshedSession = await loadLatestSessionForBooking(bookingId);
+  const callTimer = await resolveCallTimerStateForBooking(bookingId, refreshedSession);
+  return { success: true, ...body, callTimer };
+}
+
 // ============================================================================
 // VIDEO CALL HANDLERS
 // ============================================================================
@@ -538,17 +548,18 @@ class JoinMeetingHandler extends BaseHandler {
           }
 
           await trackParticipantJoined(raceActiveSession.id, userType, bookingId, cid);
-          return this.success({
-            success: true,
-            meetingId: raceActiveSession.meeting_id,
-            meeting: {
-              MeetingId: meetingInfo.MeetingId,
-              MediaPlacement: meetingInfo.MediaPlacement,
-              MediaRegion: meetingInfo.MediaRegion,
-            },
-            attendee: raceAttendee,
-            session: { id: raceActiveSession.id, status: raceActiveSession.status },
-          });
+          return this.success(
+            await buildJoinSuccessBody(bookingId, {
+              meetingId: raceActiveSession.meeting_id,
+              meeting: {
+                MeetingId: meetingInfo.MeetingId,
+                MediaPlacement: meetingInfo.MediaPlacement,
+                MediaRegion: meetingInfo.MediaRegion,
+              },
+              attendee: raceAttendee,
+              session: { id: raceActiveSession.id, status: raceActiveSession.status },
+            })
+          );
         }
 
         // Check for ANY existing session (completed/ended/cancelled) - UNIQUE(booking_id) means we must update, not insert
@@ -573,6 +584,15 @@ class JoinMeetingHandler extends BaseHandler {
             customer_join_token: null,
             vendor_attendee_id: null,
             vendor_join_token: null,
+            customer_joined_at: null,
+            vendor_joined_at: null,
+            customer_left_at: null,
+            vendor_left_at: null,
+            consultation_started_at: null,
+            call_timer_remaining_seconds: null,
+            call_timer_running_since: null,
+            overlap_segment_started_at: null,
+            overlap_duration_seconds: 0,
           };
           if (userType === UserType.CUSTOMER) {
             updateData.customer_attendee_id = newAttendee.AttendeeId;
@@ -632,17 +652,18 @@ class JoinMeetingHandler extends BaseHandler {
 
         vidlog('join', 'create-on-join-success', { bookingId, meetingId: newMeetingId }, cid);
         await trackParticipantJoined(session?.id, userType, bookingId, cid);
-        return this.success({
-          success: true,
-          meetingId: newMeetingId,
-          meeting: {
-            MeetingId: meetingResponse.Meeting.MeetingId,
-            MediaPlacement: meetingResponse.Meeting.MediaPlacement,
-            MediaRegion: meetingResponse.Meeting.MediaRegion,
-          },
-          attendee: newAttendee,
-          session: { id: session.id, status: session.status },
-        });
+        return this.success(
+          await buildJoinSuccessBody(bookingId, {
+            meetingId: newMeetingId,
+            meeting: {
+              MeetingId: meetingResponse.Meeting.MeetingId,
+              MediaPlacement: meetingResponse.Meeting.MediaPlacement,
+              MediaRegion: meetingResponse.Meeting.MediaRegion,
+            },
+            attendee: newAttendee,
+            session: { id: session.id, status: session.status },
+          })
+        );
       }
 
       const chimeClient = new ChimeSDKMeetingsClient({
@@ -706,17 +727,18 @@ class JoinMeetingHandler extends BaseHandler {
         await update('video_call_sessions', { id: session.id }, updateData);
         await update('bookings', { id: bookingId }, { video_call_meeting_id: newMeetingId, video_call_started_at: new Date().toISOString() });
         await trackParticipantJoined(session.id, userType, bookingId, cid);
-        return this.success({
-          success: true,
-          meetingId: newMeetingId,
-          meeting: {
-            MeetingId: createResponse.Meeting.MeetingId,
-            MediaPlacement: createResponse.Meeting.MediaPlacement,
-            MediaRegion: createResponse.Meeting.MediaRegion,
-          },
-          attendee: newAttendee,
-          session: { id: session.id, status: session.status },
-        });
+        return this.success(
+          await buildJoinSuccessBody(bookingId, {
+            meetingId: newMeetingId,
+            meeting: {
+              MeetingId: createResponse.Meeting.MeetingId,
+              MediaPlacement: createResponse.Meeting.MediaPlacement,
+              MediaRegion: createResponse.Meeting.MediaRegion,
+            },
+            attendee: newAttendee,
+            session: { id: session.id, status: session.status },
+          })
+        );
       }
 
       if (!meetingInfo || !meetingInfo.MediaPlacement) {
@@ -766,27 +788,25 @@ class JoinMeetingHandler extends BaseHandler {
 
       vidlog('join', 'success', { bookingId, meetingId: session.meeting_id, participantType: userType }, cid);
       await trackParticipantJoined(session.id, userType, bookingId, cid);
-      const refreshedSession = await loadLatestSessionForBooking(bookingId);
-      const callTimer = await resolveCallTimerStateForBooking(bookingId, refreshedSession);
-      return this.success({
-        success: true,
-        meetingId: session.meeting_id,
-        meeting: {
-          MeetingId: meetingInfo.MeetingId,
-          MediaPlacement: meetingInfo.MediaPlacement,
-          MediaRegion: meetingInfo.MediaRegion,
-        },
-        attendee: {
-          AttendeeId: attendee.AttendeeId,
-          JoinToken: attendee.JoinToken,
-          ExternalUserId: attendee.ExternalUserId,
-        },
-        session: {
-          id: session.id,
-          status: session.status,
-        },
-        callTimer,
-      });
+      return this.success(
+        await buildJoinSuccessBody(bookingId, {
+          meetingId: session.meeting_id,
+          meeting: {
+            MeetingId: meetingInfo.MeetingId,
+            MediaPlacement: meetingInfo.MediaPlacement,
+            MediaRegion: meetingInfo.MediaRegion,
+          },
+          attendee: {
+            AttendeeId: attendee.AttendeeId,
+            JoinToken: attendee.JoinToken,
+            ExternalUserId: attendee.ExternalUserId,
+          },
+          session: {
+            id: session.id,
+            status: session.status,
+          },
+        })
+      );
     } catch (error: any) {
       // ✅ CRITICAL: If vendor was joining and something went wrong, ensure available_for_instant_tele stays false
       if (vendorIdForCleanup) {
