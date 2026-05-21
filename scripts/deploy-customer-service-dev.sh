@@ -22,8 +22,22 @@ ECS_SERVICE="${ECS_SERVICE:-warmpawz-dev-customer-svc}"
 ECS_TASK_FAMILY="${ECS_TASK_FAMILY:-warmpawz-dev-customer-task}"
 ECS_CONTAINER_NAME="${ECS_CONTAINER_NAME:-customer-service}"
 IMAGE_TAG="${IMAGE_TAG:-$(date +%Y%m%d%H%M%S)}"
-MAVEN_WRAPPER="${MAVEN_WRAPPER:-./mvnw}"
+resolve_maven_wrapper() {
+  local dir="$1"
+  if [[ -f "$dir/mvnw" ]]; then
+    echo "$dir/mvnw"
+  elif [[ -f "$dir/mvnw.cmd" ]]; then
+    echo "$dir/mvnw.cmd"
+  elif [[ -f "$PROJECT_ROOT/services/booking-service/mvnw" ]]; then
+    echo "$PROJECT_ROOT/services/booking-service/mvnw"
+  elif [[ -f "$PROJECT_ROOT/services/booking-service/mvnw.cmd" ]]; then
+    echo "$PROJECT_ROOT/services/booking-service/mvnw.cmd"
+  else
+    echo "$dir/mvnw"
+  fi
+}
 JIB_GOAL="${JIB_GOAL:-com.google.cloud.tools:jib-maven-plugin:3.4.5:build}"
+JIB_MAIN_CLASS="${JIB_MAIN_CLASS:-com.warmpawz.customer.CustomerServiceApplication}"
 
 IMAGE_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG"
 TMP_DIR="$PROJECT_ROOT/.deploy-customer-service-tmp-$$-$RANDOM"
@@ -85,6 +99,7 @@ aws ecr describe-repositories \
 
 echo "Packaging customer-service..."
 cd "$SERVICE_DIR"
+MAVEN_WRAPPER="${MAVEN_WRAPPER:-$(resolve_maven_wrapper "$SERVICE_DIR")}"
 "$MAVEN_WRAPPER" -DskipTests package
 
 echo "Building and pushing image with Jib (no local Docker daemon required)..."
@@ -92,7 +107,8 @@ ECR_PASSWORD="$(aws ecr get-login-password --region "$AWS_REGION")"
 "$MAVEN_WRAPPER" -DskipTests compile "$JIB_GOAL" \
   -Djib.to.image="$IMAGE_URI" \
   -Djib.to.auth.username=AWS \
-  -Djib.to.auth.password="$ECR_PASSWORD"
+  -Djib.to.auth.password="$ECR_PASSWORD" \
+  -Djib.container.mainClass="$JIB_MAIN_CLASS"
 
 echo "Resolving current ECS task definition..."
 CURRENT_TASK_DEFINITION="$(
@@ -124,6 +140,9 @@ export TASK_TARGET="$TASK_JSON"
 # client work. Dev default is the dev HTTP API gateway; override via env when needed.
 API_BASE_URL_VALUE="${API_BASE_URL:-https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com}"
 export ECS_TASK_FAMILY ECS_CONTAINER_NAME IMAGE_URI API_BASE_URL_VALUE
+export SPRING_JPA_HIBERNATE_DDL_AUTO="${SPRING_JPA_HIBERNATE_DDL_AUTO:-none}"
+export APP_SECURITY_UAT_JWT_ENABLED="${APP_SECURITY_UAT_JWT_ENABLED:-true}"
+export UAT_JWT_SECRET="${UAT_JWT_SECRET:-uat-secret-key-change-in-production}"
 node <<'NODE'
 const fs = require('fs');
 const task = JSON.parse(fs.readFileSync(process.env.TASK_SOURCE, 'utf8'));
@@ -159,6 +178,9 @@ const upsertEnv = (name, value) => {
   else target.environment.push({ name, value });
 };
 upsertEnv('API_BASE_URL', process.env.API_BASE_URL_VALUE);
+upsertEnv('SPRING_JPA_HIBERNATE_DDL_AUTO', process.env.SPRING_JPA_HIBERNATE_DDL_AUTO || 'none');
+upsertEnv('APP_SECURITY_UAT_JWT_ENABLED', process.env.APP_SECURITY_UAT_JWT_ENABLED || 'true');
+upsertEnv('UAT_JWT_SECRET', process.env.UAT_JWT_SECRET || 'uat-secret-key-change-in-production');
 fs.writeFileSync(process.env.TASK_TARGET, JSON.stringify(task, null, 2));
 NODE
 

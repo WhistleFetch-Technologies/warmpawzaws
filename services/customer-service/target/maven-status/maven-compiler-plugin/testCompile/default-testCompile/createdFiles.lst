@@ -1,0 +1,15 @@
+com\warmpawz\customer\controller\CustomerSecurityEnabledTest.class
+com\warmpawz\customer\service\PetServiceImplTest.class
+com\warmpawz\customer\service\IdempotencyServiceImplTest.class
+com\warmpawz\customer\ApplicationTests.class
+com\warmpawz\customer\controller\CustomerApiCompatibilityControllerTest.class
+com\warmpawz\customer\controller\CustomerSecurityDisabledTest.class
+com\warmpawz\customer\service\CustomerAddressServiceImplTest$1.class
+com\warmpawz\customer\service\CustomerServiceImplTest.class
+com\warmpawz\customer\service\CustomerAddressServiceImplTest.class
+com\warmpawz\customer\service\GoogleMapsServiceImplTest.class
+com\warmpawz\customer\controller\CustomerUatJwtSecurityTest.class
+com\warmpawz\customer\service\PetServiceImplTest$1.class
+com\warmpawz\customer\service\CustomerServiceImplTest$1.class
+com\warmpawz\customer\telemetry\SqlTelemetryFilterTest.class
+com\warmpawz\customer\config\CacheConfigTest.class

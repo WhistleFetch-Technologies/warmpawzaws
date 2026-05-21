@@ -1,0 +1,6 @@
+# Copy to customer-stack.auto.tfvars in this directory (gitignored as *.tfvars)
+#
+# enable_customer_stack  = true
+# customer_service_image = "057442119249.dkr.ecr.ap-south-1.amazonaws.com/warmpawz-dev-customer-svc:latest"
+#
+# Keep booking stack enabled when applying (see booking-stack.auto.tfvars.example).

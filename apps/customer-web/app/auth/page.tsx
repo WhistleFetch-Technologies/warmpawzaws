@@ -342,7 +342,9 @@ function AuthPageContent() {
         const phoneKey = localStorage.getItem('customerPhone') || digits;
         if (phoneKey && phoneKey.length >= 10) {
           const profileResponse = await apiClient.get<any>(
-            `/customer/profile/unified/${encodeURIComponent(phoneKey)}`
+            `/customer/profile/unified/${encodeURIComponent(phoneKey)}`,
+            undefined,
+            { suppressForcedLogout: true }
           );
           if (profileResponse?.profile) {
             localStorage.setItem('customerData', JSON.stringify(profileResponse.profile));

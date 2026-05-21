@@ -529,6 +529,17 @@ resource "aws_vpc_security_group_ingress_rule" "secretsmanager_vpce_from_booking
   to_port                      = 443
 }
 
+resource "aws_vpc_security_group_ingress_rule" "secretsmanager_vpce_from_customer_ecs" {
+  for_each = local.customer_stack_live ? toset(data.aws_vpc_endpoint.secretsmanager.security_group_ids) : toset([])
+
+  security_group_id            = each.value
+  referenced_security_group_id = module.customer_service_ecs[0].ecs_task_security_group_id
+  description                  = "customer-service ECS tasks read RDS secret via Secrets Manager VPCE"
+  ip_protocol                  = "tcp"
+  from_port                    = 443
+  to_port                      = 443
+}
+
 # Cognito Module
 module "cognito" {
   source = "../../modules/cognito"
