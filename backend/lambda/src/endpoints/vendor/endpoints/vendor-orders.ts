@@ -14,6 +14,7 @@
 
 import { Hono } from 'hono';
 import { select, query } from '../../../database/rds-connection';
+import { triggerAutoShipment } from '../../../utils/logistics/trigger-auto-shipment';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
@@ -484,6 +485,12 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       const updateQuery = `UPDATE orders SET ${updates.join(', ')} WHERE id = $2 AND vendor_id = $3`;
       await query(updateQuery, params);
 
+      if (status === 'confirmed' && currentStatus === 'pending') {
+        triggerAutoShipment(orderId, 'ecommerce').catch((e) =>
+          console.error('[VENDOR-ORDERS] Auto-shipment trigger failed:', e)
+        );
+      }
+
       return c.json({ 
         success: true, 
         message: `Order status updated to ${status}`,
@@ -577,6 +584,12 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         `UPDATE orders SET ${setClauses.join(', ')} WHERE id = $${values.length - 1} AND vendor_id = $${values.length}`,
         values
       );
+
+      if (status === 'confirmed' && currentStatus === 'pending') {
+        triggerAutoShipment(orderId, 'ecommerce').catch((e) =>
+          console.error('[VENDOR-ORDERS] Auto-shipment trigger failed:', e)
+        );
+      }
 
       return c.json({ 
         success: true, 

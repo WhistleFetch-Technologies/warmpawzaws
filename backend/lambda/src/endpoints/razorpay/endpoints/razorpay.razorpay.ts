@@ -1046,8 +1046,7 @@ class VerifyPaymentHandler extends BaseHandler {
           const updateResult = await client.query(
             `UPDATE orders SET
               payment_status = 'paid',
-              order_status = 'confirmed',
-              payment_id = $2,
+              payment_id = COALESCE(payment_id, $2),
               updated_at = NOW()
             WHERE id = $1::uuid
             RETURNING id, payment_status, order_status`,
@@ -1055,11 +1054,15 @@ class VerifyPaymentHandler extends BaseHandler {
           );
 
           if (updateResult.rows.length === 0) {
-            console.error('[PAYMENT-VERIFY] ❌ Ecommerce order not found:', ecommerceOrderId);
-            throw new Error(`Order ${ecommerceOrderId} not found`);
+            const { rows: existing } = await client.query(
+              `SELECT id FROM orders WHERE id = $1::uuid LIMIT 1`,
+              [ecommerceOrderId]
+            );
+            if (existing.length === 0) {
+              console.error('[PAYMENT-VERIFY] ❌ Ecommerce order not found:', ecommerceOrderId);
+              throw new Error(`Order ${ecommerceOrderId} not found`);
+            }
           }
-
-          ecommerceOrderForShipment = String(ecommerceOrderId);
 
           return {
             success: true,
@@ -1312,12 +1315,11 @@ class VerifyPaymentHandler extends BaseHandler {
             await query(
               `UPDATE orders SET
                 payment_status = 'paid',
-                order_status = CASE WHEN order_status = 'pending' THEN 'confirmed' ELSE order_status END,
                 updated_at = NOW()
               WHERE id = $1::uuid AND payment_status != 'paid'`,
               [paymentRows[0].order_id]
             );
-            console.log('[PAYMENT-VERIFY] ⚠️ Best-effort ecommerce order update:', paymentRows[0].order_id);
+            console.log('[PAYMENT-VERIFY] ⚠️ Best-effort ecommerce payment update:', paymentRows[0].order_id);
           } else if (paymentRows.length > 0 && paymentRows[0].booking_id) {
             await query(
               `UPDATE bookings SET 
@@ -1472,13 +1474,11 @@ class RazorpayWebhookHandler extends BaseHandler {
           await client.query(
             `UPDATE orders SET
               payment_status = 'paid',
-              order_status = 'confirmed',
               payment_id = COALESCE(payment_id, $2),
               updated_at = NOW()
             WHERE id = $1::uuid AND payment_status != 'paid'`,
             [paymentRecord.order_id, paymentRecord.id]
           );
-          ecommerceOrderForShipment = String(paymentRecord.order_id);
         }
       });
 

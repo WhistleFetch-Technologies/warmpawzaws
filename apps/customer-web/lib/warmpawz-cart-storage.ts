@@ -53,6 +53,50 @@ export function clearWarmpawzCartStorage(): void {
   emitWarmpawzCartUpdated();
 }
 
+/** Set absolute line quantity (PDP +/-, Update Cart). Removes line when quantity is 0. */
+export function setLineQuantityInWarmpawzCartStorage(params: {
+  lineId: string;
+  quantity: number;
+  product: WarmpawzCartProductSnapshot;
+  selectedVariations?: Record<string, string>;
+}): boolean {
+  if (typeof window === 'undefined' || !params.lineId) return false;
+  const qty = Math.max(0, Math.floor(params.quantity));
+  try {
+    const cart = readWarmpawzCartLines();
+    const existingIndex = cart.findIndex(
+      (item) => String(item.product_id) === String(params.lineId)
+    );
+
+    if (qty <= 0) {
+      if (existingIndex >= 0) cart.splice(existingIndex, 1);
+    } else if (existingIndex >= 0) {
+      cart[existingIndex].quantity = qty;
+      cart[existingIndex].product = params.product;
+      if (params.selectedVariations && Object.keys(params.selectedVariations).length > 0) {
+        cart[existingIndex].selected_variations = params.selectedVariations;
+      }
+    } else {
+      cart.push({
+        product_id: params.lineId,
+        product: params.product,
+        quantity: qty,
+        selected_variations:
+          params.selectedVariations && Object.keys(params.selectedVariations).length > 0
+            ? params.selectedVariations
+            : undefined,
+      });
+    }
+
+    localStorage.setItem(WARMPAWZ_CART_KEY, JSON.stringify(cart));
+    emitWarmpawzCartUpdated();
+    return true;
+  } catch (e) {
+    console.error('[warmpawz_cart] set quantity failed', e);
+    return false;
+  }
+}
+
 export function mergeLineIntoWarmpawzCartStorage(params: {
   lineId: string;
   quantity: number;

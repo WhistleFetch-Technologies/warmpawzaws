@@ -4,6 +4,11 @@ import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, MapPin, Star, ChevronRight, User, Heart, Settings, LogOut, FileText, Package, Gift, Coins } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import {
+  CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE,
+  isCustomerEcommerceEnabled,
+} from '@/lib/customer-ecommerce-flag';
+import { toast } from 'sonner';
 
 interface Booking {
   id: string;
@@ -249,16 +254,24 @@ export function CustomerSidebar({
 
               <button 
                 onClick={() => {
+                  if (!isCustomerEcommerceEnabled()) {
+                    toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
+                    return;
+                  }
                   onNavigate?.('order_history');
                   onClose();
                 }}
-                className="w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-all"
+                className={`w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-xl transition-all ${
+                  isCustomerEcommerceEnabled() ? 'hover:bg-gray-50' : 'opacity-60'
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-gradient-to-br from-green-100 to-green-200 rounded-full flex items-center justify-center">
                     <Package className="w-5 h-5 text-green-600" />
                   </div>
-                  <span className="font-medium text-gray-800">My Orders</span>
+                  <span className="font-medium text-gray-800">
+                    My Orders{!isCustomerEcommerceEnabled() ? ' (Soon)' : ''}
+                  </span>
                 </div>
                 <ChevronRight className="w-5 h-5 text-gray-400" />
               </button>

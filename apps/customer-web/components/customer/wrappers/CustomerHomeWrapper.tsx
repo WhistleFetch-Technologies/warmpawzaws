@@ -95,6 +95,11 @@ import {
 import { pickCustomerVendorAccountId, firstNonEmptyString } from '@warmpawz/shared-types';
 import { useNotificationService } from '../useNotificationService';
 import { toast } from 'sonner';
+import {
+  CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE,
+  isCustomerEcommerceEnabled,
+  isCustomerEcommerceScreen,
+} from '@/lib/customer-ecommerce-flag';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { useCart } from '@/context/CartContext';
 import { MyBookings } from '../booking/MyBookings';
@@ -694,6 +699,10 @@ export function CustomerHomeWrapper({
   };
 
   const goToShopFromParent = (opts?: { category?: string }) => {
+    if (!isCustomerEcommerceEnabled()) {
+      toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
+      return;
+    }
     if (!SHOP_SUBFLOW_SCREENS.has(currentScreen)) {
       setShopReturnScreen(currentScreen);
     }
@@ -833,7 +842,13 @@ export function CustomerHomeWrapper({
     else if (service === 'shop') {
       goToShopFromParent();
     }
-    else if (service === 'cart') setCurrentScreen('cart');
+    else if (service === 'cart') {
+      if (!isCustomerEcommerceEnabled()) {
+        toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
+        return;
+      }
+      setCurrentScreen('cart');
+    }
     else if (service === 'my-bookings' || service === 'bookings') setCurrentScreen('my-bookings');
     else if (service === 'photography') setCurrentScreen('photography');
     else if (service === 'breeder') setCurrentScreen('breeder');
@@ -889,6 +904,10 @@ export function CustomerHomeWrapper({
     else if (service === 'whats-new') router.push('/whats-new');
     else if (service === 'articles' || service === 'customer-articles') router.push('/articles');
     else if (service === 'wishlist') {
+      if (!isCustomerEcommerceEnabled()) {
+        toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
+        return;
+      }
       clearWishlistOpenedFromShopMark();
       router.push('/wishlist');
     }
@@ -1230,7 +1249,13 @@ export function CustomerHomeWrapper({
     setUserSidebarOpen(false);
     if (path === 'home') setCurrentScreen('home');
     else if (path === 'shop') goToShopFromParent();
-    else if (path === 'account/orders') setCurrentScreen('order_history');
+    else if (path === 'account/orders') {
+      if (!isCustomerEcommerceEnabled()) {
+        toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
+        return;
+      }
+      setCurrentScreen('order_history');
+    }
     else if (path === 'account/addresses') setCurrentScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') setCurrentScreen('wallet');
     else if (path === 'my-packages') router.push('/my-packages');
@@ -1280,6 +1305,10 @@ export function CustomerHomeWrapper({
       setCurrentServiceType(null);
       setProblemGridSpecialization(undefined);
     } else if (screen === 'cart') {
+      if (!isCustomerEcommerceEnabled()) {
+        toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
+        return;
+      }
       setUserSidebarOpen(false);
       setPetSitterOriginScreen(null);
       setPetSitterFacilityOptionId(null);
@@ -3283,7 +3312,10 @@ export function CustomerHomeWrapper({
     onComplete={() => { toast.success('Sample collection completed'); setCurrentScreen('lab-diagnostics'); }}
   />;
 
-  // Shop & Orders
+  // Shop & Orders (marketplace gated by isCustomerEcommerceEnabled)
+  if (!isCustomerEcommerceEnabled() && isCustomerEcommerceScreen(currentScreen)) {
+    return <NotAvailable label="Shop" onBack={handleBack} />;
+  }
   if (currentScreen === 'shop') {
     return (
       <CustomerScreenWrapper 

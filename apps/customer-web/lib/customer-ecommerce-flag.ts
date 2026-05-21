@@ -33,3 +33,24 @@ export function isCustomerEcommerceEnabled(): boolean {
   if (explicit !== null) return explicit;
   return false; // default: off until launch
 }
+
+/** Toast / inline copy when shop, cart, wishlist, or product orders are disabled. */
+export const CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE = 'Shop is coming soon.';
+
+/** SPA screens owned by the marketplace (CustomerHomeWrapper). */
+export const CUSTOMER_ECOMMERCE_SPA_SCREENS = new Set([
+  'shop',
+  'cart',
+  'checkout',
+  'order_success',
+  'order_history',
+  'order_detail',
+  'order_tracking',
+  'product_detail',
+  'product_reviews',
+  'vendor_profile',
+]);
+
+export function isCustomerEcommerceScreen(screen: string): boolean {
+  return CUSTOMER_ECOMMERCE_SPA_SCREENS.has(screen);
+}

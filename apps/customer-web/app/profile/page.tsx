@@ -13,6 +13,11 @@ import {
 import { validateEmail } from '@/lib/validation';
 import { readProfileCompleted } from '@/lib/customer-flow-guards';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { toast } from 'sonner';
+import {
+  CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE,
+  isCustomerEcommerceEnabled,
+} from '@/lib/customer-ecommerce-flag';
 import {
   clearCustomerSession,
   getStoredCustomerJwtForSession,
@@ -469,16 +474,30 @@ export default function ProfilePage() {
             </span>
             <span className="text-gray-400">→</span>
           </button>
-          <button
-            onClick={() => router.push('/orders')}
-            className="w-full p-4 bg-white rounded-xl shadow-sm flex items-center justify-between hover:shadow-md transition"
-          >
-            <span className="flex items-center gap-3">
-              <span className="text-2xl">📦</span>
-              <span className="font-medium">Order History</span>
-            </span>
-            <span className="text-gray-400">→</span>
-          </button>
+          {isCustomerEcommerceEnabled() ? (
+            <button
+              onClick={() => router.push('/orders')}
+              className="w-full p-4 bg-white rounded-xl shadow-sm flex items-center justify-between hover:shadow-md transition"
+            >
+              <span className="flex items-center gap-3">
+                <span className="text-2xl">📦</span>
+                <span className="font-medium">Order History</span>
+              </span>
+              <span className="text-gray-400">→</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE)}
+              className="w-full p-4 bg-white rounded-xl shadow-sm flex items-center justify-between opacity-60"
+            >
+              <span className="flex items-center gap-3">
+                <span className="text-2xl">📦</span>
+                <span className="font-medium">Order History (Soon)</span>
+              </span>
+              <span className="text-gray-400">→</span>
+            </button>
+          )}
           <button
             onClick={() => router.push('/wallet')}
             className="w-full p-4 bg-white rounded-xl shadow-sm flex items-center justify-between hover:shadow-md transition"

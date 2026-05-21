@@ -23,6 +23,10 @@ import {
 } from '@/lib/ai-booking-wizard-category-config';
 import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPaymentPage';
 import { toast } from 'sonner';
+import {
+  CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE,
+  isCustomerEcommerceEnabled,
+} from '@/lib/customer-ecommerce-flag';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 
 interface AIChatbotWidgetProps {
@@ -960,6 +964,10 @@ export function AIChatbotWidget({
     }
 
     if (a.includes('shop') || (a.includes('browse') && a.includes('shop'))) {
+      if (!isCustomerEcommerceEnabled()) {
+        toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
+        return;
+      }
       goTo('/shop');
       setIsOpen(false);
       onClose?.();
@@ -967,6 +975,10 @@ export function AIChatbotWidget({
     }
 
     if (a.includes('cart')) {
+      if (!isCustomerEcommerceEnabled()) {
+        toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
+        return;
+      }
       goTo('/cart');
       setIsOpen(false);
       onClose?.();
