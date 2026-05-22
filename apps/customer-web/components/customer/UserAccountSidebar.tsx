@@ -9,7 +9,7 @@ import {
   Clock, MapPin, Star, Bell, CreditCard, HelpCircle, LogOut,
   ShoppingCart, Home as HomeIcon, FileText, Shield, AlertCircle, Mail,
   Trash2, Plus, Check, Wallet, ShoppingBag,
-  Gift, Users, Award, Smartphone, Building2
+  Gift, Users, Award, Smartphone, Building2, MessageSquare
 } from 'lucide-react';
 // Uses apiClient with Cognito auth
 import { apiClient, isUatMode } from '@/lib/api-client';
@@ -480,7 +480,7 @@ export function UserAccountSidebar({
     'menu' | 'bookings' | 'cart' | 'saved' | 'addresses' | 'payments' | 'notifications' | 'help'
   >('menu');
   
-  // Profile summary for header (full edit lives at /profile)
+  // Profile summary for header (full edit opens CustomerProfileView)
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string>('');
   

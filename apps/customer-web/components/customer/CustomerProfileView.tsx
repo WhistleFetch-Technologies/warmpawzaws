@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, Camera, Edit2, Save, X, Loader2 } from 'lucide-react';
+import { User, Camera, Edit2, Loader2 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
@@ -13,6 +13,7 @@ import {
   PROFILE_ADDRESS_FORMAT_PLACEHOLDER,
 } from '@/lib/profile-address-format';
 import { PresignableImage } from '@/components/shared/PresignableImage';
+import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import {
   normalizeCustomerProfileFields,
   patchCustomerProfileKeysInLocalStorage,
@@ -36,10 +37,25 @@ interface UserProfile {
 interface CustomerProfileViewProps {
   phone: string;
   onBack: () => void;
+  /** X on header — exit to app home (same as account sidebar / wallet). */
+  onCloseToHome?: () => void;
 }
 
-export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps) {
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return <label className="block text-xs font-semibold text-gray-500 mb-2">{children}</label>;
+}
+
+function ReadOnlyField({ value }: { value: string }) {
+  return (
+    <p className="text-gray-900 font-medium px-4 py-3 bg-gray-100 rounded-xl min-h-[48px] flex items-center">
+      {value || '—'}
+    </p>
+  );
+}
+
+export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerProfileViewProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [savedProfile, setSavedProfile] = useState<UserProfile | null>(null);
   const [editMode, setEditMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -53,9 +69,9 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
     loadProfile();
   }, [phone]);
 
-  const loadProfile = async () => {
+  const fetchAndApplyProfile = async (showLoadingSpinner: boolean) => {
     try {
-      setLoading(true);
+      if (showLoadingSpinner) setLoading(true);
       const result = await apiClient.get<{ profile: Record<string, unknown> }>(
         `/customer/profile?phone=${encodeURIComponent(phone)}`
       );
@@ -85,40 +101,35 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
         created_at: (raw as any).created_at ?? (raw as any).createdAt,
       };
       setProfile(normalized);
+      setSavedProfile(normalized);
       setPhotoPreview(base.photo || '');
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
-      setLoading(false);
+      if (showLoadingSpinner) setLoading(false);
     }
   };
+
+  const loadProfile = () => fetchAndApplyProfile(true);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !profile) return;
 
-    // Show preview immediately
     const reader = new FileReader();
     reader.onloadend = () => {
       setPhotoPreview(reader.result as string);
     };
     reader.readAsDataURL(file);
 
-    // Upload photo with progress
     setUploadingPhoto(true);
     setUploadProgress(0);
 
     try {
-      const result = await uploadCustomerPhotoWithProgress(
-        file,
-        phone,
-        {
-          onProgress: (progress) => {
-            setUploadProgress(progress);
-          },
-          verifyUpload: true,
-        }
-      );
+      const result = await uploadCustomerPhotoWithProgress(file, phone, {
+        onProgress: (progress) => setUploadProgress(progress),
+        verifyUpload: true,
+      });
 
       if (result.success && result.publicUrl) {
         setUploadedPhotoUrl(result.publicUrl);
@@ -127,12 +138,11 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
         toast.success('Photo uploaded successfully!');
       } else {
         toast.error(result.error || 'Failed to upload photo. Please try again.');
-        // Reset preview on error
         setPhotoPreview(profile.photo || '');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Photo upload error:', error);
-      toast.error(error.message || 'Failed to upload photo. Please try again.');
+      toast.error(error instanceof Error ? error.message : 'Failed to upload photo. Please try again.');
       setPhotoPreview(profile.photo || '');
     } finally {
       setUploadingPhoto(false);
@@ -143,7 +153,6 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
   const handleSave = async () => {
     if (!profile) return;
 
-    // Validation
     if (!profile.firstName || !profile.lastName || !profile.email || !profile.address || !profile.pincode) {
       alert('Please fill in all required fields');
       return;
@@ -166,7 +175,6 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
 
     setSaving(true);
     try {
-      // Use uploaded photo URL if available, otherwise keep existing
       const addr = profile.address.trim();
       const { city: inferredCity, state: inferredState } = inferCityStateFromCommaAddress(addr);
       const profileToSave = {
@@ -180,7 +188,7 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
       };
 
       await apiClient.post('/customer/profile', {
-        phone: phone,
+        phone,
         profile: profileToSave,
       });
 
@@ -189,12 +197,15 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
         address: profileToSave.address,
         city: profileToSave.city,
         state: profileToSave.state,
+        photo: profileToSave.photo || '',
+        houseNo: profileToSave.houseNo,
+        floor: profileToSave.floor,
       });
-      setProfile(profileToSave);
-
       setEditMode(false);
-      setUploadedPhotoUrl(''); // Reset after save
-      toast.success('Profile updated successfully! 🎉');
+      setUploadedPhotoUrl('');
+      toast.success('Profile updated successfully!');
+      // Silently re-fetch from API so photo, houseNo, etc. reflect what is actually stored in the DB
+      await fetchAndApplyProfile(false);
     } catch (error) {
       console.error('Error saving profile:', error);
       toast.error('Error saving profile. Please try again.');
@@ -203,12 +214,41 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
     }
   };
 
+  const displayName = profile
+    ? [profile.firstName, profile.lastName].filter(Boolean).join(' ').trim() || 'Account'
+    : 'Account';
+
+  const headerIcon = (
+    <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white">
+      {photoPreview ? (
+        <PresignableImage src={photoPreview} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <User className="h-6 w-6 text-[#FF8C42]" />
+      )}
+    </span>
+  );
+
+  const header = (
+    <ServiceDashboardHeader
+      serviceName={loading ? 'Account' : displayName}
+      serviceSubtitle={loading ? undefined : phone}
+      serviceIcon={headerIcon}
+      iconColor="text-white"
+      stats={[]}
+      onCloseToHome={onCloseToHome}
+      onBack={onBack}
+      showBackButton
+      bottomEdge="sheet"
+      sheetToneClass="bg-gray-50"
+    />
+  );
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-customer mx-auto">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading profile...</p>
+      <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        {header}
+        <div className="-mt-1 flex items-center justify-center py-24">
+          <div className="w-12 h-12 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin" />
         </div>
       </div>
     );
@@ -216,8 +256,9 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
 
   if (!profile) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-customer mx-auto">
-        <div className="text-center px-6">
+      <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+        {header}
+        <div className="-mt-1 flex flex-col items-center justify-center px-6 py-24">
           <p className="text-gray-600 mb-4">Profile not found</p>
           <Button onClick={onBack} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
             Go Back
@@ -227,61 +268,75 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
     );
   }
 
-  return (
-    <div className="min-h-screen bg-white flex flex-col w-full max-w-customer mx-auto">
-      {/* Header — real device status bar is system-drawn; use safe-area padding only */}
-      <div className="cw-header-safe-top cw-header-safe-x pb-4 flex items-center justify-between border-b border-gray-200">
-        <button onClick={onBack} className="p-2 -ml-2 hover:bg-gray-100 rounded-full">
-          <ChevronLeft className="w-6 h-6 text-gray-700" />
-        </button>
-        <h1 className="text-black">My Profile</h1>
-        <button 
-          onClick={() => editMode ? setEditMode(false) : setEditMode(true)}
-          className="p-2 -mr-2 hover:bg-gray-100 rounded-full"
-        >
-          {editMode ? (
-            <X className="w-6 h-6 text-gray-700" />
-          ) : (
-            <Edit2 className="w-5 h-5 text-[#FF8C42]" />
-          )}
-        </button>
-      </div>
+  const inputClass =
+    'w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-white focus:border-[#FF8C42] focus:outline-none';
 
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto pb-32">
-        <div className="px-6 py-6">
-          {/* Profile Photo */}
-          <div className="flex flex-col items-center mb-8">
-            <div 
+  return (
+    <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+      {header}
+
+      <div className="-mt-1 pb-28">
+        <div className="px-5 pt-5 pb-6">
+          <div className="flex items-center justify-between gap-3 mb-5">
+            <h2 className="text-xl font-bold text-gray-900">My Profile</h2>
+            {!editMode ? (
+              <button
+                type="button"
+                onClick={() => setEditMode(true)}
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm active:scale-[0.98]"
+              >
+                <Edit2 className="w-4 h-4 text-gray-600" />
+                Edit Profile
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  if (savedProfile) {
+                    setProfile(savedProfile);
+                    setPhotoPreview(savedProfile.photo || '');
+                  }
+                  setEditMode(false);
+                  setUploadedPhotoUrl('');
+                }}
+                className="text-sm font-medium text-gray-600 px-3 py-2"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+
+          <div className="flex justify-center mb-8">
+            <div
               onClick={() => editMode && !uploadingPhoto && fileInputRef.current?.click()}
-              className={`w-32 h-32 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full overflow-hidden flex items-center justify-center border-4 border-white shadow-lg mb-3 relative group ${editMode && !uploadingPhoto ? 'cursor-pointer' : ''} ${uploadingPhoto ? 'opacity-75' : ''}`}
+              className={`w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden flex items-center justify-center border-4 border-white shadow-lg bg-gray-200 relative ${
+                editMode && !uploadingPhoto ? 'cursor-pointer' : ''
+              } ${uploadingPhoto ? 'opacity-75' : ''}`}
             >
               {photoPreview ? (
                 <>
                   <PresignableImage src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
                   {uploadingPhoto && (
-                    <div className="absolute inset-0 bg-black bg-opacity-50 flex flex-col items-center justify-center">
-                      <Loader2 className="w-8 h-8 text-white animate-spin mb-2" />
+                    <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center">
+                      <Loader2 className="w-8 h-8 text-white animate-spin mb-1" />
                       <span className="text-white text-xs">{uploadProgress}%</span>
                     </div>
                   )}
                   {editMode && !uploadingPhoto && (
-                    <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
                       <Camera className="w-8 h-8 text-white" />
                     </div>
                   )}
                 </>
               ) : (
-                <div className="flex flex-col items-center text-white">
+                <div className="flex flex-col items-center justify-center text-gray-400 w-full h-full">
                   {uploadingPhoto ? (
                     <>
-                      <Loader2 className="w-8 h-8 animate-spin mb-2" />
-                      <span className="text-xs">{uploadProgress}%</span>
+                      <Loader2 className="w-10 h-10 animate-spin mb-1" />
+                      <span className="text-xs text-gray-500">{uploadProgress}%</span>
                     </>
                   ) : (
-                    <span className="text-4xl font-bold">
-                      {profile.firstName?.charAt(0)}{profile.lastName?.charAt(0)}
-                    </span>
+                    <User className="w-16 h-16 sm:w-20 sm:h-20" strokeWidth={1.25} />
                   )}
                 </div>
               )}
@@ -294,97 +349,59 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
               disabled={uploadingPhoto}
               className="hidden"
             />
-            {editMode && (
-              <div className="text-center">
-                <p className="text-xs text-gray-500">
-                  {uploadingPhoto ? 'Uploading...' : 'Click photo to change'}
-                </p>
-                {uploadingPhoto && (
-                  <div className="mt-2 w-48 bg-gray-200 rounded-full h-1.5">
-                    <div
-                      className="bg-orange-500 h-1.5 rounded-full transition-all duration-300"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
           </div>
 
-          {/* Profile Information */}
           <div className="space-y-4">
-            {/* Name */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-2">
-                  First Name
-                </label>
+                <FieldLabel>First Name</FieldLabel>
                 {editMode ? (
                   <input
                     type="text"
                     value={profile.firstName}
                     onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                    className={inputClass}
                   />
                 ) : (
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
-                    {profile.firstName}
-                  </p>
+                  <ReadOnlyField value={profile.firstName} />
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-2">
-                  Last Name
-                </label>
+                <FieldLabel>Last Name</FieldLabel>
                 {editMode ? (
                   <input
                     type="text"
                     value={profile.lastName}
                     onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                    className={inputClass}
                   />
                 ) : (
-                  <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
-                    {profile.lastName}
-                  </p>
+                  <ReadOnlyField value={profile.lastName} />
                 )}
               </div>
             </div>
 
-            {/* Email */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-2">
-                Email Address
-              </label>
+              <FieldLabel>Phone Number</FieldLabel>
+              <ReadOnlyField value={profile.phone} />
+            </div>
+
+            <div>
+              <FieldLabel>Email</FieldLabel>
               {editMode ? (
                 <input
                   type="email"
                   value={profile.email}
                   onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                  className={inputClass}
                 />
               ) : (
-                <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
-                  {profile.email}
-                </p>
+                <ReadOnlyField value={profile.email} />
               )}
             </div>
 
-            {/* Phone (Read-only) */}
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-2">
-                Phone Number
-              </label>
-              <p className="text-black font-medium px-4 py-3 bg-gray-100 rounded-xl cursor-not-allowed">
-                {profile.phone}
-              </p>
-            </div>
-
-            {/* Address — single comma-separated field (area, locality, city, state, country) */}
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-2">
-                Address
-              </label>
+              <FieldLabel>Address</FieldLabel>
               {editMode ? (
                 <>
                   <textarea
@@ -398,62 +415,82 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
                     }}
                     placeholder={PROFILE_ADDRESS_FORMAT_PLACEHOLDER}
                     rows={4}
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none resize-y min-h-[100px]"
+                    className={`${inputClass} resize-y min-h-[100px]`}
                   />
                   <p className="text-xs text-gray-500 mt-1.5">
                     Separate parts with commas: area, locality, city, state, country.
                   </p>
                 </>
               ) : (
-                <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl whitespace-pre-wrap">
-                  {profile.address}
-                </p>
+                <ReadOnlyField value={profile.address} />
               )}
             </div>
 
-            {/* House No / Flat No — same as account creation */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                House No / Flat No <span className="text-red-500">*</span>
-              </label>
+              <FieldLabel>
+                House No / Flat No {editMode && <span className="text-red-500">*</span>}
+              </FieldLabel>
               {editMode ? (
                 <input
                   type="text"
                   value={profile.houseNo}
                   onChange={(e) => setProfile({ ...profile, houseNo: e.target.value })}
                   placeholder="e.g., A-101, Flat 12B"
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                  className={inputClass}
                 />
               ) : (
-                <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
-                  {profile.houseNo?.trim() || '—'}
-                </p>
+                <ReadOnlyField value={profile.houseNo} />
               )}
             </div>
 
-            {/* Floor (optional) */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Floor</label>
+              <FieldLabel>Floor</FieldLabel>
               {editMode ? (
                 <input
                   type="text"
                   value={profile.floor}
                   onChange={(e) => setProfile({ ...profile, floor: e.target.value })}
                   placeholder="e.g., 1st Floor"
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                  className={inputClass}
                 />
               ) : (
-                <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
-                  {profile.floor?.trim() || '—'}
-                </p>
+                <ReadOnlyField value={profile.floor} />
               )}
             </div>
 
-            {/* Pincode */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <FieldLabel>City</FieldLabel>
+                {editMode ? (
+                  <input
+                    type="text"
+                    value={profile.city ?? ''}
+                    onChange={(e) => setProfile({ ...profile, city: e.target.value })}
+                    placeholder="Bengaluru"
+                    className={inputClass}
+                  />
+                ) : (
+                  <ReadOnlyField value={profile.city ?? ''} />
+                )}
+              </div>
+              <div>
+                <FieldLabel>State</FieldLabel>
+                {editMode ? (
+                  <input
+                    type="text"
+                    value={profile.state ?? ''}
+                    onChange={(e) => setProfile({ ...profile, state: e.target.value })}
+                    placeholder="Karnataka"
+                    className={inputClass}
+                  />
+                ) : (
+                  <ReadOnlyField value={profile.state ?? ''} />
+                )}
+              </div>
+            </div>
+
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-2">
-                Pincode
-              </label>
+              <FieldLabel>Pincode</FieldLabel>
               {editMode ? (
                 <input
                   type="text"
@@ -463,38 +500,18 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
                     setProfile({ ...profile, pincode: value });
                   }}
                   maxLength={6}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-[#FF8C42] focus:outline-none"
+                  className={inputClass}
                 />
               ) : (
-                <p className="text-black font-medium px-4 py-3 bg-gray-50 rounded-xl">
-                  {profile.pincode}
-                </p>
+                <ReadOnlyField value={profile.pincode} />
               )}
-            </div>
-          </div>
-
-          {/* Account Info */}
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <h3 className="text-sm font-medium text-gray-700 mb-4">Account Information</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center py-2">
-                <span className="text-sm text-gray-600">Member Since</span>
-                <span className="text-sm font-medium text-black">
-                  {new Date(profile.created_at || Date.now()).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-2">
-                <span className="text-sm text-gray-600">Profile Status</span>
-                <span className="text-sm font-medium text-green-600">✓ Verified</span>
-              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Fixed Bottom Button */}
       {editMode && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 max-w-customer mx-auto w-full">
+        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-200 bg-white px-5 py-4 max-w-customer mx-auto w-full pb-[max(1rem,env(safe-area-inset-bottom))]">
           <Button
             onClick={handleSave}
             disabled={saving}
@@ -502,20 +519,6 @@ export function CustomerProfileView({ phone, onBack }: CustomerProfileViewProps)
           >
             {saving ? 'Saving...' : 'Save Changes'}
           </Button>
-
-          {/* Home Indicator */}
-          <div className="flex justify-center mt-4">
-            <div className="w-32 h-1 bg-black rounded-full"></div>
-          </div>
-        </div>
-      )}
-
-      {/* Home Indicator (when not in edit mode) */}
-      {!editMode && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white px-6 py-4 max-w-customer mx-auto w-full">
-          <div className="flex justify-center">
-            <div className="w-32 h-1 bg-black rounded-full"></div>
-          </div>
         </div>
       )}
     </div>

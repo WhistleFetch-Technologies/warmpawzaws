@@ -43,7 +43,7 @@ const EnhancedAddPetModal = dynamic(
 const PetBookingDetails = dynamic(() => import('./PetBookingDetails').then(mod => ({ default: mod.PetBookingDetails })), { loading: LoadingSpinner });
 const PetQuickView = dynamic(() => import('./PetQuickView').then(mod => ({ default: mod.PetQuickView })), { loading: LoadingSpinner });
 const AddPetModal = dynamic(() => import('./AddPetModal').then(mod => ({ default: mod.AddPetModal })), { loading: LoadingSpinner });
-const CustomerProfile = dynamic(() => import('./CustomerProfile').then(mod => ({ default: mod.CustomerProfile })), { loading: LoadingSpinner });
+const CustomerProfileView = dynamic(() => import('./CustomerProfileView').then(mod => ({ default: mod.CustomerProfileView })), { loading: LoadingSpinner });
 const PetProfile = dynamic(() => import('./PetProfile').then(mod => ({ default: mod.PetProfile })), { loading: LoadingSpinner });
 const PetProfileDashboard = dynamic(() => import('./PetProfileDashboard').then(mod => ({ default: mod.PetProfileDashboard })), { loading: LoadingSpinner });
 
@@ -566,7 +566,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             onViewMyPackages={() => router.push('/my-packages')}
             onViewProfile={() => {
               setUserSidebarOpen(false);
-              router.push('/profile');
+              setCurrentScreen('customer-profile');
             }}
             onNavigate={handleAccountNavigate}
           />
@@ -580,7 +580,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   // Given the truncation, I'll focus on the modifications and the structure.
   
   // ✅ UPDATED: Customer Profile with navigation
-  if (currentScreen === 'customer-profile') return <CustomerProfile phone={phone} onBack={handleBack} onNavigate={handleNavigate} />;
+  if (currentScreen === 'customer-profile') return <CustomerProfileView phone={phone} onBack={handleBack} />;
   if (currentScreen === 'pet-profile' && selectedPetData) return <PetProfile phone={phone} petId={selectedPetData.id} petName={selectedPetData.name} petType={selectedPetData.type} petBreed={selectedPetData.breed} petAge={selectedPetData.age} petGender={selectedPetData.gender} petImage={selectedPetData.image} onBack={handleBack} />;
   if (currentScreen === 'booking-details' && selectedBookingId && selectedPetId) return <PetBookingDetails bookingId={selectedBookingId} petId={selectedPetId} phone={phone} onBack={handleBack} onReorderMedicine={handleReorderMedicine} />;
   if (currentScreen === 'pet-quick' && selectedPetId) return <PetQuickView petId={selectedPetId} phone={phone} onBack={handleBack} onViewFullProfile={handleViewFullPetProfile} />;
@@ -733,8 +733,8 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'sunset') return <SunsetServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={() => navigateToScreen('home')} />;
   if (currentScreen === 'insurance') return <InsuranceServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'insurance_provider' || screen === 'insurance_policy_purchase') { setSelectedVendorId(data?.vendorId || data?.provider?.id); navigateToScreen('insurance_provider'); } else if (screen === 'pets') navigateToScreen('pets'); else navigateToScreen(screen as ScreenType); }} />;
 
-  // Built flows: user-profile = CustomerProfile; training/boarding/insurance wired to existing components
-  if (currentScreen === 'user-profile') return <CustomerProfile phone={phone} onBack={handleBack} onNavigate={(s: string) => navigateToScreen(s as ScreenType)} />;
+  // Built flows: user-profile = CustomerProfileView; training/boarding/insurance wired to existing components
+  if (currentScreen === 'user-profile') return <CustomerProfileView phone={phone} onBack={handleBack} />;
   const trainingCenterNavigate = (screen: string, data?: any) => {
     if (screen === 'training-booking' || screen === 'booking' || screen === 'create-booking') {
       setVetServiceData({ vendorId: data?.vendorId, serviceType: 'training', serviceStyle: 'at_center', trainer: data?.vendor || data?.trainer, service: data?.service, serviceId: data?.serviceId, selectedServices: data?.selectedServices, vendorName: data?.vendorName, price: data?.price, duration: data?.duration });
