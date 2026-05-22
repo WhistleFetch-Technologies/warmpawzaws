@@ -1,9 +1,12 @@
+import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
+
 /**
  * Deep link for tele "Book Now" → /booking/tele with instant auto-pay flow.
  * Query contract: service=tele, mode=instant, autoPay=true
  * (+ optional serviceId, petId, roleId, category, vendorId).
  * Offer overlay: offerName, price, desc — payment page uses these for label and amount
  * (vendor/service IDs still come from API or static fallbacks).
+ * Returns null when instant tele UI is hidden (callers should use scheduled tele flow).
  */
 export function buildTeleInstantAutoPayBookingUrl(params?: {
   serviceId?: string;
@@ -14,7 +17,8 @@ export function buildTeleInstantAutoPayBookingUrl(params?: {
   offerName?: string;
   price?: number;
   desc?: string;
-}): string {
+}): string | null {
+  if (!isInstantTeleUiEnabled()) return null;
   const sp = new URLSearchParams();
   sp.set('service', 'tele');
   sp.set('mode', 'instant');

@@ -257,7 +257,7 @@ export function UniversalVendorListView({ roleId, roleName, phone, onBack, onNav
                       </div>
                       <div className="flex-1 min-w-0">
                         <h3 className="font-bold text-gray-900 truncate">{person.name}</h3>
-                        <p className="text-xs text-gray-500 truncate">{person.specialization || roleName}</p>
+                        <p className="text-xs text-gray-500 truncate">{roleName}</p>
                         <div className="flex items-center gap-2 mt-1 flex-wrap">
                           <div className="flex items-center gap-1 text-xs font-medium">
                             <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />

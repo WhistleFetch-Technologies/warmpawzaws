@@ -542,10 +542,6 @@ export function VendorListingByStyle({
                       <p className="text-xs text-gray-500 mb-1">From {vendor.vendorName}</p>
                     )}
                     
-                    {vendor.specialization && (
-                      <p className="text-xs text-[#FF8C42] font-medium mb-1">{vendor.specialization}</p>
-                    )}
-                    
                     <div className="flex items-center gap-2 text-sm flex-wrap">
                       <VendorRatingDisplay
                         row={{

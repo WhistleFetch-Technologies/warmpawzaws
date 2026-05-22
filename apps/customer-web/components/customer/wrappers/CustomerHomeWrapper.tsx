@@ -597,15 +597,23 @@ export function CustomerHomeWrapper({
     [router, pathname]
   );
 
-  // Deep link: /?service=tele → full-page tele booking with instant auto-pay (re-run when query string changes)
+  // Deep link: /?service=tele → instant auto-pay when enabled; otherwise scheduled vet tele
   const homeTeleSearchKey = searchParams.toString();
   useEffect(() => {
     const sp = new URLSearchParams(homeTeleSearchKey);
     if (sp.get('service') !== 'tele') return;
     const url = buildTeleInstantAutoPayBookingUrl();
-    console.log('[CustomerHomeWrapper] service=tele in URL → redirect to instant auto-pay booking:', url);
-    router.replace(url);
-  }, [router, homeTeleSearchKey]);
+    if (url) {
+      console.log('[CustomerHomeWrapper] service=tele in URL → redirect to instant auto-pay booking:', url);
+      router.replace(url);
+      return;
+    }
+    setTeleSkipToScheduled(true);
+    setCurrentScreen('vet-tele-consultation');
+    sp.delete('service');
+    const qs = sp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [router, pathname, homeTeleSearchKey]);
 
   const prevScreenForTeleRef = useRef<ScreenType | null>(null);
   useEffect(() => {

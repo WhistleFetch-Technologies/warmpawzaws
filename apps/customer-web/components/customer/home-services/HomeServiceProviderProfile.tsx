@@ -729,23 +729,6 @@ export function HomeServiceProviderProfile({
               </div>
             )}
 
-            {/* Specializations */}
-            {provider.specializations.length > 0 && (
-              <div>
-                <h3 className="font-semibold text-gray-800 mb-2">Specializations</h3>
-                <div className="flex flex-wrap gap-2">
-                  {provider.specializations.map((spec, i) => (
-                    <span
-                      key={i}
-                      className="px-3 py-1.5 bg-orange-50 text-orange-600 rounded-full text-sm"
-                    >
-                      {spec}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Amenities */}
             {provider.amenities.length > 0 && (
               <div>

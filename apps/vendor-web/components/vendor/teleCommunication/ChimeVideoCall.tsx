@@ -2063,8 +2063,8 @@ export function ChimeVideoCall({
 
       {/* Chat Panel — safe-area so header clears notch / status bar (iOS/Android) */}
       {showChat && (
-        <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-lg flex flex-col min-h-0 pt-[env(safe-area-inset-top,0px)]">
-          <div className="px-3 sm:px-4 py-3 border-b border-slate-700 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 min-w-0 shrink-0 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))]">
+        <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-lg flex flex-col min-h-0">
+          <div className="px-3 sm:px-4 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-3 border-b border-slate-700 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 min-w-0 shrink-0 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))]">
             <div className="min-w-0 flex-1">
               <h3 className="text-white font-semibold text-sm sm:text-base truncate">Chat with {otherParticipantName}</h3>
               {isOtherTyping && (

@@ -103,13 +103,28 @@ function normalizeJoinBody(body: any): { bookingId: string; userId: string; user
 class CreateMeetingHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    const { bookingId, customerId, vendorId } = normalizeCreateMeetingBody(body);
+    let { bookingId, customerId, vendorId } = normalizeCreateMeetingBody(body);
 
-    if (!bookingId || !customerId || !vendorId) {
-      return this.error('bookingId, customerId, and vendorId are required (camelCase or snake_case)', 400);
+    if (!bookingId) {
+      return this.error('bookingId is required (camelCase or snake_case)', 400);
     }
 
     const cid = vidcorId();
+
+    // Resolve customerId/vendorId from booking when omitted (e.g. vendor dashboard schedule Join)
+    if (!customerId || !vendorId) {
+      const bookingRows = await select('bookings', { id: bookingId });
+      if (bookingRows.length === 0) {
+        return this.error('Booking not found', 404);
+      }
+      const bookingForIds = bookingRows[0];
+      customerId = customerId || bookingForIds.customer_id;
+      vendorId = vendorId || bookingForIds.vendor_id;
+    }
+
+    if (!customerId || !vendorId) {
+      return this.error('bookingId, customerId, and vendorId are required (camelCase or snake_case)', 400);
+    }
 
     // ✅ Set vendor unavailable for instant tele when they create a meeting
     const ensureVendorUnavailable = async (vendorId: string, reason: string = 'error-recovery') => {

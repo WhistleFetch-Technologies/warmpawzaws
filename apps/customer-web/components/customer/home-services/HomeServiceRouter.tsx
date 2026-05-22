@@ -835,17 +835,6 @@ export function HomeServiceRouter({
             </div>
           )}
 
-          {/* Specializations */}
-          {provider.specializations && provider.specializations.length > 0 && (
-            <div className="flex gap-1 mt-2 flex-wrap">
-              {provider.specializations.slice(0, 3).map((spec, idx) => (
-                <Badge key={idx} variant="secondary" className="text-xs">
-                  {spec}
-                </Badge>
-              ))}
-            </div>
-          )}
-
           {/* Next Availability & Price */}
           <div className="flex items-center justify-between mt-3 pt-3 border-t">
             <div className="flex items-center gap-1 text-sm">

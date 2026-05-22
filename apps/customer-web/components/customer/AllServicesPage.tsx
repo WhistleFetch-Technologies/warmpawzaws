@@ -324,7 +324,7 @@ export function AllServicesPage({ onBack, onServiceSelect }: AllServicesPageProp
   return (
     <div className="h-screen flex flex-col bg-[#FF8C42] max-w-md mx-auto overflow-hidden">
       {/* Header - Orange Background (Fixed) */}
-      <div className="flex-shrink-0 px-6 pt-12 pb-6">
+      <div className="flex-shrink-0 px-6 cw-header-safe-top pb-6">
         <div className="flex items-center gap-4">
           <button 
             onClick={onBack}
