@@ -16,6 +16,7 @@ import {
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { saveGeneratedPdfBlob } from '@/lib/capacitor-pdf-save';
 import { getCustomerWebOrigin } from '@/lib/customer-web-url';
 
 /** Print without a popup — works on many mobile WebViews where window.open is blocked. */
@@ -469,42 +470,25 @@ export default function PrescriptionDocument({
       const safePet = String(prescription.pet.name || 'Pet').replace(/[^\w\s-]+/g, '_');
       const fileName = `Prescription_${safePet}_${prescription.prescriptionDate}.pdf`;
       const blob = pdf.output('blob');
-      const file = new File([blob], fileName, { type: 'application/pdf' });
 
-      const nav = navigator as Navigator & {
-        canShare?: (data: { files?: File[] }) => boolean;
-      };
-      if (
-        typeof nav.canShare === 'function' &&
-        nav.canShare({ files: [file] }) &&
-        typeof navigator.share === 'function'
-      ) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: `Prescription — ${prescription.pet.name}`,
-            text: 'Save to Files (iPhone) or pick another app.',
-          });
-          toast.success('If you do not see a file, choose “Save to Files” in the share sheet.');
-          onDownload?.();
-          return;
-        } catch (shareErr) {
-          console.warn('[PrescriptionDocument] share(files) failed, using download link', shareErr);
-        }
+      const result = await saveGeneratedPdfBlob({
+        blob,
+        fileName,
+        title: `Prescription — ${prescription.pet.name}`,
+        shareText: 'Save the PDF to Drive, Files, or another app.',
+      });
+
+      if (result === 'shared') {
+        toast.success('Choose Drive, Files, or another app in the share sheet to save the PDF.');
+      } else if (result === 'downloaded') {
+        toast.success('PDF downloaded.');
+      } else {
+        toast.message('PDF export failed on this device. Opening print instead…');
+        handlePrint();
+        onDownload?.();
+        return;
       }
 
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      toast.success(
-        'PDF exported. On iPhone, open Files → Downloads or On My iPhone; on Android, check Downloads or Files.'
-      );
       onDownload?.();
     } catch (err) {
       console.warn('[PrescriptionDocument] PDF export failed', err);
