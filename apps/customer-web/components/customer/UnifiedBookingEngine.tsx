@@ -28,6 +28,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 
@@ -242,9 +243,15 @@ export function UnifiedBookingEngine({
         return 'datetime_selection';
 
       case 'service_style_selection':
-        // For tele services, show booking type selection (instant vs scheduled)
-        if (selectedServiceStyle === 'tele') {
+        // For tele services, show booking type selection when instant UI is enabled
+        if (selectedServiceStyle === 'tele' && isInstantTeleUiEnabled()) {
           return 'booking_type_selection';
+        }
+        if (selectedServiceStyle === 'tele' && !isInstantTeleUiEnabled()) {
+          if (service.requires_staff) {
+            return 'staff_selection';
+          }
+          return 'datetime_selection';
         }
         if (service.requires_staff) {
           return 'staff_selection';
@@ -543,7 +550,7 @@ export function UnifiedBookingEngine({
           </div>
         )}
 
-        {step === 'booking_type_selection' && (
+        {step === 'booking_type_selection' && isInstantTeleUiEnabled() && (
           <div>
             <h2 className="text-2xl font-bold mb-4">Choose Booking Type</h2>
             <div className="space-y-4">
@@ -602,9 +609,6 @@ export function UnifiedBookingEngine({
                     }`}
                   >
                     <div className="font-semibold">{staff.name}</div>
-                    {staff.specialization && (
-                      <div className="text-sm text-gray-600">{staff.specialization}</div>
-                    )}
                     {staff.rating && (
                       <div className="text-sm text-primary">⭐ {staff.rating}</div>
                     )}

@@ -16,6 +16,7 @@ import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/sha
 import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager';
 import { CenterProfile, DAYS, ProfileManagerProps } from './constants/interface';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 
 // ✅ RENAMED: CenterProfileManager -> ProfileManager (generic naming)
 // Export both names for backward compatibility
@@ -738,7 +739,7 @@ In rare scenarios of any injury or medical issue with the pet, it will be dealt 
             )}
 
             {/* Instant Tele — only when Admin role includes tele (same source as customer discovery) */}
-            {canVendorUseServiceStyle(vendorStyleSource, 'tele') && (
+            {canVendorUseServiceStyle(vendorStyleSource, 'tele') && isInstantTeleUiEnabled() && (
             <div className="bg-white rounded-2xl border shadow-sm p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">

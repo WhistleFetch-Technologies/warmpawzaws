@@ -20,6 +20,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 import {
   Home,
   Building2,
@@ -628,7 +629,7 @@ export function ProblemGridFlowRouter({
         </div>
       )}
 
-      {!loadingProblemDetails && hasTeleOption && (
+      {!loadingProblemDetails && hasTeleOption && isInstantTeleUiEnabled() && (
         <Card className="bg-gradient-to-r from-purple-500 to-indigo-600 p-4 text-white">
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center">

@@ -189,18 +189,6 @@ export function UniversalVendorCard({
     return null;
   };
 
-  // ✅ ENRICHED: Format specializations
-  const getSpecializations = () => {
-    if (!vendor.specializations || vendor.specializations.length === 0) return null;
-    
-    return vendor.specializations.slice(0, 3).map((spec, index) => {
-      if (typeof spec === 'string') {
-        return { id: `spec-${index}`, name: spec };
-      }
-      return spec;
-    });
-  };
-
   // Track card interactions
   const handleViewDetails = () => {
     trackClick(vendor.vendorName, 'vendor_card_details', { vendorId: vendor.vendorId || vendor.id });
@@ -214,7 +202,6 @@ export function UniversalVendorCard({
 
   const nextAvail = getNextAvailability();
   const distanceDisplay = getDistanceDisplay();
-  const specializations = getSpecializations();
 
   return (
     <Card className="p-4 hover:shadow-lg transition-shadow relative overflow-visible bg-white border border-gray-100">

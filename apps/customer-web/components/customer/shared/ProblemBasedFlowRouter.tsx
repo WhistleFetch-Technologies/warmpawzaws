@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, Video, Home, Building2, Clock, ChevronRight, 
-  Zap, Calendar, Star, MapPin, AlertCircle, CheckCircle,
+  Zap, Calendar, Star, MapPin, AlertCircle,
   Stethoscope, Scissors, GraduationCap, Bike, House, Brain, Salad
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 
 import { UniversalServiceProviderList } from './UniversalServiceProviderList';
 import { UniversalProviderProfile } from './UniversalProviderProfile';
+import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 
 // ============================================================================
 // TYPES
@@ -237,18 +238,6 @@ function ServiceStyleSelector({
           </div>
         )}
 
-        {/* Specialization Info Card */}
-        <div className="mt-6 p-4 bg-green-50 rounded-xl border border-green-100 flex gap-3">
-          <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-          <div className="min-w-0">
-            <p className="text-sm text-gray-800">
-              <span className="font-semibold">Specialization:</span> {problemTitle}
-            </p>
-            <p className="text-xs text-gray-600 mt-0.5">
-              All listed providers specialize in this area
-            </p>
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -263,9 +252,16 @@ interface TeleModeSelectorProps {
   onSelectInstant: () => void;
   onSelectScheduled: () => void;
   onBack: () => void;
+  showInstantOption: boolean;
 }
 
-function TeleModeSelector({ problemTitle, onSelectInstant, onSelectScheduled, onBack }: TeleModeSelectorProps) {
+function TeleModeSelector({
+  problemTitle,
+  onSelectInstant,
+  onSelectScheduled,
+  onBack,
+  showInstantOption,
+}: TeleModeSelectorProps) {
   return (
     <div className="mx-auto min-h-screen w-full max-w-customer bg-[#FF8C42]">
       {/* Header - Matching Customer Home Design */}
@@ -295,31 +291,32 @@ function TeleModeSelector({ problemTitle, onSelectInstant, onSelectScheduled, on
         {/* Section Title */}
         <h2 className="text-base font-semibold text-gray-900 mb-4">How would you like to consult?</h2>
 
-        {/* Instant Option */}
-        <button
-          className="w-full p-4 mb-3 rounded-2xl text-left transition-all border-2 border-transparent hover:border-green-400 hover:shadow-md bg-green-50"
-          onClick={onSelectInstant}
-        >
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Zap className="w-6 h-6 text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <h3 className="font-semibold text-base text-gray-900">Instant</h3>
-                <span className="px-2 py-0.5 bg-green-500 text-white text-xs rounded-full font-medium">Live Now</span>
+        {showInstantOption ? (
+          <button
+            className="w-full p-4 mb-3 rounded-2xl text-left transition-all border-2 border-transparent hover:border-green-400 hover:shadow-md bg-green-50"
+            onClick={onSelectInstant}
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Zap className="w-6 h-6 text-white" />
               </div>
-              <p className="text-sm text-gray-600 leading-snug">
-                Connect immediately with the next available specialist
-              </p>
-              <div className="flex items-center gap-1 text-xs text-gray-500 mt-1.5">
-                <Clock className="w-3.5 h-3.5" />
-                <span>&lt;5 min wait</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <h3 className="font-semibold text-base text-gray-900">Instant</h3>
+                  <span className="px-2 py-0.5 bg-green-500 text-white text-xs rounded-full font-medium">Live Now</span>
+                </div>
+                <p className="text-sm text-gray-600 leading-snug">
+                  Connect immediately with the next available specialist
+                </p>
+                <div className="flex items-center gap-1 text-xs text-gray-500 mt-1.5">
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>&lt;5 min wait</span>
+                </div>
               </div>
+              <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
             </div>
-            <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
-          </div>
-        </button>
+          </button>
+        ) : null}
 
         {/* Scheduled Option */}
         <button
@@ -593,8 +590,11 @@ export function ProblemBasedFlowRouter({
     setSelectedStyle(style);
     
     if (style === 'tele') {
-      // For tele, show instant vs scheduled option
-      setStep('tele-mode');
+      if (isInstantTeleUiEnabled()) {
+        setStep('tele-mode');
+      } else {
+        setStep('provider-list');
+      }
     } else {
       // For home/center, go directly to provider list
       setStep('provider-list');
@@ -678,8 +678,12 @@ export function ProblemBasedFlowRouter({
       return (
         <TeleModeSelector
           problemTitle={problemTitle}
+          showInstantOption={isInstantTeleUiEnabled()}
           onSelectInstant={() => {
-            // Navigate to instant tele queue with specialization filter
+            if (!isInstantTeleUiEnabled()) {
+              setStep('provider-list');
+              return;
+            }
             onNavigate('instant-tele-queue', {
               roleId,
               category,

@@ -665,9 +665,11 @@ export function UniversalServicesByStyle({
           serviceId: sid,
           vendorId: vid ? String(vid) : undefined,
         });
-        console.log('[UniversalServicesByStyle] vet tele Book Now →', url);
-        router.push(url);
-        return;
+        if (url) {
+          console.log('[UniversalServicesByStyle] vet tele Book Now →', url);
+          router.push(url);
+          return;
+        }
       }
     }
 
@@ -855,7 +857,12 @@ export function UniversalServicesByStyle({
     const address = vendor?.address || facility?.address || profileProvider.address || '';
     const phoneNumber = vendor?.phone || facility?.phone || profileProvider.phone || '';
     const description = vendor?.description || facility?.description || `${providerName} provides professional ${config.category} services.`;
-    const specializationText = facility?.specialization || vendor?.specialization || specialization || `General ${config.roleName} Care`;
+    const profileServiceSubtitle =
+      serviceStyle === 'tele'
+        ? config.styleDescriptions.tele || 'Video consultation'
+        : serviceStyle === 'at_home'
+          ? config.styleDescriptions.at_home
+          : config.styleDescriptions.at_center;
 
     const profileVendorId = String(
       vendorId ?? profileProvider.id ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
@@ -896,7 +903,7 @@ export function UniversalServicesByStyle({
           fullWidth
           className="!z-0 isolation-auto"
           serviceName={providerName}
-          serviceSubtitle={specializationText}
+          serviceSubtitle={profileServiceSubtitle}
           serviceIcon={RoleIcon}
           iconColor="text-white"
           stats={dashboardStats}
@@ -983,12 +990,6 @@ export function UniversalServicesByStyle({
                     {config.styleLabels[serviceStyle] || serviceTypeName || 'Service'}
                   </span>
                 </div>
-                {specializationText && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 rounded-lg">
-                    <RoleIcon className="w-4 h-4 text-[#FF8C42]" />
-                    <span className="text-sm font-medium text-gray-700">{specializationText}</span>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -1556,9 +1557,6 @@ export function UniversalServicesByStyle({
                           <div className="text-xs text-gray-500 mt-1">
                             {provider.experienceYears} years experience
                           </div>
-                        )}
-                        {provider.specialization && (
-                          <Badge variant="secondary" className="text-xs mt-1">{provider.specialization}</Badge>
                         )}
                         {provider.nextAvailableSlot && (
                           <div className="flex items-center gap-1 text-xs text-green-600 mt-1">

@@ -1613,6 +1613,8 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
           const vendorVisibleToday = resolveVendorVisibleBookingAmount(booking, { serviceSnap: serviceSnapToday });
           return {
             id: booking.id,
+            customer_id: booking.customer_id,
+            customerId: booking.customer_id,
             customer_name: customer.length > 0 ? customer[0].full_name : 'Unknown',
             service_name: serviceSnapToday?.serviceName || (service.length > 0 ? service[0].name : 'Unknown Service'),
             booking_date: booking.booking_date,

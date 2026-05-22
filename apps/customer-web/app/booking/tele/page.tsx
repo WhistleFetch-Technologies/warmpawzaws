@@ -8,6 +8,7 @@ import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 
 type DirectPayContext = {
   vendorId: string;
@@ -141,6 +142,7 @@ function TeleConsultationContent() {
 
   const searchKey = searchParams.toString();
   const wantsAutoPay = isTeleInstantAutoPayRoute;
+  const instantTeleUiEnabled = isInstantTeleUiEnabled();
   const petIdFromUrl = useMemo(() => {
     const v = new URLSearchParams(searchKey).get('petId')?.trim();
     return v || null;
@@ -293,6 +295,12 @@ function TeleConsultationContent() {
   }, [customerId, customerPhone]);
 
   useEffect(() => {
+    if (!instantTeleUiEnabled) {
+      router.replace('/?target=vet-tele-consultation');
+    }
+  }, [instantTeleUiEnabled, router]);
+
+  useEffect(() => {
     if (!wantsAutoPay || !customerId || !customerPhone) {
       if (wantsAutoPay) {
         console.log('[booking/tele] direct pay waiting for session', {
@@ -371,6 +379,14 @@ function TeleConsultationContent() {
             {!customerId ? 'Login' : 'Update profile'}
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (!instantTeleUiEnabled) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#FF8C42] mx-auto" />
       </div>
     );
   }

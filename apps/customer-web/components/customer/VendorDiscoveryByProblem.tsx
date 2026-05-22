@@ -346,20 +346,6 @@ export function VendorDiscoveryByProblem({
                             {vendor.businessName || vendor.fullName}
                           </p>
                           
-                          {/* Specializations */}
-                          {specialist.specializationDetails && specialist.specializationDetails.length > 0 && (
-                            <div className="flex flex-wrap gap-1 mb-2">
-                              {specialist.specializationDetails.map((spec: any, idx: number) => (
-                                <span
-                                  key={idx}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs"
-                                >
-                                  {spec.icon} {spec.displayName}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          
                           {/* Services Offered */}
                           {specialist.services && specialist.services.length > 0 && (
                             <div className="mt-2 pt-2 border-t border-gray-100">
@@ -466,20 +452,6 @@ export function VendorDiscoveryByProblem({
                               <p className="text-xs text-gray-500 mb-2">
                                 {vendor.businessName || vendor.fullName}
                               </p>
-                              
-                              {/* Specializations */}
-                              {specialist.specializationDetails && specialist.specializationDetails.length > 0 && (
-                                <div className="flex flex-wrap gap-1 mb-2">
-                                  {specialist.specializationDetails.map((spec: any, idx: number) => (
-                                    <span
-                                      key={idx}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs"
-                                    >
-                                      {spec.icon} {spec.displayName}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
                               
                               {/* Services Offered */}
                               {specialist.services && specialist.services.length > 0 && (

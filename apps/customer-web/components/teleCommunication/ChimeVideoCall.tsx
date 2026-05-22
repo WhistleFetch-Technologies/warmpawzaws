@@ -2197,12 +2197,12 @@ export function ChimeVideoCall({
       {/* Audio element for remote audio */}
       <audio ref={audioElementRef} autoPlay />
 
-      {/* Chat Panel */}
+      {/* Chat Panel — safe-area so header clears notch / status bar (iOS/Android) */}
       {showChat && (
-        <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-lg flex flex-col">
-          <div className="p-4 border-b border-slate-700 flex items-center justify-between">
-            <div>
-              <h3 className="text-white font-semibold">Chat with {otherParticipantName}</h3>
+        <div className="absolute inset-0 z-50 bg-slate-900/95 backdrop-blur-lg flex flex-col min-h-0">
+          <div className="px-3 sm:px-4 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-3 border-b border-slate-700 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3 min-w-0 shrink-0 pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))]">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-white font-semibold text-sm sm:text-base truncate">Chat with {otherParticipantName}</h3>
               {isOtherTyping && (
                 <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
                   <span className="flex gap-0.5">
@@ -2214,12 +2214,17 @@ export function ChimeVideoCall({
                 </p>
               )}
             </div>
-            <button onClick={() => setShowChat(false)} className="p-2 hover:bg-slate-700 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setShowChat(false)}
+              className="min-h-[44px] min-w-[44px] self-end sm:self-center p-2 hover:bg-slate-700 rounded-xl shrink-0 touch-manipulation flex items-center justify-center"
+              aria-label="Close chat"
+            >
               <X className="w-5 h-5 text-white" />
             </button>
           </div>
 
-          <div ref={chatScrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
             {chatMessages.length === 0 ? (
               <div className="text-center py-8 text-slate-500">
                 <MessageSquare className="w-10 h-10 mx-auto mb-2 opacity-50" />
@@ -2311,8 +2316,8 @@ export function ChimeVideoCall({
             )}
           </div>
 
-          <div className="p-4 border-t border-slate-700">
-            <div className="flex gap-2">
+          <div className="p-3 sm:p-4 border-t border-slate-700 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom,0px))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))]">
+            <div className="flex gap-2 min-w-0">
               <input
                 ref={fileInputRef}
                 type="file"

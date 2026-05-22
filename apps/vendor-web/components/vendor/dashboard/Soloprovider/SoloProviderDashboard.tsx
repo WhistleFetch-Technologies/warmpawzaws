@@ -240,6 +240,7 @@ export function SoloProviderDashboard({
             petBreed: b.pet_breed,
             customerName: b.customer_name || 'Customer',
             customerPhone: b.customer_phone || '',
+            customerId: b.customerId ?? b.customer_id ?? undefined,
             serviceName: b.service_name || 'Service',
             serviceType: b.service_type || 'at_home',
             status: b.status || 'pending',
