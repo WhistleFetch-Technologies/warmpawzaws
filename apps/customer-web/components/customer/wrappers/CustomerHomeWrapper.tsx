@@ -1234,6 +1234,21 @@ export function CustomerHomeWrapper({
     }
   };
 
+  const rememberWalletHubOriginIfNeeded = () => {
+    if (currentScreen === 'wallet') {
+      setPreviousScreen('wallet');
+    }
+  };
+
+  const backFromWalletHubChild = () => {
+    if (previousScreen === 'wallet') {
+      setCurrentScreen('wallet');
+      setPreviousScreen(null);
+      return;
+    }
+    backToAccountMenu();
+  };
+
   const handleAccountNavigate = (path: string) => {
     setUserSidebarOpen(false);
     if (path === 'home') setCurrentScreen('home');
@@ -1242,10 +1257,15 @@ export function CustomerHomeWrapper({
     else if (path === 'account/addresses') setCurrentScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') setCurrentScreen('wallet');
     else if (path === 'my-packages') router.push('/my-packages');
-    else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
-    else if (path === 'referral-system') setCurrentScreen('referral-system');
-    else if (path === 'appointments') setCurrentScreen('appointments');
+    else if (path === 'rewards-loyalty') {
+      rememberWalletHubOriginIfNeeded();
+      setCurrentScreen('rewards-loyalty');
+    } else if (path === 'referral-system') {
+      rememberWalletHubOriginIfNeeded();
+      setCurrentScreen('referral-system');
+    } else if (path === 'appointments') setCurrentScreen('appointments');
     else if (path === 'support_help' || path === 'help') {
+      rememberWalletHubOriginIfNeeded();
       setCurrentScreen('support_help');
     } else if (path === 'promotions' || path === 'offers') {
       rememberPromotionsBackSpaScreen(currentScreen);
@@ -3916,7 +3936,7 @@ export function CustomerHomeWrapper({
     return (
       <SupportHelpCenter
         phone={phone}
-        onBack={backToAccountMenu}
+        onBack={backFromWalletHubChild}
         onChatbotNavigate={handleSupportHelpChatbotNavigate}
       />
     );
@@ -3959,12 +3979,12 @@ export function CustomerHomeWrapper({
     onBack={() => setCurrentScreen('order_detail')}
   />;
 
-  // Rewards & Loyalty
+  // Rewards & Points
   if (currentScreen === 'rewards-loyalty')
     return (
       <RewardsLoyaltyPage
         customerPhone={phone}
-        onBack={backToAccountMenu}
+        onBack={backFromWalletHubChild}
         onCloseToHome={handleBack}
       />
     );
@@ -3975,7 +3995,7 @@ export function CustomerHomeWrapper({
       <ReferralSystemPage
         customerPhone={phone}
         customerId={phone}
-        onBack={backToAccountMenu}
+        onBack={backFromWalletHubChild}
         onCloseToHome={handleBack}
       />
     );

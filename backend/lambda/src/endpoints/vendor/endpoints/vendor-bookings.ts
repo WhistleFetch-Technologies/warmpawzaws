@@ -65,6 +65,128 @@ function formatDetailedAddress(addr: any): string {
   return parts.filter(Boolean).join(', ');
 }
 
+/** ISO week Mon–Sun containing anchorDate (YYYY-MM-DD). Month = calendar month of anchor. */
+function formatYmdLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function bookingScheduleRange(
+  period: 'today' | 'week' | 'month',
+  anchorDate: string
+): { startDate: string; endDate: string } {
+  const anchor = /^\d{4}-\d{2}-\d{2}$/.test(anchorDate) ? anchorDate : formatYmdLocal(new Date());
+  if (period === 'today') {
+    return { startDate: anchor, endDate: anchor };
+  }
+  const d = new Date(`${anchor}T12:00:00`);
+  if (period === 'week') {
+    const day = d.getDay();
+    const diffToMon = day === 0 ? -6 : 1 - day;
+    const mon = new Date(d);
+    mon.setDate(d.getDate() + diffToMon);
+    const sun = new Date(mon);
+    sun.setDate(mon.getDate() + 6);
+    return { startDate: formatYmdLocal(mon), endDate: formatYmdLocal(sun) };
+  }
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const start = new Date(y, m, 1);
+  const end = new Date(y, m + 1, 0);
+  return { startDate: formatYmdLocal(start), endDate: formatYmdLocal(end) };
+}
+
+function resolveVendorBookingsDateFilter(queries: {
+  date?: string;
+  startDate?: string;
+  endDate?: string;
+  period?: string;
+  anchorDate?: string;
+}): {
+  startDate: string | null;
+  endDate: string | null;
+  mode: string;
+} {
+  const date = queries.date?.trim();
+  const startDateQ = queries.startDate?.trim();
+  const endDateQ = queries.endDate?.trim();
+  const period = queries.period?.trim()?.toLowerCase();
+  const anchorDate = queries.anchorDate?.trim() || date;
+
+  if (period === 'today' || period === 'week' || period === 'month') {
+    const anchor = anchorDate || formatYmdLocal(new Date());
+    const range = bookingScheduleRange(period, anchor);
+    return { startDate: range.startDate, endDate: range.endDate, mode: period };
+  }
+  if (date && !startDateQ && !endDateQ) {
+    return { startDate: date, endDate: date, mode: 'single' };
+  }
+  if (startDateQ && endDateQ) {
+    return { startDate: startDateQ, endDate: endDateQ, mode: 'range' };
+  }
+  if (startDateQ) {
+    return { startDate: startDateQ, endDate: null, mode: 'startOnly' };
+  }
+  return { startDate: null, endDate: null, mode: 'none' };
+}
+
+function sqlTeleBookingPredicate(alias: string): string {
+  return `(
+    LOWER(COALESCE(${alias}.service_style, '')) IN ('tele', 'online', 'video_consultation', 'tele_consultation', 'teleconsultation')
+    OR LOWER(COALESCE(${alias}.service_type, '')) IN ('tele', 'video_consultation', 'tele_consultation', 'teleconsultation')
+    OR LOWER(COALESCE(${alias}.service_style, '')) LIKE '%tele%'
+    OR LOWER(COALESCE(${alias}.service_type, '')) LIKE '%tele%'
+    OR LOWER(COALESCE(${alias}.service_type, '')) LIKE '%video%'
+  )`;
+}
+
+function sqlLocationBookingPredicate(alias: string): string {
+  return `(
+    LOWER(COALESCE(${alias}.service_style, ${alias}.service_type, '')) IN ('at_center', 'at_home', 'at_clinic', 'at_vendor', 'home_visit', 'home_service', 'clinic')
+    OR LOWER(COALESCE(${alias}.service_style, '')) LIKE '%home%'
+    OR LOWER(COALESCE(${alias}.service_type, '')) LIKE '%home%'
+    OR LOWER(COALESCE(${alias}.service_style, '')) LIKE '%center%'
+    OR LOWER(COALESCE(${alias}.service_type, '')) LIKE '%clinic%'
+  ) AND NOT ${sqlTeleBookingPredicate(alias)}`;
+}
+
+function appendBookingViewFilter(view: string | undefined, alias: string): string {
+  const v = (view || 'all').toLowerCase();
+  if (v === 'consultations') return ` AND ${sqlTeleBookingPredicate(alias)}`;
+  if (v === 'locations') return ` AND ${sqlLocationBookingPredicate(alias)}`;
+  return '';
+}
+
+function parseVendorBookingsPagination(limitRaw: string | undefined, offsetRaw: string | undefined) {
+  let limit = parseInt(String(limitRaw ?? '50'), 10);
+  if (!Number.isFinite(limit) || limit < 1) limit = 50;
+  if (limit > 100) limit = 100;
+  let offset = parseInt(String(offsetRaw ?? '0'), 10);
+  if (!Number.isFinite(offset) || offset < 0) offset = 0;
+  return { limit, offset };
+}
+
+function appendBookingDateFilterSql(
+  queryText: string,
+  params: any[],
+  paramIndex: number,
+  dateFilter: ReturnType<typeof resolveVendorBookingsDateFilter>
+): { queryText: string; params: any[]; paramIndex: number } {
+  if (dateFilter.startDate && dateFilter.endDate) {
+    queryText += ` AND b.booking_date >= $${paramIndex} AND b.booking_date <= $${paramIndex + 1}`;
+    params.push(dateFilter.startDate, dateFilter.endDate);
+    return { queryText, params, paramIndex: paramIndex + 2 };
+  }
+  if (dateFilter.startDate && dateFilter.mode === 'startOnly') {
+    queryText += ` AND b.booking_date >= $${paramIndex}`;
+    params.push(dateFilter.startDate);
+    return { queryText, params, paramIndex: paramIndex + 1 };
+  }
+  return { queryText, params, paramIndex };
+}
+
 export function registerVendorBookingsEndpoints(app: Hono) {
   /**
    * GET /vendor/bookings/:vendorId
@@ -87,9 +209,26 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       }
       const date = c.req.query('date');
       const filter = c.req.query('filter') || 'all';
+      const startDate = c.req.query('startDate');
+      const endDate = c.req.query('endDate');
+      const period = c.req.query('period');
+      const anchorDate = c.req.query('anchorDate');
+      const view = c.req.query('view');
+      const { limit, offset } = parseVendorBookingsPagination(
+        c.req.query('limit'),
+        c.req.query('offset')
+      );
+
+      const dateFilter = resolveVendorBookingsDateFilter({
+        date,
+        startDate,
+        endDate,
+        period,
+        anchorDate,
+      });
 
       console.log(`📋 [VENDOR-BOOKINGS] Fetching bookings for vendor: ${paramVendorId} (resolved: ${vendorId})`);
-      console.log(`   Filters: date=${date}, status=${filter}`);
+      console.log(`   Filters: date=${date}, period=${period}, anchorDate=${anchorDate}, range=${dateFilter.startDate}..${dateFilter.endDate}, status=${filter}, view=${view}, limit=${limit}, offset=${offset}`);
 
       // ✅ FIX: Get center_id for the querying vendor to include bookings from same center
       let centerId: string | null = null;
@@ -155,21 +294,29 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         paramIndex += 2;
       }
 
-      // Filter by date
-      if (date) {
-        queryText += ` AND b.booking_date = $${paramIndex}`;
-        params.push(date);
-        paramIndex++;
-      }
+      // Filter by date range (single day, week, month, or explicit start/end)
+      const dateApplied = appendBookingDateFilterSql(queryText, params, paramIndex, dateFilter);
+      queryText = dateApplied.queryText;
+      paramIndex = dateApplied.paramIndex;
 
-      // Filter by status
+      // Filter by status (API param `filter` — not schedule period)
       if (filter && filter !== 'all') {
         queryText += ` AND b.status = $${paramIndex}`;
         params.push(filter);
         paramIndex++;
       }
 
-      queryText += ' ORDER BY b.booking_date DESC, b.booking_time DESC';
+      // Consultations vs physical locations
+      queryText += appendBookingViewFilter(view, 'b');
+
+      const countQueryText = queryText.replace(/^SELECT b\.\* FROM bookings b/i, 'SELECT COUNT(*)::int AS total FROM bookings b');
+      const countResult = await query(countQueryText, params).catch(() => ({ rows: [{ total: '0' }] }));
+      const total = parseInt(String(countResult.rows[0]?.total ?? '0'), 10) || 0;
+
+      queryText += ' ORDER BY b.booking_date ASC, b.booking_time ASC';
+      queryText += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
+      paramIndex += 2;
 
       const result = await query(queryText, params).catch(() => ({ rows: [] }));
 
@@ -305,10 +452,18 @@ export function registerVendorBookingsEndpoints(app: Hono) {
       return c.json({
         success: true,
         bookings: enrichedBookings,
-        total: enrichedBookings.length,
+        total,
+        limit,
+        offset,
+        hasMore: offset + enrichedBookings.length < total,
         filters: {
           date,
+          startDate: dateFilter.startDate,
+          endDate: dateFilter.endDate,
+          period: period || dateFilter.mode,
+          anchorDate: anchorDate || date,
           status: filter,
+          view: view || 'all',
         },
       });
     } catch (error: any) {
@@ -1435,11 +1590,27 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
         return c.json({ error: 'Vendor does not have booking viewing capability' }, 403);
       }
       const date = c.req.query('date');
-      const status = c.req.query('status') || 'all';
+      const status = c.req.query('status') || c.req.query('filter') || 'all';
       const startDate = c.req.query('startDate');
+      const endDate = c.req.query('endDate');
+      const period = c.req.query('period');
+      const anchorDate = c.req.query('anchorDate');
+      const view = c.req.query('view');
+      const { limit, offset } = parseVendorBookingsPagination(
+        c.req.query('limit'),
+        c.req.query('offset')
+      );
+
+      const dateFilter = resolveVendorBookingsDateFilter({
+        date,
+        startDate,
+        endDate,
+        period,
+        anchorDate,
+      });
 
       console.log(`📋 [VENDOR-BOOKINGS] Fetching bookings for vendor: ${paramVendorId} (alias, resolved: ${vendorId})`);
-      console.log(`   Filters: date=${date}, status=${status}, startDate=${startDate}`);
+      console.log(`   Filters: date=${date}, period=${period}, range=${dateFilter.startDate}..${dateFilter.endDate}, status=${status}, view=${view}, limit=${limit}, offset=${offset}`);
 
       let queryText = vendorIds.length === 1
         ? `SELECT * FROM bookings b WHERE b.vendor_id = $1
@@ -1468,28 +1639,25 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
         paramIndex += 2;
       }
 
-      // Filter by date
-      if (date) {
-        queryText += ` AND b.booking_date = $${paramIndex}`;
-        params.push(date);
-        paramIndex++;
-      }
+      const dateAppliedAlias = appendBookingDateFilterSql(queryText, params, paramIndex, dateFilter);
+      queryText = dateAppliedAlias.queryText;
+      paramIndex = dateAppliedAlias.paramIndex;
 
-      // Filter by start date (for upcoming)
-      if (startDate) {
-        queryText += ` AND b.booking_date >= $${paramIndex}`;
-        params.push(startDate);
-        paramIndex++;
-      }
-
-      // Filter by status
       if (status && status !== 'all') {
         queryText += ` AND b.status = $${paramIndex}`;
         params.push(status);
         paramIndex++;
       }
 
-      queryText += ' ORDER BY b.booking_date DESC, b.booking_time DESC';
+      queryText += appendBookingViewFilter(view, 'b');
+
+      const countQueryTextAlias = queryText.replace(/^SELECT \* FROM bookings b/i, 'SELECT COUNT(*)::int AS total FROM bookings b');
+      const countResultAlias = await query(countQueryTextAlias, params).catch(() => ({ rows: [{ total: '0' }] }));
+      const totalAlias = parseInt(String(countResultAlias.rows[0]?.total ?? '0'), 10) || 0;
+
+      queryText += ' ORDER BY b.booking_date ASC, b.booking_time ASC';
+      queryText += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(limit, offset);
 
       const result = await query(queryText, params).catch(() => ({ rows: [] }));
 
@@ -1545,8 +1713,19 @@ const [customer, vendorServiceRows, pet, vendor, prescriptions, activities, pack
       return c.json({ 
         success: true, 
         bookings: enrichedBookings,
-        total: enrichedBookings.length,
-        filters: { status }
+        total: totalAlias,
+        limit,
+        offset,
+        hasMore: offset + enrichedBookings.length < totalAlias,
+        filters: {
+          date,
+          startDate: dateFilter.startDate,
+          endDate: dateFilter.endDate,
+          period: period || dateFilter.mode,
+          anchorDate: anchorDate || date,
+          status,
+          view: view || 'all',
+        },
       });
     } catch (error: any) {
       console.error('❌ [VENDOR-BOOKINGS] Error fetching bookings:', error);
