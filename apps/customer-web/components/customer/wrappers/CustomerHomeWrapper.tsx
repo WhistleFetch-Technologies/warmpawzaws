@@ -1535,6 +1535,10 @@ export function CustomerHomeWrapper({
         onNavigateHome={handleBack}
         onViewBooking={handleViewBooking}
         onViewMyPackages={() => router.push('/my-packages')}
+        onViewProfile={() => {
+          setUserSidebarOpen(false);
+          router.push('/profile');
+        }}
         onNavigate={handleAccountNavigate}
       />
     ) : null;

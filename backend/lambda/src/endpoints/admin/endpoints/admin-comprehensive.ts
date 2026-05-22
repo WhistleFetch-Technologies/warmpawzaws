@@ -960,7 +960,8 @@ class GetVendorDetailsHandler extends BaseHandler {
             ORDER BY created_at DESC
             LIMIT 10
           ) b
-          LEFT JOIN vendor_services vs ON vs.service_id = b.service_id AND vs.vendor_id = b.vendor_id
+          LEFT JOIN vendor_services vs ON vs.vendor_id = b.vendor_id
+            AND (vs.service_id = b.service_id OR vs.id = b.service_id)
           LEFT JOIN services s ON s.id = b.service_id
           LEFT JOIN customers c ON c.id = b.customer_id) as recent_orders
         FROM vendors v
@@ -1068,7 +1069,8 @@ class GetVendorDetailsHandler extends BaseHandler {
             COALESCE(vs.service_name, s.name, 'Service') as description,
             COALESCE(c.full_name, 'Customer') as related_entity
           FROM bookings b
-          LEFT JOIN vendor_services vs ON vs.service_id = b.service_id AND vs.vendor_id = b.vendor_id
+          LEFT JOIN vendor_services vs ON vs.vendor_id = b.vendor_id
+            AND (vs.service_id = b.service_id OR vs.id = b.service_id)
           LEFT JOIN services s ON s.id = b.service_id
           LEFT JOIN customers c ON c.id = b.customer_id
           WHERE b.vendor_id = $1
@@ -1655,7 +1657,8 @@ class GetVendorActivityHistoryHandler extends BaseHandler {
               'customerId', b.customer_id
             ) as metadata
           FROM bookings b
-          LEFT JOIN vendor_services vs ON vs.service_id = b.service_id AND vs.vendor_id = b.vendor_id
+          LEFT JOIN vendor_services vs ON vs.vendor_id = b.vendor_id
+            AND (vs.service_id = b.service_id OR vs.id = b.service_id)
           LEFT JOIN services s ON s.id = b.service_id
           LEFT JOIN customers c ON c.id = b.customer_id
           WHERE b.vendor_id = $1

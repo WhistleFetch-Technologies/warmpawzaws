@@ -111,17 +111,14 @@ export function VendorGalleryManagement({ vendorId, onBack }: VendorGalleryManag
       return;
     }
     try {
-      const result = await uploadFacilityCenterPhotos(
-        effectiveVendorId,
-        cameraPayloads?.length ? [] : valid,
-        {
+      const result = await uploadFacilityCenterPhotos(effectiveVendorId, valid, {
         payloads: cameraPayloads,
+        maxRetries: 3,
         onProgress:
           (cameraPayloads?.length || valid.length) === 1
             ? (pct) => console.log(`[GALLERY] Upload progress: ${pct}%`)
             : undefined,
-      }
-      );
+      });
       console.log('[GALLERY] Upload response:', {
         uploadedCount: result.uploadedCount,
         displayUrls: result.displayUrls?.length,

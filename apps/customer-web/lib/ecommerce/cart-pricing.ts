@@ -28,12 +28,25 @@ export type PricingCartLine = Pick<
   categoryId?: string;
 };
 
+/** Seller Hub / vendor_promotions savings (additive to legacy demo coupons). */
+export type SellerPromotionPricing = {
+  /** Auto-applied from POST /promotions/calculate-cart (e.g. BOGO). */
+  autoDiscount?: number;
+  /** Manual code via POST /promotions/validate-code at checkout. */
+  codeDiscount?: number;
+  label?: string;
+  code?: string;
+  promotionId?: string;
+};
+
 export type CartPricingOptions = {
   appliedCoupons?: CartPricingCoupon[];
   deliverySpeed?: DeliverySpeed;
   giftWrap?: boolean;
   productProtection?: boolean;
   itemCount?: number;
+  /** Optional seller promotion; does not change coupon behavior when omitted. */
+  sellerPromotion?: SellerPromotionPricing;
 };
 
 export type VendorPricingRow = {
@@ -47,6 +60,10 @@ export type VendorPricingRow = {
 export type CartPricingBreakdown = {
   lineSubtotal: number;
   discount: number;
+  /** Legacy demo / cart coupons only. */
+  couponDiscount?: number;
+  /** Seller auto + code (capped with coupons at subtotal). */
+  sellerPromotionDiscount?: number;
   subtotalAfterDiscount: number;
   deliveryFees: number;
   giftWrapFee: number;
@@ -112,6 +129,15 @@ export function calculateVendorDeliveryFee(
   return STANDARD_DELIVERY_FEE;
 }
 
+export function computeSellerPromotionDiscount(
+  sellerPromotion?: SellerPromotionPricing
+): number {
+  if (!sellerPromotion) return 0;
+  const auto = Math.max(0, sellerPromotion.autoDiscount ?? 0);
+  const code = Math.max(0, sellerPromotion.codeDiscount ?? 0);
+  return Math.max(auto, code);
+}
+
 export function computeCouponDiscount(
   cartTotal: number,
   appliedCoupons: CartPricingCoupon[]
@@ -138,7 +164,12 @@ export function computeCartPricing(
   const itemsByVendor = groupCartLinesByVendor(cart);
 
   const lineSubtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const discount = computeCouponDiscount(lineSubtotal, appliedCoupons);
+  const couponDiscount = computeCouponDiscount(lineSubtotal, appliedCoupons);
+  const sellerPromotionDiscount = computeSellerPromotionDiscount(options.sellerPromotion);
+  const discount = Math.min(
+    lineSubtotal,
+    couponDiscount + sellerPromotionDiscount
+  );
   const subtotalAfterDiscount = Math.max(0, lineSubtotal - discount);
 
   const byVendor: VendorPricingRow[] = Object.keys(itemsByVendor).map((vendorId) => {
@@ -184,6 +215,8 @@ export function computeCartPricing(
   return {
     lineSubtotal,
     discount,
+    couponDiscount,
+    sellerPromotionDiscount,
     subtotalAfterDiscount,
     deliveryFees,
     giftWrapFee,

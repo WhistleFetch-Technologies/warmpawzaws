@@ -10,7 +10,7 @@
  * Features:
  * - HD video calling with echo cancellation
  * - Real-time chat during call using Chime Data Messages
- * - 15-minute consultation countdown with auto-end
+ * - Consultation countdown from vendor service duration with auto-end
  * - Waiting room with status updates
  * - Responsive design matching Warmpawz theme
  * - Typing indicators
@@ -42,11 +42,13 @@ import {
 import { AttendeeStatus, CallStatus, ChatDataMessage, ChatMessage, ChimeAttendeeData, ChimeMeetingData, ChimeVideoCallProps, TypingDataMessage } from './constants/interface';
 import {
   CALL_ENDED_TOPIC,
-  CALL_SLOT_SECONDS,
+  DEFAULT_CALL_SLOT_SECONDS,
   CHAT_TOPIC,
   MEDIA_STATE_TOPIC,
   MESSAGE_LIFETIME_MS,
   TYPING_TOPIC,
+  CallTimerPayload,
+  computeClientCallRemaining,
 } from './constants';
 import { useActiveVideoCallForVendor } from '@/hooks/useActivevideocallTracker';
 import { TeleTracker } from './TeleTracker';
@@ -71,7 +73,7 @@ export function ChimeVideoCall({
   {/* Call state*/ }
   const [status, setStatus] = useState<CallStatus>('loading');
   const [error, setError] = useState<string | null>(null);
-  const [callRemainingSeconds, setCallRemainingSeconds] = useState(CALL_SLOT_SECONDS);
+  const [callRemainingSeconds, setCallRemainingSeconds] = useState(DEFAULT_CALL_SLOT_SECONDS);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [pseudoFullScreen, setPseudoFullScreen] = useState(false);
 
@@ -115,7 +117,11 @@ export function ChimeVideoCall({
   const [uploadingFile, setUploadingFile] = useState(false);
   const callRootRef = useRef<HTMLDivElement>(null);
   const videoStageRef = useRef<HTMLDivElement>(null);
-  const callRemainingRef = useRef(CALL_SLOT_SECONDS);
+  const callRemainingRef = useRef(DEFAULT_CALL_SLOT_SECONDS);
+  const callSlotSecondsRef = useRef(DEFAULT_CALL_SLOT_SECONDS);
+  const consultationStartedAtRef = useRef<string | null>(null);
+  const timerPausedRef = useRef(true);
+  const timerBaseSecondsRef = useRef<number | null>(null);
   const pipDragRef = useRef({
     active: false,
     startX: 0,
@@ -132,6 +138,13 @@ export function ChimeVideoCall({
   });
   const [endedByOther, setEndedByOther] = useState(false);
   const endedByOtherRef = useRef(false);
+  const [endOutcome, setEndOutcome] = useState<{
+    userMessage?: string;
+    teleCompletionStatus?: string;
+    bookingCompleted?: boolean;
+    overlapSeconds?: number;
+  } | null>(null);
+  const leftReportedRef = useRef(false);
 
   {/* Meeting data*/ }
   const [meetingData, setMeetingData] = useState<any>(null);
@@ -159,6 +172,68 @@ export function ChimeVideoCall({
 
 
   //---------------------------helper functions------------------------------//
+
+  const applyCallTimer = useCallback((callTimer: CallTimerPayload | undefined, opts?: { syncDisplay?: boolean }) => {
+    if (!callTimer) return;
+    const syncDisplay = opts?.syncDisplay !== false;
+    const slot =
+      callTimer.serviceDurationSeconds != null && callTimer.serviceDurationSeconds > 0
+        ? callTimer.serviceDurationSeconds
+        : callSlotSecondsRef.current;
+    callSlotSecondsRef.current = slot;
+    timerPausedRef.current = !!callTimer.timerPaused;
+
+    const running =
+      !callTimer.timerPaused &&
+      (!!callTimer.timerRunningSince ||
+        !!callTimer.consultationStartedAt ||
+        !!callTimer.consultationActive);
+
+    if (running) {
+      timerPausedRef.current = false;
+      consultationStartedAtRef.current =
+        callTimer.timerRunningSince ??
+        callTimer.consultationStartedAt ??
+        consultationStartedAtRef.current;
+      if (callTimer.timerBaseSeconds != null) {
+        timerBaseSecondsRef.current = callTimer.timerBaseSeconds;
+      } else if (timerBaseSecondsRef.current == null) {
+        timerBaseSecondsRef.current =
+          callTimer.callRemainingSeconds != null ? callTimer.callRemainingSeconds : slot;
+      }
+    } else {
+      consultationStartedAtRef.current = null;
+      if (callTimer.callRemainingSeconds != null) {
+        timerBaseSecondsRef.current = callTimer.callRemainingSeconds;
+      } else if (callTimer.timerBaseSeconds != null) {
+        timerBaseSecondsRef.current = callTimer.timerBaseSeconds;
+      }
+    }
+
+    if (!syncDisplay && running) {
+      return;
+    }
+
+    const remaining = computeClientCallRemaining(slot, {
+      timerPaused: timerPausedRef.current,
+      timerRunningSince: consultationStartedAtRef.current,
+      timerBaseSeconds: timerBaseSecondsRef.current,
+    });
+    setCallRemainingSeconds(remaining);
+    callRemainingRef.current = remaining;
+  }, []);
+
+  const getElapsedCallSeconds = useCallback(() => {
+    const slot = callSlotSecondsRef.current;
+    return Math.min(slot, Math.max(0, slot - callRemainingRef.current));
+  }, []);
+
+  const getConsultationOverlapSeconds = useCallback(() => {
+    if (endOutcome?.overlapSeconds != null) {
+      return Math.max(0, endOutcome.overlapSeconds);
+    }
+    return getElapsedCallSeconds();
+  }, [endOutcome?.overlapSeconds, getElapsedCallSeconds]);
 
   {/* Load Chime SDK*/ }
   const loadChimeSDK = async (retryCount = 0) => {
@@ -266,6 +341,7 @@ export function ChimeVideoCall({
     try {
       setStatus('connecting');
       setError(null);
+      leftReportedRef.current = false;
 
       // Request meeting credentials from backend
       const response = await apiClient.post<{
@@ -275,6 +351,7 @@ export function ChimeVideoCall({
         meetingId: string;
         error?: string;
         session?: { id: string; status: string };
+        callTimer?: CallTimerPayload;
       }>('/video-call/join', {
         bookingId,
         participantId,
@@ -305,8 +382,7 @@ export function ChimeVideoCall({
 
       setMeetingData(response.meeting);
       setAttendeeData(response.attendee);
-      setCallRemainingSeconds(CALL_SLOT_SECONDS);
-      callRemainingRef.current = CALL_SLOT_SECONDS;
+      applyCallTimer(response.callTimer);
       disconnectingRef.current = false;
       endedByOtherRef.current = false;
       setEndedByOther(false);
@@ -316,6 +392,10 @@ export function ChimeVideoCall({
 
       // Start polling for attendee status
       startStatusPolling();
+
+      if (response.callTimer?.consultationActive && !response.callTimer?.timerPaused) {
+        startCallTimer();
+      }
 
       // Add system message
       addChatMessage('system', 'System', 'Connected to video call');
@@ -600,16 +680,6 @@ export function ChimeVideoCall({
 
         if (!disconnectingRef.current && !disconnectTimerRef.current) {
           addChatMessage('system', 'System', 'Waiting for customer to rejoin...');
-
-          disconnectTimerRef.current = setTimeout(() => {
-            if (!disconnectingRef.current) {
-              disconnectingRef.current = true;
-              endedByOtherRef.current = true;
-              setEndedByOther(true);
-              endCall(false);
-            }
-            disconnectTimerRef.current = null;
-          }, 60000);
         }
       }
     };
@@ -632,11 +702,14 @@ export function ChimeVideoCall({
         } else if (topic === TYPING_TOPIC) {
           handleReceivedTypingIndicator(data as TypingDataMessage);
         } else if (topic === CALL_ENDED_TOPIC) {
-          if (!disconnectingRef.current) {
+          const finalized = !!(data as { finalize?: boolean }).finalize;
+          if (finalized && !disconnectingRef.current) {
             disconnectingRef.current = true;
             endedByOtherRef.current = true;
             setEndedByOther(true);
-            endCall(false);
+            void endCall(false, true);
+          } else if (!disconnectingRef.current) {
+            toast.info('The other participant stepped out. Waiting for them to rejoin.');
           }
         } else if (topic === MEDIA_STATE_TOPIC) {
           const m = data as { sender?: string; muted?: boolean; videoOff?: boolean };
@@ -752,17 +825,36 @@ export function ChimeVideoCall({
             vendorJoined: response.vendorJoined,
           });
 
+          if (response.callTimer) {
+            applyCallTimer(response.callTimer, {
+              syncDisplay: !(response.callTimer.consultationActive && response.callTimer.timerRunningSince),
+            });
+          }
+
           if (response.sessionEnded && !disconnectingRef.current) {
             disconnectingRef.current = true;
             endedByOtherRef.current = true;
             setEndedByOther(true);
-            endCall(false);
+            void endCall(false, true);
             return;
           }
 
-          if (response.customerJoined && response.vendorJoined && status === 'waiting') {
-            setStatus('active');
-            startCallTimer();
+          if (response.customerJoined && response.vendorJoined) {
+            setStatus((prev) => (prev === 'waiting' || prev === 'connecting' ? 'active' : prev));
+            const ct = response.callTimer;
+            if (ct && !ct.timerPaused && (ct.callRemainingSeconds ?? 0) > 0) {
+              startCallTimer();
+            } else if (ct?.timerPaused) {
+              if (callTimerRef.current) {
+                clearInterval(callTimerRef.current);
+                callTimerRef.current = null;
+              }
+            }
+          } else if (response.callTimer?.timerPaused) {
+            if (callTimerRef.current) {
+              clearInterval(callTimerRef.current);
+              callTimerRef.current = null;
+            }
           }
         }
       } catch (e) {
@@ -771,87 +863,150 @@ export function ChimeVideoCall({
     }, 2000); // Poll every 2s for faster transition when both join
   };
 
-  {/* Start call timer (15:00 countdown)*/ }
+  {/* Start call timer — ticks from server consultation start (persists across refresh) */}
   const startCallTimer = () => {
     if (callTimerRef.current) return;
+    if (timerPausedRef.current) return;
+    if (callRemainingRef.current <= 0) return;
 
     callTimerRef.current = setInterval(() => {
-      setCallRemainingSeconds((prev) => {
-        if (prev <= 1) {
-          if (callTimerRef.current) {
-            clearInterval(callTimerRef.current);
-            callTimerRef.current = null;
-          }
-          queueMicrotask(() => {
-            toast.info('Consultation time limit reached. Ending call.');
-            void endCall(true);
-          });
-          return 0;
-        }
-        return prev - 1;
+      const remaining = computeClientCallRemaining(callSlotSecondsRef.current, {
+        timerPaused: timerPausedRef.current,
+        timerRunningSince: consultationStartedAtRef.current,
+        timerBaseSeconds: timerBaseSecondsRef.current,
       });
+      callRemainingRef.current = remaining;
+      setCallRemainingSeconds(remaining);
+      if (remaining <= 0) {
+        if (callTimerRef.current) {
+          clearInterval(callTimerRef.current);
+          callTimerRef.current = null;
+        }
+        queueMicrotask(() => {
+          toast.info('Consultation time limit reached. Ending call.');
+          void endCall(true, true);
+        });
+      }
     }, 1000);
   };
 
-  {/* Handle end call click*/ }
+  const reportParticipantLeft = useCallback(async () => {
+    if (leftReportedRef.current) return;
+    leftReportedRef.current = true;
+    try {
+      const res = await apiClient.post<{
+        callTimer?: CallTimerPayload;
+        canRejoin?: boolean;
+      }>(`/video-call/${bookingId}/participant-left`, { participantType });
+      if (res?.callTimer) {
+        applyCallTimer(res.callTimer);
+      }
+      return res;
+    } catch {
+      return null;
+    }
+  }, [bookingId, participantType, applyCallTimer]);
+
   const handleEndCallClick = () => {
-    if (typeof window !== 'undefined' && window.confirm('End the call?')) {
-      endCall(true);
+    const remaining = callRemainingRef.current;
+    const msg =
+      remaining > 0
+        ? 'Leave the call? Your remaining consultation time is saved — you can rejoin until the slot ends.'
+        : 'End the consultation? Your slot time has run out.';
+    if (typeof window !== 'undefined' && window.confirm(msg)) {
+      endCall(true, remaining <= 0);
     }
   };
 
-  {/* End call*/ }
-  const endCall = async (initiatedByUs = true) => {
+  const disconnectLocalMedia = () => {
+    const session = meetingSessionRef.current;
+    if (session) {
+      try {
+        session.audioVideo.stopLocalVideoTile();
+        session.audioVideo.stop();
+      } catch { /* ignore */ }
+    }
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
+    }
+    if (statusPollerRef.current) {
+      clearInterval(statusPollerRef.current);
+      statusPollerRef.current = null;
+    }
+  };
+
+  const endCall = async (initiatedByUs = true, finalizeSession = false) => {
     if (endingCallRef.current) return;
     endingCallRef.current = true;
-    const elapsedSeconds = Math.min(
-      CALL_SLOT_SECONDS,
-      Math.max(0, CALL_SLOT_SECONDS - callRemainingRef.current)
-    );
+    const elapsedSeconds = getElapsedCallSeconds();
+    const shouldFinalize = finalizeSession || callRemainingRef.current <= 0;
+
     try {
       const session = meetingSessionRef.current;
 
-      // Notify other participant we're ending (only if we initiated)
-      if (initiatedByUs && session?.audioVideo) {
+      if (shouldFinalize && initiatedByUs && session?.audioVideo) {
         try {
-          const payload = new TextEncoder().encode(JSON.stringify({ endedBy: participantType }));
+          const payload = new TextEncoder().encode(JSON.stringify({ endedBy: participantType, finalize: true }));
           session.audioVideo.realtimeSendDataMessage(CALL_ENDED_TOPIC, payload, 5000);
-        } catch { }
+        } catch { /* ignore */ }
       }
 
-      // Stop local media
-      if (session) {
-        session.audioVideo.stopLocalVideoTile();
-        session.audioVideo.stop();
-      }
+      disconnectLocalMedia();
 
-      // Clear timers
-      if (callTimerRef.current) {
-        clearInterval(callTimerRef.current);
-        callTimerRef.current = null;
-      }
-      if (statusPollerRef.current) {
-        clearInterval(statusPollerRef.current);
-        statusPollerRef.current = null;
-      }
+      if (shouldFinalize) {
+        const endResponse = await apiClient.post<any>(`/video-call/${bookingId}/end`, {
+          duration: elapsedSeconds,
+          participantType,
+        });
 
-      // Notify backend
-      await apiClient.post(`/video-call/${bookingId}/end`, {
-        duration: elapsedSeconds,
-        participantType,
-      });
+        if (endResponse?.userMessage || endResponse?.teleCompletionStatus) {
+          setEndOutcome({
+            userMessage: endResponse.userMessage,
+            teleCompletionStatus: endResponse.teleCompletionStatus,
+            bookingCompleted: endResponse.bookingCompleted,
+            overlapSeconds:
+              endResponse.overlapSeconds != null
+                ? Number(endResponse.overlapSeconds)
+                : undefined,
+          });
+          if (endResponse.teleCompletionStatus === 'customer_no_show') {
+            toast.error(endResponse.userMessage || 'Customer did not join the consultation.');
+          } else if (endResponse.bookingCompleted) {
+            toast.success(endResponse.userMessage || 'Consultation completed successfully.');
+          } else if (endResponse.userMessage) {
+            toast.info(endResponse.userMessage);
+          }
+        }
 
-      setStatus('ended');
-
-      if (onEndCall) {
-        onEndCall(elapsedSeconds);
+        setStatus('ended');
+        if (onEndCall) {
+          onEndCall(elapsedSeconds);
+        }
+      } else {
+        const leaveRes = await reportParticipantLeft();
+        leftReportedRef.current = false;
+        setStatus('left');
+        if (leaveRes?.canRejoin !== false) {
+          toast.info('You left the call. Rejoin anytime while time remains.');
+        }
       }
     } catch (err) {
       console.error('Error ending call:', err);
-      setStatus('ended');
+      setStatus(shouldFinalize ? 'ended' : 'left');
     } finally {
       endingCallRef.current = false;
     }
+  };
+
+  const handleRejoinCall = () => {
+    leftReportedRef.current = false;
+    endingCallRef.current = false;
+    disconnectingRef.current = false;
+    hasAutoJoinedRef.current = false;
+    setEndOutcome(null);
+    setError(null);
+    void joinMeeting();
   };
 
   {/* Add chat message*/ }
@@ -1625,25 +1780,70 @@ export function ChimeVideoCall({
     );
   }
 
-  {/* Ended state*/ }
-  if (status === 'ended') {
+  if (status === 'left') {
     return (
       <div className="bg-white rounded-2xl p-8 shadow-lg border border-gray-100">
         <div className="text-center">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Check className="w-10 h-10 text-green-500" />
+          <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Phone className="w-10 h-10 text-blue-600" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-2">
-            {endedByOther ? `${otherParticipantName} left the call` : 'Call ended'}
-          </h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">You left the call</h2>
           <p className="text-gray-600 mb-1">
-            Duration:{' '}
-            {formatDuration(
-              Math.min(CALL_SLOT_SECONDS, Math.max(0, CALL_SLOT_SECONDS - callRemainingSeconds))
-            )}
+            Time remaining:{' '}
+            <span className="font-mono font-medium">{formatDuration(callRemainingSeconds)}</span>
           </p>
           <p className="text-gray-500 text-sm mb-6">
-            {endedByOther ? 'The other participant has disconnected.' : 'Thank you for using Warmpawz'}
+            Rejoin to continue the consultation before the slot ends.
+          </p>
+          <Button
+            onClick={handleRejoinCall}
+            className="bg-[#FF8C42] hover:bg-[#FF7A2E] px-8 py-3 rounded-xl"
+          >
+            Rejoin call
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  {/* Ended state*/ }
+  if (status === 'ended') {
+    const isCustomerNoShow = endOutcome?.teleCompletionStatus === 'customer_no_show';
+    const isIncomplete = endOutcome?.teleCompletionStatus === 'incomplete_call';
+    const isQualified = endOutcome?.teleCompletionStatus === 'qualified' || endOutcome?.bookingCompleted;
+    const headline = endOutcome?.userMessage
+      ? endOutcome.userMessage
+      : endedByOther
+        ? `${otherParticipantName} left the call`
+        : 'Call ended';
+
+    return (
+      <div className="bg-white rounded-2xl p-8 shadow-lg border border-gray-100">
+        <div className="text-center">
+          <div
+            className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
+              isQualified ? 'bg-green-100' : isCustomerNoShow || isIncomplete ? 'bg-amber-100' : 'bg-gray-100'
+            }`}
+          >
+            {isQualified ? (
+              <Check className="w-10 h-10 text-green-500" />
+            ) : (
+              <AlertCircle className={`w-10 h-10 ${isCustomerNoShow ? 'text-amber-600' : 'text-gray-500'}`} />
+            )}
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">{headline}</h2>
+          <p className="text-gray-600 mb-1">
+            Duration:{' '}
+            {formatDuration(getConsultationOverlapSeconds())}
+          </p>
+          <p className="text-gray-500 text-sm mb-6">
+            {isCustomerNoShow
+              ? 'The customer did not join. Use Mark Complete only after a qualified consultation.'
+              : endedByOther
+                ? 'The other participant has disconnected.'
+                : isQualified
+                  ? 'Thank you for using Warmpawz'
+                  : 'Minimum consultation duration was not met for automatic completion.'}
           </p>
 
           <div className="flex gap-3 justify-center">
@@ -1657,11 +1857,7 @@ export function ChimeVideoCall({
               </Button>
             )}
             <Button
-              onClick={() =>
-                onEndCall?.(
-                  Math.min(CALL_SLOT_SECONDS, Math.max(0, CALL_SLOT_SECONDS - callRemainingSeconds))
-                )
-              }
+              onClick={() => onEndCall?.(getConsultationOverlapSeconds())}
               className="bg-[#FF8C42] hover:bg-[#FF7A2E] px-6 py-3 rounded-xl"
             >
               Done

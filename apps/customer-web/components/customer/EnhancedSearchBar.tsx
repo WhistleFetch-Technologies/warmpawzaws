@@ -6,6 +6,15 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { pickProfileImageUrl, type SearchApiVendorRow } from '@/lib/search-vendor-display';
+import {
+  appendDiscoverRoleParams,
+  buildSearchDiscoveryQueryParams,
+} from '@/lib/search-discovery-params';
+import {
+  applyHubCategoryFilter,
+  dedupeSearchVendorAndServiceRows,
+  inferHubSlugFromSearchQuery,
+} from '@/lib/search-hub-category-filter';
 
 interface SearchResult {
   id: string;
@@ -188,17 +197,31 @@ export function EnhancedSearchBar({
 
   const performSearch = async (searchQuery: string) => {
     const reqId = ++searchRequestSeqRef.current;
-    const locForRequest = userLocationRef.current;
     setLoading(true);
     try {
       const params = new URLSearchParams({
         q: searchQuery,
-        limit: '30'
+        limit: '30',
       });
 
-      if (locForRequest) {
-        params.append('userLat', locForRequest.lat.toString());
-        params.append('userLng', locForRequest.lng.toString());
+      const inferredHub = inferHubSlugFromSearchQuery(searchQuery);
+      if (inferredHub) {
+        params.set('category', inferredHub);
+        appendDiscoverRoleParams(params, inferredHub);
+      }
+
+      const discoveryParams = await buildSearchDiscoveryQueryParams();
+      discoveryParams.forEach((value, key) => params.set(key, value));
+
+      const locLat = params.get('userLat');
+      const locLng = params.get('userLng');
+      if (locLat && locLng) {
+        const lat = parseFloat(locLat);
+        const lng = parseFloat(locLng);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          userLocationRef.current = { lat, lng };
+          setUserLocation({ lat, lng });
+        }
       }
 
       if (customerId) {
@@ -307,12 +330,52 @@ export function EnhancedSearchBar({
         });
       });
       
-      // Fallback to old format if available
+      let finalResults = transformedResults;
+      if (inferredHub && finalResults.length > 0) {
+        finalResults = finalResults.filter((r) =>
+          applyHubCategoryFilter(
+            [
+              {
+                type: r.type,
+                category: String(r.category || r.data?.serviceType || ''),
+                name: String(r.data?.name || r.data?.businessName || ''),
+              },
+            ],
+            inferredHub,
+            searchQuery
+          ).length > 0
+        );
+      }
+
+      finalResults = dedupeSearchVendorAndServiceRows(
+        finalResults.map((r) => ({
+          ...r,
+          vendorOwnerId:
+            r.type === 'service' ? String(r.data?.vendorId || '').trim() || undefined : undefined,
+        }))
+      );
+
+      // Walker service screen lists vendors only — avoid vendor + walk service double-count.
+      if (inferredHub === 'walker') {
+        const vendorHits = finalResults.filter((r) => r.type === 'vendor');
+        if (vendorHits.length > 0) {
+          finalResults = vendorHits;
+        } else {
+          const seenVendor = new Set<string>();
+          finalResults = finalResults.filter((r) => {
+            const vid = String(r.data?.vendorId || '').trim();
+            if (!vid || seenVendor.has(vid)) return false;
+            seenVendor.add(vid);
+            return true;
+          });
+        }
+      }
+
       const oldResults = data.data?.results || data.results || [];
-      if (transformedResults.length === 0) {
+      if (finalResults.length === 0) {
         setResults(oldResults);
       } else {
-        setResults(transformedResults);
+        setResults(finalResults);
       }
     } catch (error) {
       console.error('Error performing search:', error);

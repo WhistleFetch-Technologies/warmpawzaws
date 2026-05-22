@@ -16,6 +16,7 @@ import type { WarmpawzCartProductSnapshot } from '@/lib/warmpawz-cart-storage';
 import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
 import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import {
   ArrowLeft, ShoppingCart, Star, Truck, Shield, Tag,
   Package, Store, Check, Plus, Minus, Share2, ChevronRight,
@@ -575,6 +576,11 @@ export default function ProductDetailClient() {
                 </>
               )}
             </div>
+
+            <SellerProductPromotions
+              vendorId={product.vendor_id}
+              vendorName={product.vendor_name}
+            />
 
             {/* Product Variations */}
             {product.variations && product.variations.length > 0 && (

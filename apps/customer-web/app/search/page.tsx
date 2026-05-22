@@ -9,6 +9,7 @@ import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { buildSearchFetchTrigger } from '@/lib/search-fetch-trigger';
 import { applyHubCategoryFilter } from '@/lib/search-hub-category-filter';
+import { formatCustomerApiError } from '@/lib/format-api-error';
 import { saveSearchContext, updateSearchContextSelection } from '@/lib/search-context';
 import { ServiceEvents } from '@/components/customer/ServiceEvents';
 import { CustomerSearchListingCard } from '@/components/customer/search/CustomerSearchListingCard';
@@ -21,6 +22,12 @@ import {
   pickVendorLatLng,
   type SearchApiVendorRow,
 } from '@/lib/search-vendor-display';
+import {
+  appendDiscoverRoleParams,
+  buildSearchDiscoveryQueryParams,
+} from '@/lib/search-discovery-params';
+import { dedupeSearchVendorAndServiceRows } from '@/lib/search-hub-category-filter';
+import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
 
 interface SearchResult {
   id: string;
@@ -162,6 +169,7 @@ export default function SearchPage() {
 function SearchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { openAccountMenu, accountSidebar } = useCustomerAccountSidebarHost();
   const initialQuery = searchParams.get('q') || '';
   const initialCategory = searchParams.get('category') || '';
   const vendorIdParam = searchParams.get('vendorId');
@@ -203,52 +211,34 @@ function SearchContent() {
     // the role-name fallback (which the backend matched via JOIN on roles but which may not
     // perfectly round-trip through normalizeCategoryToken). Apply client filter only for
     // keyword mode (where the backend returned the full unfiltered set).
-    const filtered = (hub && q) ? applyHubCategoryFilter(apiResults, hub, q) : apiResults;
+    const filtered = hub ? applyHubCategoryFilter(apiResults, hub, q) : apiResults;
 
-    // Deduplicate: if a vendor row is present, its services are reachable by clicking the
-    // vendor card. Suppress service rows from the same vendor to prevent the same business
-    // appearing N+1 times (once as vendor + once per service).
-    const vendorRowIds = new Set(
-      filtered.filter(r => r.type === 'vendor').map(r => r.id)
-    );
-    return filtered.filter(
-      r => r.type === 'vendor' || !(r.vendorOwnerId && vendorRowIds.has(r.vendorOwnerId))
-    );
+    return dedupeSearchVendorAndServiceRows(filtered);
   }, [apiResults, query, category]);
 
-  /** Used only for distance labels; omit fake defaults — no distance until browser shares location. */
+  /** Same coord order as discover-services (profile → localStorage → GPS). */
   const [userGeo, setUserGeo] = useState<{ lat: number; lng: number } | null>(null);
-  const userGeoRef = React.useRef(userGeo);
-  userGeoRef.current = userGeo;
+  const [discoveryCoordsReady, setDiscoveryCoordsReady] = useState(false);
 
   useEffect(() => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
-    const tryHigh = () =>
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setUserGeo({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        },
-        () =>
-          navigator.geolocation.getCurrentPosition(
-            (pos) =>
-              setUserGeo({
-                lat: pos.coords.latitude,
-                lng: pos.coords.longitude,
-              }),
-            () => setUserGeo(null),
-            {
-              maximumAge: 300_000,
-              timeout: 25_000,
-              enableHighAccuracy: true,
-            }
-          ),
-        {
-          maximumAge: 120_000,
-          timeout: 20_000,
-          enableHighAccuracy: false,
+    let cancelled = false;
+    (async () => {
+      const discoveryParams = await buildSearchDiscoveryQueryParams();
+      if (cancelled) return;
+      const latRaw = discoveryParams.get('userLat');
+      const lngRaw = discoveryParams.get('userLng');
+      if (latRaw && lngRaw) {
+        const lat = parseFloat(latRaw);
+        const lng = parseFloat(lngRaw);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          setUserGeo({ lat, lng });
         }
-      );
-    tryHigh();
+      }
+      setDiscoveryCoordsReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const displayedWithDistance = useMemo(() => {
@@ -303,19 +293,22 @@ function SearchContent() {
       setLoading(true);
       try {
         const params = new URLSearchParams();
+        const discoveryParams = await buildSearchDiscoveryQueryParams();
+        discoveryParams.forEach((value, key) => params.set(key, value));
         if (searchFetchTrigger.kind === 'keyword') {
           params.set('q', searchFetchTrigger.q);
           params.set('limit', '50');
+          const hub = categoryRef.current.trim();
+          if (hub) {
+            params.set('category', hub);
+            appendDiscoverRoleParams(params, hub);
+          }
         } else if (searchFetchTrigger.kind === 'hub') {
           params.set('category', searchFetchTrigger.c);
+          appendDiscoverRoleParams(params, searchFetchTrigger.c);
           params.set('limit', '50');
         } else {
           params.set('limit', '50');
-        }
-        const geo = userGeoRef.current;
-        if (geo) {
-          params.set('userLat', String(geo.lat));
-          params.set('userLng', String(geo.lng));
         }
         const response = await apiClient.get<any>(`/search?${params.toString()}`);
         if (cancelled) return;
@@ -324,7 +317,7 @@ function SearchContent() {
         if (searchFetchTrigger.kind === 'keyword') {
           const qStr = searchFetchTrigger.q;
           const hub = categoryRef.current.trim();
-          const filtered = (hub && qStr) ? applyHubCategoryFilter(mapped, hub, qStr) : mapped;
+          const filtered = hub ? applyHubCategoryFilter(mapped, hub, qStr) : mapped;
           const vIds = new Set(filtered.filter(r => r.type === 'vendor').map(r => r.id));
           const contextResults = filtered.filter(r => r.type === 'vendor' || !(r.vendorOwnerId && vIds.has(r.vendorOwnerId)));
           saveSearchContext({
@@ -351,7 +344,7 @@ function SearchContent() {
       } catch (err: any) {
         if (!cancelled) {
           console.error('Search error:', err);
-          setError(err.message || 'Search failed');
+          setError(formatCustomerApiError(err.message || 'Search failed'));
           setApiResults([]);
         }
       } finally {
@@ -361,7 +354,7 @@ function SearchContent() {
     return () => {
       cancelled = true;
     };
-  }, [searchFetchTrigger, vendorIdParam]);
+  }, [searchFetchTrigger, vendorIdParam, discoveryCoordsReady]);
 
   /** Keyword results loaded: keep localStorage context in sync when only the hub chip changes (no refetch). */
   useEffect(() => {
@@ -370,7 +363,7 @@ function SearchContent() {
     if (!q || !apiResultsRef.current.length) return;
     const hub = category.trim();
     // Use same dedup logic as displayedResults so stored context matches what's shown.
-    const filtered = (hub && q) ? applyHubCategoryFilter(apiResultsRef.current, hub, q) : apiResultsRef.current;
+    const filtered = hub ? applyHubCategoryFilter(apiResultsRef.current, hub, q) : apiResultsRef.current;
     const vendorIds = new Set(filtered.filter(r => r.type === 'vendor').map(r => r.id));
     const deduped = filtered.filter(r => r.type === 'vendor' || !(r.vendorOwnerId && vendorIds.has(r.vendorOwnerId)));
     saveSearchContext({
@@ -677,21 +670,36 @@ function SearchContent() {
             { Icon: Home, label: 'Home', href: '/' },
             { Icon: Search, label: 'Search', href: '/search', active: true },
             { Icon: Calendar, label: 'Bookings', href: '/bookings' },
-            { Icon: User, label: 'Profile', href: '/profile' },
-          ].map(({ Icon, label, href, active }) => (
-            <Link
-              key={label}
-              href={href}
-              className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl py-1 transition-colors ${
-                active ? 'text-[#FF8C42]' : 'text-gray-500 active:text-gray-700'
-              }`}
-            >
-              <Icon className="h-5 w-5 shrink-0" strokeWidth={active ? 2.25 : 2} />
-              <span className="max-w-full truncate text-[10px] font-medium leading-tight">{label}</span>
-            </Link>
-          ))}
+            { Icon: User, label: 'Profile', onClick: openAccountMenu },
+          ].map((tab) => {
+            const { Icon, label, active } = tab;
+            const className = `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl py-1 transition-colors ${
+              active ? 'text-[#FF8C42]' : 'text-gray-500 active:text-gray-700'
+            }`;
+            if ('onClick' in tab && tab.onClick) {
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={tab.onClick}
+                  className={className}
+                >
+                  <Icon className="h-5 w-5 shrink-0" strokeWidth={active ? 2.25 : 2} />
+                  <span className="max-w-full truncate text-[10px] font-medium leading-tight">{label}</span>
+                </button>
+              );
+            }
+            const href = 'href' in tab ? tab.href : '/';
+            return (
+              <Link key={label} href={href} className={className}>
+                <Icon className="h-5 w-5 shrink-0" strokeWidth={active ? 2.25 : 2} />
+                <span className="max-w-full truncate text-[10px] font-medium leading-tight">{label}</span>
+              </Link>
+            );
+          })}
         </div>
       </nav>
+      {accountSidebar}
     </div>
   );
 }

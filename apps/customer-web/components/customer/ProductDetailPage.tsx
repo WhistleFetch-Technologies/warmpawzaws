@@ -30,7 +30,9 @@ import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
-import { setLineQuantityInWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
+import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
+import { resolveVendorIdFromProduct } from '@/lib/ecommerce/seller-promotions';
+import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import { toast } from 'sonner';
 
 interface ProductDetailPageProps {
@@ -56,22 +58,8 @@ export function ProductDetailPage({
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [relatedProducts, setRelatedProducts] = useState<any[]>([]);
-  const { addToCart, updateQuantity, cart } = useCart();
+  const { addToCart, cart } = useCart();
   const router = useRouter();
-
-  const getCartLineId = (p: typeof product) =>
-    p
-      ? String(
-          canonicalProductId(p) ||
-            p.id ||
-            p.productId ||
-            p.product_id ||
-            ''
-        )
-      : '';
-
-  const findCartLine = (lineId: string) =>
-    lineId ? cart.find((item) => String(item.id) === lineId) : undefined;
 
   const loadProductDetails = async () => {
     try {
@@ -153,18 +141,10 @@ export function ProductDetailPage({
     initialProduct?.fullDetails,
   ]);
 
-  useEffect(() => {
-    if (!product) return;
-    const lineId = getCartLineId(product);
-    const line = findCartLine(lineId);
-    if (line) setQuantity(line.quantity);
-  }, [product, cart]);
-
   const buildCartItemForContext = () => {
     if (!product) return null;
-    const lineId = getCartLineId(product);
     return {
-      id: lineId || product.id || product.productId,
+      id: product.id || product.productId,
       name: product.name || product.product_name,
       price: parseFloat(product.price || product.unit_price || 0),
       quantity: quantity,
@@ -177,19 +157,14 @@ export function ProductDetailPage({
 
   const handleAddToCart = () => {
     const cartItem = buildCartItemForContext();
-    if (!cartItem || !product) return;
-    const lineId = getCartLineId(product);
-    if (lineId && findCartLine(lineId)) {
-      updateQuantity(lineId, quantity);
-      toast.success(`Cart updated to ${quantity}`);
-      return;
-    }
+    if (!cartItem) return;
     addToCart(cartItem);
     toast.success(`${quantity} ${product.name || 'item'} added to cart`);
   };
 
   const handleBuyNow = () => {
-    if (!product) return;
+    const cartItem = buildCartItemForContext();
+    if (!cartItem || !product) return;
 
     const lineId = String(
       canonicalProductId(product) ||
@@ -219,7 +194,7 @@ export function ProductDetailPage({
     else if (product.image_url) images = [product.image_url];
     else if (product.primary_image) images = [product.primary_image];
 
-    const persisted = setLineQuantityInWarmpawzCartStorage({
+    const persisted = mergeLineIntoWarmpawzCartStorage({
       lineId,
       quantity,
       product: {
@@ -239,25 +214,14 @@ export function ProductDetailPage({
       return;
     }
 
-    // CartProvider reloads from localStorage via CART_UPDATED_EVENT — do not call addToCart here or quantity doubles.
+    addToCart(cartItem);
     router.push('/cart?buynow=1');
-  };
-
-  const applyQuantity = (next: number) => {
-    const maxStock = product?.stock_quantity || product?.stock || 999;
-    const clamped = Math.max(1, Math.min(maxStock, next));
-    setQuantity(clamped);
-    if (!product) return;
-    const lineId = getCartLineId(product);
-    if (lineId && findCartLine(lineId)) {
-      updateQuantity(lineId, clamped);
-    }
   };
 
   const incrementQuantity = () => {
     const maxStock = product?.stock_quantity || product?.stock || 999;
     if (quantity < maxStock) {
-      applyQuantity(quantity + 1);
+      setQuantity(quantity + 1);
     } else {
       toast.info('Maximum stock available');
     }
@@ -265,7 +229,7 @@ export function ProductDetailPage({
 
   const decrementQuantity = () => {
     if (quantity > 1) {
-      applyQuantity(quantity - 1);
+      setQuantity(quantity - 1);
     }
   };
 
@@ -296,10 +260,8 @@ export function ProductDetailPage({
   }
 
   // Product exists - calculate derived values (moved before return to fix parser issue)
-  const cartLineId = getCartLineId(product);
-  const cartLine = findCartLine(cartLineId);
-  const isInCart = !!cartLine;
-  const inCartQuantity = cartLine?.quantity ?? 0;
+  const isInCart = cart.some(item => item.id === (product?.id || product?.productId));
+  const inCartQuantity = cart.find(item => item.id === (product?.id || product?.productId))?.quantity || 0;
   const productImages = product.images || 
     (product.image ? [product.image] : []) ||
     (product.image_url ? [product.image_url] : []) ||
@@ -429,6 +391,12 @@ export function ProductDetailPage({
               </>
             )}
           </div>
+
+          <SellerProductPromotions
+            vendorId={resolveVendorIdFromProduct(product)}
+            vendorName={product.vendor_name || product.vendor?.name}
+            className="px-4"
+          />
 
           {/* Tax Info */}
           <div className="flex items-center gap-2 text-xs text-gray-500">

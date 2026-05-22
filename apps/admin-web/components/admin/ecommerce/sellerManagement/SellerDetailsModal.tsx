@@ -25,7 +25,7 @@ export interface SellerSummary {
   products?: number;
   status?: string;
   sellerStatus?: string;
-  /** Full row from GET /ecommerce/vendors/list — fallback when detail route unavailable */
+  /** Full row from GET /ecommerce/vendors/list — used when detail route is not deployed yet */
   listVendor?: Record<string, unknown>;
 }
 
@@ -89,10 +89,7 @@ const toNumber = (value: unknown): number | null => {
   return null;
 };
 
-function mapVendorToDetails(
-  vendor: Record<string, unknown>,
-  summary: SellerSummary
-): SellerDetails {
+function mapVendorToDetails(vendor: Record<string, unknown>, summary: SellerSummary): SellerDetails {
   return {
     ...summary,
     businessName:
@@ -117,7 +114,8 @@ function mapVendorToDetails(
     gstNumber: (vendor.gst_number as string) || undefined,
     panNumber: (vendor.pan_number as string) || undefined,
     products: toNumber(vendor.product_count) ?? summary.products ?? 0,
-    activeProducts: toNumber(vendor.active_product_count) ?? summary.products ?? 0,
+    activeProducts:
+      toNumber(vendor.active_product_count) ?? summary.products ?? 0,
     totalOrders: toNumber(vendor.total_orders) ?? 0,
     pendingOrders: toNumber(vendor.pending_orders) ?? 0,
     totalRevenue: toNumber(vendor.total_revenue) ?? 0,

@@ -20,28 +20,27 @@ export function SellerManagement() {
       setLoading(true);
       const data = await apiClient.get<any>('/ecommerce/vendors/list');
       const vendors = (data as any).vendors || [];
-
-      const mappedSellers: SellerSummary[] = vendors.map(
-        (vendor: Record<string, unknown>) => ({
-          id: String(vendor.id),
-          businessName:
-            (vendor.business_name as string) || (vendor.businessName as string),
-          ownerName: (vendor.owner_name as string) || (vendor.ownerName as string),
-          phone: vendor.phone as string | undefined,
-          email: vendor.email as string | undefined,
-          isActive: vendor.is_active === true,
-          status: vendor.status as string | undefined,
-          sellerStatus: vendor.seller_status as string | undefined,
-          products:
-            (typeof vendor.active_product_count === 'number'
-              ? vendor.active_product_count
-              : null) ??
-            (typeof vendor.product_count === 'number' ? vendor.product_count : null) ??
-            0,
-          listVendor: vendor,
-        })
-      );
-
+      
+      // Map API response (snake_case) to component format (camelCase)
+      const mappedSellers: SellerSummary[] = vendors.map((vendor: Record<string, unknown>) => ({
+        id: String(vendor.id),
+        businessName:
+          (vendor.business_name as string) || (vendor.businessName as string),
+        ownerName: (vendor.owner_name as string) || (vendor.ownerName as string),
+        phone: vendor.phone as string | undefined,
+        email: vendor.email as string | undefined,
+        isActive: vendor.is_active === true,
+        status: vendor.status as string | undefined,
+        sellerStatus: vendor.seller_status as string | undefined,
+        products:
+          (typeof vendor.active_product_count === 'number'
+            ? vendor.active_product_count
+            : null) ??
+          (typeof vendor.product_count === 'number' ? vendor.product_count : null) ??
+          0,
+        listVendor: vendor,
+      }));
+      
       setSellers(mappedSellers);
     } catch (error: any) {
       console.error('Error loading sellers:', error);
@@ -56,14 +55,14 @@ export function SellerManagement() {
 
   const formatPhoneNumber = (phone: string | null | undefined): string => {
     if (!phone) return '-';
+    // Remove all non-digit characters
     const digits = phone.replace(/\D/g, '');
+    // Format Indian phone numbers: +91 98765 43210 or 98765 43210
     if (digits.length === 10) {
       return `${digits.slice(0, 5)} ${digits.slice(5)}`;
-    }
-    if (digits.length === 12 && digits.startsWith('91')) {
+    } else if (digits.length === 12 && digits.startsWith('91')) {
       return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
-    }
-    if (digits.length === 13 && digits.startsWith('919')) {
+    } else if (digits.length === 13 && digits.startsWith('919')) {
       return `+91 ${digits.slice(2, 7)} ${digits.slice(7)}`;
     }
     return phone;
@@ -80,6 +79,7 @@ export function SellerManagement() {
 
   return (
     <div className="p-6 space-y-6 relative">
+      {/* Loading overlay - only show when actively loading */}
       {loading && (
         <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-xl">
           <div className="text-center">
@@ -90,7 +90,9 @@ export function SellerManagement() {
       )}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-black text-xl font-semibold">Seller Management</h2>
+          <h2 className="text-black text-xl font-semibold">
+            Seller Management
+          </h2>
           <p className="text-gray-500 text-sm mt-1">
             Manage pet product sellers on the platform
           </p>
@@ -138,7 +140,10 @@ export function SellerManagement() {
             <tbody className="divide-y divide-gray-200">
               {filteredSellers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                  <td
+                    colSpan={6}
+                    className="px-6 py-12 text-center text-gray-500"
+                  >
                     <Store className="w-12 h-12 mx-auto mb-3 text-gray-300" />
                     <p>No sellers found</p>
                   </td>
@@ -151,9 +156,7 @@ export function SellerManagement() {
                         {seller.businessName || seller.ownerName || 'Unnamed Seller'}
                       </p>
                     </td>
-                    <td className="px-6 py-4 text-gray-600">
-                      {formatPhoneNumber(seller.phone)}
-                    </td>
+                    <td className="px-6 py-4 text-gray-600">{formatPhoneNumber(seller.phone)}</td>
                     <td className="px-6 py-4 text-center">
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${
@@ -203,3 +206,4 @@ export function SellerManagement() {
     </div>
   );
 }
+

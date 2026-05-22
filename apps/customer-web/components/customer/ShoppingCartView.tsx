@@ -38,11 +38,12 @@ import {
   persistPricingOptionsForCheckout,
   VENDOR_DELIVERY_CONFIG,
   type CartPricingCoupon,
+  type SellerPromotionPricing,
 } from '@/lib/ecommerce/cart-pricing';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { CartPromotionsBanner } from './shared/CartPromotionsBanner';
 import { CartPromotionResult } from '@/lib/promotions-engine';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
-import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 
 interface ShoppingCartViewProps {
   onBack: () => void;
@@ -161,16 +162,27 @@ export function ShoppingCartView({
     () =>
       cart.map((item) => ({
         id: item.id,
-        productId: item.id,
+        productId: (item as { productId?: string }).productId ?? item.id,
         name: item.name,
         price: item.price,
         quantity: item.quantity,
         vendorId: item.vendorId,
-        category: (item as any).category,
-        categoryId: (item as any).categoryId,
+        category: (item as { category?: string }).category,
+        categoryId: (item as { categoryId?: string }).categoryId,
       })),
     [cart]
   );
+
+  const sellerPromotionPricing = useMemo((): SellerPromotionPricing | undefined => {
+    if (!isCustomerEcommerceEnabled() || !promotionResult?.totalSavings) return undefined;
+    const main = promotionResult.appliedPromotions[0];
+    return {
+      autoDiscount: promotionResult.totalSavings,
+      label: main?.description || main?.promotion?.name,
+      promotionId: main?.promotion?.id,
+      code: main?.promotion?.code,
+    };
+  }, [promotionResult]);
 
   const pricing = useMemo(
     () =>
@@ -180,8 +192,17 @@ export function ShoppingCartView({
         giftWrap,
         productProtection,
         itemCount,
+        sellerPromotion: sellerPromotionPricing,
       }),
-    [cart, appliedCoupons, selectedDelivery, giftWrap, productProtection, itemCount]
+    [
+      cart,
+      appliedCoupons,
+      selectedDelivery,
+      giftWrap,
+      productProtection,
+      itemCount,
+      sellerPromotionPricing,
+    ]
   );
 
   const totalAmount = pricing.total;
@@ -202,9 +223,18 @@ export function ShoppingCartView({
       giftWrap,
       productProtection,
       itemCount,
+      sellerPromotion: sellerPromotionPricing,
     });
     onCheckout();
-  }, [appliedCoupons, selectedDelivery, giftWrap, productProtection, itemCount, onCheckout]);
+  }, [
+    appliedCoupons,
+    selectedDelivery,
+    giftWrap,
+    productProtection,
+    itemCount,
+    sellerPromotionPricing,
+    onCheckout,
+  ]);
 
   useEffect(() => {
     if (variant !== 'standalone' || searchParams.get('buynow') !== '1' || cart.length === 0) return;
@@ -361,8 +391,8 @@ export function ShoppingCartView({
           </div>
         </div>
 
-        {/* 🎯 Auto-Applied Promotions Banner (BOGO, Combos, etc.) */}
-        {cart.length > 0 && (
+        {/* Seller promotions (vendor_promotions) — marketplace only */}
+        {isCustomerEcommerceEnabled() && cart.length > 0 && primaryVendorId !== 'default' && (
           <div className="px-4 py-3">
             <CartPromotionsBanner
               items={promotionBannerItems}

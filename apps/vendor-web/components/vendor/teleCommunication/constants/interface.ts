@@ -55,7 +55,7 @@ export interface ChimeVideoCallProps {
     onPrescriptionUpload?: () => void;
 }
 
-export type CallStatus = 'loading' | 'ready' | 'waiting' | 'connecting' | 'active' | 'reconnecting' | 'ended' | 'error';
+export type CallStatus = 'loading' | 'ready' | 'waiting' | 'connecting' | 'active' | 'reconnecting' | 'left' | 'ended' | 'error';
 
 export interface ChatMessage {
     id: string;
