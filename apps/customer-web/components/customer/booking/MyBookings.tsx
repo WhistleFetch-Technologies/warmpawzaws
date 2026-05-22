@@ -377,7 +377,7 @@ export function MyBookings({
           bookingTime: b.booking_time || b.bookingTime || b.scheduled_time || '',
           duration: b.duration || 30,
           price: parseFloat(b.total_amount || b.totalAmount || b.price || 0),
-          status: b.status || 'pending',
+          status: String(b.status ?? 'pending').toLowerCase(),
           completionOTP: b.completion_otp || b.completionOTP,
           isPackage: Boolean(
             b.is_package ||
@@ -570,8 +570,9 @@ export function MyBookings({
     }
   };
 
-  const getStatusText = (status: string) => {
-    return status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+  const getStatusText = (status: unknown) => {
+    const s = String(status ?? 'pending');
+    return s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ');
   };
 
   if (selectedBooking) {

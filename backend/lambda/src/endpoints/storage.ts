@@ -20,6 +20,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { regeneratePresignedUrl } from './constants/helper';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 // Use consistent S3_UPLOADS_BUCKET env var (set by CDK lambda-stack)
@@ -377,17 +378,12 @@ export function registerStorageEndpoints(app: Hono) {
       // Decode the file key
       fileKey = decodeURIComponent(fileKey);
 
-      // Generate a fresh presigned URL (1 hour validity)
-      const signedUrl = await getSignedUrl(
-        s3Client,
-        new GetObjectCommand({
-          Bucket: BUCKET_NAME,
-          Key: fileKey,
-        }),
-        { expiresIn: 3600 }
-      );
+      // Resolve bucket via HeadObject (legacy warmpawz-dev-uploads vs S3_UPLOADS_BUCKET)
+      const signedUrl = await regeneratePresignedUrl(fileKey);
+      if (!signedUrl) {
+        return c.json({ error: 'File not found' }, 404);
+      }
 
-      // Redirect to the presigned URL
       return c.redirect(signedUrl, 302);
     } catch (error: any) {
       console.error('❌ Error serving media:', error);

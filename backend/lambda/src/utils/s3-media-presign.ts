@@ -8,9 +8,73 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 
+/** API origin for GET /storage/media/* proxy (matches Java customer-service CustomerMapper). */
+export function getApiBaseUrlForMedia(): string {
+  const raw =
+    process.env.API_BASE_URL ||
+    process.env.PUBLIC_API_BASE_URL ||
+    '';
+  return raw.trim().replace(/\/$/, '');
+}
+
 /**
- * If `url` points at S3 (virtual-hosted style), return a GET presigned URL.
- * Uses the bucket name from the URL so prod/staging buckets work even when env defaults differ.
+ * Stable display URL: API Gateway redirects to a fresh S3 presign on each image load.
+ * Avoids returning expiring SigV4 URLs (STS session dies before X-Amz-Expires).
+ */
+export function buildStorageMediaProxyUrl(keyOrUrl: string | null | undefined): string | null {
+  if (keyOrUrl == null || keyOrUrl === '') return null;
+  const base = getApiBaseUrlForMedia();
+  if (!base) return null;
+
+  let key = String(keyOrUrl).trim();
+  if (!key || key.startsWith('data:')) return null;
+
+  if (key.includes('://')) {
+    const stripped = stripS3PresignQueryFromUrl(key);
+    try {
+      const u = new URL(stripped);
+      if (!u.hostname.includes('.s3.') || !u.hostname.includes('amazonaws.com')) {
+        return null;
+      }
+      key = decodeURIComponent(u.pathname.replace(/^\//, ''));
+    } catch {
+      return null;
+    }
+  }
+
+  if (!key) return null;
+
+  const encoded = key
+    .split('/')
+    .map((segment) => encodeURIComponent(segment).replace(/\+/g, '%20'))
+    .join('/');
+
+  return `${base}/storage/media/${encoded}`;
+}
+
+/**
+ * Resolve customer/pet/product media for API JSON and <img src>.
+ * Prefers /storage/media proxy; falls back to multi-bucket presign (legacy warmpawz-dev-uploads).
+ */
+export async function resolveMediaUrlForDisplay(
+  raw: string | null | undefined
+): Promise<string | null | undefined> {
+  if (raw == null || raw === '') return raw;
+  if (typeof raw !== 'string') return raw;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.startsWith('data:')) return trimmed;
+
+  const proxy = buildStorageMediaProxyUrl(trimmed);
+  if (proxy) return proxy;
+
+  const { regeneratePresignedUrl } = await import('../endpoints/constants/helper');
+  const signed = await regeneratePresignedUrl(trimmed);
+  return signed ?? trimmed;
+}
+
+/**
+ * If `url` points at S3 (virtual-hosted style or key), return a display-safe URL.
+ * Strips stale presigned query strings and resolves the correct bucket (dev has two upload buckets).
  */
 export async function presignS3GetUrlIfApplicable(
   url: string | null | undefined
@@ -18,28 +82,41 @@ export async function presignS3GetUrlIfApplicable(
   if (url == null || url === '') return url;
   if (typeof url !== 'string') return url;
   if (url.startsWith('data:')) return url;
-  if (url.includes('X-Amz-Algorithm=') || url.includes('X-Amz-Credential=')) return url;
 
-  try {
-    const u = new URL(url);
-    const host = u.hostname;
-    // e.g. my-bucket.s3.ap-south-1.amazonaws.com
-    const match = host.match(/^([^.]+)\.s3[./]/);
-    if (!match) return url;
-    const bucket = match[1];
+  const stripped = stripS3PresignQueryFromUrl(url.trim());
+  const proxy = buildStorageMediaProxyUrl(stripped);
+  if (proxy) return proxy;
 
-    const key = decodeURIComponent(u.pathname.replace(/^\//, ''));
-    if (!key) return url;
+  if (stripped.includes('://')) {
+    try {
+      const u = new URL(stripped);
+      const host = u.hostname;
+      const match = host.match(/^([^.]+)\.s3[./]/);
+      if (!match) return stripped;
+      const bucket = match[1];
+      const key = decodeURIComponent(u.pathname.replace(/^\//, ''));
+      if (!key) return stripped;
 
-    return await getSignedUrl(
-      s3Client,
-      new GetObjectCommand({ Bucket: bucket, Key: key }),
-      { expiresIn: 604800 }
-    );
-  } catch (e: any) {
-    console.warn('[presignS3GetUrlIfApplicable] skipped:', e?.message || e);
-    return url;
+      const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+      try {
+        await s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+        return await getSignedUrl(
+          s3Client,
+          new GetObjectCommand({ Bucket: bucket, Key: key }),
+          { expiresIn: 604800 }
+        );
+      } catch {
+        const { regeneratePresignedUrl } = await import('../endpoints/constants/helper');
+        return (await regeneratePresignedUrl(stripped)) ?? stripped;
+      }
+    } catch (e: any) {
+      console.warn('[presignS3GetUrlIfApplicable] skipped:', e?.message || e);
+      return stripped;
+    }
   }
+
+  const { regeneratePresignedUrl } = await import('../endpoints/constants/helper');
+  return (await regeneratePresignedUrl(stripped)) ?? stripped;
 }
 
 /**

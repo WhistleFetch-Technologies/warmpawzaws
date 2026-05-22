@@ -287,7 +287,8 @@ resource "aws_ecs_task_definition" "customer" {
           { name = "SPRING_DATASOURCE_URL", value = local.jdbc_url },
           { name = "SPRING_JPA_HIBERNATE_DDL_AUTO", value = var.hibernate_ddl_auto }
         ],
-        var.openapi_public_server_url != "" ? [{ name = "OPENAPI_PUBLIC_SERVER_URL", value = var.openapi_public_server_url }] : []
+        var.openapi_public_server_url != "" ? [{ name = "OPENAPI_PUBLIC_SERVER_URL", value = var.openapi_public_server_url }] : [],
+        var.api_base_url != "" ? [{ name = "API_BASE_URL", value = var.api_base_url }] : []
       )
       secrets = [
         {

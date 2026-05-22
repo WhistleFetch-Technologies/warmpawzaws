@@ -231,7 +231,7 @@ public class CustomerPetController {
         return ResponseEntity.ok(CommonResponse.message("Pet deleted successfully"));
     }
 
-    @GetMapping("/customer/{phone}/pets/{petId}/bookings")
+    @GetMapping("/customer/by-phone/{phone}/pets/{petId}/bookings")
     public ResponseEntity<CommonResponse<Map<String, Object>>> getPetBookingsByPhone(
             @PathVariable String phone,
             @PathVariable UUID petId

@@ -34,6 +34,7 @@ booking_java_route_keys = [
   "POST /bookings/{bookingId}/reschedule",
   "POST /customer/booking/create",
   "POST /customer/bookings/create",
+  "POST /customer/bookings/refund-preview",
   "POST /followup/create",
   "POST /vendor/bookings/{bookingId}/accept",
   "POST /vendor/bookings/{bookingId}/cancel",
@@ -46,5 +47,5 @@ booking_java_route_keys = [
   "PUT /bookings/{bookingId}/status",
   "PUT /vendor/bookings/{bookingId}/status",
 ]
-# Total: 41 route keys
+# Total: 42 route keys
 # Target integration: bsttuan (warmpawz-dev-booking-i ALB)

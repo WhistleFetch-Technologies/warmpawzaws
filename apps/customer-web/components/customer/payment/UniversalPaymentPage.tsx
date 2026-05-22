@@ -22,11 +22,10 @@ import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
+import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
 import {
-  digitsToRazorpayContactE164,
   RAZORPAY_PREFILL_EMAIL_FALLBACK,
   sanitizeRazorpayInstanceOptions,
-  getWarmpawzRazorpayUpiDisplayConfig,
 } from '@/lib/razorpay/razorpay-utils';
 import {
   isWarmpawzCustomerNativeWebView,
@@ -2347,26 +2346,17 @@ export function UniversalPaymentPage({
           : [];
       const amountPaise = Math.max(1, Math.round(Number(amountToCharge) * 100));
 
-      const e164Contact = digitsToRazorpayContactE164(phoneDigits);
-      const prefillEmail =
+      const upiVpaTrimmed = manualUpiVpa.replace(/\s+/g, '').trim().toLowerCase();
+      const validPrefillVpa = upiVpaTrimmed.length > 0 && /^[\w.+-]+@[\w.-]+$/.test(upiVpaTrimmed);
+      const checkoutEmailForPrefill =
         resolvedCheckoutEmail &&
         resolvedCheckoutEmail.includes('@') &&
         resolvedCheckoutEmail !== 'undefined' &&
         resolvedCheckoutEmail !== 'null'
           ? resolvedCheckoutEmail
-          : undefined;
-      const razorpayPrefill: Record<string, string> = {};
-      if (e164Contact) razorpayPrefill.contact = e164Contact;
-      if (prefillEmail) razorpayPrefill.email = prefillEmail;
-      const upiVpaTrimmed = manualUpiVpa.replace(/\s+/g, '').trim().toLowerCase();
-      const validPrefillVpa = upiVpaTrimmed.length > 0 && /^[\w.+-]+@[\w.-]+$/.test(upiVpaTrimmed);
-      if (validPrefillVpa) {
-        razorpayPrefill.vpa = upiVpaTrimmed;
-        razorpayPrefill.method = 'upi';
-      } else if (e164Contact && !razorpayPrefill.email) {
-        // Matches wallet/shop flows: Razorpay often drops UPI on mobile/live without any prefill.email.
-        razorpayPrefill.email = RAZORPAY_PREFILL_EMAIL_FALLBACK;
-      }
+          : !validPrefillVpa
+            ? RAZORPAY_PREFILL_EMAIL_FALLBACK
+            : undefined;
 
       const processRazorpaySuccess = async (response: any) => {
         try {
@@ -2614,17 +2604,23 @@ export function UniversalPaymentPage({
         }
       };
 
-      const options: Record<string, unknown> = {
-        key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
-        amount: amountPaise,
-        currency: 'INR',
-        name: 'Warmpawz',
+      const razorpayKey = (keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY || '').trim();
+      if (!razorpayKey || razorpayKey === 'undefined') {
+        throw new Error('Payment gateway configuration error: Razorpay key not found');
+      }
+
+      const checkoutOptions = buildSanitizedStandardRazorpayCheckoutOptions({
+        key: razorpayKey,
+        amountPaise,
         description: paymentDescription,
         order_id: razorpayOrderId,
         handler: async (response: any) => {
           razorpayGatewaySuccessHandled = true;
           await processRazorpaySuccess(response);
         },
+        customerPhone,
+        customerEmail: checkoutEmailForPrefill,
+        offers: razorpayOfferIds,
         theme: { color: '#FF8C42' },
         modal: {
           ondismiss: () => {
@@ -2632,21 +2628,16 @@ export function UniversalPaymentPage({
             void releaseSlotIfCheckoutAbandoned();
           },
         },
-      };
-      // UPI display block (collect/intent/qr) + method.upi=true is what surfaces
-      // GPay/PhonePe/Paytm intents on Capacitor Android WebView. The legacy
-      // `banks` block hid UPI on many Android builds. When the user has
-      // pre-entered a VPA, fall back to default layout + `prefill.vpa` (Razorpay
-      // Payment Link–style) so collect runs straight through without the picker.
-      if (!validPrefillVpa) {
-        options.config = getWarmpawzRazorpayUpiDisplayConfig();
-        options.method = { upi: true };
-      }
-      if (Object.keys(razorpayPrefill).length > 0) {
-        options.prefill = razorpayPrefill;
-      }
+        includeInstrumentBlocks: !validPrefillVpa,
+      });
+
       if (validPrefillVpa) {
-        options.method = 'upi';
+        checkoutOptions.prefill = {
+          ...(checkoutOptions.prefill as Record<string, string> | undefined),
+          vpa: upiVpaTrimmed,
+        };
+        checkoutOptions.method = 'upi';
+        delete checkoutOptions.config;
       }
 
       console.log('🚀 [PAYMENT] Opening Razorpay checkout...', {
@@ -2658,23 +2649,13 @@ export function UniversalPaymentPage({
 
       if (isWarmpawzCustomerNativeWebView()) {
         const w = window as unknown as { ReactNativeWebView?: { postMessage: (s: string) => void } };
-        const nativeOpenPayload: Record<string, unknown> = {
+        const nativeOpenPayload = sanitizeRazorpayInstanceOptions({
+          ...checkoutOptions,
           description: paymentDescription,
           currency: 'INR',
-          key: keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY,
           amount: amountPaise,
           name: 'Warmpawz',
-          order_id: razorpayOrderId,
-          ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
-          theme: { color: '#FF8C42' },
-          // Keep parity with web `new Razorpay(options)` — UPI display block
-          // (collect/intent/qr) + `method: { upi: true }` is what surfaces UPI
-          // on react-native-razorpay too. With a manual VPA, switch to single
-          // `method: 'upi'` + `prefill.vpa` for a straight collect flow.
-          ...(!validPrefillVpa
-            ? { config: getWarmpawzRazorpayUpiDisplayConfig(), method: { upi: true as const } }
-            : { method: 'upi' as const }),
-        };
+        });
         try {
           const resultPromise = waitForWarmpawzNativeRazorpayResult();
           w.ReactNativeWebView!.postMessage(
@@ -2701,7 +2682,7 @@ export function UniversalPaymentPage({
         }
 
         try {
-          const razorpay = new window.Razorpay(sanitizeRazorpayInstanceOptions(options));
+          const razorpay = new window.Razorpay(sanitizeRazorpayInstanceOptions(checkoutOptions));
           // ✅ Listen for payment failures (these don't trigger the handler callback)
           razorpay.on('payment.failed', (resp: any) => {
             razorpayPaymentFailed = true;

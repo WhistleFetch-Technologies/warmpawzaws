@@ -84,6 +84,14 @@ export function getWarmpawzRazorpayUpiDisplayConfig(): {
   };
 }
 
+/** True for null/undefined/blank or the literal strings "undefined" / "null". */
+export function isInvalidRazorpayString(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== 'string') return false;
+  const t = value.trim();
+  return !t || t === 'undefined' || t === 'null';
+}
+
 export function digitsToRazorpayContactE164(digitsOnly: string): string | undefined {
   const d = String(digitsOnly || '').replace(/\D/g, '');
   if (d.length >= 12 && d.startsWith('91')) return `+${d}`;
@@ -107,6 +115,13 @@ export function sanitizeRazorpayInstanceOptions<T extends Record<string, any>>(o
       continue;
     }
 
+    if (key === 'key' || key === 'order_id' || key === 'checkout_config_id') {
+      if (isInvalidRazorpayString(v)) {
+        delete out[key];
+      }
+      continue;
+    }
+
     if (key === 'offers') {
       if (!Array.isArray(v)) {
         delete out[key];
@@ -124,6 +139,10 @@ export function sanitizeRazorpayInstanceOptions<T extends Record<string, any>>(o
     if (key === 'prefill' && typeof v === 'object' && v !== null && !Array.isArray(v)) {
       const p = { ...(v as Record<string, unknown>) };
       for (const pk of Object.keys(p)) {
+        if (pk === 'method') {
+          delete p[pk];
+          continue;
+        }
         const pv = p[pk];
         if (pv === undefined || pv === null || pv === '') {
           delete p[pk];
@@ -148,9 +167,13 @@ export function sanitizeRazorpayInstanceOptions<T extends Record<string, any>>(o
     }
 
     if (key === 'config' && typeof v === 'object' && v !== null && !Array.isArray(v)) {
-      out[key] = v;
+      out[key] = stripUndefinedDeep(v);
       continue;
     }
+  }
+
+  if (isInvalidRazorpayString(out.key)) {
+    delete out.key;
   }
 
   const desc = out.description;
@@ -165,6 +188,28 @@ export function sanitizeRazorpayInstanceOptions<T extends Record<string, any>>(o
   }
 
   return out as T;
+}
+
+function stripUndefinedDeep(value: unknown): unknown {
+  if (value === undefined || value === null) return undefined;
+  if (Array.isArray(value)) {
+    const arr = value
+      .map(stripUndefinedDeep)
+      .filter((item) => item !== undefined);
+    return arr;
+  }
+  if (typeof value === 'object') {
+    const obj: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      const next = stripUndefinedDeep(v);
+      if (next !== undefined && !isInvalidRazorpayString(next)) {
+        obj[k] = next;
+      }
+    }
+    return Object.keys(obj).length > 0 ? obj : undefined;
+  }
+  if (isInvalidRazorpayString(value)) return undefined;
+  return value;
 }
 
 export interface RazorpayOrderResponse {

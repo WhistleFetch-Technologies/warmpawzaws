@@ -38,4 +38,18 @@ public class JwtPrincipalUtil {
             throw new ForbiddenException("Access denied: resource does not belong to the authenticated principal");
         }
     }
+
+    /**
+     * Prefer JWT {@code sub}; when security is disabled (no resource-server JWT parsing),
+     * allow an explicit customer id from the request body for dev/UAT flows.
+     */
+    public static UUID resolveCustomerPrincipal(Jwt jwt, UUID bodyCustomerId) {
+        if (jwt != null) {
+            return extractUuid(jwt);
+        }
+        if (bodyCustomerId != null) {
+            return bodyCustomerId;
+        }
+        throw new ForbiddenException("Authentication required");
+    }
 }

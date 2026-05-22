@@ -25,8 +25,7 @@ import { select, update, query, insert } from '../../../database/rds-connection'
 import { UpdateCustomerProfileRequestSchema } from '@warmpawz/api-contracts';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
-import { presignS3GetUrlIfApplicable, stripS3PresignQueryFromUrl } from '../../../utils/s3-media-presign';
-import { regeneratePresignedUrl } from '../../constants/helper';
+import { resolveMediaUrlForDisplay } from '../../../utils/s3-media-presign';
 import { getCustomerByPhoneFromMicroservice } from '../../../lib/services/customer-microservice-client';
 import { geocodeAddress, geocodeIndiaPincode } from '../../../lib/utils/geocode';
 /**
@@ -36,23 +35,8 @@ import { geocodeAddress, geocodeIndiaPincode } from '../../../lib/utils/geocode'
  */
 async function resolveCustomerPhotoForDisplay(raw: string | null | undefined): Promise<string | null> {
   if (raw == null) return null;
-  const s = String(raw).trim();
-  if (!s) return null;
-  if (s.startsWith('data:')) return s;
-
-  const stripped = stripS3PresignQueryFromUrl(s);
-
-  if (!stripped.includes('://')) {
-    const signed = await regeneratePresignedUrl(stripped);
-    return signed || stripped;
-  }
-
-  const presigned = await presignS3GetUrlIfApplicable(stripped);
-  if (presigned && presigned !== stripped) {
-    return presigned;
-  }
-  const regen = await regeneratePresignedUrl(stripped);
-  return regen || presigned || stripped;
+  const resolved = await resolveMediaUrlForDisplay(raw);
+  return resolved ?? null;
 }
 
 /** Map DB row to API profile with camelCase address detail fields */

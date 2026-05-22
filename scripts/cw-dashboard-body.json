@@ -1,0 +1,91 @@
+{
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0, "y": 0, "width": 24, "height": 6,
+      "properties": {
+        "title": "API GW - Total request count (all routes)",
+        "metrics": [
+          ["AWS/ApiGateway","Count","ApiId","z0b3obweb6","Stage","$default",{"stat":"Sum","label":"all requests","period":60}]
+        ],
+        "view": "timeSeries",
+        "region": "ap-south-1",
+        "period": 60
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0, "y": 6, "width": 12, "height": 6,
+      "properties": {
+        "title": "booking-service 5xx (Target Group)",
+        "metrics": [
+          ["AWS/ApplicationELB","HTTPCode_Target_5XX_Count",
+           "TargetGroup","targetgroup/wmbs-20260519062844878900000005/bbd7dba89aa87eb5",
+           "LoadBalancer","app/warmpawz-dev-booking-i/3ced24b847c2671f",
+           {"stat":"Sum","period":60}]
+        ],
+        "view": "timeSeries",
+        "region": "ap-south-1",
+        "period": 60
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12, "y": 6, "width": 12, "height": 6,
+      "properties": {
+        "title": "customer-service 5xx (Target Group)",
+        "metrics": [
+          ["AWS/ApplicationELB","HTTPCode_Target_5XX_Count",
+           "TargetGroup","targetgroup/wmcs-20260521124611758900000004/fb24641c7ab588df",
+           "LoadBalancer","app/warmpawz-dev-customer-i/59484e18ebe71d0b",
+           {"stat":"Sum","period":60}]
+        ],
+        "view": "timeSeries",
+        "region": "ap-south-1",
+        "period": 60
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0, "y": 12, "width": 12, "height": 6,
+      "properties": {
+        "title": "booking-service ECS CPU + Memory",
+        "metrics": [
+          ["AWS/ECS","CPUUtilization","ServiceName","warmpawz-dev-booking-service","ClusterName","warmpawz-dev",{"stat":"Average","period":60}],
+          [".",       "MemoryUtilization",".",          ".",                         ".",            ".",          {"stat":"Average","period":60,"yAxis":"right"}]
+        ],
+        "view": "timeSeries",
+        "region": "ap-south-1",
+        "period": 60
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12, "y": 12, "width": 12, "height": 6,
+      "properties": {
+        "title": "customer-service ECS CPU + Memory",
+        "metrics": [
+          ["AWS/ECS","CPUUtilization","ServiceName","warmpawz-dev-customer-service","ClusterName","warmpawz-dev",{"stat":"Average","period":60}],
+          [".",       "MemoryUtilization",".",          ".",                          ".",           ".",          {"stat":"Average","period":60,"yAxis":"right"}]
+        ],
+        "view": "timeSeries",
+        "region": "ap-south-1",
+        "period": 60
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0, "y": 18, "width": 24, "height": 6,
+      "properties": {
+        "title": "Lambda api-handler — Invocations + Errors",
+        "metrics": [
+          ["AWS/Lambda","Invocations","FunctionName","warmpawz-dev-api-handler",{"stat":"Sum","period":60,"label":"Invocations"}],
+          [".",          "Errors",     ".",            ".",                       {"stat":"Sum","period":60,"label":"Errors","yAxis":"right"}]
+        ],
+        "view": "timeSeries",
+        "region": "ap-south-1",
+        "period": 60
+      }
+    }
+  ]
+}

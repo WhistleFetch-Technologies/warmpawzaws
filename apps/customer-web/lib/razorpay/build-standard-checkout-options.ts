@@ -11,6 +11,7 @@
 import { apiClient } from '@/lib/api-client';
 import {
   digitsToRazorpayContactE164,
+  isInvalidRazorpayString,
   RAZORPAY_PREFILL_EMAIL_FALLBACK,
   sanitizeRazorpayInstanceOptions,
 } from '@/lib/razorpay/razorpay-utils';
@@ -85,13 +86,16 @@ export function buildSanitizedStandardRazorpayCheckoutOptions(
     includeInstrumentBlocks = true,
   } = input;
 
-  const checkoutConfigId =
-    typeof input.checkout_config_id === 'string' && input.checkout_config_id.trim()
-      ? input.checkout_config_id.trim()
-      : typeof process.env.NEXT_PUBLIC_RAZORPAY_CHECKOUT_CONFIG_ID === 'string' &&
-          process.env.NEXT_PUBLIC_RAZORPAY_CHECKOUT_CONFIG_ID.trim()
-        ? process.env.NEXT_PUBLIC_RAZORPAY_CHECKOUT_CONFIG_ID.trim()
-        : undefined;
+  const checkoutConfigId = (() => {
+    const fromInput =
+      typeof input.checkout_config_id === 'string' ? input.checkout_config_id : '';
+    const fromEnv =
+      typeof process.env.NEXT_PUBLIC_RAZORPAY_CHECKOUT_CONFIG_ID === 'string'
+        ? process.env.NEXT_PUBLIC_RAZORPAY_CHECKOUT_CONFIG_ID
+        : '';
+    const candidate = fromInput.trim() || fromEnv.trim();
+    return isInvalidRazorpayString(candidate) ? undefined : candidate;
+  })();
 
   const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
   const e164 = digitsToRazorpayContactE164(phoneDigits);
@@ -163,9 +167,5 @@ export function buildSanitizedStandardRazorpayCheckoutOptions(
     ...(retry ? { retry } : {}),
   };
 
-  const sanitized = sanitizeRazorpayInstanceOptions(raw);
-
-  console.log('Razorpay options:', sanitized);
-
-  return sanitized;
+  return sanitizeRazorpayInstanceOptions(raw);
 }

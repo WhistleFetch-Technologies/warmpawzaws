@@ -250,8 +250,8 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
       console.log('🔍 [BOOKING-DETAIL] Loading booking:', bookingId);
       // AWS Serverless compatible - use apiClient
       const result = await apiClient.get(`/customer/bookings/${bookingId}`) as any;
-      // ✅ FIX: Handle both response formats (result.booking or result.data.booking)
-      const rawBooking = result.booking || result.data?.booking || result;
+      // Handle Lambda shape { booking: {...} }, Java shape { data: {...} }, or bare object
+      const rawBooking = result.booking ?? result.data?.booking ?? result.data ?? result;
       console.log('✅ [BOOKING-DETAIL] Raw booking loaded:', rawBooking);
       
       // ✅ FIX: Parse notes for diagnostic bookings to extract test names
@@ -601,7 +601,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 {getBookingStatusDisplayLabel(booking)}
               </span>
               <span className="text-sm text-gray-600">
-                Booking #{booking.id.slice(0, 8)}
+                Booking #{(booking.id ?? bookingId ?? '').slice(0, 8)}
               </span>
             </div>
 
@@ -1177,7 +1177,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                       const downloadUrl = window.URL.createObjectURL(blob);
                       const link = document.createElement('a');
                       link.href = downloadUrl;
-                      link.download = `invoice-${booking.id.slice(0, 8)}.pdf`;
+                      link.download = `invoice-${(booking.id ?? bookingId ?? '').slice(0, 8)}.pdf`;
                       document.body.appendChild(link);
                       link.click();
                       document.body.removeChild(link);

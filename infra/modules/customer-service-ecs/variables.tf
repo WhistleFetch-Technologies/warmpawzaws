@@ -75,6 +75,12 @@ variable "desired_count" {
   default = 1
 }
 
+variable "api_base_url" {
+  description = "Public API base for CustomerMapper media proxy (GET /storage/media/* on Lambda). e.g. https://dev.api.warmpawz.com"
+  type        = string
+  default     = ""
+}
+
 variable "openapi_public_server_url" {
   description = "HTTPS origin for OpenAPI/Swagger UI (e.g. API Gateway invoke URL). Prevents mixed-content http:// Try it out behind internal ALB."
   type        = string

@@ -129,6 +129,10 @@ TASK_JSON="$TMP_DIR/register-task-definition.json"
 export TASK_SOURCE="$TMP_DIR/current-task-definition.json"
 export TASK_TARGET="$TASK_JSON"
 export ECS_TASK_FAMILY ECS_CONTAINER_NAME IMAGE_URI
+# UAT JWT must match Lambda issuer (warmpawz-uat / default secret when UAT_JWT_SECRET unset on Lambda).
+export APP_SECURITY_ENABLED="${APP_SECURITY_ENABLED:-true}"
+export APP_SECURITY_UAT_JWT_ENABLED="${APP_SECURITY_UAT_JWT_ENABLED:-true}"
+export UAT_JWT_SECRET="${UAT_JWT_SECRET:-uat-secret-key-change-in-production}"
 node <<'NODE'
 const fs = require('fs');
 const task = JSON.parse(fs.readFileSync(process.env.TASK_SOURCE, 'utf8'));
@@ -156,6 +160,16 @@ if (!target) {
   console.error(`Container ${want} not found; updating first container ${target.name}`);
 }
 target.image = process.env.IMAGE_URI;
+target.environment = Array.isArray(target.environment) ? target.environment : [];
+const upsertEnv = (name, value) => {
+  if (value == null || value === '') return;
+  const existing = target.environment.find((e) => e.name === name);
+  if (existing) existing.value = value;
+  else target.environment.push({ name, value });
+};
+upsertEnv('APP_SECURITY_ENABLED', process.env.APP_SECURITY_ENABLED || 'true');
+upsertEnv('APP_SECURITY_UAT_JWT_ENABLED', process.env.APP_SECURITY_UAT_JWT_ENABLED || 'true');
+upsertEnv('UAT_JWT_SECRET', process.env.UAT_JWT_SECRET || 'uat-secret-key-change-in-production');
 fs.writeFileSync(process.env.TASK_TARGET, JSON.stringify(task, null, 2));
 NODE
 

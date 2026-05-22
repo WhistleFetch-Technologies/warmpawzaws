@@ -36,17 +36,22 @@ public class CustomerMapper {
     static String rewriteMediaUrl(String url) {
         if (url == null || url.isBlank()) return url;
         if (API_BASE_URL.isEmpty()) return url;
-        if (!url.contains("amazonaws.com")) return url;
+
         String key;
-        try {
-            URI parsed = new URI(url);
-            String host = parsed.getHost();
-            if (host == null || !host.contains("amazonaws.com")) return url;
-            key = parsed.getPath();
-            if (key == null || key.isBlank()) return url;
-            if (key.startsWith("/")) key = key.substring(1);
-        } catch (URISyntaxException ex) {
-            return url;
+        if (url.contains("://")) {
+            if (!url.contains("amazonaws.com")) return url;
+            try {
+                URI parsed = new URI(url);
+                String host = parsed.getHost();
+                if (host == null || !host.contains("amazonaws.com")) return url;
+                key = parsed.getPath();
+                if (key == null || key.isBlank()) return url;
+                if (key.startsWith("/")) key = key.substring(1);
+            } catch (URISyntaxException ex) {
+                return url;
+            }
+        } else {
+            key = url.startsWith("/") ? url.substring(1) : url;
         }
         // The Lambda route is GET /storage/media/<key> and decodes the key with decodeURIComponent.
         // We must keep '/' as literal separators so the path matches Hono's wildcard, but escape

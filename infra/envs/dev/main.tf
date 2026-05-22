@@ -717,6 +717,7 @@ module "api_gateway" {
       "POST /bookings/{bookingId}/reschedule",
       "POST /customer/booking/create",
       "POST /customer/bookings/create",
+      "POST /customer/bookings/refund-preview",
       "POST /followup/create",
       "POST /vendor/bookings/{bookingId}/accept",
       "POST /vendor/bookings/{bookingId}/cancel",

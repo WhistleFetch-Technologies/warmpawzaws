@@ -5,6 +5,7 @@ import { Calendar, TrendingUp, Clock, Filter, Search, Package, ArrowLeft, Home }
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { isPetBookingsUnavailable } from '@/lib/pet-route-errors';
+import { isValidUUID } from '@/lib/booking-utils';
 import { BookingDetailModal } from './BookingDetailModal';
 
 interface Pet {
@@ -124,9 +125,10 @@ export function PetProfileDashboard({ phone, petData, onBack, onBackToHome }: Pe
       let rows: any[] = [];
 
       try {
-        const data = (await apiClient.get(
-          `/customer/${pathSeg}/pets/${petData.id}/bookings`
-        )) as any;
+        const path = isValidUUID(pathSeg)
+          ? `/customer/${pathSeg}/pets/${petData.id}/bookings`
+          : `/customer/by-phone/${pathSeg}/pets/${petData.id}/bookings`;
+        const data = (await apiClient.get(path)) as any;
         rows = extractRows(data);
       } catch (primaryError) {
         if (isPetBookingsUnavailable(primaryError)) {

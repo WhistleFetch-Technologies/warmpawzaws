@@ -38,14 +38,27 @@ public class JdbcWalletRefundCreditor implements WalletRefundCreditor {
         boolean hasReferenceId = walletTxCols.contains("reference_id");
         boolean hasBookingId = walletTxCols.contains("booking_id");
 
-        jdbcTemplate.update(
-                """
-                INSERT INTO customer_wallets (customer_id, balance, currency)
-                VALUES (?, 0, 'INR')
-                ON CONFLICT (customer_id) DO NOTHING
-                """,
-                customerId
-        );
+        Set<String> walletCols = loadColumns("customer_wallets");
+        boolean walletHasCurrency = walletCols.contains("currency");
+        if (walletHasCurrency) {
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO customer_wallets (customer_id, balance, currency)
+                    VALUES (?, 0, 'INR')
+                    ON CONFLICT (customer_id) DO NOTHING
+                    """,
+                    customerId
+            );
+        } else {
+            jdbcTemplate.update(
+                    """
+                    INSERT INTO customer_wallets (customer_id, balance)
+                    VALUES (?, 0)
+                    ON CONFLICT (customer_id) DO NOTHING
+                    """,
+                    customerId
+            );
+        }
 
         jdbcTemplate.queryForObject(
                 "SELECT id FROM customer_wallets WHERE customer_id = ? FOR UPDATE",

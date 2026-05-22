@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiClient } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { isPetBookingsUnavailable } from '@/lib/pet-route-errors';
+import { isValidUUID } from '@/lib/booking-utils';
 
 interface PetProfileProps {
   phone: string;
@@ -94,9 +95,10 @@ export function PetProfile({
       let rows: Booking[] = [];
 
       try {
-        const data = (await apiClient.get(
-          `/customer/${pathSeg}/pets/${petId}/bookings`
-        )) as any;
+        const path = isValidUUID(pathSeg)
+          ? `/customer/${pathSeg}/pets/${petId}/bookings`
+          : `/customer/by-phone/${pathSeg}/pets/${petId}/bookings`;
+        const data = (await apiClient.get(path)) as any;
         rows = extractBookings(data);
         if (data?.stats) {
           setStats(data.stats);

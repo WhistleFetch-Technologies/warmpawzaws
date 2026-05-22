@@ -4,7 +4,9 @@ import com.warmpawz.booking.dto.common.CommonResponse;
 import com.warmpawz.booking.dto.common.PaginatedResult;
 import com.warmpawz.booking.dto.common.PaginationMetadata;
 import com.warmpawz.booking.dto.request.CreateBookingRequest;
+import com.warmpawz.booking.dto.request.RefundPreviewRequest;
 import com.warmpawz.booking.dto.response.BookingResponse;
+import com.warmpawz.booking.dto.response.RefundPreviewResponse;
 import com.warmpawz.booking.service.BookingService;
 import com.warmpawz.booking.service.IdempotencyService;
 import com.warmpawz.booking.util.JwtPrincipalUtil;
@@ -18,7 +20,10 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -125,5 +130,33 @@ public class CustomerBookingController {
         JwtPrincipalUtil.requireSelf(jwt, customerId);
         List<BookingResponse> bookings = bookingService.getFollowUpEligibleBookings(customerId);
         return ResponseEntity.ok(CommonResponse.success(bookings));
+    }
+
+    @PostMapping("/customer/bookings/refund-preview")
+    @Operation(summary = "Preview refund for a booking cancellation (customer path alias)")
+    public ResponseEntity<CommonResponse<Map<String, Object>>> previewRefund(
+            @Valid @RequestBody RefundPreviewRequest request,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        UUID customerId = JwtPrincipalUtil.extractUuid(jwt);
+        RefundPreviewResponse response = bookingService.previewRefund(request.getBookingId(), customerId);
+        return ResponseEntity.ok(CommonResponse.success(Map.of("refund", toRefundPayload(response))));
+    }
+
+    private static Map<String, Object> toRefundPayload(RefundPreviewResponse preview) {
+        Map<String, Object> refund = new LinkedHashMap<>();
+        boolean eligible = preview.getRefundPercentage() > 0
+                || (preview.getRefundAmount() != null
+                && preview.getRefundAmount().compareTo(BigDecimal.ZERO) > 0);
+        refund.put("eligible", eligible);
+        refund.put("refundAmount", preview.getRefundAmount());
+        refund.put("refundPercentage", preview.getRefundPercentage());
+        refund.put("hoursUntil", preview.getHoursUntil() != null ? preview.getHoursUntil() : 0L);
+        refund.put("cancellationFee", preview.getDeductionAmount());
+        refund.put("message", preview.getReason());
+        refund.put("policy", preview.getPolicy());
+        refund.put("platformFeeApplies", false);
+        refund.put("policyApplied", preview.getPolicy() != null && !"no_refund".equals(preview.getPolicy()));
+        return refund;
     }
 }

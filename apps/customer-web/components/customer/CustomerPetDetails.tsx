@@ -233,7 +233,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
 
       // Primary endpoint: pet-scoped history route.
       try {
-        const data = (await apiClient.get(`/customer/${phone}/pets/${petId}/bookings`)) as any;
+        const data = (await apiClient.get(`/customer/by-phone/${phone}/pets/${petId}/bookings`)) as any;
         const rows = extractBookingsList(data);
         normalizeAndSet(rows);
         return;

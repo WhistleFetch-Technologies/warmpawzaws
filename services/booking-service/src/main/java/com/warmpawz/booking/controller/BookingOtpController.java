@@ -30,7 +30,10 @@ public class BookingOtpController {
             @AuthenticationPrincipal Jwt jwt,
             @RequestBody GenerateOtpRequest request
     ) {
-        OtpResponse response = bookingService.generateOtp(request, JwtPrincipalUtil.extractUuid(jwt));
+        OtpResponse response = bookingService.generateOtp(
+                request,
+                JwtPrincipalUtil.resolveCustomerPrincipal(jwt, request.getCustomerId())
+        );
         return ResponseEntity.ok(CommonResponse.success(response));
     }
 

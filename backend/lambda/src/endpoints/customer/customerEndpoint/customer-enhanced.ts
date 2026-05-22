@@ -30,7 +30,7 @@ import {
 } from '@warmpawz/api-contracts/customers';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
-import { presignS3GetUrlIfApplicable } from '../../../utils/s3-media-presign';
+import { resolveMediaUrlForDisplay } from '../../../utils/s3-media-presign';
 import { findCustomerByPhone } from '../../../utils/customer-phone-lookup';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 import {
@@ -773,7 +773,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         }
         const pet = rows[0];
         const rawPhoto = pet.profile_photo_url;
-        const photoUrl = (await presignS3GetUrlIfApplicable(rawPhoto)) || rawPhoto;
+        const photoUrl = (await resolveMediaUrlForDisplay(rawPhoto)) || rawPhoto;
         return c.json({
           success: true,
           pet: {
@@ -812,7 +812,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       const petsOut = await Promise.all(
         pets.map(async (pet: any) => {
           const rawPhoto = pet.profile_photo_url;
-          const photoUrl = (await presignS3GetUrlIfApplicable(rawPhoto)) || rawPhoto;
+          const photoUrl = (await resolveMediaUrlForDisplay(rawPhoto)) || rawPhoto;
           return {
             id: pet.id,
             name: pet.name,

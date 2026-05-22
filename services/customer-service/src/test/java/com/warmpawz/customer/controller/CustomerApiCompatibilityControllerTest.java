@@ -353,7 +353,7 @@ class CustomerApiCompatibilityControllerTest {
         mockMvc.perform(delete("/customer/{phone}/pets/{petId}", "9999999999", petId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("Pet deleted successfully"));
-        mockMvc.perform(get("/customer/{phone}/pets/{petId}/bookings", "9999999999", petId))
+        mockMvc.perform(get("/customer/by-phone/{phone}/pets/{petId}/bookings", "9999999999", petId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.message").value("booking_service_not_yet_available"))
