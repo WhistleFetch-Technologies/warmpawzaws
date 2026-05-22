@@ -103,7 +103,7 @@ export function SupportHelpCenter({
     }
   }, [initialTab]);
 
-  const loadTickets = async () => {
+  const loadTickets = useCallback(async () => {
     if (!phone) return;
     setLoadingTickets(true);
     try {
@@ -122,7 +122,12 @@ export function SupportHelpCenter({
     } finally {
       setLoadingTickets(false);
     }
-  };
+  }, [phone]);
+
+  useEffect(() => {
+    if (activeTab !== 'tickets' || !phone) return;
+    void loadTickets();
+  }, [activeTab, phone, loadTickets]);
 
   const loadTicketDetail = useCallback(async (ticketId: string) => {
     if (!ticketId.trim()) return;
@@ -429,13 +434,6 @@ export function SupportHelpCenter({
                     </button>
                   </div>
                 </Card>
-
-                <Button
-                  onClick={() => setShowContactForm(true)}
-                  className="w-full bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
-                >
-                  Create Support Ticket
-                </Button>
               </>
             ) : (
               <Card className="p-4">
@@ -559,8 +557,10 @@ export function SupportHelpCenter({
                 {!loadingTickets && tickets.length === 0 && (
                   <Card className="p-8 text-center">
                     <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500 mb-2">No support tickets loaded</p>
-                    <p className="text-sm text-gray-400">Tap Refresh to load your tickets, or create a new one</p>
+                    <p className="text-gray-500 mb-2">No support tickets yet</p>
+                    <p className="text-sm text-gray-400">
+                      Create a new ticket if you need help, or tap Refresh if you just submitted one
+                    </p>
                   </Card>
                 )}
 

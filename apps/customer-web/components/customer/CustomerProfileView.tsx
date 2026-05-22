@@ -7,11 +7,8 @@ import { apiClient } from '@/lib/api-client';
 import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
 import { validateEmail } from '@/lib/validation';
-import {
-  inferCityStateFromCommaAddress,
-  mergeStreetAddressLineOnly,
-  PROFILE_ADDRESS_FORMAT_PLACEHOLDER,
-} from '@/lib/profile-address-format';
+import { inferCityStateFromCommaAddress, mergeStreetAddressLineOnly } from '@/lib/profile-address-format';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import {
@@ -31,6 +28,8 @@ interface UserProfile {
   city?: string;
   state?: string;
   photo?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   created_at?: string;
 }
 
@@ -86,6 +85,13 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
       const houseNo = String((raw as any).houseNo ?? (raw as any).house_no ?? '').trim();
       const floor = String((raw as any).floor ?? '').trim();
       const { city: inferredCity, state: inferredState } = inferCityStateFromCommaAddress(addressLine);
+      const latRaw = (raw as any).latitude ?? (raw as any).lat;
+      const lngRaw = (raw as any).longitude ?? (raw as any).lng;
+      const latitude =
+        latRaw != null && Number.isFinite(Number(latRaw)) ? Number(latRaw) : undefined;
+      const longitude =
+        lngRaw != null && Number.isFinite(Number(lngRaw)) ? Number(lngRaw) : undefined;
+
       const normalized: UserProfile = {
         firstName: base.firstName,
         lastName: base.lastName,
@@ -98,6 +104,8 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
         city: inferredCity ?? base.city,
         state: inferredState ?? base.state,
         photo: base.photo,
+        latitude,
+        longitude,
         created_at: (raw as any).created_at ?? (raw as any).createdAt,
       };
       setProfile(normalized);
@@ -185,6 +193,14 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
         houseNo: profile.houseNo.trim(),
         floor: (profile.floor || '').trim(),
         photo: uploadedPhotoUrl || profile.photo,
+        ...(profile.latitude != null &&
+          profile.longitude != null &&
+          Number.isFinite(profile.latitude) &&
+          Number.isFinite(profile.longitude) && {
+            latitude: profile.latitude,
+            longitude: profile.longitude,
+            coordinates: { lat: profile.latitude, lng: profile.longitude },
+          }),
       };
 
       await apiClient.post('/customer/profile', {
@@ -404,21 +420,32 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
               <FieldLabel>Address</FieldLabel>
               {editMode ? (
                 <>
-                  <textarea
+                  <EnhancedAddressAutocomplete
                     value={profile.address}
-                    onChange={(e) => {
-                      const address = e.target.value;
-                      const { city: c, state: s } = inferCityStateFromCommaAddress(address);
-                      setProfile((prev) =>
-                        prev ? { ...prev, address, city: c ?? prev.city, state: s ?? prev.state } : null
-                      );
+                    onChange={(address: string, components?: AddressComponents) => {
+                      setProfile((prev) => {
+                        if (!prev) return null;
+                        const updated = { ...prev, address };
+                        if (components?.pincode) updated.pincode = components.pincode;
+                        if (components?.city) updated.city = components.city;
+                        if (components?.state) updated.state = components.state;
+                        if (components?.coordinates) {
+                          updated.latitude = components.coordinates.lat;
+                          updated.longitude = components.coordinates.lng;
+                        } else {
+                          const { city: c, state: s } = inferCityStateFromCommaAddress(address);
+                          if (c) updated.city = c;
+                          if (s) updated.state = s;
+                        }
+                        return updated;
+                      });
                     }}
-                    placeholder={PROFILE_ADDRESS_FORMAT_PLACEHOLDER}
-                    rows={4}
-                    className={`${inputClass} resize-y min-h-[100px]`}
+                    placeholder="Search address, landmark, city..."
+                    className="w-full"
+                    required
                   />
                   <p className="text-xs text-gray-500 mt-1.5">
-                    Separate parts with commas: area, locality, city, state, country.
+                    Type to search for your address, landmark or area
                   </p>
                 </>
               ) : (
