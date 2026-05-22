@@ -250,9 +250,11 @@ export function VetServicesByStyle({
           serviceId: sid,
           vendorId: vid ? String(vid) : undefined,
         });
-        console.log('[VetServicesByStyle] tele Book Now →', url);
-        router.push(url);
-        return;
+        if (url) {
+          console.log('[VetServicesByStyle] tele Book Now →', url);
+          router.push(url);
+          return;
+        }
       }
     }
 
@@ -437,7 +439,12 @@ export function VetServicesByStyle({
     const address = vendor?.address || facility?.address || profileProvider.address || '';
     const phoneNumber = vendor?.phone || facility?.phone || profileProvider.phone || '';
     const description = vendor?.description || facility?.description || `${providerName} provides professional veterinary services.`;
-    const specialization = facility?.specialization || vendor?.specialization || 'General Veterinary Care';
+    const profileServiceSubtitle =
+      serviceStyle === 'tele'
+        ? 'Tele Consultation'
+        : serviceStyle === 'at_home'
+          ? 'Home Visit'
+          : 'Clinic Visit';
 
     // ✅ FIX: Prepare stats for ServiceDashboardHeader
     const profileVendorId = String(
@@ -463,7 +470,7 @@ export function VetServicesByStyle({
           fullWidth
           className="!z-0 isolation-auto"
           serviceName={providerName}
-          serviceSubtitle={specialization}
+          serviceSubtitle={profileServiceSubtitle}
           serviceIcon={Stethoscope}
           iconColor="text-white"
           stats={dashboardStats}
@@ -548,12 +555,6 @@ export function VetServicesByStyle({
                     {serviceStyle === 'tele' ? 'Tele Consultation' : serviceStyle === 'at_home' ? 'Home Visit' : 'Clinic Visit'}
                   </span>
                 </div>
-                {specialization && (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 rounded-lg">
-                    <Stethoscope className="w-4 h-4 text-[#FF8C42]" />
-                    <span className="text-sm font-medium text-gray-700">{specialization}</span>
-                  </div>
-                )}
               </div>
             </div>
 

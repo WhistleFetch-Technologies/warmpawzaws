@@ -134,9 +134,6 @@ export function PreviousProvidersCarousel({
                 <h3 className="font-bold text-gray-900 truncate">
                   {provider.providerName}
                 </h3>
-                <p className="text-sm text-gray-600 truncate">
-                  {provider.specialization}
-                </p>
 
                 {/* Rating */}
                 <div className="flex items-center gap-2 mt-1">

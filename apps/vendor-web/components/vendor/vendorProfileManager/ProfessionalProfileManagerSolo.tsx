@@ -16,6 +16,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 import { Camera, Save, User, Mail, Phone, MapPin, FileText, Clock, Award, Briefcase, CheckCircle, AlertCircle, Calendar, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -664,7 +665,7 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
                   />
                 </div>
               </div>
-              {!isPetInsuranceProfile && (
+              {!isPetInsuranceProfile && isInstantTeleUiEnabled() && (
                 <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
                   <div className="flex items-center gap-3 mb-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100">

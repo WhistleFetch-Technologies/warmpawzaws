@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { resolvePromotionDestination } from '@/lib/promotion-navigation';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
+import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 import { parsePromotionApplicableServices, shouldIncludePromotionForService } from '@/lib/promotion-banner-filter';
 
 interface Promotion {
@@ -171,17 +172,23 @@ export function PromotionBanner({
         promotionId: promo.id,
         promotionIntent,
         ...(resolvedStyle ? { serviceStyle: resolvedStyle } : {}),
-        ...(screen === 'vet-tele-consultation'
+        ...(screen === 'vet-tele-consultation' && isInstantTeleUiEnabled()
           ? { service: 'tele' as const, directTelePay: true as const }
-          : {}),
+          : screen === 'vet-tele-consultation'
+            ? { startStep: 'scheduled' as const }
+            : {}),
       });
       return;
     }
     if (typeof window !== 'undefined') {
       if (screen === 'vet-tele-consultation') {
         const path = buildTeleInstantAutoPayBookingUrl();
-        console.log('[PromotionBanner] no onNavigate → tele instant pay', path);
-        window.location.href = `${window.location.origin}${path}`;
+        if (path) {
+          console.log('[PromotionBanner] no onNavigate → tele instant pay', path);
+          window.location.href = `${window.location.origin}${path}`;
+          return;
+        }
+        window.location.href = `${window.location.origin}/?target=vet-tele-consultation`;
         return;
       }
       window.location.href = `/?promotion=${encodeURIComponent(promo.id)}&target=${encodeURIComponent(screen)}`;

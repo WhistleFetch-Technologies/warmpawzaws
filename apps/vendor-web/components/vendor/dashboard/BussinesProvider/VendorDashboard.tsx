@@ -433,6 +433,7 @@ export function VendorDashboard({
                 petBreed: b.pet_breed,
                 customerName: b.customer_name || 'Customer',
                 customerPhone: b.customer_phone || '',
+                customerId: b.customerId ?? b.customer_id ?? undefined,
                 serviceName: b.service_name || 'Service',
                 serviceType: b.service_type || 'at_center',
                 status: b.status || 'pending',
@@ -488,6 +489,7 @@ export function VendorDashboard({
               petBreed: b.pet_breed,
               customerName: b.customer_name || 'Customer',
               customerPhone: b.customer_phone || '',
+              customerId: b.customerId ?? b.customer_id ?? undefined,
               serviceName: b.service_name || 'Service',
               serviceType: b.service_type || 'at_center',
               status: b.status || 'pending',
@@ -1786,10 +1788,21 @@ export function VendorDashboard({
                                         toast.info('Preparing video call...');
                                         
                                         // Create meeting then notify customer (so they see incoming call) before navigating
+                                        const effectiveCustomerId = appointment.customerId;
+                                        const effectiveVendorIdForMeeting = vendorData?.id || vendorId;
+                                        if (!effectiveCustomerId) {
+                                          toast.error('Customer ID is missing for this booking. Please refresh and try again.');
+                                          return;
+                                        }
+                                        if (!effectiveVendorIdForMeeting) {
+                                          toast.error('Vendor ID is missing. Please sign in again.');
+                                          return;
+                                        }
+
                                         const createRes = await apiClient.post('/video-call/create-meeting', {
                                           bookingId: bid,
-                                          customerId: (appointment as any).customerId || (appointment as any).customer_id || '',
-                                          vendorId: vendorData?.id || vendorId,
+                                          customerId: effectiveCustomerId,
+                                          vendorId: effectiveVendorIdForMeeting,
                                         }) as any;
                                         
                                         if (!createRes?.success && !createRes?.meetingId) {

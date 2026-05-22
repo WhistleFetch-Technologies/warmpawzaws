@@ -334,7 +334,6 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
                 </div>
                 <div className="flex-1 text-left">
                   <h3 className="font-semibold text-gray-900">{doctor.name}</h3>
-                  <p className="text-sm text-gray-500">{doctor.specialization}</p>
                 </div>
                 <div className="flex items-center gap-1">
                   <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />

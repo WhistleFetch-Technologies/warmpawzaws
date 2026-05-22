@@ -166,17 +166,18 @@ body {
 /* Customer-specific utility classes — safe-area helpers live in @layer utilities so Tailwind build order cannot drop their precedence. */
 
 /**
- * Mobile headers: env(safe-area-inset-top) is often 0 in embedded WebViews / some browsers.
- * Use a generous minimum (~64px) so back/title clear the system status bar; add inset when available.
+ * Mobile headers: use env(safe-area-inset-top) when available (iOS / PWA).
+ * Capacitor Android already pads the WebView below the status bar (MainActivity), so avoid
+ * a large min padding here — that duplicated the inset and showed as extra orange gap.
  */
 @layer utilities {
   .cw-header-safe-top {
-    padding-top: max(3rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
   }
 
   @media (min-width: 768px) {
     .cw-header-safe-top {
-      padding-top: max(3rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+      padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
     }
   }
 

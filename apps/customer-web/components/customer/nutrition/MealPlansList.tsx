@@ -131,7 +131,7 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
   if (MEAL_PLANS_COMING_SOON) {
     return (
       <div className="mx-auto flex min-h-screen max-w-md flex-col bg-gray-50 pb-24">
-        <div className="shrink-0 bg-[#FF8C42] px-6 pt-12 pb-10">
+        <div className="shrink-0 bg-[#FF8C42] px-6 cw-header-safe-top pb-10">
           <div className="flex items-center gap-4">
             <button
               type="button"
@@ -152,7 +152,7 @@ export function MealPlansList({ phone, onBack, onNavigate }: MealPlansListProps)
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col bg-gray-50 pb-24">
-      <div className="shrink-0 bg-[#FF8C42] px-6 pt-12 pb-10">
+      <div className="shrink-0 bg-[#FF8C42] px-6 cw-header-safe-top pb-10">
         <div className="flex items-center gap-4">
           <button 
             onClick={onBack}

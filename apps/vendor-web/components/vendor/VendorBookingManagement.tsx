@@ -3,6 +3,7 @@
 import { useState, useEffect, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 import {
   VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT,
   VENDOR_MIN_PAYOUT_REQUEST_RS,
@@ -1322,7 +1323,7 @@ export function VendorBookingManagement({
             )}
 
             {/* Instant Consultations Stats - Hide for solo groomers (no tele services) */}
-            {hasTeleService && (
+            {hasTeleService && isInstantTeleUiEnabled() && (
               <div className="p-4 bg-white border-b border-gray-100">
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Instant Consultations</h3>
                 <div className="flex items-center justify-between">
