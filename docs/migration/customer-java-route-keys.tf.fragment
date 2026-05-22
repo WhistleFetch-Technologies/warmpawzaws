@@ -1,0 +1,67 @@
+customer_java_route_keys = [
+  # ANY — paths with 3+ verbs (GET+PUT+DELETE or PUT+PATCH+DELETE) collapsed (rule 5)
+  "ANY /customer/addresses/{addressId}",           # GET+PUT+PATCH+DELETE
+  "ANY /customer/{customerId}",                    # GET+PUT+DELETE
+  "ANY /customer/{customerRef}/addresses/{addressId}", # PUT+PATCH+DELETE
+  "ANY /customers/addresses/{addressId}",          # GET+PUT+PATCH+DELETE
+  "ANY /customers/{customerId}",                   # GET+PUT+DELETE
+  "ANY /customers/{customerRef}/addresses/{addressId}", # PUT+PATCH+DELETE
+  "ANY /pets/{petId}",                             # GET+PUT+DELETE
+
+  # DELETE — 2-verb paths kept explicit
+  "DELETE /customer/{segment}/pets/{petId}",
+  "DELETE /customers/pets/{petId}",
+
+  # GET
+  "GET /customer/addresses",
+  "GET /customer/by-phone",
+  "GET /customer/by-phone/{phone}/pets/{petId}/bookings",
+  "GET /customer/pets",
+  "GET /customer/pets/{phone}",
+  "GET /customer/profile",
+  "GET /customer/profile/unified/{phone}",
+  "GET /customer/profile/{identifier}",
+  "GET /customer/{customerId}/addresses",
+  "GET /customer/{customerId}/pets",
+  "GET /customer/{phone}/pets/{petId}",
+  "GET /customer/{phone}/preferences",
+  "GET /customers/addresses",
+  "GET /customers/by-phone",
+  "GET /customers/profile",
+  "GET /customers/profile/unified/{phone}",
+  "GET /customers/profile/{identifier}",
+  "GET /customers/{customerId}/addresses",
+  "GET /customers/{customerId}/preferences",
+  "GET /customers/{customerId}/profile-completion",
+  "GET /pets/customer/{customerId}",
+
+  # POST
+  "POST /customer",
+  "POST /customer/addresses",
+  "POST /customer/customers",
+  "POST /customer/pets",
+  "POST /customer/profile",
+  "POST /customer/{customerId}/addresses",
+  "POST /customer/{customerId}/pets",
+  "POST /customer/{phone}/preferences",
+  "POST /customers",
+  "POST /customers/addresses",
+  "POST /customers/customers",
+  "POST /customers/profile",
+  "POST /customers/{customerId}/addresses",
+  "POST /customers/{customerId}/complete/address",
+  "POST /customers/{customerId}/complete/basic",
+  "POST /customers/{customerId}/complete/pet",
+  "POST /customers/{customerId}/complete/preferences",
+  "POST /customers/{customerId}/pets",
+  "POST /customers/{customerId}/preferences",
+  "POST /pets",
+
+  # PUT — 2-verb paths kept explicit
+  "PUT /customer/profile/{identifier}",
+  "PUT /customer/{segment}/pets/{petId}",
+  "PUT /customers/pets/{petId}",
+  "PUT /customers/profile/{identifier}",
+]
+# Total: 54 route keys
+# Target integration: hv286ua (warmpawz-dev-customer-i ALB)

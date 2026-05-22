@@ -1,0 +1,86 @@
+## Dev API Gateway Baseline
+## API ID: z0b3obweb6 | Region: ap-south-1
+## Captured: 2026-05-22
+
+=== ROUTES ===
+
+-------------------------------------------------------------------------
+|                               GetRoutes                               |
++----------------------------------------------+------------------------+
+|                   RouteKey                   |        Target          |
++----------------------------------------------+------------------------+
+|  ANY /v3/api-docs/{proxy+}                   |  integrations/9pkprho  |
+|  ANY /booking/{proxy+}                       |  integrations/bsttuan  |
+|  ANY /logistics/meal/dispatch                |  integrations/9pkprho  |
+|  ANY /bookings/{proxy+}                      |  integrations/bsttuan  |
+|  GET /customer/announcements                 |  integrations/jrsc8v3  |
+|  ANY /                                       |  integrations/jrsc8v3  |
+|  ANY /customer/{proxy+}                      |  integrations/jrsc8v3  |
+|  GET /customer/discover-services             |  integrations/jrsc8v3  |
+|  GET /customer/search-suggestions            |  integrations/jrsc8v3  |
+|  ANY /v3/api-docs.yaml                       |  integrations/9pkprho  |
+|  GET /customer/profile                       |  integrations/hv286ua  |
+|  GET /customer/banners                       |  integrations/jrsc8v3  |
+|  GET /customer/payment-methods               |  integrations/jrsc8v3  |
+|  ANY /v3/api-docs                            |  integrations/9pkprho  |
+|  POST /customer/change-password              |  integrations/jrsc8v3  |
+|  ANY /webhooks/pidge                         |  integrations/9pkprho  |
+|  ANY /swagger-ui/{proxy+}                    |  integrations/9pkprho  |
+|  DELETE /customer/{customerId}               |  integrations/jrsc8v3  |
+|  POST /customer/set-password                 |  integrations/jrsc8v3  |
+|  POST /customer/delivery-fee/calculate       |  integrations/jrsc8v3  |
+|  ANY /pets                                   |  integrations/hv286ua  |
+|  GET /customer/refund-policy                 |  integrations/jrsc8v3  |
+|  POST /customer/profile                      |  integrations/hv286ua  |
+|  GET /customer/delivery-fee-policy           |  integrations/jrsc8v3  |
+|  ANY /logistics/pidge/order/partial-delivery |  integrations/9pkprho  |
+|  GET /customer/articles                      |  integrations/jrsc8v3  |
+|  GET /customer/notifications                 |  integrations/jrsc8v3  |
+|  ANY /customers                              |  integrations/hv286ua  |
+|  POST /customer/profile/set-password         |  integrations/jrsc8v3  |
+|  ANY /{proxy+}                               |  integrations/jrsc8v3  |
+|  GET /customer/wallet                        |  integrations/jrsc8v3  |
+|  GET /customer/password-status               |  integrations/jrsc8v3  |
+|  ANY /pets/{proxy+}                          |  integrations/hv286ua  |
+|  GET /customer/profile/password-status       |  integrations/jrsc8v3  |
+|  ANY /customer                               |  integrations/jrsc8v3  |
+|  ANY /swagger-ui.html                        |  integrations/9pkprho  |
+|  ANY /_customer-canary/{proxy+}              |  integrations/9pkprho  |
+|  ANY /webhooks/pidge/rider-task              |  integrations/9pkprho  |
+|  GET /customer/bookings                      |  integrations/jrsc8v3  |
+|  ANY /customers/{proxy+}                     |  integrations/hv286ua  |
+|  GET /health                                 |  integrations/jrsc8v3  |
+|  GET /customer/by-phone                      |  integrations/hv286ua  |
+|  ANY /_customer-canary-v3/{proxy+}           |  integrations/9pkprho  |
+|  ANY /swagger-ui                             |  integrations/9pkprho  |
+|  GET /customer/{customerId}                  |  integrations/hv286ua  |
+|  GET /customer/pets                          |  integrations/hv286ua  |
+|  ANY /webhooks/pidge/ticket                  |  integrations/9pkprho  |
+|  GET /customer/featured-vendors              |  integrations/jrsc8v3  |
+|  POST /bookings/verify-otp                   |  integrations/jrsc8v3  |
+|  PUT /customer/{customerId}                  |  integrations/hv286ua  |
+|  ANY /logistics/pidge/{proxy+}               |  integrations/9pkprho  |
+|  GET /customer/adoption-stats                |  integrations/jrsc8v3  |
+|  POST /bookings/generate-otp                 |  integrations/jrsc8v3  |
++----------------------------------------------+------------------------+
+
+=== INTEGRATIONS ===
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+|                                                                                 GetIntegrations                                                                                |
++---------+-------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
+|   Id    |    Type     |                                                                          Uri                                                                           |
++---------+-------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
+|  1dvi6tb|  AWS_PROXY  |  arn:aws:lambda:ap-south-1:057442119249:function:warmpawz-api-dev-api                                                                                  |
+|  9pkprho|  HTTP_PROXY |  arn:aws:elasticloadbalancing:ap-south-1:057442119249:listener/app/warmpawz-dev-delivery-i/e5957ef6f5f9bf6c/26e863674d9526cd                           |
+|  bsttuan|  HTTP_PROXY |  arn:aws:elasticloadbalancing:ap-south-1:057442119249:listener/app/warmpawz-dev-booking-i/3ced24b847c2671f/d6a0593389454e61                            |
+|  hv286ua|  HTTP_PROXY |  arn:aws:elasticloadbalancing:ap-south-1:057442119249:listener/app/warmpawz-dev-customer-i/59484e18ebe71d0b/3b761c0a50a056fb                           |
+|  jrsc8v3|  AWS_PROXY  |  arn:aws:apigateway:ap-south-1:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-south-1:057442119249:function:warmpawz-dev-api-handler/invocations   |
++---------+-------------+--------------------------------------------------------------------------------------------------------------------------------------------------------+
+
+=== INTEGRATION KEY ===
+  1dvi6tb  AWS_PROXY  → warmpawz-api-dev-api (Lambda, old/unused?)
+  9pkprho  HTTP_PROXY → warmpawz-dev-delivery-i ALB  (delivery / logistics / swagger / canary routes)
+  bsttuan  HTTP_PROXY → warmpawz-dev-booking-i ALB   (/booking/{proxy+}, /bookings/{proxy+})
+  hv286ua  HTTP_PROXY → warmpawz-dev-customer-i ALB  (/customer profile, /pets, /customers, /customer/{id} explicit routes)
+  jrsc8v3  AWS_PROXY  → warmpawz-dev-api-handler Lambda  (main Lambda; catch-all /{proxy+} and most /customer/* routes)

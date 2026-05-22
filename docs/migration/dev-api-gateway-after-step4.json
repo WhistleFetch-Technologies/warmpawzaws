@@ -1,0 +1,939 @@
+﻿{
+    "Items": [
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "036ip6t",
+            "RouteKey": "ANY /v3/api-docs/{proxy+}",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "07xji49",
+            "RouteKey": "ANY /logistics/meal/dispatch",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "0p2emua",
+            "RouteKey": "GET /bookings/available-slots",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "13paydo",
+            "RouteKey": "POST /bookings/{bookingId}/cancel",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "16r5kps",
+            "RouteKey": "POST /vendor/bookings/{bookingId}/accept",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "26sefga",
+            "RouteKey": "GET /booking/{bookingId}",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "2akxib4",
+            "RouteKey": "GET /customer/pets/{phone}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "2crw5jh",
+            "RouteKey": "GET /customer/profile/unified/{phone}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "307tp96",
+            "RouteKey": "GET /customer/announcements",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "36klvb1",
+            "RouteKey": "POST /booking/{bookingId}/reschedule",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationScopes": [],
+            "AuthorizationType": "NONE",
+            "RequestModels": {},
+            "RouteId": "36y0gne",
+            "RouteKey": "ANY /",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "3h7x8mb",
+            "RouteKey": "POST /customers/{customerId}/pets",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "3jbdsi8",
+            "RouteKey": "POST /booking/{bookingId}/cancel-with-refund",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "3m03kmi",
+            "RouteKey": "POST /pets",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "3ywhxj5",
+            "RouteKey": "GET /customers/profile/unified/{phone}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "4hasrl3",
+            "RouteKey": "POST /customer/{customerId}/pets",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "4weahpi",
+            "RouteKey": "GET /customer/discover-services",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "59nz6ci",
+            "RouteKey": "POST /bookings/{bookingId}/cancel-with-refund",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "5c4lian",
+            "RouteKey": "GET /customer/search-suggestions",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "5e1jwwb",
+            "RouteKey": "POST /customers/addresses",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "5x8o67n",
+            "RouteKey": "GET /vendor/reschedule-policy",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "64ot5nb",
+            "RouteKey": "GET /customer/{customerId}/bookings/{bookingId}",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "69knbms",
+            "RouteKey": "GET /customer/{customerId}/bookings/follow-up-eligible",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "6fvjqef",
+            "RouteKey": "ANY /v3/api-docs.yaml",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "6otqfn1",
+            "RouteKey": "POST /customers/{customerId}/preferences",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "6oxiq98",
+            "RouteKey": "PUT /bookings/{bookingId}/status",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "6tucvrl",
+            "RouteKey": "POST /followup/create",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "79irwiu",
+            "RouteKey": "POST /bookings/{bookingId}/reschedule",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "7iyw2r5",
+            "RouteKey": "GET /customer/profile",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "7j3kir4",
+            "RouteKey": "GET /vendor/bookings/{vendorId}",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "7m1vei5",
+            "RouteKey": "PUT /customers/profile/{identifier}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "7qr5ouo",
+            "RouteKey": "POST /vendor/bookings/{bookingId}/decline",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "7vmdx4b",
+            "RouteKey": "GET /customer/banners",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "7wh0t12",
+            "RouteKey": "POST /customers/{customerId}/complete/basic",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "8e9siy6",
+            "RouteKey": "GET /customer/payment-methods",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "8fjyvfr",
+            "RouteKey": "GET /customer/bookings/{bookingId}",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "8hx4wqd",
+            "RouteKey": "PUT /booking/{bookingId}/status",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "8iuo9wi",
+            "RouteKey": "ANY /v3/api-docs",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "8rx0il6",
+            "RouteKey": "DELETE /customers/pets/{petId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "94p12gf",
+            "RouteKey": "POST /customer/change-password",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "99wz9v6",
+            "RouteKey": "POST /booking/{bookingId}/calculate-refund",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "9kobo7n",
+            "RouteKey": "POST /customers/profile",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "9nd2d89",
+            "RouteKey": "POST /customer/customers",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "9nnpmn5",
+            "RouteKey": "POST /customers/customers",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "a7qcfrm",
+            "RouteKey": "POST /customers",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "aes4wlg",
+            "RouteKey": "ANY /webhooks/pidge",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "bq57owe",
+            "RouteKey": "ANY /swagger-ui/{proxy+}",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "brekdrr",
+            "RouteKey": "POST /customer/pets",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "c6nutak",
+            "RouteKey": "GET /customer/addresses",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "c8ul5zb",
+            "RouteKey": "POST /booking/customer/bookings/refund-preview",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "ckkkq0f",
+            "RouteKey": "DELETE /customer/{customerId}",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "cuzdf2f",
+            "RouteKey": "POST /customer/set-password",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "cxe36y9",
+            "RouteKey": "POST /customer/addresses",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "drkhkfk",
+            "RouteKey": "POST /customer/delivery-fee/calculate",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "dyeuasb",
+            "RouteKey": "GET /customer/refund-policy",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "dzoxe74",
+            "RouteKey": "GET /customer/{phone}/preferences",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "e7ensf1",
+            "RouteKey": "POST /customer/bookings/create",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "emu42zq",
+            "RouteKey": "GET /customer/profile/{identifier}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "enptokl",
+            "RouteKey": "POST /customer/{phone}/preferences",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "ezkfnt0",
+            "RouteKey": "POST /customer/profile",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "f0wy76m",
+            "RouteKey": "POST /customers/{customerId}/complete/address",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "faxw0o9",
+            "RouteKey": "GET /customer/delivery-fee-policy",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "fgncmvc",
+            "RouteKey": "DELETE /customer/{segment}/pets/{petId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "fhzktqh",
+            "RouteKey": "ANY /customer/{customerId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "fmn134l",
+            "RouteKey": "ANY /logistics/pidge/order/partial-delivery",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "fqwqoz0",
+            "RouteKey": "POST /customers/{customerId}/complete/pet",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "ga16pki",
+            "RouteKey": "GET /vendor/available-slots",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "gamjfdf",
+            "RouteKey": "GET /customers/{customerId}/addresses",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "gk76v2t",
+            "RouteKey": "ANY /customer/{customerRef}/addresses/{addressId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "gl6yd13",
+            "RouteKey": "GET /customer/articles",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "gu8np2r",
+            "RouteKey": "GET /customer/notifications",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "haly595",
+            "RouteKey": "POST /vendor/bookings/{bookingId}/confirm",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "i8yucbi",
+            "RouteKey": "ANY /customers/{customerRef}/addresses/{addressId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "i9cixfj",
+            "RouteKey": "GET /customers/{customerId}/preferences",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "ibt5nu6",
+            "RouteKey": "POST /customer/profile/set-password",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "ilyoada",
+            "RouteKey": "POST /booking/create",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "iphxqus",
+            "RouteKey": "POST /bookings/create",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationScopes": [],
+            "AuthorizationType": "NONE",
+            "RequestModels": {},
+            "RouteId": "iqhn09n",
+            "RouteKey": "ANY /{proxy+}",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "jgwl099",
+            "RouteKey": "GET /customer/{customerId}/addresses",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "jkpdxqb",
+            "RouteKey": "GET /customer/wallet",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "jnfcxx2",
+            "RouteKey": "GET /pets/customer/{customerId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "jsfkv5o",
+            "RouteKey": "GET /customer/password-status",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "k1s5zh2",
+            "RouteKey": "GET /customer/profile/password-status",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "k69clpk",
+            "RouteKey": "GET /customers/profile/{identifier}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "kgdmzp5",
+            "RouteKey": "PUT /customer/profile/{identifier}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "kjdin5e",
+            "RouteKey": "POST /customer/{customerId}/addresses",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "ljhar8c",
+            "RouteKey": "ANY /customer",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "ljhjlet",
+            "RouteKey": "POST /customers/{customerId}/addresses",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "lmvvt0d",
+            "RouteKey": "ANY /swagger-ui.html",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "lqxd90u",
+            "RouteKey": "ANY /_customer-canary/{proxy+}",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "lt241en",
+            "RouteKey": "POST /customer/booking/create",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "luw6tfn",
+            "RouteKey": "ANY /customers/{customerId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "m1z1o65",
+            "RouteKey": "POST /vendor/bookings/{bookingId}/cancel",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "mqm38pr",
+            "RouteKey": "POST /bookings/customer/bookings/refund-preview",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "n2fke6k",
+            "RouteKey": "ANY /webhooks/pidge/rider-task",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "naq48dc",
+            "RouteKey": "GET /customer/bookings",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "nptgcrh",
+            "RouteKey": "GET /health",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "o3hglib",
+            "RouteKey": "GET /customer/by-phone",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "o93q0cl",
+            "RouteKey": "PUT /customers/pets/{petId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "oif6bbc",
+            "RouteKey": "GET /customer/{customerId}/bookings",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "ot96jk3",
+            "RouteKey": "ANY /_customer-canary-v3/{proxy+}",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "oud3be9",
+            "RouteKey": "ANY /swagger-ui",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "p64ky9c",
+            "RouteKey": "ANY /pets/{petId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "qa0x4rs",
+            "RouteKey": "GET /customer/{customerId}/pets",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "qspdgq1",
+            "RouteKey": "GET /vendor/{vendorId}/bookings/today",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "qsu6vdn",
+            "RouteKey": "GET /customer/{phone}/pets/{petId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "qw1lg6l",
+            "RouteKey": "POST /bookings/{bookingId}/calculate-refund",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "rbov3is",
+            "RouteKey": "GET /bookings/{bookingId}",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "rg5wtod",
+            "RouteKey": "GET /booking/{bookingId}/history",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "rkfxd5t",
+            "RouteKey": "GET /vendor/{vendorId}/bookings",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "sdnaung",
+            "RouteKey": "GET /customers/by-phone",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "sfdiw7t",
+            "RouteKey": "GET /customers/{customerId}/profile-completion",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "t1utp9q",
+            "RouteKey": "GET /vendor/bookings/{bookingId}/details",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "toz04pl",
+            "RouteKey": "GET /customer/pets",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "tt02zs0",
+            "RouteKey": "GET /customer/by-phone/{phone}/pets/{petId}/bookings",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "u6sctbv",
+            "RouteKey": "ANY /customers/addresses/{addressId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "uiakqjj",
+            "RouteKey": "PUT /vendor/bookings/{bookingId}/status",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "uyofpcb",
+            "RouteKey": "GET /customers/profile",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "w4sfqca",
+            "RouteKey": "POST /customers/{customerId}/complete/preferences",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "wc3a3y1",
+            "RouteKey": "ANY /webhooks/pidge/ticket",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "wlrpgo7",
+            "RouteKey": "POST /booking/{bookingId}/cancel",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "wnry9g8",
+            "RouteKey": "GET /customer/featured-vendors",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "x0xujsf",
+            "RouteKey": "GET /customer/{customerId}/pets/{petId}/bookings",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "x8fwb6r",
+            "RouteKey": "POST /bookings/verify-otp",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "xbaq03p",
+            "RouteKey": "ANY /logistics/pidge/{proxy+}",
+            "Target": "integrations/9pkprho"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "xuzs70f",
+            "RouteKey": "POST /customer",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "y4gv8za",
+            "RouteKey": "GET /bookings/{bookingId}/history",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "y5r2zzj",
+            "RouteKey": "PUT /customer/{segment}/pets/{petId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "ys6e1qt",
+            "RouteKey": "ANY /customer/addresses/{addressId}",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "ywsaodt",
+            "RouteKey": "GET /customer/adoption-stats",
+            "Target": "integrations/jrsc8v3"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "z68p015",
+            "RouteKey": "POST /vendor/bookings/{bookingId}/reject",
+            "Target": "integrations/bsttuan"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "znisez0",
+            "RouteKey": "GET /customers/addresses",
+            "Target": "integrations/17hs4nn"
+        },
+        {
+            "ApiKeyRequired": false,
+            "AuthorizationType": "NONE",
+            "RouteId": "zw7epu6",
+            "RouteKey": "POST /bookings/generate-otp",
+            "Target": "integrations/bsttuan"
+        }
+    ]
+}

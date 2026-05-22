@@ -64,20 +64,20 @@ data "aws_route53_zone" "main" {
 locals {
   environment = "dev"
   domain_name = "warmpawz.com"
-  
+
   # Domain configuration for dev environment
-  api_subdomain      = "dev.api.warmpawz.com"
+  api_subdomain = "dev.api.warmpawz.com"
   # Must match existing HTTP API (see module.api_gateway existing_api_gateway_id) — used for Swagger/OpenAPI Try it out (HTTPS).
   dev_http_api_invoke_url = "https://z0b3obweb6.execute-api.${var.aws_region}.amazonaws.com"
-  admin_subdomain    = "dev.admin.warmpawz.com"
-  vendor_subdomain   = "dev.vendor.warmpawz.com"
-  customer_subdomain = "dev.customer.warmpawz.com"
-  
+  admin_subdomain         = "dev.admin.warmpawz.com"
+  vendor_subdomain        = "dev.vendor.warmpawz.com"
+  customer_subdomain      = "dev.customer.warmpawz.com"
+
   common_tags = {
     Environment = "dev"
     Project     = "Warmpawz"
   }
-  
+
   # CORS allowed origins including custom domains and CloudFront distributions
   # OFFICIAL CloudFront distributions only (as per infrastructure)
   # Admin: E1WPXL8WBOWOE8 → dfof7mguaa0a5.cloudfront.net
@@ -106,8 +106,8 @@ locals {
   ]
 
   # Java delivery/logistics ECS + API Gateway split (VPC link → internal ALB)
-  delivery_stack_live       = var.enable_delivery_stack && var.delivery_service_image != ""
-  delivery_codebuild_live   = local.delivery_stack_live && var.delivery_codebuild_github_url != ""
+  delivery_stack_live     = var.enable_delivery_stack && var.delivery_service_image != ""
+  delivery_codebuild_live = local.delivery_stack_live && var.delivery_codebuild_github_url != ""
 
   # Java customer-service ECS + API Gateway split (VPC link → internal ALB)
   customer_stack_live = var.enable_customer_stack && var.customer_service_image != ""
@@ -129,7 +129,7 @@ module "vpc" {
   enable_nat_gateway       = true
   single_nat_gateway       = true
   create_private_endpoints = false
-  use_existing_vpc         = true  # CRITICAL: Use existing VPC (VPC limit reached)
+  use_existing_vpc         = true # CRITICAL: Use existing VPC (VPC limit reached)
 }
 
 # SNS Module (for alarms and push notifications)
@@ -150,9 +150,9 @@ module "rds" {
   allowed_security_groups = [module.lambda.lambda_security_group_id]
   database_name           = "warmpawz"
   master_username         = "warmpawz_admin"
-  min_capacity            = 2.0  # Increased from 1.0 to 2.0 ACU to prevent database pausing and handle more connections
-  max_capacity            = 4.0  # Increased from 1.0 to 4.0 ACU to handle traffic bursts
-  backup_retention_period = 1  # Free tier allows max 1 day
+  min_capacity            = 2.0 # Increased from 1.0 to 2.0 ACU to prevent database pausing and handle more connections
+  max_capacity            = 4.0 # Increased from 1.0 to 4.0 ACU to handle traffic bursts
+  backup_retention_period = 1   # Free tier allows max 1 day
   availability_zones      = slice(module.vpc.availability_zones, 0, 2)
   deletion_protection     = false
   skip_final_snapshot     = true
@@ -196,13 +196,13 @@ module "sqs" {
 module "secrets" {
   source = "../../modules/secrets"
 
-  environment                = local.environment
-  razorpay_key_id            = var.razorpay_key_id
-  razorpay_key_secret        = var.razorpay_key_secret
-  razorpay_x_account_number  = var.razorpay_x_account_number
-  google_maps_api_key        = var.google_maps_api_key
-  shiprocket_email    = var.shiprocket_email
-  shiprocket_password = var.shiprocket_password
+  environment               = local.environment
+  razorpay_key_id           = var.razorpay_key_id
+  razorpay_key_secret       = var.razorpay_key_secret
+  razorpay_x_account_number = var.razorpay_x_account_number
+  google_maps_api_key       = var.google_maps_api_key
+  shiprocket_email          = var.shiprocket_email
+  shiprocket_password       = var.shiprocket_password
 }
 
 # Optional: load UAT JWT HMAC from SSM when var.uat_jwt_secret is not in tfvars (no runtime SSM read on Lambda).
@@ -228,12 +228,12 @@ module "lambda" {
     api-handler = {
       handler                 = "handler.handler"
       runtime                 = "nodejs20.x"
-      timeout                 = 60  # Increased from 30s to 60s to handle VPC cold starts and RDS scaling delays
-      memory_size             = 1024  # Increased from 512 to reduce cold start time
+      timeout                 = 60   # Increased from 30s to 60s to handle VPC cold starts and RDS scaling delays
+      memory_size             = 1024 # Increased from 512 to reduce cold start time
       provisioned_concurrency = 5    # Increased from 2 to 5 to handle burst traffic and eliminate cold starts
       zip_path                = "${path.module}/../../../backend/lambda/api-handler.zip"
-      env_vars                = {
-        DB_POOL_MAX = "10"  # Increase connection pool size
+      env_vars = {
+        DB_POOL_MAX = "10" # Increase connection pool size
       }
     }
   }
@@ -242,30 +242,30 @@ module "lambda" {
   # Optional UAT_JWT_SECRET when var.uat_jwt_secret is non-empty — must match verify-OTP signing on this same Lambda.
   common_env_vars = merge(
     {
-    ENVIRONMENT                 = local.environment
-    SETTLEMENT_CALCULATE_CRON_RULE_NAME = "warmpawz-${local.environment}-settlement-calculate-daily"
-    ALLOWED_ORIGINS             = join(",", local.cors_allowed_origins)
-    # AWS_REGION is reserved by Lambda runtime, cannot be set
-    # Lambda functions automatically have AWS_REGION available
-    UAT_MODE                    = "true"
-    NODE_ENV                    = "development"
-    DB_HOST                     = module.rds.cluster_endpoint
-    DB_NAME                     = module.rds.database_name
-    DB_SECRET_ARN               = module.rds.secret_arn
-    DYNAMODB_SESSIONS_TABLE     = module.dynamodb.sessions_table_name
-    DYNAMODB_CACHE_TABLE        = module.dynamodb.cache_table_name
-    S3_UPLOADS_BUCKET           = module.s3.user_uploads_bucket_name
-    SQS_BOOKING_QUEUE_URL       = module.sqs.booking_processing_queue_url
-    SQS_PAYMENT_QUEUE_URL       = module.sqs.payment_processing_queue_url
-    SNS_NOTIFICATIONS_TOPIC_ARN = module.sns.user_notifications_topic_arn
-    SNS_BOOKING_UPDATES_ARN     = module.sns.booking_updates_topic_arn
-    SNS_VENDOR_TOPIC_ARN        = module.sns.vendor_notifications_topic_arn
-    RAZORPAY_SECRET_ARN         = module.secrets.razorpay_secret_arn
-    GOOGLE_MAPS_SECRET_ARN      = module.secrets.google_maps_secret_arn
-    SHIPROCKET_SECRET_ARN       = module.secrets.shiprocket_secret_arn
-    API_BASE_URL                = "https://${local.api_subdomain}"
-    COGNITO_USER_POOL_ID        = module.cognito.user_pool_id
-    COGNITO_CLIENT_ID           = module.cognito.customer_web_client_id
+      ENVIRONMENT                         = local.environment
+      SETTLEMENT_CALCULATE_CRON_RULE_NAME = "warmpawz-${local.environment}-settlement-calculate-daily"
+      ALLOWED_ORIGINS                     = join(",", local.cors_allowed_origins)
+      # AWS_REGION is reserved by Lambda runtime, cannot be set
+      # Lambda functions automatically have AWS_REGION available
+      UAT_MODE                    = "true"
+      NODE_ENV                    = "development"
+      DB_HOST                     = module.rds.cluster_endpoint
+      DB_NAME                     = module.rds.database_name
+      DB_SECRET_ARN               = module.rds.secret_arn
+      DYNAMODB_SESSIONS_TABLE     = module.dynamodb.sessions_table_name
+      DYNAMODB_CACHE_TABLE        = module.dynamodb.cache_table_name
+      S3_UPLOADS_BUCKET           = module.s3.user_uploads_bucket_name
+      SQS_BOOKING_QUEUE_URL       = module.sqs.booking_processing_queue_url
+      SQS_PAYMENT_QUEUE_URL       = module.sqs.payment_processing_queue_url
+      SNS_NOTIFICATIONS_TOPIC_ARN = module.sns.user_notifications_topic_arn
+      SNS_BOOKING_UPDATES_ARN     = module.sns.booking_updates_topic_arn
+      SNS_VENDOR_TOPIC_ARN        = module.sns.vendor_notifications_topic_arn
+      RAZORPAY_SECRET_ARN         = module.secrets.razorpay_secret_arn
+      GOOGLE_MAPS_SECRET_ARN      = module.secrets.google_maps_secret_arn
+      SHIPROCKET_SECRET_ARN       = module.secrets.shiprocket_secret_arn
+      API_BASE_URL                = "https://${local.api_subdomain}"
+      COGNITO_USER_POOL_ID        = module.cognito.user_pool_id
+      COGNITO_CLIENT_ID           = module.cognito.customer_web_client_id
     },
     var.uat_jwt_secret != "" ? { UAT_JWT_SECRET = var.uat_jwt_secret } : (
       length(data.aws_ssm_parameter.uat_jwt_secret) > 0 ? { UAT_JWT_SECRET = data.aws_ssm_parameter.uat_jwt_secret[0].value } : {}
@@ -321,10 +321,10 @@ module "delivery_service_ecs" {
   count  = local.delivery_stack_live ? 1 : 0
   source = "../../modules/delivery-service-ecs"
 
-  environment        = local.environment
-  aws_region         = var.aws_region
-  vpc_id             = module.vpc.vpc_id
-  private_subnet_ids = module.vpc.private_subnet_ids
+  environment                       = local.environment
+  aws_region                        = var.aws_region
+  vpc_id                            = module.vpc.vpc_id
+  private_subnet_ids                = module.vpc.private_subnet_ids
   apigw_vpc_link_security_group_ids = [aws_security_group.apigw_delivery_vpc_link[0].id]
 
   rds_endpoint          = module.rds.cluster_endpoint
@@ -332,10 +332,10 @@ module "delivery_service_ecs" {
   rds_secret_arn        = module.rds.secret_arn
   rds_security_group_id = module.rds.security_group_id
 
-  container_image    = var.delivery_service_image
-  public_api_base_url = "https://${local.api_subdomain}"
+  container_image           = var.delivery_service_image
+  public_api_base_url       = "https://${local.api_subdomain}"
   openapi_public_server_url = local.dev_http_api_invoke_url
-  hibernate_ddl_auto  = var.delivery_hibernate_ddl_auto
+  hibernate_ddl_auto        = var.delivery_hibernate_ddl_auto
 }
 
 resource "aws_security_group" "apigw_customer_vpc_link" {
@@ -367,10 +367,10 @@ module "customer_service_ecs" {
   count  = local.customer_stack_live ? 1 : 0
   source = "../../modules/customer-service-ecs"
 
-  environment        = local.environment
-  aws_region         = var.aws_region
-  vpc_id             = module.vpc.vpc_id
-  private_subnet_ids = module.vpc.private_subnet_ids
+  environment                       = local.environment
+  aws_region                        = var.aws_region
+  vpc_id                            = module.vpc.vpc_id
+  private_subnet_ids                = module.vpc.private_subnet_ids
   apigw_vpc_link_security_group_ids = [aws_security_group.apigw_customer_vpc_link[0].id]
 
   rds_endpoint          = module.rds.cluster_endpoint
@@ -379,6 +379,7 @@ module "customer_service_ecs" {
   rds_security_group_id = module.rds.security_group_id
 
   container_image           = var.customer_service_image
+  api_base_url              = "https://${local.api_subdomain}"
   openapi_public_server_url = local.dev_http_api_invoke_url
   hibernate_ddl_auto        = var.customer_hibernate_ddl_auto
 }
@@ -412,10 +413,10 @@ module "booking_service_ecs" {
   count  = local.booking_stack_live ? 1 : 0
   source = "../../modules/booking-service-ecs"
 
-  environment        = local.environment
-  aws_region         = var.aws_region
-  vpc_id             = module.vpc.vpc_id
-  private_subnet_ids = module.vpc.private_subnet_ids
+  environment                       = local.environment
+  aws_region                        = var.aws_region
+  vpc_id                            = module.vpc.vpc_id
+  private_subnet_ids                = module.vpc.private_subnet_ids
   apigw_vpc_link_security_group_ids = [aws_security_group.apigw_booking_vpc_link[0].id]
 
   rds_endpoint          = module.rds.cluster_endpoint
@@ -431,22 +432,22 @@ module "booking_service_ecs" {
   booking_created_topic_arn        = module.sns.booking_updates_topic_arn
   booking_status_updated_topic_arn = module.sns.booking_updates_topic_arn
   sns_publish_topic_arns           = [module.sns.booking_updates_topic_arn]
-  customer_service_url = local.customer_stack_live ? "http://${module.customer_service_ecs[0].internal_alb_dns_name}" : ""
+  customer_service_url             = local.customer_stack_live ? "http://${module.customer_service_ecs[0].internal_alb_dns_name}" : ""
 }
 
 module "delivery_codebuild" {
   count = local.delivery_codebuild_live ? 1 : 0
 
-  source        = "../../modules/codebuild-delivery-service"
-  environment   = local.environment
-  aws_region    = var.aws_region
+  source      = "../../modules/codebuild-delivery-service"
+  environment = local.environment
+  aws_region  = var.aws_region
 
-  service_name_slug       = "delivery"
-  ecr_repository_name     = module.delivery_service_ecs[0].ecr_repository_name
-  ecs_cluster_name        = module.delivery_service_ecs[0].ecs_cluster_name
-  ecs_service_name        = module.delivery_service_ecs[0].ecs_service_name
-  github_repository_url    = var.delivery_codebuild_github_url
-  source_branch           = var.delivery_codebuild_branch_ref
+  service_name_slug         = "delivery"
+  ecr_repository_name       = module.delivery_service_ecs[0].ecr_repository_name
+  ecs_cluster_name          = module.delivery_service_ecs[0].ecs_cluster_name
+  ecs_service_name          = module.delivery_service_ecs[0].ecs_service_name
+  github_repository_url     = var.delivery_codebuild_github_url
+  source_branch             = var.delivery_codebuild_branch_ref
   codestar_connection_arn   = var.delivery_codebuild_codestar_connection_arn
   use_github_codeconnection = var.delivery_codebuild_use_github_codeconnection
 }
@@ -454,11 +455,11 @@ module "delivery_codebuild" {
 resource "aws_security_group_rule" "rds_postgres_from_delivery_ecs" {
   count = local.delivery_stack_live ? 1 : 0
 
-  type              = "ingress"
-  security_group_id = module.rds.security_group_id
-  from_port         = 5432
-  to_port           = 5432
-  protocol          = "tcp"
+  type                     = "ingress"
+  security_group_id        = module.rds.security_group_id
+  from_port                = 5432
+  to_port                  = 5432
+  protocol                 = "tcp"
   source_security_group_id = module.delivery_service_ecs[0].ecs_task_security_group_id
   description              = "delivery-service Fargate to shared dev Postgres (Terraform rule)"
 }
@@ -566,21 +567,21 @@ module "api_gateway" {
   stage_name                  = "$default"
   auto_deploy                 = true
   cors_allowed_origins        = local.cors_allowed_origins
-  throttle_burst_limit        = 5000   # Increased to prevent OPTIONS preflight rate limiting
-  throttle_rate_limit         = 10000   # Increased to prevent OPTIONS preflight rate limiting
+  throttle_burst_limit        = 5000  # Increased to prevent OPTIONS preflight rate limiting
+  throttle_rate_limit         = 10000 # Increased to prevent OPTIONS preflight rate limiting
   cognito_user_pool_arn       = module.cognito.user_pool_arn
   cognito_user_pool_id        = module.cognito.user_pool_id
   cognito_user_pool_client_id = module.cognito.customer_web_client_id
-  
+
   # CRITICAL: Reference existing API Gateway (IMMUTABLE - do not create or modify)
   # This API Gateway is LIVE and IN USE - z0b3obweb6
-  existing_api_gateway_id     = "z0b3obweb6"
+  existing_api_gateway_id = "z0b3obweb6"
 
   lambda_integrations = {
     api-handler = {
       invoke_arn    = module.lambda.lambda_function_invoke_arns["api-handler"]
       function_name = module.lambda.lambda_function_names["api-handler"]
-      timeout_ms    = 60000  # Increased to match Lambda timeout (60s)
+      timeout_ms    = 60000 # Increased to match Lambda timeout (60s)
     }
   }
 
@@ -621,12 +622,111 @@ module "api_gateway" {
     vpc_link_subnet_ids         = module.vpc.private_subnet_ids
     vpc_link_security_group_ids = [aws_security_group.apigw_customer_vpc_link[0].id]
     alb_listener_arn            = module.customer_service_ecs[0].alb_listener_arn
+    route_keys = [
+      "ANY /customer/addresses/{addressId}",
+      "ANY /customer/{customerId}",
+      "ANY /customer/{customerRef}/addresses/{addressId}",
+      "ANY /customers/addresses/{addressId}",
+      "ANY /customers/{customerId}",
+      "ANY /customers/{customerRef}/addresses/{addressId}",
+      "ANY /pets/{petId}",
+      "DELETE /customer/{segment}/pets/{petId}",
+      "DELETE /customers/pets/{petId}",
+      "GET /customer/addresses",
+      "GET /customer/by-phone",
+      "GET /customer/by-phone/{phone}/pets/{petId}/bookings",
+      "GET /customer/pets",
+      "GET /customer/pets/{phone}",
+      "GET /customer/profile",
+      "GET /customer/profile/unified/{phone}",
+      "GET /customer/profile/{identifier}",
+      "GET /customer/{customerId}/addresses",
+      "GET /customer/{customerId}/pets",
+      "GET /customer/{phone}/pets/{petId}",
+      "GET /customer/{phone}/preferences",
+      "GET /customers/addresses",
+      "GET /customers/by-phone",
+      "GET /customers/profile",
+      "GET /customers/profile/unified/{phone}",
+      "GET /customers/profile/{identifier}",
+      "GET /customers/{customerId}/addresses",
+      "GET /customers/{customerId}/preferences",
+      "GET /customers/{customerId}/profile-completion",
+      "GET /pets/customer/{customerId}",
+      "POST /customer",
+      "POST /customer/addresses",
+      "POST /customer/customers",
+      "POST /customer/pets",
+      "POST /customer/profile",
+      "POST /customer/{customerId}/addresses",
+      "POST /customer/{customerId}/pets",
+      "POST /customer/{phone}/preferences",
+      "POST /customers",
+      "POST /customers/addresses",
+      "POST /customers/customers",
+      "POST /customers/profile",
+      "POST /customers/{customerId}/addresses",
+      "POST /customers/{customerId}/complete/address",
+      "POST /customers/{customerId}/complete/basic",
+      "POST /customers/{customerId}/complete/pet",
+      "POST /customers/{customerId}/complete/preferences",
+      "POST /customers/{customerId}/pets",
+      "POST /customers/{customerId}/preferences",
+      "POST /pets",
+      "PUT /customer/profile/{identifier}",
+      "PUT /customer/{segment}/pets/{petId}",
+      "PUT /customers/pets/{petId}",
+      "PUT /customers/profile/{identifier}",
+    ]
   } : null
 
   booking_java_integration = local.booking_stack_live ? {
     vpc_link_subnet_ids         = module.vpc.private_subnet_ids
     vpc_link_security_group_ids = [aws_security_group.apigw_booking_vpc_link[0].id]
     alb_listener_arn            = module.booking_service_ecs[0].alb_listener_arn
+    route_keys = [
+      "GET /booking/{bookingId}",
+      "GET /booking/{bookingId}/history",
+      "GET /bookings/available-slots",
+      "GET /bookings/{bookingId}",
+      "GET /bookings/{bookingId}/history",
+      "GET /customer/bookings/{bookingId}",
+      "GET /customer/{customerId}/bookings",
+      "GET /customer/{customerId}/bookings/follow-up-eligible",
+      "GET /customer/{customerId}/bookings/{bookingId}",
+      "GET /customer/{customerId}/pets/{petId}/bookings",
+      "GET /vendor/available-slots",
+      "GET /vendor/bookings/{bookingId}/details",
+      "GET /vendor/bookings/{vendorId}",
+      "GET /vendor/reschedule-policy",
+      "GET /vendor/{vendorId}/bookings",
+      "GET /vendor/{vendorId}/bookings/today",
+      "POST /booking/create",
+      "POST /booking/customer/bookings/refund-preview",
+      "POST /booking/{bookingId}/calculate-refund",
+      "POST /booking/{bookingId}/cancel",
+      "POST /booking/{bookingId}/cancel-with-refund",
+      "POST /booking/{bookingId}/reschedule",
+      "POST /bookings/create",
+      "POST /bookings/customer/bookings/refund-preview",
+      "POST /bookings/generate-otp",
+      "POST /bookings/verify-otp",
+      "POST /bookings/{bookingId}/calculate-refund",
+      "POST /bookings/{bookingId}/cancel",
+      "POST /bookings/{bookingId}/cancel-with-refund",
+      "POST /bookings/{bookingId}/reschedule",
+      "POST /customer/booking/create",
+      "POST /customer/bookings/create",
+      "POST /followup/create",
+      "POST /vendor/bookings/{bookingId}/accept",
+      "POST /vendor/bookings/{bookingId}/cancel",
+      "POST /vendor/bookings/{bookingId}/confirm",
+      "POST /vendor/bookings/{bookingId}/decline",
+      "POST /vendor/bookings/{bookingId}/reject",
+      "PUT /booking/{bookingId}/status",
+      "PUT /bookings/{bookingId}/status",
+      "PUT /vendor/bookings/{bookingId}/status",
+    ]
   } : null
 }
 
@@ -648,15 +748,15 @@ module "acm" {
     "dev.customer.warmpawz.com"
   ]
   create_regional_cert = true
-  skip_validation      = true  # Certificate already exists and is validated in us-east-1
+  skip_validation      = true # Certificate already exists and is validated in us-east-1
 }
 
 # CloudFront Module (frontend hosting)
 module "cloudfront" {
   source = "../../modules/cloudfront"
 
-  environment       = local.environment
-  aws_region        = var.aws_region
+  environment = local.environment
+  aws_region  = var.aws_region
   # IMPORTANT: Only use certificate if validated (ISSUED state)
   # CloudFront rejects PENDING_VALIDATION certificates
   certificate_arn   = var.skip_cert_validation ? null : module.acm.validated_certificate_arn
@@ -691,10 +791,10 @@ module "cloudfront" {
 
 # Route53 DNS Records
 resource "aws_route53_record" "api" {
-  count    = var.skip_cert_validation ? 0 : 1
-  zone_id  = data.aws_route53_zone.main.zone_id
-  name     = local.api_subdomain
-  type     = "A"
+  count   = var.skip_cert_validation ? 0 : 1
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = local.api_subdomain
+  type    = "A"
 
   alias {
     name                   = aws_apigatewayv2_domain_name.api[0].domain_name_configuration[0].target_domain_name

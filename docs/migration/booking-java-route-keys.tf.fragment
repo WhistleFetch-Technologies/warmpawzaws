@@ -1,0 +1,50 @@
+booking_java_route_keys = [
+  # GET — no path has 3+ verbs, so no ANY collapsing needed
+  "GET /booking/{bookingId}",
+  "GET /booking/{bookingId}/history",
+  "GET /bookings/available-slots",
+  "GET /bookings/{bookingId}",
+  "GET /bookings/{bookingId}/history",
+  "GET /customer/bookings/{bookingId}",
+  "GET /customer/{customerId}/bookings",
+  "GET /customer/{customerId}/bookings/follow-up-eligible",
+  "GET /customer/{customerId}/bookings/{bookingId}",
+  "GET /customer/{customerId}/pets/{petId}/bookings", # NOTE: same URL template as customer GET /customer/{phone}/pets/{petId}/bookings
+  "GET /vendor/available-slots",
+  "GET /vendor/bookings/{bookingId}/details",
+  "GET /vendor/bookings/{vendorId}",
+  "GET /vendor/reschedule-policy",
+  "GET /vendor/{vendorId}/bookings",
+  "GET /vendor/{vendorId}/bookings/today",
+
+  # POST
+  "POST /booking/create",
+  "POST /booking/customer/bookings/refund-preview",
+  "POST /booking/{bookingId}/calculate-refund",
+  "POST /booking/{bookingId}/cancel",
+  "POST /booking/{bookingId}/cancel-with-refund",
+  "POST /booking/{bookingId}/reschedule",
+  "POST /bookings/create",
+  "POST /bookings/customer/bookings/refund-preview",
+  "POST /bookings/generate-otp",  # CONFLICT — exists in baseline → jrsc8v3; import before apply
+  "POST /bookings/verify-otp",    # CONFLICT — exists in baseline → jrsc8v3; import before apply
+  "POST /bookings/{bookingId}/calculate-refund",
+  "POST /bookings/{bookingId}/cancel",
+  "POST /bookings/{bookingId}/cancel-with-refund",
+  "POST /bookings/{bookingId}/reschedule",
+  "POST /customer/booking/create",
+  "POST /customer/bookings/create",
+  "POST /followup/create",
+  "POST /vendor/bookings/{bookingId}/accept",
+  "POST /vendor/bookings/{bookingId}/cancel",
+  "POST /vendor/bookings/{bookingId}/confirm",
+  "POST /vendor/bookings/{bookingId}/decline",
+  "POST /vendor/bookings/{bookingId}/reject",
+
+  # PUT
+  "PUT /booking/{bookingId}/status",
+  "PUT /bookings/{bookingId}/status",
+  "PUT /vendor/bookings/{bookingId}/status",
+]
+# Total: 41 route keys
+# Target integration: bsttuan (warmpawz-dev-booking-i ALB)

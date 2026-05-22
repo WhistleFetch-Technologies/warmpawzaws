@@ -1,0 +1,319 @@
+﻿create	aws_apigatewayv2_api_mapping.api[0]
+create	aws_apigatewayv2_domain_name.api[0]
+create	aws_route53_record.admin[0]
+create	aws_route53_record.api[0]
+create	aws_route53_record.customer[0]
+create	aws_route53_record.vendor[0]
+create	aws_vpc_security_group_ingress_rule.secretsmanager_vpce_from_customer_ecs["sg-029fd9f75cf25da6f"]
+create	module.api_gateway.aws_apigatewayv2_api_mapping.main[0]
+create	module.api_gateway.aws_apigatewayv2_domain_name.main[0]
+create	module.api_gateway.aws_apigatewayv2_integration.customer_java[0]
+create	module.api_gateway.aws_apigatewayv2_integration.lambda["api-handler"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /booking/{bookingId}"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /booking/{bookingId}/history"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /bookings/{bookingId}"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /bookings/{bookingId}/history"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /bookings/available-slots"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /customer/{customerId}/bookings"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /customer/{customerId}/bookings/{bookingId}"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /customer/{customerId}/bookings/follow-up-eligible"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /customer/{customerId}/pets/{petId}/bookings"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /customer/bookings/{bookingId}"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /vendor/{vendorId}/bookings"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /vendor/{vendorId}/bookings/today"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /vendor/available-slots"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /vendor/bookings/{bookingId}/details"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /vendor/bookings/{vendorId}"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["GET /vendor/reschedule-policy"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /booking/{bookingId}/calculate-refund"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /booking/{bookingId}/cancel"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /booking/{bookingId}/cancel-with-refund"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /booking/{bookingId}/reschedule"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /booking/create"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /booking/customer/bookings/refund-preview"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /bookings/{bookingId}/calculate-refund"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /bookings/{bookingId}/cancel"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /bookings/{bookingId}/cancel-with-refund"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /bookings/{bookingId}/reschedule"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /bookings/create"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /bookings/customer/bookings/refund-preview"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /customer/booking/create"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /customer/bookings/create"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /followup/create"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /vendor/bookings/{bookingId}/accept"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /vendor/bookings/{bookingId}/cancel"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /vendor/bookings/{bookingId}/confirm"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /vendor/bookings/{bookingId}/decline"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /vendor/bookings/{bookingId}/reject"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["PUT /booking/{bookingId}/status"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["PUT /bookings/{bookingId}/status"]
+create	module.api_gateway.aws_apigatewayv2_route.booking_java["PUT /vendor/bookings/{bookingId}/status"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["ANY /customer/{customerId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["ANY /customer/{customerRef}/addresses/{addressId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["ANY /customer/addresses/{addressId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["ANY /customers/{customerId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["ANY /customers/{customerRef}/addresses/{addressId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["ANY /customers/addresses/{addressId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["ANY /pets/{petId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["DELETE /customer/{segment}/pets/{petId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["DELETE /customers/pets/{petId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customer/{customerId}/addresses"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customer/{customerId}/pets"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customer/{phone}/pets/{petId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customer/{phone}/preferences"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customer/addresses"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customer/by-phone/{phone}/pets/{petId}/bookings"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customer/pets/{phone}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customer/profile/{identifier}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customer/profile/unified/{phone}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customers/{customerId}/addresses"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customers/{customerId}/preferences"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customers/{customerId}/profile-completion"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customers/addresses"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customers/by-phone"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customers/profile"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customers/profile/{identifier}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customers/profile/unified/{phone}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /pets/customer/{customerId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customer"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customer/{customerId}/addresses"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customer/{customerId}/pets"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customer/{phone}/preferences"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customer/addresses"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customer/customers"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customer/pets"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customers"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customers/{customerId}/addresses"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customers/{customerId}/complete/address"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customers/{customerId}/complete/basic"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customers/{customerId}/complete/pet"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customers/{customerId}/complete/preferences"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customers/{customerId}/pets"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customers/{customerId}/preferences"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customers/addresses"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customers/customers"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customers/profile"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /pets"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["PUT /customer/{segment}/pets/{petId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["PUT /customer/profile/{identifier}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["PUT /customers/pets/{petId}"]
+create	module.api_gateway.aws_apigatewayv2_route.customer_java["PUT /customers/profile/{identifier}"]
+create	module.api_gateway.aws_apigatewayv2_route.routes["health"]
+create	module.api_gateway.aws_apigatewayv2_route.routes["proxy"]
+create	module.api_gateway.aws_apigatewayv2_route.routes["root"]
+create	module.api_gateway.aws_apigatewayv2_stage.main
+create	module.api_gateway.aws_apigatewayv2_vpc_link.customer_java[0]
+create	module.api_gateway.aws_route53_record.api[0]
+create	module.cloudfront.aws_cloudfront_distribution.frontend["admin"]
+create	module.cloudfront.aws_cloudfront_distribution.frontend["customer"]
+create	module.cloudfront.aws_cloudfront_distribution.frontend["vendor"]
+create	module.cloudfront.aws_cloudfront_function.url_rewrite["admin"]
+create	module.cloudfront.aws_cloudfront_function.url_rewrite["customer"]
+create	module.cloudfront.aws_cloudfront_function.url_rewrite["vendor"]
+create	module.customer_service_ecs[0].aws_ecr_repository.customer_service
+create	module.lambda.aws_lambda_alias.provisioned["api-handler"]
+create	module.lambda.aws_lambda_provisioned_concurrency_config.functions["api-handler"]
+create	module.rds.aws_db_proxy.main
+create	module.rds.aws_db_proxy_default_target_group.main
+create	module.rds.aws_db_proxy_target.cluster
+create	module.rds.aws_iam_role.rds_proxy
+create	module.rds.aws_iam_role_policy.rds_proxy_secrets
+create	module.rds.aws_secretsmanager_secret_version.rds_master_password
+create	module.rds.aws_security_group.rds_proxy
+create	module.rds.aws_security_group_rule.rds_allow_proxy
+create	module.sns.aws_sns_topic_subscription.system_alerts_email[0]
+delete	aws_security_group.apigw_delivery_vpc_link[0]
+delete	aws_security_group_rule.rds_postgres_from_delivery_ecs[0]
+delete	aws_vpc_security_group_ingress_rule.secretsmanager_vpce_from_delivery_ecs["sg-029fd9f75cf25da6f"]
+delete	module.api_gateway.aws_apigatewayv2_integration.delivery_java[0]
+delete	module.api_gateway.aws_apigatewayv2_route.booking_java["ANY /booking/{proxy+}"]
+delete	module.api_gateway.aws_apigatewayv2_route.booking_java["ANY /bookings/{proxy+}"]
+delete	module.api_gateway.aws_apigatewayv2_vpc_link.delivery_java[0]
+delete	module.api_gateway.null_resource.update_existing_api_cors[0]
+delete	module.booking_service_ecs[0].aws_ecs_task_definition.booking
+delete	module.customer_service_ecs[0].aws_ecs_task_definition.customer
+delete	module.delivery_codebuild[0].aws_cloudwatch_log_group.codebuild
+delete	module.delivery_codebuild[0].aws_codebuild_project.delivery
+delete	module.delivery_codebuild[0].aws_iam_role.codebuild
+delete	module.delivery_codebuild[0].aws_iam_role_policy.codebuild_inline
+delete	module.delivery_service_ecs[0].aws_cloudwatch_log_group.ecs
+delete	module.delivery_service_ecs[0].aws_ecr_repository.delivery_service
+delete	module.delivery_service_ecs[0].aws_ecs_cluster.delivery
+delete	module.delivery_service_ecs[0].aws_ecs_service.delivery
+delete	module.delivery_service_ecs[0].aws_ecs_task_definition.delivery
+delete	module.delivery_service_ecs[0].aws_iam_role.ecs_execution
+delete	module.delivery_service_ecs[0].aws_iam_role.ecs_task
+delete	module.delivery_service_ecs[0].aws_iam_role_policy.ecs_execution_secrets
+delete	module.delivery_service_ecs[0].aws_iam_role_policy_attachment.ecs_execution_managed
+delete	module.delivery_service_ecs[0].aws_lb.internal
+delete	module.delivery_service_ecs[0].aws_lb_listener.http
+delete	module.delivery_service_ecs[0].aws_lb_target_group.delivery
+delete	module.delivery_service_ecs[0].aws_security_group.alb_internal
+delete	module.delivery_service_ecs[0].aws_security_group.ecs_tasks
+delete	module.delivery_service_ecs[0].aws_security_group_rule.alb_ingress_from_apigw_vpc_link[0]
+delete	module.delivery_service_ecs[0].aws_security_group_rule.ecs_tasks_ingress_from_alb
+delete	module.dynamodb.aws_cloudwatch_metric_alarm.dynamodb_read_throttles["analytics_events"]
+delete	module.dynamodb.aws_cloudwatch_metric_alarm.dynamodb_write_throttles["analytics_events"]
+delete	module.dynamodb.aws_dynamodb_table.analytics_events
+delete	module.secrets.aws_secretsmanager_secret_version.razorpay
+no-op	aws_security_group.apigw_booking_vpc_link[0]
+no-op	aws_security_group.apigw_customer_vpc_link[0]
+no-op	aws_security_group_rule.rds_postgres_from_booking_ecs[0]
+no-op	aws_security_group_rule.rds_postgres_from_customer_ecs[0]
+no-op	aws_vpc_security_group_ingress_rule.secretsmanager_vpce_from_booking_ecs["sg-029fd9f75cf25da6f"]
+no-op	module.acm.aws_acm_certificate.main
+no-op	module.acm.aws_acm_certificate.regional[0]
+no-op	module.api_gateway.aws_apigatewayv2_integration.booking_java[0]
+no-op	module.api_gateway.aws_apigatewayv2_vpc_link.booking_java[0]
+no-op	module.api_gateway.aws_cloudwatch_log_group.api_gateway
+no-op	module.api_gateway.aws_lambda_permission.api_gateway["api-handler"]
+no-op	module.booking_service_ecs[0].aws_cloudwatch_log_group.ecs
+no-op	module.booking_service_ecs[0].aws_ecr_repository.booking_service
+no-op	module.booking_service_ecs[0].aws_ecs_cluster.booking
+no-op	module.booking_service_ecs[0].aws_iam_role.ecs_execution
+no-op	module.booking_service_ecs[0].aws_iam_role.ecs_task
+no-op	module.booking_service_ecs[0].aws_iam_role_policy.ecs_execution_secrets
+no-op	module.booking_service_ecs[0].aws_iam_role_policy.ecs_task_sns[0]
+no-op	module.booking_service_ecs[0].aws_iam_role_policy_attachment.ecs_execution_managed
+no-op	module.booking_service_ecs[0].aws_lb.internal
+no-op	module.booking_service_ecs[0].aws_lb_listener.http
+no-op	module.booking_service_ecs[0].aws_lb_target_group.booking
+no-op	module.booking_service_ecs[0].aws_security_group.alb_internal
+no-op	module.booking_service_ecs[0].aws_security_group.ecs_tasks
+no-op	module.booking_service_ecs[0].aws_security_group_rule.alb_ingress_from_apigw_vpc_link[0]
+no-op	module.booking_service_ecs[0].aws_security_group_rule.ecs_tasks_ingress_from_alb
+no-op	module.cloudfront.aws_cloudfront_origin_access_control.frontend["admin"]
+no-op	module.cloudfront.aws_cloudfront_origin_access_control.frontend["customer"]
+no-op	module.cloudfront.aws_cloudfront_origin_access_control.frontend["vendor"]
+no-op	module.cloudfront.aws_s3_bucket_public_access_block.frontend["admin"]
+no-op	module.cloudfront.aws_s3_bucket_public_access_block.frontend["customer"]
+no-op	module.cloudfront.aws_s3_bucket_public_access_block.frontend["vendor"]
+no-op	module.cognito.aws_cognito_identity_pool.main
+no-op	module.cognito.aws_cognito_identity_pool_roles_attachment.main
+no-op	module.cognito.aws_cognito_user_pool.main
+no-op	module.cognito.aws_cognito_user_pool_client.admin_web
+no-op	module.cognito.aws_cognito_user_pool_client.customer_web
+no-op	module.cognito.aws_cognito_user_pool_client.mobile_customer
+no-op	module.cognito.aws_cognito_user_pool_client.mobile_vendor
+no-op	module.cognito.aws_cognito_user_pool_client.vendor_web
+no-op	module.cognito.aws_cognito_user_pool_domain.main
+no-op	module.cognito.aws_iam_role.authenticated
+no-op	module.cognito.random_string.domain_suffix
+no-op	module.customer_service_ecs[0].aws_cloudwatch_log_group.ecs
+no-op	module.customer_service_ecs[0].aws_ecs_cluster.customer
+no-op	module.customer_service_ecs[0].aws_iam_role.ecs_execution
+no-op	module.customer_service_ecs[0].aws_iam_role.ecs_task
+no-op	module.customer_service_ecs[0].aws_iam_role_policy.ecs_execution_secrets
+no-op	module.customer_service_ecs[0].aws_iam_role_policy_attachment.ecs_execution_managed
+no-op	module.customer_service_ecs[0].aws_lb.internal
+no-op	module.customer_service_ecs[0].aws_lb_listener.http
+no-op	module.customer_service_ecs[0].aws_lb_target_group.customer
+no-op	module.customer_service_ecs[0].aws_security_group.alb_internal
+no-op	module.customer_service_ecs[0].aws_security_group.ecs_tasks
+no-op	module.customer_service_ecs[0].aws_security_group_rule.alb_ingress_from_apigw_vpc_link[0]
+no-op	module.customer_service_ecs[0].aws_security_group_rule.ecs_tasks_ingress_from_alb
+no-op	module.dynamodb.aws_cloudwatch_metric_alarm.dynamodb_read_throttles["cache"]
+no-op	module.dynamodb.aws_cloudwatch_metric_alarm.dynamodb_read_throttles["rate_limits"]
+no-op	module.dynamodb.aws_cloudwatch_metric_alarm.dynamodb_read_throttles["sessions"]
+no-op	module.dynamodb.aws_cloudwatch_metric_alarm.dynamodb_write_throttles["cache"]
+no-op	module.dynamodb.aws_cloudwatch_metric_alarm.dynamodb_write_throttles["rate_limits"]
+no-op	module.dynamodb.aws_cloudwatch_metric_alarm.dynamodb_write_throttles["sessions"]
+no-op	module.dynamodb.aws_dynamodb_table.cache
+no-op	module.dynamodb.aws_dynamodb_table.rate_limits
+no-op	module.dynamodb.aws_dynamodb_table.sessions
+no-op	module.lambda.aws_cloudwatch_log_group.lambda["api-handler"]
+no-op	module.lambda.aws_cloudwatch_log_group.migration_runner[0]
+no-op	module.lambda.aws_cloudwatch_metric_alarm.lambda_errors["api-handler"]
+no-op	module.lambda.aws_cloudwatch_metric_alarm.lambda_throttles["api-handler"]
+no-op	module.lambda.aws_iam_role.lambda
+no-op	module.lambda.aws_iam_role.migration_runner[0]
+no-op	module.lambda.aws_iam_role_policy.migration_runner[0]
+no-op	module.lambda.aws_iam_role_policy_attachment.lambda_basic
+no-op	module.lambda.aws_iam_role_policy_attachment.lambda_vpc
+no-op	module.lambda.aws_security_group.lambda
+no-op	module.lambda.aws_security_group.migration_runner[0]
+no-op	module.rds.aws_cloudwatch_metric_alarm.database_connections
+no-op	module.rds.aws_cloudwatch_metric_alarm.database_cpu
+no-op	module.rds.aws_db_parameter_group.main
+no-op	module.rds.aws_db_subnet_group.main
+no-op	module.rds.aws_rds_cluster.main
+no-op	module.rds.aws_rds_cluster_instance.main[0]
+no-op	module.rds.aws_rds_cluster_parameter_group.main
+no-op	module.rds.aws_secretsmanager_secret.rds_master_password
+no-op	module.rds.aws_security_group.rds
+no-op	module.rds.random_password.master
+no-op	module.s3.aws_cloudwatch_metric_alarm.s3_4xx_errors["static"]
+no-op	module.s3.aws_cloudwatch_metric_alarm.s3_4xx_errors["user_uploads"]
+no-op	module.s3.aws_s3_bucket.backups
+no-op	module.s3.aws_s3_bucket.logs
+no-op	module.s3.aws_s3_bucket.static_website
+no-op	module.s3.aws_s3_bucket.user_uploads
+no-op	module.s3.aws_s3_bucket_lifecycle_configuration.backups
+no-op	module.s3.aws_s3_bucket_lifecycle_configuration.logs
+no-op	module.s3.aws_s3_bucket_lifecycle_configuration.user_uploads
+no-op	module.s3.aws_s3_bucket_public_access_block.backups
+no-op	module.s3.aws_s3_bucket_public_access_block.logs
+no-op	module.s3.aws_s3_bucket_public_access_block.static_website
+no-op	module.s3.aws_s3_bucket_public_access_block.user_uploads
+no-op	module.s3.aws_s3_bucket_server_side_encryption_configuration.backups
+no-op	module.s3.aws_s3_bucket_server_side_encryption_configuration.logs
+no-op	module.s3.aws_s3_bucket_server_side_encryption_configuration.static_website
+no-op	module.s3.aws_s3_bucket_server_side_encryption_configuration.user_uploads
+no-op	module.s3.aws_s3_bucket_versioning.backups
+no-op	module.s3.aws_s3_bucket_versioning.user_uploads
+no-op	module.s3.aws_s3_bucket_website_configuration.static_website
+no-op	module.secrets.aws_secretsmanager_secret.google_maps
+no-op	module.secrets.aws_secretsmanager_secret.razorpay
+no-op	module.secrets.aws_secretsmanager_secret.shiprocket
+no-op	module.secrets.aws_secretsmanager_secret_version.google_maps
+no-op	module.secrets.aws_secretsmanager_secret_version.shiprocket
+no-op	module.sns.aws_cloudwatch_metric_alarm.sns_failed_notifications["booking_updates"]
+no-op	module.sns.aws_cloudwatch_metric_alarm.sns_failed_notifications["payment_events"]
+no-op	module.sns.aws_cloudwatch_metric_alarm.sns_failed_notifications["system_alerts"]
+no-op	module.sns.aws_cloudwatch_metric_alarm.sns_failed_notifications["user_notifications"]
+no-op	module.sns.aws_cloudwatch_metric_alarm.sns_failed_notifications["vendor_notifications"]
+no-op	module.sns.aws_sns_topic.booking_updates
+no-op	module.sns.aws_sns_topic.payment_events
+no-op	module.sns.aws_sns_topic.user_notifications
+no-op	module.sns.aws_sns_topic.vendor_notifications
+no-op	module.sns.aws_sns_topic_policy.system_alerts
+no-op	module.sqs.aws_cloudwatch_metric_alarm.sqs_age_of_oldest_message["analytics_events"]
+no-op	module.sqs.aws_cloudwatch_metric_alarm.sqs_age_of_oldest_message["booking_processing"]
+no-op	module.sqs.aws_cloudwatch_metric_alarm.sqs_age_of_oldest_message["email_delivery"]
+no-op	module.sqs.aws_cloudwatch_metric_alarm.sqs_age_of_oldest_message["notification_delivery"]
+no-op	module.sqs.aws_cloudwatch_metric_alarm.sqs_age_of_oldest_message["order_processing"]
+no-op	module.sqs.aws_cloudwatch_metric_alarm.sqs_age_of_oldest_message["payment_processing"]
+no-op	module.sqs.aws_cloudwatch_metric_alarm.sqs_dlq_fifo_messages
+no-op	module.sqs.aws_cloudwatch_metric_alarm.sqs_dlq_messages
+no-op	module.sqs.aws_sqs_queue.analytics_events
+no-op	module.sqs.aws_sqs_queue.booking_processing
+no-op	module.sqs.aws_sqs_queue.dlq
+no-op	module.sqs.aws_sqs_queue.dlq_fifo
+no-op	module.sqs.aws_sqs_queue.email_delivery
+no-op	module.sqs.aws_sqs_queue.notification_delivery
+no-op	module.sqs.aws_sqs_queue.order_processing
+no-op	module.sqs.aws_sqs_queue.payment_processing
+update	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /bookings/generate-otp"]
+update	module.api_gateway.aws_apigatewayv2_route.booking_java["POST /bookings/verify-otp"]
+update	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customer/by-phone"]
+update	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customer/pets"]
+update	module.api_gateway.aws_apigatewayv2_route.customer_java["GET /customer/profile"]
+update	module.api_gateway.aws_apigatewayv2_route.customer_java["POST /customer/profile"]
+update	module.api_gateway.aws_cloudwatch_metric_alarm.api_4xx_errors
+update	module.api_gateway.aws_cloudwatch_metric_alarm.api_5xx_errors
+update	module.api_gateway.aws_cloudwatch_metric_alarm.api_latency
+update	module.booking_service_ecs[0].aws_ecs_service.booking
+update	module.cloudfront.aws_cloudwatch_metric_alarm.cloudfront_error_rate["admin"]
+update	module.cloudfront.aws_cloudwatch_metric_alarm.cloudfront_error_rate["customer"]
+update	module.cloudfront.aws_cloudwatch_metric_alarm.cloudfront_error_rate["vendor"]
+update	module.cloudfront.aws_s3_bucket_policy.frontend["admin"]
+update	module.cloudfront.aws_s3_bucket_policy.frontend["customer"]
+update	module.cloudfront.aws_s3_bucket_policy.frontend["vendor"]
+update	module.cognito.aws_iam_role_policy.authenticated
+update	module.customer_service_ecs[0].aws_ecs_service.customer
+update	module.lambda.aws_cloudwatch_metric_alarm.lambda_duration["api-handler"]
+update	module.lambda.aws_iam_role_policy.lambda_custom
+update	module.lambda.aws_lambda_function.functions["api-handler"]
+update	module.lambda.aws_lambda_function.migration_runner[0]
+update	module.s3.aws_s3_bucket_cors_configuration.user_uploads
+update	module.sns.aws_sns_topic.system_alerts
