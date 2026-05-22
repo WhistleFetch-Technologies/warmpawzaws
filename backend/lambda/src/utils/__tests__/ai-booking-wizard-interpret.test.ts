@@ -1,4 +1,8 @@
-import { interpretActionsToPatch, parseInterpretActionsFromModelJson } from '../ai/ai-booking-wizard-interpret';
+import {
+  inferVisitStyleFromMessage,
+  interpretActionsToPatch,
+  parseInterpretActionsFromModelJson,
+} from '../ai/ai-booking-wizard-interpret';
 
 describe('ai-booking-wizard-interpret', () => {
   it('parses allowlisted actions and drops unknown types', () => {
@@ -18,5 +22,12 @@ describe('ai-booking-wizard-interpret', () => {
     ] as any);
     expect(patch.category).toBe('grooming');
     expect(patch.total_duration).toBe(45);
+  });
+
+  it('infers visit style from natural language', () => {
+    expect(inferVisitStyleFromMessage('clinic visit please')).toBe('at_center');
+    expect(inferVisitStyleFromMessage('switch to tele')).toBe('tele');
+    expect(inferVisitStyleFromMessage('home visit')).toBe('at_home');
+    expect(inferVisitStyleFromMessage('what time?')).toBeNull();
   });
 });

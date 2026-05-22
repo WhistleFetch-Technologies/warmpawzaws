@@ -12,7 +12,12 @@
  */
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import {
+  isVendorTeleConsultationBooking,
+  resolveVendorBookingId,
+} from '@/lib/vendor-utils';
 import { Button } from '@/components/ui/button';
 import { 
   ArrowLeft, 
@@ -47,7 +52,6 @@ import { toast } from 'sonner';
 import { AppointmentDetailModal } from '../vendor/AppointmentDetailModal';
 import { DeclineBookingModal } from '../vendor/DeclineBookingModal';
 import { VendorChatModal } from '../vendor/VendorChatModal';
-import { VendorTeleConsultationFlow } from '../vendor/VendorTeleConsultationFlow';
 import {
   Dialog,
   DialogContent,
@@ -155,8 +159,7 @@ export function UniversalAppointmentManagement({
   const [chatBooking, setChatBooking] = useState<Booking | null>(null);
   
   // Video Call Modal State
-  const [showVideoCall, setShowVideoCall] = useState(false);
-  const [videoBooking, setVideoBooking] = useState<Booking | null>(null);
+  const router = useRouter();
   
   // Appointment Detail Modal State
   const [showAppointmentDetail, setShowAppointmentDetail] = useState(false);
@@ -413,7 +416,7 @@ export function UniversalAppointmentManagement({
 
   const handleStart = async (booking: Booking) => {
     // ✅ FIX: Check service type FIRST - tele consultations don't need OTP
-    if (!isTeleConsultationBooking(booking) && booking.otp) {
+    if (!isVendorTeleConsultationBooking(booking) && booking.otp) {
       setSelectedBooking(booking);
       setOtpAction('start');
       setOtpInput('');
@@ -579,7 +582,7 @@ export function UniversalAppointmentManagement({
 
   const handleComplete = async (booking: Booking) => {
     // ✅ FIX: Check service type FIRST - tele consultations don't need OTP
-    if (!isTeleConsultationBooking(booking) && booking.otp) {
+    if (!isVendorTeleConsultationBooking(booking) && booking.otp) {
       setSelectedBooking(booking);
       setOtpAction('complete');
       setOtpInput('');
@@ -591,12 +594,25 @@ export function UniversalAppointmentManagement({
   };
 
   const doComplete = async (booking: Booking, otpCode: string) => {
+    const bid = resolveVendorBookingId(booking);
+    if (!bid) {
+      toast.error('Missing booking id');
+      return;
+    }
     try {
       setCompletingBooking(true);
-      const endpoint = getActionEndpoint(booking.id, 'complete');
-      const data = await apiClient.put<any>(endpoint, { otp: otpCode }) as any;
+      const data =
+        userType === 'vendor' || userType === 'solo' || userType === 'solo_vendor'
+          ? ((await apiClient.post(`/vendor/bookings/${bid}/complete`, {
+              vendorId: userId,
+              otp: otpCode || null,
+            })) as { success?: boolean; error?: string; message?: string })
+          : ((await apiClient.put(getActionEndpoint(bid, 'complete'), { otp: otpCode })) as {
+              success?: boolean;
+              error?: string;
+            });
 
-      if (data && data.success) {
+      if (data && data.success !== false) {
         // Stop GPS tracking if active
         if (isTracking[booking.id]) {
           await stopLocationTracking(booking.id);
@@ -636,8 +652,14 @@ export function UniversalAppointmentManagement({
   };
 
   const handleOpenVideoCall = (booking: Booking) => {
-    setVideoBooking(booking);
-    setShowVideoCall(true);
+    const bid = resolveVendorBookingId(booking);
+    if (!bid) {
+      toast.error('Missing booking id');
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set('bookingId', bid);
+    router.push(`/video?${params.toString()}`);
   };
 
   const getStatusColor = (status: string) => {
@@ -1194,20 +1216,6 @@ export function UniversalAppointmentManagement({
           onVideoCallStart={(bid, mid) => {
             setShowChatModal(false);
             setChatBooking(null);
-          }}
-        />
-      )}
-
-      {/* Video Call Modal */}
-      {showVideoCall && videoBooking && (
-        <VendorTeleConsultationFlow
-          vendorId={userId}
-          bookingId={videoBooking.bookingId || videoBooking.id}
-          vendorData={userData}
-          bookingData={videoBooking}
-          onBack={() => {
-            setShowVideoCall(false);
-            setVideoBooking(null);
           }}
         />
       )}

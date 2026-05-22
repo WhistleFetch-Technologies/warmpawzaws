@@ -54,7 +54,7 @@ Output: `android\app\build\outputs\bundle\release\app-release.aab`
 
 1. `npx cap sync android` ran after any change to `capacitor.config.json` or npm Capacitor plugins.
 2. Install debug APK → Gallery → Center photos → pick → photo stays after refresh.
-3. Chrome `chrome://inspect` → WebView → confirm `[GALLERY] Uploading via JSON base64` in console.
+3. Chrome `chrome://inspect` → WebView → confirm `[GALLERY] Uploading via JSON base64 (native CapacitorHttp)` in console (browser shows `FormData multipart` instead).
 
 ## Why browser works but the app did not
 

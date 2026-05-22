@@ -130,12 +130,77 @@ export function ChimeVideoCall({
   bookingId,
   participantType,
   participantId,
-  vendorName = 'Doctor',
+  vendorName = 'Service Provider',
   customerName = 'Customer',
   serviceName = 'Tele Consultation',
   onEndCall,
   onPrescriptionUpload
 }: ChimeVideoCallProps) {
+  const [resolvedVendorName, setResolvedVendorName] = useState(vendorName);
+  const [resolvedCustomerName, setResolvedCustomerName] = useState(customerName);
+  const [resolvedServiceName, setResolvedServiceName] = useState(serviceName);
+
+  useEffect(() => {
+    setResolvedVendorName(vendorName);
+    setResolvedCustomerName(customerName);
+    setResolvedServiceName(serviceName);
+  }, [vendorName, customerName, serviceName]);
+
+  useEffect(() => {
+    if (!bookingId) return;
+    const genericVendor =
+      !vendorName || vendorName === 'Doctor' || vendorName === 'Service Provider';
+    const genericCustomer = !customerName || customerName === 'Customer';
+    const shouldLoad =
+      (participantType === 'customer' && genericVendor) ||
+      (participantType === 'vendor' && genericCustomer) ||
+      !serviceName ||
+      serviceName === 'Tele Consultation';
+    if (!shouldLoad) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await apiClient.get<any>(`/customer/bookings/${bookingId}`);
+        const booking = response?.booking || response;
+        if (cancelled || !booking) return;
+        const vn = String(
+          booking.vendor?.businessName ||
+            booking.vendor?.business_name ||
+            booking.vendorName ||
+            booking.vendor_name ||
+            ''
+        ).trim();
+        if (vn && (participantType === 'customer' || genericVendor)) {
+          setResolvedVendorName(vn);
+        }
+        const cn = String(
+          booking.customerName ||
+            booking.customer_name ||
+            booking.customer?.full_name ||
+            booking.customer?.name ||
+            ''
+        ).trim();
+        if (cn && (participantType === 'vendor' || genericCustomer)) {
+          setResolvedCustomerName(cn);
+        }
+        const sn = String(
+          booking.service?.name || booking.serviceName || booking.service_name || ''
+        ).trim();
+        if (sn) setResolvedServiceName(sn);
+      } catch (err) {
+        console.warn('[ChimeVideoCall] Could not load booking labels:', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bookingId, participantType, vendorName, customerName, serviceName]);
+
+  const effectiveVendorName = resolvedVendorName;
+  const effectiveCustomerName = resolvedCustomerName;
+  const effectiveServiceName = resolvedServiceName;
+
   // Call state
   const [status, setStatus] = useState<CallStatus>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -834,7 +899,7 @@ export function ChimeVideoCall({
           clearTimeout(disconnectTimerRef.current);
           disconnectTimerRef.current = null;
         }
-        addChatMessage('system', 'System', `${participantType === 'customer' ? vendorName : customerName} joined the call`);
+        addChatMessage('system', 'System', `${participantType === 'customer' ? effectiveVendorName : effectiveCustomerName} joined the call`);
         setAttendeeStatus(prev => ({
           ...prev,
           vendorJoined: participantType === 'customer' ? true : prev.vendorJoined,
@@ -847,7 +912,7 @@ export function ChimeVideoCall({
           customerJoined: participantType === 'vendor' ? false : prev.customerJoined,
           vendorJoined: participantType === 'customer' ? false : prev.vendorJoined,
         }));
-        addChatMessage('system', 'System', `${participantType === 'customer' ? vendorName : customerName} left the call`);
+        addChatMessage('system', 'System', `${participantType === 'customer' ? effectiveVendorName : effectiveCustomerName} left the call`);
 
         if (!disconnectingRef.current && !disconnectTimerRef.current) {
           addChatMessage('system', 'System', 'Waiting for the other participant to rejoin...');
@@ -1349,7 +1414,7 @@ export function ChimeVideoCall({
     if (!newMessage.trim()) return;
     if (!meetingSessionRef.current) return;
 
-    const senderName = participantType === 'customer' ? customerName : vendorName;
+    const senderName = participantType === 'customer' ? effectiveCustomerName : effectiveVendorName;
     const messageId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const messageText = newMessage.trim();
     const timestamp = new Date();
@@ -1416,7 +1481,7 @@ export function ChimeVideoCall({
   const distributeChatFileAfterUpload = useCallback(
     (fileUrl: string, displayName: string, messageType: 'image' | 'file', messageId: string) => {
       if (!meetingSessionRef.current) return;
-      const senderName = participantType === 'customer' ? customerName : vendorName;
+      const senderName = participantType === 'customer' ? effectiveCustomerName : effectiveVendorName;
       addChatMessage(
         participantType as 'customer' | 'vendor',
         senderName,
@@ -1441,7 +1506,7 @@ export function ChimeVideoCall({
       const payload = new TextEncoder().encode(JSON.stringify(chatData));
       audioVideo.realtimeSendDataMessage(CHAT_TOPIC, payload, MESSAGE_LIFETIME_MS);
     },
-    [participantType, customerName, vendorName]
+    [participantType, effectiveCustomerName, effectiveVendorName]
   );
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1456,7 +1521,7 @@ export function ChimeVideoCall({
       cameraCaptureInputRef.current.value = '';
     }
 
-    const senderName = participantType === 'customer' ? customerName : vendorName;
+    const senderName = participantType === 'customer' ? effectiveCustomerName : effectiveVendorName;
     setUploadingFile(true);
 
     try {
@@ -1530,7 +1595,7 @@ export function ChimeVideoCall({
 
     try {
       const audioVideo = meetingSessionRef.current.audioVideo;
-      const senderName = participantType === 'customer' ? customerName : vendorName;
+      const senderName = participantType === 'customer' ? effectiveCustomerName : effectiveVendorName;
 
       const typingData: TypingDataMessage = {
         type: 'typing',
@@ -1660,7 +1725,7 @@ export function ChimeVideoCall({
     fileInputRef.current?.click();
   };
 
-  const otherParticipantName = participantType === 'customer' ? vendorName : customerName;
+  const otherParticipantName = participantType === 'customer' ? effectiveVendorName : effectiveCustomerName;
   const handleJoinTap = async () => {
     const perm = await requestCameraMicrophonePermission();
     if (perm === 'denied') {
@@ -1724,7 +1789,7 @@ export function ChimeVideoCall({
             <Video className="w-12 h-12 text-white" />
           </div>
           <h2 className="text-2xl font-bold text-white mb-2">Ready to Join</h2>
-          <p className="text-slate-400 mb-6">{serviceName} with {otherParticipantName}</p>
+          <p className="text-slate-400 mb-6">{effectiveServiceName} with {otherParticipantName}</p>
 
           <Button
             onClick={handleJoinTap}
@@ -1944,7 +2009,7 @@ export function ChimeVideoCall({
             </div>
             <div>
               <p className="text-white font-medium text-sm">{otherParticipantName}</p>
-              <p className="text-slate-400 text-xs">{serviceName}</p>
+              <p className="text-slate-400 text-xs">{effectiveServiceName}</p>
             </div>
           </div>
 
