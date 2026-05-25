@@ -21,6 +21,11 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { fixRewardCatalogTextFields } from '../utils/fix-rupee-mojibake';
 import { isValidUUID } from '../types/entities';
 import { isHiddenLegacyCatalogReward } from '../lib/hidden-rewards-catalog';
+import {
+  isValidIndianMobile,
+  loadCustomerContact,
+  sendRewardCouponSmsAfterRedeem,
+} from '../lib/reward-coupon-sms';
 
 function normalizeCatalogRow(row: Record<string, any>): Record<string, any> {
   return fixRewardCatalogTextFields(row);
@@ -691,7 +696,7 @@ export function registerRewardsEndpoints(app: Hono) {
         ? 0
         : Math.round((parseFloat(String(reward.cash_value ?? 0)) || 0) * 100) / 100;
 
-      const { remainingPoints, walletCredited, assignedLink } = await withTransaction(async (client) => {
+      const { remainingPoints, walletCredited, assignedLink, redemptionId } = await withTransaction(async (client) => {
         const cwCol = await client.query<{ column_name: string }>(
           `SELECT column_name FROM information_schema.columns
            WHERE table_schema = 'public' AND table_name = 'customer_wallets'`
@@ -842,6 +847,7 @@ export function registerRewardsEndpoints(app: Hono) {
           remainingPoints: parseInt(String(after.rows[0]?.total_points ?? '0'), 10),
           walletCredited: credited,
           assignedLink: customerLink,
+          redemptionId: redemptionRowId,
         };
       });
 
@@ -850,10 +856,38 @@ export function registerRewardsEndpoints(app: Hono) {
 
       const publicReward = mapCustomerCatalogReward(reward);
 
+      let smsNotification:
+        | { attempted: boolean; status: 'queued' | 'skipped'; reason?: string }
+        | undefined;
+
+      if (isExternalLink && assignedLink && redemptionId) {
+        const contact = await loadCustomerContact(customerId);
+        const canSms =
+          Boolean(contact.phone) && isValidIndianMobile(String(contact.phone));
+        smsNotification = canSms
+          ? { attempted: true, status: 'queued' }
+          : { attempted: false, status: 'skipped', reason: 'no_phone' };
+
+        if (canSms) {
+          void sendRewardCouponSmsAfterRedeem({
+            customerId,
+            redemptionId,
+            rewardName: String(reward.name),
+            link: assignedLink,
+            phone: contact.phone,
+            customerName: contact.name,
+          }).catch((err) =>
+            console.error('[rewards/redeem] coupon SMS failed:', err)
+          );
+        }
+      }
+
       return c.json({
         success: true,
         message: isExternalLink
-          ? 'Reward redeemed! Use your unique coupon link below.'
+          ? smsNotification?.status === 'queued'
+            ? 'Reward redeemed! Use your coupon link below — we are also sending it to your mobile.'
+            : 'Reward redeemed! Use your unique coupon link below.'
           : walletCredited > 0
             ? `Reward redeemed. ₹${walletCredited.toFixed(2)} added to your wallet.`
             : 'Reward redeemed successfully',
@@ -865,6 +899,7 @@ export function registerRewardsEndpoints(app: Hono) {
         lifetimePointsEarned: lifetimeOut.earned,
         lifetimePointsRedeemed: lifetimeOut.redeemed,
         walletCredited,
+        smsNotification,
       });
     } catch (error: any) {
       console.error('Error redeeming reward:', error);

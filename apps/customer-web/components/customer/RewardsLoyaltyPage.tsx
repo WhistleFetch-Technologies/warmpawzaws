@@ -309,10 +309,15 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
           (redeemBody as any).redemption_link ||
           null;
         setRedeemedLink(link ? String(link) : null);
+        const apiMessage =
+          typeof (redeemBody as any).message === 'string'
+            ? String((redeemBody as any).message).trim()
+            : '';
         setSuccess(
-          link
-            ? `Successfully redeemed: ${reward.name}! Open your coupon link below.`
-            : `Successfully redeemed: ${reward.name}!`
+          apiMessage ||
+            (link
+              ? `Successfully redeemed: ${reward.name}! Open your coupon link below.`
+              : `Successfully redeemed: ${reward.name}!`)
         );
         const rem = Number(
           (redeemBody as any).points ??
