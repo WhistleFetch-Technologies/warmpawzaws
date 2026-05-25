@@ -11,7 +11,7 @@ describe('buildRewardCouponSmsMessage', () => {
       rewardName: 'Amazon Coupon',
       link: 'https://amazon.in/redeem/abc',
     });
-    expect(msg).toContain('Hi Bindushree');
+    expect(msg).toContain('Warmpawz: Hi Bindushree');
     expect(msg).toContain('Amazon Coupon');
     expect(msg).toContain('https://amazon.in/redeem/abc');
   });
@@ -21,7 +21,7 @@ describe('buildRewardCouponSmsMessage', () => {
       rewardName: 'Amazon Coupon',
       link: 'https://example.com/c',
     });
-    expect(msg.startsWith('Hi there,')).toBe(true);
+    expect(msg.startsWith('Warmpawz: Hi there,')).toBe(true);
   });
 });
 

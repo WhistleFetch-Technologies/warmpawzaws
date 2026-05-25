@@ -3,6 +3,10 @@
  * Idempotent per reward_redemptions row; never throws to callers.
  */
 
+import {
+  buildRewardCouponSmsBody,
+  JIO_REWARD_COUPON_TEMPLATE_ID,
+} from '../constants/jio-reward-coupon-sms';
 import { query, select } from '../database/rds-connection';
 import { sendSMS } from '../utils/sms-service';
 
@@ -26,12 +30,7 @@ export function buildRewardCouponSmsMessage(params: {
   rewardName: string;
   link: string;
 }): string {
-  const first =
-    String(params.customerName || 'there')
-      .trim()
-      .split(/\s+/)[0] || 'there';
-  const reward = String(params.rewardName).trim() || 'Reward';
-  return `Hi ${first}, your ${reward} coupon is ready on Warmpawz. Link: ${params.link.trim()}. Also in app: Rewards & Points > My Rewards.`;
+  return buildRewardCouponSmsBody(params);
 }
 
 export async function loadCustomerContact(
@@ -160,7 +159,7 @@ export async function sendRewardCouponSmsAfterRedeem(params: {
     link,
   });
 
-  const templateId = process.env.SMS_REWARD_COUPON_TEMPLATE_ID?.trim() || undefined;
+  const templateId = JIO_REWARD_COUPON_TEMPLATE_ID || undefined;
   const result = await sendSMS({
     to: phone,
     message,
