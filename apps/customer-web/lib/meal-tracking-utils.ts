@@ -4,6 +4,34 @@
 
 export const MEAL_TRACKING_POLL_MS = 18_000;
 
+/** Hyperlocal deliveries — ignore sandbox rider GPS far from drop-off (avoids India-wide map zoom). */
+export const MAX_RIDER_DESTINATION_KM = 80;
+
+export function haversineDistanceKm(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+/** True when rider and drop-off are close enough to draw a live route (not sandbox noise). */
+export function isRiderNearDestination(
+  rider: { lat: number; lng: number } | null | undefined,
+  destination: { lat: number; lng: number } | null | undefined,
+  maxKm = MAX_RIDER_DESTINATION_KM,
+): boolean {
+  if (!rider || !destination) return false;
+  return haversineDistanceKm(rider, destination) <= maxKm;
+}
+
 function parseAddressObject(raw: unknown): Record<string, unknown> | null {
   if (raw == null) return null;
   if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
@@ -68,6 +96,22 @@ export function extractDestinationCoordinates(
       lng: directLng,
       address: addressText?.trim() || 'Delivery address',
     };
+  }
+
+  const snap = parseAddressObject(order.purchase_snapshot ?? order.purchaseSnapshot);
+  const snapAddr =
+    snap?.deliveryAddress ?? snap?.delivery_address ?? snap?.delivery_address_raw;
+  const snapParsed = parseAddressObject(snapAddr);
+  if (snapParsed) {
+    const lat = readCoord(snapParsed, 'lat', 'latitude', 'customer_lat');
+    const lng = readCoord(snapParsed, 'lng', 'longitude', 'lon', 'customer_lng');
+    if (lat != null && lng != null) {
+      const addr =
+        addressText?.trim() ||
+        (typeof snapParsed.address === 'string' ? snapParsed.address : '') ||
+        'Delivery address';
+      return { lat, lng, address: addr };
+    }
   }
 
   const raw = order.delivery_address ?? order.deliveryAddress;

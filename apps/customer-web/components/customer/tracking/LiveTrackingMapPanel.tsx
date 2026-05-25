@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Clock, Loader2, MapPin } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { isRiderNearDestination } from '@/lib/meal-tracking-utils';
 
 declare global {
   interface Window {
@@ -82,6 +83,13 @@ function formatEta(minutes: number): string {
   return mins === 0 ? `${hrs}h` : `${hrs}h ${mins}m`;
 }
 
+function clampMapZoom(map: any, minZoom: number, maxZoom: number) {
+  const z = map.getZoom();
+  if (typeof z !== 'number') return;
+  if (z < minZoom) map.setZoom(minZoom);
+  if (z > maxZoom) map.setZoom(maxZoom);
+}
+
 export function LiveTrackingMapPanel({
   deliveryAddress,
   currentLocation,
@@ -95,18 +103,28 @@ export function LiveTrackingMapPanel({
   const googleMapRef = useRef<any>(null);
   const riderMarkerRef = useRef<any>(null);
   const destinationMarkerRef = useRef<any>(null);
-  const polylineRef = useRef<any>(null);
+  const directionsRendererRef = useRef<any>(null);
+  const directionsServiceRef = useRef<any>(null);
 
   const accent = variant === 'meal' ? 'teal' : 'orange';
   const riderColor = variant === 'meal' ? '#0d9488' : '#f97316';
   const destColor = variant === 'meal' ? '#16a34a' : '#22c55e';
   const hasDestination = hasValidCoords(deliveryAddress);
   const hasRider = hasValidCoords(currentLocation);
-  const waitingMessage = !hasRider
-    ? 'Waiting for rider location…'
-    : !hasDestination
-      ? 'Waiting for delivery location…'
-      : null;
+  const showLiveRoute =
+    hasRider &&
+    hasDestination &&
+    deliveryAddress &&
+    currentLocation &&
+    isRiderNearDestination(currentLocation, deliveryAddress);
+
+  const waitingMessage = !hasDestination
+    ? 'Waiting for delivery location…'
+    : !hasRider
+      ? 'Waiting for rider location…'
+      : !showLiveRoute
+        ? 'Pinning your address — partner location updating…'
+        : null;
 
   useEffect(() => {
     if (!hasDestination || !deliveryAddress) return;
@@ -140,14 +158,44 @@ export function LiveTrackingMapPanel({
           strokeWeight: 3,
         },
         title: 'Delivery location',
+        zIndex: 2,
+      });
+
+      directionsServiceRef.current = new window.google.maps.DirectionsService();
+      directionsRendererRef.current = new window.google.maps.DirectionsRenderer({
+        map,
+        suppressMarkers: true,
+        preserveViewport: false,
+        polylineOptions: {
+          strokeColor: riderColor,
+          strokeOpacity: 0.9,
+          strokeWeight: 5,
+        },
       });
 
       setMapLoaded(true);
     });
-  }, [deliveryAddress?.lat, deliveryAddress?.lng, destColor, hasDestination]);
+  }, [deliveryAddress?.lat, deliveryAddress?.lng, destColor, hasDestination, riderColor]);
 
   useEffect(() => {
-    if (!mapLoaded || !hasRider || !currentLocation || !googleMapRef.current || !hasDestination || !deliveryAddress) return;
+    if (!mapLoaded || !googleMapRef.current || !hasDestination || !deliveryAddress) return;
+
+    const map = googleMapRef.current;
+    const dest = { lat: deliveryAddress.lat, lng: deliveryAddress.lng };
+
+    if (!showLiveRoute || !currentLocation) {
+      if (directionsRendererRef.current) {
+        directionsRendererRef.current.setMap(null);
+        directionsRendererRef.current.setMap(map);
+      }
+      if (riderMarkerRef.current) {
+        riderMarkerRef.current.setMap(null);
+        riderMarkerRef.current = null;
+      }
+      map.setCenter(dest);
+      map.setZoom(15);
+      return;
+    }
 
     const { lat, lng } = currentLocation;
 
@@ -156,7 +204,7 @@ export function LiveTrackingMapPanel({
     } else {
       riderMarkerRef.current = new window.google.maps.Marker({
         position: { lat, lng },
-        map: googleMapRef.current,
+        map,
         icon: {
           path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
           scale: 6,
@@ -164,34 +212,41 @@ export function LiveTrackingMapPanel({
           fillOpacity: 1,
           strokeColor: '#ffffff',
           strokeWeight: 2,
+          rotation: 0,
         },
         title: 'Delivery partner',
+        zIndex: 3,
       });
     }
 
-    const path = [
-      { lat, lng },
-      { lat: deliveryAddress.lat, lng: deliveryAddress.lng },
-    ];
-
-    if (polylineRef.current) {
-      polylineRef.current.setPath(path);
-    } else {
-      polylineRef.current = new window.google.maps.Polyline({
-        path,
-        geodesic: true,
-        strokeColor: riderColor,
-        strokeOpacity: 0.85,
-        strokeWeight: 4,
-        map: googleMapRef.current,
-      });
+    const directionsService = directionsServiceRef.current;
+    const directionsRenderer = directionsRendererRef.current;
+    if (directionsService && directionsRenderer) {
+      directionsService.route(
+        {
+          origin: { lat, lng },
+          destination: dest,
+          travelMode: window.google.maps.TravelMode.DRIVING,
+        },
+        (result: unknown, status: string) => {
+          if (status === 'OK' && result) {
+            directionsRenderer.setDirections(result);
+            window.google.maps.event.addListenerOnce(map, 'idle', () => {
+              clampMapZoom(map, 12, 17);
+            });
+            return;
+          }
+          const bounds = new window.google.maps.LatLngBounds();
+          bounds.extend({ lat, lng });
+          bounds.extend(dest);
+          map.fitBounds(bounds, { padding: 56 });
+          window.google.maps.event.addListenerOnce(map, 'idle', () => {
+            clampMapZoom(map, 12, 17);
+          });
+        },
+      );
     }
-
-    const bounds = new window.google.maps.LatLngBounds();
-    bounds.extend({ lat, lng });
-    bounds.extend({ lat: deliveryAddress.lat, lng: deliveryAddress.lng });
-    googleMapRef.current.fitBounds(bounds, { padding: 48 });
-  }, [currentLocation, mapLoaded, deliveryAddress, hasDestination, hasRider, riderColor]);
+  }, [currentLocation, mapLoaded, deliveryAddress, hasDestination, hasRider, riderColor, showLiveRoute]);
 
   const accentBg = accent === 'teal' ? 'bg-teal-50' : 'bg-orange-50';
   const accentText = accent === 'teal' ? 'text-teal-900' : 'text-orange-900';
@@ -221,17 +276,16 @@ export function LiveTrackingMapPanel({
 
       <div className="relative">
         {waitingMessage && !hasDestination ? (
-          <div className={`h-56 flex flex-col items-center justify-center px-6 text-center ${accentBg}`}>
+          <div className={`h-64 flex flex-col items-center justify-center px-6 text-center ${accentBg}`}>
             <MapPin className={`w-10 h-10 mb-3 ${accentIcon}`} />
             <p className={`text-sm font-semibold ${accentText}`}>{waitingMessage}</p>
             <p className="text-xs text-slate-600 mt-2">
-              Live map will appear when rider GPS and delivery coordinates are available.
+              Live route map will appear when rider GPS and delivery coordinates are available.
             </p>
           </div>
         ) : (
           <>
-            {/* Loader must not be a child of mapRef — Google Maps owns that node's children. */}
-            <div className="relative h-56 bg-slate-100">
+            <div className="relative h-64 bg-slate-100">
               <div ref={mapRef} className="h-full w-full" />
               {!mapLoaded ? (
                 <div className="absolute inset-0 flex items-center justify-center bg-slate-100">
@@ -240,16 +294,16 @@ export function LiveTrackingMapPanel({
               ) : null}
             </div>
 
-            {hasRider ? (
+            {showLiveRoute ? (
               <div className="absolute top-3 left-3 bg-white rounded-full px-3 py-1.5 shadow-md flex items-center gap-2">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                <span className="text-xs font-semibold text-slate-700">LIVE</span>
+                <span className="text-xs font-semibold text-slate-700">LIVE ROUTE</span>
               </div>
             ) : waitingMessage ? (
               <div className="absolute inset-x-3 top-3 bg-white/95 backdrop-blur rounded-xl px-3 py-2.5 shadow-md border border-slate-100">
                 <p className={`text-xs font-semibold ${accentText}`}>{waitingMessage}</p>
                 <p className="text-[11px] text-slate-600 mt-0.5">
-                  Your delivery address is pinned. Rider position updates automatically.
+                  Your delivery address is pinned. The driving route appears when partner GPS is nearby.
                 </p>
               </div>
             ) : null}

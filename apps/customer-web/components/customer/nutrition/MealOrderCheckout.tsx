@@ -18,6 +18,8 @@ import {
 } from '@/lib/meal-plan-catalog-display';
 import { SubscriptionCheckoutContainer } from '@/components/customer/meal-subscription/SubscriptionCheckoutContainer';
 import { resolveCustomerPublicAssetUrl } from '@/lib/public-asset-url';
+import { isMealKitchenClosed, mealKitchenClosedMessage } from '@/lib/meal-kitchen-availability';
+import { MealKitchenStatusBanner } from '@/components/customer/nutrition/MealKitchenStatusBanner';
 
 interface MealOrderCheckoutProps {
   phone: string;
@@ -42,6 +44,13 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
     convenienceFee?: number;
     totalAmount: number;
     leadTimeHours: number;
+    bookingPolicy?: {
+      earliestDeliveryAt?: string;
+      sameDayAllowed?: boolean;
+      effectiveLeadTimeHours?: number;
+    };
+    deliveryPolicyMessage?: string;
+    deliveryAllowed?: boolean;
     gst?: {
       foodGstPct: number;
       deliveryGstPct?: number;
@@ -81,6 +90,10 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       q.set('customerLat', String(effectiveLat));
       q.set('customerLng', String(effectiveLng));
     }
+    if (scheduledDate) {
+      q.set('scheduledDeliveryDate', scheduledDate);
+      if (scheduledTime) q.set('deliveryTime', scheduledTime);
+    }
 
     apiClient
       .get(`/meal-plans/${mealPlanId}/order-preview?${q.toString()}`)
@@ -88,7 +101,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
         if (res.success) setPreview(res);
       })
       .catch(() => setPreview(null));
-  }, [mealPlanId, quantity, addressId, addresses]);
+  }, [mealPlanId, quantity, addressId, addresses, scheduledDate, scheduledTime]);
 
   const loadData = async () => {
     try {
@@ -166,8 +179,14 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
     };
   };
 
+  const kitchenClosed = isMealKitchenClosed(mealPlan);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (kitchenClosed) {
+      toast.error(mealKitchenClosedMessage(mealPlan));
+      return;
+    }
     if (!mealPlan?.id || !preview) {
       toast.error('Missing meal plan or price details');
       return;
@@ -187,6 +206,10 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
     }
     if (!scheduledDate || !scheduledTime) {
       toast.error('Please select delivery date and time');
+      return;
+    }
+    if (preview.deliveryAllowed === false) {
+      toast.error(preview.deliveryPolicyMessage || `Order must be at least ${preview.leadTimeHours} hours before delivery`);
       return;
     }
     if (!petId && pets.length > 0) {
@@ -265,9 +288,18 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
 
   const minDate = new Date();
   minDate.setHours(0, 0, 0, 0);
-  const leadHours = preview?.leadTimeHours ?? 24;
-  minDate.setTime(minDate.getTime() + leadHours * 60 * 60 * 1000);
+  const earliestRaw = preview?.bookingPolicy?.earliestDeliveryAt;
+  if (earliestRaw) {
+    minDate.setTime(new Date(earliestRaw).getTime());
+  } else {
+    const leadHours = preview?.leadTimeHours ?? 24;
+    minDate.setTime(minDate.getTime() + leadHours * 60 * 60 * 1000);
+  }
   const minDateStr = minDate.toISOString().split('T')[0];
+  const leadHours = preview?.leadTimeHours ?? 24;
+  const sameDayHint = preview?.bookingPolicy?.sameDayAllowed
+    ? ' Same-day delivery may be available for this plan.'
+    : '';
 
   return (
     <div className="min-h-screen bg-orange-50 max-w-md mx-auto pb-24">
@@ -279,6 +311,9 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       </div>
 
       <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        {kitchenClosed ? (
+          <MealKitchenStatusBanner message={mealKitchenClosedMessage(mealPlan)} />
+        ) : null}
         <Card className="p-4">
           <div className="flex gap-3">
             {mealPlanImageUrl ? (
@@ -473,6 +508,12 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
             />
           </div>
         </div>
+        <p className="text-xs text-slate-600 -mt-2">
+          Order at least {leadHours} hour{leadHours === 1 ? '' : 's'} before delivery.{sameDayHint}
+        </p>
+        {preview?.deliveryPolicyMessage && preview.deliveryAllowed === false ? (
+          <p className="text-xs text-red-700">{preview.deliveryPolicyMessage}</p>
+        ) : null}
 
         <div>
           <Label>Special instructions</Label>
@@ -540,6 +581,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
           type="submit"
           className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E]"
           disabled={
+            kitchenClosed ||
             !addressId ||
             !preview ||
             !hasSelectedAddressCoordinates ||

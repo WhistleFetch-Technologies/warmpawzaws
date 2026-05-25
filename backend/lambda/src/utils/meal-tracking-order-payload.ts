@@ -193,18 +193,26 @@ export function buildMealTrackingSummaryLines(input: {
   );
 }
 
-export function buildMealTrackingCustomerPayload(
+export async function buildMealTrackingCustomerPayload(
   customerRow: Record<string, unknown> | null | undefined,
   order: Record<string, unknown>,
-): Record<string, unknown> | null {
+  presignPhoto?: (url: string | null | undefined) => Promise<string | null | undefined>,
+): Promise<Record<string, unknown> | null> {
   if (!customerRow) return null;
+  const rawPhoto =
+    typeof customerRow.profile_photo_url === 'string'
+      ? customerRow.profile_photo_url.trim()
+      : '';
+  const photoUrl =
+    rawPhoto && presignPhoto ? (await presignPhoto(rawPhoto)) ?? rawPhoto : rawPhoto || null;
   return {
     id: customerRow.id,
     full_name: customerRow.full_name,
     name: customerRow.full_name,
     phone: customerRow.phone ?? order.shipping_phone,
-    profile_photo_url: customerRow.profile_photo_url,
-    profilePhotoUrl: customerRow.profile_photo_url,
+    profile_photo_url: photoUrl,
+    profilePhotoUrl: photoUrl,
+    photo: photoUrl,
   };
 }
 

@@ -87,6 +87,8 @@ export type MealProductDietaryInput = {
   ingredients: string[];
   nutritionalValue: Record<string, unknown>;
   preparationLeadTime: number;
+  leadTimeHours?: number;
+  orderCutoffTime?: string;
   storageInstructions?: string;
   shelfLifeDays: number;
   mealCategories: string[];
@@ -144,6 +146,9 @@ export function mealProductParsedToDietaryJson(
     ingredients: parsed.ingredients,
     nutritionalValue: parsed.nutritionalValue,
     preparationLeadTime: parsed.preparationLeadTime,
+    prepTimeMinutes: parsed.preparationLeadTime,
+    ...(parsed.leadTimeHours != null ? { leadTimeHours: parsed.leadTimeHours } : {}),
+    ...(parsed.orderCutoffTime ? { orderCutoffTime: parsed.orderCutoffTime } : {}),
     storageInstructions: parsed.storageInstructions,
     shelfLifeDays: parsed.shelfLifeDays,
     shelfLife: parsed.shelfLifeDays,

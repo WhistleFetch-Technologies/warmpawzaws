@@ -37,6 +37,7 @@ import {
   resolveCustomerMealPlanOrderDisplayTotals,
 } from '../../../utils/meal-order-pricing';
 import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '../../../utils/meal-delivery-effective-state';
+import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../services/meal-subscription/meal-subscription-operations-service';
 
 // ============================================================================
 // CUSTOMER HANDLERS
@@ -552,6 +553,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
                     o.delivery_date as scheduled_delivery_date, o.delivery_time as scheduled_delivery_slot, o.created_at,
                     o.vendor_id, v.business_name as vendor_name,
                     (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_plan_name,
+                    (SELECT mpo.meal_plan_id FROM meal_plan_orders mpo WHERE mpo.order_id = o.id LIMIT 1) as meal_plan_id,
                     (SELECT p.name FROM meal_plan_orders mpo LEFT JOIN pets p ON p.id = mpo.pet_id WHERE mpo.order_id = o.id LIMIT 1) as pet_name,
                     (SELECT mpo.quantity FROM meal_plan_orders mpo WHERE mpo.order_id = o.id LIMIT 1) as line_quantity
              FROM orders o
@@ -567,7 +569,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
               order_number: o.order_number || o.id?.toString().slice(-8),
               order_type: 'meal_plan_delivery',
               orderType: 'meal_plan_delivery',
-              meal_plan_id: null,
+              meal_plan_id: o.meal_plan_id ?? null,
               meal_plan_name: o.meal_plan_name || 'Meal Plan',
               pet_id: null,
               pet_name: o.pet_name,
@@ -590,6 +592,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
 
       // Sort by created_at desc
       allOrders.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+      await enrichSubscriptionRowsWithPresignedMealImages(allOrders);
 
       return c.json({ success: true, orders: allOrders });
     } catch (error: any) {

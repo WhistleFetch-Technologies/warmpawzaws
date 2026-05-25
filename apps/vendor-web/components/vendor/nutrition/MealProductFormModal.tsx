@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { apiClient } from '@/lib/api-client';
 import { uploadImageWithProgress } from '@/lib/photo-upload-enhanced';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import {
@@ -28,6 +29,9 @@ export interface MealProductModalProduct {
   price: number;
   metadata?: unknown;
   duration_days?: number;
+  prep_time_minutes?: number;
+  lead_time_hours?: number;
+  order_cutoff_time?: string;
 }
 
 function SectionTitle({ id, children }: { id?: string; children: React.ReactNode }) {
@@ -66,6 +70,8 @@ function defaultForm() {
     dietType: 'Non-Veg',
     petTypes: ['Dog'] as string[],
     preparationTime: '60',
+    leadTimeHours: '24',
+    orderCutoffTime: '18:00',
     mealImageUrl: '',
     mealCategories: [] as string[],
     categoryQuery: '',
@@ -111,6 +117,8 @@ export function MealProductFormModal({
   const [submitting, setSubmitting] = useState(false);
   const [uploadingMealImage, setUploadingMealImage] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [leadBounds, setLeadBounds] = useState({ min: 0, max: 72, defaultHours: 24 });
+  const [sameDayEnabled, setSameDayEnabled] = useState(false);
 
   const handleMealImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -170,7 +178,22 @@ export function MealProductFormModal({
       protein: String((md.nutritionalValue as Record<string, unknown>)?.protein ?? ''),
       dietType: (md.dietType as string) || 'Non-Veg',
       petTypes: Array.isArray(md.petTypes) && md.petTypes.length ? (md.petTypes as string[]) : ['Dog'],
-      preparationTime: String(md.preparationLeadTime ?? '60'),
+      preparationTime: String(
+        md.prepTimeMinutes ??
+          editingProduct.prep_time_minutes ??
+          md.preparationLeadTime ??
+          '60',
+      ),
+      leadTimeHours: String(
+        md.leadTimeHours ??
+          editingProduct.lead_time_hours ??
+          leadBounds.defaultHours,
+      ),
+      orderCutoffTime: String(
+        (md.orderCutoffTime as string) ||
+          editingProduct.order_cutoff_time ||
+          '18:00',
+      ),
       mealImageUrl: (md.mealImageUrl as string) || '',
       mealCategories: Array.isArray(md.mealCategories) ? (md.mealCategories as string[]) : [],
       categoryQuery: '',
@@ -217,7 +240,29 @@ export function MealProductFormModal({
         : 'FRESH_COOKED') as MealProductFormState['preparationType'],
       suitableFor: Array.isArray(md.suitableFor) ? (md.suitableFor as string[]) : [],
     });
-  }, [editingProduct]);
+  }, [editingProduct, leadBounds.defaultHours]);
+
+  useEffect(() => {
+    if (!open) return;
+    apiClient
+      .get<{
+        success?: boolean;
+        bounds?: { minHours: number; maxHours: number; defaultHours: number };
+        sameDay?: { enabled: boolean };
+        orderCutoff?: { time: string };
+      }>('/vendor/meal-booking-policy')
+      .then((res) => {
+        if (res?.bounds) {
+          setLeadBounds({
+            min: res.bounds.minHours,
+            max: res.bounds.maxHours,
+            defaultHours: res.bounds.defaultHours,
+          });
+        }
+        if (res?.sameDay) setSameDayEnabled(!!res.sameDay.enabled);
+      })
+      .catch(() => undefined);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -350,6 +395,13 @@ export function MealProductFormModal({
     if (!Number.isFinite(prepMins) || prepMins < 1 || prepMins > 24 * 60) {
       err.preparationTime = 'Prep time is required (1–1440 minutes)';
     }
+    const leadHrs = parseInt(String(form.leadTimeHours).trim(), 10);
+    if (!Number.isFinite(leadHrs) || leadHrs < leadBounds.min || leadHrs > leadBounds.max) {
+      err.leadTimeHours = `Lead time must be ${leadBounds.min}–${leadBounds.max} hours`;
+    }
+    if (!/^([01]?\d|2[0-3]):([0-5]\d)$/.test(form.orderCutoffTime.trim())) {
+      err.orderCutoffTime = 'Enter cutoff as HH:mm (e.g. 18:00)';
+    }
     const shelf = parseInt(form.shelfLifeDays, 10);
     if (Number.isNaN(shelf) || shelf < 1 || shelf > 365) err.shelfLifeDays = 'Shelf life must be between 1 and 365 days';
     if (form.feedingInstructions.length > FEEDING_MAX) err.feedingInstructions = `Max ${FEEDING_MAX} characters`;
@@ -365,6 +417,8 @@ export function MealProductFormModal({
     const price = parseFloat(form.price);
     const shelfLifeDays = parseInt(form.shelfLifeDays, 10);
     const preparationLeadTime = parseInt(String(form.preparationTime).trim(), 10);
+    const leadTimeHours = parseInt(String(form.leadTimeHours).trim(), 10);
+    const orderCutoffTime = form.orderCutoffTime.trim();
 
     const subPriceRaw = form.subscriptionPrice.trim();
     const subscriptionPrice =
@@ -421,6 +475,9 @@ export function MealProductFormModal({
       suitableFor: form.suitableFor,
       petTypes: form.petTypes,
       preparationLeadTime,
+      prepTimeMinutes: preparationLeadTime,
+      leadTimeHours,
+      orderCutoffTime,
     };
     return payload;
   };
@@ -464,8 +521,8 @@ export function MealProductFormModal({
             {editingProduct ? 'Edit meal product' : 'Add meal product'}
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Required: meal name, description, image, price, prep time (minutes), categories, pet types, ingredients,
-            preparation type, purchase options, and shelf life (days).
+            Required: meal name, description, image, price, prep time (minutes), lead time (hours), order cutoff,
+            categories, pet types, ingredients, preparation type, purchase options, and shelf life (days).
           </p>
         </div>
 
@@ -592,6 +649,59 @@ export function MealProductFormModal({
                     {fieldErrors.preparationTime}
                   </p>
                 ) : null}
+                <p className="text-xs text-slate-500 mt-1">Kitchen time to prepare one order.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="lead-time-hrs">
+                  Lead time (hrs) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="lead-time-hrs"
+                  type="number"
+                  min={leadBounds.min}
+                  max={leadBounds.max}
+                  required
+                  value={form.leadTimeHours}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    const v = Number.isFinite(n) ? n : leadBounds.defaultHours;
+                    setForm((p) => ({
+                      ...p,
+                      leadTimeHours: String(Math.min(leadBounds.max, Math.max(leadBounds.min, v))),
+                    }));
+                  }}
+                  className={`w-full px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 ${
+                    fieldErrors.leadTimeHours ? 'border-red-300' : 'border-slate-200'
+                  }`}
+                />
+                {fieldErrors.leadTimeHours ? (
+                  <p className="text-xs text-red-600 mt-1">{fieldErrors.leadTimeHours}</p>
+                ) : (
+                  <p className="text-xs text-slate-500 mt-1">
+                    How far in advance customers must order ({leadBounds.min}–{leadBounds.max}h).
+                    {sameDayEnabled ? ' Lower values can allow same-day delivery.' : ''}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="order-cutoff">
+                  Order cutoff <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="order-cutoff"
+                  type="time"
+                  required
+                  value={form.orderCutoffTime}
+                  onChange={(e) => setForm((p) => ({ ...p, orderCutoffTime: e.target.value }))}
+                  className={`w-full px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 ${
+                    fieldErrors.orderCutoffTime ? 'border-red-300' : 'border-slate-200'
+                  }`}
+                />
+                {fieldErrors.orderCutoffTime ? (
+                  <p className="text-xs text-red-600 mt-1">{fieldErrors.orderCutoffTime}</p>
+                ) : (
+                  <p className="text-xs text-slate-500 mt-1">Last time today customers can order for same-day rules.</p>
+                )}
               </div>
               <div className="md:col-span-2">
                 <span className="block text-sm font-medium text-slate-700 mb-1">

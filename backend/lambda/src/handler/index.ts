@@ -178,6 +178,7 @@ import { registerCustomerEndpointsEnhanced } from 'src/endpoints/customer/custom
 import { registerAdminSellersEndpoints } from 'src/endpoints/admin/endpoints/admin-sellers';
 import { registerCustomerContentEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-content';
 import { registerCustomerDeliveryFeePolicyEndpoints } from '../endpoints/customer-delivery-fee-policy-endpoints';
+import { registerMealBookingPolicyEndpoints } from '../endpoints/meal-booking-policy-endpoints';
 import { registerCustomerPhoneConvenienceEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-phone-convenience';
 import { registerCustomerBookingHistoryEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-booking-history';
 import { registerAdminGovernanceEndpoints } from 'src/endpoints/admin/endpoints/admin-governance';
@@ -603,6 +604,7 @@ registerServiceDiscoveryEndpoints(app); // /customer/vendors/search, /customer/d
 registerServiceCatalogEndpoints(app); // /services/:serviceId - before /customer/:customerId
 registerCustomerContentEndpoints(app); // /customer/banners, /customer/articles, /customer/announcements - before /customer/:customerId
 registerCustomerDeliveryFeePolicyEndpoints(app); // /customer/delivery-fee-policy, /customer/delivery-fee/calculate, /admin/delivery-fee-policy
+registerMealBookingPolicyEndpoints(app); // /admin/meal-booking-policy, /vendor/meal-booking-policy
 // ✅ CRITICAL ROUTE ORDERING: Specific routes MUST come before parameterized routes
 // /customer/bookings/active is registered in registerCustomerPhoneConvenienceEndpoints
 // This ensures "active" is not interpreted as a UUID in /customer/:customerId route

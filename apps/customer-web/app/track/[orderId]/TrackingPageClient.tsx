@@ -24,6 +24,7 @@ import {
 import { useMealTrackingPoll } from '@/lib/use-meal-tracking-poll';
 import { MealOrderDetailsCollapsible } from '@/components/customer/tracking/MealOrderDetailsCollapsible';
 import { MealCustomerDetailsCard } from '@/components/customer/tracking/MealCustomerDetailsCard';
+import { DeliveryPartnerCallAction } from '@/components/customer/tracking/DeliveryPartnerCallAction';
 import { formatMealOrderDeliveryAddress } from '@/lib/meal-order-tracking-details';
 
 interface TrackingData {
@@ -341,6 +342,9 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
                       src={riderPhoto || tracking.tracking!.deliveryPerson!.photo}
                       alt=""
                       className="w-full h-full rounded-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
                     />
                   ) : (
                     <Truck className="w-7 h-7 text-teal-600" />
@@ -360,13 +364,7 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
                   </p>
                 </div>
                 {riderPhone ? (
-                  <a
-                    href={`tel:${riderPhone}`}
-                    className="p-3 bg-green-100 text-green-600 rounded-xl hover:bg-green-200 transition shrink-0"
-                    aria-label="Call delivery partner"
-                  >
-                    <Phone className="w-5 h-5" />
-                  </a>
+                  <DeliveryPartnerCallAction phone={riderPhone} variant="icon" />
                 ) : null}
               </div>
               {etaMinutes != null && Number.isFinite(Number(etaMinutes)) ? (

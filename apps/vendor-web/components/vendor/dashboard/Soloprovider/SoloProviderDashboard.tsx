@@ -74,7 +74,12 @@ import {
   getVendorDashboardRatingPresentation,
   mergeVendorDashboardStats,
 } from '../helpers';
-import { mapMealOrdersToSchedule, type VendorScheduleTypeFilter } from '@/lib/vendor-meal-order-schedule';
+import {
+  isMealOrderScheduleItem,
+  mapMealOrdersToSchedule,
+  mergeAllTypesSchedule,
+  type VendorScheduleTypeFilter,
+} from '@/lib/vendor-meal-order-schedule';
 import { VendorMealOrderScheduleCard } from '../VendorMealOrderScheduleCard';
 import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayout';
 import { Dashboardstats, ScheduleItem, SoloProviderDashboardProps } from '../types';
@@ -1030,7 +1035,11 @@ export function SoloProviderDashboard({
                 };
                 return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
               });
-              const scheduleItems = showingMealOrders ? mealOrderSchedule : filteredBookings;
+              const scheduleItems = showingMealOrders
+                ? mealOrderSchedule
+                : appointmentTypeFilter === 'all' && isNutritionist
+                  ? mergeAllTypesSchedule(filteredBookings, mealOrderSchedule)
+                  : filteredBookings;
 
               if (scheduleItems.length === 0) {
                 return (
@@ -1043,12 +1052,18 @@ export function SoloProviderDashboard({
                       )}
                     </div>
                     <h3 className="text-gray-900 font-semibold mb-1">
-                      {showingMealOrders ? 'No Meal Orders Yet' : 'No Appointments Yet'}
+                      {showingMealOrders
+                        ? 'No Meal Orders Yet'
+                        : appointmentTypeFilter === 'all' && isNutritionist
+                          ? 'No Bookings or Meal Orders Yet'
+                          : 'No Appointments Yet'}
                     </h3>
                     <p className="text-sm text-gray-500 mb-4 max-w-[250px] mx-auto">
                       {showingMealOrders
                         ? 'New meal plan and delivery orders will appear here for the selected period.'
-                        : 'Complete your profile and add services to start getting bookings!'}
+                        : appointmentTypeFilter === 'all' && isNutritionist
+                          ? 'Share your profile with customers to start getting bookings and meal orders!'
+                          : 'Complete your profile and add services to start getting bookings!'}
                     </p>
                     {!showingMealOrders && (
                       <button
@@ -1077,15 +1092,17 @@ export function SoloProviderDashboard({
                     </button>
                   </div>
                   <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                    {showingMealOrders
-                      ? scheduleItems.map((order) => (
+                    {scheduleItems.map((appointment) => {
+                      if (showingMealOrders || isMealOrderScheduleItem(appointment)) {
+                        return (
                           <VendorMealOrderScheduleCard
-                            key={order.id}
-                            order={order}
+                            key={appointment.id}
+                            order={appointment}
                             onOpen={() => router.push('/nutrition/dashboard')}
                           />
-                        ))
-                      : scheduleItems.map((appointment) => {
+                        );
+                      }
+
                       // Get customer location from appointment data
                       const customerLat = (appointment as any).customerLat || (appointment as any).customer_lat;
                       const customerLng = (appointment as any).customerLng || (appointment as any).customer_lng;

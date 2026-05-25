@@ -8,6 +8,7 @@ import type { MealLifecycleFilter } from '@/lib/meal-subscriptions-api';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { formatMealSubscriptionDateOnly } from '@/lib/meal-subscription-display';
 import { sanitizeDisplayImageUrl } from '@/lib/resolve-display-image-url';
+import { handleSubscriptionsPageBack } from '@/lib/go-back-or-replace';
 
 function SubscriptionPlanThumb({ imageUrl }: { imageUrl: string | undefined }) {
   const [broken, setBroken] = React.useState(false);
@@ -64,7 +65,7 @@ export default function SubscriptionsPage() {
         <div className="flex items-start gap-2 px-4 pb-3 pt-1">
           <button
             type="button"
-            onClick={() => router.push('/orders/meal-plans')}
+            onClick={() => handleSubscriptionsPageBack(router)}
             className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-800 transition active:bg-white/70 active:scale-[0.97]"
             aria-label="Back to meal plan orders and tracking"
           >

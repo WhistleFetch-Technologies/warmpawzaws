@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { MealProductFormModal } from '@/components/vendor/nutrition/MealProductFormModal';
+import { MealKitchenAvailabilityCard } from '@/components/vendor/nutrition/MealKitchenAvailabilityCard';
 import { useVendorWebSocket } from '@/hooks/useVendorWebSocket';
 import {
   resolveEffectiveMealDeliveryState,
@@ -120,6 +121,9 @@ interface MealProduct {
   metadata?: unknown;
   is_active?: boolean;
   duration_days?: number;
+  prep_time_minutes?: number;
+  lead_time_hours?: number;
+  order_cutoff_time?: string;
 }
 
 interface MealOrder {
@@ -1011,9 +1015,11 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
 
       {/* Content — scrolls under fixed header (works inside shells that use overflow-hidden). */}
       <main className="max-w-7xl mx-auto w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-6 overscroll-contain">
+        <MealKitchenAvailabilityCard vendorId={vendorId} />
+
         {/* Products Tab */}
         {activeTab === 'products' && (
-          <div className="space-y-4">
+          <div className="space-y-4 mt-4">
             {/* Add Product Button */}
               <button
                 onClick={() => {

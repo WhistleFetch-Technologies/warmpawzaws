@@ -29,8 +29,23 @@ import {
   deriveDistanceKmFromLocations,
 } from '../utils/customer-delivery-fee-quote';
 import { fetchCustomerDeliveryFeePolicy } from '../utils/customer-delivery-fee-policy';
+import {
+  clampLeadTimeHoursForPlatform,
+  evaluateMealBookingForPlan,
+  fetchPlatformMealBookingPolicy,
+  isMealBookingPolicyRolloutEnabled,
+  resolveEffectiveLeadTimeHours,
+  resolveSameDayAllowed,
+} from '../utils/meal-booking-policy';
+import type { MealPurchaseType } from '@warmpawz/shared-types';
 import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr, resolveMealPurchaseSubtotalInr } from '../utils/meal-order-pricing';
 import { ensureMealPlanMirrorForProductCheckout, normalizeProductRowToMealPlanShape, resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
+import {
+  assertVendorAcceptingMealOrders,
+  enrichMealPlanRowsWithKitchenAvailability,
+  fetchMealKitchenAvailabilityForVendor,
+  toPublicMealKitchenAvailability,
+} from '../utils/meal-kitchen-availability';
 import { resolveVendorId } from '../utils/vendor-resolve';
 import {
   mealPlanMatchesCustomerMealType,
@@ -80,6 +95,77 @@ function bypassMealLeadTimeValidationForDev(): boolean {
     .toLowerCase()
     .trim();
   return v === 'true' || v === '1' || v === 'yes';
+}
+
+async function mealBookingPolicyPreviewExtras(
+  plan: Record<string, unknown>,
+  purchaseType: string,
+  query: {
+    scheduledDeliveryDate?: string;
+    deliveryTime?: string;
+    vendorId?: string;
+    planId?: string;
+  },
+): Promise<Record<string, unknown>> {
+  const platform = await fetchPlatformMealBookingPolicy();
+  const pt = String(purchaseType || 'ONE_OFF').toUpperCase() as MealPurchaseType;
+  const planOverrides = {
+    leadTimeHours:
+      plan.lead_time_hours != null ? Number(plan.lead_time_hours) : null,
+    orderCutoffTime:
+      typeof plan.order_cutoff_time === 'string' ? plan.order_cutoff_time : null,
+  };
+  const { hours: effectiveLeadTimeHours } = resolveEffectiveLeadTimeHours(
+    platform,
+    planOverrides,
+    pt,
+  );
+  const now = new Date();
+  const earliestDeliveryAt = new Date(
+    now.getTime() + effectiveLeadTimeHours * 3600000,
+  ).toISOString();
+  const sameDayAllowed = resolveSameDayAllowed(
+    platform,
+    effectiveLeadTimeHours,
+    planOverrides.leadTimeHours,
+  );
+  const extras: Record<string, unknown> = {
+    leadTimeHours: effectiveLeadTimeHours,
+    bookingPolicy: {
+      rolloutEnabled: isMealBookingPolicyRolloutEnabled(),
+      effectiveLeadTimeHours,
+      earliestDeliveryAt,
+      sameDayAllowed,
+      orderCutoffTime: planOverrides.orderCutoffTime || platform.orderCutoff.time,
+      bounds: platform.leadTime,
+      sameDay: platform.sameDay,
+    },
+  };
+  const dateRaw = query.scheduledDeliveryDate;
+  if (dateRaw && isMealBookingPolicyRolloutEnabled()) {
+    let requestedDeliveryAt = dateRaw;
+    const t = query.deliveryTime?.trim();
+    if (t && /^\d{1,2}:\d{2}/.test(t)) {
+      requestedDeliveryAt = `${dateRaw}T${t.length === 5 ? `${t}:00` : t}`;
+    } else {
+      requestedDeliveryAt = `${dateRaw}T12:00:00`;
+    }
+    const evaluation = await evaluateMealBookingForPlan(
+      {
+        vendorId: query.vendorId || String(plan.vendor_id || ''),
+        mealPlanId: query.planId || String(plan.id || ''),
+        purchaseType: pt,
+        requestedDeliveryAt,
+      },
+      plan,
+    );
+    (extras.bookingPolicy as Record<string, unknown>).evaluation = evaluation;
+    extras.deliveryAllowed = evaluation.allowed;
+    if (!evaluation.allowed && evaluation.message) {
+      extras.deliveryPolicyMessage = evaluation.message;
+    }
+  }
+  return extras;
 }
 
 async function mealOrdersTableColumns(): Promise<Set<string>> {
@@ -272,6 +358,12 @@ export function registerMealPlanEndpoints(app: Hono) {
         return c.json({ error: prepParsed.message }, 400);
       }
 
+      const platformMealPolicy = await fetchPlatformMealBookingPolicy();
+      const resolvedLeadHours =
+        leadTimeHours != null && leadTimeHours !== ''
+          ? clampLeadTimeHoursForPlatform(Number(leadTimeHours), platformMealPolicy)
+          : platformMealPolicy.leadTime.defaultHours;
+
       // Create meal plan
       const result = await insert('meal_plans', {
         vendor_id: vendorId,
@@ -296,7 +388,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         available_days: availableDays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
         order_cutoff_time: orderCutoffTime || '18:00',
         delivery_slots: JSON.stringify(deliverySlots || []),
-        lead_time_hours: leadTimeHours || 24,
+        lead_time_hours: resolvedLeadHours,
         is_active: true,
       });
 
@@ -304,6 +396,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         success: true,
         mealPlan: result[0],
         message: 'Meal plan created successfully',
+        bookingPolicyBounds: platformMealPolicy.leadTime,
       });
     } catch (error: any) {
       console.error('Error creating meal plan:', error);
@@ -353,6 +446,14 @@ export function registerMealPlanEndpoints(app: Hono) {
           return c.json({ error: prepParsed.message }, 400);
         }
         updateData.prep_time_minutes = prepParsed.minutes;
+      }
+
+      if (updateData.lead_time_hours !== undefined) {
+        const platformMealPolicy = await fetchPlatformMealBookingPolicy();
+        updateData.lead_time_hours = clampLeadTimeHoursForPlatform(
+          Number(updateData.lead_time_hours),
+          platformMealPolicy,
+        );
       }
 
       await update('meal_plans', { id: planId }, updateData);
@@ -434,7 +535,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         return tb - ta;
       });
 
-      const mealPlans = await Promise.all(
+      let mealPlans = await Promise.all(
         merged.map(async (mp: any) => {
           const { dietary_requirements, photos, mealImageUrl } = await presignMealPlanRowDisplayFields(
             mp as Record<string, unknown>,
@@ -476,9 +577,15 @@ export function registerMealPlanEndpoints(app: Hono) {
         }),
       );
 
+      mealPlans = await enrichMealPlanRowsWithKitchenAvailability(mealPlans);
+      const kitchenAvailability = toPublicMealKitchenAvailability(
+        await fetchMealKitchenAvailabilityForVendor(vendorId),
+      );
+
       return c.json({
         success: true,
         mealPlans,
+        kitchenAvailability,
       });
     } catch (error: any) {
       console.error('Error fetching meal plans:', error);
@@ -597,7 +704,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         );
       }
 
-      const mealPlans = await Promise.all(
+      let mealPlans = await Promise.all(
         filteredPlans.map(async (mp: any) => {
           const distanceKm = mp.distance_km || null;
           const estimatedDeliveryMinutes = distanceKm != null ? Math.round(15 + distanceKm * 3) : null; // Phase 1: ETA ~15min + 3min/km
@@ -636,6 +743,8 @@ export function registerMealPlanEndpoints(app: Hono) {
           };
         }),
       );
+
+      mealPlans = await enrichMealPlanRowsWithKitchenAvailability(mealPlans);
 
       return c.json({
         success: true,
@@ -683,6 +792,11 @@ export function registerMealPlanEndpoints(app: Hono) {
         return fallback;
       };
 
+      const vendorIdForKitchen = String(mp.vendor_id || '');
+      const kitchenAvailability = vendorIdForKitchen
+        ? toPublicMealKitchenAvailability(await fetchMealKitchenAvailabilityForVendor(vendorIdForKitchen))
+        : { acceptingOrders: true, message: null };
+
       return c.json({
         success: true,
         mealPlan: {
@@ -694,7 +808,10 @@ export function registerMealPlanEndpoints(app: Hono) {
           deliverySlots: parseJsonish(mp.delivery_slots, []),
           dietary_requirements,
           mealImageUrl,
+          acceptingMealOrders: kitchenAvailability.acceptingOrders,
+          kitchenClosedMessage: kitchenAvailability.message,
         },
+        kitchenAvailability,
       });
     } catch (error: any) {
       console.error('Error fetching meal plan:', error);
@@ -729,10 +846,35 @@ export function registerMealPlanEndpoints(app: Hono) {
         return c.json({ error: 'Meal plan not found' }, 404);
       }
       const plan = planRow as Record<string, unknown>;
+      const kitchenGate = await assertVendorAcceptingMealOrders(String(plan.vendor_id || ''));
+      if (!kitchenGate.allowed) {
+        return c.json(
+          {
+            error: kitchenGate.message,
+            code: kitchenGate.code,
+            allowed: false,
+            acceptingOrders: false,
+          },
+          403,
+        );
+      }
       const diet = parseMealCatalogDiet(plan);
       const purchaseTypeNorm = normalizePurchaseType(diet);
       const purchaseCadence =
         purchaseTypeNorm === 'ONE_TIME' ? 'one_time' : purchaseTypeNorm === 'WEEKLY_PLAN' ? 'weekly' : 'monthly';
+
+      const policyExtras = await mealBookingPolicyPreviewExtras(plan, purchaseTypeNorm, {
+        scheduledDeliveryDate:
+          (c.req.query('scheduledDeliveryDate') as string) ||
+          (c.req.query('deliveryDate') as string) ||
+          undefined,
+        deliveryTime:
+          (c.req.query('deliveryTime') as string) ||
+          (c.req.query('scheduledDeliverySlot') as string) ||
+          undefined,
+        vendorId: String(plan.vendor_id || ''),
+        planId,
+      });
 
       const previewQ = {
         weekdays: c.req.query('weekdays') || undefined,
@@ -797,7 +939,7 @@ export function registerMealPlanEndpoints(app: Hono) {
           platformFee: feeQuote.platformFeePerCycle,
           convenienceFee: feeQuote.convenienceFeePerCycle,
           totalAmount: upfrontTotalWithFoodGst,
-          leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+          ...policyExtras,
           gst: {
             ...gstRates,
             foodGstAmount: mealGstPreview.foodGstAmount,
@@ -863,7 +1005,7 @@ export function registerMealPlanEndpoints(app: Hono) {
             platformFee,
             convenienceFee,
             totalAmount: packageTotalAmount,
-            leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+            ...policyExtras,
             gst: {
               ...gstRates,
               foodGstAmount: mealGstNoAddr.foodGstAmount,
@@ -902,7 +1044,7 @@ export function registerMealPlanEndpoints(app: Hono) {
           platformFee,
           convenienceFee,
           totalAmount: packageTotalAmount,
-          leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+          ...policyExtras,
           gst: {
             ...gstRates,
             foodGstAmount: mealGstNoVendorLoc.foodGstAmount,
@@ -939,7 +1081,7 @@ export function registerMealPlanEndpoints(app: Hono) {
           platformFee,
           convenienceFee,
           totalAmount: packageTotalAmount,
-          leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+          ...policyExtras,
           gst: {
             ...gstRates,
             foodGstAmount: mealGstNoDelivery.foodGstAmount,
@@ -966,7 +1108,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         platformFee,
         convenienceFee,
         totalAmount: packageTotalAmount,
-        leadTimeHours: (plan.lead_time_hours as number | undefined) ?? 24,
+        ...policyExtras,
         gst: {
           ...gstRates,
           foodGstAmount: mealGstOneTime.foodGstAmount,
@@ -1106,6 +1248,18 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const plan = plans[0];
 
+      const kitchenGate = await assertVendorAcceptingMealOrders(String(plan.vendor_id || ''));
+      if (!kitchenGate.allowed) {
+        return c.json(
+          {
+            error: kitchenGate.message,
+            code: kitchenGate.code,
+            acceptingOrders: false,
+          },
+          403,
+        );
+      }
+
       const dietFull = parseMealCatalogDiet(plan as Record<string, unknown>);
       const expectedPurchaseType = normalizePurchaseType(dietFull);
       const requestedPurchaseType =
@@ -1150,39 +1304,73 @@ export function registerMealPlanEndpoints(app: Hono) {
               recommendedPlanLengthWeeks: dietFull.recommendedPlanLengthWeeks,
             };
 
-      // Check lead time (when plan has lead_time_hours set)
-      const leadTimeHours =
-        plan.lead_time_hours != null ? Number(plan.lead_time_hours as number | string) : 0;
-      const skipLeadTimeForDev = bypassMealLeadTimeValidationForDev();
-      if (!skipLeadTimeForDev && leadTimeHours > 0) {
-        // ✅ FIX: Use the actual delivery datetime (date + slot time), not just date at midnight
-        // This ensures the lead time is calculated correctly based on when delivery actually happens
-        let deliveryDateTime: Date;
-        if (scheduledDeliverySlot && scheduledDeliverySlot.start) {
-          // Parse the slot start time (format: "HH:MM")
+      // Lead time / same-day policy (platform + plan)
+      if (isMealBookingPolicyRolloutEnabled()) {
+        let requestedDeliveryAt = scheduledDeliveryDate;
+        if (scheduledDeliverySlot?.start) {
           const [hours, minutes] = scheduledDeliverySlot.start.split(':').map(Number);
-          deliveryDateTime = new Date(scheduledDeliveryDate);
-          deliveryDateTime.setHours(hours || 0, minutes || 0, 0, 0);
-        } else {
-          // Fallback: use date at start of day (midnight)
-          deliveryDateTime = new Date(scheduledDeliveryDate);
-          deliveryDateTime.setHours(0, 0, 0, 0);
+          const d = new Date(scheduledDeliveryDate);
+          d.setHours(hours || 0, minutes || 0, 0, 0);
+          requestedDeliveryAt = d.toISOString();
+        } else if (typeof scheduledDeliveryDate === 'string' && !scheduledDeliveryDate.includes('T')) {
+          requestedDeliveryAt = `${scheduledDeliveryDate}T12:00:00`;
         }
-        
-        const leadTimeMs = leadTimeHours * 60 * 60 * 1000;
-        const timeUntilDelivery = deliveryDateTime.getTime() - Date.now();
-        
-        if (timeUntilDelivery < leadTimeMs) {
-          return c.json({
-            error: `Order must be placed at least ${leadTimeHours} hours in advance`,
-            code: 'LEAD_TIME_VIOLATION',
-            details: {
-              deliveryDateTime: deliveryDateTime.toISOString(),
-              currentTime: new Date().toISOString(),
-              hoursUntilDelivery: (timeUntilDelivery / (60 * 60 * 1000)).toFixed(2),
-              requiredLeadTimeHours: leadTimeHours
-            }
-          }, 400);
+        const evaluation = await evaluateMealBookingForPlan(
+          {
+            vendorId: String(plan.vendor_id || vendorId || ''),
+            mealPlanId: String(plan.id || mealPlanId || ''),
+            purchaseType: 'ONE_OFF',
+            requestedDeliveryAt: String(requestedDeliveryAt),
+          },
+          plan as Record<string, unknown>,
+        );
+        if (!evaluation.allowed) {
+          return c.json(
+            {
+              error:
+                evaluation.message ||
+                `Order must be placed at least ${evaluation.effectiveLeadTimeHours} hours in advance`,
+              code: evaluation.blockCode || 'LEAD_TIME_VIOLATION',
+              details: {
+                requiredLeadTimeHours: evaluation.effectiveLeadTimeHours,
+                earliestDeliveryAt: evaluation.earliestDeliveryAt,
+                sameDayAllowed: evaluation.sameDayAllowed,
+              },
+            },
+            400,
+          );
+        }
+      } else {
+        const leadTimeHours =
+          plan.lead_time_hours != null ? Number(plan.lead_time_hours as number | string) : 0;
+        const skipLeadTimeForDev = bypassMealLeadTimeValidationForDev();
+        if (!skipLeadTimeForDev && leadTimeHours > 0) {
+          let deliveryDateTime: Date;
+          if (scheduledDeliverySlot && scheduledDeliverySlot.start) {
+            const [hours, minutes] = scheduledDeliverySlot.start.split(':').map(Number);
+            deliveryDateTime = new Date(scheduledDeliveryDate);
+            deliveryDateTime.setHours(hours || 0, minutes || 0, 0, 0);
+          } else {
+            deliveryDateTime = new Date(scheduledDeliveryDate);
+            deliveryDateTime.setHours(0, 0, 0, 0);
+          }
+          const leadTimeMs = leadTimeHours * 60 * 60 * 1000;
+          const timeUntilDelivery = deliveryDateTime.getTime() - Date.now();
+          if (timeUntilDelivery < leadTimeMs) {
+            return c.json(
+              {
+                error: `Order must be placed at least ${leadTimeHours} hours in advance`,
+                code: 'LEAD_TIME_VIOLATION',
+                details: {
+                  deliveryDateTime: deliveryDateTime.toISOString(),
+                  currentTime: new Date().toISOString(),
+                  hoursUntilDelivery: (timeUntilDelivery / (60 * 60 * 1000)).toFixed(2),
+                  requiredLeadTimeHours: leadTimeHours,
+                },
+              },
+              400,
+            );
+          }
         }
       }
 

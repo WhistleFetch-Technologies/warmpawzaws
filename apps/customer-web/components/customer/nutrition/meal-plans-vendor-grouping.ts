@@ -1,4 +1,5 @@
 import type { NutritionVendorCardModel } from './NutritionVendorDetailsCard';
+import { isMealKitchenClosed, mealKitchenClosedMessage } from '@/lib/meal-kitchen-availability';
 
 export type MealPlanVendorGroup = {
   vendorId: string;
@@ -12,6 +13,7 @@ export function uniqueVendorsFromMealPlans(mealPlans: any[]): MealPlanVendorGrou
     const vendorId = String(p.vendor_id ?? p.vendorId ?? '').trim();
     if (!vendorId) continue;
     if (byId.has(vendorId)) continue;
+    const closed = isMealKitchenClosed(p);
     byId.set(vendorId, {
       id: vendorId,
       vendorId,
@@ -26,6 +28,8 @@ export function uniqueVendorsFromMealPlans(mealPlans: any[]): MealPlanVendorGrou
       vendor_address: p.vendor_address ?? p.vendorAddress,
       city: p.vendor_city ?? p.vendorCity,
       photo: p.vendor_photo ?? p.vendorPhoto ?? p.vendor_image_url,
+      acceptingMealOrders: !closed,
+      kitchenClosedMessage: closed ? mealKitchenClosedMessage(p) : null,
     });
   }
   return Array.from(byId.entries()).map(([vendorId, vendorMeta]) => ({

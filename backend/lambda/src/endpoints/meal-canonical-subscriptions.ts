@@ -12,6 +12,8 @@ import {
   type CreateCanonicalSubscriptionInput,
   type SubscriptionDeliveryScheduleInput,
 } from '../services/meal-subscription/meal-subscription-canonical-service';
+import { assertVendorAcceptingMealOrders } from '../utils/meal-kitchen-availability';
+import { resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
 import {
   activateCanonicalSubscriptionAfterPayment,
   applyWalletDebitToPendingMealSubscription,
@@ -124,6 +126,18 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
 
       if (!input.mealPlanId) {
         return c.json({ success: false, error: 'mealPlanId is required' }, 400);
+      }
+
+      const planRow = await resolveMealPlanOrProductById(input.mealPlanId);
+      const planVendorId = planRow?.vendor_id != null ? String(planRow.vendor_id) : '';
+      if (planVendorId) {
+        const kitchenGate = await assertVendorAcceptingMealOrders(planVendorId);
+        if (!kitchenGate.allowed) {
+          return c.json(
+            { success: false, error: kitchenGate.message, code: kitchenGate.code },
+            403,
+          );
+        }
       }
 
       const { subscription, deliveriesInserted } = await createCanonicalSubscription(input);

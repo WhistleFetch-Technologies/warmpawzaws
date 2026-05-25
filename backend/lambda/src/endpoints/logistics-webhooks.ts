@@ -39,6 +39,7 @@ import {
   buildMealTrackingCustomerPayload,
   type MealTrackingOrderSource,
 } from '../utils/meal-tracking-order-payload';
+import { presignS3GetUrlIfApplicable } from '../utils/s3-media-presign';
 
 // Status mappings for different partners
 const SHIPROCKET_STATUS_MAP: Record<string, string> = {
@@ -1102,7 +1103,11 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
              FROM customers WHERE id = $1 LIMIT 1`,
             [order.customer_id],
           ).catch(() => ({ rows: [] }));
-          customerPayload = buildMealTrackingCustomerPayload(custRes.rows[0], order);
+          customerPayload = await buildMealTrackingCustomerPayload(
+            custRes.rows[0],
+            order,
+            presignS3GetUrlIfApplicable,
+          );
         }
 
         return c.json({

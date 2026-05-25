@@ -160,6 +160,8 @@ export function MealPlanOrderTrackingUI({
       <main className="max-w-md mx-auto px-4 -mt-2 space-y-4">
         {deliveryOtpBanner}
 
+        {deliveryPartnerCard}
+
         {liveTrackingMap}
 
         {/* Order Status card */}
@@ -213,8 +215,6 @@ export function MealPlanOrderTrackingUI({
             })}
           </ul>
         </section>
-
-        {deliveryPartnerCard}
 
         {deliveredBanner}
 

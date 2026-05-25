@@ -111,3 +111,15 @@ export function mapMealOrdersToSchedule(
   );
   return filterMealOrdersByTimeframe(rows, timeframe).map(mapMealOrderToScheduleItem);
 }
+
+/** Bookings + meal orders for nutritionist "All Types" on the home schedule. */
+export function mergeAllTypesSchedule(
+  bookings: ScheduleItem[],
+  mealOrders: ScheduleItem[],
+): ScheduleItem[] {
+  return [...bookings, ...mealOrders];
+}
+
+export function isMealOrderScheduleItem(item: ScheduleItem): boolean {
+  return item.serviceType === 'meal_order';
+}

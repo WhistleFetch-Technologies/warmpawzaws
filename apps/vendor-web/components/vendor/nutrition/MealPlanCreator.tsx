@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   Plus, Minus, Save, Upload, Trash2, Clock, Calendar, 
   Leaf, AlertCircle, ChevronDown, ChevronUp, Info, Scale,
@@ -75,7 +75,27 @@ export function MealPlanCreator({ vendorId, existingPlan, onSave, onCancel }: Me
   const [prepTimeMinutes, setPrepTimeMinutes] = useState<number | ''>(initialPrep);
   const [shelfLifeDays, setShelfLifeDays] = useState(existingPlan?.shelf_life_days || 1);
   const [leadTimeHours, setLeadTimeHours] = useState(existingPlan?.lead_time_hours || 24);
+  const [leadBounds, setLeadBounds] = useState({ min: 0, max: 72, defaultHours: 24 });
+  const [sameDayEnabled, setSameDayEnabled] = useState(true);
   const [orderCutoffTime, setOrderCutoffTime] = useState(existingPlan?.order_cutoff_time || '18:00');
+
+  useEffect(() => {
+    apiClient
+      .get<{ success?: boolean; bounds?: { minHours: number; maxHours: number; defaultHours: number }; sameDay?: { enabled: boolean } }>(
+        '/vendor/meal-booking-policy',
+      )
+      .then((res) => {
+        if (res?.bounds) {
+          setLeadBounds({
+            min: res.bounds.minHours,
+            max: res.bounds.maxHours,
+            defaultHours: res.bounds.defaultHours,
+          });
+        }
+        if (res?.sameDay) setSameDayEnabled(!!res.sameDay.enabled);
+      })
+      .catch(() => undefined);
+  }, []);
   const [availableDays, setAvailableDays] = useState<string[]>(existingPlan?.available_days || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat']);
   const [deliverySlots, setDeliverySlots] = useState<DeliverySlot[]>(existingPlan?.delivery_slots || [
     { start: '09:00', end: '12:00' },
@@ -560,10 +580,20 @@ export function MealPlanCreator({ vendorId, existingPlan, onSave, onCancel }: Me
                   <label className="block text-sm font-medium text-gray-700 mb-1">Lead Time (hrs)</label>
                   <input
                     type="number"
+                    min={leadBounds.min}
+                    max={leadBounds.max}
                     value={leadTimeHours}
-                    onChange={(e) => setLeadTimeHours(parseInt(e.target.value) || 24)}
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value, 10);
+                      const v = Number.isFinite(n) ? n : leadBounds.defaultHours;
+                      setLeadTimeHours(Math.min(leadBounds.max, Math.max(leadBounds.min, v)));
+                    }}
                     className="w-full p-3 border border-gray-200 rounded-xl"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Platform allows {leadBounds.min}–{leadBounds.max}h
+                    {sameDayEnabled ? ' (low values enable same-day delivery).' : '.'}
+                  </p>
                 </div>
               </div>
 

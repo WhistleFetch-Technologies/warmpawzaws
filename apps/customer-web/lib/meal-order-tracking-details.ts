@@ -2,6 +2,8 @@
  * Meal order tracking — checkout-style summary, delivery address, customer profile.
  */
 
+import { sanitizeDisplayImageUrl } from '@/lib/resolve-display-image-url';
+
 export type MealTrackingSummaryLine = {
   label: string;
   amount: number;
@@ -143,10 +145,12 @@ export function resolveMealTrackingCustomer(
     (typeof order.customer_phone === 'string' && order.customer_phone.trim()) ||
     (typeof order.shipping_phone === 'string' && order.shipping_phone.trim()) ||
     '';
-  const photoUrl =
+  const photoRaw =
+    (typeof c?.photo === 'string' && c.photo.trim()) ||
     (typeof c?.profile_photo_url === 'string' && c.profile_photo_url.trim()) ||
     (typeof c?.profilePhotoUrl === 'string' && c.profilePhotoUrl.trim()) ||
     undefined;
+  const photoUrl = sanitizeDisplayImageUrl(photoRaw);
   return { name, phone, photoUrl };
 }
 

@@ -97,6 +97,9 @@ function coerceMealProductRaw(raw: unknown): unknown {
   if ((PURCHASE_TYPE_VALUES as readonly string[]).includes(ptFinal)) {
     o.deliveryType = legacyDeliveryTypeMirror(ptFinal as PurchaseType);
   }
+  if (o.prepTimeMinutes != null && o.prepTimeMinutes !== '' && o.preparationLeadTime == null) {
+    o.preparationLeadTime = o.prepTimeMinutes;
+  }
   return o;
 }
 
@@ -243,7 +246,18 @@ const mealProductInnerSchema = z
       (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {}),
       z.record(z.string(), z.unknown()),
     ),
-    preparationLeadTime: z.coerce.number().int().min(1).max(24 * 180).optional().default(60),
+    /** Kitchen prep duration in minutes (not booking lead time). */
+    preparationLeadTime: z.coerce.number().int().min(1).max(24 * 60).optional().default(60),
+    /** Minimum hours before first delivery slot (booking policy). */
+    leadTimeHours: z.coerce.number().int().min(0).max(168).optional(),
+    orderCutoffTime: z
+      .union([z.string(), z.null(), z.undefined()])
+      .optional()
+      .transform((v) => {
+        if (v == null || v === '') return undefined;
+        const t = String(v).trim();
+        return /^([01]?\d|2[0-3]):([0-5]\d)$/.test(t) ? t : undefined;
+      }),
     stockQuantity: z.coerce.number().int().min(0).optional(),
     packSize: z
       .union([z.string(), z.null(), z.undefined()])

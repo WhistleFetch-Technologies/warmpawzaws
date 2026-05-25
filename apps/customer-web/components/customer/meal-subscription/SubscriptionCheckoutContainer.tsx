@@ -30,6 +30,8 @@ import { SubscriptionPolicyInfo } from './SubscriptionPolicyInfo';
 import { AutoRenewToggle } from './AutoRenewToggle';
 import type { SubscriptionDeliveryPattern } from './subscription-checkout-types';
 import { resolveCustomerPublicAssetUrl } from '@/lib/public-asset-url';
+import { isMealKitchenClosed, mealKitchenClosedMessage } from '@/lib/meal-kitchen-availability';
+import { MealKitchenStatusBanner } from '@/components/customer/nutrition/MealKitchenStatusBanner';
 
 function newClientRequestKey(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -250,8 +252,14 @@ export function SubscriptionCheckoutContainer({
     return Math.round(preview.totalAmount * Math.max(1, totalSessions) * 100) / 100;
   }, [preview, totalSessions]);
 
+  const kitchenClosed = isMealKitchenClosed(mealPlan);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (kitchenClosed) {
+      toast.error(mealKitchenClosedMessage(mealPlan));
+      return;
+    }
     if (!mealPlan || !preview || !customerId) {
       toast.error('Missing plan or customer');
       return;
@@ -402,6 +410,9 @@ export function SubscriptionCheckoutContainer({
       </div>
 
       <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        {kitchenClosed ? (
+          <MealKitchenStatusBanner message={mealKitchenClosedMessage(mealPlan)} />
+        ) : null}
         <SubscriptionSummaryCard
           planName={planName}
           vendorLabel="Vendor linked to this meal plan"
@@ -678,6 +689,7 @@ export function SubscriptionCheckoutContainer({
           type="submit"
           className="w-full bg-[#FF8C42] hover:bg-[#FF7A2E]"
           disabled={
+            kitchenClosed ||
             submitting ||
             !addressId ||
             !preview ||

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   MapPin, Package, Truck, CheckCircle, Clock, Phone, 
-  MessageCircle, Navigation, ChevronDown, Star, ArrowLeft,
+  Navigation, ChevronDown, Star, ArrowLeft,
   AlertCircle, Loader2, User, Bike
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { isTerminalDeliveryState } from '@warmpawz/shared-types';
 import { MEAL_TRACKING_POLL_MS } from '@/lib/meal-tracking-utils';
 import { LiveTrackingMapPanel } from '@/components/customer/tracking/LiveTrackingMapPanel';
+import { DeliveryPartnerCallAction } from '@/components/customer/tracking/DeliveryPartnerCallAction';
 
 interface DeliveryPerson {
   name: string;
@@ -212,19 +213,9 @@ export function LiveOrderTracking({
                 <span>{tracking.deliveryPerson.vehicleNumber || 'Delivery Partner'}</span>
               </div>
             </div>
-            <div className="flex gap-2">
-              {tracking.deliveryPerson.phone ? (
-              <a
-                href={`tel:${tracking.deliveryPerson.phone}`}
-                className="w-11 h-11 bg-green-100 rounded-full flex items-center justify-center active:scale-95 transition-transform"
-              >
-                <Phone className="w-5 h-5 text-green-600" />
-              </a>
-              ) : null}
-              <button className="w-11 h-11 bg-blue-100 rounded-full flex items-center justify-center active:scale-95 transition-transform">
-                <MessageCircle className="w-5 h-5 text-blue-600" />
-              </button>
-            </div>
+            {tracking.deliveryPerson.phone ? (
+              <DeliveryPartnerCallAction phone={tracking.deliveryPerson.phone} variant="icon" />
+            ) : null}
           </div>
         </div>
       )}

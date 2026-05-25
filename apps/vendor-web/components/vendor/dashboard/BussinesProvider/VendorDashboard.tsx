@@ -69,7 +69,12 @@ import {
   getVendorDashboardRatingPresentation,
   mergeVendorDashboardStats,
 } from '../helpers';
-import { mapMealOrdersToSchedule, type VendorScheduleTypeFilter } from '@/lib/vendor-meal-order-schedule';
+import {
+  isMealOrderScheduleItem,
+  mapMealOrdersToSchedule,
+  mergeAllTypesSchedule,
+  type VendorScheduleTypeFilter,
+} from '@/lib/vendor-meal-order-schedule';
 import { VendorMealOrderScheduleCard } from '../VendorMealOrderScheduleCard';
 import { toast } from 'sonner';
 import { useActiveVideoCallForVendor } from '@/hooks/useActivevideocallTracker';
@@ -1534,8 +1539,7 @@ export function VendorDashboard({
 
           {(isPharmacy ||
             (capabilities.orders && !isNutritionistVendor) ||
-            SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS ||
-            isNutritionistVendor) && (
+            SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS) && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {/* ✅ PHARMACY FIX: Show Orders first for Pharmacy, Appointments for others */}
             {isPharmacy ? (
@@ -1556,7 +1560,7 @@ export function VendorDashboard({
             ) : (
               <>
                 {/* ✅ Stat card with role-aware labels — gated by SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS */}
-                {!isPharmacy && (SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS || isNutritionistVendor) && (
+                {!isPharmacy && SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS && (
                   <button
                     key="stat-appointments"
                     onClick={() => {
@@ -1684,10 +1688,16 @@ export function VendorDashboard({
                 };
                 return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
               });
-              const scheduleItems = showingMealOrders ? mealOrderSchedule : filteredBookings;
+              const scheduleItems = showingMealOrders
+                ? mealOrderSchedule
+                : appointmentTypeFilter === 'all' && isNutritionistVendor
+                  ? mergeAllTypesSchedule(filteredBookings, mealOrderSchedule)
+                  : filteredBookings;
               const scheduleLabel = showingMealOrders
                 ? 'meal orders'
-                : labels.bookings.toLowerCase();
+                : appointmentTypeFilter === 'all' && isNutritionistVendor
+                  ? 'bookings and meal orders'
+                  : labels.bookings.toLowerCase();
 
               if (scheduleItems.length === 0) {
                 return (
@@ -1730,15 +1740,17 @@ export function VendorDashboard({
                     </button>
                   </div>
                   <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                    {showingMealOrders
-                      ? scheduleItems.map((order) => (
+                    {scheduleItems.map((appointment) => {
+                      if (showingMealOrders || isMealOrderScheduleItem(appointment)) {
+                        return (
                           <VendorMealOrderScheduleCard
-                            key={order.id}
-                            order={order}
+                            key={appointment.id}
+                            order={appointment}
                             onOpen={() => router.push('/nutrition/dashboard')}
                           />
-                        ))
-                      : scheduleItems.map((appointment) => {
+                        );
+                      }
+
                       const serviceType = appointment.serviceType?.toLowerCase();
                       let typeIcon = Stethoscope;
                       let typeColor = 'bg-blue-100';

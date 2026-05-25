@@ -6,6 +6,11 @@
 import { query } from '../database/rds-connection';
 import { isValidUUID } from '../types/entities';
 import { normalizePurchaseType } from './meal-purchase-metadata';
+import {
+  resolveLeadTimeHours,
+  resolveOrderCutoffTime,
+  resolvePrepTimeMinutes,
+} from './meal-product-timing';
 
 function parseJsonObject(v: unknown): Record<string, unknown> {
   if (v == null || v === '') return {};
@@ -172,7 +177,6 @@ export function normalizeProductRowToMealPlanShape(p: Record<string, unknown>): 
     ...(mealImageUrl ? { mealImageUrl } : {}),
   };
 
-  const prepLead = meta.preparationLeadTime;
   const shelfLife = meta.shelfLifeDays;
 
   const taxCategoryFromRow =
@@ -207,16 +211,25 @@ export function normalizeProductRowToMealPlanShape(p: Record<string, unknown>): 
     allergens: Array.isArray(meta.allergens) ? meta.allergens : [],
     price_per_meal: safePrice,
     price: safePrice,
-    prep_time_minutes: typeof meta.prepTimeMinutes === 'number' ? meta.prepTimeMinutes : 60,
+    prep_time_minutes: resolvePrepTimeMinutes(
+      meta,
+      p.prep_time_minutes != null ? Number(p.prep_time_minutes) : null,
+    ),
     shelf_life_days: typeof shelfLife === 'number' ? shelfLife : 7,
     storage_instructions:
       typeof meta.storageInstructions === 'string' ? meta.storageInstructions : null,
     serving_instructions:
       typeof meta.feedingInstructions === 'string' ? meta.feedingInstructions : null,
     available_days: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
-    order_cutoff_time: '18:00',
+    order_cutoff_time: resolveOrderCutoffTime(
+      meta,
+      typeof p.order_cutoff_time === 'string' ? p.order_cutoff_time : null,
+    ),
     delivery_slots: JSON.stringify(Array.isArray(meta.deliverySlots) ? meta.deliverySlots : []),
-    lead_time_hours: typeof prepLead === 'number' ? prepLead : 24,
+    lead_time_hours: resolveLeadTimeHours(
+      meta,
+      p.lead_time_hours != null ? Number(p.lead_time_hours) : null,
+    ),
     is_active: p.is_active !== false,
     dietary_requirements,
     ...(taxCategoryFromRow != null

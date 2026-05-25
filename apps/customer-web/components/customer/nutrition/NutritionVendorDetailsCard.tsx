@@ -4,6 +4,11 @@ import { MapPin, UtensilsCrossed } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { StarRating } from '@/components/customer/shared/StarRating';
+import {
+  MealKitchenClosedBadge,
+  MealKitchenStatusBanner,
+} from '@/components/customer/nutrition/MealKitchenStatusBanner';
+import { isMealKitchenClosed, mealKitchenClosedMessage } from '@/lib/meal-kitchen-availability';
 
 /** Vendor shape from discovery, meal search rows, or navigation snapshot */
 export type NutritionVendorCardModel = {
@@ -21,6 +26,8 @@ export type NutritionVendorCardModel = {
   city?: string;
   photo?: string;
   profile_photo_url?: string;
+  acceptingMealOrders?: boolean;
+  kitchenClosedMessage?: string | null;
 };
 
 function displayName(v: NutritionVendorCardModel): string {
@@ -118,6 +125,8 @@ export function NutritionVendorDetailsCard({
   const addr =
     (vendor.address || vendor.vendor_address || '').trim() || undefined;
   const photo = vendor.photo || vendor.profile_photo_url;
+  const kitchenClosed = isMealKitchenClosed(vendor);
+  const kitchenMsg = mealKitchenClosedMessage(vendor);
 
   return (
     <Card
@@ -140,7 +149,13 @@ export function NutritionVendorDetailsCard({
             <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-100">
               Nutritionist
             </span>
+            {kitchenClosed ? <MealKitchenClosedBadge /> : null}
           </div>
+          {kitchenClosed ? (
+            <div className="mt-2">
+              <MealKitchenStatusBanner message={kitchenMsg} />
+            </div>
+          ) : null}
           {subtitle ? (
             <p className="mt-1 text-xs text-slate-600">{subtitle}</p>
           ) : null}

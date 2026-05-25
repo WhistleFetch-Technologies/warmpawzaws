@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   MapPin, Package, Truck, CheckCircle, Clock, Phone, 
-  MessageCircle, Navigation, ChevronDown, Star, ArrowLeft,
+  Navigation, ChevronDown, Star, ArrowLeft,
   AlertCircle, Loader2, X
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
@@ -24,6 +24,7 @@ import {
 import { useMealTrackingPoll } from '@/lib/use-meal-tracking-poll';
 import { MealOrderDetailsCollapsible } from '@/components/customer/tracking/MealOrderDetailsCollapsible';
 import { MealCustomerDetailsCard } from '@/components/customer/tracking/MealCustomerDetailsCard';
+import { DeliveryPartnerCallAction } from '@/components/customer/tracking/DeliveryPartnerCallAction';
 import { formatMealOrderDeliveryAddress } from '@/lib/meal-order-tracking-details';
 
 interface DeliveryPerson {
@@ -354,24 +355,9 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
                         'Delivery partner'}
                     </p>
                   </div>
-                  <div className="flex gap-2 shrink-0">
-                    {riderPhone ? (
-                    <a
-                      href={`tel:${riderPhone}`}
-                      className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center"
-                      aria-label="Call delivery partner"
-                    >
-                      <Phone className="w-5 h-5 text-green-600" />
-                    </a>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center"
-                      aria-label="Message"
-                    >
-                      <MessageCircle className="w-5 h-5 text-blue-600" />
-                    </button>
-                  </div>
+                  {riderPhone ? (
+                    <DeliveryPartnerCallAction phone={riderPhone} variant="pill" />
+                  ) : null}
                 </div>
                 {(tracking?.eta ?? tracking?.etaMinutes) ? (
                   <div className="mt-4 flex items-center gap-3 p-3 bg-teal-50 rounded-xl border border-teal-100">
@@ -417,15 +403,6 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
           }
           orderDetailsCollapsible={
             <MealOrderDetailsCollapsible order={order as Record<string, unknown>} />
-          }
-          floatingChatButton={
-            <button
-              type="button"
-              className="w-14 h-14 bg-white shadow-lg rounded-full flex items-center justify-center border border-slate-100"
-              aria-label="Chat"
-            >
-              <MessageCircle className="w-7 h-7 text-gray-600" />
-            </button>
           }
         />
         {showReviewModal && (
@@ -564,17 +541,9 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
                 {tracking.deliveryPerson.vehicle_number || 'Delivery Partner'}
               </p>
             </div>
-            <div className="flex gap-2">
-              <a
-                href={`tel:${tracking.deliveryPerson.phone}`}
-                className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center"
-              >
-                <Phone className="w-5 h-5 text-green-600" />
-              </a>
-              <button className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                <MessageCircle className="w-5 h-5 text-blue-600" />
-              </button>
-            </div>
+            {tracking.deliveryPerson.phone ? (
+              <DeliveryPartnerCallAction phone={tracking.deliveryPerson.phone} variant="icon" />
+            ) : null}
           </div>
         </div>
       )}
@@ -768,12 +737,6 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
         )}
       </div>
 
-      {/* Help Button */}
-      <div className="fixed bottom-6 right-6">
-        <button className="w-14 h-14 bg-white shadow-lg rounded-full flex items-center justify-center">
-          <MessageCircle className="w-6 h-6 text-gray-600" />
-        </button>
-      </div>
     </div>
   );
 }

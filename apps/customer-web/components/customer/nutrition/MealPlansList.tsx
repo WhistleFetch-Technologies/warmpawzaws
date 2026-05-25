@@ -12,6 +12,11 @@ import {
 } from './NutritionVendorDetailsCard';
 import { uniqueVendorsFromMealPlans } from './meal-plans-vendor-grouping';
 import { resolveCustomerPublicAssetUrl } from '@/lib/public-asset-url';
+import { isMealKitchenClosed, mealKitchenClosedMessage } from '@/lib/meal-kitchen-availability';
+import {
+  MealKitchenClosedBadge,
+  MealKitchenStatusBanner,
+} from '@/components/customer/nutrition/MealKitchenStatusBanner';
 
 const MAX_RADIUS_KM = 10;
 
@@ -37,6 +42,10 @@ export function MealPlansList({
   const [mealPlansForVendors, setMealPlansForVendors] = useState<any[]>([]);
   /** Drill-down: plans for one vendor */
   const [vendorMealPlans, setVendorMealPlans] = useState<any[]>([]);
+  const [vendorKitchenAvailability, setVendorKitchenAvailability] = useState<{
+    acceptingOrders: boolean;
+    message: string | null;
+  } | null>(null);
   const [pets, setPets] = useState<any[]>([]);
   const [hasPets, setHasPets] = useState<boolean | null>(null);
   const [filterOptions, setFilterOptions] = useState<{ purpose?: string[]; mealType?: string[] }>({});
@@ -129,11 +138,27 @@ export function MealPlansList({
   const fetchVendorMealPlans = async (vendorId: string) => {
     try {
       setLoading(true);
-      const data = (await apiClient.get<{ mealPlans?: any[]; meal_plans?: any[] }>(
-        `/meal-plans/vendor/${encodeURIComponent(vendorId)}?activeOnly=true`
-      )) as any;
+      const data = (await apiClient.get<{
+        mealPlans?: any[];
+        meal_plans?: any[];
+        kitchenAvailability?: { acceptingOrders?: boolean; message?: string | null };
+      }>(`/meal-plans/vendor/${encodeURIComponent(vendorId)}?activeOnly=true`)) as any;
       const plans = (data.mealPlans || data.meal_plans || []) as any[];
       setVendorMealPlans(plans);
+      const ka = data.kitchenAvailability;
+      if (ka) {
+        setVendorKitchenAvailability({
+          acceptingOrders: ka.acceptingOrders !== false,
+          message: ka.message ?? null,
+        });
+      } else if (plans.length > 0) {
+        setVendorKitchenAvailability({
+          acceptingOrders: !isMealKitchenClosed(plans[0]),
+          message: isMealKitchenClosed(plans[0]) ? mealKitchenClosedMessage(plans[0]) : null,
+        });
+      } else {
+        setVendorKitchenAvailability(null);
+      }
     } catch (error: any) {
       console.error('Error loading vendor meal plans:', error);
       toast.error('Failed to load meal plans for this nutritionist.');
@@ -144,6 +169,10 @@ export function MealPlansList({
   };
 
   const handleMealPlanClick = (mealPlan: any) => {
+    if (isMealKitchenClosed(mealPlan)) {
+      toast.error(mealKitchenClosedMessage(mealPlan));
+      return;
+    }
     if (!hasPets || pets.length === 0) {
       toast.error('Please add a pet first before booking meal plans');
       onNavigate?.('pets', { action: 'add' });
@@ -175,6 +204,12 @@ export function MealPlansList({
     ...(vendorFocus?.vendorSnapshot as NutritionVendorCardModel),
     id: focusVendorId || undefined,
     vendorId: focusVendorId || undefined,
+    ...(vendorKitchenAvailability
+      ? {
+          acceptingMealOrders: vendorKitchenAvailability.acceptingOrders,
+          kitchenClosedMessage: vendorKitchenAvailability.message,
+        }
+      : {}),
   };
 
   const renderMealPlanCard = (mealPlan: any, index: number) => {
@@ -205,11 +240,16 @@ export function MealPlansList({
       firstPhoto ||
       null;
     const mealImageUrl = resolveCustomerPublicAssetUrl(mealImageRaw);
+    const kitchenClosed = isMealKitchenClosed(mealPlan);
 
     return (
       <Card
         key={mealPlan.id || index}
-        className="cursor-pointer rounded-2xl border border-slate-100 p-4 shadow-sm transition-all hover:border-orange-200 hover:shadow-md"
+        className={`rounded-2xl border p-4 shadow-sm transition-all ${
+          kitchenClosed
+            ? 'cursor-not-allowed border-amber-100 bg-amber-50/40 opacity-90'
+            : 'cursor-pointer border-slate-100 hover:border-orange-200 hover:shadow-md'
+        }`}
         onClick={() => handleMealPlanClick(mealPlan)}
       >
         <div className="flex items-start gap-4">
@@ -225,7 +265,10 @@ export function MealPlansList({
           )}
 
           <div className="min-w-0 flex-1">
-            <h3 className="mb-1 truncate font-bold text-slate-900">{planName}</h3>
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <h3 className="truncate font-bold text-slate-900">{planName}</h3>
+              {kitchenClosed ? <MealKitchenClosedBadge /> : null}
+            </div>
 
             <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
               <span className="font-medium">by {vendorName}</span>
@@ -370,6 +413,9 @@ export function MealPlansList({
                 vendor={mergedFocusVendor}
                 subtitle={`${vendorMealPlans.length} meal plan${vendorMealPlans.length === 1 ? '' : 's'} available`}
               />
+              {vendorKitchenAvailability && !vendorKitchenAvailability.acceptingOrders ? (
+                <MealKitchenStatusBanner message={vendorKitchenAvailability.message} />
+              ) : null}
               {vendorMealPlans.length === 0 ? (
                 <Card className="p-8 text-center">
                   <div className="mb-3 text-4xl">🍽️</div>

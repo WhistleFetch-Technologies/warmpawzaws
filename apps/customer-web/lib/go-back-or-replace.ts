@@ -66,6 +66,7 @@ export const WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY = 'warmpawz_account_sideba
 export const WARMPAWZ_HOME_RESUME_SCREENS = new Set<string>([
   'order_history',
   'my-bookings',
+  'meal-plan-orders',
   'package-tracking',
   'shop',
   'cart',
@@ -344,4 +345,60 @@ export function handleWalletChildPageBack(router: RouterWithPush, fallbackPath =
     }
   }
   goBackOrReplace(router, fallbackPath);
+}
+
+// --- Subscriptions (`/subscriptions`): return to meal-plan orders (route or shell) ---
+
+const SUBSCRIPTIONS_BACK_INTENT_KEY = 'warmpawz_subscriptions_back_intent';
+
+type SubscriptionsBackIntent =
+  | { kind: 'path'; path: string }
+  | { kind: 'spa'; screen: string };
+
+/** Call before navigating to `/subscriptions` from a real route (e.g. `/orders/meal-plans`). */
+export function rememberSubscriptionsBackFromCurrentUrl(): void {
+  if (typeof window === 'undefined') return;
+  const path = window.location.pathname + window.location.search;
+  if (!isSafeInternalPath(path) || path.startsWith('/subscriptions')) return;
+  if (path === '/' || path === '') return;
+  sessionStorage.setItem(
+    SUBSCRIPTIONS_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'path', path } satisfies SubscriptionsBackIntent),
+  );
+}
+
+/** Call before `router.push('/subscriptions')` from the home shell (e.g. `meal-plan-orders` on `/`). */
+export function rememberSubscriptionsBackSpaScreen(screen: string): void {
+  if (typeof window === 'undefined') return;
+  const safe = WARMPAWZ_HOME_RESUME_SCREENS.has(screen) ? screen : 'meal-plan-orders';
+  sessionStorage.setItem(
+    SUBSCRIPTIONS_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'spa', screen: safe } satisfies SubscriptionsBackIntent),
+  );
+}
+
+export function handleSubscriptionsPageBack(router: RouterWithPush): void {
+  if (typeof window === 'undefined') {
+    router.replace('/orders/meal-plans');
+    return;
+  }
+  const raw = sessionStorage.getItem(SUBSCRIPTIONS_BACK_INTENT_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as SubscriptionsBackIntent;
+      sessionStorage.removeItem(SUBSCRIPTIONS_BACK_INTENT_KEY);
+      if (parsed.kind === 'path' && isSafeInternalPath(parsed.path)) {
+        router.push(parsed.path);
+        return;
+      }
+      if (parsed.kind === 'spa' && WARMPAWZ_HOME_RESUME_SCREENS.has(parsed.screen)) {
+        sessionStorage.setItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY, parsed.screen);
+        router.push('/');
+        return;
+      }
+    } catch {
+      sessionStorage.removeItem(SUBSCRIPTIONS_BACK_INTENT_KEY);
+    }
+  }
+  router.push('/orders/meal-plans');
 }

@@ -24,6 +24,12 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { sanitizeDisplayImageUrl } from '@/lib/resolve-display-image-url';
+import { resolveCustomerPublicAssetUrl } from '@/lib/public-asset-url';
+import {
+  rememberSubscriptionsBackFromCurrentUrl,
+  rememberSubscriptionsBackSpaScreen,
+} from '@/lib/go-back-or-replace';
 
 export interface MealPlanOrder {
   id: string;
@@ -32,6 +38,7 @@ export interface MealPlanOrder {
   subscription_id?: string | null;
   meal_plan_id: string;
   meal_plan_name: string;
+  meal_plan_image_url?: string;
   pet_id: string;
   pet_name: string;
   quantity: number;
@@ -46,6 +53,40 @@ export interface MealPlanOrder {
   otp_verified?: boolean;
   delivery_partner_name?: string;
   delivery_partner_phone?: string;
+}
+
+function resolveMealOrderImageUrl(o: Record<string, unknown>): string | undefined {
+  let firstPhoto: string | undefined;
+  const photosRaw = o.photos;
+  let photos: unknown[] = [];
+  if (Array.isArray(photosRaw)) {
+    photos = photosRaw;
+  } else if (typeof photosRaw === 'string' && photosRaw.trim()) {
+    try {
+      const parsed = JSON.parse(photosRaw) as unknown;
+      if (Array.isArray(parsed)) photos = parsed;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (photos[0]) {
+    if (typeof photos[0] === 'string') firstPhoto = photos[0];
+    else if (typeof photos[0] === 'object' && photos[0] !== null) {
+      const p0 = photos[0] as { url?: string; src?: string };
+      firstPhoto = p0.url || p0.src;
+    }
+  }
+  const raw =
+    o.meal_plan_image_url ??
+    o.meal_plan_image ??
+    o.mealImageUrl ??
+    firstPhoto;
+  const sanitized = sanitizeDisplayImageUrl(raw);
+  return (
+    resolveCustomerPublicAssetUrl(
+      typeof raw === 'string' ? raw : sanitized ?? null,
+    ) ?? sanitized
+  );
 }
 
 function formatDeliveryTime(slot: unknown): string {
@@ -112,6 +153,7 @@ export function MealPlanOrdersPanel({
           ...o,
           subscription_id: o.subscription_id != null ? String(o.subscription_id) : null,
           meal_plan_name: (o.meal_plan_name as string) || (o.meal_plan_id as string) || 'Meal Plan',
+          meal_plan_image_url: resolveMealOrderImageUrl(o),
           pet_name: (o.pet_name as string) || undefined,
           quantity: o.quantity != null ? Number(o.quantity) : undefined,
           delivery_date: o.delivery_date || o.scheduled_delivery_date || o.created_at,
@@ -218,6 +260,15 @@ export function MealPlanOrdersPanel({
     router.push('/bookings');
   };
 
+  const openSubscriptions = () => {
+    if (onBack) {
+      rememberSubscriptionsBackSpaScreen('meal-plan-orders');
+    } else {
+      rememberSubscriptionsBackFromCurrentUrl();
+    }
+    router.push('/subscriptions');
+  };
+
   const hubNav = (
     <div
       className="mt-5 rounded-xl border border-orange-100 bg-gradient-to-r from-orange-50/80 to-amber-50/60 p-3 sm:p-4"
@@ -227,9 +278,10 @@ export function MealPlanOrdersPanel({
       <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-orange-800/80">
         More nutrition
       </p>
-      <Link
-        href="/subscriptions"
-        className="group flex items-center justify-between gap-2 rounded-lg border border-white/80 bg-white/90 px-3 py-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md"
+      <button
+        type="button"
+        onClick={openSubscriptions}
+        className="group flex w-full items-center justify-between gap-2 rounded-lg border border-white/80 bg-white/90 px-3 py-3 text-left shadow-sm transition hover:border-orange-200 hover:shadow-md"
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-orange-600">
@@ -241,7 +293,7 @@ export function MealPlanOrdersPanel({
           </span>
         </span>
         <ChevronRight className="h-4 w-4 shrink-0 text-gray-400 transition group-hover:text-orange-500" aria-hidden />
-      </Link>
+      </button>
     </div>
   );
 
@@ -292,7 +344,7 @@ export function MealPlanOrdersPanel({
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center gap-3 mb-2">
                       <h3 className="text-lg font-semibold text-gray-900">
                         {order.meal_plan_name || 'Meal Plan'}
                       </h3>
@@ -303,6 +355,20 @@ export function MealPlanOrdersPanel({
                         {order.status.replace('_', ' ').toUpperCase()}
                       </span>
                     </div>
+
+                    {order.meal_plan_image_url ? (
+                      <div className="mb-3 overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
+                        <img
+                          src={order.meal_plan_image_url}
+                          alt={order.meal_plan_name || 'Meal plan'}
+                          className="h-40 w-full object-cover"
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    ) : null}
 
                     <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
                       <div className="flex items-center gap-2">

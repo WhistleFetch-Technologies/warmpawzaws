@@ -57,11 +57,36 @@ import { formatMealProductZodError, parseMealProductRequest } from '../zodContra
 import { resolveEffectiveMealDeliveryState } from '../utils/meal-delivery-effective-state';
 import { resolveMealCatalogDisplayName } from '../utils/meal-plan-resolve';
 import {
+  clampLeadTimeHoursForPlatform,
+  fetchPlatformMealBookingPolicy,
+} from '../utils/meal-booking-policy';
+import { parseOrderCutoffHm } from '../utils/meal-product-timing';
+import {
+  buildMealKitchenAvailabilityPayload,
+  fetchMealKitchenAvailabilityForVendor,
+  resolveCustomerKitchenMessage,
+} from '../utils/meal-kitchen-availability';
+import {
   backfillMissingMealDeliverySettlementsForVendorIds,
   syncDeliveredMealOrdersFromTracking,
 } from '../utils/meal-order-settlement';
 
 /** Coerce DB/API money fields so vendor UI never receives NaN or bogus strings. */
+/** Clamp booking lead time / cutoff to platform policy before persisting meal catalog rows. */
+async function applyPlatformMealTimingToParsed<
+  T extends { leadTimeHours?: number; orderCutoffTime?: string; preparationLeadTime: number },
+>(p: T): Promise<T & { leadTimeHours: number; orderCutoffTime: string }> {
+  const policy = await fetchPlatformMealBookingPolicy();
+  const leadTimeHours = clampLeadTimeHoursForPlatform(
+    p.leadTimeHours != null && Number.isFinite(Number(p.leadTimeHours))
+      ? Number(p.leadTimeHours)
+      : policy.leadTime.defaultHours,
+    policy,
+  );
+  const orderCutoffTime = parseOrderCutoffHm(p.orderCutoffTime) || policy.orderCutoff.time;
+  return { ...p, leadTimeHours, orderCutoffTime };
+}
+
 function safeMoney(v: unknown): number {
   if (v === null || v === undefined || v === '') return 0;
   const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
@@ -1850,6 +1875,23 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               : (mp.dietary_requirements || {});
           } catch (_) {}
           const dietForApi = await presignMealImageUrlInRecord(dietaryReqs as Record<string, unknown>);
+          const prepMins =
+            mp.prep_time_minutes != null
+              ? Number(mp.prep_time_minutes)
+              : (dietForApi.prepTimeMinutes ?? dietForApi.preparationLeadTime);
+          const leadHrs = mp.lead_time_hours != null ? Number(mp.lead_time_hours) : dietForApi.leadTimeHours;
+          const cutoff =
+            typeof mp.order_cutoff_time === 'string' && mp.order_cutoff_time
+              ? mp.order_cutoff_time
+              : dietForApi.orderCutoffTime;
+          const metadata = {
+            ...dietForApi,
+            ...(prepMins != null && Number.isFinite(Number(prepMins))
+              ? { prepTimeMinutes: Number(prepMins), preparationLeadTime: Number(prepMins) }
+              : {}),
+            ...(leadHrs != null && Number.isFinite(Number(leadHrs)) ? { leadTimeHours: Number(leadHrs) } : {}),
+            ...(typeof cutoff === 'string' && cutoff ? { orderCutoffTime: cutoff } : {}),
+          };
           list.push({
             id: mp.id,
             name: mp.plan_name,
@@ -1857,7 +1899,10 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             description: mp.description,
             price: mp.price_per_meal ?? mp.price,
             category: 'meal_plan',
-            metadata: dietForApi,
+            metadata,
+            prep_time_minutes: mp.prep_time_minutes,
+            lead_time_hours: mp.lead_time_hours,
+            order_cutoff_time: mp.order_cutoff_time,
             petTypes: dietaryReqs.petTypes || [],
             dietType: dietaryReqs.dietType,
             ingredients: dietaryReqs.ingredients || [],
@@ -1885,6 +1930,90 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error fetching meal products:', error);
       return c.json({ success: true, products: [], total: 0 });
+    }
+  });
+
+  /**
+   * GET /vendor/:vendorId/meal-kitchen-availability
+   * Vendor toggle: accepting new meal orders + optional customer-facing pause reason.
+   */
+  app.get('/vendor/:vendorId/meal-kitchen-availability', async (c) => {
+    try {
+      const vendorId = await resolveVendorId(c.req.param('vendorId'));
+      const availability = await fetchMealKitchenAvailabilityForVendor(vendorId);
+      return c.json({
+        success: true,
+        availability: {
+          ...availability,
+          customerPreview: availability.acceptingOrders
+            ? null
+            : resolveCustomerKitchenMessage(availability),
+        },
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to load kitchen status';
+      return c.json({ success: false, error: msg }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/meal-kitchen-availability
+   * Body: { acceptingOrders, reasonCode?, customerMessage? }
+   */
+  app.put('/vendor/:vendorId/meal-kitchen-availability', async (c) => {
+    try {
+      const vendorId = await resolveVendorId(c.req.param('vendorId'));
+      const body = await c.req.json();
+      const built = buildMealKitchenAvailabilityPayload({
+        acceptingOrders: body.acceptingOrders,
+        reasonCode: body.reasonCode,
+        customerMessage: body.customerMessage,
+      });
+      if (!built.ok) {
+        return c.json({ success: false, error: built.error }, 400);
+      }
+
+      const vendors = await select('vendors', { id: vendorId });
+      if (!vendors.length) {
+        return c.json({ success: false, error: 'Vendor not found' }, 404);
+      }
+
+      const row = vendors[0] as { metadata?: unknown };
+      let currentMeta: Record<string, unknown> = {};
+      if (row.metadata != null) {
+        if (typeof row.metadata === 'string') {
+          try {
+            currentMeta = JSON.parse(row.metadata) as Record<string, unknown>;
+          } catch {
+            currentMeta = {};
+          }
+        } else if (typeof row.metadata === 'object' && !Array.isArray(row.metadata)) {
+          currentMeta = row.metadata as Record<string, unknown>;
+        }
+      }
+
+      const updatedMeta = {
+        ...currentMeta,
+        mealKitchenAvailability: built.value,
+      };
+
+      await update('vendors', { id: vendorId }, {
+        metadata: updatedMeta,
+        updated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        availability: {
+          ...built.value,
+          customerPreview: built.value.acceptingOrders
+            ? null
+            : resolveCustomerKitchenMessage(built.value),
+        },
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to update kitchen status';
+      return c.json({ success: false, error: msg }, 500);
     }
   });
 
@@ -1921,7 +2050,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       if (!parsed.success) {
         return c.json({ error: formatMealProductZodError(parsed.error) }, 400);
       }
-      const p = parsed.data;
+      const pTimed = await applyPlatformMealTimingToParsed(parsed.data);
+      const p = pTimed;
 
       const mealImageUrl = p.mealImageUrl
         ? stripS3PresignQueryFromUrl(String(p.mealImageUrl).trim())
@@ -1946,6 +2076,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         mealPlanRow.subscription_config = dietaryPayload.subscriptionConfig ?? {};
       }
       if (mpCols.has('prep_time_minutes')) mealPlanRow.prep_time_minutes = p.preparationLeadTime;
+      if (mpCols.has('lead_time_hours')) mealPlanRow.lead_time_hours = p.leadTimeHours;
+      if (mpCols.has('order_cutoff_time')) mealPlanRow.order_cutoff_time = p.orderCutoffTime;
       if (mpCols.has('shelf_life_days')) mealPlanRow.shelf_life_days = p.shelfLifeDays;
       if (mpCols.has('storage_instructions')) mealPlanRow.storage_instructions = p.storageInstructions ?? null;
       if (mpCols.has('serving_instructions')) mealPlanRow.serving_instructions = p.feedingInstructions ?? null;
@@ -2018,9 +2150,15 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const productCols = await getPublicTableColumns('products');
 
       let existingDiet: any = {};
-      let mealPlanRowHints: { meals_per_day?: number; shelfLifeDays?: number } = {};
+      let mealPlanRowHints: {
+        meals_per_day?: number;
+        shelfLifeDays?: number;
+        prep_time_minutes?: number;
+        lead_time_hours?: number;
+        order_cutoff_time?: string;
+      } = {};
       const existingMp = await query(
-        `SELECT dietary_requirements, meals_per_day, shelf_life_days, duration_days FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
+        `SELECT dietary_requirements, meals_per_day, shelf_life_days, duration_days, prep_time_minutes, lead_time_hours, order_cutoff_time FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
         [productId, vendorId]
       );
       if (existingMp.rows?.[0]) {
@@ -2036,6 +2174,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         const dd = r.duration_days != null ? Number(r.duration_days) : NaN;
         if (Number.isFinite(sl) && sl >= 1 && sl <= 365) mealPlanRowHints.shelfLifeDays = sl;
         else if (Number.isFinite(dd) && dd >= 1 && dd <= 365) mealPlanRowHints.shelfLifeDays = dd;
+        if (r.prep_time_minutes != null) mealPlanRowHints.prep_time_minutes = Number(r.prep_time_minutes);
+        if (r.lead_time_hours != null) mealPlanRowHints.lead_time_hours = Number(r.lead_time_hours);
+        if (typeof r.order_cutoff_time === 'string' && r.order_cutoff_time) {
+          mealPlanRowHints.order_cutoff_time = r.order_cutoff_time;
+        }
       }
 
       let existingProdMeta: any = {};
@@ -2090,13 +2233,21 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         ...existingDiet,
         ...(mealPlanRowHints.meals_per_day != null ? { mealsPerDay: mealPlanRowHints.meals_per_day } : {}),
         ...(mealPlanRowHints.shelfLifeDays != null ? { shelfLifeDays: mealPlanRowHints.shelfLifeDays } : {}),
+        ...(mealPlanRowHints.prep_time_minutes != null
+          ? { preparationLeadTime: mealPlanRowHints.prep_time_minutes, prepTimeMinutes: mealPlanRowHints.prep_time_minutes }
+          : {}),
+        ...(mealPlanRowHints.lead_time_hours != null ? { leadTimeHours: mealPlanRowHints.lead_time_hours } : {}),
+        ...(mealPlanRowHints.order_cutoff_time
+          ? { orderCutoffTime: mealPlanRowHints.order_cutoff_time }
+          : {}),
         ...dataTop,
       };
       const parsed = parseMealProductRequest(mergeForParse);
       if (!parsed.success) {
         return c.json({ error: formatMealProductZodError(parsed.error) }, 400);
       }
-      const p = parsed.data;
+      const pTimed = await applyPlatformMealTimingToParsed(parsed.data);
+      const p = pTimed;
 
       const dietaryPayload = mealProductParsedToDietaryJson(p as MealProductDietaryInput, {
         mealImageUrl: resolvedMealImageUrl ?? undefined,
@@ -2123,6 +2274,16 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           nextPh += 1;
           extras += `, prep_time_minutes = COALESCE($${nextPh}, prep_time_minutes)`;
           mpParams.push(p.preparationLeadTime);
+        }
+        if (mpCols.has('lead_time_hours')) {
+          nextPh += 1;
+          extras += `, lead_time_hours = COALESCE($${nextPh}, lead_time_hours)`;
+          mpParams.push(p.leadTimeHours);
+        }
+        if (mpCols.has('order_cutoff_time')) {
+          nextPh += 1;
+          extras += `, order_cutoff_time = COALESCE($${nextPh}, order_cutoff_time)`;
+          mpParams.push(p.orderCutoffTime);
         }
         if (mpCols.has('shelf_life_days')) {
           nextPh += 1;
