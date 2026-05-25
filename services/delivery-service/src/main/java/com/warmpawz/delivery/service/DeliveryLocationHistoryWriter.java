@@ -49,7 +49,7 @@ public class DeliveryLocationHistoryWriter {
 		locationHistoryRepository.save(row);
 	}
 
-	static boolean isValidCoord(BigDecimal lat, BigDecimal lng) {
+	public static boolean isValidCoord(BigDecimal lat, BigDecimal lng) {
 		if (lat == null || lng == null) {
 			return false;
 		}
@@ -64,7 +64,7 @@ public class DeliveryLocationHistoryWriter {
 		return !(la == 0d && ln == 0d);
 	}
 
-	static boolean coordsEqual(BigDecimal aLat, BigDecimal aLng, BigDecimal bLat, BigDecimal bLng) {
+	public static boolean coordsEqual(BigDecimal aLat, BigDecimal aLng, BigDecimal bLat, BigDecimal bLng) {
 		if (aLat == null || aLng == null || bLat == null || bLng == null) {
 			return false;
 		}
