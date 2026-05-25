@@ -10,6 +10,8 @@ import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { PaymentSourcesDisplay } from '../payment/PaymentSourcesDisplay';
+import type { PaymentSource } from '@/lib/payment-display-utils';
 import { AddAddressModal } from '../shared/AddAddressModal';
 import { trackBookingStep, useBookingAnalytics } from '@/lib/analytics';
 import { formatPriceWithSymbol, catalogPriceIncludesTax } from '@/lib/booking-display-utils';
@@ -164,6 +166,10 @@ export function VetBookingRouter({
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
+  const [paymentSummary, setPaymentSummary] = useState<{
+    paymentSources?: PaymentSource[];
+    totalPaid?: number;
+  } | null>(null);
   const [selectedPackageForSwitch, setSelectedPackageForSwitch] = useState<any | null>(null); // Phase 1: Package switch
   const [vendorServices, setVendorServices] = useState<any[]>([]);
   // ✅ NEW: Store all selected services for multi-service booking
@@ -1626,8 +1632,13 @@ export function VetBookingRouter({
                 onPaymentAbandoned={() => {
                   if (selectedDate) void loadTimeSlots(selectedDate);
                 }}
-                onSuccess={(bookingId) => {
+                onSuccess={(bookingId, _orderId, _otp, meta) => {
                   setBookingId(bookingId);
+                  setPaymentSummary(
+                    meta?.paymentSources?.length
+                      ? { paymentSources: meta.paymentSources, totalPaid: meta.totalPaid }
+                      : null
+                  );
                   setShowPaymentPage(false);
                   setStep('confirmation');
                 }}
@@ -1682,6 +1693,15 @@ export function VetBookingRouter({
                 </div>
               </div>
             </div>
+
+            {paymentSummary?.paymentSources && paymentSummary.paymentSources.length > 0 && (
+              <PaymentSourcesDisplay
+                sources={paymentSummary.paymentSources}
+                totalPaid={paymentSummary.totalPaid}
+                compact
+                className="mb-4 sm:mb-6 text-left"
+              />
+            )}
 
             {/* Package upsell offer - show if this was a single booking (not using package) */}
             {!usePackageSession && !showPackageOffer && (
