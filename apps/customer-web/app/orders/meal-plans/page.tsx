@@ -1,9 +1,22 @@
 'use client';
 
 import React, { Suspense } from 'react';
+import { useRouter } from 'next/navigation';
 import { MealPlanOrdersPanel } from '@/components/customer/meal-plans/MealPlanOrdersPanel';
+import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
+import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 
 function MealPlanOrdersContent() {
+  const router = useRouter();
+  if (!isCustomerMealPlansEnabled()) {
+    return (
+      <MealPlansComingSoon
+        onBack={() => router.push('/')}
+        title="Meal plan orders"
+        subtitle="Track deliveries when we launch"
+      />
+    );
+  }
   return <MealPlanOrdersPanel />;
 }
 

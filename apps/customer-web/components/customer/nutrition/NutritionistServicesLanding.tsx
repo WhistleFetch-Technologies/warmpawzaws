@@ -5,6 +5,7 @@ import { ArrowLeft, Apple, UtensilsCrossed, Calendar, Heart, Sparkles, ChevronRi
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
 import { toast } from 'sonner';
 import { useProblemGridByRole } from '../useProblemGridByRole';
@@ -25,6 +26,7 @@ import {
  * Nutrition services require a pet to be selected before booking
  */
 export function NutritionistServicesLanding({ phone, onBack, onNavigate }: NutritionistServicesLandingProps) {
+  const mealPlansLive = isCustomerMealPlansEnabled();
   //---------------------------states----------------------------------//
   const nutritionistNeeds = useProblemGridByRole('nutritionist');
   const [loading, setLoading] = useState(true);
@@ -96,6 +98,10 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
     try {
       const serviceType = data?.serviceType || 'Diet Consultation';
       if (serviceType === 'Meal Plans') {
+        if (!mealPlansLive) {
+          toast.info('Meal plans are coming soon.');
+          return;
+        }
         onNavigate?.('nutrition-meal-plans');
         return;
       }
@@ -273,20 +279,37 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
           <div>
             <h2 className="text-lg font-bold text-slate-900 mb-4">Our Services</h2>
             <div className="grid grid-cols-2 gap-3">
-              {serviceTypes.map((service, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handleBookNow({ serviceType: service.label })}
-                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden"
-                >
-                  <div className={`w-10 h-10 rounded-xl ${service.color.split(' ')[0]} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
-                    <service.icon className={`w-5 h-5 ${service.color.split(' ')[1]}`} />
-                  </div>
-                  <h3 className="font-semibold text-slate-900 text-sm mb-0.5">{service.label}</h3>
-                  <p className="text-xs text-slate-500">{service.desc}</p>
-                </button>
-              ))}
+              {serviceTypes.map((service, idx) => {
+                const isMealPlansTile = service.label === 'Meal Plans';
+                const comingSoon = isMealPlansTile && !mealPlansLive;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleBookNow({ serviceType: service.label })}
+                    disabled={comingSoon}
+                    aria-label={comingSoon ? `${service.label} — coming soon` : service.label}
+                    className={`bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-left group relative overflow-hidden ${
+                      comingSoon
+                        ? 'opacity-80 cursor-not-allowed'
+                        : 'hover:shadow-md transition-all'
+                    }`}
+                  >
+                    {comingSoon ? (
+                      <span className="absolute top-2 right-2 rounded-md bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
+                        Soon
+                      </span>
+                    ) : null}
+                    <div className={`w-10 h-10 rounded-xl ${service.color.split(' ')[0]} flex items-center justify-center mb-3 ${comingSoon ? '' : 'group-hover:scale-110 transition-transform'}`}>
+                      <service.icon className={`w-5 h-5 ${service.color.split(' ')[1]}`} />
+                    </div>
+                    <h3 className="font-semibold text-slate-900 text-sm mb-0.5">{service.label}</h3>
+                    <p className="text-xs text-slate-500">
+                      {comingSoon ? 'Coming soon' : service.desc}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -317,8 +340,12 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                     <NutritionVendorDetailsCard
                       key={vendorId || index}
                       vendor={snapshot}
-                      showViewMealPlans
+                      showViewMealPlans={mealPlansLive}
                       onViewMealPlans={() => {
+                        if (!mealPlansLive) {
+                          toast.info('Meal plans are coming soon.');
+                          return;
+                        }
                         if (!vendorId) return;
                         onNavigate?.('nutrition-meal-plans', {
                           vendorId,

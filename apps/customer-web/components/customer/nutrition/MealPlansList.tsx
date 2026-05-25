@@ -17,6 +17,8 @@ import {
   MealKitchenClosedBadge,
   MealKitchenStatusBanner,
 } from '@/components/customer/nutrition/MealKitchenStatusBanner';
+import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
+import { MealPlansComingSoon } from './MealPlansComingSoon';
 
 const MAX_RADIUS_KM = 10;
 
@@ -30,7 +32,14 @@ export interface MealPlansListProps {
   onExitVendorFocus?: () => void;
 }
 
-export function MealPlansList({
+export function MealPlansList(props: MealPlansListProps) {
+  if (!isCustomerMealPlansEnabled()) {
+    return <MealPlansComingSoon onBack={props.onBack} />;
+  }
+  return <MealPlansListLive {...props} />;
+}
+
+function MealPlansListLive({
   phone,
   onBack,
   onNavigate,

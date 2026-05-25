@@ -26,6 +26,8 @@ import { MealOrderDetailsCollapsible } from '@/components/customer/tracking/Meal
 import { MealCustomerDetailsCard } from '@/components/customer/tracking/MealCustomerDetailsCard';
 import { DeliveryPartnerCallAction } from '@/components/customer/tracking/DeliveryPartnerCallAction';
 import { formatMealOrderDeliveryAddress } from '@/lib/meal-order-tracking-details';
+import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
+import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
 
 interface DeliveryPerson {
   name: string;
@@ -227,6 +229,16 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
       setReviewSubmitting(false);
     }
   };
+
+  if (orderType === 'meal' && !isCustomerMealPlansEnabled()) {
+    return (
+      <MealPlansComingSoon
+        onBack={onBack}
+        title="Order tracking"
+        subtitle="Live meal delivery tracking"
+      />
+    );
+  }
 
   if (loading) {
     return (

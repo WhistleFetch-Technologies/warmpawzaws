@@ -10,6 +10,7 @@ import {
 } from './NutritionVendorDetailsCard';
 import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
 import { toast } from 'sonner';
+import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 
 interface ExpertNutritionistsListProps {
   phone: string;
@@ -125,8 +126,12 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
                   <NutritionVendorDetailsCard
                     key={vendorId || index}
                     vendor={snapshot}
-                    showViewMealPlans
+                    showViewMealPlans={isCustomerMealPlansEnabled()}
                     onViewMealPlans={() => {
+                      if (!isCustomerMealPlansEnabled()) {
+                        toast.info('Meal plans are coming soon.');
+                        return;
+                      }
                       if (!vendorId) return;
                       onNavigate?.('nutrition-meal-plans', {
                         vendorId,

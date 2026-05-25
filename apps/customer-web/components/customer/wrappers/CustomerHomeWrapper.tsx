@@ -77,6 +77,7 @@ import { SupportHelpCenter } from '../SupportHelpCenter';
 import { OrderTrackingView } from '../OrderTrackingView';
 import { ProblemCategoryMapper } from '../../admin/ProblemCategoryMapper';
 import { apiClient } from '@/lib/api-client';
+import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
@@ -1623,6 +1624,10 @@ export function CustomerHomeWrapper({
             if (screen === 'order-tracking') {
               const orderId = data?.orderId;
               if (data?.orderType === 'meal' && orderId) {
+                if (!isCustomerMealPlansEnabled()) {
+                  toast.info('Meal order tracking is coming soon.');
+                  return;
+                }
                 setSelectedBookingId(orderId);
                 setCurrentScreen('meal-order-tracking');
               } else if (orderId) {
@@ -3080,6 +3085,10 @@ export function CustomerHomeWrapper({
           onBack={handleBack} 
           onNavigate={(screen, data) => {
             if (screen === 'nutrition-meal-plans') {
+              if (!isCustomerMealPlansEnabled()) {
+                toast.info('Meal plans are coming soon.');
+                return;
+              }
               if (data?.vendorId) {
                 setMealPlanVendorFocus({
                   vendorId: String(data.vendorId),

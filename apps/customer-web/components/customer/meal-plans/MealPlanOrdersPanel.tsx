@@ -30,6 +30,8 @@ import {
   rememberSubscriptionsBackFromCurrentUrl,
   rememberSubscriptionsBackSpaScreen,
 } from '@/lib/go-back-or-replace';
+import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
+import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
 
 export interface MealPlanOrder {
   id: string;
@@ -111,7 +113,20 @@ export interface MealPlanOrdersPanelProps {
   onTrackOrder?: (orderId: string) => void;
 }
 
-export function MealPlanOrdersPanel({
+export function MealPlanOrdersPanel(props: MealPlanOrdersPanelProps) {
+  if (!isCustomerMealPlansEnabled()) {
+    return (
+      <MealPlansComingSoon
+        onBack={props.onBack}
+        title="Meal plan orders"
+        subtitle="Track deliveries when we launch"
+      />
+    );
+  }
+  return <MealPlanOrdersPanelLive {...props} />;
+}
+
+function MealPlanOrdersPanelLive({
   fixedCustomerPhone,
   onBack,
   onTrackOrder,

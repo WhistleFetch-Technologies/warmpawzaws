@@ -8,6 +8,8 @@ import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-chec
 import type { MealSubscriptionSummaryLine } from '@/components/customer/payment/MealSubscriptionPaymentSummary';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import { Button } from '@/components/ui/button';
+import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
+import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
 
 const STORAGE_KEY = 'meal_one_time_pay_draft_v1';
 
@@ -35,6 +37,9 @@ export type MealOneTimePayDraft = {
 function MealOneTimePayInner() {
   const router = useRouter();
   const sp = useSearchParams();
+  if (!isCustomerMealPlansEnabled()) {
+    return <MealPlansComingSoon onBack={() => router.push('/')} title="Meal plan checkout" />;
+  }
   const planTitle = String(sp.get('mealPlanName') || 'Meal plan').trim() || 'Meal plan';
 
   const [draft, setDraft] = useState<MealOneTimePayDraft | null>(null);

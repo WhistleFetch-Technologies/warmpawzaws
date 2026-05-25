@@ -18,6 +18,7 @@ type RuntimeConfig = {
   uatMode?: boolean;
   environment?: string;
   customerEcommerceEnabled?: boolean;
+  customerMealPlansEnabled?: boolean;
 };
 
 declare global {
@@ -102,13 +103,8 @@ function isProductionEnvironment(): boolean {
   return true;
 }
 
-/**
- * Meal plan orders hub under My Bookings + `/track/:orderId` (hyperlocal delivery UI).
- * Uses GET /customer/meal-plan-orders and GET /customer/tracking/:id — enabled in all environments.
- */
-export function isCustomerWebDevMealPlanOrdersEnabled(): boolean {
-  return true;
-}
+/** Re-export — see `lib/customer-meal-plans-flag.ts`. */
+export { isCustomerMealPlansEnabled, isCustomerMealPlansEnabled as isCustomerWebDevMealPlanOrdersEnabled } from './customer-meal-plans-flag';
 
 /**
  * Get API Gateway URL based on environment

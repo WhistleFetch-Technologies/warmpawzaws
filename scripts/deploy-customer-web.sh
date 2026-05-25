@@ -99,6 +99,18 @@ else
   CEE_JS="false"
 fi
 
+# Meal plans browse + meal order tracking (off on prod until launch).
+if [ "$PROD" = true ]; then
+  CMP_RAW="${CUSTOMER_MEAL_PLANS_ENABLED:-false}"
+else
+  CMP_RAW="${CUSTOMER_MEAL_PLANS_ENABLED:-true}"
+fi
+if [ "$CMP_RAW" = "true" ] || [ "$CMP_RAW" = "1" ]; then
+  CMP_JS="true"
+else
+  CMP_JS="false"
+fi
+
 if [ "$DEPLOY_ONLY" = true ] && [ -d "dist" ]; then
   echo -e "${GREEN}✅ Skipping build (--deploy-only, dist exists)${NC}"
 else
@@ -116,6 +128,7 @@ else
       "NEXT_PUBLIC_ENVIRONMENT=production"
       "NEXT_PUBLIC_API_BASE_URL=${RESOLVED_API_BASE_URL}"
       "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
+      "NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=${CMP_JS}"
     )
   else
     BUILD_ENV=(
@@ -162,7 +175,8 @@ if [ "$PROD" = true ]; then
     apiBaseUrl: "${API_BASE_URL}",
     uatMode: false,
     environment: "production",
-    customerEcommerceEnabled: ${CEE_JS}
+    customerEcommerceEnabled: ${CEE_JS},
+    customerMealPlansEnabled: ${CMP_JS}
   };
   console.log('🔧 Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
@@ -175,7 +189,8 @@ else
     apiBaseUrl: "${API_BASE_URL}",
     uatMode: true,
     environment: "development",
-    customerEcommerceEnabled: ${CEE_JS}
+    customerEcommerceEnabled: ${CEE_JS},
+    customerMealPlansEnabled: ${CMP_JS}
   };
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();

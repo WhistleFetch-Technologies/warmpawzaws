@@ -26,6 +26,8 @@ import { MealOrderDetailsCollapsible } from '@/components/customer/tracking/Meal
 import { MealCustomerDetailsCard } from '@/components/customer/tracking/MealCustomerDetailsCard';
 import { DeliveryPartnerCallAction } from '@/components/customer/tracking/DeliveryPartnerCallAction';
 import { formatMealOrderDeliveryAddress } from '@/lib/meal-order-tracking-details';
+import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
+import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
 
 interface TrackingData {
   success: boolean;
@@ -190,6 +192,24 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
       minute: '2-digit',
     });
   };
+
+  if (!isCustomerMealPlansEnabled()) {
+    const backHref =
+      from === 'meal-plans'
+        ? phone
+          ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}`
+          : '/orders/meal-plans'
+        : '/';
+    return (
+      <MealPlansComingSoon
+        title="Order tracking"
+        subtitle="Live meal delivery tracking"
+        onBack={() => {
+          if (typeof window !== 'undefined') window.location.href = backHref;
+        }}
+      />
+    );
+  }
 
   if (loading) {
     return (
