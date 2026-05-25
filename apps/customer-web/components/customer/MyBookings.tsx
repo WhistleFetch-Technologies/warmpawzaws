@@ -13,6 +13,11 @@ import { apiClient, isCustomerWebDevMealPlanOrdersEnabled } from '@/lib/api-clie
 import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { copyTextToClipboard } from '@/lib/shareUtils';
 import {
+  derivePaymentSourcesFromBooking,
+  formatPaymentSourcesShortLabel,
+} from '@/lib/payment-display-utils';
+import type { PaymentSource } from '@/lib/payment-display-utils';
+import {
   getServiceStyleDisplayLabel,
   formatPriceWithSymbol,
   customerBookingStatusShowsCheckInOtp,
@@ -102,6 +107,7 @@ interface Booking {
   otpCode?: string;
   otpVerified?: boolean;
   paymentStatus?: string;
+  paymentSources?: PaymentSource[];
   completedAt?: string;
 }
 
@@ -325,6 +331,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         otpCode: b.otp_code || b.otpCode,
         otpVerified: b.otp_verified || b.otpVerified,
         paymentStatus: b.payment_status || b.paymentStatus,
+        paymentSources: derivePaymentSourcesFromBooking(b),
         completedAt:
           b.completed_at ||
           b.completedAt ||
@@ -667,9 +674,19 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                     {getStatusText(booking.status)}
                   </span>
                   {booking.paymentStatus === 'paid' && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                      Paid
-                    </span>
+                    <>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                        Paid
+                      </span>
+                      {booking.paymentSources && booking.paymentSources.length > 0 && (
+                        <span
+                          className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 max-w-[8rem] truncate text-right"
+                          title={formatPaymentSourcesShortLabel(booking.paymentSources)}
+                        >
+                          {formatPaymentSourcesShortLabel(booking.paymentSources)}
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -969,7 +986,16 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
               )}
 
               <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
-                <span className="font-medium">{formatPriceWithSymbol(booking.price)}</span>
+                <div>
+                  <span className="font-medium">{formatPriceWithSymbol(booking.price)}</span>
+                  {booking.paymentStatus === 'paid' &&
+                    booking.paymentSources &&
+                    booking.paymentSources.length > 0 && (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        via {formatPaymentSourcesShortLabel(booking.paymentSources)}
+                      </p>
+                    )}
+                </div>
                 
                 {/* ✅ Action Buttons */}
                 {canCancelOrReschedule(booking) && (

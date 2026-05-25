@@ -19,7 +19,11 @@ import {
   loadActiveEcommerceCategoryMap,
   resolveEcommerceCategoryByName,
 } from '../utils/ecommerce-category-resolve';
-import { buildBulkProductTemplateBuffer, parseBulkProductXlsxBuffer } from './bulk-product-xlsx';
+import {
+  buildBulkProductTemplateBuffer,
+  getBulkProductTitle,
+  parseBulkProductXlsxBuffer,
+} from './bulk-product-xlsx';
 
 interface BulkProductRow {
   name: string;
@@ -98,6 +102,13 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         }, 400);
       }
 
+      const rowsToValidate = products.filter(
+        (p: Record<string, unknown>) => getBulkProductTitle(p).length > 0
+      );
+      if (rowsToValidate.length === 0) {
+        return c.json({ success: false, error: 'No rows with a Title found' }, 400);
+      }
+
       const errors: ValidationError[] = [];
       const validProducts: BulkProductRow[] = [];
 
@@ -114,7 +125,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         categories.map((c: any) => String(c.name ?? '').trim().toLowerCase()).filter(Boolean)
       );
 
-      products.forEach((product: any, index: number) => {
+      rowsToValidate.forEach((product: any, index: number) => {
         const rowNum = index + 1;
         const rowErrors: ValidationError[] = [];
         const push = (field: string, message: string, value?: unknown) =>
@@ -122,9 +133,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
 
         // ── Required ────────────────────────────────────────────────────
         // 1. Title*
-        const title = typeof product.name === 'string' ? product.name.trim() : '';
-        if (!title) push('name', 'Title is required', product.name);
-        else if (title.length > 255) push('name', 'Title must be ≤ 255 characters', title.length);
+        const title = getBulkProductTitle(product);
+        if (title.length > 255) push('name', 'Title must be ≤ 255 characters', title.length);
 
         // 2. SP* (price)
         const priceNum = Number(product.price);
@@ -230,7 +240,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
       return c.json({
         success: true,
         validation: {
-          totalRows: products.length,
+          totalRows: rowsToValidate.length,
           validRows: validProducts.length,
           invalidRows: errors.length > 0 ? [...new Set(errors.map(e => e.row))].length : 0,
           errors: errors.slice(0, 100), // Limit errors returned
@@ -274,10 +284,13 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
 
       const categoryMap = await loadActiveEcommerceCategoryMap();
 
-      // Process each product
+      // Process each product (skip rows without a Title)
+      let titledRowNum = 0;
       for (let i = 0; i < products.length; i++) {
         const product = products[i];
-        const rowNum = i + 1;
+        if (!getBulkProductTitle(product)) continue;
+        titledRowNum++;
+        const rowNum = titledRowNum;
 
         try {
           const categoryTrim = product.category ? String(product.category).trim() : '';
@@ -521,7 +534,9 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           product[header] = value;
         });
 
-        products.push(product);
+        if (getBulkProductTitle(product)) {
+          products.push(product);
+        }
       }
 
       return c.json({

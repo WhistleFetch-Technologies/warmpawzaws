@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -18,6 +18,8 @@ import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { PolicyAcceptanceModal } from '../PolicyAcceptanceModal';
 import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
+import { buildCheckoutPaymentSources } from '@/lib/payment-display-utils';
+import type { PaymentSource } from '@/lib/payment-display-utils';
 import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
 import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
@@ -29,7 +31,6 @@ import {
 } from '@/lib/razorpay/razorpay-utils';
 import { buildSanitizedStandardRazorpayCheckoutOptions } from '@/lib/razorpay/build-standard-checkout-options';
 import { confirmMealSubscriptionPayment } from '@/lib/meal-subscriptions-api';
-import { CustomerWalletApply } from './CustomerWalletApply';
 import { MealSubscriptionPaymentSummary, type MealSubscriptionSummaryLine } from './MealSubscriptionPaymentSummary';
 import {
   isWarmpawzCustomerNativeWebView,
@@ -103,9 +104,9 @@ interface UniversalPaymentPageProps {
   // Vendor/Seller
   vendorId: string;
   vendorName: string;
-  vendorAddress?: string; // ✅ NEW: Vendor/clinic address for at_center services
-  staffName?: string; // ✅ NEW: Staff name for at_home services
-  staffPhoto?: string; // ✅ NEW: Staff photo for at_home services
+  vendorAddress?: string; // âœ… NEW: Vendor/clinic address for at_center services
+  staffName?: string; // âœ… NEW: Staff name for at_home services
+  staffPhoto?: string; // âœ… NEW: Staff photo for at_home services
 
   // Schedule (for bookings)
   bookingDate?: string;
@@ -117,7 +118,7 @@ interface UniversalPaymentPageProps {
   petBreed?: string;
   /** When length > 1, shows an inline selector without changing the rest of the row layout */
   petSwitcherPets?: { id: string; name: string }[];
-  /** Called when the user picks a pet from the switcher, or null for “no pet” (checkout still allowed). */
+  /** Called when the user picks a pet from the switcher, or null for â€œno petâ€ (checkout still allowed). */
   onPetSwitcherChange?: (pet: { id: string; name: string } | null) => void;
 
   // Address (for home services/orders)
@@ -138,7 +139,7 @@ interface UniversalPaymentPageProps {
   priceIncludesTax?: boolean;
   duration?: number;
   quantity?: number;
-  selectedServices?: any[]; // ✅ NEW: Selected services for multi-service bookings
+  selectedServices?: any[]; // âœ… NEW: Selected services for multi-service bookings
 
   // Customer
   customerPhone: string;
@@ -166,13 +167,22 @@ interface UniversalPaymentPageProps {
 
   /**
    * fullscreen: default; CTA hugs bottom (overlays, dedicated routes).
-   * appShell: matches CustomerHomeWrapper + BottomNavigation — CTA sits above the tab bar.
+   * appShell: matches CustomerHomeWrapper + BottomNavigation â€” CTA sits above the tab bar.
    */
   layoutVariant?: 'fullscreen' | 'appShell';
 
   // Navigation
   onBack: () => void;
-  onSuccess: (bookingId: string, orderId?: string, otpCode?: string, meta?: { isInstantTele?: boolean }) => void;
+  onSuccess: (
+    bookingId: string,
+    orderId?: string,
+    otpCode?: string,
+    meta?: {
+      isInstantTele?: boolean;
+      paymentSources?: PaymentSource[];
+      totalPaid?: number;
+    }
+  ) => void;
   /** After user closes Razorpay without paying (or we attempt slot release). Use to refetch `available-slots` so UI matches DB. */
   onPaymentAbandoned?: () => void;
 }
@@ -256,7 +266,7 @@ interface RazorpayOffer {
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** POST /tax/calculate used to return success:true with empty items + error — treat as failure so UI does not show 9%+9% with ₹0 tax. */
+/** POST /tax/calculate used to return success:true with empty items + error â€” treat as failure so UI does not show 9%+9% with ₹0 tax. */
 function taxCalculateResponseHasPayload(res: any): boolean {
   if (!res || res.success !== true) return false;
   const err = res.error;
@@ -386,7 +396,7 @@ export function UniversalPaymentPage({
   const [selectedAddress, setSelectedAddress] = useState<any>(address);
   const [showAddressModal, setShowAddressModal] = useState(false);
 
-  // ✅ CRITICAL: Resolved serviceId (UUID) - resolved early to avoid issues
+  // âœ… CRITICAL: Resolved serviceId (UUID) - resolved early to avoid issues
   const [resolvedServiceId, setResolvedServiceId] = useState<string | undefined>(serviceId);
   const [serviceIdResolving, setServiceIdResolving] = useState(false);
 
@@ -401,7 +411,7 @@ export function UniversalPaymentPage({
   const [appliedPromotion, setAppliedPromotion] = useState<PromotionOffer | null>(null);
   const [razorpayOffers, setRazorpayOffers] = useState<RazorpayOffer[]>([]);
   const [selectedRazorpayOffer, setSelectedRazorpayOffer] = useState<RazorpayOffer | null>(null);
-  /** Optional UPI ID (VPA) for collect flow — passed as `prefill.vpa` (Razorpay may still show QR-only on desktop web per NPCI/Razorpay). */
+  /** Optional UPI ID (VPA) for collect flow â€” passed as `prefill.vpa` (Razorpay may still show QR-only on desktop web per NPCI/Razorpay). */
   const [manualUpiVpa, setManualUpiVpa] = useState('');
   const [paymentPolicies, setPaymentPolicies] = useState<Record<string, { title: string; description: string; details?: string[] }> | null>(null);
   const [refundPolicySummary, setRefundPolicySummary] = useState<string | null>(null);
@@ -841,7 +851,7 @@ export function UniversalPaymentPage({
         });
 
         if (coverageRes.success && coverageRes.covered) {
-          console.log('✅ [SUBSCRIPTION] Booking covered by subscription:', coverageRes.subscription);
+          console.log('âœ… [SUBSCRIPTION] Booking covered by subscription:', coverageRes.subscription);
           setSubscriptionCovered(true);
           setActiveSubscription(coverageRes.subscription);
 
@@ -850,7 +860,7 @@ export function UniversalPaymentPage({
         }
       } catch (error: any) {
         // Subscription check failed - proceed with normal payment; surface so it's not silent
-        console.log('ℹ️ [SUBSCRIPTION] No active subscription or check failed:', error.message);
+        console.log('â„¹ï¸ [SUBSCRIPTION] No active subscription or check failed:', error.message);
         setSubscriptionCovered(false);
         setActiveSubscription(null);
         toast.info('Subscription check unavailable; you can pay normally.');
@@ -970,7 +980,7 @@ export function UniversalPaymentPage({
       }
 
       // If numeric, try to resolve
-      console.log(`🔄 Resolving serviceId "${serviceId}" to UUID...`);
+      console.log(`ðŸ”„ Resolving serviceId "${serviceId}" to UUID...`);
       setServiceIdResolving(true);
 
       try {
@@ -990,17 +1000,17 @@ export function UniversalPaymentPage({
               vendorServicesRes?.services ||
               vendorServicesRes?.data?.services ||
               Array.isArray(vendorServicesRes)) {
-              console.log(`✅ [SERVICE-RESOLUTION] Found services from endpoint: ${endpoint}`);
+              console.log(`âœ… [SERVICE-RESOLUTION] Found services from endpoint: ${endpoint}`);
               break;
             }
           } catch (e: any) {
-            console.warn(`⚠️ [SERVICE-RESOLUTION] Endpoint ${endpoint} failed:`, e.message);
+            console.warn(`âš ï¸ [SERVICE-RESOLUTION] Endpoint ${endpoint} failed:`, e.message);
             continue; // Try next endpoint
           }
         }
 
         if (vendorServicesRes) {
-          // ✅ CRITICAL: Handle different API response formats
+          // âœ… CRITICAL: Handle different API response formats
           let services: any[] = [];
 
           // Format 1: { services: { at_home: { services: [...] }, ... }, allServices: [...] }
@@ -1027,7 +1037,7 @@ export function UniversalPaymentPage({
             services = vendorServicesRes;
           }
 
-          console.log('📦 [SERVICE-RESOLUTION-EARLY] Extracted services:', {
+          console.log('ðŸ“¦ [SERVICE-RESOLUTION-EARLY] Extracted services:', {
             count: services.length,
             sample: services[0],
             responseKeys: Object.keys(vendorServicesRes),
@@ -1035,7 +1045,7 @@ export function UniversalPaymentPage({
 
           // Ensure services is an array before calling .find()
           if (!Array.isArray(services)) {
-            console.error('❌ [SERVICE-RESOLUTION-EARLY] Services is not an array:', typeof services, services);
+            console.error('âŒ [SERVICE-RESOLUTION-EARLY] Services is not an array:', typeof services, services);
             // Don't throw - will be caught during payment
             return;
           }
@@ -1051,25 +1061,25 @@ export function UniversalPaymentPage({
           );
 
           if (matchingService) {
-            // ✅ FIX: Prioritize id (vendor_services.id) over service_id (services.id reference)
+            // âœ… FIX: Prioritize id (vendor_services.id) over service_id (services.id reference)
             // bookings.service_id must reference vendor_services.id, not services.id
             if (uuidRegex.test(matchingService.id)) {
               setResolvedServiceId(matchingService.id);
-              console.log(`✅ Resolved serviceId "${serviceId}" to vendor_services.id: "${matchingService.id}"`);
+              console.log(`âœ… Resolved serviceId "${serviceId}" to vendor_services.id: "${matchingService.id}"`);
             } else if (uuidRegex.test(matchingService.service_id || matchingService.serviceId)) {
               // Fallback: if id is not a UUID, try service_id (shouldn't happen normally)
             const resolved = matchingService.service_id || matchingService.serviceId;
               setResolvedServiceId(resolved);
-              console.log(`✅ Resolved serviceId "${serviceId}" to service_id: "${resolved}"`);
+              console.log(`âœ… Resolved serviceId "${serviceId}" to service_id: "${resolved}"`);
             } else {
-              console.warn(`⚠️ Could not resolve serviceId "${serviceId}" - service found but no UUID available`);
+              console.warn(`âš ï¸ Could not resolve serviceId "${serviceId}" - service found but no UUID available`);
             }
           } else {
-            console.warn(`⚠️ Service "${serviceId}" not found in vendor services`);
+            console.warn(`âš ï¸ Service "${serviceId}" not found in vendor services`);
           }
         }
       } catch (error: any) {
-        console.warn(`⚠️ Failed to resolve serviceId "${serviceId}":`, error.message);
+        console.warn(`âš ï¸ Failed to resolve serviceId "${serviceId}":`, error.message);
         // Don't set error - will be caught during booking creation
       } finally {
         setServiceIdResolving(false);
@@ -1085,13 +1095,13 @@ export function UniversalPaymentPage({
       return;
     }
     if (typeof window !== 'undefined' && !window.Razorpay) {
-      console.log('🔄 [RAZORPAY] Pre-loading Razorpay script on component mount...');
+      console.log('ðŸ”„ [RAZORPAY] Pre-loading Razorpay script on component mount...');
       loadRazorpayScript().catch((error) => {
-        console.warn('⚠️ [RAZORPAY] Failed to pre-load script (will retry on payment):', error.message);
+        console.warn('âš ï¸ [RAZORPAY] Failed to pre-load script (will retry on payment):', error.message);
         // Don't show error to user - will retry when payment button is clicked
       });
     } else if (window.Razorpay) {
-      console.log('✅ [RAZORPAY] Razorpay script already loaded');
+      console.log('âœ… [RAZORPAY] Razorpay script already loaded');
     }
   }, []); // Only run once on mount
 
@@ -1110,7 +1120,7 @@ export function UniversalPaymentPage({
     const apiBase = getApiBaseUrl();
     const sseUrl = `${apiBase}/customer/tele/instant-stream/${bookingId}`;
 
-    console.log('[UniversalPaymentPage] 🔌 Setting up SSE to monitor vendor cancellation');
+    console.log('[UniversalPaymentPage] ðŸ”Œ Setting up SSE to monitor vendor cancellation');
 
     const eventSource = new EventSource(sseUrl);
 
@@ -1118,7 +1128,7 @@ export function UniversalPaymentPage({
     eventSource.addEventListener('ended', (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('[UniversalPaymentPage] ❌ Booking ended/cancelled:', data);
+        console.log('[UniversalPaymentPage] âŒ Booking ended/cancelled:', data);
 
         // Show error toast
         toast.error(data.message || 'This consultation has been cancelled. Please try another vet.');
@@ -1126,7 +1136,7 @@ export function UniversalPaymentPage({
         // Close SSE connection
         eventSource.close();
 
-        // ✅ CRITICAL: Immediately rollback to previous page
+        // âœ… CRITICAL: Immediately rollback to previous page
         onBack();
       } catch (e) {
         console.error('[UniversalPaymentPage] Failed to parse ended event:', e);
@@ -1140,7 +1150,7 @@ export function UniversalPaymentPage({
     eventSource.addEventListener('vendor_rejected', (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('[UniversalPaymentPage] ❌ Vendor rejected/cancelled:', data);
+        console.log('[UniversalPaymentPage] âŒ Vendor rejected/cancelled:', data);
 
         toast.error(data.message || 'Vendor has cancelled this consultation. Please try another vet.');
 
@@ -1155,7 +1165,7 @@ export function UniversalPaymentPage({
 
     // Listen for connection event (for debugging)
     eventSource.addEventListener('connection', (event: MessageEvent) => {
-      console.log('[UniversalPaymentPage] 🔌 SSE connection established');
+      console.log('[UniversalPaymentPage] ðŸ”Œ SSE connection established');
     });
 
     eventSource.onerror = (error) => {
@@ -1168,7 +1178,7 @@ export function UniversalPaymentPage({
     };
 
     return () => {
-      console.log('[UniversalPaymentPage] 🧹 Cleaning up SSE connection');
+      console.log('[UniversalPaymentPage] ðŸ§¹ Cleaning up SSE connection');
       eventSource.close();
     };
   }, [bookingId, flowType, type, onBack]);
@@ -1304,7 +1314,7 @@ export function UniversalPaymentPage({
       if (serviceId) params.set('serviceId', String(serviceId));
       if (selectedServiceIds.length > 0) params.set('selectedServiceIds', selectedServiceIds.join(','));
 
-      // Load applicable promotions (public endpoint – no admin auth required)
+      // Load applicable promotions (public endpoint â€“ no admin auth required)
       const promoRes = await apiClient.get<any>(`/promotions/applicable?${params.toString()}`);
 
       if (promoRes.success && promoRes.promotions) {
@@ -1633,12 +1643,22 @@ export function UniversalPaymentPage({
     : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount);
   const walletAmount = useWallet && wallet ? Math.min(wallet.balance, walletCapBase) : 0;
 
-  // ✅ NEW: If subscription covers this booking, final amount is 0
+  // If subscription covers this booking, final amount is 0
   const finalAmount = subscriptionCovered
     ? 0
     : isMealPay
       ? Math.max(0, resolvedMealPayTotal - razorpayOfferDiscount - walletAmount)
       : Math.max(0, totalAfterDiscounts - razorpayOfferDiscount - walletAmount);
+
+  const getPaymentSuccessMeta = (gatewayMethod?: string | null) => {
+    const paymentSources = buildCheckoutPaymentSources({
+      walletAmount,
+      gatewayAmount: finalAmount,
+      gatewayMethod,
+    });
+    const totalPaid = Math.round((walletAmount + finalAmount) * 100) / 100;
+    return { paymentSources, totalPaid };
+  };
 
   const effectivePetsForPicker = petSwitcherPets ?? fetchedPetsForPicker;
   const effectivePetId = onPetSwitcherChange ? petId : (localPetSelection?.id ?? petId);
@@ -1651,7 +1671,7 @@ export function UniversalPaymentPage({
 
   const handlePayment = async (skipPolicyCheck: boolean = false) => {
     // Check if policies have been accepted (for bookings)
-    // ✅ FIX: Allow skipping policy check when called from modal acceptance
+    // âœ… FIX: Allow skipping policy check when called from modal acceptance
     if (type === 'booking' && !skipPolicyCheck && !policyAccepted) {
       setShowPolicyModal(true);
       return;
@@ -1836,9 +1856,9 @@ export function UniversalPaymentPage({
       let bookingCreationDeferred = false;
       let deferredBookingPayload: Record<string, unknown> | null = null;
       let requiredUpfrontAmount: number | null = null;
-      /** True once Razorpay success handler runs (do not cancel booking on modal dismiss — payment may have succeeded). */
+      /** True once Razorpay success handler runs (do not cancel booking on modal dismiss â€” payment may have succeeded). */
       let razorpayGatewaySuccessHandled = false;
-      /** True on payment.failed — user may retry; do not auto-cancel slot on dismiss. */
+      /** True on payment.failed â€” user may retry; do not auto-cancel slot on dismiss. */
       let razorpayPaymentFailed = false;
 
       // Step 1: Create booking/order if not already created
@@ -1873,19 +1893,19 @@ export function UniversalPaymentPage({
           return;
         }
 
-        // ✅ CRITICAL: Resolve serviceId to UUID BEFORE creating booking
+        // âœ… CRITICAL: Resolve serviceId to UUID BEFORE creating booking
         // This MUST happen synchronously here to ensure we have the UUID
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         let finalServiceId = resolvedServiceId || serviceId;
 
-        // ✅ FIX: If selectedServices is provided, use the first service's id (vendor_services.id)
+        // âœ… FIX: If selectedServices is provided, use the first service's id (vendor_services.id)
         // This ensures we use vendor_services.id instead of services.id to match the foreign key constraint
-        console.log(`🔍 [SERVICE-ID-RESOLUTION] Initial serviceId: "${serviceId}", resolvedServiceId: "${resolvedServiceId}", finalServiceId: "${finalServiceId}"`);
-        console.log(`🔍 [SERVICE-ID-RESOLUTION] selectedServices:`, selectedServices);
+        console.log(`ðŸ” [SERVICE-ID-RESOLUTION] Initial serviceId: "${serviceId}", resolvedServiceId: "${resolvedServiceId}", finalServiceId: "${finalServiceId}"`);
+        console.log(`ðŸ” [SERVICE-ID-RESOLUTION] selectedServices:`, selectedServices);
         
         if (selectedServices && selectedServices.length > 0) {
           const firstSelectedService = selectedServices[0];
-          console.log(`🔍 [SERVICE-ID-RESOLUTION] First selected service:`, {
+          console.log(`ðŸ” [SERVICE-ID-RESOLUTION] First selected service:`, {
             id: firstSelectedService.id,
             serviceId: firstSelectedService.serviceId,
             service_id: firstSelectedService.service_id,
@@ -1896,29 +1916,29 @@ export function UniversalPaymentPage({
             fullObject: firstSelectedService,
           });
           
-          // ✅ CRITICAL: Prioritize id field (vendor_services.id) over serviceId (services.id)
+          // âœ… CRITICAL: Prioritize id field (vendor_services.id) over serviceId (services.id)
           // The id field should be vendor_services.id which is what bookings.service_id FK requires
           const candidateId = firstSelectedService.id;
           const candidateServiceId = firstSelectedService.serviceId || firstSelectedService.service_id;
           
           if (candidateId && uuidRegex.test(String(candidateId))) {
             finalServiceId = String(candidateId);
-            console.log(`✅ [SERVICE-ID-RESOLUTION] Using serviceId from selectedServices[0].id (vendor_services.id): "${finalServiceId}"`);
+            console.log(`âœ… [SERVICE-ID-RESOLUTION] Using serviceId from selectedServices[0].id (vendor_services.id): "${finalServiceId}"`);
           } else if (candidateServiceId && uuidRegex.test(String(candidateServiceId))) {
-            // ⚠️ WARNING: This might be services.id, not vendor_services.id
+            // âš ï¸ WARNING: This might be services.id, not vendor_services.id
             // We'll use it but log a warning - the backend validation will catch if it's wrong
             finalServiceId = String(candidateServiceId);
-            console.warn(`⚠️ [SERVICE-ID-RESOLUTION] Using serviceId from selectedServices[0].serviceId (might be services.id, not vendor_services.id): "${finalServiceId}"`);
+            console.warn(`âš ï¸ [SERVICE-ID-RESOLUTION] Using serviceId from selectedServices[0].serviceId (might be services.id, not vendor_services.id): "${finalServiceId}"`);
           } else {
-            console.warn(`⚠️ [SERVICE-ID-RESOLUTION] selectedServices[0] has no valid UUID in id or serviceId fields`);
+            console.warn(`âš ï¸ [SERVICE-ID-RESOLUTION] selectedServices[0] has no valid UUID in id or serviceId fields`);
           }
         } else {
-          console.log(`ℹ️ [SERVICE-ID-RESOLUTION] No selectedServices provided, using finalServiceId: "${finalServiceId}"`);
+          console.log(`â„¹ï¸ [SERVICE-ID-RESOLUTION] No selectedServices provided, using finalServiceId: "${finalServiceId}"`);
         }
         
-        console.log(`🔍 [SERVICE-ID-RESOLUTION] Final resolved serviceId before sync resolution: "${finalServiceId}"`);
+        console.log(`ðŸ” [SERVICE-ID-RESOLUTION] Final resolved serviceId before sync resolution: "${finalServiceId}"`);
 
-        // ✅ CRITICAL: Only resolve if we don't already have a valid UUID from selectedServices
+        // âœ… CRITICAL: Only resolve if we don't already have a valid UUID from selectedServices
         // If selectedServices provided a valid UUID, skip the synchronous resolution to avoid overriding it
         const hasValidServiceIdFromSelectedServices = selectedServices && selectedServices.length > 0 && 
           selectedServices[0].id && uuidRegex.test(selectedServices[0].id);
@@ -1926,7 +1946,7 @@ export function UniversalPaymentPage({
         // If not a UUID, resolve it NOW (synchronously)
         // BUT skip if we already got a valid UUID from selectedServices
         if (!uuidRegex.test(finalServiceId) && !hasValidServiceIdFromSelectedServices) {
-          console.log(`🔄 Resolving serviceId "${finalServiceId}" to UUID synchronously...`);
+          console.log(`ðŸ”„ Resolving serviceId "${finalServiceId}" to UUID synchronously...`);
 
           try {
             // Try multiple endpoints to get vendor services
@@ -1945,17 +1965,17 @@ export function UniversalPaymentPage({
                   vendorServicesRes?.services ||
                   vendorServicesRes?.data?.services ||
                   Array.isArray(vendorServicesRes)) {
-                  console.log(`✅ [SERVICE-RESOLUTION-SYNC] Found services from endpoint: ${endpoint}`);
+                  console.log(`âœ… [SERVICE-RESOLUTION-SYNC] Found services from endpoint: ${endpoint}`);
                   break;
                 }
               } catch (e: any) {
-                console.warn(`⚠️ [SERVICE-RESOLUTION-SYNC] Endpoint ${endpoint} failed:`, e.message);
+                console.warn(`âš ï¸ [SERVICE-RESOLUTION-SYNC] Endpoint ${endpoint} failed:`, e.message);
                 continue; // Try next endpoint
               }
             }
 
             if (vendorServicesRes) {
-              // ✅ CRITICAL: Handle different API response formats
+              // âœ… CRITICAL: Handle different API response formats
               let services: any[] = [];
 
               // Format 1: { services: { at_home: { services: [...] }, ... }, allServices: [...] }
@@ -1982,7 +2002,7 @@ export function UniversalPaymentPage({
                 services = vendorServicesRes;
               }
 
-              console.log('📦 [SERVICE-RESOLUTION] Extracted services:', {
+              console.log('ðŸ“¦ [SERVICE-RESOLUTION] Extracted services:', {
                 count: services.length,
                 sample: services[0],
                 responseKeys: Object.keys(vendorServicesRes),
@@ -1990,7 +2010,7 @@ export function UniversalPaymentPage({
 
               // Ensure services is an array before calling .find()
               if (!Array.isArray(services)) {
-                console.error('❌ [SERVICE-RESOLUTION] Services is not an array:', typeof services, services);
+                console.error('âŒ [SERVICE-RESOLUTION] Services is not an array:', typeof services, services);
                 throw new Error('Invalid services response format from API');
               }
 
@@ -2005,18 +2025,18 @@ export function UniversalPaymentPage({
               );
 
               if (matchingService) {
-                // ✅ FIX: Prioritize id (vendor_services.id) over service_id (services.id reference)
+                // âœ… FIX: Prioritize id (vendor_services.id) over service_id (services.id reference)
                 // bookings.service_id must reference vendor_services.id, not services.id
                 if (uuidRegex.test(matchingService.id)) {
                   finalServiceId = matchingService.id;
                   setResolvedServiceId(matchingService.id);
-                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to vendor_services.id: "${matchingService.id}"`);
+                  console.log(`âœ… Synchronously resolved serviceId "${serviceId}" to vendor_services.id: "${matchingService.id}"`);
                 } else if (uuidRegex.test(matchingService.service_id || matchingService.serviceId)) {
                   // Fallback: if id is not a UUID, try service_id (shouldn't happen normally)
                 const resolved = matchingService.service_id || matchingService.serviceId;
                   finalServiceId = resolved;
                   setResolvedServiceId(resolved);
-                  console.log(`✅ Synchronously resolved serviceId "${serviceId}" to service_id: "${resolved}"`);
+                  console.log(`âœ… Synchronously resolved serviceId "${serviceId}" to service_id: "${resolved}"`);
                 } else {
                   throw new Error(`Service found but no valid UUID available. Service ID: ${serviceId}`);
                 }
@@ -2027,7 +2047,7 @@ export function UniversalPaymentPage({
               throw new Error('Could not fetch vendor services');
             }
           } catch (resolveError: any) {
-            console.error('❌ Failed to resolve serviceId:', resolveError);
+            console.error('âŒ Failed to resolve serviceId:', resolveError);
             toast.error(
               `Invalid service ID. Please go back and select the service again. ` +
               `Error: ${resolveError.message || 'Service not found'}`
@@ -2071,7 +2091,7 @@ export function UniversalPaymentPage({
               addressLat = addr.latitude;
               addressLng = addr.longitude;
             }
-            // ✅ FIX: Also extract coordinates from JSON coordinates field
+            // âœ… FIX: Also extract coordinates from JSON coordinates field
             if (!addressLat && !addressLng && addr.coordinates) {
               try {
                 const coords = typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
@@ -2079,7 +2099,7 @@ export function UniversalPaymentPage({
                 if (coords?.lng) addressLng = Number(coords.lng);
               } catch { /* ignore */ }
             }
-            // ✅ CRITICAL FIX: Pass the address ID so the backend can look up detailed fields (flat, house, floor, building)
+            // âœ… CRITICAL FIX: Pass the address ID so the backend can look up detailed fields (flat, house, floor, building)
             if (addr.id && addr.id !== 'profile') {
               addressIdForBooking = addr.id;
             }
@@ -2101,9 +2121,9 @@ export function UniversalPaymentPage({
         const rawServiceType = serviceTypeMap[serviceStyle || ''] || serviceStyle || 'at_center';
         const serviceTypeValue = validServiceTypes.includes(rawServiceType as any) ? rawServiceType : 'at_center';
 
-        // ✅ NEW: Check if subscription covers this booking
+        // âœ… NEW: Check if subscription covers this booking
         if (subscriptionCovered && activeSubscription) {
-          console.log('📋 Creating subscription-covered booking (0 payment)...');
+          console.log('ðŸ“‹ Creating subscription-covered booking (0 payment)...');
 
           try {
             const subscriptionBookingRes = await apiClient.post<any>('/subscriptions/create-booking', {
@@ -2131,14 +2151,14 @@ export function UniversalPaymentPage({
               return;
             }
           } catch (subError: any) {
-            console.warn('⚠️ Subscription booking failed, proceeding with normal payment:', subError);
+            console.warn('âš ï¸ Subscription booking failed, proceeding with normal payment:', subError);
             // Fall through to normal payment flow
             setSubscriptionCovered(false);
           }
         }
 
         // Create booking with correct API format
-        // ✅ CRITICAL: CreateBookingRequestSchema requires customerId (UUID). Resolve from customerPhone if missing.
+        // âœ… CRITICAL: CreateBookingRequestSchema requires customerId (UUID). Resolve from customerPhone if missing.
         let resolvedCustomerId = customerId;
         if (!resolvedCustomerId && customerPhone) {
           try {
@@ -2173,7 +2193,7 @@ export function UniversalPaymentPage({
           console.log('Could not fetch customer name for booking');
         }
 
-        // ✅ finalServiceId is already resolved and validated above
+        // âœ… finalServiceId is already resolved and validated above
 
         // Normalize bookingTime to HH:MM or HH:MM:SS (backend schema expects this)
         const timeMatch = typeof bookingTime === 'string' && bookingTime.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
@@ -2181,41 +2201,41 @@ export function UniversalPaymentPage({
           ? (timeMatch[3] !== undefined ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}:${timeMatch[3]}` : `${timeMatch[1].padStart(2, '0')}:${timeMatch[2]}`)
           : bookingTime;
 
-        // ✅ FINAL CHECK: If selectedServices is provided, ensure we use vendor_services.id
+        // âœ… FINAL CHECK: If selectedServices is provided, ensure we use vendor_services.id
         // This is a last-ditch check to prevent using services.id instead of vendor_services.id
         if (selectedServices && selectedServices.length > 0) {
           const firstSelectedService = selectedServices[0];
           if (firstSelectedService.id && uuidRegex.test(String(firstSelectedService.id))) {
             // Only override if current finalServiceId doesn't match the vendor_services.id
             if (finalServiceId !== String(firstSelectedService.id)) {
-              console.warn(`⚠️ [FINAL-CHECK] Overriding finalServiceId "${finalServiceId}" with selectedServices[0].id "${firstSelectedService.id}"`);
+              console.warn(`âš ï¸ [FINAL-CHECK] Overriding finalServiceId "${finalServiceId}" with selectedServices[0].id "${firstSelectedService.id}"`);
               finalServiceId = String(firstSelectedService.id);
             }
           }
         }
 
         const bookingPayload: Record<string, unknown> = {
-          customerId: resolvedCustomerId, // ✅ Required UUID (resolved above)
-          vendorId: vendorId, // ✅ Required UUID
-          serviceId: finalServiceId, // ✅ Required UUID (resolved above)
-          serviceName: serviceName, // ✅ Service name for booking
-          bookingDate: bookingDate, // ✅ Format: YYYY-MM-DD
-          bookingTime: normalizedBookingTime, // ✅ Format: HH:MM or HH:MM:SS
-          serviceType: serviceTypeValue, // ✅ Required enum
-          amount: taxBreakdown.total, // ✅ Number (schema allows >= 0)
+          customerId: resolvedCustomerId, // âœ… Required UUID (resolved above)
+          vendorId: vendorId, // âœ… Required UUID
+          serviceId: finalServiceId, // âœ… Required UUID (resolved above)
+          serviceName: serviceName, // âœ… Service name for booking
+          bookingDate: bookingDate, // âœ… Format: YYYY-MM-DD
+          bookingTime: normalizedBookingTime, // âœ… Format: HH:MM or HH:MM:SS
+          serviceType: serviceTypeValue, // âœ… Required enum
+          amount: taxBreakdown.total, // âœ… Number (schema allows >= 0)
           ...(couponDiscount + (appliedPromotion?.discountAmount || 0) > 0
             ? {
                 discountAmount: couponDiscount + (appliedPromotion?.discountAmount || 0),
                 ...(appliedCoupon?.code ? { couponCode: appliedCoupon.code } : {}),
               }
             : {}),
-          petId: effectivePetId || undefined, // ✅ Optional UUID
-          petName: effectivePetName || undefined, // ✅ Pet name for booking
-          customerPhone: customerPhone, // ✅ Customer phone
-          customerName: customerNameValue, // ✅ Customer name
-          address: addressValue, // ✅ Optional string
-          notes: '', // ✅ Optional string
-          // ✅ NEW: Pass selected services for multi-service bookings
+          petId: effectivePetId || undefined, // âœ… Optional UUID
+          petName: effectivePetName || undefined, // âœ… Pet name for booking
+          customerPhone: customerPhone, // âœ… Customer phone
+          customerName: customerNameValue, // âœ… Customer name
+          address: addressValue, // âœ… Optional string
+          notes: '', // âœ… Optional string
+          // âœ… NEW: Pass selected services for multi-service bookings
           selectedServices: selectedServices && selectedServices.length > 0
             ? selectedServices.map(s => ({
               id: s.id || s.serviceId,
@@ -2227,25 +2247,25 @@ export function UniversalPaymentPage({
             }))
             : undefined,
         };
-        // ✅ at_home: pass city, state, pincode, latitude, longitude for commute and backend (CreateBookingRequestSchema)
+        // âœ… at_home: pass city, state, pincode, latitude, longitude for commute and backend (CreateBookingRequestSchema)
         if (addressCity !== undefined) bookingPayload.city = addressCity;
         if (addressState !== undefined) bookingPayload.state = addressState;
         if (addressPincode !== undefined) bookingPayload.pincode = addressPincode;
         if (addressLat !== undefined) bookingPayload.latitude = addressLat;
         if (addressLng !== undefined) bookingPayload.longitude = addressLng;
-        // ✅ CRITICAL FIX: Pass addressId so backend can store address_id in booking
+        // âœ… CRITICAL FIX: Pass addressId so backend can store address_id in booking
         // This allows vendor-side to look up detailed address fields (flat, house, floor, building)
         if (addressIdForBooking) bookingPayload.addressId = addressIdForBooking;
 
-        console.log('📋 Creating booking with validated payload:', {
+        console.log('ðŸ“‹ Creating booking with validated payload:', {
           ...bookingPayload,
           originalServiceId: serviceId, // Log original
           resolvedServiceId: finalServiceId, // Log resolved UUID
           selectedServicesDebug: selectedServices ? selectedServices.map(s => ({ id: s.id, serviceId: s.serviceId, service_id: s.service_id })) : null,
         });
-        console.log('📋 [CRITICAL] Final serviceId being sent to backend:', finalServiceId);
+        console.log('ðŸ“‹ [CRITICAL] Final serviceId being sent to backend:', finalServiceId);
 
-        // ✅ Payment policy aware: attempt booking creation (may be blocked if upfront payment required)
+        // âœ… Payment policy aware: attempt booking creation (may be blocked if upfront payment required)
         // Try all possible booking creation endpoints
         const endpoints = [
           '/bookings/create',
@@ -2258,9 +2278,9 @@ export function UniversalPaymentPage({
         let paymentRequiredError: any = null;
         for (const endpoint of endpoints) {
           try {
-            console.log(`🔄 Trying booking endpoint: ${endpoint}`);
+            console.log(`ðŸ”„ Trying booking endpoint: ${endpoint}`);
             bookingRes = await apiClient.post<any>(endpoint, bookingPayload);
-            console.log(`✅ Booking created with endpoint: ${endpoint}`);
+            console.log(`âœ… Booking created with endpoint: ${endpoint}`);
             break; // Success, exit loop
           } catch (error: any) {
             lastError = error;
@@ -2270,17 +2290,17 @@ export function UniversalPaymentPage({
               (error?.message && error.message.includes('404'));
 
             if (is404) {
-              console.warn(`⚠️ ${endpoint} returned 404, trying next endpoint...`);
+              console.warn(`âš ï¸ ${endpoint} returned 404, trying next endpoint...`);
               continue; // Try next endpoint
             }
 
-            // ✅ Payment-required flow: do not throw, proceed to payment
+            // âœ… Payment-required flow: do not throw, proceed to payment
             const errorResponse = (error as any)?.response ?? (error as any)?.responseData ?? (error as any)?.responseBody ?? (error as any)?.originalError;
             const errorCode = errorResponse?.error?.code || errorResponse?.code;
             const is402 = (error as any)?.statusCode === 402 || (error as any)?.status === 402;
             if (is402 || ['PAYMENT_REQUIRED', 'PAYMENT_NOT_COMPLETED', 'PAYMENT_INSUFFICIENT'].includes(errorCode)) {
               paymentRequiredError = error;
-              console.warn('⚠️ Booking creation blocked until payment is completed. Proceeding to payment.', {
+              console.warn('âš ï¸ Booking creation blocked until payment is completed. Proceeding to payment.', {
                 endpoint,
                 errorCode,
                 details: errorResponse?.error?.details || errorResponse?.details,
@@ -2291,10 +2311,10 @@ export function UniversalPaymentPage({
             {
               // Not a 404, might be validation error - log details and throw
               const err = error as any;
-              console.error(`❌ ${endpoint} failed with non-404 error:`, error);
-              console.error('❌ Error response:', errorResponse);
-              console.error('❌ Error status:', err?.status ?? err?.statusCode);
-              console.error('❌ Error message:', error?.message);
+              console.error(`âŒ ${endpoint} failed with non-404 error:`, error);
+              console.error('âŒ Error response:', errorResponse);
+              console.error('âŒ Error status:', err?.status ?? err?.statusCode);
+              console.error('âŒ Error message:', error?.message);
 
               // Extract message from backend shape: { success: false, error: { code, message, details } }
               let errorMessage =
@@ -2311,7 +2331,7 @@ export function UniversalPaymentPage({
                 const first = validationErrors[0];
                 const path = first?.path?.join?.('.') ?? first?.path ?? '';
                 const msg = first?.message ?? '';
-                errorMessage = path ? `${errorMessage} (${path}: ${msg})` : `${errorMessage} — ${msg}`;
+                errorMessage = path ? `${errorMessage} (${path}: ${msg})` : `${errorMessage} â€” ${msg}`;
               }
 
               throw new Error(errorMessage);
@@ -2330,7 +2350,7 @@ export function UniversalPaymentPage({
 
         // If we exhausted all endpoints, throw the last error
         if (!bookingRes && !bookingCreationDeferred) {
-          console.error('❌ All booking creation endpoints failed');
+          console.error('âŒ All booking creation endpoints failed');
           throw lastError || new Error('All booking creation endpoints returned 404. Lambda may need redeployment.');
         }
 
@@ -2343,7 +2363,7 @@ export function UniversalPaymentPage({
         // Forensic: extract booking ID from any response shape (wrapped, idempotency, double-wrapped, deep)
         const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'Initial booking create');
 
-        console.log('📋 Booking creation response:', {
+        console.log('ðŸ“‹ Booking creation response:', {
           fullResponse: bookingRes,
           extractedBookingId: bookingIdValue,
           hasData: !!bookingRes?.data,
@@ -2351,18 +2371,18 @@ export function UniversalPaymentPage({
         });
 
         if (!bookingIdValue && !bookingCreationDeferred) {
-          console.error('❌ No booking ID in response:', bookingRes);
+          console.error('âŒ No booking ID in response:', bookingRes);
           throw new Error('Failed to create booking: No booking ID returned');
         }
 
         if (bookingIdValue && !UUID_REGEX.test(bookingIdValue)) {
-          console.error('❌ Invalid bookingId format from API:', bookingIdValue);
+          console.error('âŒ Invalid bookingId format from API:', bookingIdValue);
           throw new Error('Invalid booking ID format received from server');
         }
 
         if (bookingIdValue) {
           currentBookingId = bookingIdValue;
-          console.log('✅ Booking ID set:', currentBookingId);
+          console.log('âœ… Booking ID set:', currentBookingId);
         }
       } else if (type === 'order' && !currentOrderId) {
         const orderRes = await apiClient.post<any>('/customer/orders', {
@@ -2391,36 +2411,36 @@ export function UniversalPaymentPage({
 
       // Step 2: Create payment record (only when booking already exists)
 
-      // ✅ For bookings, only create payment record if booking already exists
+      // âœ… For bookings, only create payment record if booking already exists
       if (type === 'booking' && (!currentBookingId || bookingCreationDeferred)) {
-        console.log('ℹ️ Booking creation deferred; payment record will be created by Razorpay order flow.');
+        console.log('â„¹ï¸ Booking creation deferred; payment record will be created by Razorpay order flow.');
       }
 
       const paymentPayload: any = {
-        amount: taxBreakdown.total, // ✅ Required: positive number
-        paymentMethod: selectedMethod === 'razorpay' ? 'razorpay' : (selectedMethod || 'razorpay'), // ✅ Optional enum
-        bookingId: currentBookingId, // ✅ Required UUID (booking should already exist)
+        amount: taxBreakdown.total, // âœ… Required: positive number
+        paymentMethod: selectedMethod === 'razorpay' ? 'razorpay' : (selectedMethod || 'razorpay'), // âœ… Optional enum
+        bookingId: currentBookingId, // âœ… Required UUID (booking should already exist)
       };
 
       if (category != null && String(category).trim() !== '') {
         paymentPayload.category = String(category).trim();
       }
 
-      // ✅ Optional fields (not in schema but backend may handle)
+      // âœ… Optional fields (not in schema but backend may handle)
       if (customerId) {
-        paymentPayload.customerId = customerId; // ✅ Optional UUID
+        paymentPayload.customerId = customerId; // âœ… Optional UUID
       }
       if (vendorId) {
-        paymentPayload.vendorId = vendorId; // ✅ Optional UUID
+        paymentPayload.vendorId = vendorId; // âœ… Optional UUID
       }
 
-      // ✅ Wallet fields (extracted from raw body by backend)
+      // âœ… Wallet fields (extracted from raw body by backend)
       if (useWallet) {
         paymentPayload.useWallet = useWallet;
         paymentPayload.walletAmount = walletAmount || 0;
       }
 
-      // ✅ Additional fields (not in schema, but backend may handle from raw body)
+      // âœ… Additional fields (not in schema, but backend may handle from raw body)
       // These are sent but not validated by schema
       if (appliedCoupon?.code) {
         paymentPayload.couponCode = appliedCoupon.code;
@@ -2435,10 +2455,10 @@ export function UniversalPaymentPage({
         paymentPayload.razorpayOfferDiscount = razorpayOfferDiscount || 0;
       }
 
-      console.log('📤 Creating payment with payload:', paymentPayload);
+      console.log('ðŸ“¤ Creating payment with payload:', paymentPayload);
 
-      // ✅ Create payment record (bookingId is REQUIRED - booking should already exist)
-      // ⚠️ SKIP for Razorpay-only payments when finalAmount > 0 (no wallet portion):
+      // âœ… Create payment record (bookingId is REQUIRED - booking should already exist)
+      // âš ï¸ SKIP for Razorpay-only payments when finalAmount > 0 (no wallet portion):
       //    /razorpay/create-order inserts the payment row with razorpay_order_id.
       //    When the customer pays part from wallet first, we MUST call /payments/create so the backend
       //    debits wallet and leaves a pending row with razorpay_order_id NULL; create-order then reuses
@@ -2449,38 +2469,38 @@ export function UniversalPaymentPage({
       const skipPaymentsCreate = isRazorpayOnline && !needsPaymentsCreateForWalletSplit;
       let paymentRes: any = null;
       if (type === 'booking' && currentBookingId && !bookingCreationDeferred && !skipPaymentsCreate) {
-        // ✅ Validate bookingId is a UUID before sending
+        // âœ… Validate bookingId is a UUID before sending
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!uuidRegex.test(currentBookingId)) {
-          console.error('❌ Invalid bookingId format:', currentBookingId);
+          console.error('âŒ Invalid bookingId format:', currentBookingId);
           throw new Error('Invalid booking ID format. Please try again.');
         }
 
-        // ✅ Validate amount is a non-negative number (0 allowed for full wallet payment)
+        // âœ… Validate amount is a non-negative number (0 allowed for full wallet payment)
         if (paymentPayload.amount == null || paymentPayload.amount < 0 || isNaN(paymentPayload.amount)) {
-          console.error('❌ Invalid amount:', paymentPayload.amount);
+          console.error('âŒ Invalid amount:', paymentPayload.amount);
           throw new Error('Invalid payment amount. Please try again.');
         }
 
-        // ✅ Validate paymentMethod is one of the allowed values
+        // âœ… Validate paymentMethod is one of the allowed values
         const allowedMethods = ['razorpay', 'wallet', 'cash', 'card', 'upi', 'netbanking'];
         if (paymentPayload.paymentMethod && !allowedMethods.includes(paymentPayload.paymentMethod)) {
-          console.error('❌ Invalid paymentMethod:', paymentPayload.paymentMethod);
+          console.error('âŒ Invalid paymentMethod:', paymentPayload.paymentMethod);
           // Default to razorpay if invalid
           paymentPayload.paymentMethod = 'razorpay';
         }
 
-        // ✅ Validate customerId and vendorId are UUIDs if provided
+        // âœ… Validate customerId and vendorId are UUIDs if provided
         if (paymentPayload.customerId && !uuidRegex.test(paymentPayload.customerId)) {
-          console.warn('⚠️ Invalid customerId format, removing from payload:', paymentPayload.customerId);
+          console.warn('âš ï¸ Invalid customerId format, removing from payload:', paymentPayload.customerId);
           delete paymentPayload.customerId;
         }
         if (paymentPayload.vendorId && !uuidRegex.test(paymentPayload.vendorId)) {
-          console.warn('⚠️ Invalid vendorId format, removing from payload:', paymentPayload.vendorId);
+          console.warn('âš ï¸ Invalid vendorId format, removing from payload:', paymentPayload.vendorId);
           delete paymentPayload.vendorId;
         }
 
-        console.log('📤 Creating payment with validated payload:', {
+        console.log('ðŸ“¤ Creating payment with validated payload:', {
           bookingId: paymentPayload.bookingId,
           amount: paymentPayload.amount,
           amountType: typeof paymentPayload.amount,
@@ -2491,7 +2511,7 @@ export function UniversalPaymentPage({
           hasCoupon: !!paymentPayload.couponCode,
           hasPromotion: !!paymentPayload.promotionId,
         });
-        console.log('📤 Full payment payload (for debugging):', JSON.stringify(paymentPayload, null, 2));
+        console.log('ðŸ“¤ Full payment payload (for debugging):', JSON.stringify(paymentPayload, null, 2));
 
         try {
           const paymentRaw = await apiClient.post<any>('/payments/create', paymentPayload);
@@ -2501,17 +2521,17 @@ export function UniversalPaymentPage({
               ? { ...paymentRaw.data }
               : paymentRaw;
         } catch (paymentError: any) {
-          // ✅ Enhanced error logging to see validation errors
-          console.error('❌ Payment creation failed:', paymentError);
-          console.error('❌ Error response:', paymentError?.response || paymentError?.responseData);
-          console.error('❌ Error data:', paymentError?.responseData);
-          console.error('❌ Error status:', paymentError?.statusCode || paymentError?.status);
-          console.error('❌ Raw response:', paymentError?.rawResponse);
-          console.error('❌ Request payload that failed:', paymentPayload);
+          // âœ… Enhanced error logging to see validation errors
+          console.error('âŒ Payment creation failed:', paymentError);
+          console.error('âŒ Error response:', paymentError?.response || paymentError?.responseData);
+          console.error('âŒ Error data:', paymentError?.responseData);
+          console.error('âŒ Error status:', paymentError?.statusCode || paymentError?.status);
+          console.error('âŒ Raw response:', paymentError?.rawResponse);
+          console.error('âŒ Request payload that failed:', paymentPayload);
 
           // Log full error object for debugging
           if (paymentError) {
-            console.error('❌ Full error object:', {
+            console.error('âŒ Full error object:', {
               message: paymentError.message,
               code: paymentError.code,
               statusCode: paymentError.statusCode,
@@ -2536,7 +2556,7 @@ export function UniversalPaymentPage({
               return `${path}: ${e.message}`;
             }).join(', ');
             errorMessage = `Payment validation failed: ${validationErrors}`;
-            console.error('❌ Validation errors:', errorData.error.details.errors);
+            console.error('âŒ Validation errors:', errorData.error.details.errors);
           } else if (errorData?.data?.errors && Array.isArray(errorData.data.errors)) {
             // Format: { data: { errors: [...] } }
             const validationErrors = errorData.data.errors.map((e: any) => {
@@ -2544,7 +2564,7 @@ export function UniversalPaymentPage({
               return `${path}: ${e.message}`;
             }).join(', ');
             errorMessage = `Payment validation failed: ${validationErrors}`;
-            console.error('❌ Validation errors:', errorData.data.errors);
+            console.error('âŒ Validation errors:', errorData.data.errors);
           } else if (errorData?.errors && Array.isArray(errorData.errors)) {
             // Format: { errors: [...] }
             const validationErrors = errorData.errors.map((e: any) => {
@@ -2552,7 +2572,7 @@ export function UniversalPaymentPage({
               return `${path}: ${e.message}`;
             }).join(', ');
             errorMessage = `Payment validation failed: ${validationErrors}`;
-            console.error('❌ Validation errors:', errorData.errors);
+            console.error('âŒ Validation errors:', errorData.errors);
           } else if (errorData?.error?.message) {
             // Format: { success: false, error: { code, message, details } } (backend 500)
             const step = errorData.error?.details?.step;
@@ -2596,11 +2616,11 @@ export function UniversalPaymentPage({
                 }
               : {}),
           } as Record<string, unknown>;
-          console.log('🔄 Creating booking after wallet payment:', createPayload);
+          console.log('ðŸ”„ Creating booking after wallet payment:', createPayload);
           const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
           const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'After wallet payment');
           if (!bookingIdValue) {
-            console.error('❌ No booking ID after wallet payment:', bookingRes);
+            console.error('âŒ No booking ID after wallet payment:', bookingRes);
             throw new Error('Payment succeeded but booking creation failed. Please contact support.');
           }
           currentBookingId = bookingIdValue;
@@ -2634,13 +2654,13 @@ export function UniversalPaymentPage({
           : undefined;
 
         toast.success(type === 'booking' ? 'Booking confirmed!' : 'Order confirmed!');
-        onSuccess(currentBookingId || '', currentOrderId, otpCode);
+        onSuccess(currentBookingId || '', currentOrderId, otpCode, getPaymentSuccessMeta());
         return;
       }
 
       // Step 3: Create Razorpay order
-      // ✅ FIX: Use longer timeout (45s) for payment operations
-      console.log('🔄 [PAYMENT] Creating Razorpay order...', {
+      // âœ… FIX: Use longer timeout (45s) for payment operations
+      console.log('ðŸ”„ [PAYMENT] Creating Razorpay order...', {
         bookingId: currentBookingId,
         amount: bookingCreationDeferred ? (requiredUpfrontAmount ?? finalAmount) : finalAmount,
         flowType,
@@ -2684,7 +2704,7 @@ export function UniversalPaymentPage({
           45000
         );
       } catch (orderError: any) {
-        console.error('❌ [PAYMENT] Razorpay create-order API call failed:', {
+        console.error('âŒ [PAYMENT] Razorpay create-order API call failed:', {
           error: orderError.message,
           status: orderError.status,
           statusCode: orderError.statusCode,
@@ -2696,11 +2716,11 @@ export function UniversalPaymentPage({
         throw new Error(`Failed to create payment order: ${errorMsg}`);
       }
 
-      console.log('✅ [PAYMENT] Razorpay order response (raw):', JSON.stringify(orderRes, null, 2));
-      console.log('✅ [PAYMENT] Response type:', typeof orderRes);
-      console.log('✅ [PAYMENT] Response keys:', orderRes ? Object.keys(orderRes) : 'null/undefined');
+      console.log('âœ… [PAYMENT] Razorpay order response (raw):', JSON.stringify(orderRes, null, 2));
+      console.log('âœ… [PAYMENT] Response type:', typeof orderRes);
+      console.log('âœ… [PAYMENT] Response keys:', orderRes ? Object.keys(orderRes) : 'null/undefined');
 
-      // ✅ FIX: Handle ALL possible response structures
+      // âœ… FIX: Handle ALL possible response structures
       // Backend returns: { orderId, keyId, amount, currency } directly via this.success()
       // But could also be wrapped in: { success: true, data: { ... } } or { data: { ... } }
       // Or error response: { error: "..." } or { success: false, error: "..." }
@@ -2710,7 +2730,7 @@ export function UniversalPaymentPage({
         const errorMsg = typeof orderRes.error === 'string'
           ? orderRes.error
           : orderRes.error?.message || 'Failed to create payment order';
-        console.error('❌ [PAYMENT] Error in response:', errorMsg);
+        console.error('âŒ [PAYMENT] Error in response:', errorMsg);
         throw new Error(errorMsg);
       }
 
@@ -2733,7 +2753,7 @@ export function UniversalPaymentPage({
         orderRes?.data?.amount ||
         orderRes?.success?.data?.amount;
 
-      console.log('🔍 [PAYMENT] Extracted values:', {
+      console.log('ðŸ” [PAYMENT] Extracted values:', {
         razorpayOrderId: razorpayOrderId ? `${razorpayOrderId.substring(0, 20)}...` : 'MISSING',
         keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing',
         orderAmount,
@@ -2743,7 +2763,7 @@ export function UniversalPaymentPage({
       });
 
       if (!razorpayOrderId) {
-        console.error('❌ [PAYMENT] No orderId found in response. Full response structure:', {
+        console.error('âŒ [PAYMENT] No orderId found in response. Full response structure:', {
           response: orderRes,
           stringified: JSON.stringify(orderRes, null, 2),
           type: typeof orderRes,
@@ -2757,31 +2777,31 @@ export function UniversalPaymentPage({
       }
 
       if (!keyId) {
-        console.error('❌ [PAYMENT] No keyId in response and NEXT_PUBLIC_RAZORPAY_KEY not set');
+        console.error('âŒ [PAYMENT] No keyId in response and NEXT_PUBLIC_RAZORPAY_KEY not set');
         throw new Error('Payment gateway configuration error: Razorpay key not found');
       }
 
-      console.log('✅ [PAYMENT] Razorpay order created successfully:', { razorpayOrderId, keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing', amount: orderAmount });
+      console.log('âœ… [PAYMENT] Razorpay order created successfully:', { razorpayOrderId, keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing', amount: orderAmount });
 
-      // ✅ FIX: Wait for Razorpay script to load before opening checkout
+      // âœ… FIX: Wait for Razorpay script to load before opening checkout
       if (!isWarmpawzCustomerNativeWebView() && typeof window !== 'undefined' && !window.Razorpay) {
-        console.log('⏳ [PAYMENT] Waiting for Razorpay script to load...');
+        console.log('â³ [PAYMENT] Waiting for Razorpay script to load...');
         try {
           await loadRazorpayScript();
-          console.log('✅ [PAYMENT] Razorpay script loaded successfully');
+          console.log('âœ… [PAYMENT] Razorpay script loaded successfully');
         } catch (scriptError: any) {
-          console.error('❌ [PAYMENT] Failed to load Razorpay script:', scriptError);
+          console.error('âŒ [PAYMENT] Failed to load Razorpay script:', scriptError);
           throw new Error('Payment gateway script failed to load. Please refresh the page and try again.');
         }
       }
 
-      // Step 4: Open Razorpay checkout (omit invalid offer ids / empty prefill — avoids Razorpay …/build/undefined)
+      // Step 4: Open Razorpay checkout (omit invalid offer ids / empty prefill â€” avoids Razorpay â€¦/build/undefined)
       const titlePart = [serviceName, productName].find((x) => typeof x === 'string' && String(x).trim());
       const vendorPart =
         typeof vendorName === 'string' && vendorName.trim() ? vendorName.trim() : 'Warmpawz';
       const paymentDescription = titlePart
-        ? `${String(titlePart).trim()} — ${vendorPart}`
-        : `Payment — ${vendorPart}`;
+        ? `${String(titlePart).trim()} â€” ${vendorPart}`
+        : `Payment â€” ${vendorPart}`;
       const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
 
       let resolvedCheckoutEmail: string | undefined =
@@ -2835,14 +2855,14 @@ export function UniversalPaymentPage({
 
       const processRazorpaySuccess = async (response: any) => {
         try {
-          console.log('✅ [RAZORPAY] Payment response received:', {
+          console.log('âœ… [RAZORPAY] Payment response received:', {
             order_id: response.razorpay_order_id,
             payment_id: response.razorpay_payment_id,
             has_signature: !!response.razorpay_signature,
           });
 
-          // ✅ Step 1: Verify payment with backend (with retry)
-          console.log('🔄 [RAZORPAY] Verifying payment...');
+          // âœ… Step 1: Verify payment with backend (with retry)
+          console.log('ðŸ”„ [RAZORPAY] Verifying payment...');
           let verifyRes: any = null;
           const MAX_VERIFY_RETRIES = 3;
           for (let attempt = 1; attempt <= MAX_VERIFY_RETRIES; attempt++) {
@@ -2852,12 +2872,12 @@ export function UniversalPaymentPage({
                 razorpay_payment_id: response.razorpay_payment_id,
                 razorpay_signature: response.razorpay_signature,
               }, undefined, 30000);
-              console.log(`✅ [RAZORPAY] Payment verified on attempt ${attempt}:`, verifyRes);
-              break; // success – exit retry loop
+              console.log(`âœ… [RAZORPAY] Payment verified on attempt ${attempt}:`, verifyRes);
+              break; // success â€“ exit retry loop
             } catch (verifyErr: any) {
-              console.error(`❌ [RAZORPAY] verify-payment attempt ${attempt}/${MAX_VERIFY_RETRIES} failed:`, verifyErr?.message);
+              console.error(`âŒ [RAZORPAY] verify-payment attempt ${attempt}/${MAX_VERIFY_RETRIES} failed:`, verifyErr?.message);
               if (attempt === MAX_VERIFY_RETRIES) {
-                // All retries exhausted – throw so outer catch can handle
+                // All retries exhausted â€“ throw so outer catch can handle
                 throw verifyErr;
               }
               // Exponential backoff: 1s, 2s
@@ -2865,7 +2885,7 @@ export function UniversalPaymentPage({
             }
           }
 
-          // ✅ Instant tele: create booking via instant-after-payment (no booking until payment done)
+          // âœ… Instant tele: create booking via instant-after-payment (no booking until payment done)
           if (type === 'booking' && flowType === 'tele-instant') {
             const instantRes = await apiClient.post<any>('/customer/tele/instant-after-payment', {
               razorpay_order_id: response.razorpay_order_id,
@@ -2890,7 +2910,7 @@ export function UniversalPaymentPage({
             return;
           }
 
-          // ✅ Queue-accepted tele: booking already exists, confirm payment and update status
+          // âœ… Queue-accepted tele: booking already exists, confirm payment and update status
           if (type === 'booking' && flowType === 'tele-queue-accepted' && currentBookingId) {
             const confirmRes = await apiClient.post<any>('/customer/tele/confirm-payment', {
               bookingId: currentBookingId,
@@ -2907,7 +2927,7 @@ export function UniversalPaymentPage({
             return;
           }
 
-          // ✅ If booking creation was deferred, create booking now with payment info
+          // âœ… If booking creation was deferred, create booking now with payment info
           if (type === 'booking' && bookingCreationDeferred && deferredBookingPayload) {
             const createPayload = {
               ...deferredBookingPayload,
@@ -2920,18 +2940,18 @@ export function UniversalPaymentPage({
                   }
                 : {}),
             };
-            console.log('🔄 Creating booking after payment:', createPayload);
+            console.log('ðŸ”„ Creating booking after payment:', createPayload);
             const bookingRes = await apiClient.post<any>('/bookings/create', createPayload);
             const bookingIdValue = extractBookingIdFromResponse(bookingRes, 'After Razorpay payment');
             if (!bookingIdValue) {
-              console.error('❌ No booking ID after payment:', bookingRes);
+              console.error('âŒ No booking ID after payment:', bookingRes);
               throw new Error('Payment succeeded but booking creation failed. Please contact support.');
             }
             currentBookingId = bookingIdValue;
             bookingCreationDeferred = false;
           }
 
-          // ✅ Step 2: Apply coupon if used
+          // âœ… Step 2: Apply coupon if used
           if (appliedCoupon) {
             try {
               await apiClient.post('/coupons/apply', {
@@ -2941,14 +2961,14 @@ export function UniversalPaymentPage({
                 customerId,
                 amount: amountToCharge,
               });
-              console.log('✅ [COUPON] Applied successfully');
+              console.log('âœ… [COUPON] Applied successfully');
             } catch (couponErr) {
-              console.warn('⚠️ [COUPON] Failed to apply:', couponErr);
+              console.warn('âš ï¸ [COUPON] Failed to apply:', couponErr);
               // Don't block payment success if coupon fails
             }
           }
 
-          // ✅ Step 3: Apply promotion if used
+          // âœ… Step 3: Apply promotion if used
           if (appliedPromotion) {
             try {
               await apiClient.post('/promotions/apply', {
@@ -2958,32 +2978,37 @@ export function UniversalPaymentPage({
                 customerId,
                 amount: amountToCharge,
               });
-              console.log('✅ [PROMOTION] Applied successfully');
+              console.log('âœ… [PROMOTION] Applied successfully');
             } catch (promoErr) {
-              console.warn('⚠️ [PROMOTION] Failed to apply:', promoErr);
+              console.warn('âš ï¸ [PROMOTION] Failed to apply:', promoErr);
               // Don't block payment success if promotion fails
             }
           }
 
-          // ✅ Step 4: Generate OTP for eligible bookings
+          // âœ… Step 4: Generate OTP for eligible bookings
           let otpCode: string | undefined = undefined;
           if (type === 'booking' && serviceStyle !== 'tele') {
             try {
               otpCode = await generateBookingOTP(currentBookingId || '', customerId);
-              console.log('✅ [OTP] Generated successfully');
+              console.log('âœ… [OTP] Generated successfully');
             } catch (otpErr) {
-              console.warn('⚠️ [OTP] Failed to generate:', otpErr);
+              console.warn('âš ï¸ [OTP] Failed to generate:', otpErr);
               // Don't block payment success if OTP fails
             }
           }
 
-          // ✅ Step 5: Success - booking is now confirmed
-          console.log('✅ [PAYMENT] Complete! Booking confirmed:', currentBookingId);
+          // âœ… Step 5: Success - booking is now confirmed
+          console.log('âœ… [PAYMENT] Complete! Booking confirmed:', currentBookingId);
           toast.success('Payment successful! Booking confirmed.');
           setProcessing(false);
-          onSuccess(currentBookingId || '', currentOrderId, otpCode);
+          onSuccess(currentBookingId || '', currentOrderId, otpCode, getPaymentSuccessMeta(
+            verifyRes?.paymentMethod ||
+              verifyRes?.payment_method ||
+              verifyRes?.data?.paymentMethod ||
+              verifyRes?.data?.payment_method
+          ));
         } catch (err: any) {
-          console.error('❌ [PAYMENT] Verification failed:', err);
+          console.error('âŒ [PAYMENT] Verification failed:', err);
           const errorMessage = err?.response?.data?.error || err?.message || 'Payment verification failed';
           toast.error(`${errorMessage}. Please contact support with order ID: ${response.razorpay_order_id}`);
           setProcessing(false);
@@ -3039,7 +3064,7 @@ export function UniversalPaymentPage({
               b2?.paymentStatus ??
               detail2?.data?.booking?.payment_status;
           } catch {
-            /* GET optional — still attempt cancel when status unknown */
+            /* GET optional â€” still attempt cancel when status unknown */
           }
         }
 
@@ -3047,7 +3072,7 @@ export function UniversalPaymentPage({
         const paidLike = pst === 'paid' || pst === 'completed';
 
         // Backend often creates pre-payment rows as status=confirmed + payment_status=pending (slot held).
-        // Old logic only cancelled pending/pending_payment — confirmed+unpaid was skipped, so slots never released.
+        // Old logic only cancelled pending/pending_payment â€” confirmed+unpaid was skipped, so slots never released.
         const terminalNoCancel = st && ['cancelled', 'completed', 'no_show', 'in_progress'].includes(st);
         const paidConfirmed = st === 'confirmed' && paidLike;
         const skipCancel = terminalNoCancel || paidConfirmed;
@@ -3102,7 +3127,7 @@ export function UniversalPaymentPage({
       // GPay/PhonePe/Paytm intents on Capacitor Android WebView. The legacy
       // `banks` block hid UPI on many Android builds. When the user has
       // pre-entered a VPA, fall back to default layout + `prefill.vpa` (Razorpay
-      // Payment Link–style) so collect runs straight through without the picker.
+      // Payment Linkâ€“style) so collect runs straight through without the picker.
       if (!validPrefillVpa) {
         options.config = getWarmpawzRazorpayUpiDisplayConfig();
         options.method = { upi: true };
@@ -3114,7 +3139,7 @@ export function UniversalPaymentPage({
         options.method = 'upi';
       }
 
-      console.log('🚀 [PAYMENT] Opening Razorpay checkout...', {
+      console.log('ðŸš€ [PAYMENT] Opening Razorpay checkout...', {
         razorpayOrderId,
         amount: amountToCharge,
         keyId: keyId ? `${keyId.substring(0, 8)}...` : 'missing',
@@ -3132,7 +3157,7 @@ export function UniversalPaymentPage({
           order_id: razorpayOrderId,
           ...(Object.keys(razorpayPrefill).length > 0 ? { prefill: razorpayPrefill } : {}),
           theme: { color: '#FF8C42' },
-          // Keep parity with web `new Razorpay(options)` — UPI display block
+          // Keep parity with web `new Razorpay(options)` â€” UPI display block
           // (collect/intent/qr) + `method: { upi: true }` is what surfaces UPI
           // on react-native-razorpay too. With a manual VPA, switch to single
           // `method: 'upi'` + `prefill.vpa` for a straight collect flow.
@@ -3159,18 +3184,18 @@ export function UniversalPaymentPage({
           setProcessing(false);
         }
       } else {
-        // ✅ FIX: Double-check Razorpay is available before opening (browser / PWA)
+        // âœ… FIX: Double-check Razorpay is available before opening (browser / PWA)
         if (!window.Razorpay) {
-          console.error('❌ [PAYMENT] Razorpay not available after script load');
+          console.error('âŒ [PAYMENT] Razorpay not available after script load');
           throw new Error('Payment gateway not loaded. Please refresh the page and try again.');
         }
 
         try {
           const razorpay = new window.Razorpay(sanitizeRazorpayInstanceOptions(options));
-          // ✅ Listen for payment failures (these don't trigger the handler callback)
+          // âœ… Listen for payment failures (these don't trigger the handler callback)
           razorpay.on('payment.failed', (resp: any) => {
             razorpayPaymentFailed = true;
-            console.error('❌ [RAZORPAY] Payment failed event:', {
+            console.error('âŒ [RAZORPAY] Payment failed event:', {
               code: resp?.error?.code,
               description: resp?.error?.description,
               source: resp?.error?.source,
@@ -3183,19 +3208,19 @@ export function UniversalPaymentPage({
             setProcessing(false);
           });
           razorpay.open();
-          console.log('✅ [PAYMENT] Razorpay checkout opened successfully');
+          console.log('âœ… [PAYMENT] Razorpay checkout opened successfully');
         } catch (openError: any) {
-          console.error('❌ [PAYMENT] Failed to open Razorpay checkout:', openError);
+          console.error('âŒ [PAYMENT] Failed to open Razorpay checkout:', openError);
           throw new Error(`Failed to open payment gateway: ${openError.message || 'Unknown error'}`);
         }
       }
 
     } catch (error: any) {
-      console.error('❌ Payment error:', error);
-      console.error('❌ Error response:', error?.response);
-      console.error('❌ Error data:', error?.response?.data);
-      console.error('❌ Error status:', error?.status);
-      console.error('❌ Error message:', error?.message);
+      console.error('âŒ Payment error:', error);
+      console.error('âŒ Error response:', error?.response);
+      console.error('âŒ Error data:', error?.response?.data);
+      console.error('âŒ Error status:', error?.status);
+      console.error('âŒ Error message:', error?.message);
 
       // Extract detailed error message
       const errorData = error?.response?.data || error?.data;
@@ -3207,14 +3232,14 @@ export function UniversalPaymentPage({
           return `${path}: ${e.message}`;
         }).join(', ');
         errorMessage = `Payment validation failed: ${validationErrors}`;
-        console.error('❌ Validation errors:', errorData.data.errors);
+        console.error('âŒ Validation errors:', errorData.data.errors);
       } else if (errorData?.errors && Array.isArray(errorData.errors)) {
         const validationErrors = errorData.errors.map((e: any) => {
           const path = e.path?.join('.') || e.path || 'unknown';
           return `${path}: ${e.message}`;
         }).join(', ');
         errorMessage = `Payment validation failed: ${validationErrors}`;
-        console.error('❌ Validation errors:', errorData.errors);
+        console.error('âŒ Validation errors:', errorData.errors);
       } else if (errorData?.error || errorData?.message) {
         errorMessage = errorData.error || errorData.message;
       }
@@ -3255,7 +3280,7 @@ export function UniversalPaymentPage({
     );
   }
 
-  // ✅ Derive display values from selectedServices when available (universal payment for all flows)
+  // âœ… Derive display values from selectedServices when available (universal payment for all flows)
   const effectiveSelectedServices = selectedServices && selectedServices.length > 0
     ? selectedServices
     : null;
@@ -3298,7 +3323,7 @@ export function UniversalPaymentPage({
 
   return (
     <div className="mx-auto flex h-[100dvh] min-h-0 w-full max-w-customer flex-col overflow-hidden bg-orange-50">
-      {/* In-app payment summary (not Razorpay’s iframe). `compact` keeps safe-area without the 4rem mobile top pad. */}
+      {/* In-app payment summary (not Razorpayâ€™s iframe). `compact` keeps safe-area without the 4rem mobile top pad. */}
       <ServiceDashboardHeader
         className="sticky top-0 z-50 shrink-0"
         compact
@@ -3433,7 +3458,7 @@ export function UniversalPaymentPage({
                       svcStyle === 'at_home' ? 'bg-green-100' :
                         svcStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
                       }`}>
-                      {svcStyle === 'tele' ? '📱' : svcStyle === 'at_home' ? '🏠' : svcStyle === 'at_center' ? '🏥' : '🛒'}
+                      {svcStyle === 'tele' ? 'ðŸ“±' : svcStyle === 'at_home' ? 'ðŸ ' : svcStyle === 'at_center' ? 'ðŸ¥' : 'ðŸ›’'}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-gray-900">{svcName}</h3>
@@ -3461,7 +3486,7 @@ export function UniversalPaymentPage({
                 serviceStyle === 'at_home' ? 'bg-green-100' :
                   serviceStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
                 }`}>
-                {serviceStyle === 'tele' ? '📱' : serviceStyle === 'at_home' ? '🏠' : serviceStyle === 'at_center' ? '🏥' : '🛒'}
+                {serviceStyle === 'tele' ? 'ðŸ“±' : serviceStyle === 'at_home' ? 'ðŸ ' : serviceStyle === 'at_center' ? 'ðŸ¥' : 'ðŸ›’'}
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="font-semibold text-gray-900">{displayName}</h3>
@@ -3513,6 +3538,41 @@ export function UniversalPaymentPage({
           )}
         </Card>
           </>
+        )}
+
+        {/* Wallet Section â€” right after booking summary */}
+        {wallet && wallet.balance > 0 && (
+          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+            <button
+              onClick={() => setUseWallet(!useWallet)}
+              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${useWallet ? 'border-green-500 bg-green-50' : 'border-gray-200'
+                }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center ${useWallet ? 'bg-green-100' : 'bg-orange-100'
+                  }`}>
+                  <Wallet className={`w-5 h-5 ${useWallet ? 'text-green-600' : 'text-[#FF8C42]'}`} />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium text-gray-900">Warmpawz Wallet</p>
+                  <p className="text-sm text-gray-500">
+                    Balance: ₹{wallet.balance.toFixed(2)}
+                    {wallet.loyaltyPoints && ` • ${wallet.loyaltyPoints} points`}
+                  </p>
+                </div>
+              </div>
+              <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${useWallet ? 'border-green-500 bg-green-500 text-white' : 'border-gray-300'
+                }`}>
+                {useWallet && <CheckCircle2 className="w-4 h-4" />}
+              </div>
+            </button>
+            {useWallet && (
+              <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
+                <CheckCircle2 className="w-4 h-4" />
+                ₹{walletAmount.toFixed(2)} will be deducted from wallet
+              </p>
+            )}
+          </Card>
         )}
 
         {/* Promotions & Spotlight Offers */}
@@ -3654,16 +3714,6 @@ export function UniversalPaymentPage({
           </Card>
         )}
 
-        {/* Wallet Section */}
-        {wallet && wallet.balance > 0 && (
-          <CustomerWalletApply
-            wallet={wallet}
-            useWallet={useWallet}
-            onToggleUseWallet={() => setUseWallet(!useWallet)}
-            walletAmountApplied={walletAmount}
-          />
-        )}
-
         {/* Price Breakdown */}
         <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <h2 className="font-semibold text-gray-900 mb-4">Price Details</h2>
@@ -3679,7 +3729,7 @@ export function UniversalPaymentPage({
               <span>₹{taxBreakdown.subtotal.toFixed(2)}</span>
             </div>
 
-            {/* ✅ FIX: Vendor Discount - Applied directly by vendor at service level */}
+            {/* âœ… FIX: Vendor Discount - Applied directly by vendor at service level */}
             {appliedPromotion && (
               <div className="flex justify-between text-green-600">
                 <span className="flex items-center gap-1">
@@ -3690,7 +3740,7 @@ export function UniversalPaymentPage({
               </div>
             )}
 
-            {/* ✅ FIX: Platform Coupon - Applied at checkout level by platform */}
+            {/* âœ… FIX: Platform Coupon - Applied at checkout level by platform */}
             {appliedCoupon && (
               <div className="flex justify-between text-blue-600">
                 <span className="flex items-center gap-1">
@@ -3727,7 +3777,7 @@ export function UniversalPaymentPage({
               </>
             )}
 
-            {/* ✅ FIX GAP-7.1: Platform Discount (shown separately from vendor discount) */}
+            {/* âœ… FIX GAP-7.1: Platform Discount (shown separately from vendor discount) */}
             {appliedPromotion && promotionDiscount > 0 && (
               <div className="flex justify-between text-blue-600">
                 <span className="flex items-center gap-1">
@@ -3940,7 +3990,7 @@ export function UniversalPaymentPage({
               />
               <p className="text-[11px] leading-snug text-gray-500">
                 If entered, we pass this to Razorpay as <span className="font-mono">prefill.vpa</span>. Desktop checkout often
-                stays QR-first; try mobile browser if collect does not appear — per Razorpay/NPCI rules.
+                stays QR-first; try mobile browser if collect does not appear â€” per Razorpay/NPCI rules.
               </p>
             </div>
           )}
@@ -3964,7 +4014,7 @@ export function UniversalPaymentPage({
         )}
       </main>
 
-      {/* Fixed CTA — same max width as BottomNavigation (max-w-customer) */}
+      {/* Fixed CTA â€” same max width as BottomNavigation (max-w-customer) */}
       <div
         className={`pointer-events-none fixed left-0 right-0 z-[100] mx-auto w-full max-w-customer px-4 ${ctaBottomClass}`}
       >
@@ -4064,7 +4114,7 @@ export function UniversalPaymentPage({
         isOpen={showPolicyModal}
         onClose={() => setShowPolicyModal(false)}
         onAccept={() => {
-          // ✅ FIX: Close modal first, then set policy accepted and proceed with payment
+          // âœ… FIX: Close modal first, then set policy accepted and proceed with payment
           // This ensures the modal closes immediately and payment proceeds without double-click
           setShowPolicyModal(false);
           setPolicyAccepted(true);

@@ -48,7 +48,7 @@ import { normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
 import { PetSitterServiceRouter } from '../PetSitterServiceRouter';
 import { AdoptionServiceRouter } from '../AdoptionServiceRouter';
 import { SunsetServiceRouter } from '../SunsetServiceRouter';
-import { CustomerProfile } from '../CustomerProfile';
+import { CustomerProfileView } from '../CustomerProfileView';
 import { PetProfile } from '../PetProfile';
 import { PetProfileDashboard } from '../PetProfileDashboard';
 import { InsuranceServicesLanding } from '../InsuranceServicesLanding';
@@ -484,6 +484,8 @@ export function CustomerHomeWrapper({
    */
   const trainingCenterOpenedWithEmbedRef = useRef(false);
   const trainingHomeOpenedWithEmbedRef = useRef(false);
+  /** My Profile from account sidebar: back reopens menu instead of generic handleBack. */
+  const profileFromAccountMenuRef = useRef(false);
   /** After opening grooming/training style hub from problem-grid discovery, full back returns here instead of the service hub. */
   const [returnToProblemGridFromStyleHub, setReturnToProblemGridFromStyleHub] = useState(false);
   /**
@@ -1461,20 +1463,19 @@ export function CustomerHomeWrapper({
     navigateBackToPreviousOr(handleBack);
   };
 
-  /** From profile / profile-tab: remember origin when opening full bookings list. */
-  const handleCustomerProfileScreenNavigate = (screen: string) => {
-    if (screen === 'bookings') {
-      setPreviousScreen(currentScreen);
-      setCurrentScreen('bookings');
-      return;
-    }
-    setCurrentScreen(screen as ScreenType);
-  };
-
   /** Profile / account full-screen pages: Back returns to home with account sidebar open (not full shell reset). */
   const backToAccountMenu = () => {
     setCurrentScreen('home');
     setUserSidebarOpen(true);
+  };
+
+  const handleCustomerProfileBack = () => {
+    if (profileFromAccountMenuRef.current) {
+      profileFromAccountMenuRef.current = false;
+      backToAccountMenu();
+      return;
+    }
+    handleBack();
   };
 
   const navigateToPets = () => {
@@ -1549,7 +1550,8 @@ export function CustomerHomeWrapper({
         onViewMyPackages={() => router.push('/my-packages')}
         onViewProfile={() => {
           setUserSidebarOpen(false);
-          router.push('/profile');
+          profileFromAccountMenuRef.current = true;
+          setCurrentScreen('customer-profile');
         }}
         onNavigate={handleAccountNavigate}
       />
@@ -1780,17 +1782,13 @@ export function CustomerHomeWrapper({
     );
   }
 
-  // ✅ UPDATED: Customer Profile with navigation
   if (currentScreen === 'customer-profile') {
     return (
-      <CustomerScreenWrapper 
-        currentScreen={currentScreen}
-        onNavigate={handleBottomNav}
-        onProfileClick={handleProfileClick}
-        accountSidebar={accountSidebarOverlay}
-      >
-        <CustomerProfile phone={phone} onBack={handleBack} onNavigate={handleCustomerProfileScreenNavigate} />
-      </CustomerScreenWrapper>
+      <CustomerProfileView
+        phone={phone}
+        onBack={handleCustomerProfileBack}
+        onCloseToHome={handleBack}
+      />
     );
   }
   if (currentScreen === 'pet-profile' && selectedPetData)
@@ -4155,12 +4153,9 @@ export function CustomerHomeWrapper({
       />
     );
   }
-  // profile: map to customer-profile (e.g. from VetBookingRouter tab)
-  if (currentScreen === 'profile') return (
-    <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-      <CustomerProfile phone={phone} onBack={handleBack} onNavigate={handleCustomerProfileScreenNavigate} />
-    </CustomerScreenWrapper>
-  );
+  if (currentScreen === 'profile') {
+    return <CustomerProfileView phone={phone} onBack={handleBack} onCloseToHome={handleBack} />;
+  }
 
   // Emergency Booking
   if (currentScreen === 'emergency-booking') return <EmergencyBookingPage

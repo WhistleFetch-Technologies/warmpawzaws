@@ -81,6 +81,9 @@ export function patchCustomerProfileKeysInLocalStorage(patch: {
   address: string;
   city?: string;
   state?: string;
+  photo?: string;
+  houseNo?: string;
+  floor?: string;
 }): void {
   if (typeof window === 'undefined') return;
   try {
@@ -93,6 +96,9 @@ export function patchCustomerProfileKeysInLocalStorage(patch: {
       d.address = patch.address;
       if (patch.city !== undefined) d.city = patch.city;
       if (patch.state !== undefined) d.state = patch.state;
+      if (patch.photo !== undefined) d.photo = patch.photo;
+      if (patch.houseNo !== undefined) { d.houseNo = patch.houseNo; d.house_no = patch.houseNo; }
+      if (patch.floor !== undefined) d.floor = patch.floor;
       localStorage.setItem(key, JSON.stringify(d));
     }
   } catch {

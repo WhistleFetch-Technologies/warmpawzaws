@@ -10,6 +10,9 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { PaymentSourcesDisplay } from './PaymentSourcesDisplay';
+import type { PaymentSource } from '@/lib/payment-display-utils';
+import { normalizePaymentSources } from '@/lib/payment-display-utils';
 
 interface BookingConfirmationPageProps {
   bookingId: string;
@@ -39,6 +42,7 @@ interface BookingConfirmationPageProps {
   totalAmount: number;
   paymentMethod?: string;
   transactionId?: string;
+  paymentSources?: PaymentSource[];
   
   // Navigation
   onViewDetails: () => void;
@@ -68,6 +72,7 @@ export function BookingConfirmationPage({
   totalAmount,
   paymentMethod,
   transactionId,
+  paymentSources,
   onViewDetails,
   onBackToHome,
   onBack,
@@ -194,6 +199,10 @@ export function BookingConfirmationPage({
 
   const displayName = serviceName || productName || 'Service';
   const isEligibleForOTP = type === 'booking' && serviceStyle && serviceStyle !== 'tele' && serviceStyle !== 'ecom';
+  const resolvedPaymentSources =
+    paymentSources && paymentSources.length > 0
+      ? paymentSources
+      : normalizePaymentSources(bookingDetails?.paymentSources);
 
   return (
     <div className="w-full max-w-customer mx-auto min-h-[100dvh] bg-gradient-to-br from-green-50 via-white to-orange-50 flex flex-col">
@@ -433,20 +442,30 @@ export function BookingConfirmationPage({
             )}
             
             {/* Payment */}
-            <div className="flex items-start gap-3 pt-3 border-t border-gray-200">
-              <div className="flex-1">
-                <p className="text-sm text-gray-500">Total Amount</p>
-                <p className="font-bold text-lg text-[#FF8C42]">₹{totalAmount.toFixed(2)}</p>
-                {paymentMethod && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    Paid via {paymentMethod === 'razorpay' ? 'Razorpay' : paymentMethod}
-                  </p>
-                )}
-              </div>
-              <Badge className="bg-green-100 text-green-700 border-green-200">
-                <CheckCircle2 className="w-3 h-3 mr-1" />
-                Paid
-              </Badge>
+            <div className="pt-3 border-t border-gray-200 space-y-3">
+              {resolvedPaymentSources.length > 0 ? (
+                <PaymentSourcesDisplay
+                  sources={resolvedPaymentSources}
+                  totalPaid={totalAmount}
+                  compact
+                />
+              ) : (
+                <div className="flex items-start gap-3">
+                  <div className="flex-1">
+                    <p className="text-sm text-gray-500">Total Amount</p>
+                    <p className="font-bold text-lg text-[#FF8C42]">₹{totalAmount.toFixed(2)}</p>
+                    {paymentMethod && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        Paid via {paymentMethod === 'razorpay' ? 'Razorpay' : paymentMethod}
+                      </p>
+                    )}
+                  </div>
+                  <Badge className="bg-green-100 text-green-700 border-green-200">
+                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                    Paid
+                  </Badge>
+                </div>
+              )}
             </div>
           </div>
         </Card>
