@@ -24,7 +24,11 @@ import { fetchVendorBankRowsForPayout } from '../../../utils/vendor-bank-for-pay
 import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../../../utils/error-serialization';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
-import { pickTaxCategoryDisplayRate } from '../../../utils/tax-category-display-rate';
+import {
+  isMealPlanGstScope,
+  parseGstApplicationScope,
+  pickTaxCategoryDisplayRate,
+} from '../../../utils/tax-category-display-rate';
 import { isValidUUID } from '../../../types/entities';
 import {
   listFeeSettingsFromDb,
@@ -4596,15 +4600,15 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const catalogCategoryId = body.catalogCategoryId ?? body.catalog_category_id;
       const roleIdsRaw = body.roleIds ?? body.role_ids;
       const { description, defaultGSTRate, isActive, name } = body;
-      const gstApplicationScopeRaw = body.gstApplicationScope ?? body.gst_application_scope;
-      const gstApplicationScope =
-        String(gstApplicationScopeRaw || '').trim() === 'meal_plan_food' ? 'meal_plan_food' : 'service_booking';
+      const gstApplicationScope = parseGstApplicationScope(
+        body.gstApplicationScope ?? body.gst_application_scope,
+      );
 
       if (!catalogCategoryId || String(catalogCategoryId).trim() === '') {
         return c.json({ success: false, error: 'Catalog category is required' }, 400);
       }
       if (
-        gstApplicationScope !== 'meal_plan_food' &&
+        !isMealPlanGstScope(gstApplicationScope) &&
         (!Array.isArray(roleIdsRaw) || roleIdsRaw.length === 0)
       ) {
         return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
@@ -4750,8 +4754,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       }
       const gstScopeBody = body.gstApplicationScope ?? body.gst_application_scope;
       if (gstScopeBody !== undefined && gstScopeBody !== null) {
-        const s = String(gstScopeBody).trim();
-        updateData.gst_application_scope = s === 'meal_plan_food' ? 'meal_plan_food' : 'service_booking';
+        updateData.gst_application_scope = parseGstApplicationScope(gstScopeBody);
       }
 
       const applyTaxCategoryUpdate = async (): Promise<void> => {
@@ -4793,7 +4796,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         );
         const effScope = String(scMeta.rows?.[0]?.gs || 'service_booking').trim();
         if (roleIdsRaw.length === 0) {
-          if (effScope === 'meal_plan_food') {
+          if (effScope === 'meal_plan_food' || effScope === 'meal_plan_delivery') {
             await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
           } else {
             return c.json({ success: false, error: 'At least one applicable role is required' }, 400);

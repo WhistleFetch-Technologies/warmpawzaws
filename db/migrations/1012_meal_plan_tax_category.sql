@@ -34,10 +34,10 @@ BEGIN
   ) THEN
     INSERT INTO tax_categories (name, description, default_gst_rate, is_active)
     VALUES
-      ('Meal Plans – Food',
+      ('Meal Plans - Food',
        'Pet prepared meals and nutrition subscriptions (food component). Default GST 5% (prepared pet food). Admin can update.',
        5.00, TRUE),
-      ('Meal Plans – Delivery Fee',
+      ('Meal Plans - Delivery Fee',
        'Delivery fee component of meal plan orders. Default GST 18%. Admin can update.',
        18.00, TRUE)
     ON CONFLICT (name) DO NOTHING;
@@ -47,10 +47,10 @@ BEGIN
   ) THEN
     INSERT INTO tax_categories (category_name, description, tax_rate, is_active)
     VALUES
-      ('Meal Plans – Food',
+      ('Meal Plans - Food',
        'Pet prepared meals and nutrition subscriptions (food component). Default GST 5% (prepared pet food). Admin can update.',
        5.00, TRUE),
-      ('Meal Plans – Delivery Fee',
+      ('Meal Plans - Delivery Fee',
        'Delivery fee component of meal plan orders. Default GST 18%. Admin can update.',
        18.00, TRUE)
     ON CONFLICT (category_name) DO NOTHING;
@@ -65,4 +65,4 @@ ALTER TABLE meal_plans
 -- 4. Add a platform-level default column: nullable; when NULL, pricing uses
 --    the category seeded above (looked up by name).
 COMMENT ON COLUMN meal_plans.tax_category_id IS
-  'Optional override. When NULL, the platform uses the "Meal Plans – Food" tax category from tax_categories.';
+  'Optional override. When NULL, the platform uses the "Meal Plans - Food" tax category from tax_categories.';
