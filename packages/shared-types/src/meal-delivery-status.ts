@@ -166,31 +166,37 @@ export function isTerminalDeliveryState(status: string | null | undefined): bool
   return TERMINAL_DELIVERY_TOKENS.has(single);
 }
 
-/** Active Pidge phases where a live map is meaningful (requires coordinates). */
+/** Active Pidge phases where live map UI is shown (coords optional — placeholder until GPS arrives). */
 const MEAL_LIVE_MAP_LOGISTICS_TOKENS = new Set([
   'heading_to_pickup',
   'picked_up',
   'on_the_way',
   'nearby',
+  'out_for_delivery',
+  'ofd',
 ]);
 
 export function shouldShowMealLiveMap(input: {
   logisticsPartner?: string | null;
   logisticsType?: string | null;
   logisticsStatus?: string | null;
-  hasCoordinates: boolean;
+  /** @deprecated Coords no longer gate visibility; map shows placeholder until GPS arrives. */
+  hasCoordinates?: boolean;
   orderEffectiveState?: MealDeliveryEffective;
 }): boolean {
   const partner = String(input.logisticsPartner ?? '').trim().toLowerCase();
   const logisticsType = String(input.logisticsType ?? '').trim().toLowerCase();
   if (partner !== 'pidge' && logisticsType !== 'pidge') return false;
-  if (!input.hasCoordinates) return false;
   if (input.orderEffectiveState && isTerminalMealDeliveryState(input.orderEffectiveState)) {
     return false;
   }
   if (isTerminalDeliveryState(input.logisticsStatus)) return false;
   const segs = splitMealStatusSegments(input.logisticsStatus);
-  return segs.some((s) => MEAL_LIVE_MAP_LOGISTICS_TOKENS.has(s));
+  if (segs.some((s) => MEAL_LIVE_MAP_LOGISTICS_TOKENS.has(s))) return true;
+  if (input.orderEffectiveState === 'on_the_way' || input.orderEffectiveState === 'picked_up') {
+    return true;
+  }
+  return false;
 }
 
 /** Rider card / live enrichment only during active delivery phases (Pidge + internal). */

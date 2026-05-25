@@ -11,11 +11,10 @@ import {
   MealPlanOrderTrackingUI,
   formatMealOrderDisplayId,
 } from '@/components/customer/tracking/MealPlanOrderTrackingUI';
-import { LiveTrackingMapPanel } from '@/components/customer/tracking/LiveTrackingMapPanel';
+import { MealLiveMapSection } from '@/components/customer/tracking/MealLiveMapSection';
 import {
   resolveEffectiveMealDeliveryState,
   shouldShowDeliveryRider,
-  shouldShowMealLiveMap,
 } from '@warmpawz/shared-types';
 import {
   extractDestinationCoordinates,
@@ -23,10 +22,14 @@ import {
   resolveRiderPhoto,
 } from '@/lib/meal-tracking-utils';
 import { useMealTrackingPoll } from '@/lib/use-meal-tracking-poll';
+import { MealOrderDetailsCollapsible } from '@/components/customer/tracking/MealOrderDetailsCollapsible';
+import { MealCustomerDetailsCard } from '@/components/customer/tracking/MealCustomerDetailsCard';
+import { formatMealOrderDeliveryAddress } from '@/lib/meal-order-tracking-details';
 
 interface TrackingData {
   success: boolean;
   orderType: 'ecommerce' | 'pharmacy' | 'meal';
+  customer?: Record<string, unknown> | null;
   order: {
     id?: string;
     order_number?: string;
@@ -256,20 +259,13 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
     const etaMinutes = tracking.tracking?.etaMinutes ?? tracking.tracking?.eta;
     const riderPhoto = resolveRiderPhoto(tracking.tracking as Record<string, unknown>);
     const riderCoords = extractRiderCoordinates(tracking.tracking as Record<string, unknown>);
-    const destination = extractDestinationCoordinates(
+    const deliveryAddressText = formatMealOrderDeliveryAddress(
       tracking.order as Record<string, unknown>,
     );
-    const showLiveMap =
-      shouldShowMealLiveMap({
-        logisticsPartner: tracking.tracking?.logistics_partner ?? null,
-        logisticsType:
-          (tracking.order as { logistics_type?: string; logisticsType?: string }).logistics_type ??
-          (tracking.order as { logisticsType?: string }).logisticsType ??
-          null,
-        logisticsStatus,
-        hasCoordinates: Boolean(riderCoords && destination),
-        orderEffectiveState: mealDeliveryEff,
-      }) && destination != null && riderCoords != null;
+    const destination = extractDestinationCoordinates(
+      tracking.order as Record<string, unknown>,
+      deliveryAddressText,
+    );
 
     return (
       <MealPlanOrderTrackingUI
@@ -319,15 +315,20 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
           ) : undefined
         }
         liveTrackingMap={
-          showLiveMap && destination && riderCoords ? (
-            <LiveTrackingMapPanel
-              variant="meal"
-              deliveryAddress={destination}
-              currentLocation={riderCoords}
-              etaMinutes={etaMinutes}
-              distanceRemainingKm={tracking.tracking?.distanceRemaining}
-            />
-          ) : undefined
+          <MealLiveMapSection
+            logisticsPartner={tracking.tracking?.logistics_partner ?? null}
+            logisticsType={
+              (tracking.order as { logistics_type?: string; logisticsType?: string }).logistics_type ??
+              (tracking.order as { logisticsType?: string }).logisticsType ??
+              null
+            }
+            logisticsStatus={logisticsStatus}
+            orderEffectiveState={mealDeliveryEff}
+            riderCoords={riderCoords}
+            destination={destination}
+            etaMinutes={etaMinutes}
+            distanceRemainingKm={tracking.tracking?.distanceRemaining}
+          />
         }
         deliveryPartnerCard={
           showRiderCard ? (
@@ -397,6 +398,15 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
               </a>
             </div>
           ) : undefined
+        }
+        customerDetailsCard={
+          <MealCustomerDetailsCard
+            order={tracking.order as Record<string, unknown>}
+            customer={tracking.customer ?? null}
+          />
+        }
+        orderDetailsCollapsible={
+          <MealOrderDetailsCollapsible order={tracking.order as Record<string, unknown>} />
         }
         floatingChatButton={
           <a

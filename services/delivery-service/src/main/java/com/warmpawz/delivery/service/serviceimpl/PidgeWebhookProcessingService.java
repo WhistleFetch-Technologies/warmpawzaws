@@ -451,6 +451,22 @@ public class PidgeWebhookProcessingService {
 		};
 	}
 
+	private static BigDecimal readRiderCoord(JsonNode rider, String... keys) {
+		if (rider == null || rider.isNull()) {
+			return null;
+		}
+		for (String key : keys) {
+			if (!rider.has(key) || rider.get(key).isNull()) {
+				continue;
+			}
+			JsonNode node = rider.get(key);
+			if (node.isNumber() && Double.isFinite(node.asDouble())) {
+				return BigDecimal.valueOf(node.asDouble());
+			}
+		}
+		return null;
+	}
+
 	private static String extractRiderName(JsonNode rider) {
 		if (rider == null || rider.isNull()) {
 			return null;
@@ -515,16 +531,28 @@ public class PidgeWebhookProcessingService {
 	 */
 	@Transactional
 	public Map<String, Object> handleRiderTaskPayload(JsonNode payload) {
+		try {
+			log.info("[PIDGE RIDER TASK RAW] {}", objectMapper.writeValueAsString(payload));
+		} catch (Exception e) {
+			log.info("[PIDGE RIDER TASK RAW] <unserializable: {}>", e.getMessage());
+		}
+
 		JsonNode rider = payload.path("rider");
 		String riderName = extractRiderName(rider);
 		String riderPhone = extractRiderPhone(rider);
 		String riderPhoto = extractRiderPhoto(rider);
-		BigDecimal riderLat = rider.has("current_latitude")
-				? BigDecimal.valueOf(rider.get("current_latitude").asDouble())
-				: null;
-		BigDecimal riderLng = rider.has("current_longitude")
-				? BigDecimal.valueOf(rider.get("current_longitude").asDouble())
-				: null;
+		BigDecimal riderLat = readRiderCoord(rider, "current_latitude", "latitude", "lat");
+		BigDecimal riderLng = readRiderCoord(rider, "current_longitude", "longitude", "lng", "lon");
+
+		log.info(
+				"[PIDGE RIDER TASK PARSED] riderName={}, phone={}, lat={}, lng={}, orderDetailCount={}",
+				riderName,
+				riderPhone,
+				riderLat,
+				riderLng,
+				payload.has("order_details") && payload.get("order_details").isArray()
+						? payload.get("order_details").size()
+						: 0);
 		String updateSource = payload.hasNonNull("update_source") ? payload.get("update_source").asText() : null;
 		long eventTimestamp = payload.has("event_timestamp") ? payload.get("event_timestamp").asLong() : 0L;
 
@@ -723,12 +751,16 @@ public class PidgeWebhookProcessingService {
 			}
 		}
 		log.info(
-				"[PIDGE RIDER TASK] persisted_order_detail deliveryTrackingId={} finalDeliveryTrackingStatus={} normalizedInternal={} mealOrderOrPharmacyId={} orderRowStatusUpdate={}",
+				"[PIDGE RIDER TASK] persisted_order_detail deliveryTrackingId={} finalDeliveryTrackingStatus={} normalizedInternal={} mealOrderOrPharmacyId={} orderRowStatusUpdate={} deliveryPersonName={} deliveryPersonPhone={} currentLat={} currentLng={}",
 				dt.getId(),
 				dt.getStatus(),
 				normalized,
 				hyperlocalOrderId,
-				riderDowngradeBlocked || orderStatus == null ? "skipped" : orderStatus);
+				riderDowngradeBlocked || orderStatus == null ? "skipped" : orderStatus,
+				dt.getDeliveryPersonName(),
+				dt.getDeliveryPersonPhone(),
+				dt.getCurrentLat(),
+				dt.getCurrentLng());
 	}
 
 	private String mergeRiderTaskMetadata(

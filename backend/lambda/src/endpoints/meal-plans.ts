@@ -1150,11 +1150,6 @@ export function registerMealPlanEndpoints(app: Hono) {
               recommendedPlanLengthWeeks: dietFull.recommendedPlanLengthWeeks,
             };
 
-      const purchase_snapshot = {
-        purchaseType: expectedPurchaseType,
-        subscriptionConfig: subscriptionConfigSnap,
-      };
-
       // Check lead time (when plan has lead_time_hours set)
       const leadTimeHours =
         plan.lead_time_hours != null ? Number(plan.lead_time_hours as number | string) : 0;
@@ -1279,6 +1274,24 @@ export function registerMealPlanEndpoints(app: Hono) {
         gstRatesOrder.deliveryGstPct,
       );
       const totalAmount = Math.round((totalAmountBeforeGst + mealGstOrder.totalGstAmount) * 100) / 100;
+
+      const purchase_snapshot = {
+        purchaseType: expectedPurchaseType,
+        subscriptionConfig: subscriptionConfigSnap,
+        deliveryAddress: {
+          ...normalizedAddress,
+          city: deliveryAddress.city ?? deliveryAddress.address_city,
+          state: deliveryAddress.state ?? deliveryAddress.address_state,
+        },
+        checkoutPricing: {
+          subtotal,
+          deliveryFee,
+          platformFee,
+          convenienceFee,
+          gst: mealGstOrder,
+          totalAmount,
+        },
+      };
 
       const moCols = await mealOrdersTableColumns();
       const mealOrderRow: Record<string, unknown> = {

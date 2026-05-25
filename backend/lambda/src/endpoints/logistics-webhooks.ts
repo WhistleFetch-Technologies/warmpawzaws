@@ -36,6 +36,7 @@ import {
 import { resolveEffectiveMealDeliveryState } from '../utils/meal-delivery-effective-state';
 import {
   buildCustomerMealTrackingOrderPayload,
+  buildMealTrackingCustomerPayload,
   type MealTrackingOrderSource,
 } from '../utils/meal-tracking-order-payload';
 
@@ -862,9 +863,22 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           order = result.rows[0];
           orderType = 'pharmacy';
         } else {
-          // Check meal orders (id only – meal_orders may not have order_number)
+          // Check meal orders (id or human-readable order_number e.g. ML…)
           result = await query(
-            `SELECT * FROM meal_orders WHERE id::text = $1`,
+            `SELECT mo.*,
+                    COALESCE(
+                      NULLIF(TRIM(mp.name), ''),
+                      NULLIF(TRIM(mp.plan_name), ''),
+                      NULLIF(TRIM(prod.name), '')
+                    ) AS meal_plan_name,
+                    mp.price_per_meal AS mp_price_per_meal,
+                    mp.price AS mp_legacy_price
+             FROM meal_orders mo
+             LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
+             LEFT JOIN products prod ON prod.id = mo.meal_plan_id
+               AND prod.category IN ('meal_plan', 'nutrition', 'food')
+             WHERE mo.id::text = $1 OR mo.order_number = $1
+             LIMIT 1`,
             [orderId]
           ).catch(() => ({ rows: [] }));
           if (result.rows.length > 0) {
@@ -999,9 +1013,40 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           }
         }
 
+        let mealPlanForTotals: Record<string, unknown> | null = null;
+        if (orderType === 'meal' && mealOrderSource === 'meal_orders') {
+          mealPlanForTotals = {
+            price_per_meal: order.mp_price_per_meal,
+            price: order.mp_legacy_price,
+          };
+        } else if (orderType === 'meal' && mealOrderSource === 'orders') {
+          const mpo = await query(
+            `SELECT mpo.quantity,
+                    mp.name AS meal_plan_name,
+                    mp.plan_name AS mp_plan_name,
+                    mp.price_per_meal,
+                    mp.price AS mp_legacy_price
+             FROM meal_plan_orders mpo
+             LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id
+             WHERE mpo.order_id = $1
+             LIMIT 1`,
+            [order.id]
+          ).catch(() => ({ rows: [] }));
+          const line = mpo.rows[0];
+          if (line) {
+            order.quantity = line.quantity;
+            order.meal_plan_name =
+              line.meal_plan_name || line.mp_plan_name || order.meal_plan_name;
+            mealPlanForTotals = {
+              price_per_meal: line.price_per_meal,
+              price: line.mp_legacy_price,
+            };
+          }
+        }
+
         const mealDisplayTotals =
           orderType === 'meal'
-            ? resolveCustomerMealPlanOrderDisplayTotals(order, null)
+            ? resolveCustomerMealPlanOrderDisplayTotals(order, mealPlanForTotals)
             : null;
         const displayTotalAmount =
           mealDisplayTotals != null ? mealDisplayTotals.total : order.total_amount;
@@ -1050,9 +1095,20 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           }
         }
 
+        let customerPayload: Record<string, unknown> | null = null;
+        if (orderType === 'meal' && order.customer_id) {
+          const custRes = await query(
+            `SELECT id, full_name, phone, profile_photo_url
+             FROM customers WHERE id = $1 LIMIT 1`,
+            [order.customer_id],
+          ).catch(() => ({ rows: [] }));
+          customerPayload = buildMealTrackingCustomerPayload(custRes.rows[0], order);
+        }
+
         return c.json({
           success: true,
           orderType,
+          customer: customerPayload,
           order:
             orderType === 'meal' && mealOrderSource
               ? buildCustomerMealTrackingOrderPayload({
@@ -1060,6 +1116,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
                   orderSource: mealOrderSource,
                   displayStatus,
                   mealDisplayTotals,
+                  mealPlan: mealPlanForTotals,
                   deliveryTracking: deliveryTracking ?? null,
                 })
               : {

@@ -11,11 +11,10 @@ import {
   MealPlanOrderTrackingUI,
   formatMealOrderDisplayId,
 } from '@/components/customer/tracking/MealPlanOrderTrackingUI';
-import { LiveTrackingMapPanel } from '@/components/customer/tracking/LiveTrackingMapPanel';
+import { MealLiveMapSection } from '@/components/customer/tracking/MealLiveMapSection';
 import {
   resolveEffectiveMealDeliveryState,
   shouldShowDeliveryRider,
-  shouldShowMealLiveMap,
 } from '@warmpawz/shared-types';
 import {
   extractDestinationCoordinates,
@@ -23,6 +22,9 @@ import {
   resolveRiderPhoto,
 } from '@/lib/meal-tracking-utils';
 import { useMealTrackingPoll } from '@/lib/use-meal-tracking-poll';
+import { MealOrderDetailsCollapsible } from '@/components/customer/tracking/MealOrderDetailsCollapsible';
+import { MealCustomerDetailsCard } from '@/components/customer/tracking/MealCustomerDetailsCard';
+import { formatMealOrderDeliveryAddress } from '@/lib/meal-order-tracking-details';
 
 interface DeliveryPerson {
   name: string;
@@ -141,6 +143,7 @@ function resolveDeliveryAddressText(order: Record<string, unknown>): string {
 export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackingScreenProps) {
   const [order, setOrder] = useState<any>(null);
   const [tracking, setTracking] = useState<TrackingData | null>(null);
+  const [mealCustomer, setMealCustomer] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [showDetails, setShowDetails] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -158,6 +161,7 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
         if (response.success) {
           setOrder(response.order);
           setTracking(response.tracking);
+          setMealCustomer(response.customer ?? null);
           orderRef.current = response.order;
           trackingRef.current = response.tracking;
         }
@@ -263,23 +267,14 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
     const otp = tracking?.deliveryOtp;
     const totalAmt =
       order.total_amount ?? order.totalAmount ?? order.total ?? order.amount;
-    const subtotalAmt = order.subtotal ?? order.subtotal_amount;
-    const deliveryFeeAmt = order.delivery_fee ?? order.deliveryFee;
-    const platformFeeAmt = order.platform_fee ?? order.platformFee;
     const deliveredAtLabel = resolveDeliveredAt(order, tracking);
-    const deliveryAddressText = resolveDeliveryAddressText(order);
+    const deliveryAddressText = formatMealOrderDeliveryAddress(order as Record<string, unknown>);
     const riderCoords = extractRiderCoordinates(tracking as Record<string, unknown>);
-    const destination = extractDestinationCoordinates(order, deliveryAddressText);
+    const destination = extractDestinationCoordinates(
+      order as Record<string, unknown>,
+      deliveryAddressText,
+    );
     const riderPhoto = resolveRiderPhoto(tracking as Record<string, unknown>);
-    const showLiveMap =
-      shouldShowMealLiveMap({
-        logisticsPartner:
-          tracking?.logistics_partner ?? tracking?.logisticsPartner ?? null,
-        logisticsType: order.logistics_type ?? order.logisticsType ?? null,
-        logisticsStatus,
-        hasCoordinates: Boolean(riderCoords && destination),
-        orderEffectiveState: deliveryEff,
-      }) && destination != null && riderCoords != null;
 
     return (
       <>
@@ -320,15 +315,18 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
             ) : undefined
           }
           liveTrackingMap={
-            showLiveMap && destination && riderCoords ? (
-              <LiveTrackingMapPanel
-                variant="meal"
-                deliveryAddress={destination}
-                currentLocation={riderCoords}
-                etaMinutes={tracking?.eta ?? tracking?.etaMinutes}
-                distanceRemainingKm={tracking?.distanceRemaining}
-              />
-            ) : undefined
+            <MealLiveMapSection
+              logisticsPartner={
+                tracking?.logistics_partner ?? tracking?.logisticsPartner ?? null
+              }
+              logisticsType={order.logistics_type ?? order.logisticsType ?? null}
+              logisticsStatus={logisticsStatus}
+              orderEffectiveState={deliveryEff}
+              riderCoords={riderCoords}
+              destination={destination}
+              etaMinutes={tracking?.eta ?? tracking?.etaMinutes}
+              distanceRemainingKm={tracking?.distanceRemaining}
+            />
           }
           deliveryPartnerCard={
             showRiderCard ? (
@@ -411,72 +409,14 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
               </div>
             ) : undefined
           }
+          customerDetailsCard={
+            <MealCustomerDetailsCard
+              order={order as Record<string, unknown>}
+              customer={mealCustomer}
+            />
+          }
           orderDetailsCollapsible={
-            <div className="w-full">
-              <button
-                type="button"
-                onClick={() => setShowDetails(!showDetails)}
-                className="w-full bg-white rounded-2xl shadow-sm border border-slate-100 p-4 flex items-center justify-between"
-              >
-                <span className="font-semibold text-gray-900">Order Details</span>
-                <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
-              </button>
-              {showDetails ? (
-                <div className="bg-white rounded-b-2xl shadow-sm px-4 pb-4 -mt-2 pt-2 border border-t-0 border-slate-100">
-                  <div className="space-y-2 mb-4">
-                    {(() => {
-                      let items: any[] = [];
-                      try {
-                        const raw =
-                          typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
-                        items = Array.isArray(raw) ? raw : [];
-                      } catch {
-                        items = [];
-                      }
-                      return items.map((item: any, idx: number) => (
-                        <div key={idx} className="flex justify-between text-sm">
-                          <span className="text-gray-600">
-                            {item.medicine_name || item.name} x{item.quantity}
-                          </span>
-                          <span className="text-gray-900">₹{item.quantity * item.unit_price}</span>
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                  <div className="border-t pt-3 space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Subtotal</span>
-                      <span>₹{moneyInr(subtotalAmt)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Delivery Fee</span>
-                      <span>₹{moneyInr(deliveryFeeAmt)}</span>
-                    </div>
-                    {(platformFeeAmt ?? 0) > 0 && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">Platform Fee</span>
-                        <span>₹{moneyInr(platformFeeAmt)}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between font-semibold border-t pt-2">
-                      <span>Total</span>
-                      <span className="text-green-600">₹{moneyInr(totalAmt)}</span>
-                    </div>
-                  </div>
-                  <div className="mt-4 pt-4 border-t">
-                    <div className="flex items-start gap-3">
-                      <MapPin className="w-5 h-5 text-gray-400 mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">Delivery Address</p>
-                        <p className="text-sm text-gray-600">
-                          {deliveryAddressText || 'Address not available'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            <MealOrderDetailsCollapsible order={order as Record<string, unknown>} />
           }
           floatingChatButton={
             <button

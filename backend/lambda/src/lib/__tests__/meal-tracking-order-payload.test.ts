@@ -29,6 +29,8 @@ describe('meal-tracking-order-payload', () => {
     expect(payload.total_amount).toBe(1015);
     expect(payload.delivered_at).toBe('2026-05-25T11:30:00Z');
     expect(payload.delivery_address).toContain('MG Road');
+    expect(payload.summary_lines?.length).toBeGreaterThan(0);
+    expect(payload.subtotal).toBe(900);
   });
 
   it('formats JSON delivery_address on meal_orders', () => {

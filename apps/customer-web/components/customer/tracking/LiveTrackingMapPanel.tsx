@@ -12,13 +12,19 @@ declare global {
 }
 
 export interface LiveTrackingMapPanelProps {
-  deliveryAddress: { lat: number; lng: number; address?: string };
+  deliveryAddress: { lat: number; lng: number; address?: string } | null;
   currentLocation: { lat: number; lng: number } | null;
   etaMinutes?: number | null;
   distanceRemainingKm?: number | null;
   /** meal = teal accent (default), pharmacy = orange */
   variant?: 'meal' | 'pharmacy';
   className?: string;
+}
+
+function hasValidCoords(point: { lat: number; lng: number } | null | undefined): boolean {
+  if (!point) return false;
+  if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return false;
+  return !(point.lat === 0 && point.lng === 0);
 }
 
 let mapsScriptLoading = false;
@@ -94,8 +100,16 @@ export function LiveTrackingMapPanel({
   const accent = variant === 'meal' ? 'teal' : 'orange';
   const riderColor = variant === 'meal' ? '#0d9488' : '#f97316';
   const destColor = variant === 'meal' ? '#16a34a' : '#22c55e';
+  const hasDestination = hasValidCoords(deliveryAddress);
+  const hasRider = hasValidCoords(currentLocation);
+  const waitingMessage = !hasRider
+    ? 'Waiting for rider location…'
+    : !hasDestination
+      ? 'Waiting for delivery location…'
+      : null;
 
   useEffect(() => {
+    if (!hasDestination || !deliveryAddress) return;
     ensureGoogleMapsLoaded(() => {
       if (!mapRef.current || googleMapRef.current) return;
 
@@ -130,10 +144,10 @@ export function LiveTrackingMapPanel({
 
       setMapLoaded(true);
     });
-  }, [deliveryAddress.lat, deliveryAddress.lng, destColor]);
+  }, [deliveryAddress?.lat, deliveryAddress?.lng, destColor, hasDestination]);
 
   useEffect(() => {
-    if (!mapLoaded || !currentLocation || !googleMapRef.current) return;
+    if (!mapLoaded || !hasRider || !currentLocation || !googleMapRef.current || !hasDestination || !deliveryAddress) return;
 
     const { lat, lng } = currentLocation;
 
@@ -177,21 +191,22 @@ export function LiveTrackingMapPanel({
     bounds.extend({ lat, lng });
     bounds.extend({ lat: deliveryAddress.lat, lng: deliveryAddress.lng });
     googleMapRef.current.fitBounds(bounds, { padding: 48 });
-  }, [currentLocation, mapLoaded, deliveryAddress.lat, deliveryAddress.lng, riderColor]);
+  }, [currentLocation, mapLoaded, deliveryAddress, hasDestination, hasRider, riderColor]);
+
+  const accentBg = accent === 'teal' ? 'bg-teal-50' : 'bg-orange-50';
+  const accentText = accent === 'teal' ? 'text-teal-900' : 'text-orange-900';
+  const accentIcon = accent === 'teal' ? 'text-teal-600' : 'text-orange-600';
+  const accentSpinner = accent === 'teal' ? 'text-teal-600' : 'text-orange-500';
 
   return (
     <div className={`bg-white rounded-2xl shadow-sm border border-slate-100/80 overflow-hidden ${className}`}>
       {(etaMinutes != null && Number.isFinite(Number(etaMinutes))) ||
       (distanceRemainingKm != null && Number.isFinite(Number(distanceRemainingKm))) ? (
-        <div
-          className={`flex items-center gap-3 px-4 py-3 border-b border-slate-100 ${
-            accent === 'teal' ? 'bg-teal-50' : 'bg-orange-50'
-          }`}
-        >
+        <div className={`flex items-center gap-3 px-4 py-3 border-b border-slate-100 ${accentBg}`}>
           {etaMinutes != null && Number.isFinite(Number(etaMinutes)) ? (
             <>
-              <Clock className={`w-5 h-5 shrink-0 ${accent === 'teal' ? 'text-teal-600' : 'text-orange-600'}`} />
-              <p className={`text-sm font-medium ${accent === 'teal' ? 'text-teal-900' : 'text-orange-900'}`}>
+              <Clock className={`w-5 h-5 shrink-0 ${accentIcon}`} />
+              <p className={`text-sm font-medium ${accentText}`}>
                 ETA: {formatEta(Number(etaMinutes))}
               </p>
             </>
@@ -205,23 +220,44 @@ export function LiveTrackingMapPanel({
       ) : null}
 
       <div className="relative">
-        <div ref={mapRef} className="h-56 bg-slate-100">
-          {!mapLoaded ? (
-            <div className="h-full flex items-center justify-center">
-              <Loader2 className={`w-7 h-7 animate-spin ${accent === 'teal' ? 'text-teal-600' : 'text-orange-500'}`} />
-            </div>
-          ) : null}
-        </div>
-
-        {currentLocation ? (
-          <div className="absolute top-3 left-3 bg-white rounded-full px-3 py-1.5 shadow-md flex items-center gap-2">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span className="text-xs font-semibold text-slate-700">LIVE</span>
+        {waitingMessage && !hasDestination ? (
+          <div className={`h-56 flex flex-col items-center justify-center px-6 text-center ${accentBg}`}>
+            <MapPin className={`w-10 h-10 mb-3 ${accentIcon}`} />
+            <p className={`text-sm font-semibold ${accentText}`}>{waitingMessage}</p>
+            <p className="text-xs text-slate-600 mt-2">
+              Live map will appear when rider GPS and delivery coordinates are available.
+            </p>
           </div>
-        ) : null}
+        ) : (
+          <>
+            {/* Loader must not be a child of mapRef — Google Maps owns that node's children. */}
+            <div className="relative h-56 bg-slate-100">
+              <div ref={mapRef} className="h-full w-full" />
+              {!mapLoaded ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-100">
+                  <Loader2 className={`w-7 h-7 animate-spin ${accentSpinner}`} />
+                </div>
+              ) : null}
+            </div>
+
+            {hasRider ? (
+              <div className="absolute top-3 left-3 bg-white rounded-full px-3 py-1.5 shadow-md flex items-center gap-2">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-xs font-semibold text-slate-700">LIVE</span>
+              </div>
+            ) : waitingMessage ? (
+              <div className="absolute inset-x-3 top-3 bg-white/95 backdrop-blur rounded-xl px-3 py-2.5 shadow-md border border-slate-100">
+                <p className={`text-xs font-semibold ${accentText}`}>{waitingMessage}</p>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  Your delivery address is pinned. Rider position updates automatically.
+                </p>
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
 
-      {deliveryAddress.address ? (
+      {deliveryAddress?.address ? (
         <div className="px-4 py-3 flex items-start gap-2 text-sm text-slate-600 border-t border-slate-100">
           <MapPin className="w-4 h-4 shrink-0 mt-0.5 text-slate-400" />
           <span>{deliveryAddress.address}</span>

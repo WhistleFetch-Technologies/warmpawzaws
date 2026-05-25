@@ -107,6 +107,7 @@ export interface MealPlanOrderTrackingUIProps {
   liveTrackingMap?: ReactNode;
   deliveryPartnerCard?: ReactNode;
   deliveredBanner?: ReactNode;
+  customerDetailsCard?: ReactNode;
   orderDetailsCollapsible?: ReactNode;
   floatingChatButton?: ReactNode;
 }
@@ -122,6 +123,7 @@ export function MealPlanOrderTrackingUI({
   liveTrackingMap,
   deliveryPartnerCard,
   deliveredBanner,
+  customerDetailsCard,
   orderDetailsCollapsible,
   floatingChatButton,
 }: MealPlanOrderTrackingUIProps) {
@@ -215,6 +217,8 @@ export function MealPlanOrderTrackingUI({
         {deliveryPartnerCard}
 
         {deliveredBanner}
+
+        {customerDetailsCard}
 
         {orderDetailsCollapsible}
       </main>
