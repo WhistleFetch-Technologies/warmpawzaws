@@ -52,6 +52,12 @@ export function mergeTrackingFromDeliveryService(
     if (phone) dp.phone = phone;
     if (pickString(rider.vehicleNumber)) dp.vehicleNumber = rider.vehicleNumber;
     if (pickString(rider.vehicleType)) dp.vehicleType = rider.vehicleType;
+    const photo = pickString(
+      (rider as Record<string, unknown>).photo,
+      (rider as Record<string, unknown>).img,
+      (rider as Record<string, unknown>).image,
+    );
+    if (photo) dp.photo = photo;
     out.deliveryPerson = dp;
   }
 

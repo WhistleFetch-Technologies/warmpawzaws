@@ -2,17 +2,30 @@
 
 import { useEffect, useState } from 'react';
 
+type OrderValueSlab = {
+  minOrderInr: number;
+  maxOrderInr: number | null;
+  deliveryFeeInr: number;
+};
+
+type DeliveryFeeZone = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  minDistanceKm: number;
+  maxDistanceKm: number;
+  slabs: OrderValueSlab[];
+  description?: string;
+  operationalRules?: string[];
+};
+
 type Policy = {
   version: number;
   maxServiceRadiusKm: number;
-  zoneABoundaryKm: number;
+  zones: DeliveryFeeZone[];
   runtimeSignals?: {
     festivalActive?: boolean;
     rainActive?: boolean;
-  };
-  zones: {
-    zoneA: { minOrderInr: number; maxOrderInr: number | null; deliveryFeeInr: number }[];
-    zoneB: { minOrderInr: number; maxOrderInr: number | null; deliveryFeeInr: number }[];
   };
   surges: {
     weekendInr: number;
@@ -24,12 +37,8 @@ type Policy = {
   };
   content: {
     coverageSummary: string;
-    zoneADescription?: string;
-    zoneBDescription?: string;
     surgeIntro?: string;
     rulesFreeDelivery: string[];
-    rulesBeyond5Km: string[];
-    rulesBeyond8Km: string[];
     importantNotes: string[];
   };
 };
@@ -40,6 +49,10 @@ function apiBase(): string {
     process.env.API_GATEWAY_URL ||
     'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com'
   ).replace(/\/+$/, '');
+}
+
+function sortZones(zones: DeliveryFeeZone[]): DeliveryFeeZone[] {
+  return [...zones].sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 export default function DeliveryFeesHelpPage() {
@@ -88,6 +101,8 @@ export default function DeliveryFeesHelpPage() {
     return `₹${min} – below ₹${max}`;
   };
 
+  const zones = sortZones(policy.zones || []);
+
   return (
     <main className="max-w-3xl mx-auto px-4 py-10 space-y-10 text-gray-800">
       <header>
@@ -111,51 +126,37 @@ export default function DeliveryFeesHelpPage() {
         )}
       </header>
 
-      <section>
-        <h2 className="text-lg font-semibold">Delivery charges — Zone A (up to {policy.zoneABoundaryKm} KM)</h2>
-        {policy.content.zoneADescription && (
-          <p className="text-sm text-gray-600 mt-1">{policy.content.zoneADescription}</p>
-        )}
-        <table className="mt-3 w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="text-left p-3 border-b">Order value</th>
-              <th className="text-left p-3 border-b">Delivery fee</th>
-            </tr>
-          </thead>
-          <tbody>
-            {policy.zones.zoneA.map((row, i) => (
-              <tr key={i} className="border-b border-gray-100">
-                <td className="p-3">{fmtRange(row.minOrderInr, row.maxOrderInr)}</td>
-                <td className="p-3">{row.deliveryFeeInr === 0 ? 'FREE' : `₹${row.deliveryFeeInr}`}</td>
+      {zones.map((zone) => (
+        <section key={zone.id}>
+          <h2 className="text-lg font-semibold">
+            {zone.name} ({zone.minDistanceKm}–{zone.maxDistanceKm} KM)
+          </h2>
+          {zone.description && <p className="text-sm text-gray-600 mt-1">{zone.description}</p>}
+          <table className="mt-3 w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="text-left p-3 border-b">Order value</th>
+                <th className="text-left p-3 border-b">Delivery fee</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold">Zone B (beyond {policy.zoneABoundaryKm} KM up to {policy.maxServiceRadiusKm} KM)</h2>
-        {policy.content.zoneBDescription && (
-          <p className="text-sm text-gray-600 mt-1">{policy.content.zoneBDescription}</p>
-        )}
-        <table className="mt-3 w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="text-left p-3 border-b">Order value</th>
-              <th className="text-left p-3 border-b">Delivery fee</th>
-            </tr>
-          </thead>
-          <tbody>
-            {policy.zones.zoneB.map((row, i) => (
-              <tr key={i} className="border-b border-gray-100">
-                <td className="p-3">{fmtRange(row.minOrderInr, row.maxOrderInr)}</td>
-                <td className="p-3">{row.deliveryFeeInr === 0 ? 'FREE' : `₹${row.deliveryFeeInr}`}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+            </thead>
+            <tbody>
+              {zone.slabs.map((row, i) => (
+                <tr key={i} className="border-b border-gray-100">
+                  <td className="p-3">{fmtRange(row.minOrderInr, row.maxOrderInr)}</td>
+                  <td className="p-3">{row.deliveryFeeInr === 0 ? 'FREE' : `₹${row.deliveryFeeInr}`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {(zone.operationalRules?.length ?? 0) > 0 && (
+            <ul className="mt-3 list-disc pl-5 text-sm space-y-1">
+              {zone.operationalRules!.map((t, i) => (
+                <li key={i}>{t}</li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ))}
 
       <section>
         <h2 className="text-lg font-semibold">Additional surge charges</h2>
@@ -182,24 +183,6 @@ export default function DeliveryFeesHelpPage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold">Orders beyond 5 KM</h2>
-        <ul className="mt-2 list-disc pl-5 text-sm space-y-1">
-          {policy.content.rulesBeyond5Km.map((t, i) => (
-            <li key={i}>{t}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold">Orders beyond 8 KM</h2>
-        <ul className="mt-2 list-disc pl-5 text-sm space-y-1">
-          {policy.content.rulesBeyond8Km.map((t, i) => (
-            <li key={i}>{t}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section>
         <h2 className="text-lg font-semibold">Important notes</h2>
         <ul className="mt-2 list-disc pl-5 text-sm space-y-1">
           {policy.content.importantNotes.map((t, i) => (
@@ -207,6 +190,10 @@ export default function DeliveryFeesHelpPage() {
           ))}
         </ul>
       </section>
+
+      <p className="text-xs text-gray-500">
+        Deliveries are offered within {policy.maxServiceRadiusKm} KM of the nearest fulfillment location.
+      </p>
     </main>
   );
 }

@@ -10,6 +10,7 @@ public class RiderInfoDto {
 	String riderName;
 	String riderPhone;
 	String riderId;
+	String riderPhoto;
 	String vehicleType;
 	String vehicleNumber;
 }

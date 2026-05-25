@@ -52,6 +52,7 @@ import {
   User,
   X,
   ClipboardList,
+  UtensilsCrossed,
   icons
 } from 'lucide-react';
 
@@ -68,6 +69,8 @@ import {
   getVendorDashboardRatingPresentation,
   mergeVendorDashboardStats,
 } from '../helpers';
+import { mapMealOrdersToSchedule, type VendorScheduleTypeFilter } from '@/lib/vendor-meal-order-schedule';
+import { VendorMealOrderScheduleCard } from '../VendorMealOrderScheduleCard';
 import { toast } from 'sonner';
 import { useActiveVideoCallForVendor } from '@/hooks/useActivevideocallTracker';
 import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayout';
@@ -154,7 +157,7 @@ export function VendorDashboard({
 }: VendorDashboardProps) {
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
-  const [appointmentTypeFilter, setAppointmentTypeFilter] = useState<'all' | 'clinic' | 'home' | 'tele'>('all');
+  const [appointmentTypeFilter, setAppointmentTypeFilter] = useState<VendorScheduleTypeFilter>('all');
   const [stats, setStats] = useState<Dashboardstats>({
     appointments: 0,
     consultations: 0,
@@ -166,6 +169,7 @@ export function VendorDashboard({
     activeOrders: 0
   });
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
+  const [mealOrderSchedule, setMealOrderSchedule] = useState<ScheduleItem[]>([]);
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
@@ -529,6 +533,22 @@ export function VendorDashboard({
 
       // Wait for critical parsing to complete
       await Promise.all(criticalParsing);
+
+      if (isNutritionistVendor) {
+        const mealRes = (await apiClient
+          .get(`/vendor/${vendorId}/meal-orders`)
+          .catch(() => ({ success: false, orders: [] }))) as {
+          success?: boolean;
+          orders?: unknown[];
+        };
+        if (mealRes?.orders) {
+          setMealOrderSchedule(mapMealOrdersToSchedule(mealRes.orders, activeTab));
+        } else {
+          setMealOrderSchedule([]);
+        }
+      } else {
+        setMealOrderSchedule([]);
+      }
 
       // ✅ PERFORMANCE: End tracking for critical path
       PerformanceMonitor.markEnd('dashboard-load');
@@ -1417,12 +1437,14 @@ export function VendorDashboard({
                   <button
                     onClick={onNavigateToDietCharts}
                     className="bg-lime-50 border border-lime-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-lime-100 transition-colors"
-                    title="Diet, meal products, and orders"
+                    title="Meal plans, products, and delivery orders"
                   >
                     <svg className="w-6 h-6 text-lime-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    <span className="text-xs font-medium text-gray-900">Diet</span>
+                    <span className="text-[10px] leading-tight font-medium text-gray-900 text-center">
+                      Meal plan &amp; order management
+                    </span>
                   </button>
                 )}
 
@@ -1511,8 +1533,9 @@ export function VendorDashboard({
           </div>
 
           {(isPharmacy ||
-            capabilities.orders ||
-            SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS) && (
+            (capabilities.orders && !isNutritionistVendor) ||
+            SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS ||
+            isNutritionistVendor) && (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {/* ✅ PHARMACY FIX: Show Orders first for Pharmacy, Appointments for others */}
             {isPharmacy ? (
@@ -1533,7 +1556,7 @@ export function VendorDashboard({
             ) : (
               <>
                 {/* ✅ Stat card with role-aware labels — gated by SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS */}
-                {!isPharmacy && SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS && (
+                {!isPharmacy && (SHOW_VENDOR_STATS_BOOKINGS_SESSIONS_CARDS || isNutritionistVendor) && (
                   <button
                     key="stat-appointments"
                     onClick={() => {
@@ -1550,7 +1573,7 @@ export function VendorDashboard({
                 )}
 
                 {/* Orders Stat (if booking is disabled or orders enabled) */}
-                {capabilities.orders && (
+                {capabilities.orders && !isNutritionistVendor && (
                   <div key="stat-orders" className={`text-center p-3 bg-blue-50 rounded-lg`}>
                     <ShoppingBag className={`w-5 h-5 text-blue-600 mx-auto mb-1`} />
                     <div className="text-2xl font-bold text-gray-900">{stats.activeOrders || 0}</div>
@@ -1598,7 +1621,17 @@ export function VendorDashboard({
         {!isPharmacy && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 text-center mb-3">
-              {activeTab === 'today' ? labels.todayLabel : activeTab === 'week' ? `This Week's ${labels.bookings}` : `This Month's ${labels.bookings}`}
+              {appointmentTypeFilter === 'meal_orders'
+                ? activeTab === 'today'
+                  ? "Today's Meal Orders"
+                  : activeTab === 'week'
+                    ? "This Week's Meal Orders"
+                    : "This Month's Meal Orders"
+                : activeTab === 'today'
+                  ? labels.todayLabel
+                  : activeTab === 'week'
+                    ? `This Week's ${labels.bookings}`
+                    : `This Month's ${labels.bookings}`}
             </h2>
 
             {/* Appointment Type Filter */}
@@ -1623,38 +1656,89 @@ export function VendorDashboard({
                   <Monitor className="w-3.5 h-3.5" /> {labels.teleLabel}
                 </button>
               )}
+
+              {isNutritionistVendor && (
+                <button
+                  onClick={() => setAppointmentTypeFilter('meal_orders')}
+                  className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    appointmentTypeFilter === 'meal_orders' ? 'bg-lime-600 text-white' : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  <UtensilsCrossed className="w-3.5 h-3.5" /> Meal Orders
+                </button>
+              )}
             </div>
 
-            {todaySchedule.length === 0 ? (
-              <div className="text-center py-8 px-4 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Calendar className="w-8 h-8 text-gray-400" />
-                </div>
-                <h3 className="text-gray-900 font-semibold mb-1">No {labels.bookings} Yet</h3>
-                <p className="text-sm text-gray-500 mb-4 max-w-[250px] mx-auto">
-                  Share your profile with {labels.customers.toLowerCase()} to start getting {labels.bookings.toLowerCase()}!
-                </p>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-end mb-2">
-                  <button className="text-sm text-[#FF8C42]" onClick={() => { onNavigateToBookingManagement ? onNavigateToBookingManagement() : router.push('/bookings'); }}>View All →</button>
-                </div>
-                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                  {todaySchedule
-                    .filter(appointment => {
-                      if (appointmentTypeFilter === 'all') return true;
-                      const typeMap: Record<string, string> = {
-                        'at_center': 'clinic',
-                        'clinic': 'clinic',
-                        'at_home': 'home',
-                        'home': 'home',
-                        'tele': 'tele',
-                        'teleconsultation': 'tele'
-                      };
-                      return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
-                    })
-                    .map(appointment => {
+            {(() => {
+              const showingMealOrders = appointmentTypeFilter === 'meal_orders';
+              const filteredBookings = todaySchedule.filter((appointment) => {
+                if (showingMealOrders) return false;
+                if (appointmentTypeFilter === 'all') return true;
+                const typeMap: Record<string, string> = {
+                  at_center: 'clinic',
+                  clinic: 'clinic',
+                  at_home: 'home',
+                  home: 'home',
+                  tele: 'tele',
+                  teleconsultation: 'tele',
+                };
+                return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
+              });
+              const scheduleItems = showingMealOrders ? mealOrderSchedule : filteredBookings;
+              const scheduleLabel = showingMealOrders
+                ? 'meal orders'
+                : labels.bookings.toLowerCase();
+
+              if (scheduleItems.length === 0) {
+                return (
+                  <div className="text-center py-8 px-4 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                      {showingMealOrders ? (
+                        <UtensilsCrossed className="w-8 h-8 text-gray-400" />
+                      ) : (
+                        <Calendar className="w-8 h-8 text-gray-400" />
+                      )}
+                    </div>
+                    <h3 className="text-gray-900 font-semibold mb-1">
+                      No {showingMealOrders ? 'Meal Orders' : labels.bookings} Yet
+                    </h3>
+                    <p className="text-sm text-gray-500 mb-4 max-w-[250px] mx-auto">
+                      {showingMealOrders
+                        ? 'New meal plan and delivery orders will appear here for the selected period.'
+                        : `Share your profile with ${labels.customers.toLowerCase()} to start getting ${scheduleLabel}!`}
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <>
+                  <div className="flex items-center justify-end mb-2">
+                    <button
+                      className="text-sm text-[#FF8C42]"
+                      onClick={() => {
+                        if (showingMealOrders) {
+                          router.push('/nutrition/dashboard');
+                          return;
+                        }
+                        onNavigateToBookingManagement
+                          ? onNavigateToBookingManagement()
+                          : router.push('/bookings');
+                      }}
+                    >
+                      View All →
+                    </button>
+                  </div>
+                  <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                    {showingMealOrders
+                      ? scheduleItems.map((order) => (
+                          <VendorMealOrderScheduleCard
+                            key={order.id}
+                            order={order}
+                            onOpen={() => router.push('/nutrition/dashboard')}
+                          />
+                        ))
+                      : scheduleItems.map((appointment) => {
                       const serviceType = appointment.serviceType?.toLowerCase();
                       let typeIcon = Stethoscope;
                       let typeColor = 'bg-blue-100';
@@ -1837,9 +1921,10 @@ export function VendorDashboard({
                         </div>
                       );
                     })}
-                </div>
-              </>
-            )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 

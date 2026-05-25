@@ -37,4 +37,8 @@ public class DeliveryLocationHistory {
 
 	@Column(name = "recorded_at", nullable = false)
 	private Instant recordedAt = Instant.now();
+
+	/** e.g. pidge (webhook), partner_app (manual update-location). */
+	@Column(length = 32)
+	private String source;
 }

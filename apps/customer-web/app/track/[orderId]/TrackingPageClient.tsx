@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useParams, usePathname, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { 
@@ -11,10 +11,18 @@ import {
   MealPlanOrderTrackingUI,
   formatMealOrderDisplayId,
 } from '@/components/customer/tracking/MealPlanOrderTrackingUI';
+import { LiveTrackingMapPanel } from '@/components/customer/tracking/LiveTrackingMapPanel';
 import {
   resolveEffectiveMealDeliveryState,
   shouldShowDeliveryRider,
+  shouldShowMealLiveMap,
 } from '@warmpawz/shared-types';
+import {
+  extractDestinationCoordinates,
+  extractRiderCoordinates,
+  resolveRiderPhoto,
+} from '@/lib/meal-tracking-utils';
+import { useMealTrackingPoll } from '@/lib/use-meal-tracking-poll';
 
 interface TrackingData {
   success: boolean;
@@ -62,6 +70,7 @@ interface TrackingData {
     eta?: number;
     etaMinutes?: number;
     distanceRemaining?: number;
+    logistics_partner?: string;
     locationHistory?: Array<{ lat: number; lng: number; time: string }>;
   } | null;
 }
@@ -115,21 +124,9 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const trackingRef = useRef<TrackingData | null>(null);
 
-  useEffect(() => {
-    loadTracking();
-    
-    // Auto-refresh every 30 seconds for active deliveries
-    const interval = setInterval(() => {
-      if (tracking?.tracking?.status && !['delivered', 'cancelled', 'returned'].includes(tracking.tracking.status)) {
-        loadTracking(true);
-      }
-    }, 18000);
-
-    return () => clearInterval(interval);
-  }, [resolvedOrderId, phone]);
-
-  const loadTracking = async (silent = false) => {
+  const loadTracking = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
       else setRefreshing(true);
@@ -140,6 +137,7 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
           : '';
       const result = await apiClient.get<TrackingData>(`/customer/tracking/${resolvedOrderId}${qs}`);
       setTracking(result);
+      trackingRef.current = result;
       setError(null);
     } catch (err: any) {
       console.error('Error loading tracking:', err);
@@ -148,7 +146,16 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [resolvedOrderId, phone]);
+
+  useMealTrackingPoll(
+    loadTracking,
+    () => ({
+      orderStatus: trackingRef.current?.order?.status ?? null,
+      logisticsStatus: trackingRef.current?.tracking?.status ?? null,
+    }),
+    [resolvedOrderId, phone],
+  );
 
   const getStatusIndex = (status: string, steps: typeof statusSteps) => {
     // ✅ FIX: Map backend statuses to frontend step keys
@@ -247,6 +254,22 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
     const showRiderCard =
       !isDelivered && shouldShowDeliveryRider(logisticsStatus) && Boolean(riderName);
     const etaMinutes = tracking.tracking?.etaMinutes ?? tracking.tracking?.eta;
+    const riderPhoto = resolveRiderPhoto(tracking.tracking as Record<string, unknown>);
+    const riderCoords = extractRiderCoordinates(tracking.tracking as Record<string, unknown>);
+    const destination = extractDestinationCoordinates(
+      tracking.order as Record<string, unknown>,
+    );
+    const showLiveMap =
+      shouldShowMealLiveMap({
+        logisticsPartner: tracking.tracking?.logistics_partner ?? null,
+        logisticsType:
+          (tracking.order as { logistics_type?: string; logisticsType?: string }).logistics_type ??
+          (tracking.order as { logisticsType?: string }).logisticsType ??
+          null,
+        logisticsStatus,
+        hasCoordinates: Boolean(riderCoords && destination),
+        orderEffectiveState: mealDeliveryEff,
+      }) && destination != null && riderCoords != null;
 
     return (
       <MealPlanOrderTrackingUI
@@ -295,15 +318,26 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
             </div>
           ) : undefined
         }
+        liveTrackingMap={
+          showLiveMap && destination && riderCoords ? (
+            <LiveTrackingMapPanel
+              variant="meal"
+              deliveryAddress={destination}
+              currentLocation={riderCoords}
+              etaMinutes={etaMinutes}
+              distanceRemainingKm={tracking.tracking?.distanceRemaining}
+            />
+          ) : undefined
+        }
         deliveryPartnerCard={
           showRiderCard ? (
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100/80">
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 bg-gradient-to-br from-emerald-100 to-teal-50 rounded-full flex items-center justify-center shrink-0">
-                  {tracking.tracking?.deliveryPerson?.photo ? (
+                <div className="w-14 h-14 bg-gradient-to-br from-emerald-100 to-teal-50 rounded-full flex items-center justify-center shrink-0 overflow-hidden">
+                  {riderPhoto || tracking.tracking?.deliveryPerson?.photo ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
-                      src={tracking.tracking.deliveryPerson.photo}
+                      src={riderPhoto || tracking.tracking!.deliveryPerson!.photo}
                       alt=""
                       className="w-full h-full rounded-full object-cover"
                     />

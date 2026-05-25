@@ -193,7 +193,7 @@ export function NutritionVendorDetailsCard({
                     onBookConsultation?.();
                   }}
                 >
-                  Book consultation
+                  View services
                 </Button>
               ) : null}
             </div>

@@ -45,6 +45,7 @@ import {
   X,
   Briefcase,
   ClipboardList,
+  UtensilsCrossed,
   Shield,
   Badge,
   Navigation,
@@ -73,6 +74,8 @@ import {
   getVendorDashboardRatingPresentation,
   mergeVendorDashboardStats,
 } from '../helpers';
+import { mapMealOrdersToSchedule, type VendorScheduleTypeFilter } from '@/lib/vendor-meal-order-schedule';
+import { VendorMealOrderScheduleCard } from '../VendorMealOrderScheduleCard';
 import { VendorChromeLayout } from '@/components/vendor/layout/VendorChromeLayout';
 import { Dashboardstats, ScheduleItem, SoloProviderDashboardProps } from '../types';
 import { DashboardStats } from '@/components/shared/DashboardStats';
@@ -85,7 +88,7 @@ export function SoloProviderDashboard({
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'today' | 'week' | 'month'>('today');
   const [activeBottomTab, setActiveBottomTab] = useState<'home' | 'bookings' | 'reporting' | 'settings'>('home');
-  const [appointmentTypeFilter, setAppointmentTypeFilter] = useState<'all' | 'home' | 'tele'>('all');
+  const [appointmentTypeFilter, setAppointmentTypeFilter] = useState<VendorScheduleTypeFilter>('all');
   const [stats, setStats] = useState<Dashboardstats>({
     appointments: 0,
     consultations: 0,
@@ -96,6 +99,7 @@ export function SoloProviderDashboard({
     totalReviews: 0,
   });
   const [todaySchedule, setTodaySchedule] = useState<ScheduleItem[]>([]);
+  const [mealOrderSchedule, setMealOrderSchedule] = useState<ScheduleItem[]>([]);
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -272,6 +276,20 @@ export function SoloProviderDashboard({
           }));
           setTodaySchedule(transformedBookings);
         }
+      }
+
+      if (isNutritionist) {
+        const mealRes = (await apiClient
+          .get(`/vendor/${vendorId}/meal-orders`)
+          .catch(() => ({ success: false, orders: [] }))) as {
+          success?: boolean;
+          orders?: unknown[];
+        };
+        setMealOrderSchedule(
+          mealRes?.orders ? mapMealOrdersToSchedule(mealRes.orders, activeTab) : [],
+        );
+      } else {
+        setMealOrderSchedule([]);
       }
 
       // Fetch services (catalog/custom) for solo provider - include pharmacy, cafe, insurance, etc.
@@ -890,10 +908,12 @@ export function SoloProviderDashboard({
                   type="button"
                   onClick={() => router.push('/nutrition/dashboard')}
                   className="bg-lime-50 border border-lime-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-lime-100 transition-colors"
-                  title="Diet, meal products, and orders"
+                  title="Meal plans, products, and delivery orders"
                 >
                   <ClipboardList className="w-6 h-6 text-lime-600 mb-1" />
-                  <span className="text-xs font-medium text-gray-900">Diet</span>
+                  <span className="text-[10px] leading-tight font-medium text-gray-900 text-center">
+                    Meal plan &amp; order management
+                  </span>
                 </button>
               )}
 
@@ -942,7 +962,17 @@ export function SoloProviderDashboard({
         {!isPharmacy && (
           <div className="p-4 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900 text-center mb-3">
-              {activeTab === 'today' ? "Today's" : activeTab === 'week' ? 'This Week' : "This Month's"} Schedule
+              {appointmentTypeFilter === 'meal_orders'
+                ? activeTab === 'today'
+                  ? "Today's Meal Orders"
+                  : activeTab === 'week'
+                    ? "This Week's Meal Orders"
+                    : "This Month's Meal Orders"
+                : activeTab === 'today'
+                  ? "Today's Schedule"
+                  : activeTab === 'week'
+                    ? "This Week's Schedule"
+                    : "This Month's Schedule"}
             </h2>
 
             {/* Service Style Tabs - Only allowed styles */}
@@ -974,42 +1004,88 @@ export function SoloProviderDashboard({
                   <Monitor className="w-3.5 h-3.5" /> Tele
                 </button>
               )}
+
+              {isNutritionist && (
+                <button
+                  onClick={() => setAppointmentTypeFilter('meal_orders')}
+                  className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    appointmentTypeFilter === 'meal_orders' ? 'bg-lime-600 text-white' : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  <UtensilsCrossed className="w-3.5 h-3.5" /> Meal Orders
+                </button>
+              )}
             </div>
 
-            {todaySchedule.length === 0 ? (
-              <div className="text-center py-8 px-4 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Calendar className="w-8 h-8 text-gray-400" />
-                </div>
-                <h3 className="text-gray-900 font-semibold mb-1">No Appointments Yet</h3>
-                <p className="text-sm text-gray-500 mb-4 max-w-[250px] mx-auto">
-                  Complete your profile and add services to start getting bookings!
-                </p>
-                <button
-                  onClick={() => router.push('/profile')}
-                  className="px-4 py-2 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-lg text-sm font-medium transition-colors"
-                >
-                  Complete Profile
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-end mb-2">
-                  <button className="text-sm text-[#FF8C42]" onClick={() => router.push('/bookings')}>View All →</button>
-                </div>
-                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                  {todaySchedule
-                    .filter(appointment => {
-                      if (appointmentTypeFilter === 'all') return true;
-                      const typeMap: Record<string, string> = {
-                        'at_home': 'home',
-                        'home': 'home',
-                        'tele': 'tele',
-                        'teleconsultation': 'tele'
-                      };
-                      return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
-                    })
-                    .map(appointment => {
+            {(() => {
+              const showingMealOrders = appointmentTypeFilter === 'meal_orders';
+              const filteredBookings = todaySchedule.filter((appointment) => {
+                if (showingMealOrders) return false;
+                if (appointmentTypeFilter === 'all') return true;
+                const typeMap: Record<string, string> = {
+                  at_home: 'home',
+                  home: 'home',
+                  tele: 'tele',
+                  teleconsultation: 'tele',
+                };
+                return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
+              });
+              const scheduleItems = showingMealOrders ? mealOrderSchedule : filteredBookings;
+
+              if (scheduleItems.length === 0) {
+                return (
+                  <div className="text-center py-8 px-4 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                      {showingMealOrders ? (
+                        <UtensilsCrossed className="w-8 h-8 text-gray-400" />
+                      ) : (
+                        <Calendar className="w-8 h-8 text-gray-400" />
+                      )}
+                    </div>
+                    <h3 className="text-gray-900 font-semibold mb-1">
+                      {showingMealOrders ? 'No Meal Orders Yet' : 'No Appointments Yet'}
+                    </h3>
+                    <p className="text-sm text-gray-500 mb-4 max-w-[250px] mx-auto">
+                      {showingMealOrders
+                        ? 'New meal plan and delivery orders will appear here for the selected period.'
+                        : 'Complete your profile and add services to start getting bookings!'}
+                    </p>
+                    {!showingMealOrders && (
+                      <button
+                        onClick={() => router.push('/profile')}
+                        className="px-4 py-2 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-lg text-sm font-medium transition-colors"
+                      >
+                        Complete Profile
+                      </button>
+                    )}
+                  </div>
+                );
+              }
+
+              return (
+                <>
+                  <div className="flex items-center justify-end mb-2">
+                    <button
+                      className="text-sm text-[#FF8C42]"
+                      onClick={() =>
+                        showingMealOrders
+                          ? router.push('/nutrition/dashboard')
+                          : router.push('/bookings')
+                      }
+                    >
+                      View All →
+                    </button>
+                  </div>
+                  <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                    {showingMealOrders
+                      ? scheduleItems.map((order) => (
+                          <VendorMealOrderScheduleCard
+                            key={order.id}
+                            order={order}
+                            onOpen={() => router.push('/nutrition/dashboard')}
+                          />
+                        ))
+                      : scheduleItems.map((appointment) => {
                       // Get customer location from appointment data
                       const customerLat = (appointment as any).customerLat || (appointment as any).customer_lat;
                       const customerLng = (appointment as any).customerLng || (appointment as any).customer_lng;
@@ -1077,9 +1153,10 @@ export function SoloProviderDashboard({
                         />
                       );
                     })}
-                </div>
-              </>
-            )}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 

@@ -104,6 +104,7 @@ export interface MealPlanOrderTrackingUIProps {
   headerActions?: ReactNode;
   backSlot: ReactNode;
   deliveryOtpBanner?: ReactNode;
+  liveTrackingMap?: ReactNode;
   deliveryPartnerCard?: ReactNode;
   deliveredBanner?: ReactNode;
   orderDetailsCollapsible?: ReactNode;
@@ -118,6 +119,7 @@ export function MealPlanOrderTrackingUI({
   headerActions,
   backSlot,
   deliveryOtpBanner,
+  liveTrackingMap,
   deliveryPartnerCard,
   deliveredBanner,
   orderDetailsCollapsible,
@@ -155,6 +157,8 @@ export function MealPlanOrderTrackingUI({
 
       <main className="max-w-md mx-auto px-4 -mt-2 space-y-4">
         {deliveryOtpBanner}
+
+        {liveTrackingMap}
 
         {/* Order Status card */}
         <section className="bg-white rounded-2xl shadow-sm border border-slate-100/80 p-5">

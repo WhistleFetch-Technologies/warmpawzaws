@@ -129,6 +129,7 @@ public class DeliveryTrackingServiceImpl implements DeliveryTrackingService {
 			h.setSpeedKmh(BigDecimal.valueOf(speed));
 		}
 		h.setHeading(heading);
+		h.setSource("partner_app");
 		locationHistoryRepository.save(h);
 
 		return Map.of("success", true, "message", "Location updated");

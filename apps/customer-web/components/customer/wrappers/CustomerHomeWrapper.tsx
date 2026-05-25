@@ -138,6 +138,7 @@ import { CustomerPlacementBanners } from '../shared/CustomerPlacementBanners';
 import { ServicesByProblem } from '../ServicesByProblem';
 import { ProblemGridFlowRouter, type VendorProfileFromProblemContext } from '../ProblemGridFlowRouter';
 import { MealPlansList } from '../nutrition/MealPlansList';
+import { ExpertNutritionistsList } from '../nutrition/ExpertNutritionistsList';
 import { MealOrderCheckout } from '../nutrition/MealOrderCheckout';
 import { MealPlanOrdersPanel } from '../meal-plans/MealPlanOrdersPanel';
 import { NutritionistTeleRouter } from '../nutrition/NutritionistTeleRouter';
@@ -309,6 +310,7 @@ type ScreenType =
   | 'nutritionist-tele'
   | 'nutritionist-booking'
   | 'diet-consultation-services'
+  | 'expert-nutritionists'
   | 'pharmacy_order_flow'
   | 'pharmacy_order_status'
   | 'behaviorist'

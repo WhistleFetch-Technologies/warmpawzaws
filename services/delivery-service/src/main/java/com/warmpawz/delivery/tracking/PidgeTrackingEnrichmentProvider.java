@@ -118,14 +118,23 @@ public class PidgeTrackingEnrichmentProvider implements LogisticsTrackingEnrichm
 				textOrNull(rider, "vehicle_number"),
 				textOrNull(rider, "vehicleNumber"),
 				textOrNull(rider, "registration_number"));
+		String riderPhoto = firstNonBlank(
+				textOrNull(rider, "img"),
+				textOrNull(rider, "image"),
+				textOrNull(rider, "photo"),
+				textOrNull(rider, "photo_url"),
+				textOrNull(rider, "avatar"),
+				textOrNull(rider, "profile_image"));
 
-		if (isBlank(name) && isBlank(phone) && isBlank(riderId) && isBlank(vehicleType) && isBlank(vehicleNumber)) {
+		if (isBlank(name) && isBlank(phone) && isBlank(riderId) && isBlank(vehicleType) && isBlank(vehicleNumber)
+				&& isBlank(riderPhoto)) {
 			return null;
 		}
 		return RiderInfoDto.builder()
 				.riderName(name)
 				.riderPhone(phone)
 				.riderId(riderId)
+				.riderPhoto(riderPhoto)
 				.vehicleType(vehicleType)
 				.vehicleNumber(vehicleNumber)
 				.build();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   MapPin, Package, Truck, CheckCircle, Clock, Phone, 
   MessageCircle, Navigation, ChevronDown, Star, ArrowLeft,
@@ -11,10 +11,18 @@ import {
   MealPlanOrderTrackingUI,
   formatMealOrderDisplayId,
 } from '@/components/customer/tracking/MealPlanOrderTrackingUI';
+import { LiveTrackingMapPanel } from '@/components/customer/tracking/LiveTrackingMapPanel';
 import {
   resolveEffectiveMealDeliveryState,
   shouldShowDeliveryRider,
+  shouldShowMealLiveMap,
 } from '@warmpawz/shared-types';
+import {
+  extractDestinationCoordinates,
+  extractRiderCoordinates,
+  resolveRiderPhoto,
+} from '@/lib/meal-tracking-utils';
+import { useMealTrackingPoll } from '@/lib/use-meal-tracking-poll';
 
 interface DeliveryPerson {
   name: string;
@@ -27,11 +35,18 @@ interface DeliveryPerson {
 interface TrackingData {
   status: string;
   deliveryOtp?: string | null;
+  deliveredAt?: string | null;
   currentLat?: number;
   currentLng?: number;
   eta?: number;
   etaMinutes?: number;
+  distanceRemaining?: number;
+  logistics_partner?: string;
+  logisticsPartner?: string;
   deliveryPerson?: DeliveryPerson;
+  rider?: DeliveryPerson & { vehicleType?: string };
+  currentLocation?: { lat?: number; lng?: number; latitude?: number; longitude?: number };
+  location?: { latitude?: number; longitude?: number };
 }
 
 interface OrderTrackingScreenProps {
@@ -49,6 +64,80 @@ const statusSteps = [
   { key: 'delivered', label: 'Delivered', icon: CheckCircle, color: 'green' },
 ];
 
+function moneyInr(value: unknown): string {
+  if (value == null || value === '') return '0';
+  const n = typeof value === 'number' ? value : parseFloat(String(value).replace(/,/g, ''));
+  if (!Number.isFinite(n)) return '0';
+  return n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+}
+
+function resolveDeliveredAt(order: Record<string, unknown>, tracking: TrackingData | null): string | null {
+  const raw =
+    order.delivered_at ??
+    order.deliveredAt ??
+    (tracking as { deliveredAt?: string } | null)?.deliveredAt;
+  if (!raw) return null;
+  const d = new Date(String(raw));
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleString('en-IN');
+}
+
+function resolveDeliveryAddressText(order: Record<string, unknown>): string {
+  const direct =
+    (typeof order.delivery_address === 'string' && order.delivery_address.trim()) ||
+    (typeof order.deliveryAddress === 'string' && order.deliveryAddress.trim());
+  if (direct && !direct.startsWith('{')) return direct;
+
+  const raw = order.delivery_address ?? order.deliveryAddress;
+  if (raw == null || raw === '') {
+    return [
+      order.shipping_address,
+      order.shipping_city,
+      order.shipping_state,
+      order.shipping_pincode,
+    ]
+      .filter((x) => typeof x === 'string' && x.trim())
+      .join(', ');
+  }
+
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    if (typeof o.address === 'string' && o.address.trim()) return o.address.trim();
+    return [
+      o.address_line1,
+      o.addressLine1,
+      o.line1,
+      o.address_line2,
+      o.addressLine2,
+      o.landmark,
+      o.city,
+      o.state,
+      o.pincode,
+    ]
+      .filter((x) => typeof x === 'string' && x.trim())
+      .join(', ');
+  }
+
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof parsed.address === 'string' && parsed.address.trim()) return parsed.address.trim();
+      return [
+        parsed.address_line1,
+        parsed.addressLine1,
+        parsed.city,
+        parsed.state,
+        parsed.pincode,
+      ]
+        .filter((x) => typeof x === 'string' && x.trim())
+        .join(', ');
+    } catch {
+      return raw.trim();
+    }
+  }
+
+  return '';
+}
+
 export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackingScreenProps) {
   const [order, setOrder] = useState<any>(null);
   const [tracking, setTracking] = useState<TrackingData | null>(null);
@@ -59,26 +148,26 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
   const [reviewText, setReviewText] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const orderRef = useRef<any>(null);
+  const trackingRef = useRef<TrackingData | null>(null);
 
-  useEffect(() => {
-    loadOrderAndTracking();
-    const interval = setInterval(loadOrderAndTracking, 18000);
-    return () => clearInterval(interval);
-  }, [orderId]);
-
-  const loadOrderAndTracking = async () => {
+  const loadOrderAndTracking = useCallback(async () => {
     try {
       if (orderType === 'meal') {
         const response = await apiClient.get(`/customer/tracking/${orderId}`) as any;
         if (response.success) {
           setOrder(response.order);
           setTracking(response.tracking);
+          orderRef.current = response.order;
+          trackingRef.current = response.tracking;
         }
       } else {
         const response = await apiClient.get(`/pharmacy/orders/${orderId}`) as any;
         if (response.success) {
           setOrder(response.order);
           setTracking(response.tracking);
+          orderRef.current = response.order;
+          trackingRef.current = response.tracking;
         }
       }
     } catch (error) {
@@ -86,7 +175,16 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
     } finally {
       setLoading(false);
     }
-  };
+  }, [orderId, orderType]);
+
+  useMealTrackingPoll(
+    loadOrderAndTracking,
+    () => ({
+      orderStatus: orderRef.current?.status ?? null,
+      logisticsStatus: trackingRef.current?.status ?? null,
+    }),
+    [orderId, orderType],
+  );
 
   const getCurrentStepIndex = () => {
     if (!order) return 0;
@@ -165,6 +263,23 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
     const otp = tracking?.deliveryOtp;
     const totalAmt =
       order.total_amount ?? order.totalAmount ?? order.total ?? order.amount;
+    const subtotalAmt = order.subtotal ?? order.subtotal_amount;
+    const deliveryFeeAmt = order.delivery_fee ?? order.deliveryFee;
+    const platformFeeAmt = order.platform_fee ?? order.platformFee;
+    const deliveredAtLabel = resolveDeliveredAt(order, tracking);
+    const deliveryAddressText = resolveDeliveryAddressText(order);
+    const riderCoords = extractRiderCoordinates(tracking as Record<string, unknown>);
+    const destination = extractDestinationCoordinates(order, deliveryAddressText);
+    const riderPhoto = resolveRiderPhoto(tracking as Record<string, unknown>);
+    const showLiveMap =
+      shouldShowMealLiveMap({
+        logisticsPartner:
+          tracking?.logistics_partner ?? tracking?.logisticsPartner ?? null,
+        logisticsType: order.logistics_type ?? order.logisticsType ?? null,
+        logisticsStatus,
+        hasCoordinates: Boolean(riderCoords && destination),
+        orderEffectiveState: deliveryEff,
+      }) && destination != null && riderCoords != null;
 
     return (
       <>
@@ -204,15 +319,26 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
               </div>
             ) : undefined
           }
+          liveTrackingMap={
+            showLiveMap && destination && riderCoords ? (
+              <LiveTrackingMapPanel
+                variant="meal"
+                deliveryAddress={destination}
+                currentLocation={riderCoords}
+                etaMinutes={tracking?.eta ?? tracking?.etaMinutes}
+                distanceRemainingKm={tracking?.distanceRemaining}
+              />
+            ) : undefined
+          }
           deliveryPartnerCard={
             showRiderCard ? (
               <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100/80">
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-gradient-to-br from-emerald-100 to-teal-50 rounded-full flex items-center justify-center text-teal-700 text-xl font-bold shrink-0">
-                    {tracking?.deliveryPerson?.photo ? (
+                    {riderPhoto || tracking?.deliveryPerson?.photo ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
-                        src={tracking.deliveryPerson.photo}
+                        src={riderPhoto || tracking!.deliveryPerson!.photo}
                         alt=""
                         className="w-full h-full rounded-full object-cover"
                       />
@@ -266,10 +392,7 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
                 <CheckCircle className="w-14 h-14 mx-auto mb-3 opacity-95" />
                 <h2 className="text-xl font-bold mb-1">Order Delivered!</h2>
                 <p className="text-sm text-white/90 mb-4">
-                  Delivered at{' '}
-                  {order.delivered_at
-                    ? new Date(order.delivered_at).toLocaleTimeString('en-IN')
-                    : 'N/A'}
+                  Delivered at {deliveredAtLabel ?? 'N/A'}
                 </p>
                 {!order.rating && !reviewSubmitted ? (
                   <button
@@ -323,21 +446,21 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
                   <div className="border-t pt-3 space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-600">Subtotal</span>
-                      <span>₹{order.subtotal}</span>
+                      <span>₹{moneyInr(subtotalAmt)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">Delivery Fee</span>
-                      <span>₹{order.delivery_fee}</span>
+                      <span>₹{moneyInr(deliveryFeeAmt)}</span>
                     </div>
-                    {order.platform_fee > 0 && (
+                    {(platformFeeAmt ?? 0) > 0 && (
                       <div className="flex justify-between">
                         <span className="text-gray-600">Platform Fee</span>
-                        <span>₹{order.platform_fee}</span>
+                        <span>₹{moneyInr(platformFeeAmt)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-semibold border-t pt-2">
                       <span>Total</span>
-                      <span className="text-green-600">₹{order.total_amount}</span>
+                      <span className="text-green-600">₹{moneyInr(totalAmt)}</span>
                     </div>
                   </div>
                   <div className="mt-4 pt-4 border-t">
@@ -346,9 +469,7 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
                       <div>
                         <p className="text-sm font-medium text-gray-900">Delivery Address</p>
                         <p className="text-sm text-gray-600">
-                          {typeof order.delivery_address === 'string'
-                            ? JSON.parse(order.delivery_address).address
-                            : order.delivery_address?.address}
+                          {deliveryAddressText || 'Address not available'}
                         </p>
                       </div>
                     </div>

@@ -1,6 +1,7 @@
 import {
   calculateCustomerDeliveryFee,
   fetchCustomerDeliveryFeePolicy,
+  type DeliveryFeeZoneLabel,
 } from './customer-delivery-fee-policy';
 
 export function calculateDistanceKm(
@@ -62,7 +63,9 @@ export async function computePolicyDeliveryFeeForOrder(input: {
   success: boolean;
   deliveryFeeInr: number | null;
   policyVersion: number;
-  zone: 'zone_a' | 'zone_b' | 'out_of_coverage';
+  zone: DeliveryFeeZoneLabel;
+  zoneId?: string;
+  zoneName?: string;
   message?: string;
 }> {
   if ((input.logisticsType || 'warmpawz') !== 'warmpawz') {
@@ -102,6 +105,8 @@ export async function computePolicyDeliveryFeeForOrder(input: {
       deliveryFeeInr: calculation.totalDeliveryFeeInr,
       policyVersion: policy.version,
       zone: calculation.zone,
+      zoneId: calculation.zoneId,
+      zoneName: calculation.zoneName,
     };
   }
 
@@ -110,6 +115,8 @@ export async function computePolicyDeliveryFeeForOrder(input: {
     deliveryFeeInr: null,
     policyVersion: policy.version,
     zone: calculation.zone,
+    zoneId: calculation.zoneId,
+    zoneName: calculation.zoneName,
     message: calculation.message || 'Delivery fee could not be computed from the active zone policy.',
   };
 }

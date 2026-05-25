@@ -1,6 +1,6 @@
 /**
- * Admin: customer delivery fee & radius policy (Zone A/B slabs, surges, help copy).
- * Backed by platform_settings key customer:delivery:fee_policy.
+ * Admin: customer delivery fee policy — dynamic distance zones, slabs, surges, help copy.
+ * Backed by platform_settings key customer:delivery:fee_policy (v2).
  */
 'use client';
 
@@ -14,14 +14,22 @@ type OrderValueSlab = {
   deliveryFeeInr: number;
 };
 
+type DeliveryFeeZone = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  minDistanceKm: number;
+  maxDistanceKm: number;
+  slabs: OrderValueSlab[];
+  surgeConfig: { weekend: boolean; festival: boolean; rain: boolean };
+  description?: string;
+  operationalRules?: string[];
+};
+
 type CustomerDeliveryFeePolicy = {
   version: number;
   maxServiceRadiusKm: number;
-  zoneABoundaryKm: number;
-  zones: {
-    zoneA: OrderValueSlab[];
-    zoneB: OrderValueSlab[];
-  };
+  zones: DeliveryFeeZone[];
   surges: {
     weekendInr: number;
     festivalMinInr: number;
@@ -30,34 +38,72 @@ type CustomerDeliveryFeePolicy = {
     rainMaxInr: number;
     priorityNote?: string;
   };
-  zoneSurgeConfig?: {
-    zoneA: { weekend: boolean; festival: boolean; rain: boolean };
-    zoneB: { weekend: boolean; festival: boolean; rain: boolean };
-  };
   runtimeSignals?: {
     festivalActive: boolean;
     rainActive: boolean;
   };
   content: {
     coverageSummary: string;
-    zoneADescription?: string;
-    zoneBDescription?: string;
     surgeIntro?: string;
     rulesFreeDelivery: string[];
-    rulesBeyond5Km: string[];
-    rulesBeyond8Km: string[];
     importantNotes: string[];
   };
 };
 
+function newZoneId(): string {
+  return `zone_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function sortZones(zones: DeliveryFeeZone[]): DeliveryFeeZone[] {
+  return [...zones].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function reindexZones(zones: DeliveryFeeZone[], maxServiceRadiusKm: number): DeliveryFeeZone[] {
+  const sorted = sortZones(zones);
+  return sorted.map((z, i) => ({
+    ...z,
+    sortOrder: i,
+    minDistanceKm: i === 0 ? 0 : sorted[i - 1].maxDistanceKm,
+    maxDistanceKm: i === sorted.length - 1 ? maxServiceRadiusKm : z.maxDistanceKm,
+  }));
+}
+
 const EMPTY_POLICY: CustomerDeliveryFeePolicy = {
-  version: 1,
+  version: 2,
   maxServiceRadiusKm: 10,
-  zoneABoundaryKm: 5,
-  zones: {
-    zoneA: [],
-    zoneB: [],
-  },
+  zones: [
+    {
+      id: 'zone_near',
+      name: 'Zone A',
+      sortOrder: 0,
+      minDistanceKm: 0,
+      maxDistanceKm: 5,
+      slabs: [
+        { minOrderInr: 0, maxOrderInr: 1000, deliveryFeeInr: 99 },
+        { minOrderInr: 1000, maxOrderInr: 1500, deliveryFeeInr: 49 },
+        { minOrderInr: 1500, maxOrderInr: null, deliveryFeeInr: 0 },
+      ],
+      surgeConfig: { weekend: true, festival: true, rain: true },
+      description: 'Up to 5 KM from fulfillment.',
+      operationalRules: [],
+    },
+    {
+      id: 'zone_mid',
+      name: 'Zone B',
+      sortOrder: 1,
+      minDistanceKm: 5,
+      maxDistanceKm: 10,
+      slabs: [
+        { minOrderInr: 0, maxOrderInr: 1000, deliveryFeeInr: 149 },
+        { minOrderInr: 1000, maxOrderInr: 1500, deliveryFeeInr: 99 },
+        { minOrderInr: 1500, maxOrderInr: 2000, deliveryFeeInr: 49 },
+        { minOrderInr: 2000, maxOrderInr: null, deliveryFeeInr: 0 },
+      ],
+      surgeConfig: { weekend: true, festival: true, rain: true },
+      description: 'Beyond 5 KM up to 10 KM.',
+      operationalRules: [],
+    },
+  ],
   surges: {
     weekendInr: 0,
     festivalMinInr: 0,
@@ -66,22 +112,14 @@ const EMPTY_POLICY: CustomerDeliveryFeePolicy = {
     rainMaxInr: 0,
     priorityNote: '',
   },
-  zoneSurgeConfig: {
-    zoneA: { weekend: true, festival: true, rain: true },
-    zoneB: { weekend: true, festival: true, rain: true },
-  },
   runtimeSignals: {
     festivalActive: false,
     rainActive: false,
   },
   content: {
     coverageSummary: '',
-    zoneADescription: '',
-    zoneBDescription: '',
     surgeIntro: '',
     rulesFreeDelivery: [],
-    rulesBeyond5Km: [],
-    rulesBeyond8Km: [],
     importantNotes: [],
   },
 };
@@ -145,79 +183,192 @@ export function CustomerDeliveryFeePolicyManager() {
     });
   };
 
-  const updateSlab = (zone: 'zoneA' | 'zoneB', index: number, key: keyof OrderValueSlab, value: string) => {
+  const updateSlab = (zoneId: string, index: number, key: keyof OrderValueSlab, value: string) => {
+    updatePolicy((prev) => ({
+      ...prev,
+      zones: prev.zones.map((z) => {
+        if (z.id !== zoneId) return z;
+        const slabs = [...z.slabs];
+        const slab = { ...slabs[index] };
+        if (key === 'maxOrderInr') {
+          slab.maxOrderInr = value === '' ? null : Math.max(0, Number(value));
+        } else {
+          slab[key] = Math.max(0, Number(value)) as never;
+        }
+        slabs[index] = slab;
+        return { ...z, slabs };
+      }),
+    }));
+  };
+
+  const addSlab = (zoneId: string) => {
+    updatePolicy((prev) => ({
+      ...prev,
+      zones: prev.zones.map((z) =>
+        z.id === zoneId
+          ? { ...z, slabs: [...z.slabs, { minOrderInr: 0, maxOrderInr: null, deliveryFeeInr: 0 }] }
+          : z
+      ),
+    }));
+  };
+
+  const removeSlab = (zoneId: string, index: number) => {
+    updatePolicy((prev) => ({
+      ...prev,
+      zones: prev.zones.map((z) =>
+        z.id === zoneId ? { ...z, slabs: z.slabs.filter((_, i) => i !== index) } : z
+      ),
+    }));
+  };
+
+  const addZone = () => {
     updatePolicy((prev) => {
-      const slabs = [...prev.zones[zone]];
-      const slab = { ...slabs[index] };
-      if (key === 'maxOrderInr') {
-        slab.maxOrderInr = value === '' ? null : Math.max(0, Number(value));
+      const sorted = sortZones(prev.zones);
+      const last = sorted[sorted.length - 1];
+      const splitAt = last
+        ? Math.min(last.maxDistanceKm, prev.maxServiceRadiusKm)
+        : prev.maxServiceRadiusKm;
+      const mid =
+        last && last.minDistanceKm < splitAt
+          ? Math.round(((last.minDistanceKm + splitAt) / 2) * 10) / 10
+          : splitAt / 2 || 1;
+
+      const newZone: DeliveryFeeZone = {
+        id: newZoneId(),
+        name: `Zone ${String.fromCharCode(65 + sorted.length)}`,
+        sortOrder: sorted.length,
+        minDistanceKm: last ? mid : 0,
+        maxDistanceKm: last ? splitAt : prev.maxServiceRadiusKm,
+        slabs: [{ minOrderInr: 0, maxOrderInr: null, deliveryFeeInr: 0 }],
+        surgeConfig: { weekend: true, festival: true, rain: true },
+        description: '',
+        operationalRules: [],
+      };
+
+      let zones = [...sorted];
+      if (last) {
+        zones = zones.map((z, i) =>
+          i === zones.length - 1 ? { ...z, maxDistanceKm: mid } : z
+        );
+        zones.push(newZone);
       } else {
-        slab[key] = Math.max(0, Number(value)) as never;
+        zones = [newZone];
       }
-      slabs[index] = slab;
+
       return {
         ...prev,
-        zones: {
-          ...prev.zones,
-          [zone]: slabs,
-        },
+        zones: reindexZones(zones, prev.maxServiceRadiusKm),
       };
     });
   };
 
-  const addSlab = (zone: 'zoneA' | 'zoneB') => {
-    updatePolicy((prev) => ({
-      ...prev,
-      zones: {
-        ...prev.zones,
-        [zone]: [...prev.zones[zone], { minOrderInr: 0, maxOrderInr: null, deliveryFeeInr: 0 }],
-      },
-    }));
-  };
-
-  const removeSlab = (zone: 'zoneA' | 'zoneB', index: number) => {
-    updatePolicy((prev) => ({
-      ...prev,
-      zones: {
-        ...prev.zones,
-        [zone]: prev.zones[zone].filter((_, i) => i !== index),
-      },
-    }));
-  };
-
-  const updateContentListItem = (
-    key: 'rulesFreeDelivery' | 'rulesBeyond5Km' | 'rulesBeyond8Km' | 'importantNotes',
-    index: number,
-    value: string
-  ) => {
+  const removeZone = (zoneId: string) => {
     updatePolicy((prev) => {
-      const nextList = [...prev.content[key]];
-      nextList[index] = value;
+      if (prev.zones.length <= 1) return prev;
+      const zones = reindexZones(
+        prev.zones.filter((z) => z.id !== zoneId),
+        prev.maxServiceRadiusKm
+      );
+      return { ...prev, zones };
+    });
+  };
+
+  const moveZone = (zoneId: string, direction: 'up' | 'down') => {
+    updatePolicy((prev) => {
+      const sorted = sortZones(prev.zones);
+      const idx = sorted.findIndex((z) => z.id === zoneId);
+      if (idx < 0) return prev;
+      const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= sorted.length) return prev;
+      const next = [...sorted];
+      [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
       return {
         ...prev,
-        content: {
-          ...prev.content,
-          [key]: nextList,
-        },
+        zones: reindexZones(next, prev.maxServiceRadiusKm),
       };
+    });
+  };
+
+  const updateZoneField = (
+    zoneId: string,
+    field: 'name' | 'description' | 'maxDistanceKm',
+    value: string | number
+  ) => {
+    updatePolicy((prev) => {
+      const sorted = sortZones(prev.zones);
+      const idx = sorted.findIndex((z) => z.id === zoneId);
+      if (idx < 0) return prev;
+
+      let zones = sorted.map((z) => {
+        if (z.id !== zoneId) return z;
+        if (field === 'name') return { ...z, name: String(value) };
+        if (field === 'description') return { ...z, description: String(value) };
+        return { ...z, maxDistanceKm: Math.max(z.minDistanceKm + 0.1, Number(value)) };
+      });
+
+      if (field === 'maxDistanceKm' && idx < zones.length - 1) {
+        const newMax = zones[idx].maxDistanceKm;
+        zones = zones.map((z, i) => (i === idx + 1 ? { ...z, minDistanceKm: newMax } : z));
+      }
+
+      if (idx === zones.length - 1 && field === 'maxDistanceKm') {
+        return {
+          ...prev,
+          maxServiceRadiusKm: zones[idx].maxDistanceKm,
+          zones: reindexZones(zones, zones[idx].maxDistanceKm),
+        };
+      }
+
+      return { ...prev, zones: reindexZones(zones, prev.maxServiceRadiusKm) };
     });
   };
 
   const updateZoneSurgeFlag = (
-    zone: 'zoneA' | 'zoneB',
+    zoneId: string,
     key: 'weekend' | 'festival' | 'rain',
     checked: boolean
   ) => {
     updatePolicy((prev) => ({
       ...prev,
-      zoneSurgeConfig: {
-        zoneA: prev.zoneSurgeConfig?.zoneA || EMPTY_POLICY.zoneSurgeConfig!.zoneA,
-        zoneB: prev.zoneSurgeConfig?.zoneB || EMPTY_POLICY.zoneSurgeConfig!.zoneB,
-        [zone]: {
-          ...(prev.zoneSurgeConfig?.[zone] || EMPTY_POLICY.zoneSurgeConfig![zone]),
-          [key]: checked,
-        },
-      },
+      zones: prev.zones.map((z) =>
+        z.id === zoneId
+          ? { ...z, surgeConfig: { ...z.surgeConfig, [key]: checked } }
+          : z
+      ),
+    }));
+  };
+
+  const updateOperationalRule = (zoneId: string, index: number, value: string) => {
+    updatePolicy((prev) => ({
+      ...prev,
+      zones: prev.zones.map((z) => {
+        if (z.id !== zoneId) return z;
+        const rules = [...(z.operationalRules || [])];
+        rules[index] = value;
+        return { ...z, operationalRules: rules };
+      }),
+    }));
+  };
+
+  const addOperationalRule = (zoneId: string) => {
+    updatePolicy((prev) => ({
+      ...prev,
+      zones: prev.zones.map((z) =>
+        z.id === zoneId
+          ? { ...z, operationalRules: [...(z.operationalRules || []), ''] }
+          : z
+      ),
+    }));
+  };
+
+  const removeOperationalRule = (zoneId: string, index: number) => {
+    updatePolicy((prev) => ({
+      ...prev,
+      zones: prev.zones.map((z) =>
+        z.id === zoneId
+          ? { ...z, operationalRules: (z.operationalRules || []).filter((_, i) => i !== index) }
+          : z
+      ),
     }));
   };
 
@@ -232,22 +383,29 @@ export function CustomerDeliveryFeePolicyManager() {
     }));
   };
 
-  const addContentListItem = (
-    key: 'rulesFreeDelivery' | 'rulesBeyond5Km' | 'rulesBeyond8Km' | 'importantNotes'
+  const updateContentListItem = (
+    key: 'rulesFreeDelivery' | 'importantNotes',
+    index: number,
+    value: string
   ) => {
+    updatePolicy((prev) => {
+      const nextList = [...prev.content[key]];
+      nextList[index] = value;
+      return {
+        ...prev,
+        content: { ...prev.content, [key]: nextList },
+      };
+    });
+  };
+
+  const addContentListItem = (key: 'rulesFreeDelivery' | 'importantNotes') => {
     updatePolicy((prev) => ({
       ...prev,
-      content: {
-        ...prev.content,
-        [key]: [...prev.content[key], ''],
-      },
+      content: { ...prev.content, [key]: [...prev.content[key], ''] },
     }));
   };
 
-  const removeContentListItem = (
-    key: 'rulesFreeDelivery' | 'rulesBeyond5Km' | 'rulesBeyond8Km' | 'importantNotes',
-    index: number
-  ) => {
+  const removeContentListItem = (key: 'rulesFreeDelivery' | 'importantNotes', index: number) => {
     updatePolicy((prev) => ({
       ...prev,
       content: {
@@ -278,10 +436,15 @@ export function CustomerDeliveryFeePolicyManager() {
     setMessage(null);
     setError(null);
     try {
-      const parsed = JSON.parse(rawJson);
-      await apiClient.put<{ success: boolean; policy: CustomerDeliveryFeePolicy }>('/admin/delivery-fee-policy', { policy: parsed });
+      const parsed = JSON.parse(rawJson) as CustomerDeliveryFeePolicy;
+      parsed.version = Math.max(2, parsed.version || 2);
+      parsed.zones = reindexZones(parsed.zones, parsed.maxServiceRadiusKm);
+      await apiClient.put<{ success: boolean; policy: CustomerDeliveryFeePolicy }>(
+        '/admin/delivery-fee-policy',
+        { policy: parsed }
+      );
       setMessage('Saved successfully.');
-      setPolicy(parsed as CustomerDeliveryFeePolicy);
+      setPolicy(parsed);
       await load();
     } catch (e: unknown) {
       if (e instanceof SyntaxError) {
@@ -298,19 +461,22 @@ export function CustomerDeliveryFeePolicyManager() {
     return <div className="text-center py-8 text-gray-600">Loading delivery fee policy…</div>;
   }
 
-  const renderSlabEditor = (zone: 'zoneA' | 'zoneB', title: string) => (
-    <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+  const sortedZones = sortZones(policy.zones);
+
+  const renderSlabEditor = (zone: DeliveryFeeZone) => (
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h5 className="font-semibold text-gray-900">{title}</h5>
-        <Button type="button" variant="outline" onClick={() => addSlab(zone)}>
+        <h6 className="text-sm font-medium text-gray-900">Order-value slabs</h6>
+        <Button type="button" variant="outline" onClick={() => addSlab(zone.id)}>
           Add slab
         </Button>
       </div>
-      {policy.zones[zone].length === 0 && (
-        <p className="text-xs text-gray-500">No slabs added yet.</p>
-      )}
-      {policy.zones[zone].map((slab, index) => (
-        <div key={`${zone}-${index}`} className="grid grid-cols-12 gap-2 items-end border border-gray-100 rounded-md p-2">
+      {zone.slabs.length === 0 && <p className="text-xs text-gray-500">No slabs added yet.</p>}
+      {zone.slabs.map((slab, index) => (
+        <div
+          key={`${zone.id}-slab-${index}`}
+          className="grid grid-cols-12 gap-2 items-end border border-gray-100 rounded-md p-2"
+        >
           <label className="col-span-3 text-xs text-gray-600">
             Min order
             <input
@@ -318,7 +484,7 @@ export function CustomerDeliveryFeePolicyManager() {
               type="number"
               min={0}
               value={slab.minOrderInr}
-              onChange={(e) => updateSlab(zone, index, 'minOrderInr', e.target.value)}
+              onChange={(e) => updateSlab(zone.id, index, 'minOrderInr', e.target.value)}
             />
           </label>
           <label className="col-span-3 text-xs text-gray-600">
@@ -328,7 +494,7 @@ export function CustomerDeliveryFeePolicyManager() {
               type="number"
               min={0}
               value={slab.maxOrderInr ?? ''}
-              onChange={(e) => updateSlab(zone, index, 'maxOrderInr', e.target.value)}
+              onChange={(e) => updateSlab(zone.id, index, 'maxOrderInr', e.target.value)}
               placeholder="No upper limit"
             />
           </label>
@@ -339,11 +505,11 @@ export function CustomerDeliveryFeePolicyManager() {
               type="number"
               min={0}
               value={slab.deliveryFeeInr}
-              onChange={(e) => updateSlab(zone, index, 'deliveryFeeInr', e.target.value)}
+              onChange={(e) => updateSlab(zone.id, index, 'deliveryFeeInr', e.target.value)}
             />
           </label>
           <div className="col-span-2 flex justify-end">
-            <Button type="button" variant="outline" onClick={() => removeSlab(zone, index)}>
+            <Button type="button" variant="outline" onClick={() => removeSlab(zone.id, index)}>
               Remove
             </Button>
           </div>
@@ -353,7 +519,7 @@ export function CustomerDeliveryFeePolicyManager() {
   );
 
   const renderListEditor = (
-    key: 'rulesFreeDelivery' | 'rulesBeyond5Km' | 'rulesBeyond8Km' | 'importantNotes',
+    key: 'rulesFreeDelivery' | 'importantNotes',
     title: string
   ) => (
     <div className="border border-gray-200 rounded-lg p-4 space-y-2">
@@ -384,7 +550,7 @@ export function CustomerDeliveryFeePolicyManager() {
       <div>
         <h4 className="text-md font-semibold text-gray-900">Customer delivery fee policy</h4>
         <p className="text-sm text-gray-600 mt-1">
-          Zone A/B by distance and order-value slabs, surge amounts, and policy text shown to customers via{' '}
+          Dynamic distance zones with order-value slabs, surge amounts, and policy text shown to customers via{' '}
           <code className="text-xs bg-gray-100 px-1 rounded">GET /customer/delivery-fee-policy</code>.
           {updatedAt && (
             <span className="block mt-1 text-xs text-gray-500">Last updated: {updatedAt}</span>
@@ -407,10 +573,13 @@ export function CustomerDeliveryFeePolicyManager() {
             <input
               className="mt-1 w-full border rounded px-2 py-1 text-sm"
               type="number"
-              min={1}
+              min={2}
               value={policy.version}
               onChange={(e) =>
-                updatePolicy((prev) => ({ ...prev, version: Math.max(1, Number(e.target.value || 1)) }))
+                updatePolicy((prev) => ({
+                  ...prev,
+                  version: Math.max(2, Number(e.target.value || 2)),
+                }))
               }
             />
           </label>
@@ -420,30 +589,21 @@ export function CustomerDeliveryFeePolicyManager() {
               className="mt-1 w-full border rounded px-2 py-1 text-sm"
               type="number"
               min={1}
+              step={0.1}
               value={policy.maxServiceRadiusKm}
-              onChange={(e) =>
+              onChange={(e) => {
+                const max = Math.max(1, Number(e.target.value || 1));
                 updatePolicy((prev) => ({
                   ...prev,
-                  maxServiceRadiusKm: Math.max(1, Number(e.target.value || 1)),
-                }))
-              }
+                  maxServiceRadiusKm: max,
+                  zones: reindexZones(prev.zones, max),
+                }));
+              }}
             />
           </label>
-          <label className="block text-xs text-gray-600">
-            Zone A boundary (KM)
-            <input
-              className="mt-1 w-full border rounded px-2 py-1 text-sm"
-              type="number"
-              min={1}
-              value={policy.zoneABoundaryKm}
-              onChange={(e) =>
-                updatePolicy((prev) => ({
-                  ...prev,
-                  zoneABoundaryKm: Math.max(1, Number(e.target.value || 1)),
-                }))
-              }
-            />
-          </label>
+          <p className="text-xs text-gray-500">
+            Zones must be contiguous from 0 KM to this max. The last zone&apos;s upper bound is set automatically.
+          </p>
         </div>
 
         <div className="border border-gray-200 rounded-lg p-4 space-y-3">
@@ -493,34 +653,152 @@ export function CustomerDeliveryFeePolicyManager() {
         </div>
       </div>
 
-      <div className="border border-gray-200 rounded-lg p-4 space-y-3">
-        <div>
-          <h5 className="font-semibold text-gray-900">Delivery fee slabs (not duplicate)</h5>
-          <p className="text-xs text-gray-600 mt-1">
-            Two columns are required: <strong>Zone A</strong> applies when distance ≤ Zone A boundary KM;
-            <strong> Zone B</strong> applies from just beyond that up to max service radius. Each zone has its own
-            order-value slabs and fees.
-          </p>
+      <div className="border border-gray-200 rounded-lg p-4 space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h5 className="font-semibold text-gray-900">Delivery zones</h5>
+            <p className="text-xs text-gray-600 mt-1">
+              Add as many zones as needed. Each zone has its own distance band, slabs, surge toggles, and operational rules.
+            </p>
+          </div>
+          <Button type="button" variant="outline" onClick={addZone}>
+            Add zone
+          </Button>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {renderSlabEditor(
-            'zoneA',
-            `Zone A slabs (≤ ${policy.zoneABoundaryKm} KM)`
-          )}
-          {renderSlabEditor(
-            'zoneB',
-            `Zone B slabs (beyond ${policy.zoneABoundaryKm} KM, up to ${policy.maxServiceRadiusKm} KM)`
-          )}
-        </div>
+
+        {sortedZones.map((zone, zoneIndex) => {
+          const isLast = zoneIndex === sortedZones.length - 1;
+          const isFirst = zoneIndex === 0;
+          return (
+            <div key={zone.id} className="border border-orange-100 rounded-lg p-4 space-y-4 bg-orange-50/20">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <h6 className="font-semibold text-gray-900">
+                    {zone.name} ({zone.minDistanceKm} – {zone.maxDistanceKm} KM)
+                  </h6>
+                  <p className="text-xs text-gray-500 font-mono">{zone.id}</p>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isFirst}
+                    onClick={() => moveZone(zone.id, 'up')}
+                  >
+                    Move up
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isLast}
+                    onClick={() => moveZone(zone.id, 'down')}
+                  >
+                    Move down
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={sortedZones.length <= 1}
+                    onClick={() => removeZone(zone.id)}
+                  >
+                    Delete zone
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <label className="block text-xs text-gray-600">
+                  Zone name
+                  <input
+                    className="mt-1 w-full border rounded px-2 py-1 text-sm"
+                    value={zone.name}
+                    onChange={(e) => updateZoneField(zone.id, 'name', e.target.value)}
+                  />
+                </label>
+                <label className="block text-xs text-gray-600">
+                  From (KM)
+                  <input
+                    className="mt-1 w-full border rounded px-2 py-1 text-sm bg-gray-50"
+                    type="number"
+                    value={zone.minDistanceKm}
+                    readOnly
+                  />
+                </label>
+                <label className="block text-xs text-gray-600">
+                  To (KM)
+                  <input
+                    className="mt-1 w-full border rounded px-2 py-1 text-sm"
+                    type="number"
+                    min={zone.minDistanceKm + 0.1}
+                    step={0.1}
+                    value={zone.maxDistanceKm}
+                    onChange={(e) => updateZoneField(zone.id, 'maxDistanceKm', e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <label className="block text-xs text-gray-600">
+                Customer description
+                <input
+                  className="mt-1 w-full border rounded px-2 py-1 text-sm"
+                  value={zone.description || ''}
+                  onChange={(e) => updateZoneField(zone.id, 'description', e.target.value)}
+                  placeholder={`e.g. ${zone.minDistanceKm}–${zone.maxDistanceKm} KM from fulfillment`}
+                />
+              </label>
+
+              <div className="rounded-md border border-gray-100 p-3 space-y-2 bg-white">
+                <h6 className="text-sm font-medium text-gray-900">Surge toggles for this zone</h6>
+                <div className="flex flex-wrap gap-4">
+                  {(['weekend', 'festival', 'rain'] as const).map((flag) => (
+                    <label key={`${zone.id}-${flag}`} className="text-xs text-gray-700 flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={zone.surgeConfig[flag]}
+                        onChange={(e) => updateZoneSurgeFlag(zone.id, flag, e.target.checked)}
+                      />
+                      {flag === 'weekend' ? 'Weekend' : flag === 'festival' ? 'Festival' : 'Rain'}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {renderSlabEditor(zone)}
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h6 className="text-sm font-medium text-gray-900">Operational rules (customer copy)</h6>
+                  <Button type="button" variant="outline" onClick={() => addOperationalRule(zone.id)}>
+                    Add rule
+                  </Button>
+                </div>
+                {(zone.operationalRules || []).map((line, index) => (
+                  <div key={`${zone.id}-rule-${index}`} className="flex gap-2">
+                    <input
+                      className="flex-1 border rounded px-2 py-1 text-sm"
+                      value={line}
+                      onChange={(e) => updateOperationalRule(zone.id, index, e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => removeOperationalRule(zone.id, index)}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <div className="border border-gray-200 rounded-lg p-4 space-y-4">
         <div>
-          <h5 className="font-semibold text-gray-900">Surge pricing</h5>
+          <h5 className="font-semibold text-gray-900">Surge pricing (global switches)</h5>
           <p className="text-xs text-gray-600 mt-1">
-            <strong>Weekend</strong> is automatic (Sat/Sun IST) when enabled per zone below.
-            <strong> Festival / Rain active</strong> turns on those surges platform-wide (checkout uses them when the API does not override).
-            Zone toggles for festival/rain are optional extras; global active alone is enough for those two.
+            Weekend is automatic (Sat/Sun IST) when enabled per zone. Festival / Rain active turns on those surges platform-wide.
           </p>
         </div>
         <div className="flex flex-wrap gap-6 pb-2 border-b border-gray-100">
@@ -541,37 +819,10 @@ export function CustomerDeliveryFeePolicyManager() {
             Rain active (global)
           </label>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {(['zoneA', 'zoneB'] as const).map((zone) => (
-            <div key={zone} className="rounded-md border border-gray-100 p-3 space-y-2 bg-gray-50/50">
-              <h6 className="text-sm font-medium text-gray-900">
-                {zone === 'zoneA' ? 'Zone A — apply weekend surge?' : 'Zone B — apply weekend surge?'}
-              </h6>
-              <p className="text-xs text-gray-500">
-                Festival/rain still follow global switches above. Use these to disable weekend surcharge in this zone only.
-              </p>
-              <div className="flex flex-wrap gap-4">
-                {(['weekend', 'festival', 'rain'] as const).map((flag) => (
-                  <label key={`${zone}-${flag}`} className="text-xs text-gray-700 flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={
-                        policy.zoneSurgeConfig?.[zone]?.[flag] ??
-                        EMPTY_POLICY.zoneSurgeConfig![zone][flag]
-                      }
-                      onChange={(e) => updateZoneSurgeFlag(zone, flag, e.target.checked)}
-                    />
-                    {flag === 'weekend' ? 'Weekend' : flag === 'festival' ? 'Festival (extra)' : 'Rain (extra)'}
-                  </label>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
       </div>
 
       <div className="border border-gray-200 rounded-lg p-4 space-y-3">
-        <h5 className="font-semibold text-gray-900">Customer copy</h5>
+        <h5 className="font-semibold text-gray-900">Customer copy (global)</h5>
         <label className="block text-xs text-gray-600">
           Coverage summary
           <textarea
@@ -586,34 +837,6 @@ export function CustomerDeliveryFeePolicyManager() {
             }
           />
         </label>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <label className="block text-xs text-gray-600">
-            Zone A description
-            <input
-              className="mt-1 w-full border rounded px-2 py-1 text-sm"
-              value={policy.content.zoneADescription || ''}
-              onChange={(e) =>
-                updatePolicy((prev) => ({
-                  ...prev,
-                  content: { ...prev.content, zoneADescription: e.target.value },
-                }))
-              }
-            />
-          </label>
-          <label className="block text-xs text-gray-600">
-            Zone B description
-            <input
-              className="mt-1 w-full border rounded px-2 py-1 text-sm"
-              value={policy.content.zoneBDescription || ''}
-              onChange={(e) =>
-                updatePolicy((prev) => ({
-                  ...prev,
-                  content: { ...prev.content, zoneBDescription: e.target.value },
-                }))
-              }
-            />
-          </label>
-        </div>
         <label className="block text-xs text-gray-600">
           Surge intro
           <input
@@ -631,8 +854,6 @@ export function CustomerDeliveryFeePolicyManager() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {renderListEditor('rulesFreeDelivery', 'Free delivery rules')}
-        {renderListEditor('rulesBeyond5Km', 'Rules beyond 5 KM')}
-        {renderListEditor('rulesBeyond8Km', 'Rules beyond 8 KM')}
         {renderListEditor('importantNotes', 'Important notes')}
       </div>
 
@@ -644,15 +865,20 @@ export function CustomerDeliveryFeePolicyManager() {
             type="number"
             min={0}
             value={quoteInput.orderSubtotalInr}
-            onChange={(e) => setQuoteInput((prev) => ({ ...prev, orderSubtotalInr: Number(e.target.value || 0) }))}
+            onChange={(e) =>
+              setQuoteInput((prev) => ({ ...prev, orderSubtotalInr: Number(e.target.value || 0) }))
+            }
             placeholder="Subtotal"
           />
           <input
             className="border rounded px-2 py-1 text-sm"
             type="number"
             min={0}
+            step={0.1}
             value={quoteInput.distanceKm}
-            onChange={(e) => setQuoteInput((prev) => ({ ...prev, distanceKm: Number(e.target.value || 0) }))}
+            onChange={(e) =>
+              setQuoteInput((prev) => ({ ...prev, distanceKm: Number(e.target.value || 0) }))
+            }
             placeholder="Distance KM"
           />
           <label className="text-xs text-gray-600 flex items-center gap-2">
@@ -680,13 +906,16 @@ export function CustomerDeliveryFeePolicyManager() {
             Rain
           </label>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button type="button" variant="outline" onClick={handlePreviewQuote} disabled={quoting}>
             {quoting ? 'Calculating…' : 'Calculate sample fee'}
           </Button>
           {quoteResult && (
             <span className="text-xs text-gray-600">
-              Zone: {String(quoteResult.zone || 'n/a')} • Total: ₹{String(quoteResult.totalDeliveryFeeInr || 0)}
+              {quoteResult.zoneName
+                ? `${String(quoteResult.zoneName)} (${String(quoteResult.zoneId || quoteResult.zone)})`
+                : `Zone: ${String(quoteResult.zone || 'n/a')}`}{' '}
+              • Total: ₹{String(quoteResult.totalDeliveryFeeInr || 0)}
             </span>
           )}
         </div>
@@ -719,9 +948,9 @@ export function CustomerDeliveryFeePolicyManager() {
       </div>
 
       <p className="text-xs text-gray-500">
-        Slabs use half-open ranges: <code>minOrderInr</code> inclusive, <code>maxOrderInr</code> exclusive,
-        or null for unlimited upper bound. Distance: Zone A is ≤ <code>zoneABoundaryKm</code> KM; Zone B is up
-        to <code>maxServiceRadiusKm</code> KM.
+        Order slabs use half-open ranges: <code>minOrderInr</code> inclusive, <code>maxOrderInr</code>{' '}
+        exclusive, or null for unlimited. Distance zones are contiguous from 0 KM; shared boundaries belong to the
+        lower zone (matches legacy Zone A/B behavior).
       </p>
     </div>
   );

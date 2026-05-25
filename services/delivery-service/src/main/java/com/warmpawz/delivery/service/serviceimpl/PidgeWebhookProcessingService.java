@@ -9,6 +9,7 @@ import com.warmpawz.delivery.repository.ShipmentRepository;
 import com.warmpawz.delivery.repository.ShipmentTrackingEventRepository;
 import com.warmpawz.delivery.service.OrderStatusJdbcService;
 import com.warmpawz.delivery.service.PidgePartialDeliverySupport;
+import com.warmpawz.delivery.service.DeliveryLocationHistoryWriter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -77,6 +78,7 @@ public class PidgeWebhookProcessingService {
 	private final ObjectMapper objectMapper;
 	private final PidgeTicketWebhookProcessingService pidgeTicketWebhookProcessingService;
 	private final PidgePartialDeliveryWebhookService pidgePartialDeliveryWebhookService;
+	private final DeliveryLocationHistoryWriter deliveryLocationHistoryWriter;
 
 	/** Pidge Communications Module — Rider Active Task webhook (batch rider + order_details). */
 	static boolean isRiderTaskPayload(JsonNode payload) {
@@ -175,6 +177,7 @@ public class PidgeWebhookProcessingService {
 		String dtStatus = mapPidgeNormalizedToDeliveryTrackingStatus(normalized);
 		String riderName = extractRiderName(rider);
 		String riderPhone = extractRiderPhone(rider);
+		String riderPhoto = extractRiderPhoto(rider);
 
 		boolean trackingDowngradeBlocked =
 				"delivered".equalsIgnoreCase(dt.getStatus()) && !"delivered".equalsIgnoreCase(dtStatus);
@@ -201,9 +204,13 @@ public class PidgeWebhookProcessingService {
 		if (riderPhone != null && !riderPhone.isBlank()) {
 			dt.setDeliveryPersonPhone(riderPhone);
 		}
+		if (riderPhoto != null && !riderPhoto.isBlank()) {
+			dt.setDeliveryPersonPhoto(riderPhoto);
+		}
 		if (lastLocation != null && lastLocation.has("latitude") && lastLocation.has("longitude")) {
-			dt.setCurrentLat(BigDecimal.valueOf(lastLocation.get("latitude").asDouble()));
-			dt.setCurrentLng(BigDecimal.valueOf(lastLocation.get("longitude").asDouble()));
+			BigDecimal lat = BigDecimal.valueOf(lastLocation.get("latitude").asDouble());
+			BigDecimal lng = BigDecimal.valueOf(lastLocation.get("longitude").asDouble());
+			persistHyperlocalGps(dt, lat, lng, Instant.now());
 		}
 		dt.setUpdatedAt(Instant.now());
 		deliveryTrackingRepository.save(dt);
@@ -464,6 +471,35 @@ public class PidgeWebhookProcessingService {
 		return null;
 	}
 
+	private static String extractRiderPhoto(JsonNode rider) {
+		if (rider == null || rider.isNull()) {
+			return null;
+		}
+		for (String field : List.of("img", "image", "photo", "photo_url", "avatar", "profile_image")) {
+			if (rider.hasNonNull(field)) {
+				String v = rider.get(field).asText().trim();
+				if (!v.isEmpty()) {
+					return v;
+				}
+			}
+		}
+		return null;
+	}
+
+	private void persistHyperlocalGps(DeliveryTracking dt, BigDecimal lat, BigDecimal lng, Instant recordedAt) {
+		if (!DeliveryLocationHistoryWriter.isValidCoord(lat, lng)) {
+			return;
+		}
+		if (DeliveryLocationHistoryWriter.coordsEqual(dt.getCurrentLat(), dt.getCurrentLng(), lat, lng)) {
+			deliveryLocationHistoryWriter.appendIfChanged(dt.getId(), lat, lng, "pidge", recordedAt);
+			return;
+		}
+		dt.setCurrentLat(lat);
+		dt.setCurrentLng(lng);
+		dt.setLastLocationUpdate(recordedAt != null ? recordedAt : Instant.now());
+		deliveryLocationHistoryWriter.appendIfChanged(dt.getId(), lat, lng, "pidge", recordedAt);
+	}
+
 	private static String buildRiderSummary(JsonNode rider) {
 		String name = extractRiderName(rider);
 		String phone = extractRiderPhone(rider);
@@ -482,6 +518,7 @@ public class PidgeWebhookProcessingService {
 		JsonNode rider = payload.path("rider");
 		String riderName = extractRiderName(rider);
 		String riderPhone = extractRiderPhone(rider);
+		String riderPhoto = extractRiderPhoto(rider);
 		BigDecimal riderLat = rider.has("current_latitude")
 				? BigDecimal.valueOf(rider.get("current_latitude").asDouble())
 				: null;
@@ -512,6 +549,7 @@ public class PidgeWebhookProcessingService {
 					detail,
 					riderName,
 					riderPhone,
+					riderPhoto,
 					riderLat,
 					riderLng,
 					updateSource,
@@ -600,6 +638,7 @@ public class PidgeWebhookProcessingService {
 			JsonNode detail,
 			String riderName,
 			String riderPhone,
+			String riderPhoto,
 			BigDecimal riderLat,
 			BigDecimal riderLng,
 			String updateSource,
@@ -622,10 +661,12 @@ public class PidgeWebhookProcessingService {
 		if (riderPhone != null && !riderPhone.isBlank()) {
 			dt.setDeliveryPersonPhone(riderPhone);
 		}
+		if (riderPhoto != null && !riderPhoto.isBlank()) {
+			dt.setDeliveryPersonPhoto(riderPhoto);
+		}
 		if (riderLat != null && riderLng != null) {
-			dt.setCurrentLat(riderLat);
-			dt.setCurrentLng(riderLng);
-			dt.setLastLocationUpdate(Instant.now());
+			Instant ts = eventTimestamp > 0 ? Instant.ofEpochMilli(eventTimestamp) : Instant.now();
+			persistHyperlocalGps(dt, riderLat, riderLng, ts);
 		}
 
 		String pickupEtaIso = detail.hasNonNull("estimated_pickup_time")

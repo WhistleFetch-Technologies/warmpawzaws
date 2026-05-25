@@ -296,7 +296,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
               <h2 className="text-lg font-bold text-slate-900">Expert Nutritionists</h2>
               <button
                 className="text-sm text-orange-600 flex items-center gap-1 font-medium"
-                onClick={() => handleBookNow()}
+                onClick={() => onNavigate?.('expert-nutritionists')}
               >
                 View All <ChevronRight className="w-4 h-4" />
               </button>

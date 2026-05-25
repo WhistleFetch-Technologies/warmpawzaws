@@ -156,6 +156,43 @@ export function isTerminalMealDeliveryState(status: MealDeliveryEffective): bool
   return status === 'delivered' || status === 'cancelled' || status === 'failed';
 }
 
+/** Terminal logistics / tracking tokens — stop customer polling when any segment matches. */
+const TERMINAL_DELIVERY_TOKENS = new Set(['delivered', 'cancelled', 'failed', 'returned']);
+
+export function isTerminalDeliveryState(status: string | null | undefined): boolean {
+  const segs = splitMealStatusSegments(status);
+  if (segs.some((s) => TERMINAL_DELIVERY_TOKENS.has(s))) return true;
+  const single = normalizeMealDeliveryToken(status);
+  return TERMINAL_DELIVERY_TOKENS.has(single);
+}
+
+/** Active Pidge phases where a live map is meaningful (requires coordinates). */
+const MEAL_LIVE_MAP_LOGISTICS_TOKENS = new Set([
+  'heading_to_pickup',
+  'picked_up',
+  'on_the_way',
+  'nearby',
+]);
+
+export function shouldShowMealLiveMap(input: {
+  logisticsPartner?: string | null;
+  logisticsType?: string | null;
+  logisticsStatus?: string | null;
+  hasCoordinates: boolean;
+  orderEffectiveState?: MealDeliveryEffective;
+}): boolean {
+  const partner = String(input.logisticsPartner ?? '').trim().toLowerCase();
+  const logisticsType = String(input.logisticsType ?? '').trim().toLowerCase();
+  if (partner !== 'pidge' && logisticsType !== 'pidge') return false;
+  if (!input.hasCoordinates) return false;
+  if (input.orderEffectiveState && isTerminalMealDeliveryState(input.orderEffectiveState)) {
+    return false;
+  }
+  if (isTerminalDeliveryState(input.logisticsStatus)) return false;
+  const segs = splitMealStatusSegments(input.logisticsStatus);
+  return segs.some((s) => MEAL_LIVE_MAP_LOGISTICS_TOKENS.has(s));
+}
+
 /** Rider card / live enrichment only during active delivery phases (Pidge + internal). */
 export function shouldShowDeliveryRider(logisticsStatus: string | null | undefined): boolean {
   const segs = splitMealStatusSegments(logisticsStatus);

@@ -34,6 +34,10 @@ import {
   extractPidgeOrderIdMap,
 } from '../lib/services/pidge-logistics';
 import { resolveEffectiveMealDeliveryState } from '../utils/meal-delivery-effective-state';
+import {
+  buildCustomerMealTrackingOrderPayload,
+  type MealTrackingOrderSource,
+} from '../utils/meal-tracking-order-payload';
 
 // Status mappings for different partners
 const SHIPROCKET_STATUS_MAP: Record<string, string> = {
@@ -830,6 +834,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
       // Find order (check multiple tables)
       let order: any = null;
       let orderType = 'ecommerce';
+      let mealOrderSource: MealTrackingOrderSource | null = null;
       
       // Check e-commerce orders
       // Use COALESCE to handle both UUID and order_number lookups safely
@@ -844,6 +849,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
         const ot = String(order.order_type || '').toLowerCase();
         if (ot === 'meal_plan_delivery' || ot === 'nutrition_delivery') {
           orderType = 'meal';
+          mealOrderSource = 'orders';
         }
       } else {
         // Check pharmacy orders
@@ -864,6 +870,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           if (result.rows.length > 0) {
             order = result.rows[0];
             orderType = 'meal';
+            mealOrderSource = 'meal_orders';
           }
         }
       }
@@ -1046,16 +1053,25 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
         return c.json({
           success: true,
           orderType,
-          order: {
-            id: order.id,
-            order_number: order.order_number || order.id?.toString().slice(-8),
-            orderNumber: order.order_number || order.id?.toString().slice(-8),
-            status: displayStatus,
-            total: displayTotalAmount,
-            total_amount: displayTotalAmount,
-            createdAt: order.created_at,
-            created_at: order.created_at,
-          },
+          order:
+            orderType === 'meal' && mealOrderSource
+              ? buildCustomerMealTrackingOrderPayload({
+                  order,
+                  orderSource: mealOrderSource,
+                  displayStatus,
+                  mealDisplayTotals,
+                  deliveryTracking: deliveryTracking ?? null,
+                })
+              : {
+                  id: order.id,
+                  order_number: order.order_number || order.id?.toString().slice(-8),
+                  orderNumber: order.order_number || order.id?.toString().slice(-8),
+                  status: displayStatus,
+                  total: displayTotalAmount,
+                  total_amount: displayTotalAmount,
+                  createdAt: order.created_at,
+                  created_at: order.created_at,
+                },
           tracking: trackingPayload,
         });
       }

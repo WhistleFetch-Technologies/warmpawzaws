@@ -4,6 +4,8 @@ import com.warmpawz.delivery.dto.tracking.DeliveryTrackingEnrichmentDto;
 import com.warmpawz.delivery.dto.tracking.LiveLocationDto;
 import com.warmpawz.delivery.dto.tracking.RiderInfoDto;
 import com.warmpawz.delivery.entity.DeliveryTracking;
+import com.warmpawz.delivery.repository.DeliveryTrackingRepository;
+import com.warmpawz.delivery.service.DeliveryLocationHistoryWriter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +19,8 @@ import java.util.Optional;
 public class DeliveryTrackingEnrichmentService {
 
 	private final PidgeTrackingEnrichmentProvider pidgeProvider;
+	private final DeliveryTrackingRepository deliveryTrackingRepository;
+	private final DeliveryLocationHistoryWriter deliveryLocationHistoryWriter;
 
 	public Optional<DeliveryTrackingEnrichmentDto> enrichIfApplicable(DeliveryTracking tracking) {
 		if (tracking == null) {
@@ -35,7 +39,38 @@ public class DeliveryTrackingEnrichmentService {
 		if (externalId == null || externalId.isBlank()) {
 			return Optional.empty();
 		}
-		return pidgeProvider.fetchLiveEnrichment(externalId);
+		Optional<DeliveryTrackingEnrichmentDto> enriched = pidgeProvider.fetchLiveEnrichment(externalId);
+		enriched.ifPresent(dto -> persistEnrichmentSideEffects(tracking, dto));
+		return enriched;
+	}
+
+	private void persistEnrichmentSideEffects(DeliveryTracking tracking, DeliveryTrackingEnrichmentDto dto) {
+		boolean dirty = false;
+		if (dto.getRider() != null) {
+			String photo = dto.getRider().getRiderPhoto();
+			if (photo != null && !photo.isBlank()
+					&& (tracking.getDeliveryPersonPhoto() == null || tracking.getDeliveryPersonPhoto().isBlank())) {
+				tracking.setDeliveryPersonPhoto(photo);
+				dirty = true;
+			}
+		}
+		if (dto.getLocation() != null) {
+			var lat = java.math.BigDecimal.valueOf(dto.getLocation().getLatitude());
+			var lng = java.math.BigDecimal.valueOf(dto.getLocation().getLongitude());
+			if (DeliveryLocationHistoryWriter.isValidCoord(lat, lng)) {
+				if (!DeliveryLocationHistoryWriter.coordsEqual(tracking.getCurrentLat(), tracking.getCurrentLng(), lat, lng)) {
+					tracking.setCurrentLat(lat);
+					tracking.setCurrentLng(lng);
+					tracking.setLastLocationUpdate(java.time.Instant.now());
+					dirty = true;
+				}
+				deliveryLocationHistoryWriter.appendIfChanged(
+						tracking.getId(), lat, lng, "pidge", java.time.Instant.now());
+			}
+		}
+		if (dirty) {
+			deliveryTrackingRepository.save(tracking);
+		}
 	}
 
 	/** Merges normalized enrichment into the tracking map returned by delivery APIs. */
@@ -62,6 +97,9 @@ public class DeliveryTrackingEnrichmentService {
 			}
 			if (enrichment.getRider().getVehicleType() != null && !enrichment.getRider().getVehicleType().isBlank()) {
 				deliveryPerson.put("vehicleType", enrichment.getRider().getVehicleType());
+			}
+			if (enrichment.getRider().getRiderPhoto() != null && !enrichment.getRider().getRiderPhoto().isBlank()) {
+				deliveryPerson.put("photo", enrichment.getRider().getRiderPhoto());
 			}
 			tracking.put("deliveryPerson", deliveryPerson);
 		}
@@ -106,6 +144,9 @@ public class DeliveryTrackingEnrichmentService {
 		}
 		if (rider.getVehicleNumber() != null) {
 			m.put("vehicleNumber", rider.getVehicleNumber());
+		}
+		if (rider.getRiderPhoto() != null) {
+			m.put("photo", rider.getRiderPhoto());
 		}
 		return m;
 	}
