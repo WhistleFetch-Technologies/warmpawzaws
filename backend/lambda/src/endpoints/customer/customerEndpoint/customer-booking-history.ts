@@ -18,6 +18,7 @@ import { Hono } from 'hono';
 import { select, query } from '../../../database/rds-connection';
 import { normalizeDbRows, buildBookingResponse, parseSelectedServices } from '../../../utils/entity-extractor';
 import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
+import { resolveBookingPaymentSources, resolveBookingPaymentSourcesBatch } from '../../../utils/payments/booking-payment-sources';
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 import {
@@ -120,7 +121,10 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
       //   Tier 2 – Razorpay API: pending payment with razorpay_order_id → check Razorpay if actually paid
       await reconcileBookingPayments(bookings.rows);
 
-      // Get statistics
+      const paymentSourcesByBooking = await resolveBookingPaymentSourcesBatch(
+        bookings.rows.map((b: any) => ({ id: b.id, total_amount: b.total_amount }))
+      );
+
       const statsQuery = await query(
         `SELECT 
            COUNT(*) as total,
@@ -176,6 +180,7 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           selectedServices: parseSelectedServices(b.selected_services),
           selected_services: b.selected_services, // ✅ FIX: Include raw selected_services for frontend parsing
           totalDurationMinutes: b.total_duration_minutes != null ? Number(b.total_duration_minutes) : undefined,
+          paymentSources: paymentSourcesByBooking.get(b.id) || [],
           ...packageFieldsFromBookingRow(b),
         })),
         stats: {
@@ -338,6 +343,10 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
 
       await reconcileBookingPayments([booking]);
 
+      const totalAmountNum =
+        booking.total_amount != null ? parseFloat(String(booking.total_amount)) : undefined;
+      const paymentSources = await resolveBookingPaymentSources(bookingId, totalAmountNum);
+
       return c.json({
         success: true,
         booking: {
@@ -433,6 +442,7 @@ export function registerCustomerBookingHistoryEndpoints(app: Hono) {
           totalAmount: booking.total_amount != null ? parseFloat(booking.total_amount) : undefined,
           price: booking.total_amount != null ? parseFloat(booking.total_amount) : (booking.base_price != null ? parseFloat(booking.base_price) : undefined),
           base_price: booking.base_price != null ? parseFloat(booking.base_price) : undefined,
+          paymentSources,
           ...packageFieldsFromBookingRow(booking),
         }
       });

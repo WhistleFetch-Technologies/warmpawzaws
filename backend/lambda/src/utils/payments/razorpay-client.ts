@@ -303,6 +303,30 @@ export async function razorpayRequest(
   }
 }
 
+/** Map Razorpay payment.method to our payments.payment_method enum. */
+export function normalizeRazorpayPaymentMethod(raw: unknown): string | null {
+  const m = String(raw || '').toLowerCase().trim();
+  if (!m) return null;
+  if (m === 'upi') return 'upi';
+  if (m === 'card' || m === 'credit' || m === 'debit') return 'card';
+  if (m === 'netbanking' || m === 'nb') return 'netbanking';
+  if (m === 'wallet') return 'wallet';
+  if (m === 'emi') return 'card';
+  return null;
+}
+
+/** Fetch Razorpay payment and return normalized method (upi, card, netbanking, …). */
+export async function fetchRazorpayPaymentMethod(paymentId: string): Promise<string | null> {
+  if (!paymentId || !String(paymentId).trim()) return null;
+  try {
+    const rpPayment = await razorpayRequest(`/payments/${String(paymentId).trim()}`, 'GET', undefined, 10000);
+    return normalizeRazorpayPaymentMethod(rpPayment?.method);
+  } catch (err: any) {
+    console.warn('[RAZORPAY] fetch payment method failed:', err?.message || err);
+    return null;
+  }
+}
+
 /** Razorpay Banking payout source account (customer identifier in Dashboard → Banking). */
 export async function resolveRazorpayPayoutSourceAccountNumber(): Promise<string | null> {
   try {
