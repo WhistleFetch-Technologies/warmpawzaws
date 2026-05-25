@@ -116,12 +116,14 @@ else
       "NEXT_PUBLIC_ENVIRONMENT=production"
       "NEXT_PUBLIC_API_BASE_URL=${RESOLVED_API_BASE_URL}"
       "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
+      "NEXT_PUBLIC_FIREBASE_VAPID_KEY=BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw"
     )
   else
     BUILD_ENV=(
       "NEXT_PUBLIC_ENVIRONMENT=development"
       "NEXT_PUBLIC_API_BASE_URL=${RESOLVED_API_BASE_URL}"
       "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
+      "NEXT_PUBLIC_FIREBASE_VAPID_KEY=BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw"
     )
   fi
 
@@ -162,7 +164,14 @@ if [ "$PROD" = true ]; then
     apiBaseUrl: "${API_BASE_URL}",
     uatMode: false,
     environment: "production",
-    customerEcommerceEnabled: ${CEE_JS}
+    customerEcommerceEnabled: ${CEE_JS},
+    firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+    firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+    firebaseProjectId:         "warmpawz-b9baf",
+    firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+    firebaseMessagingSenderId: "771876271254",
+    firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+    firebaseMeasurementId:     "G-PYF54Y34BP"
   };
   console.log('🔧 Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
@@ -175,7 +184,14 @@ else
     apiBaseUrl: "${API_BASE_URL}",
     uatMode: true,
     environment: "development",
-    customerEcommerceEnabled: ${CEE_JS}
+    customerEcommerceEnabled: ${CEE_JS},
+    firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+    firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+    firebaseProjectId:         "warmpawz-b9baf",
+    firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+    firebaseMessagingSenderId: "771876271254",
+    firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+    firebaseMeasurementId:     "G-PYF54Y34BP"
   };
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();

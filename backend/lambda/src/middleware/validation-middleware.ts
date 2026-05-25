@@ -111,6 +111,7 @@ export function validateBody<T>(schema: ZodSchema<T>) {
           error: 'Validation error',
           code: 'VALIDATION_ERROR',
           details: formatZodError(error),
+          errors: error.errors,
         }, 400);
       }
       

@@ -10,7 +10,9 @@
  */
 
 import { Hono } from 'hono';
+import { z } from 'zod';
 import { select, insert, update, query, deleteRows } from '../database/rds-connection';
+import { validateBody } from '../middleware/validation-middleware';
 import {
   sendPushToDevice,
   sendPushToMultipleDevices,
@@ -22,45 +24,51 @@ import {
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
+const registerDeviceSchema = z.object({
+  userId: z.string().uuid(),
+  userType: z.enum(['customer', 'vendor', 'staff', 'admin']),
+  fcmToken: z.string().min(10).max(512),
+  deviceId: z.string().min(1).max(255).optional(),
+  platform: z.enum(['ios', 'android', 'web', 'unknown']).default('unknown'),
+  appVersion: z.string().max(50).optional(),
+});
+
 export function registerPushNotificationEndpoints(app: Hono) {
   /**
    * POST /push/register-device
    * Register a device for push notifications
    */
-  app.post("/push/register-device", async (c) => {
+  app.post("/push/register-device", validateBody(registerDeviceSchema), async (c) => {
+    const { userId, userType, fcmToken, deviceId, platform, appVersion } = (c as any).get('validatedBody') as z.infer<typeof registerDeviceSchema>;
+
     try {
-      const { userId, userType, fcmToken, deviceId, platform } = await c.req.json();
+      const resolvedDeviceId = deviceId ?? fcmToken;
 
-      if (!userId || !userType || !fcmToken) {
-        return c.json({ error: 'userId, userType, and fcmToken are required' }, 400);
-      }
-
-      // Upsert device token
-      const existing = await query(
-        `SELECT id FROM device_tokens WHERE user_id = $1 AND user_type = $2 AND device_id = $3`,
-        [userId, userType, deviceId || fcmToken]
+      const upsertResult = await query(
+        `INSERT INTO device_tokens (user_id, user_type, device_id, fcm_token, platform, app_version, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, true)
+         ON CONFLICT (user_id, user_type, device_id) DO UPDATE SET
+           fcm_token = EXCLUDED.fcm_token,
+           platform = EXCLUDED.platform,
+           app_version = EXCLUDED.app_version,
+           is_active = true,
+           updated_at = NOW()
+         RETURNING id, (xmax = 0) AS inserted`,
+        [userId, userType, resolvedDeviceId, fcmToken, platform, appVersion ?? null]
       );
 
-      if (existing.rows.length > 0) {
-        await update('device_tokens',
-          { id: existing.rows[0].id },
-          {
-            fcm_token: fcmToken,
-            platform: platform || 'unknown',
-            is_active: true,
-            updated_at: new Date().toISOString(),
-          }
-        );
-      } else {
-        await insert('device_tokens', {
-          user_id: userId,
-          user_type: userType,
-          device_id: deviceId || fcmToken,
-          fcm_token: fcmToken,
-          platform: platform || 'unknown',
-          is_active: true,
-        });
-      }
+      const isNew = upsertResult.rows[0]?.inserted === true;
+      const truncatedDeviceId =
+        resolvedDeviceId.length > 12 ? `${resolvedDeviceId.slice(0, 12)}...` : resolvedDeviceId;
+
+      console.log(JSON.stringify({
+        event: 'device_registered',
+        userId,
+        userType,
+        platform,
+        isNew,
+        deviceId: truncatedDeviceId,
+      }));
 
       // Subscribe to relevant topics
       const topics = [
@@ -70,7 +78,22 @@ export function registerPushNotificationEndpoints(app: Hono) {
       ];
 
       for (const topic of topics) {
-        await subscribeToTopic(fcmToken, topic);
+        try {
+          const subscribed = await subscribeToTopic(fcmToken, topic);
+          if (!subscribed) {
+            console.warn(JSON.stringify({
+              event: 'topic_subscription_failed',
+              topic,
+              userId,
+            }));
+          }
+        } catch {
+          console.warn(JSON.stringify({
+            event: 'topic_subscription_failed',
+            topic,
+            userId,
+          }));
+        }
       }
 
       return c.json({
@@ -78,7 +101,13 @@ export function registerPushNotificationEndpoints(app: Hono) {
         message: 'Device registered for push notifications',
       });
     } catch (error: any) {
-      console.error('Error registering device:', error);
+      console.error(JSON.stringify({
+        event: 'device_register_error',
+        userId,
+        userType,
+        error: error.message,
+        stack: error.stack,
+      }));
       return c.json({ error: error.message }, 500);
     }
   });
