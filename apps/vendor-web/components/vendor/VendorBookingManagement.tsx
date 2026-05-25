@@ -66,7 +66,16 @@ import {
   isSoloVendor,
 } from '@/lib/vendor-utils';
 import { EmergencyAvailabilitySosCard } from './EmergencyAvailabilitySosCard';
-import { DeclineBookingModal } from './DeclineBookingModal';
+import {
+  buildVendorScheduleBookingsQuery,
+  isTeleScheduleBooking,
+  paginationShowingLabel,
+  scheduleAppointmentsSectionTitle,
+  scheduleEmptyStateMessage,
+  VENDOR_SCHEDULE_PAGE_SIZE,
+  type VendorSchedulePeriod,
+  type VendorScheduleView,
+} from '@/lib/vendor-schedule-bookings';
 
 /** 7-day chart when API omits dailyBreakdown: bucket by credited-at (realizedAt). */
 function buildDailyTrendFromEarningTransactions(transactions: any[]): Array<{ day: string; amount: number }> {
@@ -256,8 +265,11 @@ export function VendorBookingManagement({
   const allowedServiceStyles = getVendorAllowedServiceStyles(vendorData);
   const hasTeleService = !isSoloGroomer && allowedServiceStyles.includes('tele');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [activeFilter, setActiveFilter] = useState<'today' | 'week' | 'month'>('today');
-  const [activeView, setActiveView] = useState<'consultations' | 'locations'>('consultations');
+  const [schedulePeriod, setSchedulePeriod] = useState<VendorSchedulePeriod>('today');
+  const [activeView, setActiveView] = useState<VendorScheduleView>('consultations');
+  const [bookingsPageIndex, setBookingsPageIndex] = useState(0);
+  const [bookingsTotal, setBookingsTotal] = useState(0);
+  const [bookingsHasMore, setBookingsHasMore] = useState(false);
   const [activeTab, setActiveTab] = useState<'bookings' | 'earnings' | 'payouts'>('bookings');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -497,8 +509,12 @@ export function VendorBookingManagement({
     .sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
 
   useEffect(() => {
+    setBookingsPageIndex(0);
+  }, [selectedDate, schedulePeriod, activeView]);
+
+  useEffect(() => {
     loadBookings();
-  }, [selectedDate, activeFilter]);
+  }, [selectedDate, schedulePeriod, activeView, bookingsPageIndex]);
   
   // Load earnings when Earnings tab is shown (vendorId must be set; not tied to bookings date filter)
   useEffect(() => {
@@ -519,24 +535,28 @@ export function VendorBookingManagement({
       setLoading(true);
       
       console.log('🔍 [VENDOR-UI] Loading bookings with filters:', {
-        date: selectedDate,
-        filter: activeFilter,
-        vendorId
+        anchorDate: selectedDate,
+        schedulePeriod,
+        activeView,
+        page: bookingsPageIndex,
+        vendorId,
       });
-      
-      // Load bookings and vendor-configured availability in parallel
-      // Use startDate for week/month filters, date for today filter
-      let dateParam = '';
-      if (activeFilter === 'today') {
-        dateParam = `date=${selectedDate}`;
-      } else if (activeFilter === 'week') {
-        dateParam = `startDate=${selectedDate}`;
-      } else if (activeFilter === 'month') {
-        dateParam = `startDate=${selectedDate}`;
+
+      const queryParams = buildVendorScheduleBookingsQuery({
+        schedulePeriod,
+        anchorDate: selectedDate,
+        activeView,
+        pageIndex: bookingsPageIndex,
+        pageSize: VENDOR_SCHEDULE_PAGE_SIZE,
+        statusFilter: 'all',
+      });
+      if (!hasTeleService) {
+        delete queryParams.view;
       }
-      
+      const qs = new URLSearchParams(queryParams).toString();
+
       const [bookingsData, availabilityData] = await Promise.all([
-        apiClient.get(`/vendor/bookings/${vendorId}?${dateParam}&filter=all`) as Promise<any>,
+        apiClient.get(`/vendor/bookings/${vendorId}?${qs}`) as Promise<any>,
         apiClient.get(`/vendor/${vendorId}/availability`).catch(() => null) as Promise<any>
       ]);
 
@@ -647,18 +667,14 @@ export function VendorBookingManagement({
         });
         
         setBookings(mappedBookings);
-        console.log(`✅ Loaded ${mappedBookings.length} bookings for vendor ${vendorId}`);
-        
-        // ✅ FIX: Calculate instant consultation stats from filtered bookings (respects activeFilter: today/week/month)
-        // Stats should match what's shown on the dashboard for the selected period
-        // Check both serviceType and service_type (from raw booking data) to identify tele consultations
-        const teleBookings = mappedBookings.filter((b: Booking) => {
-          const serviceType = (b.serviceType || (b as any).service_type || '').toString().toLowerCase();
-          return serviceType === 'tele' || 
-                 serviceType === 'teleconsultation' || 
-                 serviceType.includes('tele') ||
-                 b.communicationType === 'video';
-        });
+        setBookingsTotal(Number(bookingsData.total ?? mappedBookings.length));
+        setBookingsHasMore(Boolean(bookingsData.hasMore));
+        const pageOffset = bookingsPageIndex * VENDOR_SCHEDULE_PAGE_SIZE;
+        console.log(
+          `✅ Loaded ${mappedBookings.length} bookings (total ${bookingsData.total ?? mappedBookings.length}) for vendor ${vendorId}`
+        );
+
+        const teleBookings = mappedBookings.filter((b: Booking) => isTeleScheduleBooking(b));
         
         // Separate phone calls from video consultations
         const phoneCalls = teleBookings.filter((b: Booking) => 
@@ -678,11 +694,13 @@ export function VendorBookingManagement({
           phone: phoneCalls.length, // Phone consultations
         });
         
-        console.log(`📊 [VENDOR-UI] Stats for ${activeFilter}:`, {
+        console.log(`📊 [VENDOR-UI] Stats for ${schedulePeriod}:`, {
           totalTele: teleBookings.length,
           video: videoCalls.length,
           phone: phoneCalls.length,
-          totalBookings: mappedBookings.length
+          totalBookings: mappedBookings.length,
+          totalCount: bookingsData.total,
+          offset: pageOffset,
         });
         
         // Build slots purely from vendor availability API — no fallback, no assumptions.
@@ -700,6 +718,8 @@ export function VendorBookingManagement({
       } else {
         console.error('Failed to load bookings:', bookingsData);
         setBookings([]);
+        setBookingsTotal(0);
+        setBookingsHasMore(false);
         setTimeSlots([]);
         setBreakWindows([]);
         // ✅ FIX: Reset stats to 0 when no bookings are found for the selected period
@@ -712,6 +732,8 @@ export function VendorBookingManagement({
     } catch (error) {
       console.error('Error loading bookings:', error);
       setBookings([]);
+      setBookingsTotal(0);
+      setBookingsHasMore(false);
       setTimeSlots([]);
       setBreakWindows([]);
       // ✅ FIX: Reset stats to 0 on error
@@ -1259,9 +1281,9 @@ export function VendorBookingManagement({
           {/* Filter Tabs */}
           <div className="flex gap-2">
             <button
-              onClick={() => setActiveFilter('today')}
+              onClick={() => setSchedulePeriod('today')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeFilter === 'today'
+                schedulePeriod === 'today'
                   ? 'bg-[#FF8C42] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
@@ -1269,9 +1291,9 @@ export function VendorBookingManagement({
               Today
             </button>
             <button
-              onClick={() => setActiveFilter('week')}
+              onClick={() => setSchedulePeriod('week')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeFilter === 'week'
+                schedulePeriod === 'week'
                   ? 'bg-[#FF8C42] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
@@ -1279,9 +1301,9 @@ export function VendorBookingManagement({
               Week
             </button>
             <button
-              onClick={() => setActiveFilter('month')}
+              onClick={() => setSchedulePeriod('month')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeFilter === 'month'
+                schedulePeriod === 'month'
                   ? 'bg-[#FF8C42] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
@@ -1352,9 +1374,11 @@ export function VendorBookingManagement({
               </div>
             )}
 
-            {/* Today's Appointments */}
+            {/* Appointments list */}
             <div className="p-4 bg-white">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Today's Appointments</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">
+                {scheduleAppointmentsSectionTitle(schedulePeriod, selectedDate)}
+              </h3>
               
               {loading ? (
                 <div className="text-center py-8">
@@ -1363,7 +1387,7 @@ export function VendorBookingManagement({
               ) : (() => {
                 return bookings.length === 0 ? (
                   <div className="text-center py-8 text-gray-500 text-sm">
-                    No appointments scheduled
+                    {scheduleEmptyStateMessage(schedulePeriod)}
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1385,6 +1409,9 @@ export function VendorBookingManagement({
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="text-sm font-semibold text-gray-900">{booking.time}</span>
+                            {schedulePeriod !== 'today' && booking.date && (
+                              <span className="text-xs text-gray-500">{booking.date}</span>
+                            )}
                             <span className="text-sm text-gray-600">{booking.customerName}</span>
                             {booking.isRescheduled && (
                               <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-orange-50 text-orange-700 border border-orange-200">
@@ -1674,6 +1701,39 @@ export function VendorBookingManagement({
                       </div>
                     </div>
                     ))}
+                    {(bookingsTotal > VENDOR_SCHEDULE_PAGE_SIZE || bookingsPageIndex > 0) && (
+                      <div className="pt-4 mt-2 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <p className="text-xs text-gray-500">
+                          {paginationShowingLabel(
+                            bookingsTotal,
+                            bookingsPageIndex * VENDOR_SCHEDULE_PAGE_SIZE,
+                            bookings.length
+                          )}
+                        </p>
+                        <div className="flex gap-2 w-full sm:w-auto">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 sm:flex-none"
+                            disabled={bookingsPageIndex === 0 || loading}
+                            onClick={() => setBookingsPageIndex((p) => Math.max(0, p - 1))}
+                          >
+                            Previous
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="flex-1 sm:flex-none"
+                            disabled={!bookingsHasMore || loading}
+                            onClick={() => setBookingsPageIndex((p) => p + 1)}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
