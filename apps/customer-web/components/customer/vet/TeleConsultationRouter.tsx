@@ -20,6 +20,7 @@ import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { InstantTeleQueue } from '../InstantTele/InstantTeleQueue';
+import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 
 // ============================================================================
 // TYPES
@@ -109,9 +110,10 @@ interface ModeSelectionProps {
   onSelectScheduled: () => void;
   onSelectInstant: () => void;
   onBack: () => void;
+  showInstantOption: boolean;
 }
 
-function ModeSelection({ onSelectScheduled, onSelectInstant, onBack }: ModeSelectionProps) {
+function ModeSelection({ onSelectScheduled, onSelectInstant, onBack, showInstantOption }: ModeSelectionProps) {
   // ✅ FIX: Prepare stats for ServiceDashboardHeader
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
 
@@ -134,37 +136,38 @@ function ModeSelection({ onSelectScheduled, onSelectInstant, onBack }: ModeSelec
         {/* Section Title */}
         <h2 className="text-base font-semibold text-gray-900 mb-4">How would you like to consult?</h2>
 
-        {/* Instant Consultation */}
-        <button
-          className="w-full p-4 mb-3 rounded-2xl text-left transition-all border-2 border-transparent hover:border-green-400 hover:shadow-md bg-green-50"
-          onClick={onSelectInstant}
-        >
-          <div className="flex items-start gap-4">
-            <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
-              <Zap className="w-6 h-6 text-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                <h3 className="font-semibold text-base text-gray-900">Instant Consultation</h3>
-                <span className="px-2 py-0.5 bg-green-500 text-white text-xs rounded-full font-medium">Live Now</span>
+        {showInstantOption ? (
+          <button
+            className="w-full p-4 mb-3 rounded-2xl text-left transition-all border-2 border-transparent hover:border-green-400 hover:shadow-md bg-green-50"
+            onClick={onSelectInstant}
+          >
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Zap className="w-6 h-6 text-white" />
               </div>
-              <p className="text-sm text-gray-600 leading-snug">
-                Connect immediately with the next available vet
-              </p>
-              <div className="flex items-center gap-3 text-xs text-gray-500 mt-1.5">
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3.5 h-3.5" />
-                  &lt;5 min wait
-                </span>
-                <span className="flex items-center gap-1">
-                  <Video className="w-3.5 h-3.5" />
-                  Video call
-                </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <h3 className="font-semibold text-base text-gray-900">Instant Consultation</h3>
+                  <span className="px-2 py-0.5 bg-green-500 text-white text-xs rounded-full font-medium">Live Now</span>
+                </div>
+                <p className="text-sm text-gray-600 leading-snug">
+                  Connect immediately with the next available vet
+                </p>
+                <div className="flex items-center gap-3 text-xs text-gray-500 mt-1.5">
+                  <span className="flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    &lt;5 min wait
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Video className="w-3.5 h-3.5" />
+                    Video call
+                  </span>
+                </div>
               </div>
+              <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
             </div>
-            <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
-          </div>
-        </button>
+          </button>
+        ) : null}
 
         {/* Scheduled Consultation */}
         <button
@@ -783,9 +786,14 @@ function CallingVendorScreen({
 // ============================================================================
 
 export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSelection, skipToScheduled }: TeleConsultationRouterProps) {
-  const [step, setStep] = useState<FlowStep>(
-    skipModeSelection ? 'instant-vendor-list' : skipToScheduled ? 'provider-list' : 'mode-selection'
-  );
+  const instantUiEnabled = isInstantTeleUiEnabled();
+  const skipToInstantList = Boolean(skipModeSelection && instantUiEnabled);
+  const initialStep: FlowStep = skipToInstantList
+    ? 'instant-vendor-list'
+    : skipToScheduled || (skipModeSelection && !instantUiEnabled)
+      ? 'provider-list'
+      : 'mode-selection';
+  const [step, setStep] = useState<FlowStep>(initialStep);
   const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
   const [selectedService, setSelectedService] = useState<PlatformService | null>(null);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
@@ -793,7 +801,7 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
 
   // Instant flow (available-now → vendor → service → pet → calling → payment)
   const [availableNowVendors, setAvailableNowVendors] = useState<AvailableNowVendor[]>([]);
-  const [loadingAvailableNow, setLoadingAvailableNow] = useState(!!skipModeSelection);
+  const [loadingAvailableNow, setLoadingAvailableNow] = useState(skipToInstantList);
   const deepLinkInstantFetchRef = useRef(false);
   const [selectedInstantVendor, setSelectedInstantVendor] = useState<AvailableNowVendor | null>(null);
   const [vendorTeleServices, setVendorTeleServices] = useState<PlatformService[]>([]);
@@ -913,12 +921,16 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
   }, []);
 
   useEffect(() => {
-    if (!skipModeSelection || deepLinkInstantFetchRef.current) return;
+    if (!skipToInstantList || deepLinkInstantFetchRef.current) return;
     deepLinkInstantFetchRef.current = true;
     void loadInstantVendorsAndGo(true);
-  }, [skipModeSelection, loadInstantVendorsAndGo]);
+  }, [skipToInstantList, loadInstantVendorsAndGo]);
 
   const handleSelectInstant = () => {
+    if (!instantUiEnabled) {
+      handleSelectScheduled();
+      return;
+    }
     void loadInstantVendorsAndGo(false);
   };
 
@@ -1137,6 +1149,7 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
           onSelectScheduled={handleSelectScheduled}
           onSelectInstant={handleSelectInstant}
           onBack={onBack}
+          showInstantOption={instantUiEnabled}
         />
       );
 
@@ -1276,6 +1289,7 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
           onSelectScheduled={handleSelectScheduled}
           onSelectInstant={handleSelectInstant}
           onBack={onBack}
+          showInstantOption={instantUiEnabled}
         />
       );
   }

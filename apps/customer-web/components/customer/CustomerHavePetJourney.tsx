@@ -152,7 +152,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
         return (
           <>
             {/* Orange Top Section */}
-            <div className="flex flex-col items-center pt-12 pb-8 px-6">
+            <div className="flex flex-col items-center cw-header-safe-top pb-8 px-6">
               <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center mb-6">
                 <PawPrint className="w-12 h-12 text-white" />
               </div>
@@ -229,7 +229,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
         return (
           <>
             {/* Orange Top Section */}
-            <div className="flex flex-col items-center pt-12 pb-8 px-6">
+            <div className="flex flex-col items-center cw-header-safe-top pb-8 px-6">
               <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-6">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <path d="M14 20L14 28L18 32L30 32L34 28L34 20L30 16L18 16L14 20Z" stroke="white" strokeWidth="3" fill="none"/>
@@ -336,7 +336,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
         return (
           <>
             {/* Orange Top Section */}
-            <div className="flex flex-col items-center pt-12 pb-8 px-6">
+            <div className="flex flex-col items-center cw-header-safe-top pb-8 px-6">
               <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-6">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <circle cx="24" cy="24" r="18" stroke="white" strokeWidth="3" fill="none"/>
@@ -483,7 +483,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
         return (
           <>
             {/* Orange Top Section */}
-            <div className="flex flex-col items-center pt-12 pb-8 px-6">
+            <div className="flex flex-col items-center cw-header-safe-top pb-8 px-6">
               <div className="w-24 h-24 bg-[#FF8C42] rounded-full flex items-center justify-center mb-6">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
                   <path d="M18 12C18 9 20 7 23 7H25C28 7 30 9 30 12V14H18V12Z" fill="white"/>
@@ -593,7 +593,7 @@ export function CustomerHavePetJourney({ session, onComplete }: CustomerHavePetJ
         return (
           <>
             {/* Orange Top Section */}
-            <div className="flex flex-col items-center pt-12 pb-8 px-6">
+            <div className="flex flex-col items-center cw-header-safe-top pb-8 px-6">
               <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center mb-6">
                 <span className="text-5xl">🎉</span>
               </div>

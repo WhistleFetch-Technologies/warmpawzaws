@@ -548,7 +548,7 @@ export function PaymentPage({
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-orange-50 pb-32">
       {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-40 cw-header-safe-top cw-header-safe-x">
+      <header className="bg-white shadow-sm sticky top-0 z-40 cw-header-safe-x pt-[max(3rem,calc(env(safe-area-inset-top,0px)+0.75rem))]">
         <div className="max-w-lg mx-auto px-4 py-4 flex items-center gap-4">
           <button onClick={onBack} className="text-gray-600 hover:text-gray-900">
             <ArrowLeft className="w-6 h-6" />

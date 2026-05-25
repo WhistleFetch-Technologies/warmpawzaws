@@ -606,24 +606,6 @@ export function HomeServiceProviderListView({
                       )}
                     </div>
 
-                    {/* Specializations */}
-                    {provider.specializations.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-2">
-                        {provider.specializations.slice(0, 3).map((spec, i) => (
-                          <span
-                            key={i}
-                            className="px-2 py-0.5 bg-gray-100 rounded-full text-xs text-gray-600"
-                          >
-                            {spec}
-                          </span>
-                        ))}
-                        {provider.specializations.length > 3 && (
-                          <span className="px-2 py-0.5 bg-gray-100 rounded-full text-xs text-gray-500">
-                            +{provider.specializations.length - 3}
-                          </span>
-                        )}
-                      </div>
-                    )}
                   </div>
                 </div>
 

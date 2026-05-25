@@ -289,3 +289,59 @@ export function handleHelpPageBack(router: RouterWithPush): void {
   }
   goBackOrReplace(router, '/');
 }
+
+// --- Wallet hub children (`/rewards`, `/referrals`): return to `/wallet` when opened from wallet ---
+
+const WALLET_CHILD_BACK_INTENT_KEY = 'warmpawz_wallet_child_back_intent';
+
+type WalletChildBackIntent =
+  | { kind: 'path'; path: string }
+  | { kind: 'spa'; screen: string };
+
+/** Call before navigating to `/rewards` or `/referrals` from a real route (e.g. `/wallet`). */
+export function rememberWalletChildBackFromCurrentUrl(): void {
+  if (typeof window === 'undefined') return;
+  const path = window.location.pathname + window.location.search;
+  if (!isSafeInternalPath(path)) return;
+  if (path === '/' || path === '') return;
+  sessionStorage.setItem(
+    WALLET_CHILD_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'path', path } satisfies WalletChildBackIntent)
+  );
+}
+
+/** Call before opening rewards/referrals from the home shell at `/` (embedded wallet screen). */
+export function rememberWalletChildBackSpaScreen(screen: string): void {
+  if (typeof window === 'undefined') return;
+  const safe = WARMPAWZ_HOME_RESUME_SCREENS.has(screen) ? screen : 'home';
+  sessionStorage.setItem(
+    WALLET_CHILD_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'spa', screen: safe } satisfies WalletChildBackIntent)
+  );
+}
+
+export function handleWalletChildPageBack(router: RouterWithPush, fallbackPath = '/wallet'): void {
+  if (typeof window === 'undefined') {
+    router.replace(fallbackPath);
+    return;
+  }
+  const raw = sessionStorage.getItem(WALLET_CHILD_BACK_INTENT_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as WalletChildBackIntent;
+      sessionStorage.removeItem(WALLET_CHILD_BACK_INTENT_KEY);
+      if (parsed.kind === 'path' && isSafeInternalPath(parsed.path)) {
+        router.push(parsed.path);
+        return;
+      }
+      if (parsed.kind === 'spa' && WARMPAWZ_HOME_RESUME_SCREENS.has(parsed.screen)) {
+        sessionStorage.setItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY, parsed.screen);
+        router.push('/');
+        return;
+      }
+    } catch {
+      sessionStorage.removeItem(WALLET_CHILD_BACK_INTENT_KEY);
+    }
+  }
+  goBackOrReplace(router, fallbackPath);
+}

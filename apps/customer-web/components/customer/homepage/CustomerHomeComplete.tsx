@@ -2762,8 +2762,12 @@ export function CustomerHomeComplete({
                           price: 2499,
                           desc: 'Full checkup + vaccination + grooming',
                         });
-                        console.log('[CustomerHomeComplete] Complete Health Package Book Now →', url);
-                        router.push(url);
+                        if (url) {
+                          console.log('[CustomerHomeComplete] Complete Health Package Book Now →', url);
+                          router.push(url);
+                          return;
+                        }
+                        handleNavigation('vet-tele-consultation', { startStep: 'scheduled' });
                       }}
                       className="bg-white text-purple-600 px-4 py-2 rounded-full text-sm font-semibold"
                     >

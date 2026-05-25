@@ -300,8 +300,9 @@ export function VetDoctorDetails({ phone, doctorId, onBack, onNavigate }: VetDoc
                     <CheckCircle2 className="w-5 h-5 text-green-500" />
                   )}
                 </div>
-                <p className="text-[#FF8C42] font-medium">{doctor.specialization}</p>
-                <p className="text-sm text-gray-500">{doctor.qualification}</p>
+                {doctor.qualification && (
+                  <p className="text-sm text-gray-500">{doctor.qualification}</p>
+                )}
                 
                 {/* Stats Row */}
                 <div className="flex items-center gap-4 mt-2">

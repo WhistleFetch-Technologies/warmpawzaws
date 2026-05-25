@@ -246,6 +246,18 @@
         { "key": "orderId", "jioTag": "alphanumeric", "maxLength": 40 },
         { "key": "detailsUrl", "jioTag": "url" }
       ]
+    },
+    {
+      "id": "reward_coupon_redeemed",
+      "jioTemplateName": "Warmpawz Reward Coupon Redeemed",
+      "jioTemplateId": "",
+      "message": "Warmpawz: Hi {#alphanumeric#}, your {#alphanumeric#} coupon is ready. Link: {#url#}. View in app under Rewards and Points.",
+      "variables": [
+        { "key": "customerFirstName", "jioTag": "alphanumeric", "maxLength": 30 },
+        { "key": "rewardName", "jioTag": "alphanumeric", "maxLength": 40 },
+        { "key": "couponLink", "jioTag": "url" }
+      ],
+      "_note": "Register in Jio True Connect; set jioTemplateId here and SMS_REWARD_COUPON_TEMPLATE_ID on prod Lambda."
     }
   ]
 }

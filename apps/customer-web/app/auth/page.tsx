@@ -33,7 +33,7 @@ function dialablePhoneForChat(countryCode: string, phoneDigits: string): string 
 const UAT_VALID_OTPS = ['123456', '12345678'] as const;
 
 /** Top padding under notch / status bar (requires viewport-fit=cover in root layout). */
-const authOrangeHeaderStyle = { paddingTop: 'max(2rem, env(safe-area-inset-top))' } as const;
+const authOrangeHeaderStyle = { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' } as const;
 
 /** Brand shell: subtle same-orange gradient, clips pseudo highlights. */
 const authShellClass =

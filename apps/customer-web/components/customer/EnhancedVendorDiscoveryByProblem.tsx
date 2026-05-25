@@ -317,25 +317,6 @@ export function EnhancedVendorDiscoveryByProblem({
                     </div>
                   </div>
 
-                  {/* Specializations (for staff) */}
-                  {result.entityType === 'staff' && result.specializations && result.specializations.length > 0 && (
-                    <div className="mb-3 flex flex-wrap gap-1.5">
-                      {result.specializations.slice(0, 3).map((spec: string, idx: number) => (
-                        <span
-                          key={idx}
-                          className="px-2 py-1 bg-green-50 text-green-700 text-xs rounded-lg border border-green-200"
-                        >
-                          {spec}
-                        </span>
-                      ))}
-                      {result.specializations.length > 3 && (
-                        <span className="px-2 py-1 bg-gray-50 text-gray-600 text-xs rounded-lg border border-gray-200">
-                          +{result.specializations.length - 3} more
-                        </span>
-                      )}
-                    </div>
-                  )}
-
                   {/* Service Styles */}
                   {result.serviceStyles && result.serviceStyles.length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-3">

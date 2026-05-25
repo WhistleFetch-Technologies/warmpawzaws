@@ -114,7 +114,7 @@ function ModeSelection({ onSelectScheduled, onBack }: ModeSelectionProps) {
   return (
     <div className="mx-auto min-h-screen w-full max-w-customer bg-[#FF8C42]">
       {/* Header - Consistent Design */}
-      <div className="px-4 pt-12 pb-8">
+      <div className="px-4 cw-header-safe-top pb-8">
         {/* Back Button */}
         <button
           onClick={onBack}
@@ -212,7 +212,7 @@ function InstantProblemSelection({ onSelectProblem, onBack }: InstantProblemSele
   return (
     <div className="mx-auto min-h-screen w-full max-w-customer bg-[#FF8C42]">
       {/* Header */}
-      <div className="px-4 pt-12 pb-8">
+      <div className="px-4 cw-header-safe-top pb-8">
         <button
           onClick={onBack}
           className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors mb-4"
@@ -271,7 +271,7 @@ function InstantPetSelection({ phone, selectedProblem, pets, loading, onSelectPe
   return (
     <div className="mx-auto min-h-screen w-full max-w-customer bg-[#FF8C42]">
       {/* Header */}
-      <div className="px-4 pt-12 pb-8">
+      <div className="px-4 cw-header-safe-top pb-8">
         <button
           onClick={onBack}
           className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors mb-4"

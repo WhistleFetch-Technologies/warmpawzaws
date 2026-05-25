@@ -6,6 +6,7 @@ import {
   goBackOrHome,
   rememberHelpBackFromCurrentUrl,
   rememberPromotionsBackFromCurrentUrl,
+  rememberWalletChildBackFromCurrentUrl,
 } from '@/lib/go-back-or-replace';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
@@ -61,10 +62,12 @@ export default function WalletPage() {
 
   const handleInAppNavigate = (path: string) => {
     if (path === 'rewards-loyalty') {
+      rememberWalletChildBackFromCurrentUrl();
       router.push('/rewards');
       return;
     }
     if (path === 'referral-system') {
+      rememberWalletChildBackFromCurrentUrl();
       router.push('/referrals');
       return;
     }

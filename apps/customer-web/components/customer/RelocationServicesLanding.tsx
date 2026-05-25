@@ -74,7 +74,7 @@ export function RelocationServicesLanding({ phone, onBack, onNavigate }: Relocat
   return (
     <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
       {/* Header - Orange Background */}
-      <div className="px-6 pt-12 pb-6">
+      <div className="px-6 cw-header-safe-top pb-6">
         <div className="flex items-center gap-4 mb-6">
            <button 
             onClick={onBack}

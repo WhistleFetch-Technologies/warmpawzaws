@@ -284,9 +284,8 @@ export function EnhancedSearchBar({
             name: vendor.businessName || vendor.name,
             businessName: vendor.businessName,
             ownerName: vendor.ownerName,
-            specialization: vendor.specialization,
             serviceType: vendor.category,
-            description: vendor.specialization || vendor.description,
+            description: vendor.description,
             rating: vendor.rating,
             photoUrl,
             imageUrl: photoUrl,
@@ -599,10 +598,9 @@ export function EnhancedSearchBar({
                       {result.type === 'symptom'
                         ? `Consult for "${result.data?.matchedSymptom || result.data?.name || 'symptom'}" — book vet / clinic / tele`
                         : (() => {
-                            const spec = result.data?.specialization;
                             const serviceType = result.data?.serviceType;
                             const desc = result.data?.description;
-                            const value = spec || serviceType || desc || '';
+                            const value = serviceType || desc || '';
                             if (typeof value === 'object' && value !== null) {
                               return String(value.name || value.type || value.text || '');
                             }
