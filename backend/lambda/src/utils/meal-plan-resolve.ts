@@ -5,6 +5,7 @@
 
 import { query } from '../database/rds-connection';
 import { isValidUUID } from '../types/entities';
+import { resolveVendorId } from './vendor-resolve';
 import { normalizePurchaseType } from './meal-purchase-metadata';
 import {
   resolveLeadTimeHours,
@@ -337,10 +338,11 @@ export async function ensureMealPlanMirrorForProductCheckout(resolved: Record<st
 
   const planName = String(resolved.plan_name ?? resolved.name ?? 'Meal');
   const name = String(resolved.name ?? planName);
+  const mirrorVendorId = await resolveVendorId(String(resolved.vendor_id ?? ''));
 
   const candidates: Record<string, unknown> = {
     id: idStr,
-    vendor_id: resolved.vendor_id,
+    vendor_id: mirrorVendorId || resolved.vendor_id,
     plan_name: planName,
     description: resolved.description ?? '',
     price_per_meal: resolved.price_per_meal ?? resolved.price ?? 0,
