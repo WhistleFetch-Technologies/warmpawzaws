@@ -38,6 +38,7 @@
     "@aws-sdk/s3-request-presigner": "^3.450.0",
     "@sentry/serverless": "^7.120.4",
     "@warmpawz/api-contracts": "file:../../packages/api-contracts",
+    "@warmpawz/shared-types": "file:../../packages/shared-types",
     "@warmpawz/service-launch-mappings": "file:../../packages/service-launch-mappings",
     "aws-lambda": "^1.0.7",
     "bcryptjs": "^2.4.3",

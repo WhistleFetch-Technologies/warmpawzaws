@@ -20,7 +20,7 @@ const nextConfig = {
       ? 'dist'
       : process.env.NEXT_DEV_DIST_DIR || '.next',
   reactStrictMode: true,
-  transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs'],
+  transpilePackages: ['@warmpawz/ui', '@warmpawz/shared-libs', '@warmpawz/shared-types'],
   swcMinify: true,
   compress: true,
   images: { unoptimized: true },

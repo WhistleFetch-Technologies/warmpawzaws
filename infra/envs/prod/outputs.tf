@@ -89,3 +89,25 @@ output "prod_frontend_bucket_names" {
   }
 }
 
+output "delivery_ecr_repository_url" {
+  description = "ECR base URI (tag with :latest after build)"
+  value       = local.delivery_stack_live ? module.delivery_service_ecs[0].ecr_repository_url : null
+}
+
+output "delivery_ecs_cluster_name" {
+  value = local.delivery_stack_live ? module.delivery_service_ecs[0].ecs_cluster_name : null
+}
+
+output "delivery_ecs_service_name" {
+  value = local.delivery_stack_live ? module.delivery_service_ecs[0].ecs_service_name : null
+}
+
+output "delivery_internal_alb_dns" {
+  description = "Internal ALB DNS (Lambda DELIVERY_SERVICE_BASE_URL host)"
+  value       = local.delivery_stack_live ? module.delivery_service_ecs[0].internal_alb_dns_name : null
+}
+
+output "delivery_codebuild_project_name" {
+  value = local.delivery_codebuild_live ? module.delivery_codebuild[0].codebuild_project_name : null
+}
+

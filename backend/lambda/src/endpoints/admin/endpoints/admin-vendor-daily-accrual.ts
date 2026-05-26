@@ -1,10 +1,16 @@
 /**
- * Admin: vendor daily accrual (IST calendar day) from vendor_earnings.realized_at.
+ * Admin: vendor daily accrual (IST calendar day) from vendor_earnings.realized_at
+ * plus delivery_settlements (meal/pharmacy) by order_delivered_at.
  * POST compute materializes vendor_daily_accrual; GET / export.csv list with bank resolution.
  */
 
 import { Hono } from 'hono';
 import { query } from '../../../database/rds-connection';
+import {
+  FINITE_COMMISSION_AMOUNT_SQL,
+  FINITE_NET_PAYOUT_SQL,
+  FINITE_ORDER_AMOUNT_SQL,
+} from '../../../utils/delivery-settlement-finance';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -54,7 +60,9 @@ async function fetchAccrualRowsWithBanks(reportDate: string): Promise<{
 
   const accrualRes = await query(
     `SELECT a.id, a.report_date, a.vendor_id, a.gross_amount, a.commission_amount, a.net_amount,
-            a.earnings_line_count, a.missing_earnings_booking_count, a.currency, a.computed_at,
+            a.earnings_line_count, a.missing_earnings_booking_count,
+            a.delivery_settlement_line_count, a.missing_delivery_settlement_count,
+            a.currency, a.computed_at,
             v.business_name, v.owner_name, v.phone AS vendor_phone
      FROM vendor_daily_accrual a
      INNER JOIN vendors v ON v.id = a.vendor_id
@@ -155,6 +163,11 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         return c.json({ success: false, error: 'vendor_earnings table not found' }, 503);
       }
 
+      const { recalculatePendingMealDeliverySettlements } = await import(
+        '../../../utils/meal-order-settlement'
+      );
+      const mealSettlementsRecalculated = await recalculatePendingMealDeliverySettlements();
+
       const upsertSql = `
         WITH bounds AS (
           SELECT
@@ -174,6 +187,29 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
             AND (ve.status IS DISTINCT FROM 'cancelled')
           GROUP BY ve.vendor_id
         ),
+        delivery_agg AS (
+          SELECT ds.vendor_id,
+                 COALESCE(SUM(${FINITE_ORDER_AMOUNT_SQL}), 0)::numeric(14,2) AS gross_amount,
+                 COALESCE(SUM(${FINITE_COMMISSION_AMOUNT_SQL}), 0)::numeric(14,2) AS commission_amount,
+                 COALESCE(SUM(${FINITE_NET_PAYOUT_SQL}), 0)::numeric(14,2) AS net_amount,
+                 COUNT(*)::int AS delivery_line_count
+          FROM delivery_settlements ds
+          CROSS JOIN bounds b
+          WHERE COALESCE(ds.order_delivered_at, ds.created_at) >= b.start_ts
+            AND COALESCE(ds.order_delivered_at, ds.created_at) < b.end_ts
+            AND LOWER(COALESCE(ds.status, '')) NOT IN ('failed', 'cancelled')
+          GROUP BY ds.vendor_id
+        ),
+        combined_agg AS (
+          SELECT COALESCE(e.vendor_id, d.vendor_id) AS vendor_id,
+                 (COALESCE(e.gross_amount, 0) + COALESCE(d.gross_amount, 0))::numeric(14,2) AS gross_amount,
+                 (COALESCE(e.commission_amount, 0) + COALESCE(d.commission_amount, 0))::numeric(14,2) AS commission_amount,
+                 (COALESCE(e.net_amount, 0) + COALESCE(d.net_amount, 0))::numeric(14,2) AS net_amount,
+                 (COALESCE(e.earnings_line_count, 0) + COALESCE(d.delivery_line_count, 0))::int AS earnings_line_count,
+                 COALESCE(d.delivery_line_count, 0)::int AS delivery_settlement_line_count
+          FROM earnings_agg e
+          FULL OUTER JOIN delivery_agg d ON d.vendor_id = e.vendor_id
+        ),
         gaps AS (
           SELECT b.vendor_id, COUNT(*)::int AS missing_earnings_booking_count
           FROM bookings b
@@ -184,33 +220,52 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
             AND NOT EXISTS (SELECT 1 FROM vendor_earnings ve WHERE ve.booking_id = b.id)
           GROUP BY b.vendor_id
         ),
+        meal_gaps AS (
+          SELECT mo.vendor_id, COUNT(*)::int AS missing_delivery_settlement_count
+          FROM meal_orders mo
+          CROSS JOIN bounds bnd
+          WHERE LOWER(COALESCE(mo.status, '')) = 'delivered'
+            AND COALESCE(mo.delivered_at, mo.updated_at) >= bnd.start_ts
+            AND COALESCE(mo.delivered_at, mo.updated_at) < bnd.end_ts
+            AND NOT EXISTS (SELECT 1 FROM delivery_settlements ds WHERE ds.meal_order_id = mo.id)
+          GROUP BY mo.vendor_id
+        ),
         all_vendors AS (
-          SELECT vendor_id FROM earnings_agg
+          SELECT vendor_id FROM combined_agg
           UNION
           SELECT vendor_id FROM gaps
+          UNION
+          SELECT vendor_id FROM meal_gaps
         )
         INSERT INTO vendor_daily_accrual (
           report_date, vendor_id, gross_amount, commission_amount, net_amount,
-          earnings_line_count, missing_earnings_booking_count, computed_at
+          earnings_line_count, missing_earnings_booking_count,
+          delivery_settlement_line_count, missing_delivery_settlement_count,
+          computed_at
         )
         SELECT
           $1::date,
           av.vendor_id,
-          COALESCE(e.gross_amount, 0)::numeric(14,2),
-          COALESCE(e.commission_amount, 0)::numeric(14,2),
-          COALESCE(e.net_amount, 0)::numeric(14,2),
-          COALESCE(e.earnings_line_count, 0),
+          COALESCE(c.gross_amount, 0)::numeric(14,2),
+          COALESCE(c.commission_amount, 0)::numeric(14,2),
+          COALESCE(c.net_amount, 0)::numeric(14,2),
+          COALESCE(c.earnings_line_count, 0),
           COALESCE(g.missing_earnings_booking_count, 0),
+          COALESCE(c.delivery_settlement_line_count, 0),
+          COALESCE(mg.missing_delivery_settlement_count, 0),
           NOW()
         FROM all_vendors av
-        LEFT JOIN earnings_agg e ON e.vendor_id = av.vendor_id
+        LEFT JOIN combined_agg c ON c.vendor_id = av.vendor_id
         LEFT JOIN gaps g ON g.vendor_id = av.vendor_id
+        LEFT JOIN meal_gaps mg ON mg.vendor_id = av.vendor_id
         ON CONFLICT (report_date, vendor_id) DO UPDATE SET
           gross_amount = EXCLUDED.gross_amount,
           commission_amount = EXCLUDED.commission_amount,
           net_amount = EXCLUDED.net_amount,
           earnings_line_count = EXCLUDED.earnings_line_count,
           missing_earnings_booking_count = EXCLUDED.missing_earnings_booking_count,
+          delivery_settlement_line_count = EXCLUDED.delivery_settlement_line_count,
+          missing_delivery_settlement_count = EXCLUDED.missing_delivery_settlement_count,
           computed_at = NOW()
         RETURNING vendor_id
       `;
@@ -225,7 +280,8 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         reportDate,
         timezone: 'Asia/Kolkata',
         anchor:
-          'vendor_earnings.realized_at (gross/commission/net); gaps use bookings.completed_at in same IST window',
+          'vendor_earnings.realized_at + delivery_settlements.order_delivered_at (gross/commission/net, IST day); booking/meal gap counts in same window',
+        mealSettlementsRecalculated,
         rowsUpserted: vendorIds.length,
       });
     } catch (error: any) {
@@ -261,7 +317,9 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         'net_amount',
         'currency',
         'earnings_line_count',
+        'delivery_settlement_line_count',
         'missing_earnings_booking_count',
+        'missing_delivery_settlement_count',
         'bank_name',
         'account_holder_name',
         'account_number',
@@ -286,7 +344,9 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
             csvEscape(r.net_amount),
             csvEscape(r.currency),
             csvEscape(r.earnings_line_count),
+            csvEscape(r.delivery_settlement_line_count),
             csvEscape(r.missing_earnings_booking_count),
+            csvEscape(r.missing_delivery_settlement_count),
             csvEscape(r.bankName),
             csvEscape(r.accountHolderName),
             csvEscape(r.accountNumber),

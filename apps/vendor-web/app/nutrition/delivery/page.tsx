@@ -14,11 +14,19 @@ interface DeliveryOrder {
   delivery_address: string;
   meal_plan_name: string;
   quantity: number;
-  total_amount: number;
+  vendor_meal_total?: number;
+  /** @deprecated Prefer vendor_meal_total (meal line only) */
+  total_amount?: number;
   status: 'pending' | 'preparing' | 'out_for_delivery' | 'delivered' | 'cancelled';
   order_date: string;
   delivery_date: string;
   delivery_time: string;
+}
+
+function listingRupee(o: DeliveryOrder): number {
+  const v = o.vendor_meal_total ?? o.total_amount ?? 0;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : 0;
 }
 
 export default function FoodDeliveryPage() {
@@ -154,8 +162,8 @@ export default function FoodDeliveryPage() {
                     </div>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Total Amount</p>
-                    <p className="text-xl font-bold text-orange-600">₹{order.total_amount}</p>
+                    <p className="text-sm text-gray-500">Meal total (your listing)</p>
+                    <p className="text-xl font-bold text-orange-600">₹{listingRupee(order)}</p>
                   </div>
                 </div>
 

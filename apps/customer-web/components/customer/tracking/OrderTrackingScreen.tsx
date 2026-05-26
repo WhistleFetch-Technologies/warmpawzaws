@@ -1,28 +1,57 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   MapPin, Package, Truck, CheckCircle, Clock, Phone, 
-  MessageCircle, Navigation, ChevronDown, Star, ArrowLeft,
+  Navigation, ChevronDown, Star, ArrowLeft,
   AlertCircle, Loader2, X
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import {
+  MealPlanOrderTrackingUI,
+  formatMealOrderDisplayId,
+} from '@/components/customer/tracking/MealPlanOrderTrackingUI';
+import { MealLiveMapSection } from '@/components/customer/tracking/MealLiveMapSection';
+import {
+  resolveEffectiveMealDeliveryState,
+  shouldShowDeliveryRider,
+} from '@warmpawz/shared-types';
+import {
+  extractDestinationCoordinates,
+  extractRiderCoordinates,
+  resolveRiderPhoto,
+} from '@/lib/meal-tracking-utils';
+import { useMealTrackingPoll } from '@/lib/use-meal-tracking-poll';
+import { MealOrderDetailsCollapsible } from '@/components/customer/tracking/MealOrderDetailsCollapsible';
+import { MealCustomerDetailsCard } from '@/components/customer/tracking/MealCustomerDetailsCard';
+import { DeliveryPartnerCallAction } from '@/components/customer/tracking/DeliveryPartnerCallAction';
+import { formatMealOrderDeliveryAddress } from '@/lib/meal-order-tracking-details';
+import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
+import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
 
 interface DeliveryPerson {
   name: string;
   phone: string;
   photo?: string;
   vehicle_number?: string;
+  vehicleNumber?: string;
 }
 
 interface TrackingData {
   status: string;
   deliveryOtp?: string | null;
+  deliveredAt?: string | null;
   currentLat?: number;
   currentLng?: number;
   eta?: number;
   etaMinutes?: number;
+  distanceRemaining?: number;
+  logistics_partner?: string;
+  logisticsPartner?: string;
   deliveryPerson?: DeliveryPerson;
+  rider?: DeliveryPerson & { vehicleType?: string };
+  currentLocation?: { lat?: number; lng?: number; latitude?: number; longitude?: number };
+  location?: { latitude?: number; longitude?: number };
 }
 
 interface OrderTrackingScreenProps {
@@ -40,9 +69,84 @@ const statusSteps = [
   { key: 'delivered', label: 'Delivered', icon: CheckCircle, color: 'green' },
 ];
 
+function moneyInr(value: unknown): string {
+  if (value == null || value === '') return '0';
+  const n = typeof value === 'number' ? value : parseFloat(String(value).replace(/,/g, ''));
+  if (!Number.isFinite(n)) return '0';
+  return n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+}
+
+function resolveDeliveredAt(order: Record<string, unknown>, tracking: TrackingData | null): string | null {
+  const raw =
+    order.delivered_at ??
+    order.deliveredAt ??
+    (tracking as { deliveredAt?: string } | null)?.deliveredAt;
+  if (!raw) return null;
+  const d = new Date(String(raw));
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleString('en-IN');
+}
+
+function resolveDeliveryAddressText(order: Record<string, unknown>): string {
+  const direct =
+    (typeof order.delivery_address === 'string' && order.delivery_address.trim()) ||
+    (typeof order.deliveryAddress === 'string' && order.deliveryAddress.trim());
+  if (direct && !direct.startsWith('{')) return direct;
+
+  const raw = order.delivery_address ?? order.deliveryAddress;
+  if (raw == null || raw === '') {
+    return [
+      order.shipping_address,
+      order.shipping_city,
+      order.shipping_state,
+      order.shipping_pincode,
+    ]
+      .filter((x) => typeof x === 'string' && x.trim())
+      .join(', ');
+  }
+
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    if (typeof o.address === 'string' && o.address.trim()) return o.address.trim();
+    return [
+      o.address_line1,
+      o.addressLine1,
+      o.line1,
+      o.address_line2,
+      o.addressLine2,
+      o.landmark,
+      o.city,
+      o.state,
+      o.pincode,
+    ]
+      .filter((x) => typeof x === 'string' && x.trim())
+      .join(', ');
+  }
+
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof parsed.address === 'string' && parsed.address.trim()) return parsed.address.trim();
+      return [
+        parsed.address_line1,
+        parsed.addressLine1,
+        parsed.city,
+        parsed.state,
+        parsed.pincode,
+      ]
+        .filter((x) => typeof x === 'string' && x.trim())
+        .join(', ');
+    } catch {
+      return raw.trim();
+    }
+  }
+
+  return '';
+}
+
 export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackingScreenProps) {
   const [order, setOrder] = useState<any>(null);
   const [tracking, setTracking] = useState<TrackingData | null>(null);
+  const [mealCustomer, setMealCustomer] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [showDetails, setShowDetails] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -50,26 +154,27 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
   const [reviewText, setReviewText] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const orderRef = useRef<any>(null);
+  const trackingRef = useRef<TrackingData | null>(null);
 
-  useEffect(() => {
-    loadOrderAndTracking();
-    const interval = setInterval(loadOrderAndTracking, 5000); // Poll every 5 seconds
-    return () => clearInterval(interval);
-  }, [orderId]);
-
-  const loadOrderAndTracking = async () => {
+  const loadOrderAndTracking = useCallback(async () => {
     try {
       if (orderType === 'meal') {
         const response = await apiClient.get(`/customer/tracking/${orderId}`) as any;
         if (response.success) {
           setOrder(response.order);
           setTracking(response.tracking);
+          setMealCustomer(response.customer ?? null);
+          orderRef.current = response.order;
+          trackingRef.current = response.tracking;
         }
       } else {
         const response = await apiClient.get(`/pharmacy/orders/${orderId}`) as any;
         if (response.success) {
           setOrder(response.order);
           setTracking(response.tracking);
+          orderRef.current = response.order;
+          trackingRef.current = response.tracking;
         }
       }
     } catch (error) {
@@ -77,7 +182,16 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
     } finally {
       setLoading(false);
     }
-  };
+  }, [orderId, orderType]);
+
+  useMealTrackingPoll(
+    loadOrderAndTracking,
+    () => ({
+      orderStatus: orderRef.current?.status ?? null,
+      logisticsStatus: trackingRef.current?.status ?? null,
+    }),
+    [orderId, orderType],
+  );
 
   const getCurrentStepIndex = () => {
     if (!order) return 0;
@@ -116,6 +230,16 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
     }
   };
 
+  if (orderType === 'meal' && !isCustomerMealPlansEnabled()) {
+    return (
+      <MealPlansComingSoon
+        onBack={onBack}
+        title="Order tracking"
+        subtitle="Live meal delivery tracking"
+      />
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -136,6 +260,203 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
           Go Back
         </button>
       </div>
+    );
+  }
+
+  if (orderType === 'meal') {
+    const logisticsStatus = tracking?.status ?? null;
+    const deliveryEff = resolveEffectiveMealDeliveryState(order.status, logisticsStatus);
+    const isDelivered = deliveryEff === 'delivered';
+    const riderActive =
+      deliveryEff === 'picked_up' ||
+      deliveryEff === 'on_the_way' ||
+      shouldShowDeliveryRider(logisticsStatus);
+    const riderName =
+      tracking?.rider?.name?.trim() || tracking?.deliveryPerson?.name?.trim() || '';
+    const riderPhone =
+      tracking?.rider?.phone?.trim() || tracking?.deliveryPerson?.phone?.trim() || '';
+    const showRiderCard =
+      !isDelivered && shouldShowDeliveryRider(logisticsStatus) && Boolean(riderName);
+    const otp = tracking?.deliveryOtp;
+    const totalAmt =
+      order.total_amount ?? order.totalAmount ?? order.total ?? order.amount;
+    const deliveredAtLabel = resolveDeliveredAt(order, tracking);
+    const deliveryAddressText = formatMealOrderDeliveryAddress(order as Record<string, unknown>);
+    const riderCoords = extractRiderCoordinates(tracking as Record<string, unknown>);
+    const destination = extractDestinationCoordinates(
+      order as Record<string, unknown>,
+      deliveryAddressText,
+    );
+    const riderPhoto = resolveRiderPhoto(tracking as Record<string, unknown>);
+
+    return (
+      <>
+        <MealPlanOrderTrackingUI
+          orderDisplayId={formatMealOrderDisplayId(order)}
+          orderStatus={order.status}
+          logisticsStatus={logisticsStatus}
+          totalAmount={typeof totalAmt === 'number' ? totalAmt : undefined}
+          backSlot={
+            <button
+              type="button"
+              onClick={onBack}
+              className="p-2 rounded-full hover:bg-white/15 transition text-white"
+              aria-label="Back"
+            >
+              <ArrowLeft className="w-6 h-6" />
+            </button>
+          }
+          deliveryOtpBanner={
+            otp && riderActive && !isDelivered ? (
+              <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 -mt-2 shadow-sm">
+                <p className="text-sm font-medium text-amber-800 mb-2">
+                  Handover OTP – share with delivery partner
+                </p>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <span className="text-3xl font-mono font-bold text-amber-900 tracking-[0.3em]">
+                    {otp}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => otp && navigator.clipboard?.writeText(String(otp))}
+                    className="px-4 py-2 bg-amber-200 text-amber-900 rounded-lg text-sm font-medium"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            ) : undefined
+          }
+          liveTrackingMap={
+            <MealLiveMapSection
+              logisticsPartner={
+                tracking?.logistics_partner ?? tracking?.logisticsPartner ?? null
+              }
+              logisticsType={order.logistics_type ?? order.logisticsType ?? null}
+              logisticsStatus={logisticsStatus}
+              orderEffectiveState={deliveryEff}
+              riderCoords={riderCoords}
+              destination={destination}
+              etaMinutes={tracking?.eta ?? tracking?.etaMinutes}
+              distanceRemainingKm={tracking?.distanceRemaining}
+            />
+          }
+          deliveryPartnerCard={
+            showRiderCard ? (
+              <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100/80">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-gradient-to-br from-emerald-100 to-teal-50 rounded-full flex items-center justify-center text-teal-700 text-xl font-bold shrink-0">
+                    {riderPhoto || tracking?.deliveryPerson?.photo ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={riderPhoto || tracking!.deliveryPerson!.photo}
+                        alt=""
+                        className="w-full h-full rounded-full object-cover"
+                      />
+                    ) : (
+                      riderName.charAt(0) || 'D'
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900">{riderName}</p>
+                    <p className="text-sm text-gray-500">
+                      {tracking?.rider?.vehicleType ||
+                        (tracking?.deliveryPerson as { vehicleType?: string })?.vehicleType ||
+                        (tracking?.deliveryPerson as { vehicle_number?: string })?.vehicle_number ||
+                        tracking?.deliveryPerson?.vehicleNumber ||
+                        'Delivery partner'}
+                    </p>
+                  </div>
+                  {riderPhone ? (
+                    <DeliveryPartnerCallAction phone={riderPhone} variant="pill" />
+                  ) : null}
+                </div>
+                {(tracking?.eta ?? tracking?.etaMinutes) ? (
+                  <div className="mt-4 flex items-center gap-3 p-3 bg-teal-50 rounded-xl border border-teal-100">
+                    <Clock className="w-5 h-5 text-teal-600 shrink-0" />
+                    <p className="text-sm font-medium text-teal-900">
+                      ETA: {formatETA(tracking!.eta ?? tracking!.etaMinutes ?? 0)}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            ) : undefined
+          }
+          deliveredBanner={
+            isDelivered ? (
+              <div className="bg-gradient-to-r from-green-500 to-teal-500 rounded-2xl p-6 text-white text-center shadow-sm border border-white/20">
+                <CheckCircle className="w-14 h-14 mx-auto mb-3 opacity-95" />
+                <h2 className="text-xl font-bold mb-1">Order Delivered!</h2>
+                <p className="text-sm text-white/90 mb-4">
+                  Delivered at {deliveredAtLabel ?? 'N/A'}
+                </p>
+                {!order.rating && !reviewSubmitted ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowReviewModal(true)}
+                    className="bg-white text-green-600 px-6 py-2 rounded-full font-medium inline-flex items-center gap-2"
+                  >
+                    <Star className="w-4 h-4" />
+                    Rate Your Experience
+                  </button>
+                ) : order.rating || reviewSubmitted ? (
+                  <p className="text-sm text-white/90 flex items-center justify-center gap-1">
+                    <Star className="w-4 h-4 fill-current" /> Thank you for your review!
+                  </p>
+                ) : null}
+              </div>
+            ) : undefined
+          }
+          customerDetailsCard={
+            <MealCustomerDetailsCard
+              order={order as Record<string, unknown>}
+              customer={mealCustomer}
+            />
+          }
+          orderDetailsCollapsible={
+            <MealOrderDetailsCollapsible order={order as Record<string, unknown>} />
+          }
+        />
+        {showReviewModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-gray-900">Rate Your Experience</h3>
+                <button onClick={() => setShowReviewModal(false)} className="p-1 rounded-full hover:bg-gray-100">
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+              <div className="flex gap-2 justify-center mb-4">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setReviewRating(n)}
+                    className={`p-2 rounded-full ${reviewRating >= n ? 'bg-amber-400 text-white' : 'bg-gray-100 text-gray-400'}`}
+                  >
+                    <Star className={`w-6 h-6 ${reviewRating >= n ? 'fill-current' : ''}`} />
+                  </button>
+                ))}
+              </div>
+              <textarea
+                placeholder="Optional: share your experience..."
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl p-3 text-sm resize-none h-24 mb-4"
+                maxLength={500}
+              />
+              <button
+                onClick={submitReview}
+                disabled={reviewSubmitting || reviewRating < 1}
+                className="w-full bg-green-600 text-white py-3 rounded-xl font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {reviewSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+                Submit Review
+              </button>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -232,17 +553,9 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
                 {tracking.deliveryPerson.vehicle_number || 'Delivery Partner'}
               </p>
             </div>
-            <div className="flex gap-2">
-              <a
-                href={`tel:${tracking.deliveryPerson.phone}`}
-                className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center"
-              >
-                <Phone className="w-5 h-5 text-green-600" />
-              </a>
-              <button className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                <MessageCircle className="w-5 h-5 text-blue-600" />
-              </button>
-            </div>
+            {tracking.deliveryPerson.phone ? (
+              <DeliveryPartnerCallAction phone={tracking.deliveryPerson.phone} variant="icon" />
+            ) : null}
           </div>
         </div>
       )}
@@ -436,12 +749,6 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
         )}
       </div>
 
-      {/* Help Button */}
-      <div className="fixed bottom-6 right-6">
-        <button className="w-14 h-14 bg-white shadow-lg rounded-full flex items-center justify-center">
-          <MessageCircle className="w-6 h-6 text-gray-600" />
-        </button>
-      </div>
     </div>
   );
 }

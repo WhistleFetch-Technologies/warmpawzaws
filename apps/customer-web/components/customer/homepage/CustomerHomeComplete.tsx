@@ -48,6 +48,7 @@ import {
   mapLaunchServiceIdToCustomerHomeScreen,
   mapCatalogCategoryIdToCustomerHomeScreen,
 } from '@warmpawz/service-launch-mappings';
+import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
@@ -1642,10 +1643,25 @@ export function CustomerHomeComplete({
     const activeOrders = [
       ...pharmacyOrders,
       ...mealOrders,
-    ].filter((order: any) =>
-      order && order.status !== 'delivered' && order.status !== 'cancelled' && order.status !== 'refunded' &&
-      (order.trackingStatus ?? order.tracking_status ?? ['confirmed', 'preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'].includes(order.status))
-    );
+    ].filter((order: any) => {
+      if (!order) return false;
+      const ot = order.orderType ?? order.order_type;
+      if (ot === 'meal') {
+        const eff = resolveEffectiveMealDeliveryState(
+          order.status,
+          order.trackingStatus ?? order.tracking_status,
+        );
+        return !isTerminalMealDeliveryState(eff);
+      }
+      return (
+        order.status !== 'delivered' &&
+        order.status !== 'cancelled' &&
+        order.status !== 'refunded' &&
+        (order.trackingStatus ??
+          order.tracking_status ??
+          ['confirmed', 'preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'].includes(order.status))
+      );
+    });
     if (activeOrders.length > 0) {
       setActiveOrderTracking(activeOrders[0]);
     } else {

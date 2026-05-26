@@ -24,14 +24,14 @@ export async function findCustomerByPhone(phone: string): Promise<any | null> {
         OR RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $2
      ORDER BY
        CASE
-         WHEN phone = $1[1] THEN 0
-         WHEN phone = $1[2] THEN 1
+         WHEN phone = $3 THEN 0
+         WHEN phone = $4 THEN 1
          ELSE 2
        END,
        updated_at DESC NULLS LAST,
        created_at DESC NULLS LAST
      LIMIT 1`,
-    [candidates, last10]
+    [candidates, last10, candidates[0], candidates[1]]
   ).catch(() => ({ rows: [] as any[] }));
 
   return matched.rows.length > 0 ? matched.rows[0] : null;

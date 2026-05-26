@@ -34,7 +34,9 @@ export function AddressSelector({ phone, onBack, onSelect }: AddressSelectorProp
   const loadAddresses = async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get<{ addresses: any[] }>(`/customer/addresses/${phone}`);
+      const data = await apiClient.get<{ addresses: any[] }>(
+        `/customer/addresses?phone=${encodeURIComponent(phone)}`,
+      );
       setAddresses(data.addresses || []);
       
       // Auto-select default address

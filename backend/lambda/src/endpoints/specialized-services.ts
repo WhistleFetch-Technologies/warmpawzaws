@@ -35,6 +35,160 @@ import {
   presignMealPlanRowDisplayFields,
   stripS3PresignQueryFromUrl,
 } from '../utils/s3-media-presign';
+import { resolveMealLineSubtotalInr } from '../utils/meal-order-pricing';
+import {
+  assertMealOrderHasPidgeForPickup,
+  dispatchMealLogistics,
+  isMealDispatchStrict,
+} from '../utils/meal-dispatch';
+import {
+  isPidgeMealLogistics,
+  vendorBlockedMealStatusForPidge,
+} from '../utils/meal-order-vendor-delivery-guard';
+import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
+import { processSubscriptionVendorParentBookingFullRefund } from '../utils/meal-subscription-parent-booking-refund';
+import {
+  mealProductParsedToDietaryJson,
+  mealsPerDayColumnFromPreset,
+  type MealProductDietaryInput,
+} from '../utils/meal-product-dietary';
+import type { MealsPerDayPreset } from '../constants/meal-product-enums';
+import { formatMealProductZodError, parseMealProductRequest } from '../zodContracts/meal-product.contract';
+import { resolveEffectiveMealDeliveryState } from '../utils/meal-delivery-effective-state';
+import { resolveMealCatalogDisplayName } from '../utils/meal-plan-resolve';
+import {
+  clampLeadTimeHoursForPlatform,
+  fetchPlatformMealBookingPolicy,
+} from '../utils/meal-booking-policy';
+import { parseOrderCutoffHm } from '../utils/meal-product-timing';
+import {
+  buildMealKitchenAvailabilityPayload,
+  fetchMealKitchenAvailabilityForVendor,
+  resolveCustomerKitchenMessage,
+} from '../utils/meal-kitchen-availability';
+import {
+  backfillMissingMealDeliverySettlementsForVendorIds,
+  syncDeliveredMealOrdersFromTracking,
+} from '../utils/meal-order-settlement';
+
+/** Coerce DB/API money fields so vendor UI never receives NaN or bogus strings. */
+/** Clamp booking lead time / cutoff to platform policy before persisting meal catalog rows. */
+async function applyPlatformMealTimingToParsed<
+  T extends { leadTimeHours?: number; orderCutoffTime?: string; preparationLeadTime: number },
+>(p: T): Promise<T & { leadTimeHours: number; orderCutoffTime: string }> {
+  const policy = await fetchPlatformMealBookingPolicy();
+  const leadTimeHours = clampLeadTimeHoursForPlatform(
+    p.leadTimeHours != null && Number.isFinite(Number(p.leadTimeHours))
+      ? Number(p.leadTimeHours)
+      : policy.leadTime.defaultHours,
+    policy,
+  );
+  const orderCutoffTime = parseOrderCutoffHm(p.orderCutoffTime) || policy.orderCutoff.time;
+  return { ...p, leadTimeHours, orderCutoffTime };
+}
+
+function safeMoney(v: unknown): number {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function parseMealOrderPurchaseSnapshotForVendor(raw: unknown): Record<string, unknown> {
+  if (raw == null) return {};
+  if (typeof raw === 'string') {
+    try {
+      const o = JSON.parse(raw) as unknown;
+      return typeof o === 'object' && o != null && !Array.isArray(o)
+        ? (o as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  return {};
+}
+
+/** Vendor-facing meal list: meal line total only (quantity × listed price). Strip checkout fees & platform economics. */
+const VENDOR_MEAL_ORDER_OMIT_PRICE_KEYS = new Set([
+  'total_amount',
+  'delivery_fee',
+  'platform_fee',
+  'logistics_cost',
+  'commission_amount',
+  'logistics_deduction',
+  'vendor_payout',
+  'tax_amount',
+  'gst_amount',
+  'cgst_amount',
+  'sgst_amount',
+  'igst_amount',
+  'convenience_fee',
+  'service_fee',
+]);
+
+function sanitizeVendorMealOrderRow(row: Record<string, unknown>): Record<string, unknown> {
+  const snap = parseMealOrderPurchaseSnapshotForVendor(row.purchase_snapshot);
+  let mealOnly = safeMoney(row.subtotal);
+  const next: Record<string, unknown> = { ...row };
+
+  if (snap.subscriptionVendorBookingRole === 'parent') {
+    next.subscription_vendor_parent_booking = true;
+    const ts = Number(snap.subscriptionTotalSessions);
+    next.subscription_booking_session_count = Number.isFinite(ts) ? ts : null;
+    const sn = Number(snap.sessionNumber);
+    next.subscription_session_number =
+      Number.isFinite(sn) && sn > 0 ? Math.floor(sn) : 1;
+    /** Parent row DB subtotal = full-cycle vendor food — vendor UI shows per-session line like session rows */
+    mealOnly = Math.round(mealOnly * 100) / 100;
+    const splitN =
+      Number.isFinite(Number(next.subscription_booking_session_count)) &&
+      Number(next.subscription_booking_session_count) >= 1
+        ? Math.floor(Number(next.subscription_booking_session_count))
+        : 1;
+    mealOnly = Math.round((mealOnly / splitN) * 100) / 100;
+    const paid =
+      Number(snap.subscriptionCustomerPaidTotalInr) > 0.009
+        ? Number(snap.subscriptionCustomerPaidTotalInr)
+        : safeMoney(row.total_amount);
+    next.subscription_customer_paid_total_inr = Math.round(paid * 100) / 100;
+    const pk = String(snap.subscriptionPurchaseType || row.purchase_type || '').trim();
+    next.subscription_booking_plan_kind = pk.replace(/_PLAN$/i, '').toLowerCase();
+    next.subscription_booking_delivery_type = String(
+      snap.subscriptionLogisticsType || row.logistics_type || 'warmpawz',
+    );
+    const mf = String(snap.subscriptionMonthlyDeliveryFrequency || '').trim().toUpperCase();
+    if (mf) next.subscription_monthly_delivery_frequency = mf;
+  }
+
+  if (snap.subscriptionVendorBookingRole === 'session') {
+    next.subscription_vendor_session_booking = true;
+    const sn = Number(snap.sessionNumber);
+    next.subscription_session_number = Number.isFinite(sn) ? sn : null;
+    const ts = Number(snap.subscriptionTotalSessions);
+    next.subscription_booking_session_count = Number.isFinite(ts) ? ts : null;
+    const pk = String(snap.subscriptionPurchaseType || row.purchase_type || '').trim();
+    next.subscription_booking_plan_kind = pk.replace(/_PLAN$/i, '').toLowerCase();
+    next.subscription_booking_delivery_type = String(
+      snap.subscriptionLogisticsType || row.logistics_type || 'warmpawz',
+    );
+    const mf = String(snap.subscriptionMonthlyDeliveryFrequency || '').trim().toUpperCase();
+    if (mf) next.subscription_monthly_delivery_frequency = mf;
+    const paid =
+      Number(snap.subscriptionCustomerPaidTotalInr) > 0.009 ? Number(snap.subscriptionCustomerPaidTotalInr) : null;
+    if (paid != null && Number.isFinite(paid)) {
+      next.subscription_customer_paid_total_inr = Math.round(paid * 100) / 100;
+    }
+    mealOnly = Math.round(safeMoney(row.subtotal) * 100) / 100;
+  }
+
+  for (const k of VENDOR_MEAL_ORDER_OMIT_PRICE_KEYS) {
+    delete next[k];
+  }
+  delete next.subtotal;
+  next.vendor_meal_total = mealOnly;
+  return next;
+}
 
 /** Lowercased column set for `public.<table>` — avoids 42703 when optional migrations (e.g. products.metadata) are not applied. */
 async function getPublicTableColumns(tableName: string): Promise<Set<string>> {
@@ -1268,6 +1422,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         description: mealPlanData.description || null,
         duration_days: durationDays,
         price_per_meal: price,
+        price,
         meals_per_day: mealPlanData.meals_per_day ?? mealPlanData.mealsPerDay ?? 2,
         dietary_requirements: JSON.stringify({
           pet_types: mealPlanData.pet_types || mealPlanData.petTypes || ['Dog', 'Cat'],
@@ -1317,7 +1472,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       if (planName != null) { updates.push(`plan_name = $${idx}`); params.push(planName); idx++; }
       if (description != null) { updates.push(`description = $${idx}`); params.push(description); idx++; }
       if (durationDays != null) { updates.push(`duration_days = $${idx}`); params.push(durationDays); idx++; }
-      if (price != null) { updates.push(`price_per_meal = $${idx}`); params.push(price); idx++; }
+      if (price != null) {
+        updates.push(`price_per_meal = $${idx}`, `price = $${idx + 1}`);
+        params.push(price, price);
+        idx += 2;
+      }
       if (mealsPerDay != null) { updates.push(`meals_per_day = $${idx}`); params.push(mealsPerDay); idx++; }
       if (isActive !== undefined) { updates.push(`is_active = $${idx}`); params.push(isActive); idx++; }
       if (petTypes != null) {
@@ -1630,6 +1789,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    * GET /vendor/:vendorId/meal-products
    * Get meal products for a nutritionist vendor (merged from products + meal_plans for consistent list)
    * Resolves vendorId (identity id → vendors id) for correct vendor lookup
+   *
+   * Each item includes `metadata` (or merged specs) with optional catalog keys:
+   * mealCategories, medicalConditionTags, feedingInstructions, storageInstructions, shelfLifeDays,
+   * deliveryType, mealsPerDayPreset, mealsPerDayCustom, allergens, preparationType, ingredients (string[]),
+   * nutritionalValue, petTypes, dietType, preparationLeadTime, mealImageUrl.
    */
   app.get("/vendor/:vendorId/meal-products", async (c) => {
     try {
@@ -1711,6 +1875,23 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               : (mp.dietary_requirements || {});
           } catch (_) {}
           const dietForApi = await presignMealImageUrlInRecord(dietaryReqs as Record<string, unknown>);
+          const prepMins =
+            mp.prep_time_minutes != null
+              ? Number(mp.prep_time_minutes)
+              : (dietForApi.prepTimeMinutes ?? dietForApi.preparationLeadTime);
+          const leadHrs = mp.lead_time_hours != null ? Number(mp.lead_time_hours) : dietForApi.leadTimeHours;
+          const cutoff =
+            typeof mp.order_cutoff_time === 'string' && mp.order_cutoff_time
+              ? mp.order_cutoff_time
+              : dietForApi.orderCutoffTime;
+          const metadata = {
+            ...dietForApi,
+            ...(prepMins != null && Number.isFinite(Number(prepMins))
+              ? { prepTimeMinutes: Number(prepMins), preparationLeadTime: Number(prepMins) }
+              : {}),
+            ...(leadHrs != null && Number.isFinite(Number(leadHrs)) ? { leadTimeHours: Number(leadHrs) } : {}),
+            ...(typeof cutoff === 'string' && cutoff ? { orderCutoffTime: cutoff } : {}),
+          };
           list.push({
             id: mp.id,
             name: mp.plan_name,
@@ -1718,7 +1899,10 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             description: mp.description,
             price: mp.price_per_meal ?? mp.price,
             category: 'meal_plan',
-            metadata: dietForApi,
+            metadata,
+            prep_time_minutes: mp.prep_time_minutes,
+            lead_time_hours: mp.lead_time_hours,
+            order_cutoff_time: mp.order_cutoff_time,
             petTypes: dietaryReqs.petTypes || [],
             dietType: dietaryReqs.dietType,
             ingredients: dietaryReqs.ingredients || [],
@@ -1750,9 +1934,105 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   });
 
   /**
+   * GET /vendor/:vendorId/meal-kitchen-availability
+   * Vendor toggle: accepting new meal orders + optional customer-facing pause reason.
+   */
+  app.get('/vendor/:vendorId/meal-kitchen-availability', async (c) => {
+    try {
+      const vendorId = await resolveVendorId(c.req.param('vendorId'));
+      const availability = await fetchMealKitchenAvailabilityForVendor(vendorId);
+      return c.json({
+        success: true,
+        availability: {
+          ...availability,
+          customerPreview: availability.acceptingOrders
+            ? null
+            : resolveCustomerKitchenMessage(availability),
+        },
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to load kitchen status';
+      return c.json({ success: false, error: msg }, 500);
+    }
+  });
+
+  /**
+   * PUT /vendor/:vendorId/meal-kitchen-availability
+   * Body: { acceptingOrders, reasonCode?, customerMessage? }
+   */
+  app.put('/vendor/:vendorId/meal-kitchen-availability', async (c) => {
+    try {
+      const vendorId = await resolveVendorId(c.req.param('vendorId'));
+      const body = await c.req.json();
+      const built = buildMealKitchenAvailabilityPayload({
+        acceptingOrders: body.acceptingOrders,
+        reasonCode: body.reasonCode,
+        customerMessage: body.customerMessage,
+      });
+      if (!built.ok) {
+        return c.json({ success: false, error: built.error }, 400);
+      }
+
+      const vendors = await select('vendors', { id: vendorId });
+      if (!vendors.length) {
+        return c.json({ success: false, error: 'Vendor not found' }, 404);
+      }
+
+      const row = vendors[0] as { metadata?: unknown };
+      let currentMeta: Record<string, unknown> = {};
+      if (row.metadata != null) {
+        if (typeof row.metadata === 'string') {
+          try {
+            currentMeta = JSON.parse(row.metadata) as Record<string, unknown>;
+          } catch {
+            currentMeta = {};
+          }
+        } else if (typeof row.metadata === 'object' && !Array.isArray(row.metadata)) {
+          currentMeta = row.metadata as Record<string, unknown>;
+        }
+      }
+
+      const updatedMeta = {
+        ...currentMeta,
+        mealKitchenAvailability: built.value,
+      };
+
+      await update('vendors', { id: vendorId }, {
+        metadata: updatedMeta,
+        updated_at: new Date().toISOString(),
+      });
+
+      return c.json({
+        success: true,
+        availability: {
+          ...built.value,
+          customerPreview: built.value.acceptingOrders
+            ? null
+            : resolveCustomerKitchenMessage(built.value),
+        },
+      });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to update kitchen status';
+      return c.json({ success: false, error: msg }, 500);
+    }
+  });
+
+  /**
    * POST /vendor/:vendorId/meal-products
-   * Create a meal product (products.metadata or products.specifications JSONB, else meal_plans)
+   * Create a meal product: **meal_plans first** (single canonical nutrition catalog row).
+   * Falls back to **products** only when `meal_plans` insert fails with a recoverable schema error
+   * (e.g. missing relation/column), matching older DBs that lack columns.
    * Resolves vendorId (identity id → vendors id) to fix meal_plans_vendor_id_fkey FK violation
+   *
+   * Extended catalog fields (camelCase JSON, also persisted inside dietary_requirements / metadata):
+   * mealCategories[], medicalConditionTags[], feedingInstructions, storageInstructions, shelfLifeDays (1–365),
+   * purchaseType (ONE_TIME | WEEKLY_PLAN | MONTHLY_PLAN); legacy deliveryType still accepted and mirrored,
+   * subscriptionConfig object optional (fields also accepted top-level): deliveryFrequency, deliveryDays,
+   * mealsPerDelivery*, subscriptionPrice, recommendedPlanLengthWeeks, pauseAllowed, cancelAnytime,
+   * mealsPerDayPreset (1|2|3|CUSTOM), mealsPerDayCustom (when CUSTOM),
+   * allergens[], preparationType (FRESH_COOKED | FREEZE_DRIED | RAW | DEHYDRATED | HOMEMADE),
+   * ingredients[] (array of strings; legacy comma-separated string still accepted once and normalized).
+   * Omitted extended fields use safe defaults so older clients remain compatible.
    */
   app.post("/vendor/:vendorId/meal-products", async (c) => {
     try {
@@ -1766,69 +2046,87 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         }, 404);
       }
       const data = await c.req.json();
-      const mealImageUrlRaw =
-        typeof data.mealImageUrl === 'string' && data.mealImageUrl.trim() ? data.mealImageUrl.trim() : undefined;
-      const mealImageUrl = mealImageUrlRaw ? stripS3PresignQueryFromUrl(mealImageUrlRaw) : undefined;
-      const dietaryPayload = {
-        petTypes: data.petTypes || ['Dog', 'Cat'],
-        dietType: data.dietType,
-        suitableFor: data.suitableFor || [],
-        ingredients: data.ingredients || [],
-        nutritionalValue: data.nutritionalValue || {},
-        preparationLeadTime: data.preparationLeadTime,
-        storageInstructions: data.storageInstructions,
-        shelfLife: data.shelfLife,
-        packSize: data.packSize,
-        ...(mealImageUrl ? { mealImageUrl } : {}),
-      };
+      const parsed = parseMealProductRequest(data);
+      if (!parsed.success) {
+        return c.json({ error: formatMealProductZodError(parsed.error) }, 400);
+      }
+      const pTimed = await applyPlatformMealTimingToParsed(parsed.data);
+      const p = pTimed;
 
-      // Try products table first (metadata or specifications JSONB; see db/migrations/034_add_metadata_columns.sql)
+      const mealImageUrl = p.mealImageUrl
+        ? stripS3PresignQueryFromUrl(String(p.mealImageUrl).trim())
+        : undefined;
+      const dietaryPayload = mealProductParsedToDietaryJson(p as MealProductDietaryInput, { mealImageUrl });
+
+      // Prefer meal_plans (legacy nutrition catalog); fall back to products only on schema-level failures.
+      const mpCols = await getPublicTableColumns('meal_plans');
+      const mealPlanRow: Record<string, unknown> = {
+        vendor_id: vendorId,
+        plan_name: p.name,
+        description: p.description,
+        price_per_meal: p.price,
+        price: p.price,
+        duration_days: p.shelfLifeDays,
+        meals_per_day: Number(dietaryPayload.mealsPerDay ?? mealsPerDayColumnFromPreset(p.mealsPerDayPreset as MealsPerDayPreset)),
+        dietary_requirements: JSON.stringify(dietaryPayload),
+        is_active: true,
+      };
+      if (mpCols.has('purchase_type')) mealPlanRow.purchase_type = p.purchaseType;
+      if (mpCols.has('subscription_config')) {
+        mealPlanRow.subscription_config = dietaryPayload.subscriptionConfig ?? {};
+      }
+      if (mpCols.has('prep_time_minutes')) mealPlanRow.prep_time_minutes = p.preparationLeadTime;
+      if (mpCols.has('lead_time_hours')) mealPlanRow.lead_time_hours = p.leadTimeHours;
+      if (mpCols.has('order_cutoff_time')) mealPlanRow.order_cutoff_time = p.orderCutoffTime;
+      if (mpCols.has('shelf_life_days')) mealPlanRow.shelf_life_days = p.shelfLifeDays;
+      if (mpCols.has('storage_instructions')) mealPlanRow.storage_instructions = p.storageInstructions ?? null;
+      if (mpCols.has('serving_instructions')) mealPlanRow.serving_instructions = p.feedingInstructions ?? null;
+      if (mpCols.has('allergens') && p.allergens?.length) mealPlanRow.allergens = p.allergens;
+      if (mpCols.has('ingredients')) mealPlanRow.ingredients = JSON.stringify(p.ingredients);
+
+      try {
+        const mealPlan = await insert('meal_plans', mealPlanRow as any);
+        const transformedProduct = {
+          ...mealPlan[0],
+          name: mealPlan[0].plan_name,
+          category: 'meal_plan',
+          metadata: mealPlan[0].dietary_requirements,
+        };
+        return c.json({ success: true, product: transformedProduct });
+      } catch (mealPlansErr: any) {
+        const m = String(mealPlansErr?.message || '');
+        if (!m.includes('does not exist')) {
+          throw mealPlansErr;
+        }
+        console.warn('[meal-products POST] meal_plans insert failed, falling back to products:', m);
+      }
+
+      // Fallback: products (metadata or specifications JSONB; see db/migrations/034_add_metadata_columns.sql)
       const productCols = await getPublicTableColumns('products');
       const hasMetadata = productCols.has('metadata');
       const hasSpecifications = productCols.has('specifications');
 
-      try {
-        const productPayload: any = {
-          vendor_id: vendorId,
-          name: data.name,
-          description: data.description,
-          price: data.price,
-          category: 'meal_plan',
-          sku: `MP-${Date.now()}`,
-          stock: data.stockQuantity || 100,
-          is_active: true,
-        };
-        if (hasMetadata) {
-          productPayload.metadata = JSON.stringify(dietaryPayload);
-        } else if (hasSpecifications) {
-          productPayload.specifications = JSON.stringify(dietaryPayload);
-        }
-        const product = await insert('products', productPayload);
-        return c.json({ success: true, product: product[0] });
-      } catch (productsErr: any) {
-        if (!productsErr?.message?.includes('does not exist') && !productsErr?.message?.includes('metadata')) {
-          throw productsErr;
-        }
-      }
-
-      // Fallback to meal_plans table
-      const mealPlan = await insert('meal_plans', {
+      const productPayload: any = {
         vendor_id: vendorId,
-        plan_name: data.name,
-        description: data.description,
-        price_per_meal: data.price,
-        duration_days: data.durationDays || 7,
-        meals_per_day: data.mealsPerDay || 2,
-        dietary_requirements: JSON.stringify(dietaryPayload),
-        is_active: true,
-      });
-      const transformedProduct = {
-        ...mealPlan[0],
-        name: mealPlan[0].plan_name,
+        name: p.name,
+        description: p.description,
+        price: p.price,
         category: 'meal_plan',
-        metadata: mealPlan[0].dietary_requirements,
+        sku: `MP-${Date.now()}`,
+        stock: p.stockQuantity ?? 100,
+        is_active: true,
       };
-      return c.json({ success: true, product: transformedProduct });
+      if (productCols.has('purchase_type')) productPayload.purchase_type = p.purchaseType;
+      if (productCols.has('subscription_config')) {
+        productPayload.subscription_config = dietaryPayload.subscriptionConfig ?? {};
+      }
+      if (hasMetadata) {
+        productPayload.metadata = JSON.stringify(dietaryPayload);
+      } else if (hasSpecifications) {
+        productPayload.specifications = JSON.stringify(dietaryPayload);
+      }
+      const product = await insert('products', productPayload);
+      return c.json({ success: true, product: product[0] });
     } catch (error: any) {
       console.error('Error creating meal product:', error);
       return c.json({ error: error.message }, 500);
@@ -1838,6 +2136,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
   /**
    * PUT /vendor/:vendorId/meal-products/:productId
    * Update a meal product (meal_plans.dietary_requirements, or products.metadata / products.specifications)
+   *
+   * Same extended fields as POST; body is merged with existing metadata before validation so partial
+   * payloads from older clients still merge safely.
    */
   app.put("/vendor/:vendorId/meal-products/:productId", async (c) => {
     try {
@@ -1849,8 +2150,15 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       const productCols = await getPublicTableColumns('products');
 
       let existingDiet: any = {};
+      let mealPlanRowHints: {
+        meals_per_day?: number;
+        shelfLifeDays?: number;
+        prep_time_minutes?: number;
+        lead_time_hours?: number;
+        order_cutoff_time?: string;
+      } = {};
       const existingMp = await query(
-        `SELECT dietary_requirements FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
+        `SELECT dietary_requirements, meals_per_day, shelf_life_days, duration_days, prep_time_minutes, lead_time_hours, order_cutoff_time FROM meal_plans WHERE id = $1 AND vendor_id = $2`,
         [productId, vendorId]
       );
       if (existingMp.rows?.[0]) {
@@ -1859,6 +2167,17 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           existingDiet = typeof dr === 'string' ? JSON.parse(dr) : (dr || {});
         } catch {
           existingDiet = {};
+        }
+        const r = existingMp.rows[0];
+        if (r.meals_per_day != null) mealPlanRowHints.meals_per_day = Number(r.meals_per_day);
+        const sl = r.shelf_life_days != null ? Number(r.shelf_life_days) : NaN;
+        const dd = r.duration_days != null ? Number(r.duration_days) : NaN;
+        if (Number.isFinite(sl) && sl >= 1 && sl <= 365) mealPlanRowHints.shelfLifeDays = sl;
+        else if (Number.isFinite(dd) && dd >= 1 && dd <= 365) mealPlanRowHints.shelfLifeDays = dd;
+        if (r.prep_time_minutes != null) mealPlanRowHints.prep_time_minutes = Number(r.prep_time_minutes);
+        if (r.lead_time_hours != null) mealPlanRowHints.lead_time_hours = Number(r.lead_time_hours);
+        if (typeof r.order_cutoff_time === 'string' && r.order_cutoff_time) {
+          mealPlanRowHints.order_cutoff_time = r.order_cutoff_time;
         }
       }
 
@@ -1907,18 +2226,32 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           stripIfStr(existingProdMeta.mealImageUrl) ??
           stripIfStr(meta.mealImageUrl);
 
-      const dietaryPayload = {
-        petTypes: data.petTypes || meta.petTypes || existingDiet.petTypes || ['Dog', 'Cat'],
-        dietType: data.dietType ?? meta.dietType ?? existingDiet.dietType,
-        suitableFor: data.suitableFor ?? meta.suitableFor ?? existingDiet.suitableFor ?? [],
-        ingredients: data.ingredients ?? meta.ingredients ?? existingDiet.ingredients ?? [],
-        nutritionalValue: data.nutritionalValue ?? meta.nutritionalValue ?? existingDiet.nutritionalValue ?? {},
-        preparationLeadTime: data.preparationLeadTime ?? meta.preparationLeadTime ?? existingDiet.preparationLeadTime,
-        storageInstructions: data.storageInstructions ?? meta.storageInstructions ?? existingDiet.storageInstructions,
-        shelfLife: data.shelfLife ?? meta.shelfLife ?? existingDiet.shelfLife,
-        packSize: data.packSize ?? meta.packSize ?? existingDiet.packSize,
-        ...(resolvedMealImageUrl ? { mealImageUrl: resolvedMealImageUrl } : {}),
+      const dataTop: Record<string, unknown> = { ...(data as Record<string, unknown>) };
+      delete dataTop.metadata;
+      const mergeForParse: Record<string, unknown> = {
+        ...existingProdMeta,
+        ...existingDiet,
+        ...(mealPlanRowHints.meals_per_day != null ? { mealsPerDay: mealPlanRowHints.meals_per_day } : {}),
+        ...(mealPlanRowHints.shelfLifeDays != null ? { shelfLifeDays: mealPlanRowHints.shelfLifeDays } : {}),
+        ...(mealPlanRowHints.prep_time_minutes != null
+          ? { preparationLeadTime: mealPlanRowHints.prep_time_minutes, prepTimeMinutes: mealPlanRowHints.prep_time_minutes }
+          : {}),
+        ...(mealPlanRowHints.lead_time_hours != null ? { leadTimeHours: mealPlanRowHints.lead_time_hours } : {}),
+        ...(mealPlanRowHints.order_cutoff_time
+          ? { orderCutoffTime: mealPlanRowHints.order_cutoff_time }
+          : {}),
+        ...dataTop,
       };
+      const parsed = parseMealProductRequest(mergeForParse);
+      if (!parsed.success) {
+        return c.json({ error: formatMealProductZodError(parsed.error) }, 400);
+      }
+      const pTimed = await applyPlatformMealTimingToParsed(parsed.data);
+      const p = pTimed;
+
+      const dietaryPayload = mealProductParsedToDietaryJson(p as MealProductDietaryInput, {
+        mealImageUrl: resolvedMealImageUrl ?? undefined,
+      });
 
       // 1) Try updating meal_plans (id may be from meal_plans when products insert failed or wasn't used)
       const mealPlanCheck = await query(
@@ -1926,22 +2259,81 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         [productId, vendorId]
       );
       if (mealPlanCheck.rows?.length > 0) {
+        const mpCols = await getPublicTableColumns('meal_plans');
+        const mpParams: unknown[] = [
+          data.name ?? data.plan_name,
+          data.description,
+          data.price,
+          p.shelfLifeDays,
+          Number(dietaryPayload.mealsPerDay ?? mealsPerDayColumnFromPreset(p.mealsPerDayPreset as MealsPerDayPreset)),
+          JSON.stringify(dietaryPayload),
+        ];
+        let nextPh = 6;
+        let extras = '';
+        if (mpCols.has('prep_time_minutes')) {
+          nextPh += 1;
+          extras += `, prep_time_minutes = COALESCE($${nextPh}, prep_time_minutes)`;
+          mpParams.push(p.preparationLeadTime);
+        }
+        if (mpCols.has('lead_time_hours')) {
+          nextPh += 1;
+          extras += `, lead_time_hours = COALESCE($${nextPh}, lead_time_hours)`;
+          mpParams.push(p.leadTimeHours);
+        }
+        if (mpCols.has('order_cutoff_time')) {
+          nextPh += 1;
+          extras += `, order_cutoff_time = COALESCE($${nextPh}, order_cutoff_time)`;
+          mpParams.push(p.orderCutoffTime);
+        }
+        if (mpCols.has('shelf_life_days')) {
+          nextPh += 1;
+          extras += `, shelf_life_days = COALESCE($${nextPh}, shelf_life_days)`;
+          mpParams.push(p.shelfLifeDays);
+        }
+        if (mpCols.has('storage_instructions')) {
+          nextPh += 1;
+          extras += `, storage_instructions = COALESCE($${nextPh}, storage_instructions)`;
+          mpParams.push(p.storageInstructions ?? null);
+        }
+        if (mpCols.has('serving_instructions')) {
+          nextPh += 1;
+          extras += `, serving_instructions = COALESCE($${nextPh}, serving_instructions)`;
+          mpParams.push(p.feedingInstructions ?? null);
+        }
+        if (mpCols.has('allergens')) {
+          nextPh += 1;
+          extras += `, allergens = $${nextPh}`;
+          mpParams.push(p.allergens ?? []);
+        }
+        if (mpCols.has('ingredients')) {
+          nextPh += 1;
+          extras += `, ingredients = $${nextPh}::jsonb`;
+          mpParams.push(JSON.stringify(p.ingredients));
+        }
+        if (mpCols.has('purchase_type')) {
+          nextPh += 1;
+          extras += `, purchase_type = $${nextPh}`;
+          mpParams.push(p.purchaseType);
+        }
+        if (mpCols.has('subscription_config')) {
+          nextPh += 1;
+          extras += `, subscription_config = $${nextPh}::jsonb`;
+          mpParams.push(JSON.stringify(dietaryPayload.subscriptionConfig ?? {}));
+        }
+        const idPh = nextPh + 1;
+        const vendorPh = nextPh + 2;
+        mpParams.push(productId, vendorId);
         await query(
           `UPDATE meal_plans SET 
             plan_name = COALESCE($1, plan_name),
             description = COALESCE($2, description),
             price_per_meal = COALESCE($3, price_per_meal),
-            dietary_requirements = COALESCE($4::jsonb, dietary_requirements),
+            duration_days = COALESCE($4, duration_days),
+            meals_per_day = COALESCE($5, meals_per_day),
+            dietary_requirements = COALESCE($6::jsonb, dietary_requirements)${extras},
             updated_at = NOW()
-           WHERE id = $5 AND vendor_id = $6`,
-          [
-            data.name ?? data.plan_name,
-            data.description,
-            data.price,
-            JSON.stringify(dietaryPayload),
-            productId,
-            vendorId,
-          ]
+           WHERE id = $${idPh} AND vendor_id = $${vendorPh}`,
+          mpParams,
         );
         return c.json({ success: true, message: 'Product updated' });
       }
@@ -1965,9 +2357,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             updated_at = NOW()
            WHERE id = $5 AND vendor_id = $6`,
           [
-            data.name,
-            data.description,
-            data.price,
+            p.name,
+            p.description,
+            p.price,
             JSON.stringify(mergedMealJson),
             productId,
             vendorId,
@@ -1983,9 +2375,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             updated_at = NOW()
            WHERE id = $5 AND vendor_id = $6`,
           [
-            data.name,
-            data.description,
-            data.price,
+            p.name,
+            p.description,
+            p.price,
             JSON.stringify(mergedMealJson),
             productId,
             vendorId,
@@ -1999,7 +2391,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             price = COALESCE($3, price),
             updated_at = NOW()
            WHERE id = $4 AND vendor_id = $5`,
-          [data.name, data.description, data.price, productId, vendorId]
+          [p.name, p.description, p.price, productId, vendorId]
         );
       }
 
@@ -2292,8 +2684,14 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       // Add additional vendor IDs to the main list
       allVendorIds = [...allVendorIds, ...additionalVendorIds];
       console.log(`[meal-orders] Final vendor IDs including same business name: ${JSON.stringify(allVendorIds)}`);
+
+      await syncDeliveredMealOrdersFromTracking(allVendorIds);
+      await backfillMissingMealDeliverySettlementsForVendorIds(
+        allVendorIds,
+        '[MEAL-ORDERS-SETTLEMENT-BACKFILL]',
+      );
       
-      // ✅ CRITICAL FIX: If we still have no orders after all checks, 
+      // ✅ CRITICAL FIX: If we still have no orders after all checks,
       // query ALL meal orders and check if any have the same business name
       // This is a fallback to ensure we find orders even if vendor IDs don't match
       // We'll do this as a separate query after the main query if it returns 0 results
@@ -2316,7 +2714,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         mealParams.push(status);
         mealOrdersQuery += ` AND mo.status = $${mealParams.length}`;
       }
-      mealOrdersQuery += ` ORDER BY mo.created_at DESC LIMIT 100`;
+      mealOrdersQuery += ` ORDER BY mo.scheduled_delivery_date ASC NULLS LAST, mo.created_at DESC LIMIT 100`;
       
       // ✅ CRITICAL: If we have business_name, the query uses OR condition which might cause issues
       // Let's ensure the vendor_id match is tried FIRST and works correctly
@@ -2385,7 +2783,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           SELECT mo.*
           FROM meal_orders mo
           WHERE mo.vendor_id::text = ANY($1::text[])
-          ORDER BY mo.created_at DESC LIMIT 100
+          ORDER BY mo.scheduled_delivery_date ASC NULLS LAST, mo.created_at DESC LIMIT 100
         `;
         const simplifiedResult = await query(simplifiedQuery, [allVendorIds]).catch(() => ({ rows: [] }));
         console.log(`[meal-orders] Simplified query (no JOINs, no filters) found: ${simplifiedResult.rows.length} orders`);
@@ -2429,13 +2827,15 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             LEFT JOIN customers c ON mo.customer_id = c.id
             LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
             LEFT JOIN vendors v ON mp.vendor_id = v.id
-            WHERE mp.vendor_id::text = ANY($1::text[])
+            WHERE (
+              mp.vendor_id::text = ANY($1::text[])
                OR (v.business_name IS NOT NULL AND (
                    LOWER(TRIM(v.business_name)) = LOWER(TRIM($2))
                    OR LOWER(TRIM(v.business_name)) LIKE '%' || LOWER(TRIM($2)) || '%'
                    OR LOWER(TRIM($2)) LIKE '%' || LOWER(TRIM(v.business_name)) || '%'
                ))
                OR (v.phone IS NOT NULL AND v.phone = $3)
+            )
           `;
           const mealPlanVendorParams: any[] = [allVendorIds];
           if (vendor.business_name) {
@@ -2476,7 +2876,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
                 LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
                 LEFT JOIN vendors v ON mp.vendor_id = v.id
                 WHERE mo.created_at >= NOW() - INTERVAL '30 days'
-                ORDER BY mo.created_at DESC LIMIT 500
+                ORDER BY mo.scheduled_delivery_date ASC NULLS LAST, mo.created_at DESC LIMIT 500
               `;
               const allRecentOrdersResult = await query(allRecentOrdersQuery, []).catch(() => ({ rows: [] }));
               console.log(`[meal-orders] Found ${allRecentOrdersResult.rows.length} recent orders total`);
@@ -2598,7 +2998,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               AND (LOWER(TRIM(v.business_name)) = LOWER(TRIM($1))
                    OR LOWER(TRIM(v.business_name)) LIKE '%' || LOWER(TRIM($1)) || '%'
                    OR LOWER(TRIM($1)) LIKE '%' || LOWER(TRIM(v.business_name)) || '%')
-            ORDER BY mo.created_at DESC LIMIT 100
+            ORDER BY mo.scheduled_delivery_date ASC NULLS LAST, mo.created_at DESC LIMIT 100
           `;
           const businessNameResult = await query(businessNameQuery, [vendor.business_name]).catch(() => ({ rows: [] }));
           console.log(`[meal-orders] Found ${businessNameResult.rows.length} orders by meal_plan vendor business name match`);
@@ -2681,7 +3081,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         LEFT JOIN customers c ON mo.customer_id = c.id
         LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
               WHERE mo.meal_plan_id = ANY($1::uuid[])
-              ORDER BY mo.created_at DESC LIMIT 100
+              ORDER BY mo.scheduled_delivery_date ASC NULLS LAST, mo.created_at DESC LIMIT 100
       `;
             const ordersByMealPlanResult = await query(ordersByMealPlanQuery, [mealPlanIds]).catch(() => ({ rows: [] }));
             console.log(`[meal-orders] Found ${ordersByMealPlanResult.rows.length} orders by meal_plan_id`);
@@ -2712,7 +3112,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
                 AND (mp.vendor_id::text = ANY($1::text[])
                      OR v.business_name IS NOT NULL AND LOWER(TRIM(v.business_name)) = LOWER(TRIM($2))
                      OR v.phone IS NOT NULL AND v.phone = $3)
-              ORDER BY mo.created_at DESC LIMIT 100
+              ORDER BY mo.scheduled_delivery_date ASC NULLS LAST, mo.created_at DESC LIMIT 100
             `;
             const directMealPlanResult = await query(directMealPlanQuery, [
               allVendorIds,
@@ -2750,22 +3150,42 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           }
         }
         
-        // Fetch meal plan name if not already included
+        // Meal plan display name + pricing row (subtotal may be 0 in DB if only legacy `price` was set)
         let mealName = o.meal_name;
-        if (!mealName && o.meal_plan_id) {
+        let mealPlanRow: Record<string, unknown> | null = null;
+        if (o.meal_plan_id) {
           try {
+            if (!mealName) {
+              mealName = (await resolveMealCatalogDisplayName(String(o.meal_plan_id))) ?? undefined;
+            }
             const mealPlanData = await query(
-              `SELECT name, plan_name FROM meal_plans WHERE id = $1 LIMIT 1`,
+              `SELECT name, plan_name, price_per_meal, price FROM meal_plans WHERE id = $1 LIMIT 1`,
               [o.meal_plan_id]
             ).catch(() => ({ rows: [] }));
             if (mealPlanData.rows.length > 0) {
-              mealName = mealPlanData.rows[0].name || mealPlanData.rows[0].plan_name;
+              const row = mealPlanData.rows[0];
+              mealName = mealName || row.name || row.plan_name;
+              mealPlanRow = row as Record<string, unknown>;
+            }
+            if (!mealPlanRow) {
+              const prodData = await query(
+                `SELECT name, price FROM products WHERE id = $1
+                 AND category IN ('meal_plan', 'nutrition', 'food') LIMIT 1`,
+                [o.meal_plan_id],
+              ).catch(() => ({ rows: [] }));
+              if (prodData.rows.length > 0) {
+                const row = prodData.rows[0];
+                mealName = mealName || row.name;
+                mealPlanRow = { price_per_meal: row.price, price: row.price };
+              }
             }
           } catch (err) {
             console.warn(`[meal-orders] Error fetching meal plan data:`, err);
           }
         }
-        
+
+        const lineSubtotal = resolveMealLineSubtotalInr(o, mealPlanRow);
+
         allOrders.push({
           ...o,
           source: 'meal_orders',
@@ -2775,6 +3195,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           meal_name: mealName,
           items: [],
           delivery_address: typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address,
+          subtotal: lineSubtotal,
         });
       }
 
@@ -2787,7 +3208,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           // ✅ FIX: Query using ALL vendor IDs, not just the one from URL
           let ordQuery = `
             SELECT o.id, o.customer_id, o.vendor_id, o.order_number, o.order_status as status,
-                   o.total_amount, o.shipping_address as delivery_address, o.created_at,
+                   o.subtotal, o.shipping_address as delivery_address, o.created_at,
                    o.delivery_date as scheduled_delivery_date, o.delivery_time as scheduled_delivery_slot,
                    c.full_name as customer_name, c.phone as customer_phone,
                    (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_name
@@ -2805,6 +3226,30 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           const ordResult = await query(ordQuery, ordParams).catch(() => ({ rows: [] }));
           for (const o of ordResult.rows) {
             const parsedAddr = typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address;
+            let lineQty = 1;
+            let mpForLine: Record<string, unknown> | null = null;
+            try {
+              const mpRow = await query(
+                `SELECT mpo.quantity AS q, mp.price_per_meal, mp.price
+                 FROM meal_plan_orders mpo
+                 JOIN meal_plans mp ON mp.id = mpo.meal_plan_id
+                 WHERE mpo.order_id = $1
+                 LIMIT 1`,
+                [o.id]
+              ).catch(() => ({ rows: [] }));
+              const r = mpRow.rows?.[0];
+              if (r) {
+                const q = Number(r.q);
+                if (Number.isFinite(q) && q >= 1) lineQty = Math.floor(q);
+                mpForLine = { price_per_meal: r.price_per_meal, price: r.price };
+              }
+            } catch {
+              /* ignore */
+            }
+            const lineSubtotal = resolveMealLineSubtotalInr(
+              { subtotal: o.subtotal, quantity: lineQty },
+              mpForLine,
+            );
             allOrders.push({
               id: o.id,
               customer_id: o.customer_id,
@@ -2812,12 +3257,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               meal_plan_id: null,
               pet_id: null,
               order_type: 'meal_plan_delivery',
-              quantity: 1,
+              quantity: lineQty,
               special_instructions: null,
-              subtotal: o.total_amount,
-              delivery_fee: 0,
-              platform_fee: 0,
-              total_amount: o.total_amount,
+              subtotal: lineSubtotal,
               status: o.status,
               payment_status: 'pending',
               scheduled_delivery_date: o.scheduled_delivery_date,
@@ -2844,7 +3286,40 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
         .slice(0, 100);
 
-      return c.json({ success: true, orders: deduped, total: deduped.length });
+      const mealOrderIds = deduped
+        .filter((o: { source?: string; id?: string }) => String(o.source || '') === 'meal_orders' && o.id)
+        .map((o: { id: string }) => String(o.id));
+
+      const trackingByMealId = new Map<string, string>();
+      if (mealOrderIds.length > 0) {
+        try {
+          const trRows = await query(
+            `SELECT DISTINCT ON (meal_order_id) meal_order_id::text AS meal_order_id, status
+               FROM delivery_tracking
+              WHERE meal_order_id::text = ANY($1::text[])
+              ORDER BY meal_order_id, updated_at DESC NULLS LAST, created_at DESC`,
+            [mealOrderIds],
+          ).catch(() => ({ rows: [] as Array<{ meal_order_id?: string; status?: string }> }));
+          for (const r of trRows.rows || []) {
+            const mid = String(r.meal_order_id || '');
+            if (mid) trackingByMealId.set(mid, String(r.status ?? ''));
+          }
+        } catch (trErr) {
+          console.warn('[meal-orders] delivery_tracking batch lookup failed:', (trErr as Error)?.message);
+        }
+      }
+
+      const forVendor = deduped.map((row) => {
+        const rec = { ...(row as Record<string, unknown>) };
+        if (String(rec.source || '') === 'meal_orders' && rec.id) {
+          const mid = String(rec.id);
+          const dtStatus = trackingByMealId.get(mid);
+          rec.delivery_tracking_status = dtStatus ?? null;
+          rec.effective_delivery_status = resolveEffectiveMealDeliveryState(String(rec.status ?? ''), dtStatus ?? '');
+        }
+        return sanitizeVendorMealOrderRow(rec);
+      });
+      return c.json({ success: true, orders: forVendor, total: forVendor.length });
     } catch (error: any) {
       console.error('Error fetching meal orders:', error);
       return c.json({ success: true, orders: [], total: 0 });
@@ -2864,60 +3339,125 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       // Valid statuses per DB constraint: 'pending', 'confirmed', 'preparing', 'ready_for_pickup', 'picked_up', 'on_the_way', 'delivered', 'cancelled'
       // Map 'accepted' to 'confirmed' for backward compatibility
       const validStatuses = ['pending', 'confirmed', 'preparing', 'ready_for_pickup', 'picked_up', 'on_the_way', 'delivered', 'cancelled'];
-      let actualStatus = status;
-      
-      // ✅ BUSINESS LOGIC: Map 'accepted' to 'confirmed' (they mean the same thing)
-      if (status === 'accepted') {
-        actualStatus = 'confirmed';
-        console.log(`[meal-order-status] Mapping 'accepted' to 'confirmed' for database constraint`);
-      }
-      
-      if (!validStatuses.includes(actualStatus)) {
-        return c.json({ error: `Invalid status. Valid statuses: ${validStatuses.join(', ')}` }, 400);
-      }
 
       // ✅ CRITICAL FIX: Resolve vendor and get ALL vendor IDs (same as list endpoint)
       // This ensures orders are found even if they were created with a different vendor_id
       console.log(`[meal-order-status] Input vendorId: ${vendorId}, orderId: ${orderId}`);
       let vendor = await resolveVendorById(vendorId);
-      
+
       // ✅ FIX: If vendor not found, try to query order directly
       if (!vendor) {
         console.log(`[meal-order-status] Vendor not found for ${vendorId}, but will still try to query order directly...`);
         vendor = {
           id: vendorId,
           business_name: null,
-          phone: null
+          phone: null,
         };
       }
-      
+
       console.log(`[meal-order-status] Resolved vendor: id=${vendor.id}`);
-      
+
       // Get all vendor IDs (vendors.id + vendor_identity.id for same vendor/phone)
       let allVendorIds = await getVendorIdsForAvailabilityLookup(vendor.id);
       console.log(`[meal-order-status] All vendor IDs: ${JSON.stringify(allVendorIds)}`);
-      
+
       // Ensure vendor.id is in the array
       if (vendor.id && !allVendorIds.includes(vendor.id)) {
         allVendorIds = [vendor.id, ...allVendorIds];
       }
-      
-      // ✅ CRITICAL FIX: Check if order exists with ANY of the resolved vendor IDs
-      // Use the same query pattern as the list endpoint
-      const orderCheck = await query(
-        `SELECT id, vendor_id, status FROM meal_orders 
-         WHERE id = $1 AND vendor_id::text = ANY($2::text[])
-         LIMIT 1`,
-        [orderId, allVendorIds]
+
+      const orderRowRes = await query(
+        `SELECT mo.id, mo.vendor_id, mo.status AS order_status, mo.subscription_id,
+                mo.scheduled_delivery_date, mo.purchase_snapshot, mo.logistics_type
+           FROM meal_orders mo
+          WHERE mo.id = $1 AND mo.vendor_id::text = ANY($2::text[])
+          LIMIT 1`,
+        [orderId, allVendorIds],
       ).catch(() => ({ rows: [] }));
-      
-      if (orderCheck.rows.length === 0) {
+
+      if (!orderRowRes.rows?.length) {
         console.log(`[meal-order-status] Order not found or not owned by vendor`);
         console.log(`[meal-order-status] OrderId: ${orderId}, VendorIds checked: ${JSON.stringify(allVendorIds)}`);
         return c.json({ error: 'Order not found or not owned by vendor' }, 404);
       }
-      
-      const order = orderCheck.rows[0];
+
+      const orderRow = orderRowRes.rows[0] as Record<string, unknown>;
+      const purchaseSnapEarly = parseMealOrderPurchaseSnapshotForVendor(orderRow.purchase_snapshot);
+      const subscriptionParentEarly =
+        Boolean(orderRow.subscription_id) &&
+        purchaseSnapEarly.subscriptionVendorBookingRole === 'parent';
+
+      /** Vendor rejects subscription signup before service — refund entire initial payment. */
+      if (status === 'cancelled' && subscriptionParentEarly && orderRow.subscription_id) {
+        const deliveredCheck = await query(
+          `SELECT COUNT(*)::int AS c FROM meal_subscription_deliveries
+           WHERE subscription_id = $1::uuid AND status = 'delivered'`,
+          [orderRow.subscription_id],
+        ).catch(() => ({ rows: [{ c: 0 }] }));
+        const deliveredCount = Number((deliveredCheck.rows?.[0] as { c?: number })?.c ?? 0);
+        if (deliveredCount > 0) {
+          return c.json(
+            { error: 'Cannot cancel subscription booking after sessions have been delivered.' },
+            400,
+          );
+        }
+
+        const refund = await processSubscriptionVendorParentBookingFullRefund(
+          String(orderRow.subscription_id),
+          'Vendor cancelled subscription booking from nutrition queue',
+        );
+        const msgLow = String(refund.message || '').toLowerCase();
+        if (!refund.refunded && !msgLow.includes('already processed')) {
+          return c.json({ success: false, error: refund.message || 'Refund failed' }, 422);
+        }
+        return c.json({
+          success: true,
+          message:
+            refund.refunded && refund.message
+              ? refund.message
+              : 'Subscription cancelled; refund processed per platform policy (platform fee may be retained).',
+          refund,
+        });
+      }
+
+      let actualStatus = status;
+      if (status === 'accepted') {
+        if (subscriptionParentEarly) {
+          // Parent row: vendor confirms the signup only — sessions move to `confirmed` via cascade.
+          // Fulfillment (Start preparing / logistics) happens on per-session meal_orders, not on the parent.
+          actualStatus = 'confirmed';
+          console.log(
+            `[meal-order-status] Subscription parent accept → confirmed (sessions cascaded separately; scheduled=${orderRow.scheduled_delivery_date})`,
+          );
+        } else {
+          actualStatus = 'confirmed';
+          console.log(`[meal-order-status] Mapping 'accepted' to 'confirmed' for database constraint`);
+        }
+      }
+
+      if (!validStatuses.includes(actualStatus)) {
+        return c.json({ error: `Invalid status. Valid statuses: ${validStatuses.join(', ')}` }, 400);
+      }
+
+      if (
+        isPidgeMealLogistics(orderRow.logistics_type) &&
+        vendorBlockedMealStatusForPidge(actualStatus)
+      ) {
+        return c.json(
+          {
+            success: false,
+            error:
+              'This order uses Pidge delivery — pickup and delivery completion are updated from Pidge automatically.',
+          },
+          422,
+        );
+      }
+
+      const order = {
+        id: orderRow.id,
+        vendor_id: orderRow.vendor_id,
+        status: orderRow.order_status,
+      };
       console.log(`[meal-order-status] Order found: vendor_id=${order.vendor_id}, current_status=${order.status}`);
       
       // ✅ Use the order's actual vendor_id for the update (not the URL vendorId)
@@ -2963,7 +3503,38 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         // Direct status update to 'confirmed' (not via 'accepted')
         updatePayload.confirmed_at = new Date().toISOString();
       } else if (actualStatus === 'preparing') {
-        updatePayload.prep_started_at = new Date().toISOString();
+        updatePayload.confirmed_at = updatePayload.confirmed_at ?? new Date().toISOString();
+        const prepStartedAt = new Date();
+        updatePayload.prep_started_at = prepStartedAt.toISOString();
+
+        // Snapshot prep_time_minutes from the meal plan if meal_orders.prep_minutes is null,
+        // and compute expected_ready_at = prep_started_at + prep_minutes. New columns added in
+        // migration 1010 — guarded so older deployments don't fail when columns are missing.
+        try {
+          const moInfo = await query(
+            `SELECT mo.prep_minutes, mp.prep_time_minutes AS plan_prep_minutes
+               FROM meal_orders mo
+               LEFT JOIN meal_plans mp ON mp.id = mo.meal_plan_id
+              WHERE mo.id = $1`,
+            [orderId]
+          ).catch(() => ({ rows: [] as Array<Record<string, unknown>> }));
+          const moRow = (moInfo.rows && moInfo.rows[0]) as Record<string, unknown> | undefined;
+          const existingPrep =
+            moRow && typeof moRow.prep_minutes === 'number' ? (moRow.prep_minutes as number) : null;
+          const planPrep =
+            moRow && typeof moRow.plan_prep_minutes === 'number'
+              ? (moRow.plan_prep_minutes as number)
+              : null;
+          const prepMinutes = existingPrep ?? planPrep ?? 30;
+          if (existingPrep == null) {
+            updatePayload.prep_minutes = prepMinutes;
+          }
+          updatePayload.expected_ready_at = new Date(
+            prepStartedAt.getTime() + prepMinutes * 60_000
+          ).toISOString();
+        } catch (e) {
+          console.warn('[meal-order-status] could not compute expected_ready_at:', e);
+        }
       } else if (status === 'ready_for_pickup') {
         updatePayload.ready_at = new Date().toISOString();
       } else if (status === 'picked_up') {
@@ -2974,24 +3545,101 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       } else if (status === 'cancelled') {
         updatePayload.cancelled_at = new Date().toISOString();
       }
-      
+
+      // Pidge must succeed before we persist `preparing` (default): avoids vendor/customer seeing
+      // "preparing" + manual logistics buttons when no rider was ever booked.
+      let dispatchStrictResult: Awaited<ReturnType<typeof dispatchMealLogistics>> | null = null;
+      if (actualStatus === 'preparing' && isMealDispatchStrict()) {
+        dispatchStrictResult = await dispatchMealLogistics(orderId);
+        if (!dispatchStrictResult.ok) {
+          return c.json(
+            {
+              success: false,
+              error:
+                dispatchStrictResult.error ||
+                'Could not schedule delivery partner. Fix the issue, then try Start preparing again.',
+              dispatch: dispatchStrictResult,
+            },
+            422
+          );
+        }
+      }
+
+      if (actualStatus === 'ready_for_pickup' && isMealDispatchStrict()) {
+        const pidgeCheck = await assertMealOrderHasPidgeForPickup(orderId);
+        if (!pidgeCheck.ok) {
+          return c.json({ success: false, error: pidgeCheck.error }, 422);
+        }
+      }
+
       // Update using the order's actual vendor_id
       // Use raw query to handle potential missing columns gracefully
       try {
         await update('meal_orders', { id: orderId, vendor_id: order.vendor_id }, updatePayload);
         console.log(`[meal-order-status] Order status updated to: ${status}`);
       } catch (updateError: any) {
-        // If update fails due to missing columns, try updating just status
+        // If update fails due to missing columns, retry without the new prep/expected fields, then
+        // fall back to status-only as a last resort.
         if (updateError.message?.includes('does not exist')) {
-          console.log(`[meal-order-status] Some columns don't exist, updating only status...`);
-          await update('meal_orders', { id: orderId, vendor_id: order.vendor_id }, { status });
-          console.log(`[meal-order-status] Order status updated to: ${status} (without timestamp fields)`);
+          console.log(`[meal-order-status] Some columns don't exist, retrying with smaller payload...`);
+          const fallback: Record<string, any> = { ...updatePayload };
+          delete fallback.prep_minutes;
+          delete fallback.expected_ready_at;
+          try {
+            await update('meal_orders', { id: orderId, vendor_id: order.vendor_id }, fallback);
+            console.log(`[meal-order-status] Order status updated to: ${status} (without prep/expected fields)`);
+          } catch (e2: any) {
+            await update('meal_orders', { id: orderId, vendor_id: order.vendor_id }, { status: actualStatus });
+            console.log(`[meal-order-status] Order status updated to: ${status} (status-only fallback)`);
+          }
         } else {
           throw updateError;
         }
       }
 
-      return c.json({ success: true, message: 'Order status updated' });
+      if (status === 'accepted' && subscriptionParentEarly && orderRow.subscription_id) {
+        await query(
+          `UPDATE meal_orders
+             SET status = 'confirmed',
+                 confirmed_at = COALESCE(confirmed_at, NOW()),
+                 updated_at = NOW()
+           WHERE subscription_id = $1::uuid
+             AND purchase_snapshot IS NOT NULL
+             AND (purchase_snapshot::jsonb->>'subscriptionVendorBookingRole') = 'session'
+             AND status = 'pending'`,
+          [orderRow.subscription_id],
+        ).catch((e) =>
+          console.warn('[meal-order-status] cascade subscription session meal_orders failed', e),
+        );
+      }
+
+      // When not strict (MEAL_DISPATCH_REQUIRED=false), keep best-effort dispatch after DB update for local dev.
+      let dispatch: Awaited<ReturnType<typeof dispatchMealLogistics>> | null =
+        dispatchStrictResult;
+      if (actualStatus === 'preparing' && !isMealDispatchStrict()) {
+        dispatch = await dispatchMealLogistics(orderId).catch((e) => {
+          console.warn('[meal-order-status] dispatchMealLogistics threw:', e);
+          return { ok: false, error: String(e) } as Awaited<
+            ReturnType<typeof dispatchMealLogistics>
+          >;
+        });
+      }
+
+      // Idempotent vendor settlement on delivered (parity with the meal-plans.ts
+      // POST /meal/orders/:orderId/update-status path).
+      if (actualStatus === 'delivered') {
+        try {
+          await ensureMealOrderSettlementOnDelivered(orderId);
+        } catch (e) {
+          console.warn('[meal-order-status] settlement insert failed:', e);
+        }
+      }
+
+      return c.json({
+        success: true,
+        message: 'Order status updated',
+        ...(dispatch ? { dispatch } : {}),
+      });
     } catch (error: any) {
       console.error('Error updating meal order status:', error);
       return c.json({ error: error.message }, 500);

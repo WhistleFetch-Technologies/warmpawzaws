@@ -17,6 +17,7 @@ import {
 	RefreshCw,
 	Package,
 	TableProperties,
+	Truck,
 	X,
 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
@@ -34,6 +35,7 @@ import {
 	VendorDailyAccrualReport,
 } from "@/components/admin/finance";
 import { FeeConfigurationManager } from "@/components/admin/finance/FeeConfigurationManager";
+import { CustomerDeliveryFeePolicyManager } from "@/components/admin/finance/CustomerDeliveryFeePolicyManager";
 
 import { Button } from "@warmpawz/ui";
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
@@ -53,6 +55,7 @@ interface FinanceStats {
 type TabType =
 	| "dashboard"
 	| "fee-config"
+	| "customer-delivery-fees"
 	| "payment-policies"
 	| "cancellation-policy"
 	| "ecommerce-policies"
@@ -71,6 +74,7 @@ function FinanceManagementContent() {
 	const validTabs: TabType[] = [
 		"dashboard",
 		"fee-config",
+		"customer-delivery-fees",
 		"payment-policies",
 		"cancellation-policy",
 		"ecommerce-policies",
@@ -154,6 +158,11 @@ function FinanceManagementContent() {
 	const tabs = [
 		{ id: "dashboard", label: "Dashboard", icon: BarChart3 },
 		{ id: "fee-config", label: "Fee Configuration", icon: IndianRupee },
+		{
+			id: "customer-delivery-fees",
+			label: "Customer delivery fees",
+			icon: Truck,
+		},
 		{ id: "payment-policies", label: "Payment Policies", icon: CreditCard },
 		{
 			id: "cancellation-policy",
@@ -343,6 +352,18 @@ function FinanceManagementContent() {
 
 					{activeTab === "fee-config" && (
 						<FeeConfigurationManager />
+					)}
+
+					{activeTab === "customer-delivery-fees" && (
+						<div className="bg-white rounded-lg border border-gray-200 p-6">
+							<p className="text-sm text-gray-600 border-l-4 border-[#FF8C42] pl-3 mb-6">
+								<strong>Zone A / B slabs, surges, and customer-facing copy</strong> for checkout and help pages. This
+								is separate from <strong>Fee Configuration</strong> (platform / convenience globals). Delivery
+								charge is sourced from this policy only; <strong>Logistics Rules are routing-only</strong>. API: <code className="text-xs bg-gray-100 px-1 rounded">GET/PUT /admin/delivery-fee-policy</code>
+								, public: <code className="text-xs bg-gray-100 px-1 rounded">GET /customer/delivery-fee-policy</code>.
+							</p>
+							<CustomerDeliveryFeePolicyManager />
+						</div>
 					)}
 
 					{activeTab === "payment-policies" && (

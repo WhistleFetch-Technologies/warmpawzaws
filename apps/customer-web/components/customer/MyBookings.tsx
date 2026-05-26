@@ -9,9 +9,14 @@ import {
   Navigation, MessageSquare
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, isCustomerWebDevMealPlanOrdersEnabled } from '@/lib/api-client';
 import { getBookingResponsePayload, pickBookingApiMessage } from '@/lib/booking-response-message';
 import { copyTextToClipboard } from '@/lib/shareUtils';
+import {
+  derivePaymentSourcesFromBooking,
+  formatPaymentSourcesShortLabel,
+} from '@/lib/payment-display-utils';
+import type { PaymentSource } from '@/lib/payment-display-utils';
 import {
   getServiceStyleDisplayLabel,
   formatPriceWithSymbol,
@@ -25,8 +30,6 @@ import { RateServiceModal } from './RateServiceModal';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { UtensilsCrossed } from 'lucide-react';
 
-/** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
-export const MEAL_PLAN_ORDERS_ENABLED = false;
 /** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
 export const PHARMACY_ORDERS_ENABLED = false;
 
@@ -104,6 +107,7 @@ interface Booking {
   otpCode?: string;
   otpVerified?: boolean;
   paymentStatus?: string;
+  paymentSources?: PaymentSource[];
   completedAt?: string;
 }
 
@@ -121,8 +125,13 @@ interface MyBookingsProps {
 export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine, onNavigate }: MyBookingsProps) {
   const router = useRouter();
 
+  const [mealPlanOrdersEnabled, setMealPlanOrdersEnabled] = useState(false);
+  useEffect(() => {
+    setMealPlanOrdersEnabled(isCustomerWebDevMealPlanOrdersEnabled());
+  }, []);
+
   const navigateToMealPlanOrders = () => {
-    if (!MEAL_PLAN_ORDERS_ENABLED) return;
+    if (!mealPlanOrdersEnabled) return;
     router.push(mealPlanOrdersUrl(phone));
   };
 
@@ -322,6 +331,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         otpCode: b.otp_code || b.otpCode,
         otpVerified: b.otp_verified || b.otpVerified,
         paymentStatus: b.payment_status || b.paymentStatus,
+        paymentSources: derivePaymentSourcesFromBooking(b),
         completedAt:
           b.completed_at ||
           b.completedAt ||
@@ -508,27 +518,27 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
       />
 
       <div className="-mt-1 max-w-customer mx-auto">
-        {/* Meal Plan Orders; navigation gated by MEAL_PLAN_ORDERS_ENABLED (mirrors booking/MyBookings.tsx) */}
+        {/* Meal Plan Orders — opens /orders/meal-plans; Track Order uses /track/:id + booking phone */}
         <div className="px-4 py-3 bg-white border-b border-gray-100">
           <button
             type="button"
-            disabled={!MEAL_PLAN_ORDERS_ENABLED}
+            disabled={!mealPlanOrdersEnabled}
             onClick={navigateToMealPlanOrders}
             aria-label={
-              MEAL_PLAN_ORDERS_ENABLED
+              mealPlanOrdersEnabled
                 ? 'Open meal plan orders and tracking'
                 : 'Meal plan orders and tracking — coming soon'
             }
             className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium border transition-colors ${
-              MEAL_PLAN_ORDERS_ENABLED
+              mealPlanOrdersEnabled
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
                 : 'bg-emerald-50/55 border-emerald-200/50 text-emerald-700/65 cursor-not-allowed hover:bg-emerald-50/55'
             }`}
           >
-            <UtensilsCrossed className={`w-5 h-5 shrink-0 ${!MEAL_PLAN_ORDERS_ENABLED ? 'text-emerald-600/55' : ''}`} />
+            <UtensilsCrossed className={`w-5 h-5 shrink-0 ${!mealPlanOrdersEnabled ? 'text-emerald-600/55' : ''}`} />
             <span className="inline-flex items-center justify-center gap-2 flex-wrap">
               Meal Plan Orders & Tracking
-              {!MEAL_PLAN_ORDERS_ENABLED && (
+              {!mealPlanOrdersEnabled && (
                 <span className="rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white shadow-sm">
                   Soon
                 </span>
@@ -537,10 +547,10 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
           </button>
           <p
             className={`text-xs mt-1.5 text-center ${
-              MEAL_PLAN_ORDERS_ENABLED ? 'text-gray-500' : 'text-emerald-800/55'
+              mealPlanOrdersEnabled ? 'text-gray-500' : 'text-emerald-800/55'
             }`}
           >
-            {MEAL_PLAN_ORDERS_ENABLED
+            {mealPlanOrdersEnabled
               ? 'Track your meal plan deliveries and access order status'
               : 'Coming soon — track meal plan deliveries and order status here.'}
           </p>
@@ -664,9 +674,19 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                     {getStatusText(booking.status)}
                   </span>
                   {booking.paymentStatus === 'paid' && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                      Paid
-                    </span>
+                    <>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                        Paid
+                      </span>
+                      {booking.paymentSources && booking.paymentSources.length > 0 && (
+                        <span
+                          className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 max-w-[8rem] truncate text-right"
+                          title={formatPaymentSourcesShortLabel(booking.paymentSources)}
+                        >
+                          {formatPaymentSourcesShortLabel(booking.paymentSources)}
+                        </span>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -966,7 +986,16 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
               )}
 
               <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
-                <span className="font-medium">{formatPriceWithSymbol(booking.price)}</span>
+                <div>
+                  <span className="font-medium">{formatPriceWithSymbol(booking.price)}</span>
+                  {booking.paymentStatus === 'paid' &&
+                    booking.paymentSources &&
+                    booking.paymentSources.length > 0 && (
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        via {formatPaymentSourcesShortLabel(booking.paymentSources)}
+                      </p>
+                    )}
+                </div>
                 
                 {/* ✅ Action Buttons */}
                 {canCancelOrReschedule(booking) && (

@@ -1,11 +1,17 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { uploadImageWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
-import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
+import { MealProductFormModal } from '@/components/vendor/nutrition/MealProductFormModal';
+import { MealKitchenAvailabilityCard } from '@/components/vendor/nutrition/MealKitchenAvailabilityCard';
+import { useVendorWebSocket } from '@/hooks/useVendorWebSocket';
+import {
+  resolveEffectiveMealDeliveryState,
+  formatVendorMealDeliveryBadge,
+  type MealDeliveryEffective,
+} from '@warmpawz/shared-types';
 
 // 2D Sketch-style SVG Icons
 const Icons = {
@@ -112,8 +118,12 @@ interface MealProduct {
   description: string;
   price: number;
   category: string;
-  metadata?: any;
+  metadata?: unknown;
   is_active?: boolean;
+  duration_days?: number;
+  prep_time_minutes?: number;
+  lead_time_hours?: number;
+  order_cutoff_time?: string;
 }
 
 interface MealOrder {
@@ -122,12 +132,32 @@ interface MealOrder {
   customer_name: string;
   customer_phone: string;
   status: string;
-  total_amount: number;
+  /** Meal line total only (listed price × qty), from API `vendor_meal_total`. */
+  vendor_meal_total?: number;
+  /** Subscription signup total paid by customer (parent row + mirrored sessions carry snapshot). */
+  subscription_customer_paid_total_inr?: number;
   created_at: string;
+  /** Scheduled drop-off day from meal_orders / booking flow (YYYY-MM-DD or ISO). */
+  scheduled_delivery_date?: string;
   confirmed_at?: string; // Timestamp when payment was confirmed
   prep_started_at?: string; // Timestamp when vendor started preparing (indicates vendor accepted)
   items: any[];
   delivery_address?: any;
+  /** Canonical weekly/monthly: parent queue row — Accept/Cancel signup. */
+  subscription_vendor_parent_booking?: boolean;
+  /** Mirrored per-session row — no Accept/Cancel; follows parent acceptance + scheduled date. */
+  subscription_vendor_session_booking?: boolean;
+  subscription_session_number?: number | null;
+  subscription_booking_session_count?: number | null;
+  subscription_booking_plan_kind?: string;
+  subscription_booking_delivery_type?: string;
+  subscription_monthly_delivery_frequency?: string;
+  /** When `pidge`, delivery milestones after kitchen ready come from webhooks (not vendor buttons). */
+  logistics_type?: string;
+  /** Latest delivery_tracking.status for this meal_order (API enriched). */
+  delivery_tracking_status?: string | null;
+  /** Resolved display status (order ∪ logistics precedence). */
+  effective_delivery_status?: MealDeliveryEffective;
 }
 
 interface NutritionistDashboardProps {
@@ -135,8 +165,155 @@ interface NutritionistDashboardProps {
   vendorName?: string;
 }
 
+function safeRupee(v: unknown): number {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Meal line total from API (snake_case or camelCase); ignores customer checkout totals. */
+function coerceVendorMealListingAmount(raw: Record<string, unknown>): number {
+  const candidates = [
+    raw.vendor_meal_total,
+    raw.vendorMealTotal,
+    raw.subtotal,
+    raw.meal_line_total,
+    raw.mealLineTotal,
+  ];
+  for (const c of candidates) {
+    const n = safeRupee(c);
+    if (n > 0) return n;
+  }
+  return 0;
+}
+
+/** Vendor-facing meal listing amount only (meal line; excludes delivery, platform, convenience, GST). */
+function vendorMealListingRupee(o: MealOrder): number {
+  return coerceVendorMealListingAmount(o as Record<string, unknown>);
+}
+
+function subscriptionParentPlanTitle(o: MealOrder): string {
+  const raw = o as Record<string, unknown>;
+  const kind = String(raw.subscription_booking_plan_kind || '').toLowerCase();
+  if (kind === 'weekly') return 'Weekly subscription';
+  if (kind === 'monthly') return 'Monthly subscription';
+  return 'Meal subscription';
+}
+
+function monthlyCadenceShort(freq: string): string {
+  const f = freq.toUpperCase();
+  if (f === 'DAILY') return 'daily';
+  if (f === 'ALTERNATE_DAYS') return 'alternate days';
+  if (f === 'TWICE_WEEKLY') return 'twice weekly';
+  if (f === 'WEEKLY') return 'weekly';
+  return 'monthly';
+}
+
+/** Vendor-facing session progress, e.g. weekly meal session · 3/7. */
+function subscriptionSessionLabel(o: MealOrder): string {
+  const raw = o as Record<string, unknown>;
+  const n = Number(raw.subscription_session_number);
+  const total = Number(raw.subscription_booking_session_count);
+  const idx = Number.isFinite(n) && n > 0 ? Math.floor(n) : '?';
+  const tot = Number.isFinite(total) && total > 0 ? Math.floor(total) : '?';
+  const kind = String(raw.subscription_booking_plan_kind || '').toLowerCase();
+  if (kind === 'weekly') {
+    return `Weekly meal session · ${idx}/${tot}`;
+  }
+  if (kind === 'monthly') {
+    const mf = String(raw.subscription_monthly_delivery_frequency || '').trim();
+    const cadence = mf ? monthlyCadenceShort(mf) : 'chosen cadence';
+    return `Monthly meal session (${cadence}) · ${idx}/${tot}`;
+  }
+  return `Meal session · ${idx}/${tot}`;
+}
+
+function isSubscriptionSessionRow(o: MealOrder): boolean {
+  return Boolean(o.subscription_vendor_session_booking);
+}
+
+function vendorSubscriptionCancelHidden(o: MealOrder): boolean {
+  return Boolean(o.subscription_vendor_parent_booking || o.subscription_vendor_session_booking);
+}
+
+function confirmMealOrderCancel(order: MealOrder): boolean {
+  if (order.subscription_vendor_parent_booking) {
+    return window.confirm(
+      'Cancel this subscription booking?',
+    );
+  }
+  return window.confirm('Are you sure you want to cancel this order? This action cannot be undone.');
+}
+
+function ymdLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function scheduledYmdForOrder(o: MealOrder): string | null {
+  const raw = (o as Record<string, unknown>).scheduled_delivery_date as string | Date | undefined | null;
+  if (raw == null || raw === '') return null;
+  if (raw instanceof Date) return ymdLocal(raw);
+  const s = String(raw);
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  const t = new Date(s);
+  if (!Number.isNaN(t.getTime())) return ymdLocal(t);
+  return null;
+}
+
+/** Prefer scheduled delivery day; fall back to order created date (local calendar). */
+function formatOrderCalendarDate(o: MealOrder): string {
+  const sched = scheduledYmdForOrder(o);
+  if (sched) {
+    const [y, mo, d] = sched.split('-').map((x) => parseInt(x, 10));
+    return new Date(y, mo - 1, d).toLocaleDateString();
+  }
+  return new Date(o.created_at).toLocaleDateString();
+}
+
+/**
+ * Allow "Start preparing" only when the scheduled day is today or in the past (avoid early logistics / Pidge for future drops).
+ * Accept remains available for future-dated subscription sessions.
+ */
+function canStartPreparingForSchedule(o: MealOrder): boolean {
+  const sched = scheduledYmdForOrder(o);
+  const today = ymdLocal(new Date());
+  if (!sched) return true;
+  return sched <= today;
+}
+
+type VendorMealOrderBucket = 'past' | 'today' | 'upcoming';
+
+/** Active slice when viewing the Orders tab (stat cards act as filters). */
+type OrdersTabBucketFilter = VendorMealOrderBucket;
+
+function vendorMealEffectiveStatus(o: MealOrder): MealDeliveryEffective {
+  return (
+    o.effective_delivery_status ??
+    resolveEffectiveMealDeliveryState(
+      String(o.status || ''),
+      o.delivery_tracking_status != null ? String(o.delivery_tracking_status) : undefined,
+    )
+  );
+}
+
+function mealOrderBucket(o: MealOrder): VendorMealOrderBucket {
+  const st = vendorMealEffectiveStatus(o);
+  if (st === 'delivered' || st === 'cancelled' || st === 'failed') return 'past';
+  const sched = scheduledYmdForOrder(o);
+  const today = ymdLocal(new Date());
+  if (!sched) return 'today';
+  if (sched < today) return 'today';
+  if (sched === today) return 'today';
+  return 'upcoming';
+}
+
 export default function NutritionistDashboard({ vendorId, vendorName }: NutritionistDashboardProps) {
   const router = useRouter();
+  const { subscribeToMealSubscriptionDeliveryBroadcast } = useVendorWebSocket(vendorId);
   const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'analytics'>('products');
   const [products, setProducts] = useState<MealProduct[]>([]);
   const [orders, setOrders] = useState<MealOrder[]>([]);
@@ -144,7 +321,6 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   const [refreshing, setRefreshing] = useState(false);
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<MealProduct | null>(null);
-  const [uploadingMealImage, setUploadingMealImage] = useState(false);
   // ✅ Track vendor-accepted orders locally (since we can't distinguish from payment confirmation in DB)
   // Use localStorage to persist across page refreshes
   const getStoredAcceptedOrders = (): Set<string> => {
@@ -162,6 +338,8 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     return new Set();
   };
   const [acceptedOrderIds, setAcceptedOrderIds] = useState<Set<string>>(getStoredAcceptedOrders());
+  /** Which bucket’s order list is shown under the stats on the Orders tab. */
+  const [ordersBucketFilter, setOrdersBucketFilter] = useState<OrdersTabBucketFilter>('today');
   
   // Helper to update both state and localStorage
   const updateAcceptedOrderIds = useCallback((updater: (prev: Set<string>) => Set<string>) => {
@@ -181,21 +359,6 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     });
   }, [vendorId]);
 
-  // Form state
-  const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    price: '',
-    durationDays: '7', // ✅ REQUIRED: meal_plans.duration_days (NOT NULL)
-    ingredients: '',
-    calories: '',
-    protein: '',
-    dietType: 'Non-Veg',
-    suitableFor: [] as string[],
-    petTypes: ['Dog'] as string[],
-    preparationTime: '60',
-    mealImageUrl: '',
-  });
   const fetchProducts = useCallback(async () => {
     try {
       const response = await apiClient.get(`/vendor/${vendorId}/meal-products`);
@@ -211,7 +374,11 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     try {
       const response = await apiClient.get(`/vendor/${vendorId}/meal-orders`);
       if (response && (response as any).success) {
-        const fetchedOrders = (response as any).orders || [];
+        const rawList = (response as any).orders || [];
+        const fetchedOrders = rawList.map((raw: Record<string, unknown>) => ({
+          ...raw,
+          vendor_meal_total: coerceVendorMealListingAmount(raw),
+        })) as MealOrder[];
         setOrders(fetchedOrders);
         
         // ✅ Initialize acceptedOrderIds: Merge stored accepted IDs with orders that have progressed
@@ -264,6 +431,27 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     }
   }, [vendorId]);
 
+  const sortedOrders = useMemo(
+    () =>
+      [...orders].sort(
+        (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime(),
+      ),
+    [orders],
+  );
+
+  const { pastOrders, todayOrders, upcomingOrders } = useMemo(() => {
+    const past: MealOrder[] = [];
+    const today: MealOrder[] = [];
+    const upcoming: MealOrder[] = [];
+    for (const o of sortedOrders) {
+      const b = mealOrderBucket(o);
+      if (b === 'past') past.push(o);
+      else if (b === 'today') today.push(o);
+      else upcoming.push(o);
+    }
+    return { pastOrders: past, todayOrders: today, upcomingOrders: upcoming };
+  }, [sortedOrders]);
+
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true);
@@ -279,69 +467,63 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     loadAll();
   }, [fetchProducts, fetchOrders]);
 
+  useEffect(() => {
+    if (activeTab !== 'orders') return;
+    const id = window.setInterval(() => {
+      void fetchOrders();
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [activeTab, fetchOrders]);
+
+  useEffect(() => {
+    if (activeTab !== 'orders') return;
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void fetchOrders();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [activeTab, fetchOrders]);
+
+  /** Customer reschedule/skip/pause on canonical sessions updates DB; refetch meal_orders-backed list. */
+  useEffect(() => {
+    const unsub = subscribeToMealSubscriptionDeliveryBroadcast(() => {
+      if (activeTab === 'orders') void fetchOrders();
+    });
+    return () => unsub();
+  }, [subscribeToMealSubscriptionDeliveryBroadcast, fetchOrders, activeTab]);
+
   const handleRefresh = async () => {
     setRefreshing(true);
     await Promise.all([fetchProducts(), fetchOrders()]);
     setRefreshing(false);
   };
 
-  const handleSaveProduct = async () => {
-    // ✅ VALIDATION: Required fields from meal_plans schema (NOT NULL constraints)
-    if (!formData.name || formData.name.trim() === '') {
-      toast.error('Meal Name is required');
-      return;
-    }
-    
-    const price = parseFloat(formData.price);
-    if (isNaN(price) || price <= 0) {
-      toast.error('Valid Price is required (must be a positive number)');
-      return;
-    }
-    
-    const durationDays = parseInt(formData.durationDays);
-    if (isNaN(durationDays) || durationDays <= 0) {
-      toast.error('Duration Days is required (must be a positive number)');
-      return;
-    }
-
+  const handleSaveMealProduct = async ({
+    payload,
+    editingId,
+  }: {
+    payload: Record<string, unknown>;
+    editingId: string | null;
+  }) => {
     try {
-      const payload = {
-        name: formData.name,
-        description: formData.description,
-        price: price,
-        durationDays: durationDays, // ✅ REQUIRED: meal_plans.duration_days (NOT NULL)
-        ingredients: formData.ingredients ? formData.ingredients.split(',').map(i => i.trim()) : [],
-        nutritionalValue: {
-          calories: formData.calories,
-          protein: formData.protein,
-        },
-        dietType: formData.dietType,
-        suitableFor: formData.suitableFor,
-        petTypes: formData.petTypes,
-        preparationLeadTime: parseInt(formData.preparationTime) || 60,
-        // Include empty string on edit so the API clears stored mealImageUrl when the vendor removes the image.
-        mealImageUrl: formData.mealImageUrl?.trim()
-          ? formData.mealImageUrl.trim()
-          : editingProduct
-            ? ''
-            : undefined,
-      };
-
-      if (editingProduct) {
-        await apiClient.put(`/vendor/${vendorId}/meal-products/${editingProduct.id}`, payload);
+      if (editingId) {
+        await apiClient.put(`/vendor/${vendorId}/meal-products/${editingId}`, payload);
         toast.success('Meal product updated successfully');
       } else {
         await apiClient.post(`/vendor/${vendorId}/meal-products`, payload);
         toast.success('Meal product created successfully');
       }
-
       setShowAddProduct(false);
       setEditingProduct(null);
-      resetForm();
       await fetchProducts();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error saving product:', error);
-      toast.error(error?.message || 'Failed to save meal product. Please check all required fields.');
+      const msg =
+        error && typeof error === 'object' && 'message' in error
+          ? String((error as { message?: string }).message)
+          : 'Failed to save meal product. Please check all required fields.';
+      toast.error(msg);
+      throw error;
     }
   };
 
@@ -367,15 +549,25 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
         updateAcceptedOrderIds(prev => new Set(prev).add(orderId));
       }
       
-      await apiClient.put(`/vendor/${vendorId}/meal-orders/${orderId}/status`, { status });
-      
+      const res = (await apiClient.put(`/vendor/${vendorId}/meal-orders/${orderId}/status`, {
+        status,
+      })) as { dispatch?: { ok?: boolean; idempotent?: boolean } };
+
       // ✅ BUSINESS LOGIC: Track vendor acceptance locally
       if (status === 'accepted') {
         toast.success('Order accepted successfully!');
       } else if (status === 'preparing') {
         // When vendor starts preparing, they've implicitly accepted
         updateAcceptedOrderIds(prev => new Set(prev).add(orderId));
-        toast.success('Order status updated');
+        if (res?.dispatch?.ok) {
+          toast.success(
+            res.dispatch.idempotent
+              ? 'Preparing — delivery partner already scheduled'
+              : 'Preparing started — delivery partner scheduled'
+          );
+        } else {
+          toast.success('Order status updated');
+        }
       } else {
         toast.success('Order status updated');
       }
@@ -396,17 +588,6 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     }
   };
 
-  const handleSetPreparationEta = async (orderId: string, minutes: number) => {
-    try {
-      await apiClient.post(`/meal-orders/${orderId}/update-preparation-eta`, { preparationEtaMinutes: minutes });
-      toast.success(`ETA set: ${minutes} min`);
-      await fetchOrders();
-    } catch (error: any) {
-      console.error('Error setting ETA:', error);
-      toast.error(error?.message || 'Failed to set ETA');
-    }
-  };
-
   const handleNotifyLogistics = async (orderId: string) => {
     try {
       await apiClient.post(`/meal/orders/${orderId}/notify-logistics`);
@@ -418,58 +599,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     }
   };
 
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      description: '',
-      price: '',
-      durationDays: '7', // ✅ REQUIRED: meal_plans.duration_days (NOT NULL)
-      ingredients: '',
-      calories: '',
-      protein: '',
-      dietType: 'Non-Veg',
-      suitableFor: [],
-      petTypes: ['Dog'],
-      preparationTime: '60',
-      mealImageUrl: '',
-    });
-  };
-
-  const handleMealImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setUploadingMealImage(true);
-    try {
-      const res = await uploadImageWithProgress(file, `meal-products/${vendorId}`, { verifyUpload: false });
-      if (!res.success || !(res.publicUrl || res.url)) {
-        toast.error(res.error || 'Image upload failed');
-        return;
-      }
-      const url = res.publicUrl || res.url || '';
-      setFormData((prev) => ({ ...prev, mealImageUrl: url }));
-      toast.success('Meal image uploaded');
-    } finally {
-      setUploadingMealImage(false);
-    }
-  };
-
   const openEditModal = (product: MealProduct) => {
-    const metadata = product.metadata ? (typeof product.metadata === 'string' ? JSON.parse(product.metadata) : product.metadata) : {};
-    setFormData({
-      name: product.name || '',
-      description: product.description || '',
-      price: product.price?.toString() || '',
-      durationDays: (product as any).duration_days?.toString() || '7', // ✅ REQUIRED: meal_plans.duration_days
-      ingredients: (metadata.ingredients || []).join(', '),
-      calories: metadata.nutritionalValue?.calories || '',
-      protein: metadata.nutritionalValue?.protein || '',
-      dietType: metadata.dietType || 'Non-Veg',
-      suitableFor: metadata.suitableFor || [],
-      petTypes: metadata.petTypes || ['Dog'],
-      preparationTime: metadata.preparationLeadTime?.toString() || '60',
-      mealImageUrl: (metadata.mealImageUrl as string) || '',
-    });
     setEditingProduct(product);
     setShowAddProduct(true);
   };
@@ -480,15 +610,320 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       case 'confirmed': return 'bg-blue-50 text-blue-700 border-blue-200';
       case 'accepted': return 'bg-teal-50 text-teal-700 border-teal-200';
       case 'preparing': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'paused': return 'bg-violet-50 text-violet-800 border-violet-200';
       case 'ready':
       case 'ready_for_pickup': return 'bg-purple-50 text-purple-700 border-purple-200';
       case 'dispatched':
       case 'picked_up':
       case 'on_the_way': return 'bg-violet-50 text-violet-700 border-violet-200';
       case 'delivered': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'failed': return 'bg-red-50 text-red-800 border-red-200';
       case 'cancelled': return 'bg-red-50 text-red-700 border-red-200';
       default: return 'bg-slate-50 text-slate-700 border-slate-200';
     }
+  };
+
+  const renderMealOrderCard = (order: MealOrder) => {
+    const badgeCanon: MealDeliveryEffective = vendorMealEffectiveStatus(order);
+    const prepOk = canStartPreparingForSchedule(order);
+    const isParentSub = Boolean(order.subscription_vendor_parent_booking);
+    const isSessionSub = isSubscriptionSessionRow(order);
+    const isPidgeLogistics = String(order.logistics_type || '').toLowerCase() === 'pidge';
+    const vendorReadyStatuses = ['confirmed', 'accepted'];
+    const sessionReadyForPrep =
+      (isSessionSub || isParentSub) &&
+      vendorReadyStatuses.includes(String(order.status || '').toLowerCase()) &&
+      !order.prep_started_at;
+
+    return (
+      <div key={order.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
+        <div className="p-4 border-b border-slate-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600">
+                {Icons.package}
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-800">{order.order_number || `Order #${order.id.slice(0, 8)}`}</h3>
+                {(isSubscriptionSessionRow(order) || order.subscription_vendor_parent_booking) ? (
+                  <p className="text-xs font-medium text-indigo-700 mt-0.5">{subscriptionSessionLabel(order)}</p>
+                ) : null}
+                <p className="text-sm text-slate-500 flex items-center gap-1">
+                  {Icons.user}
+                  {order.customer_name || 'Customer'}
+                </p>
+              </div>
+            </div>
+            <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(badgeCanon)}`}>
+              {formatVendorMealDeliveryBadge(badgeCanon)}
+            </span>
+          </div>
+        </div>
+
+        <div className="p-4">
+          {order.subscription_vendor_parent_booking && (
+            <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50/80 px-3 py-2.5 text-slate-800">
+              <p className="text-sm font-semibold">
+                {subscriptionParentPlanTitle(order)}
+                {order.subscription_booking_session_count != null && order.subscription_booking_session_count > 0
+                  ? ` · ${order.subscription_booking_session_count} sessions`
+                  : null}
+                {order.subscription_booking_delivery_type ? (
+                  <span className="font-normal text-slate-600">
+                    {' '}
+                    · Delivery: {String(order.subscription_booking_delivery_type)}
+                  </span>
+                ) : null}
+              </p>
+            </div>
+          )}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-500">
+              <span className="flex items-center gap-1">{Icons.phone} {order.customer_phone || 'N/A'}</span>
+              <span className="flex items-center gap-1" title="Scheduled delivery date (subscription sessions use this day)">
+                {Icons.clock} Delivery: {formatOrderCalendarDate(order)}
+              </span>
+            </div>
+            <div className="text-right">
+              {order.subscription_vendor_parent_booking ? (
+                <>
+                  <span className="text-lg font-semibold text-slate-800">
+                    ₹{vendorMealListingRupee(order).toFixed(2)}
+                  </span>
+                  <p className="text-xs text-slate-500">Meal (this session)</p>
+                </>
+              ) : isSubscriptionSessionRow(order) ? (
+                <>
+                  <span className="text-lg font-semibold text-slate-800">
+                    ₹{vendorMealListingRupee(order).toFixed(2)}
+                  </span>
+                  <p className="text-xs text-slate-500">Meal (this session)</p>
+                </>
+              ) : (
+                <>
+                  <span className="text-lg font-semibold text-slate-800">
+                    ₹{vendorMealListingRupee(order).toFixed(2)}
+                  </span>
+                  <p className="text-xs text-slate-500">Meal total (your listing)</p>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {isPidgeLogistics &&
+              ['preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'].includes(badgeCanon) && (
+                <p className="text-xs text-slate-600 w-full rounded-lg bg-sky-50 border border-sky-100 px-3 py-2">
+                  Pidge delivery: after &quot;Start preparing&quot;, pickup and delivery stages update automatically from
+                  Pidge — no need to notify logistics or mark delivered manually.
+                </p>
+              )}
+            {order.status === 'paused' && (
+              <p className="text-sm text-violet-800 w-full py-2 px-3 rounded-lg bg-violet-50 border border-violet-200">
+                Customer paused this subscription — resume on their app before preparing or dispatching.
+              </p>
+            )}
+            {order.status === 'pending' && (
+              <>
+                {isSessionSub ? (
+                  <button
+                    type="button"
+                    disabled
+                    title="Accept the subscription booking on the parent row first. Sessions update automatically."
+                    className="flex-1 py-2 rounded-lg bg-slate-200 text-slate-500 cursor-not-allowed flex items-center justify-center gap-1"
+                  >
+                    {Icons.utensils}
+                    <span className="text-sm">Start Preparing</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
+                      className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                    >
+                      {Icons.check}
+                      <span className="text-sm">Accept</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirmMealOrderCancel(order)) handleUpdateOrderStatus(order.id, 'cancelled');
+                      }}
+                      className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                    >
+                      {Icons.x}
+                      <span className="text-sm ml-1">Cancel</span>
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+
+            {sessionReadyForPrep && (
+              <button
+                type="button"
+                disabled={!prepOk}
+                title={
+                  prepOk
+                    ? undefined
+                    : 'Start preparing on or after the scheduled delivery date (avoids early rider assignment).'
+                }
+                onClick={() => {
+                  if (!prepOk) return;
+                  handleUpdateOrderStatus(order.id, 'preparing');
+                }}
+                className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 ${
+                  prepOk
+                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                    : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                {Icons.utensils}
+                <span className="text-sm">Start Preparing</span>
+              </button>
+            )}
+
+            {(() => {
+              const shouldShowAccept =
+                order.status === 'confirmed' &&
+                !order.prep_started_at &&
+                !acceptedOrderIds.has(order.id) &&
+                !isParentSub &&
+                !isSessionSub;
+              return shouldShowAccept;
+            })() && (
+              <>
+                <button
+                  onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
+                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                >
+                  {Icons.check}
+                  <span className="text-sm">Accept</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!prepOk}
+                  title={
+                    prepOk
+                      ? undefined
+                      : 'Start preparing on or after the scheduled delivery date (avoids early rider assignment).'
+                  }
+                  onClick={() => {
+                    if (!prepOk) return;
+                    handleUpdateOrderStatus(order.id, 'preparing');
+                  }}
+                  className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 ${
+                    prepOk
+                      ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                      : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  {Icons.utensils}
+                  <span className="text-sm">Start Preparing</span>
+                </button>
+                {!vendorSubscriptionCancelHidden(order) && (
+                  <button
+                    onClick={() => {
+                      if (confirmMealOrderCancel(order)) {
+                        handleUpdateOrderStatus(order.id, 'cancelled');
+                      }
+                    }}
+                    className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                  >
+                    {Icons.x}
+                    <span className="text-sm ml-1">Cancel</span>
+                  </button>
+                )}
+              </>
+            )}
+
+            {order.status === 'confirmed' &&
+              !order.prep_started_at &&
+              acceptedOrderIds.has(order.id) &&
+              !isParentSub &&
+              !isSessionSub && (
+                <>
+                  <button
+                    type="button"
+                    disabled={!prepOk}
+                    title={
+                      prepOk
+                        ? undefined
+                        : 'Start preparing on or after the scheduled delivery date (avoids early rider assignment).'
+                    }
+                    onClick={() => {
+                      if (!prepOk) return;
+                      handleUpdateOrderStatus(order.id, 'preparing');
+                    }}
+                    className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 ${
+                      prepOk
+                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {Icons.utensils}
+                    <span className="text-sm">Start Preparing</span>
+                  </button>
+                  {!vendorSubscriptionCancelHidden(order) && (
+                    <button
+                      onClick={() => {
+                        if (confirmMealOrderCancel(order)) {
+                          handleUpdateOrderStatus(order.id, 'cancelled');
+                        }
+                      }}
+                      className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
+                    >
+                      {Icons.x}
+                      <span className="text-sm ml-1">Cancel</span>
+                    </button>
+                  )}
+                </>
+              )}
+
+            {order.status === 'preparing' && (
+              <button
+                onClick={() => handleUpdateOrderStatus(order.id, 'ready_for_pickup')}
+                className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+              >
+                {Icons.package}
+                <span className="text-sm">Ready for Pickup</span>
+              </button>
+            )}
+            {order.status === 'ready_for_pickup' && !isPidgeLogistics && (
+              <>
+                <button
+                  onClick={() => handleNotifyLogistics(order.id)}
+                  className="flex-1 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                >
+                  {Icons.truck}
+                  <span className="text-sm">Notify Logistics</span>
+                </button>
+                <button
+                  onClick={() => handleUpdateOrderStatus(order.id, 'picked_up')}
+                  className="py-2 px-4 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+                >
+                  <span className="text-sm">Dispatched</span>
+                </button>
+              </>
+            )}
+            {order.status === 'ready_for_pickup' && isPidgeLogistics && (
+              <p className="text-sm text-slate-600 w-full py-2 px-3 rounded-lg bg-slate-50 border border-slate-200">
+                Waiting for rider pickup — status updates when Pidge confirms pickup and delivery.
+              </p>
+            )}
+            {(order.status === 'picked_up' || order.status === 'on_the_way' || order.status === 'dispatched') &&
+              !isPidgeLogistics && (
+              <button
+                onClick={() => handleUpdateOrderStatus(order.id, 'delivered')}
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
+              >
+                {Icons.check}
+                <span className="text-sm">Mark Delivered</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   if (loading) {
@@ -503,9 +938,9 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-amber-50">
+    <div className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-gradient-to-br from-orange-50 via-white to-amber-50">
       {/* Frame UI: Orange header (vet service dashboard style) */}
-      <header className="bg-gradient-to-r from-[#FF8C42] to-orange-500 border-b border-orange-200 sticky top-0 z-40 shadow-md">
+      <header className="shrink-0 bg-gradient-to-r from-[#FF8C42] to-orange-500 border-b border-orange-200 shadow-md z-40">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -578,18 +1013,19 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
         </div>
       </header>
 
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      {/* Content — scrolls under fixed header (works inside shells that use overflow-hidden). */}
+      <main className="max-w-7xl mx-auto w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-6 overscroll-contain">
+        <MealKitchenAvailabilityCard vendorId={vendorId} />
+
         {/* Products Tab */}
         {activeTab === 'products' && (
-          <div className="space-y-4">
+          <div className="space-y-4 mt-4">
             {/* Add Product Button */}
-            <button
-              onClick={() => {
-                resetForm();
-                setEditingProduct(null);
-                setShowAddProduct(true);
-              }}
+              <button
+                onClick={() => {
+                  setEditingProduct(null);
+                  setShowAddProduct(true);
+                }}
               className="w-full py-4 border-2 border-dashed border-emerald-300 rounded-2xl text-emerald-600 font-medium hover:bg-emerald-50 transition-colors flex items-center justify-center gap-2"
             >
               {Icons.plus}
@@ -677,206 +1113,79 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 <p className="text-slate-500">Orders will appear here when customers place them</p>
               </div>
             ) : (
-              orders.map((order) => (
-                <div key={order.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
-                  <div className="p-4 border-b border-slate-100">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600">
-                          {Icons.package}
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-slate-800">{order.order_number || `Order #${order.id.slice(0, 8)}`}</h3>
-                          <p className="text-sm text-slate-500 flex items-center gap-1">
-                            {Icons.user}
-                            {order.customer_name || 'Customer'}
-                          </p>
-                        </div>
-                      </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(order.status)}`}>
-                        {order.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="p-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-4 text-sm text-slate-500">
-                        <span className="flex items-center gap-1">{Icons.phone} {order.customer_phone || 'N/A'}</span>
-                        <span className="flex items-center gap-1">{Icons.clock} {new Date(order.created_at).toLocaleDateString()}</span>
-                      </div>
-                      <span className="text-lg font-semibold text-slate-800">₹{order.total_amount || 0}</span>
-                    </div>
-
-                    {/* Order Actions – Phase 3: accept, ETA, notify logistics */}
-                    <div className="flex flex-wrap gap-2">
-                      {order.status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')}
-                            className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                          >
-                            {Icons.x}
-                            <span className="text-sm ml-1">Cancel</span>
-                          </button>
-                        </>
-                      )}
-                      {/* BUSINESS LOGIC:
-                          1. Pending: Order created, payment not done → Show Accept (but payment should be done first)
-                          2. Confirmed (after payment): Payment done, vendor needs to accept → Show Accept + Start Preparing + Cancel
-                          3. After vendor accepts: Status stays 'confirmed', but prep_started_at is still null → Hide Accept, show Start Preparing + Cancel
-                          4. Preparing: Status = 'preparing', prep_started_at is set → Hide Accept, show Ready for Pickup, restrict Cancel
-                      */}
-                      
-                      {/* Pending orders: Payment not confirmed yet */}
-                      {order.status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
-                            className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.check}
-                            <span className="text-sm">Accept</span>
-                          </button>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'cancelled')}
-                            className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                          >
-                            {Icons.x}
-                            <span className="text-sm ml-1">Cancel</span>
-                          </button>
-                        </>
-                      )}
-                      
-                      {/* Confirmed orders (payment done): Vendor can accept or start preparing directly */}
-                      {/* If prep_started_at is null, vendor hasn't started, so show Accept button */}
-                      {/* If prep_started_at is not null, vendor has started, so hide Accept button */}
-                      {/* ✅ BUSINESS LOGIC: Confirmed orders (payment done) - Vendor needs to accept */}
-                      {/* Show Accept button only if vendor hasn't accepted yet (tracked in localStorage) */}
-                      {(() => {
-                        const shouldShowAccept = order.status === 'confirmed' && !order.prep_started_at && !acceptedOrderIds.has(order.id);
-                        if (order.status === 'confirmed' && !order.prep_started_at) {
-                          console.log(`[NutritionistDashboard] Order ${order.id}: status=confirmed, prep_started_at=${order.prep_started_at}, in acceptedOrderIds=${acceptedOrderIds.has(order.id)}, shouldShowAccept=${shouldShowAccept}`);
-                        }
-                        return shouldShowAccept;
-                      })() && (
-                        <>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'accepted')}
-                            className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.check}
-                            <span className="text-sm">Accept</span>
-                          </button>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'preparing')}
-                            className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.utensils}
-                            <span className="text-sm">Start Preparing</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm('Are you sure you want to cancel this order? This action cannot be undone.')) {
-                                handleUpdateOrderStatus(order.id, 'cancelled');
-                              }
-                            }}
-                            className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                          >
-                            {Icons.x}
-                            <span className="text-sm ml-1">Cancel</span>
-                          </button>
-                        </>
-                      )}
-                      
-                      {/* Confirmed orders where vendor has accepted but not started preparing yet */}
-                      {order.status === 'confirmed' && !order.prep_started_at && acceptedOrderIds.has(order.id) && (
-                        <>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'preparing')}
-                            className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.utensils}
-                            <span className="text-sm">Start Preparing</span>
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm('Are you sure you want to cancel this order? This action cannot be undone.')) {
-                                handleUpdateOrderStatus(order.id, 'cancelled');
-                              }
-                            }}
-                            className="py-2 px-4 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors"
-                          >
-                            {Icons.x}
-                            <span className="text-sm ml-1">Cancel</span>
-                          </button>
-                        </>
-                      )}
-                      
-                      {/* Confirmed orders where vendor has accepted (prep_started_at is null but vendor clicked Accept) */}
-                      {/* This case is handled by the condition above - if prep_started_at is null, show Accept */}
-                      {/* After vendor clicks Accept, status stays 'confirmed', prep_started_at stays null until "Start Preparing" */}
-                      {/* So we need to track acceptance differently - for now, allow "Start Preparing" which implicitly accepts */}
-                      {/* ETA buttons: Show for preparing orders only (vendor has started) */}
-                      {order.status === 'preparing' && (
-                        <>
-                          <button
-                            onClick={() => handleSetPreparationEta(order.id, 30)}
-                            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm"
-                          >
-                            ETA 30m
-                          </button>
-                          <button
-                            onClick={() => handleSetPreparationEta(order.id, 45)}
-                            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm"
-                          >
-                            ETA 45m
-                          </button>
-                          <button
-                            onClick={() => handleSetPreparationEta(order.id, 60)}
-                            className="py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm"
-                          >
-                            ETA 60m
-                          </button>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'ready_for_pickup')}
-                            className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.package}
-                            <span className="text-sm">Ready for Pickup</span>
-                          </button>
-                        </>
-                      )}
-                      {order.status === 'ready_for_pickup' && (
-                        <>
-                          <button
-                            onClick={() => handleNotifyLogistics(order.id)}
-                            className="flex-1 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            {Icons.truck}
-                            <span className="text-sm">Notify Logistics</span>
-                          </button>
-                          <button
-                            onClick={() => handleUpdateOrderStatus(order.id, 'picked_up')}
-                            className="py-2 px-4 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                          >
-                            <span className="text-sm">Dispatched</span>
-                          </button>
-                        </>
-                      )}
-                      {(order.status === 'picked_up' || order.status === 'on_the_way' || order.status === 'dispatched') && (
-                        <button
-                          onClick={() => handleUpdateOrderStatus(order.id, 'delivered')}
-                          className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center justify-center gap-1"
-                        >
-                          {Icons.check}
-                          <span className="text-sm">Mark Delivered</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setOrdersBucketFilter('past')}
+                    aria-pressed={ordersBucketFilter === 'past'}
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition ring-offset-2 ring-offset-orange-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${
+                      ordersBucketFilter === 'past'
+                        ? 'bg-white border-orange-400 ring-2 ring-orange-300'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Previous / completed</p>
+                    <p className="mt-1 text-2xl font-bold text-slate-800">{pastOrders.length}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrdersBucketFilter('today')}
+                    aria-pressed={ordersBucketFilter === 'today'}
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition ring-offset-2 ring-offset-orange-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${
+                      ordersBucketFilter === 'today'
+                        ? 'bg-white border-orange-500 ring-2 ring-orange-400'
+                        : 'bg-white border-orange-100 ring-1 ring-orange-100 hover:border-orange-200'
+                    }`}
+                  >
+                    <p className="text-xs font-medium uppercase tracking-wide text-orange-800/90">Today&apos;s orders</p>
+                    <p className="mt-1 text-2xl font-bold text-orange-700">{todayOrders.length}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrdersBucketFilter('upcoming')}
+                    aria-pressed={ordersBucketFilter === 'upcoming'}
+                    className={`rounded-2xl border p-4 text-left shadow-sm transition ring-offset-2 ring-offset-orange-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 ${
+                      ordersBucketFilter === 'upcoming'
+                        ? 'bg-white border-orange-400 ring-2 ring-orange-300'
+                        : 'bg-white border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Upcoming</p>
+                    <p className="mt-1 text-2xl font-bold text-slate-800">{upcomingOrders.length}</p>
+                  </button>
                 </div>
-              ))
+                {(() => {
+                  const section =
+                    ordersBucketFilter === 'past'
+                      ? {
+                          title: 'Previous / completed',
+                          list: pastOrders,
+                          empty: 'No completed or cancelled orders in this view.',
+                        }
+                      : ordersBucketFilter === 'today'
+                        ? {
+                            title: "Today's orders",
+                            list: todayOrders,
+                            empty: 'No orders for today (includes overdue items awaiting action).',
+                          }
+                        : {
+                            title: 'Upcoming orders',
+                            list: upcomingOrders,
+                            empty: 'No future scheduled drops.',
+                          };
+                  return (
+                    <div className="space-y-3 pt-2">
+                      <h3 className="text-sm font-semibold text-slate-800 px-1">{section.title}</h3>
+                      {section.list.length === 0 ? (
+                        <p className="text-sm text-slate-400 px-1 py-1">{section.empty}</p>
+                      ) : (
+                        section.list.map((order) => renderMealOrderCard(order))
+                      )}
+                    </div>
+                  );
+                })()}
+              </>
             )}
           </div>
         )}
@@ -907,218 +1216,26 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center text-purple-600">
                   {Icons.dollarSign}
                 </div>
-                <span className="text-slate-600">Revenue</span>
+                <span className="text-slate-600">Meal listing total</span>
               </div>
               <p className="text-3xl font-bold text-slate-800">
-                ₹{orders.reduce((sum, o) => sum + (o.total_amount || 0), 0)}
+                ₹{orders.reduce((sum, o) => sum + vendorMealListingRupee(o), 0)}
               </p>
             </div>
           </div>
         )}
       </main>
 
-      {/* Add/Edit Product Modal */}
-      {showAddProduct && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-auto">
-            <div className="p-4 border-b border-slate-100">
-              <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                {Icons.utensils}
-                {editingProduct ? 'Edit Meal Product' : 'Add New Meal Product'}
-              </h2>
-            </div>
-
-            <div className="p-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Meal Name *</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  placeholder="e.g., Chicken & Rice Bowl"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
-                <textarea
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  rows={2}
-                  placeholder="Describe your meal..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Meal image (one photo)</label>
-                <p className="text-xs text-slate-500 mb-2">Shown to customers on meal lists. JPEG, PNG, or WebP up to 10MB.</p>
-                <div className="flex flex-wrap items-center gap-3">
-                  <TouchFilePicker
-                    onFileChange={handleMealImageFile}
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    disabled={uploadingMealImage}
-                    className="inline-block min-h-[2.5rem] min-w-[7rem] rounded-lg"
-                    innerClassName="items-center justify-center"
-                  >
-                    <span className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-800">
-                      {uploadingMealImage ? 'Uploading…' : formData.mealImageUrl ? 'Replace image' : 'Upload image'}
-                    </span>
-                  </TouchFilePicker>
-                  {formData.mealImageUrl ? (
-                    <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={formData.mealImageUrl} alt="" className="h-16 w-16 rounded-lg object-cover border border-slate-200" />
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, mealImageUrl: '' })}
-                        className="text-sm text-red-600 hover:underline"
-                      >
-                        Remove
-                      </button>
-                    </>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Price (₹) *</label>
-                  <input
-                    type="number"
-                    value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="299"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Duration (Days) *</label>
-                  <input
-                    type="number"
-                    value={formData.durationDays}
-                    onChange={(e) => setFormData({ ...formData, durationDays: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="7"
-                    min="1"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Prep Time (min)</label>
-                  <input
-                    type="number"
-                    value={formData.preparationTime}
-                    onChange={(e) => setFormData({ ...formData, preparationTime: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="60"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Ingredients (comma separated)</label>
-                <input
-                  type="text"
-                  value={formData.ingredients}
-                  onChange={(e) => setFormData({ ...formData, ingredients: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  placeholder="Chicken, Rice, Carrots, Peas"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Calories</label>
-                  <input
-                    type="text"
-                    value={formData.calories}
-                    onChange={(e) => setFormData({ ...formData, calories: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="350 kcal"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Protein</label>
-                  <input
-                    type="text"
-                    value={formData.protein}
-                    onChange={(e) => setFormData({ ...formData, protein: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="25g"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Diet Type</label>
-                <div className="flex gap-2">
-                  {['Non-Veg', 'Veg', 'Egg'].map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, dietType: type })}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${formData.dietType === type
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Pet Types</label>
-                <div className="flex gap-2">
-                  {['Dog', 'Cat'].map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => {
-                        const current = formData.petTypes;
-                        if (current.includes(type)) {
-                          setFormData({ ...formData, petTypes: current.filter(t => t !== type) });
-                        } else {
-                          setFormData({ ...formData, petTypes: [...current, type] });
-                        }
-                      }}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${formData.petTypes.includes(type)
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-slate-100 flex gap-3">
-              <button
-                onClick={() => { setShowAddProduct(false); setEditingProduct(null); resetForm(); }}
-                className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveProduct}
-                className="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
-              >
-                {editingProduct ? 'Update' : 'Create'} Product
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <MealProductFormModal
+        open={showAddProduct}
+        onClose={() => {
+          setShowAddProduct(false);
+          setEditingProduct(null);
+        }}
+        vendorId={vendorId}
+        editingProduct={editingProduct}
+        onSave={handleSaveMealProduct}
+      />
     </div>
   );
 }

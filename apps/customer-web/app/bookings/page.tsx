@@ -41,7 +41,8 @@ function BookingsPageInner() {
   return (
     <MyBookings
       phone={phone}
-      onBack={() => window.history.back()}
+      onBack={() => router.replace('/')}
+      onCloseToHome={() => router.replace('/')}
       reviewBookingIdFromUrl={reviewBookingId}
     />
   );

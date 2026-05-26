@@ -56,6 +56,19 @@ interface HSNCode {
   updatedAt?: string;
 }
 
+type GstApplicationScope = 'service_booking' | 'meal_plan_food' | 'meal_plan_delivery';
+
+function parseGstApplicationScope(raw: unknown): GstApplicationScope {
+  const s = String(raw ?? '').trim();
+  if (s === 'meal_plan_food') return 'meal_plan_food';
+  if (s === 'meal_plan_delivery') return 'meal_plan_delivery';
+  return 'service_booking';
+}
+
+function isMealPlanGstScope(scope: GstApplicationScope): boolean {
+  return scope === 'meal_plan_food' || scope === 'meal_plan_delivery';
+}
+
 interface TaxCategory {
   id: string;
   name?: string;
@@ -70,6 +83,8 @@ interface TaxCategory {
   catalog_category_id?: string;
   catalogCategoryName?: string;
   catalog_category_name?: string;
+  gstApplicationScope?: GstApplicationScope;
+  gst_application_scope?: GstApplicationScope | string | null;
   role_ids?: string[];
   roles?: { id: string; name: string; display_name: string }[];
   isActive: boolean;
@@ -206,6 +221,9 @@ export function GSTConfigurationManagement() {
         Array.isArray(rawCat)
           ? rawCat.map((c: any) => {
               const rate = parseTaxCategoryGstRate(c);
+              const gstApplicationScope = parseGstApplicationScope(
+                c.gst_application_scope ?? c.gstApplicationScope,
+              );
               return {
                 id: c.id,
                 name: c.name ?? c.category_name,
@@ -218,6 +236,8 @@ export function GSTConfigurationManagement() {
                   c.linked_catalog_service_count ?? c.linkedCatalogServicesCount ?? 0,
                 catalogCategoryId: c.catalog_category_id ?? c.catalogCategoryId,
                 catalogCategoryName: c.catalog_category_name ?? c.catalogCategoryName,
+                gstApplicationScope,
+                gst_application_scope: gstApplicationScope,
                 role_ids: c.role_ids ?? (Array.isArray(c.roles) ? c.roles.map((x: { id: string }) => x.id) : []),
                 roles: c.roles ?? [],
                 isActive: c.is_active !== false,
@@ -286,11 +306,12 @@ export function GSTConfigurationManagement() {
     const catalogId =
       editingCategory.catalogCategoryId ?? editingCategory.catalog_category_id ?? '';
     const roleIds = editingCategory.role_ids ?? [];
+    const gstScope = parseGstApplicationScope(editingCategory.gstApplicationScope);
     if (!catalogId) {
       toast.error('Select a catalogue category');
       return;
     }
-    if (!roleIds.length) {
+    if (!roleIds.length && !isMealPlanGstScope(gstScope)) {
       toast.error('Select at least one applicable role');
       return;
     }
@@ -306,6 +327,7 @@ export function GSTConfigurationManagement() {
         description: editingCategory.description ?? '',
         defaultGSTRate,
         roleIds,
+        gstApplicationScope: gstScope,
         isActive: editingCategory.isActive !== false,
       };
       if (editingCategory.id) {
@@ -527,6 +549,7 @@ export function GSTConfigurationManagement() {
                   defaultGSTRate: 0,
                   applicableServices: [],
                   catalogCategoryId: '',
+                  gstApplicationScope: 'service_booking',
                   role_ids: [],
                   isActive: true,
                 });
@@ -543,9 +566,20 @@ export function GSTConfigurationManagement() {
             {safeTaxCategories.map((category) => (
               <Card key={category.id}>
                 <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <CardTitle>{category.name}</CardTitle>
-                    <Badge variant={category.isActive ? 'default' : 'outline'}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                      <CardTitle className="truncate">{category.name}</CardTitle>
+                      {(category.gstApplicationScope ?? 'service_booking') === 'meal_plan_food' ? (
+                        <Badge variant="secondary" className="shrink-0 text-[11px]">
+                          Meal plan food
+                        </Badge>
+                      ) : (category.gstApplicationScope ?? 'service_booking') === 'meal_plan_delivery' ? (
+                        <Badge variant="secondary" className="shrink-0 text-[11px]">
+                          Meal plan delivery
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <Badge variant={category.isActive ? 'default' : 'outline'} className="shrink-0">
                       {category.isActive ? 'Active' : 'Inactive'}
                     </Badge>
                   </div>
@@ -556,7 +590,7 @@ export function GSTConfigurationManagement() {
                     <div className="flex justify-between">
                       <span className="text-sm text-gray-600">Default GST Rate</span>
                       <span className="font-semibold">
-                        {`${parseTaxCategoryGstRate(category as Partial<Record<string, unknown>>).toFixed(2)}%`}
+                        {`${parseTaxCategoryGstRate(category as unknown as Partial<Record<string, unknown>>).toFixed(2)}%`}
                       </span>
                     </div>
                     {(category.catalogCategoryName || category.catalog_category_name) && (
@@ -567,7 +601,14 @@ export function GSTConfigurationManagement() {
                         </span>
                       </div>
                     )}
-                    {(category.roles?.length ?? 0) > 0 && (
+                    {isMealPlanGstScope(
+                      parseGstApplicationScope(category.gstApplicationScope),
+                    ) && (category.roles?.length ?? 0) === 0 ? (
+                      <p className="text-xs text-gray-600">
+                        <span className="font-medium text-gray-700">Applicable roles: </span>
+                        All vendors (wildcard — optional role-specific overrides)
+                      </p>
+                    ) : (category.roles?.length ?? 0) > 0 ? (
                       <div className="text-xs text-gray-600">
                         <span className="font-medium text-gray-700">Applicable roles: </span>
                         {(category.roles ?? [])
@@ -575,7 +616,7 @@ export function GSTConfigurationManagement() {
                           .filter(Boolean)
                           .join(', ')}
                       </div>
-                    )}
+                    ) : null}
                     <div className="flex justify-between items-start gap-2">
                       <span className="text-sm text-gray-600">
                         Services in catalogue (same master category)
@@ -600,6 +641,7 @@ export function GSTConfigurationManagement() {
                         setEditingCategory({
                           ...category,
                           catalogCategoryId: category.catalogCategoryId ?? category.catalog_category_id,
+                          gstApplicationScope: parseGstApplicationScope(category.gstApplicationScope),
                           role_ids: category.role_ids ?? category.roles?.map((r) => r.id) ?? [],
                         });
                         setShowCategoryModal(true);
@@ -723,11 +765,32 @@ export function GSTConfigurationManagement() {
                 {editingCategory.id ? 'Edit Tax Category' : 'Add Tax Category'}
               </DialogTitle>
               <DialogDescription>
-                Tie GST to an Admin → Catalogue → Categories entry and the vendor roles allowed for that master
-                category (from specialization mapping).
+                Tie GST to a catalogue master category. Service bookings require at least one vendor role. Meal plan
+                food and delivery fee use separate scopes on the same catalogue category (roles optional).
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>GST applies to</Label>
+                <select
+                  value={editingCategory.gstApplicationScope ?? 'service_booking'}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                    setEditingCategory({
+                      ...editingCategory,
+                      gstApplicationScope: parseGstApplicationScope(e.target.value),
+                    });
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-[#FF8C42] focus:border-[#FF8C42]"
+                >
+                  <option value="service_booking">Service bookings</option>
+                  <option value="meal_plan_food">Meal plan food</option>
+                  <option value="meal_plan_delivery">Meal plan delivery fee</option>
+                </select>
+                <p className="text-xs text-gray-500">
+                  Meal checkout applies food GST to the meal subtotal and delivery GST to the delivery fee (same
+                  catalogue category, different scopes).
+                </p>
+              </div>
               <div className="space-y-2">
                 <Label>Catalogue category</Label>
                 <select
@@ -754,15 +817,21 @@ export function GSTConfigurationManagement() {
               </div>
               <div className="space-y-2">
                 <Label>Applicable Roles</Label>
+                {isMealPlanGstScope(parseGstApplicationScope(editingCategory.gstApplicationScope)) ? (
+                  <p className="text-xs text-gray-600 bg-gray-50 border border-gray-100 rounded-md p-2">
+                    Optional for meal plan scopes: leave all unchecked for one default rate for this catalogue
+                    category, or pick roles for vendor-type-specific GST.
+                  </p>
+                ) : null}
                 {loadingCatalogRoles ? (
                   <p className="text-sm text-gray-500">Loading roles for this category…</p>
                 ) : !(editingCategory.catalogCategoryId ?? editingCategory.catalog_category_id) ? (
                   <p className="text-sm text-gray-500">Select a catalogue category to load roles.</p>
                 ) : catalogRolesOptions.length === 0 ? (
                   <p className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-md p-2">
-                    No roles match this catalogue category (specialization applicable_roles or vendor Service
-                    bucket). Add specs under Catalogue → Categories, set Service on Vendor Roles and
-                    Configuration, or pick another category.
+                    {isMealPlanGstScope(parseGstApplicationScope(editingCategory.gstApplicationScope))
+                      ? 'No roles listed for this category — you can still save a wildcard meal-plan GST row.'
+                      : 'No roles match this catalogue category (specialization applicable_roles or vendor Service bucket). Add specs under Catalogue → Categories, set Service on Vendor Roles and Configuration, or pick another category.'}
                   </p>
                 ) : (
                   <div className="border border-gray-200 rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
@@ -840,7 +909,8 @@ export function GSTConfigurationManagement() {
                 disabled={
                   saving ||
                   !(editingCategory.catalogCategoryId ?? editingCategory.catalog_category_id) ||
-                  !(editingCategory.role_ids ?? []).length
+                  (!isMealPlanGstScope(parseGstApplicationScope(editingCategory.gstApplicationScope)) &&
+                    !(editingCategory.role_ids ?? []).length)
                 }
                 className="bg-[#FF8C42] text-white hover:bg-[#E67A32]"
               >

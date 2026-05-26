@@ -27,7 +27,13 @@ const WEBSOCKET_API_ENDPOINT = process.env.WEBSOCKET_API_ENDPOINT || '';
 // ============================================================================
 
 export interface WebSocketMessage {
-  type: 'order_status_update' | 'pharmacy_broadcast' | 'meal_order_update' | 'delivery_update' | 'notification';
+  type:
+    | 'order_status_update'
+    | 'pharmacy_broadcast'
+    | 'meal_order_update'
+    | 'delivery_update'
+    | 'meal_subscription_delivery_update'
+    | 'notification';
   data: any;
   timestamp: string;
 }
@@ -254,6 +260,27 @@ class WebSocketServiceImpl {
   /**
    * Send delivery tracking update
    */
+  /**
+   * Meal subscription delivery session update (canonical operational ID).
+   */
+  async sendMealSubscriptionDeliveryUpdate(
+    customerId: string,
+    vendorId: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    const message: WebSocketMessage = {
+      type: 'meal_subscription_delivery_update',
+      data,
+      timestamp: new Date().toISOString(),
+    };
+    try {
+      if (customerId) await this.sendToUser(customerId, 'customer', message);
+      if (vendorId) await this.sendToUser(vendorId, 'vendor', message);
+    } catch (error) {
+      console.error('Error sending meal subscription delivery update:', error);
+    }
+  }
+
   async sendDeliveryUpdate(
     orderId: string,
     trackingData: {

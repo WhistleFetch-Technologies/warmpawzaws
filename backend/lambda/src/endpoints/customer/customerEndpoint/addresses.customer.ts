@@ -167,7 +167,7 @@ function coordsFromRow(addr: any): { latitude?: number; longitude?: number } {
       const coords =
         typeof addr.coordinates === 'string' ? JSON.parse(addr.coordinates) : addr.coordinates;
       const la = coords?.lat ?? coords?.latitude;
-      const lo = coords?.lng ?? coords?.longitude;
+      const lo = coords?.lng ?? coords?.longitude ?? coords?.lon;
       if (latitude === undefined && la != null && Number.isFinite(Number(la))) {
         latitude = Number(la);
       }
@@ -207,6 +207,25 @@ function mapAddressRow(addr: any) {
     createdAt: addr.created_at,
     updatedAt: addr.updated_at,
   };
+}
+
+let _hasLatLngColumnsCache: boolean | null = null;
+async function hasCustomerAddressLatLngColumns(): Promise<boolean> {
+  if (_hasLatLngColumnsCache != null) return _hasLatLngColumnsCache;
+  try {
+    const res = await query(
+      `SELECT COUNT(*)::int AS cnt
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'customer_addresses'
+         AND column_name IN ('latitude', 'longitude')`
+    );
+    const cnt = Number(res.rows?.[0]?.cnt || 0);
+    _hasLatLngColumnsCache = cnt >= 2;
+  } catch {
+    _hasLatLngColumnsCache = false;
+  }
+  return _hasLatLngColumnsCache;
 }
 
 export function registerAddressEndpoints(app: Hono) {
@@ -287,6 +306,9 @@ export function registerAddressEndpoints(app: Hono) {
   app.get("/customer/addresses/:addressId", async (c) => {
     try {
       const { addressId } = c.req.param();
+      if (!isValidUUID(addressId)) {
+        return c.json({ error: 'Invalid address id', success: false }, 400);
+      }
       const addresses = await query(
         `SELECT * FROM customer_addresses WHERE id = $1`,
         [addressId]
@@ -460,10 +482,16 @@ export function registerAddressEndpoints(app: Hono) {
         (addressData as any).longitude ?? body.longitude
       );
 
+      const { latitude: rowLat, longitude: rowLng } = resolveLatLngForRow(
+        finalCoordinates,
+        (addressData as any).latitude ?? body.latitude,
+        (addressData as any).longitude ?? body.longitude
+      );
+
       // ✅ FIX: Create address with better error handling
       let address;
       try {
-        address = await insert('customer_addresses', {
+        const insertPayload: Record<string, unknown> = {
           customer_id: customer.id,
           address_type: addressData.label || 'home',
           full_name: addressData.name,
@@ -481,7 +509,12 @@ export function registerAddressEndpoints(app: Hono) {
           street_name: addressData.streetName || null,
           apartment_name: addressData.apartmentName || null,
           is_default: shouldBeDefault,
-        });
+        };
+        if (await hasCustomerAddressLatLngColumns()) {
+          insertPayload.latitude = rowLat;
+          insertPayload.longitude = rowLng;
+        }
+        address = await insert('customer_addresses', insertPayload);
       } catch (insertError: any) {
         console.error('Error inserting address:', insertError);
         console.error('Address data:', JSON.stringify({
@@ -633,8 +666,14 @@ export function registerAddressEndpoints(app: Hono) {
 
       finalCoordinates = ensureCoordinatesJson(finalCoordinates, bodyLat, bodyLng);
 
+      const { latitude: rowLat2, longitude: rowLng2 } = resolveLatLngForRow(
+        finalCoordinates,
+        bodyLat,
+        bodyLng
+      );
+
       // Create address
-      const address = await insert('customer_addresses', {
+      const insertPayload: Record<string, unknown> = {
         customer_id: customer[0].id,
         address_type: label || 'home',
         full_name: name,
@@ -652,7 +691,12 @@ export function registerAddressEndpoints(app: Hono) {
         street_name: streetName,
         apartment_name: apartmentName,
         is_default: shouldBeDefault,
-      });
+      };
+      if (await hasCustomerAddressLatLngColumns()) {
+        insertPayload.latitude = rowLat2;
+        insertPayload.longitude = rowLng2;
+      }
+      const address = await insert('customer_addresses', insertPayload);
 
       // Get all addresses
       const allAddresses = await query(
@@ -710,11 +754,19 @@ export function registerAddressEndpoints(app: Hono) {
 
       // If coordinates are missing, geocode the address
       if (!finalCoordinates) {
-        const addressLine1 = updates.addressLine1 || updates.address_line1;
-        const city = updates.city;
-        const state = updates.state;
-        const pincode = updates.pincode;
-        const addressLine2 = updates.addressLine2 || updates.address_line2;
+        const existingRows = await query(
+          `SELECT address_line1, address_line2, city, state, pincode, coordinates
+           FROM customer_addresses
+           WHERE id = $1 AND customer_id = $2
+           LIMIT 1`,
+          [addressId, customer[0].id]
+        ).catch(() => ({ rows: [] }));
+        const existing = existingRows.rows?.[0] || {};
+        const addressLine1 = updates.addressLine1 || updates.address_line1 || existing.address_line1;
+        const city = updates.city || existing.city;
+        const state = updates.state || existing.state;
+        const pincode = updates.pincode || existing.pincode;
+        const addressLine2 = updates.addressLine2 || updates.address_line2 || existing.address_line2;
 
         if (addressLine1 && city && state && pincode) {
           finalCoordinates = await geocodeAddress(
@@ -725,10 +777,20 @@ export function registerAddressEndpoints(app: Hono) {
             addressLine2
           );
         }
+        if (!finalCoordinates && existing.coordinates) {
+          finalCoordinates = normalizeCoordinates(existing.coordinates);
+        }
       }
 
       const explicitGeo =
         'coordinates' in updates || 'latitude' in updates || 'longitude' in updates;
+      const shouldUpdateGeoColumns = explicitGeo || finalCoordinates != null;
+
+      const { latitude: putLat, longitude: putLng } = resolveLatLngForRow(
+        finalCoordinates,
+        updates.latitude,
+        updates.longitude
+      );
 
       const updatePayload: Record<string, any> = {
         address_type: updates.label || updates.address_type,
@@ -742,12 +804,16 @@ export function registerAddressEndpoints(app: Hono) {
         landmark: updates.landmark,
         is_default: updates.isDefault !== undefined ? updates.isDefault : updates.is_default,
       };
-      if (explicitGeo || finalCoordinates != null) {
+      if (shouldUpdateGeoColumns) {
         updatePayload.coordinates = ensureCoordinatesJson(
           finalCoordinates,
           updates.latitude,
           updates.longitude
         );
+      }
+      if (shouldUpdateGeoColumns && (await hasCustomerAddressLatLngColumns())) {
+        updatePayload.latitude = putLat;
+        updatePayload.longitude = putLng;
       }
       if (updates.flatNo !== undefined || updates.flat_no !== undefined) updatePayload.flat_no = updates.flatNo ?? updates.flat_no;
       if (updates.houseNo !== undefined || updates.house_no !== undefined) updatePayload.house_no = updates.houseNo ?? updates.house_no;

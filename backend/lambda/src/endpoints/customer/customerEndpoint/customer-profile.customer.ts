@@ -27,6 +27,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { presignS3GetUrlIfApplicable, stripS3PresignQueryFromUrl } from '../../../utils/s3-media-presign';
 import { regeneratePresignedUrl } from '../../constants/helper';
+import { getCustomerByPhoneFromMicroservice } from '../../../lib/services/customer-microservice-client';
 import { geocodeAddress, geocodeIndiaPincode } from '../../../lib/utils/geocode';
 /**
  * DB may store bare S3 keys, unsigned HTTPS object URLs, or expired presigned URLs.
@@ -1326,6 +1327,11 @@ export function registerCustomerProfileEndpoints(app: Hono) {
       const phone = c.req.query('phone');
       if (!phone) {
         return c.json({ error: 'Phone number is required' }, 400);
+      }
+
+      const ms = await getCustomerByPhoneFromMicroservice(phone);
+      if (ms.kind === 'hit') {
+        return c.json(ms.body);
       }
 
       const customerId = await resolveCustomerId(phone);

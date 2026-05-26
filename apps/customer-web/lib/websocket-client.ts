@@ -10,8 +10,16 @@
  * ============================================================================
  */
 
+import { getWebSocketBaseUrl } from './api-client';
+
 type WebSocketMessage = {
-  type: 'order_status_update' | 'pharmacy_broadcast' | 'meal_order_update' | 'delivery_update' | 'notification';
+  type:
+    | 'order_status_update'
+    | 'pharmacy_broadcast'
+    | 'meal_order_update'
+    | 'delivery_update'
+    | 'meal_subscription_delivery_update'
+    | 'notification';
   data: any;
   timestamp: string;
 };
@@ -21,6 +29,7 @@ type MessageHandler = (message: WebSocketMessage) => void;
 class WebSocketClient {
   private ws: WebSocket | null = null;
   private url: string;
+  private readonly disabled: boolean;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
@@ -28,16 +37,27 @@ class WebSocketClient {
   private isConnecting = false;
   private connectionId: string | null = null;
 
-  constructor(apiBaseUrl: string, userId: string, userType: 'customer' | 'vendor') {
-    // Convert HTTP API URL to WebSocket URL
-    const wsUrl = apiBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
-    this.url = `${wsUrl}/ws?userId=${userId}&userType=${userType}`;
+  constructor(_apiBaseUrl: string, userId: string, userType: 'customer' | 'vendor') {
+    const base = getWebSocketBaseUrl();
+    if (!base) {
+      this.disabled = true;
+      this.url = '';
+      return;
+    }
+    this.disabled = false;
+    const wsUrl = base.replace('https://', 'wss://').replace('http://', 'ws://');
+    const q = new URLSearchParams({ userId, userType });
+    this.url = `${wsUrl}/ws?${q.toString()}`;
   }
 
   /**
    * Connect to WebSocket server
    */
   connect(): Promise<void> {
+    if (this.disabled) {
+      return Promise.resolve();
+    }
+
     if (this.ws?.readyState === WebSocket.OPEN) {
       return Promise.resolve();
     }
@@ -150,6 +170,25 @@ class WebSocketClient {
     });
   }
 
+  /** Canonical meal subscription delivery session (operational ID). */
+  onMealSubscriptionDeliveryUpdate(
+    mealSubscriptionDeliveryId: string,
+    handler: (data: any) => void,
+  ): () => void {
+    return this.on('meal_subscription_delivery_update', (message) => {
+      if (message.data.mealSubscriptionDeliveryId === mealSubscriptionDeliveryId) {
+        handler(message.data);
+      }
+    });
+  }
+
+  /** All meal subscription delivery updates for this connection (vendor queue / multi-session views). */
+  onMealSubscriptionDeliveryBroadcast(handler: (data: any) => void): () => void {
+    return this.on('meal_subscription_delivery_update', (message) => {
+      handler(message.data);
+    });
+  }
+
   /**
    * Handle incoming message
    */
@@ -171,6 +210,9 @@ class WebSocketClient {
    * Attempt to reconnect
    */
   private attemptReconnect(): void {
+    if (this.disabled) {
+      return;
+    }
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error('[WebSocket] Max reconnect attempts reached');
       return;

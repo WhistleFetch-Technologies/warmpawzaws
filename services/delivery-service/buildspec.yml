@@ -1,0 +1,24 @@
+# CodeBuild — Docker image to ECR + optional ECS rollout
+# Repo root is the CodeBuild workspace; Dockerfile context is this directory.
+
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Account / region"
+      - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - export REPOSITORY_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME"
+      - echo REPOSITORY_URI=$REPOSITORY_URI
+      - aws ecr get-login-password --region "$AWS_DEFAULT_REGION" | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com"
+  build:
+    commands:
+      - echo "Build started $(date)"
+      - docker build --platform linux/amd64 -t "$REPOSITORY_URI:$IMAGE_TAG" -t "$REPOSITORY_URI:latest" -f services/delivery-service/Dockerfile services/delivery-service
+  post_build:
+    commands:
+      - echo "Push images"
+      - docker push "$REPOSITORY_URI:$IMAGE_TAG"
+      - docker push "$REPOSITORY_URI:latest"
+      - echo "Roll ECS ($ECS_CLUSTER / $ECS_SERVICE)"
+      - aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --region "$AWS_DEFAULT_REGION" --force-new-deployment || echo "ECS update failed (optional)"
