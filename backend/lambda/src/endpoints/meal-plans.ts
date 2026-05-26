@@ -47,6 +47,8 @@ import {
   toPublicMealKitchenAvailability,
 } from '../utils/meal-kitchen-availability';
 import { resolveVendorId } from '../utils/vendor-resolve';
+import { getMealOrderVendorLookupIds } from '../utils/meal-order-vendor-lookup';
+import { fetchVendorMealOrdersForVendorIds } from '../utils/fetch-vendor-meal-orders';
 import {
   mealPlanMatchesCustomerMealType,
   mealPlanMatchesCustomerPurpose,
@@ -1482,9 +1484,10 @@ export function registerMealPlanEndpoints(app: Hono) {
       };
 
       const moCols = await mealOrdersTableColumns();
+      const orderVendorId = await resolveVendorId(String(plan.vendor_id ?? ''));
       const mealOrderRow: Record<string, unknown> = {
         customer_id: customerId,
-        vendor_id: plan.vendor_id,
+        vendor_id: orderVendorId || plan.vendor_id,
         meal_plan_id: mealPlanId,
         pet_id: petId,
         order_type: 'adhoc',
@@ -1692,48 +1695,65 @@ export function registerMealPlanEndpoints(app: Hono) {
    */
   app.get("/meal/orders/vendor/:vendorId", async (c) => {
     try {
-      const { vendorId } = c.req.param();
+      const { vendorId: paramVendorId } = c.req.param();
       const status = c.req.query('status');
       const date = c.req.query('date');
 
-      let queryText = `
-        SELECT mo.*, mp.name as meal_name, mp.prep_time_minutes,
-               c.full_name as customer_name, c.phone as customer_phone,
-               p.name as pet_name, p.species as pet_species
-        FROM meal_orders mo
-        JOIN meal_plans mp ON mo.meal_plan_id = mp.id
-        LEFT JOIN customers c ON mo.customer_id = c.id
-        LEFT JOIN pets p ON mo.pet_id = p.id
-        WHERE mo.vendor_id = $1
-      `;
-      const params: any[] = [vendorId];
-      let paramCount = 1;
-
-      if (status) {
-        paramCount++;
-        queryText += ` AND mo.status = $${paramCount}`;
-        params.push(status);
-      }
-
-      if (date) {
-        paramCount++;
-        queryText += ` AND mo.scheduled_delivery_date = $${paramCount}`;
-        params.push(date);
-      }
-
-      queryText += ` ORDER BY mo.scheduled_delivery_date ASC, mo.created_at DESC`;
-
-      const result = await query(queryText, params);
-
-      return c.json({
-        success: true,
-        orders: result.rows.map((o: any) => ({
-          ...o,
-          deliveryAddress: typeof o.delivery_address === 'string' 
-            ? JSON.parse(o.delivery_address) 
-            : o.delivery_address,
-        })),
+      const { allIds } = await getMealOrderVendorLookupIds(paramVendorId);
+      const rows = await fetchVendorMealOrdersForVendorIds(allIds, {
+        status: status || undefined,
+        limit: 100,
       });
+
+      const orders = [];
+      for (const o of rows) {
+        let mealName: string | undefined;
+        let prepTime: number | undefined;
+        if (o.meal_plan_id) {
+          const mp = await query(
+            `SELECT COALESCE(plan_name, name) AS meal_name, prep_time_minutes FROM meal_plans WHERE id = $1 LIMIT 1`,
+            [o.meal_plan_id],
+          ).catch(() => ({ rows: [] }));
+          if (mp.rows?.[0]) {
+            mealName = mp.rows[0].meal_name;
+            prepTime = mp.rows[0].prep_time_minutes;
+          }
+        }
+        let customerName: string | undefined;
+        let customerPhone: string | undefined;
+        if (o.customer_id) {
+          const cr = await query(
+            `SELECT full_name, phone FROM customers WHERE id = $1 LIMIT 1`,
+            [o.customer_id],
+          ).catch(() => ({ rows: [] }));
+          if (cr.rows?.[0]) {
+            customerName = cr.rows[0].full_name;
+            customerPhone = cr.rows[0].phone;
+          }
+        }
+        if (date && String(o.scheduled_delivery_date || '').slice(0, 10) !== String(date).slice(0, 10)) {
+          continue;
+        }
+        orders.push({
+          ...o,
+          meal_name: mealName,
+          prep_time_minutes: prepTime,
+          customer_name: customerName,
+          customer_phone: customerPhone,
+          deliveryAddress:
+            typeof o.delivery_address === 'string'
+              ? (() => {
+                  try {
+                    return JSON.parse(o.delivery_address as string);
+                  } catch {
+                    return o.delivery_address;
+                  }
+                })()
+              : o.delivery_address,
+        });
+      }
+
+      return c.json({ success: true, orders });
     } catch (error: any) {
       console.error('Error fetching vendor orders:', error);
       return c.json({ error: error.message }, 500);

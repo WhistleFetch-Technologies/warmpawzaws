@@ -339,7 +339,8 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   };
   const [acceptedOrderIds, setAcceptedOrderIds] = useState<Set<string>>(getStoredAcceptedOrders());
   /** Which bucket’s order list is shown under the stats on the Orders tab. */
-  const [ordersBucketFilter, setOrdersBucketFilter] = useState<OrdersTabBucketFilter>('today');
+  const [ordersBucketFilter, setOrdersBucketFilter] = useState<OrdersTabBucketFilter>('upcoming');
+  const [ordersFetchError, setOrdersFetchError] = useState<string | null>(null);
   
   // Helper to update both state and localStorage
   const updateAcceptedOrderIds = useCallback((updater: (prev: Set<string>) => Set<string>) => {
@@ -372,9 +373,15 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
 
   const fetchOrders = useCallback(async () => {
     try {
+      setOrdersFetchError(null);
       const response = await apiClient.get(`/vendor/${vendorId}/meal-orders`);
-      if (response && (response as any).success) {
-        const rawList = (response as any).orders || [];
+      const body = response as { success?: boolean; orders?: unknown[]; error?: string };
+      if (body?.success === false) {
+        setOrdersFetchError(body.error || 'Could not load meal orders');
+        return;
+      }
+      if (response && body.success !== false) {
+        const rawList = body.orders || [];
         const fetchedOrders = rawList.map((raw: Record<string, unknown>) => ({
           ...raw,
           vendor_meal_total: coerceVendorMealListingAmount(raw),
@@ -428,6 +435,9 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       }
     } catch (error) {
       console.error('Error fetching orders:', error);
+      setOrdersFetchError(
+        error instanceof Error ? error.message : 'Could not load meal orders',
+      );
     }
   }, [vendorId]);
 
@@ -533,8 +543,12 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     if (!confirmed) return;
     
     try {
-      await apiClient.delete(`/vendor/${vendorId}/meal-products/${productId}`);
-      toast.success('Product deleted successfully');
+      const res = await apiClient.delete<any>(`/vendor/${vendorId}/meal-products/${productId}`);
+      const msg =
+        (res && typeof res === 'object' && 'message' in res && String((res as { message?: string }).message)) ||
+        (res?.data?.message && String(res.data.message)) ||
+        'Product removed';
+      toast.success(msg);
       await fetchProducts();
     } catch (error: any) {
       console.error('Error deleting product:', error);
@@ -1104,6 +1118,11 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
         {/* Orders Tab */}
         {activeTab === 'orders' && (
           <div className="space-y-4">
+            {ordersFetchError ? (
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-800">
+                {ordersFetchError}
+              </div>
+            ) : null}
             {orders.length === 0 ? (
               <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
                 <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-600">
