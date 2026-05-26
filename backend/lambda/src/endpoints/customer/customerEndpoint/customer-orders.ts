@@ -375,6 +375,8 @@ class GetCustomerOrdersHandler extends BaseHandler {
           o.shipping_city,
           o.shipping_state,
           o.shipping_pincode,
+          o.cancelled_at,
+          o.cancellation_reason,
           o.created_at,
           o.updated_at,
           v.business_name as vendor_name,

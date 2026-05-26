@@ -80,8 +80,8 @@ export async function triggerAutoShipment(orderId: string, orderType: string): P
     );
     const autoShipmentEnabled =
       settingsResult.rows.length > 0
-        ? (settingsResult.rows[0].setting_value as { enabled?: boolean })?.enabled !== false
-        : true;
+        ? (settingsResult.rows[0].setting_value as { enabled?: boolean })?.enabled === true
+        : false;
 
     if (!autoShipmentEnabled) {
       console.log(`[AUTO-SHIPMENT] Auto-shipment disabled, skipping for ${orderId}`);
