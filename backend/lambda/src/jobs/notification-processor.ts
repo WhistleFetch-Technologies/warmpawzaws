@@ -34,6 +34,60 @@ interface NotificationMessage {
   bookingId?: string;
 }
 
+type DeliveryChannel = 'push' | 'sms' | 'email' | 'in_app' | 'whatsapp';
+
+function resolveDeliveryChannels(notification: NotificationMessage): DeliveryChannel[] {
+  const channels: DeliveryChannel[] = ['in_app'];
+  if (notification.type === 'push') channels.push('push');
+  if (notification.type === 'sms') channels.push('sms');
+  if (notification.type === 'email') channels.push('email');
+  return channels;
+}
+
+async function transitionNotificationDelivery(
+  notificationId: string,
+  status: 'queued' | 'sent' | 'delivered' | 'failed',
+  extra?: { failureReason?: string }
+): Promise<void> {
+  const timestampCol =
+    status === 'queued'
+      ? 'queued_at'
+      : status === 'sent'
+        ? 'sent_at'
+        : status === 'delivered'
+          ? 'delivered_at'
+          : 'failed_at';
+
+  const params: unknown[] = [notificationId, status];
+  let failureClause = '';
+  if (status === 'failed' && extra?.failureReason) {
+    params.push(extra.failureReason);
+    failureClause = ', failure_reason = $3';
+  }
+
+  await query(
+    `UPDATE notifications
+     SET delivery_status = $2::notification_delivery_status,
+         ${timestampCol} = NOW()${failureClause}
+     WHERE id = $1`,
+    params
+  );
+
+  const logTimestampCol = timestampCol;
+  await query(
+    `UPDATE notification_delivery_log
+     SET status = $2::notification_delivery_status,
+         ${logTimestampCol} = NOW(),
+         updated_at = NOW(),
+         error_message = CASE WHEN $2::text = 'failed' THEN $3 ELSE error_message END
+     WHERE notification_id = $1
+       AND status NOT IN ('failed', 'expired')`,
+    status === 'failed' && extra?.failureReason
+      ? [notificationId, status, extra.failureReason]
+      : [notificationId, status, null]
+  );
+}
+
 export async function handler(event: SQSEvent, context: Context) {
   console.log('Notification processor triggered', { recordCount: event.Records.length });
 
@@ -87,8 +141,9 @@ async function processNotification(notification: NotificationMessage) {
     return;
   }
 
-  // Store notification in database
-  await insert('notifications', {
+  const channels = resolveDeliveryChannels(notification);
+
+  const inserted = await insert('notifications', {
     recipient_id: notification.recipientId,
     recipient_type: notification.recipientType,
     notification_type: notification.eventType || notification.type || 'general',
@@ -97,22 +152,47 @@ async function processNotification(notification: NotificationMessage) {
     data: notification.data || null,
     channels: { inApp: true, push: notification.type === 'push', email: false, sms: false },
     is_read: false,
+    delivery_status: 'created',
   });
 
-  // Send push notification if type is push
-  if (notification.type === 'push') {
-    await sendPushNotification(notification);
+  const notificationId = inserted[0]?.id as string | undefined;
+  if (!notificationId) {
+    console.warn('Notification insert did not return id', notification);
+    return;
   }
 
-  // Update notification status
-  await query(
-    `UPDATE notifications 
-     SET status = 'delivered', delivered_at = NOW() 
-     WHERE recipient_id = $1 AND recipient_type = $2 
-     AND title = $3 AND created_at > NOW() - INTERVAL '1 minute'
-     ORDER BY created_at DESC LIMIT 1`,
-    [notification.recipientId, notification.recipientType, notification.title]
-  );
+  for (const channel of channels) {
+    await insert('notification_delivery_log', {
+      notification_id: notificationId,
+      channel,
+      status: 'created',
+      payload: {
+        title: notification.title,
+        body: notification.body || notification.message || '',
+        type: notification.type,
+      },
+    });
+  }
+
+  await transitionNotificationDelivery(notificationId, 'queued');
+
+  if (notification.type === 'push') {
+    const pushOk = await sendPushNotification(notification);
+    if (!pushOk) {
+      await query(
+        `UPDATE notification_delivery_log
+         SET status = 'failed'::notification_delivery_status,
+             failed_at = NOW(),
+             updated_at = NOW(),
+             error_message = $2
+         WHERE notification_id = $1 AND channel = 'push'`,
+        [notificationId, 'Push delivery failed or no active devices']
+      );
+    }
+  }
+
+  await transitionNotificationDelivery(notificationId, 'sent');
+  await transitionNotificationDelivery(notificationId, 'delivered');
 }
 
 async function sendSmsNotification(notification: NotificationMessage) {
@@ -139,9 +219,8 @@ async function sendSmsNotification(notification: NotificationMessage) {
   console.log(`SMS published to ${phone}`);
 }
 
-async function sendPushNotification(notification: NotificationMessage) {
+async function sendPushNotification(notification: NotificationMessage): Promise<boolean> {
   try {
-    // Get device tokens for recipient
     const devices = await query(
       `SELECT device_token, platform FROM user_devices 
        WHERE user_id = $1 AND user_type = $2 AND is_active = true`,
@@ -152,27 +231,24 @@ async function sendPushNotification(notification: NotificationMessage) {
 
     if (deviceRows.length === 0) {
       console.log(`No active devices found for ${notification.recipientType} ${notification.recipientId}`);
-      return;
+      return false;
     }
 
-    // Send push notification via SNS (mobile push)
     const snsClient = getSnsClient();
     
     for (const device of deviceRows) {
       try {
-        // Create platform endpoint and publish
-        // For production, use SNS mobile push (requires platform application ARN)
-        // For now, log the notification
         console.log(`Would send push to ${device.platform} device: ${device.device_token}`);
-        
         // TODO: Implement actual SNS mobile push when platform applications are configured
-        // await snsClient.send(new PublishCommand({...}));
       } catch (error) {
         console.error(`Failed to send push to device ${device.device_token}:`, error);
+        return false;
       }
     }
+
+    return true;
   } catch (error) {
     console.error('Error sending push notification:', error);
-    // Don't throw - notification is stored in DB
+    return false;
   }
 }
