@@ -39,13 +39,18 @@ function isProductionEnvironment(): boolean {
 
   if (typeof window !== 'undefined' && window.location) {
     const hostname = window.location.hostname;
-    if (hostname === 'd2aoyjj8ine0wk.cloudfront.net' || hostname.startsWith('dev.')) {
+    if (
+      hostname === 'd2aoyjj8ine0wk.cloudfront.net' ||
+      hostname.startsWith('dev.') ||
+      hostname.includes('.dev.warmpawz.com')
+    ) {
       return false;
     }
     if (
       hostname.includes('cloudfront.net') ||
-      hostname.includes('warmpawz.com') ||
-      hostname.includes('customer.warmpawz.com')
+      hostname === 'customer.warmpawz.com' ||
+      hostname === 'www.warmpawz.com' ||
+      hostname === 'warmpawz.com'
     ) {
       return true;
     }
