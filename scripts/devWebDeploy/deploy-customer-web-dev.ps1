@@ -120,9 +120,10 @@ if ($DeployOnly -and (Test-Path "dist")) {
     $env:NEXT_PUBLIC_ENVIRONMENT = "development"
     $env:NEXT_PUBLIC_API_BASE_URL = $ApiGatewayEndpoint
     $env:NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED = $customerEcommerceJs
+    $env:NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED = "true"
     # Run via cmd so Next.js warnings on stderr do not trigger Stop on NativeCommandError
     $buildProc = Start-Process -FilePath "cmd.exe" `
-        -ArgumentList "/c", "npm run build" `
+        -ArgumentList "/c", "set NEXT_PUBLIC_ENVIRONMENT=development&& set NEXT_PUBLIC_API_BASE_URL=$ApiGatewayEndpoint&& set NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=$customerEcommerceJs&& set NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=true&& npm run build" `
         -WorkingDirectory $customerWebDir `
         -Wait -PassThru -NoNewWindow
     if ($buildProc.ExitCode -ne 0) {
@@ -146,14 +147,18 @@ $runtimeConfigPath = Join-Path $distPath "runtime-config.js"
 
 $runtimeConfigContent = (@'
 // Runtime Configuration for Warmpawz customer-web
-// Injected at deployment time with dev API Gateway endpoint
+// Merges into layout inline config (do not replace — stale partial files broke meal plans on dev).
 (function() {
-  window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-    apiBaseUrl: "__API_GATEWAY_ENDPOINT__",
-    uatMode: true,
-    environment: 'development',
-    customerEcommerceEnabled: __CUSTOMER_ECOMMERCE_ENABLED__
-  };
+  window.__WARMPAWZ_RUNTIME_CONFIG__ = Object.assign(
+    window.__WARMPAWZ_RUNTIME_CONFIG__ || {},
+    {
+      apiBaseUrl: "__API_GATEWAY_ENDPOINT__",
+      uatMode: true,
+      environment: "development",
+      customerEcommerceEnabled: __CUSTOMER_ECOMMERCE_ENABLED__,
+      customerMealPlansEnabled: true
+    }
+  );
   console.log('Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
 '@).Replace('__API_GATEWAY_ENDPOINT__', $ApiGatewayEndpoint).Replace('__CUSTOMER_ECOMMERCE_ENABLED__', $customerEcommerceJs)
@@ -164,7 +169,7 @@ Write-Host "  ✅ runtime-config.js created" -ForegroundColor Green
 # Inject inline config into HTML files
 Write-Host "  Injecting inline config into HTML files..." -ForegroundColor Gray
 $htmlFiles = Get-ChildItem -Path $distPath -Filter "*.html" -Recurse
-$inlineConfig = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$ApiGatewayEndpoint', uatMode: true, environment: 'development', customerEcommerceEnabled: $customerEcommerceJs };"
+$inlineConfig = "window.__WARMPAWZ_RUNTIME_CONFIG__ = Object.assign(window.__WARMPAWZ_RUNTIME_CONFIG__ || {}, { apiBaseUrl: '$ApiGatewayEndpoint', uatMode: true, environment: 'development', customerEcommerceEnabled: $customerEcommerceJs, customerMealPlansEnabled: true });"
 $htmlCount = 0
 
 foreach ($htmlFile in $htmlFiles) {
