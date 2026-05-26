@@ -10,6 +10,12 @@ import { CustomerPlacementBanners } from '@/components/customer/shared/CustomerP
 import { AddAddressModal } from '@/components/customer/shared/AddAddressModal';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { useEcommerceCheckout, type CheckoutAddress } from '@/components/customer/ecommerce/useEcommerceCheckout';
+import { CouponSection } from '@/components/customer/shared/CouponSection';
+import {
+  computeCartPricing,
+  readPricingOptionsForCheckout,
+  persistPricingOptionsForCheckout,
+} from '@/lib/ecommerce/cart-pricing';
 import { DeliveryAddressPickerSheet } from '@/components/customer/ecommerce/DeliveryAddressPickerSheet';
 import {
   loadCustomerDeliveryAddresses,
@@ -34,8 +40,13 @@ export function CheckoutView({
 }: CheckoutViewProps) {
   const router = useRouter();
   const { cart, clearCart } = useCart();
-  const { getPricing, placeOrder } = useEcommerceCheckout();
+  const { placeOrder } = useEcommerceCheckout();
   const [selectedAddress, setSelectedAddress] = useState<CheckoutAddress | null>(null);
+  const [sellerCodeCoupon, setSellerCodeCoupon] = useState<{
+    code: string;
+    discountAmount: number;
+    promotionId?: string;
+  } | null>(null);
   const [addresses, setAddresses] = useState<DeliveryAddress[]>([]);
   const [addressesLoading, setAddressesLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -45,8 +56,38 @@ export function CheckoutView({
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   const commerceEnabled = isCustomerEcommerceEnabled();
 
-  const pricing = useMemo(() => getPricing(cart), [cart, getPricing]);
+  const primaryVendorId = useMemo(() => {
+    const id = cart.find((i) => i.vendorId && i.vendorId !== 'default')?.vendorId;
+    return id;
+  }, [cart]);
+
+  const pricing = useMemo(() => {
+    const persisted = readPricingOptionsForCheckout();
+    const codeDiscount =
+      sellerCodeCoupon?.discountAmount ?? persisted.sellerPromotion?.codeDiscount ?? 0;
+    return computeCartPricing(cart, {
+      ...persisted,
+      itemCount: cart.reduce((s, i) => s + i.quantity, 0),
+      sellerPromotion: {
+        autoDiscount: persisted.sellerPromotion?.autoDiscount ?? 0,
+        codeDiscount,
+        label: persisted.sellerPromotion?.label,
+        code: sellerCodeCoupon?.code ?? persisted.sellerPromotion?.code,
+        promotionId: sellerCodeCoupon?.promotionId ?? persisted.sellerPromotion?.promotionId,
+      },
+    });
+  }, [cart, sellerCodeCoupon]);
   const { taxResult } = pricing;
+
+  const appliedSellerCouponForUi = sellerCodeCoupon
+    ? {
+        code: sellerCodeCoupon.code,
+        discountType: 'fixed' as const,
+        discountValue: sellerCodeCoupon.discountAmount,
+        discountAmount: sellerCodeCoupon.discountAmount,
+        promotionId: sellerCodeCoupon.promotionId,
+      }
+    : null;
 
   const refreshAddresses = useCallback(
     async (opts?: { preserveSelection?: boolean; pickDefaultIfMissing?: boolean }) => {
@@ -274,6 +315,47 @@ export function CheckoutView({
             )}
           </div>
 
+          {primaryVendorId && (
+            <div className="mb-4">
+              <CouponSection
+                vendorId={primaryVendorId}
+                orderAmount={pricing.lineSubtotal}
+                orderType="order"
+                appliedCoupon={appliedSellerCouponForUi}
+                onApplyCoupon={(coupon) => {
+                  setSellerCodeCoupon({
+                    code: coupon.code,
+                    discountAmount: coupon.discountAmount,
+                    promotionId: coupon.promotionId,
+                  });
+                  const base = readPricingOptionsForCheckout();
+                  persistPricingOptionsForCheckout({
+                    ...base,
+                    sellerPromotion: {
+                      ...base.sellerPromotion,
+                      codeDiscount: coupon.discountAmount,
+                      code: coupon.code,
+                      promotionId: coupon.promotionId,
+                    },
+                  });
+                }}
+                onRemoveCoupon={() => {
+                  setSellerCodeCoupon(null);
+                  const base = readPricingOptionsForCheckout();
+                  persistPricingOptionsForCheckout({
+                    ...base,
+                    sellerPromotion: {
+                      ...base.sellerPromotion,
+                      codeDiscount: 0,
+                      code: undefined,
+                      promotionId: undefined,
+                    },
+                  });
+                }}
+              />
+            </div>
+          )}
+
           <div className="bg-white rounded-xl p-4 shadow-sm">
             <h2 className="font-semibold text-gray-900 mb-4">Order Summary</h2>
             <div className="space-y-3 mb-4">
@@ -296,12 +378,28 @@ export function CheckoutView({
                 <span className="text-gray-600">Subtotal</span>
                 <span className="text-gray-900">₹{pricing.lineSubtotal.toFixed(2)}</span>
               </div>
-              {pricing.discount > 0 && (
+              {(pricing.couponDiscount ?? 0) > 0 && (
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Discount</span>
-                  <span className="text-green-600">-₹{pricing.discount.toFixed(2)}</span>
+                  <span className="text-gray-600">Coupon discount</span>
+                  <span className="text-green-600">-₹{(pricing.couponDiscount ?? 0).toFixed(2)}</span>
                 </div>
               )}
+              {(pricing.sellerPromotionDiscount ?? 0) > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Store offer</span>
+                  <span className="text-green-600">
+                    -₹{(pricing.sellerPromotionDiscount ?? 0).toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {pricing.discount > 0 &&
+                (pricing.couponDiscount ?? 0) === 0 &&
+                (pricing.sellerPromotionDiscount ?? 0) === 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600">Discount</span>
+                    <span className="text-green-600">-₹{pricing.discount.toFixed(2)}</span>
+                  </div>
+                )}
               {pricing.deliveryFees > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Delivery</span>

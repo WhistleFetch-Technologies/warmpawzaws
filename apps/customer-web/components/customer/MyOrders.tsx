@@ -18,6 +18,8 @@ interface Order {
   estimated_delivery?: string;
   created_at: string;
   delivered_at?: string;
+  cancelled_at?: string;
+  cancellation_reason?: string;
 }
 
 interface OrderItem {
@@ -268,6 +270,13 @@ export function MyOrders({ customerPhone }: MyOrdersProps) {
                   {selectedOrder.estimated_delivery && (
                     <p className="text-sm text-blue-600">ETA: {new Date(selectedOrder.estimated_delivery).toLocaleDateString()}</p>
                   )}
+                </div>
+              )}
+
+              {selectedOrder.status === 'cancelled' && selectedOrder.cancellation_reason && (
+                <div className="bg-red-50 border border-red-100 rounded-xl p-4">
+                  <p className="text-sm text-red-800 font-medium">Order cancelled by seller</p>
+                  <p className="text-sm text-red-700 mt-1">{selectedOrder.cancellation_reason}</p>
                 </div>
               )}
 

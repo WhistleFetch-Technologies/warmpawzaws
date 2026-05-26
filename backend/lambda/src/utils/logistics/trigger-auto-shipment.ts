@@ -19,6 +19,12 @@ export async function triggerAutoShipment(orderId: string, orderType: string): P
         return;
       }
       order = orders[0];
+      if (order.order_status === 'pending') {
+        console.log(
+          `[AUTO-SHIPMENT] Ecommerce order ${orderId} is pending vendor confirmation — skipping`
+        );
+        return;
+      }
       await select('order_items', { order_id: orderId });
       vendorId = order.vendor_id;
     } else if (orderType === 'pharmacy') {
@@ -74,8 +80,8 @@ export async function triggerAutoShipment(orderId: string, orderType: string): P
     );
     const autoShipmentEnabled =
       settingsResult.rows.length > 0
-        ? (settingsResult.rows[0].setting_value as { enabled?: boolean })?.enabled !== false
-        : true;
+        ? (settingsResult.rows[0].setting_value as { enabled?: boolean })?.enabled === true
+        : false;
 
     if (!autoShipmentEnabled) {
       console.log(`[AUTO-SHIPMENT] Auto-shipment disabled, skipping for ${orderId}`);

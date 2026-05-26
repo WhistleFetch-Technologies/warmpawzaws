@@ -30,7 +30,9 @@ import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
-import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
+import { setLineQuantityInWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
+import { resolveVendorIdFromProduct } from '@/lib/ecommerce/seller-promotions';
+import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import { toast } from 'sonner';
 
 interface ProductDetailPageProps {
@@ -161,8 +163,7 @@ export function ProductDetailPage({
   };
 
   const handleBuyNow = () => {
-    const cartItem = buildCartItemForContext();
-    if (!cartItem || !product) return;
+    if (!product) return;
 
     const lineId = String(
       canonicalProductId(product) ||
@@ -192,7 +193,10 @@ export function ProductDetailPage({
     else if (product.image_url) images = [product.image_url];
     else if (product.primary_image) images = [product.primary_image];
 
-    const persisted = mergeLineIntoWarmpawzCartStorage({
+    // Persist the selected quantity only (matches shop PDP). Avoid merge + addToCart:
+    // merge wrote `warmpawz_cart` and emitted `cart-updated`; addToCart would add the
+    // same quantity again on top of the reloaded line (doubling).
+    const persisted = setLineQuantityInWarmpawzCartStorage({
       lineId,
       quantity,
       product: {
@@ -212,7 +216,6 @@ export function ProductDetailPage({
       return;
     }
 
-    addToCart(cartItem);
     router.push('/cart?buynow=1');
   };
 
@@ -389,6 +392,12 @@ export function ProductDetailPage({
               </>
             )}
           </div>
+
+          <SellerProductPromotions
+            vendorId={resolveVendorIdFromProduct(product)}
+            vendorName={product.vendor_name || product.vendor?.name}
+            className="px-4"
+          />
 
           {/* Tax Info */}
           <div className="flex items-center gap-2 text-xs text-gray-500">
