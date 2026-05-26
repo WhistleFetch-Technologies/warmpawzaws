@@ -15,6 +15,7 @@ import {
   fetchVendorNeedsPasswordSetup,
   WARMPAWZ_VENDOR_PROFILE_SUBMITTED_EVENT,
 } from '../VendorSetPasswordGate';
+import { bootstrapPushNotifications, teardownPushNotifications } from '@/lib/push-bootstrap';
 import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
 import { VendorAppProps, VendorSession, VendorStatus } from './constants/interface';
@@ -112,6 +113,18 @@ export function VendorApp({ initialSession }: VendorAppProps) {
       validateVendorWithBackend();
     }
   }, []);
+
+  useEffect(() => {
+    if (status !== 'active') return;
+    const vendorId = resolveVendorId();
+    if (!vendorId) return;
+    bootstrapPushNotifications({
+      userId: vendorId,
+      userType: 'vendor',
+      vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+      apiClient,
+    });
+  }, [status]);
 
   useEffect(() => {
     if (hasCheckedStatus.current || isCheckingStatus.current) return;
@@ -983,7 +996,11 @@ export function VendorApp({ initialSession }: VendorAppProps) {
     setStatus('new');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const vendorId = resolveVendorId();
+    if (vendorId) {
+      await teardownPushNotifications({ userId: vendorId, userType: 'vendor' });
+    }
     localStorage.removeItem('vendorPhone');
     localStorage.removeItem('authToken');
     localStorage.removeItem('vendorData');

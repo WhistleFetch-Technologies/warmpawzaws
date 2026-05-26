@@ -28,6 +28,7 @@ import { select, query, insert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
+import { resolveBookingPaymentSourcesBatch } from '../../../utils/payments/booking-payment-sources';
 import {
   DEFAULT_CUSTOMER_NOTIFICATION_SETTINGS,
   fetchCustomerNotificationSettings,
@@ -494,6 +495,10 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
       //   Tier 2 – Razorpay API: pending payment with razorpay_order_id → check Razorpay if actually paid
       await reconcileBookingPayments(bookings.rows);
 
+      const paymentSourcesByBooking = await resolveBookingPaymentSourcesBatch(
+        bookings.rows.map((b: any) => ({ id: b.id, total_amount: b.total_amount }))
+      );
+
       const rawRows = bookings.rows || [];
       const enrichedBookings = await Promise.all(
         rawRows.map(async (b: any) => {
@@ -520,7 +525,12 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
               }
             }
           }
-          return { ...b, completion_otp, ...packageFieldsFromBookingRow(b) };
+          return {
+            ...b,
+            completion_otp,
+            paymentSources: paymentSourcesByBooking.get(b.id) || [],
+            ...packageFieldsFromBookingRow(b),
+          };
         })
       );
 

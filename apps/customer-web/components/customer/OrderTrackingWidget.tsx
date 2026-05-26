@@ -21,6 +21,7 @@ import { useState, useEffect } from 'react';
 import { MapPin, Clock, Package, CheckCircle2, Circle, Navigation, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
+import { resolveEffectiveMealDeliveryState } from '@warmpawz/shared-types';
 
 interface OrderTrackingWidgetProps {
   orderId: string;
@@ -46,6 +47,7 @@ export function OrderTrackingWidget({
 }: OrderTrackingWidgetProps) {
   const [loading, setLoading] = useState(true);
   const [tracking, setTracking] = useState<any>(null);
+  const [mealOrderStatus, setMealOrderStatus] = useState<string | undefined>(undefined);
   const [eta, setEta] = useState<number | null>(null);
 
   useEffect(() => {
@@ -78,6 +80,7 @@ export function OrderTrackingWidget({
       if (response.success) {
         const tr = response.tracking || response;
         setTracking(tr);
+        setMealOrderStatus(response.order?.status ?? response.order?.order_status);
         setEta(tr?.eta ?? tr?.etaToDelivery ?? null);
         setLoading(false);
       }
@@ -91,9 +94,27 @@ export function OrderTrackingWidget({
     return null;
   }
 
-  const statusForStep = tracking.status === 'confirmed' ? 'accepted' : tracking.status === 'ready_for_pickup' ? 'ready' : tracking.status;
+  const effectiveMeal =
+    orderType === 'meal'
+      ? resolveEffectiveMealDeliveryState(mealOrderStatus, tracking?.status)
+      : null;
+
+  const stepDriver =
+    orderType === 'meal' && effectiveMeal ? effectiveMeal : tracking.status;
+
+  const statusForStep =
+    stepDriver === 'confirmed'
+      ? 'accepted'
+      : stepDriver === 'ready_for_pickup'
+        ? 'ready'
+        : stepDriver;
   const currentStepIndex = TRACKING_STEPS.findIndex(step => step.id === statusForStep);
-  const isActive = ['picked_up', 'on_the_way'].includes(tracking.status);
+  const isActive =
+    orderType === 'meal' && effectiveMeal
+      ? effectiveMeal === 'picked_up' || effectiveMeal === 'on_the_way'
+      : ['picked_up', 'on_the_way'].includes(tracking.status);
+
+  const showEta = Boolean(eta) && !(orderType === 'meal' && effectiveMeal === 'delivered');
 
   return (
     <div className="fixed bottom-0 left-0 right-0 z-[100] bg-white border-t-2 border-gray-200 shadow-2xl max-w-customer mx-auto">
@@ -151,7 +172,7 @@ export function OrderTrackingWidget({
         </div>
 
         {/* ETA */}
-        {eta && (
+        {showEta && (
           <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 flex items-center gap-3">
             <Clock className="w-5 h-5 text-orange-600" />
             <div>

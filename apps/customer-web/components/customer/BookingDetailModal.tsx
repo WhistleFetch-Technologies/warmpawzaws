@@ -14,6 +14,8 @@ import { CommunicationHub } from '../communication/CommunicationHub';
 import { LiveTrackingMap } from '../tracking/LiveTrackingMap';
 import { FollowUpBookingModal } from './FollowUpBookingModal';
 import { RateServiceModal } from './RateServiceModal';
+import { PaymentSourcesDisplay } from './payment/PaymentSourcesDisplay';
+import { normalizePaymentSources } from '@/lib/payment-display-utils';
 
 interface BookingDetailModalProps {
   bookingId: string;
@@ -371,6 +373,9 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           : (rawBooking.selectedServices ?? (Array.isArray(rawBooking.selected_services) ? rawBooking.selected_services : [])),
         totalDurationMinutes: rawBooking.totalDurationMinutes ?? rawBooking.total_duration_minutes,
         totalAmount: rawBooking.totalAmount ?? rawBooking.total_amount ?? rawBooking.amount,
+        paymentSources: normalizePaymentSources(
+          rawBooking.paymentSources ?? rawBooking.payment_sources
+        ),
         // Video call - map snake_case for tele consultations
         meetingId: rawBooking.meetingId || rawBooking.video_call_meeting_id,
         packagePurchaseId: rawBooking.packagePurchaseId || rawBooking.package_purchase_id,
@@ -848,6 +853,18 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 )}
               </div>
             </div>
+
+            {/* Payment breakdown */}
+            {booking.paymentSources?.length > 0 &&
+              (booking.paymentStatus === 'paid' ||
+                booking.payment_status === 'paid' ||
+                booking.paymentStatus === 'completed' ||
+                booking.payment_status === 'completed') && (
+              <PaymentSourcesDisplay
+                sources={booking.paymentSources}
+                totalPaid={booking.totalAmount ?? booking.price}
+              />
+            )}
 
             {/* Pet Information */}
             <div className="bg-white border border-gray-200 rounded-2xl p-5 space-y-3">

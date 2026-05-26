@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "771876271254",
+    "project_id": "warmpawz-b9baf",
+    "storage_bucket": "warmpawz-b9baf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:771876271254:android:7512c4e440d64590f1beb7",
+        "android_client_info": {
+          "package_name": "com.warmpawz.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxG_4GAk1-bn9UlKCXltTIglDTaM_W65A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

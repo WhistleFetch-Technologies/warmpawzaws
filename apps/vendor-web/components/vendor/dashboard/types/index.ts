@@ -67,6 +67,7 @@ export interface ScheduleItem {
     petBreed?: string;
     customerName: string;
     customerPhone: string;
+    customerId?: string;
     serviceName: string;
     serviceType: string;
     status: string;

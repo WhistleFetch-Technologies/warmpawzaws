@@ -27,6 +27,7 @@ import { createPharmacyOrderRequestSchema, approveInvoiceRequestSchema } from '.
 import { uuidSchema } from '../../../middleware/validation-middleware';
 import { verifyPayment, requiresPayment } from '../../../utils/payments/payment-verification-service';
 import { getFeeGlobalsMap } from '../../../utils/admin-fee-settings-db';
+import { computePolicyDeliveryFeeForOrder } from '../../../utils/customer-delivery-fee-quote';
 
 // Haversine formula to calculate distance between two points
 function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -40,34 +41,21 @@ function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
   return R * c;
 }
 
-// Calculate delivery fee based on logistics rules
-async function calculateDeliveryFee(distanceKm: number): Promise<number> {
-  try {
-    const rules = await query(
-      `SELECT * FROM logistics_rules 
-       WHERE is_active = true 
-       AND 'pharmacy' = ANY(applies_to)
-       AND (min_distance_km <= $1 AND (max_distance_km IS NULL OR max_distance_km >= $1))
-       ORDER BY rule_type = 'slab' DESC, min_distance_km ASC
-       LIMIT 1`,
-      [distanceKm]
-    );
-
-    if (rules.rows.length > 0) {
-      const rule = rules.rows[0];
-      if (rule.rule_type === 'slab') {
-        return parseFloat(rule.base_fee);
-      } else if (rule.rule_type === 'per_km') {
-        return parseFloat(rule.base_fee) + (distanceKm * parseFloat(rule.per_km_rate));
-      }
-    }
-
-    // Default fee if no rule found
-    return 50;
-  } catch (error) {
-    console.error('Error calculating delivery fee:', error);
-    return 50;
+// Calculate delivery fee from customer delivery fee policy (single source of truth)
+async function calculateDeliveryFee(
+  distanceKm: number,
+  orderSubtotalInr = 0,
+  logisticsType: string = 'warmpawz'
+): Promise<number> {
+  const quote = await computePolicyDeliveryFeeForOrder({
+    orderSubtotalInr,
+    distanceKm,
+    logisticsType,
+  });
+  if (!quote.success || quote.deliveryFeeInr == null) {
+    throw new Error(quote.message || 'Delivery fee unavailable for this location.');
   }
+  return quote.deliveryFeeInr;
 }
 
 // ✅ FIX GAP 6.1 & 6.2: Get configurable platform and convenience fees from admin settings
@@ -227,7 +215,7 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       const maxRadiusKm = steps.length > 0 ? steps[steps.length - 1] : 20;
 
       // Estimate delivery fee (will be finalized when pharmacy accepts)
-      const estimatedDeliveryFee = await calculateDeliveryFee(initialRadiusKm);
+      const estimatedDeliveryFee = await calculateDeliveryFee(initialRadiusKm, subtotal, logisticsType);
 
       // ✅ FIX GAP 6.1 & 6.2: Get configurable platform and convenience fees
       const platformFee = await calculatePlatformFee(subtotal, 'pharmacy');
@@ -451,7 +439,11 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
       });
 
       // Calculate final delivery fee
-      const finalDeliveryFee = quotedDeliveryFee || await calculateDeliveryFee(broadcast.distance_from_customer);
+      const finalDeliveryFee = quotedDeliveryFee || await calculateDeliveryFee(
+        broadcast.distance_from_customer,
+        parseFloat(order.subtotal || '0'),
+        useOwnLogistics ? 'own' : 'warmpawz'
+      );
       const logisticsType = useOwnLogistics ? 'own' : 'warmpawz';
       const logisticsCost = logisticsType === 'warmpawz' ? finalDeliveryFee : 0;
 
@@ -647,7 +639,11 @@ export function registerPharmacyOrderEndpoints(app: Hono) {
         quoted_eta_minutes: quotedEtaMinutes,
       });
 
-      const finalDeliveryFee = quotedDeliveryFee ?? await calculateDeliveryFee(broadcastRow.distance_from_customer);
+      const finalDeliveryFee = quotedDeliveryFee ?? await calculateDeliveryFee(
+        broadcastRow.distance_from_customer,
+        parseFloat(order.subtotal || '0'),
+        useOwnLogistics ? 'own' : 'warmpawz'
+      );
       const logisticsType = useOwnLogistics ? 'own' : 'warmpawz';
       const logisticsCost = logisticsType === 'warmpawz' ? finalDeliveryFee : 0;
       const subtotal = parseFloat(order.subtotal) || 0;
@@ -2417,7 +2413,7 @@ export function registerAdditionalPharmacyEndpoints(app: Hono) {
         sum + (item.quantity * item.unit_price), 0
       );
 
-      const estimatedDeliveryFee = await calculateDeliveryFee(5);
+      const estimatedDeliveryFee = await calculateDeliveryFee(5, orderSubtotal, logisticsType);
       const platformFee = await calculatePlatformFee(orderSubtotal, 'pharmacy');
       const convenienceFee = await getConvenienceFee('pharmacy');
 

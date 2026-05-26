@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { bootstrapPushNotifications, teardownPushNotifications } from '@/lib/push-bootstrap';
+import { apiClient } from '@/lib/api-client';
 import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
 import { CustomerBookingMessagesModalProvider } from './messaging/CustomerBookingMessagesModalProvider';
 
@@ -45,9 +47,30 @@ export function CustomerApp({
     setIsLoading(false);
   }, [initialSession]);
 
-  const handleLogoutNavigate = (screen: string) => {
+  useEffect(() => {
+    if (isLoading) return;
+    const userId =
+      session.customerId ||
+      (typeof window !== 'undefined' ? (localStorage.getItem('customerId') ?? '') : '');
+    if (!userId) return;
+    bootstrapPushNotifications({
+      userId,
+      userType: 'customer',
+      vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+      apiClient,
+    });
+  }, [isLoading, session.customerId]);
+
+  const handleLogoutNavigate = async (screen: string) => {
     if (screen === 'logout') {
       if (typeof window !== 'undefined') {
+        const userId =
+          session.customerId ||
+          localStorage.getItem('customerId') ||
+          '';
+        if (userId) {
+          await teardownPushNotifications({ userId, userType: 'customer' });
+        }
         localStorage.removeItem('customerPhone');
         localStorage.removeItem('customerId');
         localStorage.removeItem('authToken');

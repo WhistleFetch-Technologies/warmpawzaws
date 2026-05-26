@@ -48,7 +48,7 @@ import { normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
 import { PetSitterServiceRouter } from '../PetSitterServiceRouter';
 import { AdoptionServiceRouter } from '../AdoptionServiceRouter';
 import { SunsetServiceRouter } from '../SunsetServiceRouter';
-import { CustomerProfile } from '../CustomerProfile';
+import { CustomerProfileView } from '../CustomerProfileView';
 import { PetProfile } from '../PetProfile';
 import { PetProfileDashboard } from '../PetProfileDashboard';
 import { InsuranceServicesLanding } from '../InsuranceServicesLanding';
@@ -77,6 +77,7 @@ import { SupportHelpCenter } from '../SupportHelpCenter';
 import { OrderTrackingView } from '../OrderTrackingView';
 import { ProblemCategoryMapper } from '../../admin/ProblemCategoryMapper';
 import { apiClient } from '@/lib/api-client';
+import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
@@ -143,7 +144,9 @@ import { CustomerPlacementBanners } from '../shared/CustomerPlacementBanners';
 import { ServicesByProblem } from '../ServicesByProblem';
 import { ProblemGridFlowRouter, type VendorProfileFromProblemContext } from '../ProblemGridFlowRouter';
 import { MealPlansList } from '../nutrition/MealPlansList';
+import { ExpertNutritionistsList } from '../nutrition/ExpertNutritionistsList';
 import { MealOrderCheckout } from '../nutrition/MealOrderCheckout';
+import { MealPlanOrdersPanel } from '../meal-plans/MealPlanOrdersPanel';
 import { NutritionistTeleRouter } from '../nutrition/NutritionistTeleRouter';
 import { NutritionistBookingRouter } from '../nutrition/NutritionistBookingRouter';
 import { DietConsultationVendors } from '../nutrition/DietConsultationVendors';
@@ -309,9 +312,11 @@ type ScreenType =
   | 'nutrition-meal-plans'
   | 'meal-order-checkout'
   | 'meal-order-tracking'
+  | 'meal-plan-orders'
   | 'nutritionist-tele'
   | 'nutritionist-booking'
   | 'diet-consultation-services'
+  | 'expert-nutritionists'
   | 'pharmacy_order_flow'
   | 'pharmacy_order_status'
   | 'behaviorist'
@@ -409,6 +414,9 @@ export function CustomerHomeWrapper({
 
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
+  const [mealOrderTrackingBackScreen, setMealOrderTrackingBackScreen] = useState<
+    'nutrition-meal-plans' | 'meal-plan-orders'
+  >('nutrition-meal-plans');
   const [selectedProblem, setSelectedProblem] = useState<{
     id: string;
     title: string;
@@ -436,6 +444,11 @@ export function CustomerHomeWrapper({
   /** `vet` → Diagnostic Labs: header back should return here, not home (set only from `handleVetNavigate` lab path). */
   const [labDiagnosticsReturnScreen, setLabDiagnosticsReturnScreen] = useState<ScreenType | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
+  /** Meal plans drill-down: vendor catalog (`GET /meal-plans/vendor/:id`) */
+  const [mealPlanVendorFocus, setMealPlanVendorFocus] = useState<{
+    vendorId: string;
+    vendorSnapshot?: Record<string, unknown>;
+  } | null>(null);
   /** Home Services hub → {@link UniversalHomeServiceRouter} (training, walker, grooming at home, etc.). */
   const [selectedHomeServiceType, setSelectedHomeServiceType] = useState<
     'walker' | 'grooming' | 'training' | 'veterinary' | 'behaviourist' | 'sitter' | 'diagnostics'
@@ -476,6 +489,8 @@ export function CustomerHomeWrapper({
    */
   const trainingCenterOpenedWithEmbedRef = useRef(false);
   const trainingHomeOpenedWithEmbedRef = useRef(false);
+  /** My Profile from account sidebar: back reopens menu instead of generic handleBack. */
+  const profileFromAccountMenuRef = useRef(false);
   /** After opening grooming/training style hub from problem-grid discovery, full back returns here instead of the service hub. */
   const [returnToProblemGridFromStyleHub, setReturnToProblemGridFromStyleHub] = useState(false);
   /**
@@ -602,15 +617,23 @@ export function CustomerHomeWrapper({
     [router, pathname]
   );
 
-  // Deep link: /?service=tele → full-page tele booking with instant auto-pay (re-run when query string changes)
+  // Deep link: /?service=tele → instant auto-pay when enabled; otherwise scheduled vet tele
   const homeTeleSearchKey = searchParams.toString();
   useEffect(() => {
     const sp = new URLSearchParams(homeTeleSearchKey);
     if (sp.get('service') !== 'tele') return;
     const url = buildTeleInstantAutoPayBookingUrl();
-    console.log('[CustomerHomeWrapper] service=tele in URL → redirect to instant auto-pay booking:', url);
-    router.replace(url);
-  }, [router, homeTeleSearchKey]);
+    if (url) {
+      console.log('[CustomerHomeWrapper] service=tele in URL → redirect to instant auto-pay booking:', url);
+      router.replace(url);
+      return;
+    }
+    setTeleSkipToScheduled(true);
+    setCurrentScreen('vet-tele-consultation');
+    sp.delete('service');
+    const qs = sp.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [router, pathname, homeTeleSearchKey]);
 
   const prevScreenForTeleRef = useRef<ScreenType | null>(null);
   useEffect(() => {
@@ -1245,6 +1268,21 @@ export function CustomerHomeWrapper({
     }
   };
 
+  const rememberWalletHubOriginIfNeeded = () => {
+    if (currentScreen === 'wallet') {
+      setPreviousScreen('wallet');
+    }
+  };
+
+  const backFromWalletHubChild = () => {
+    if (previousScreen === 'wallet') {
+      setCurrentScreen('wallet');
+      setPreviousScreen(null);
+      return;
+    }
+    backToAccountMenu();
+  };
+
   const handleAccountNavigate = (path: string) => {
     setUserSidebarOpen(false);
     if (path === 'home') setCurrentScreen('home');
@@ -1259,10 +1297,15 @@ export function CustomerHomeWrapper({
     else if (path === 'account/addresses') setCurrentScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') setCurrentScreen('wallet');
     else if (path === 'my-packages') router.push('/my-packages');
-    else if (path === 'rewards-loyalty') setCurrentScreen('rewards-loyalty');
-    else if (path === 'referral-system') setCurrentScreen('referral-system');
-    else if (path === 'appointments') setCurrentScreen('appointments');
+    else if (path === 'rewards-loyalty') {
+      rememberWalletHubOriginIfNeeded();
+      setCurrentScreen('rewards-loyalty');
+    } else if (path === 'referral-system') {
+      rememberWalletHubOriginIfNeeded();
+      setCurrentScreen('referral-system');
+    } else if (path === 'appointments') setCurrentScreen('appointments');
     else if (path === 'support_help' || path === 'help') {
+      rememberWalletHubOriginIfNeeded();
       setCurrentScreen('support_help');
     } else if (path === 'promotions' || path === 'offers') {
       rememberPromotionsBackSpaScreen(currentScreen);
@@ -1449,20 +1492,19 @@ export function CustomerHomeWrapper({
     navigateBackToPreviousOr(handleBack);
   };
 
-  /** From profile / profile-tab: remember origin when opening full bookings list. */
-  const handleCustomerProfileScreenNavigate = (screen: string) => {
-    if (screen === 'bookings') {
-      setPreviousScreen(currentScreen);
-      setCurrentScreen('bookings');
-      return;
-    }
-    setCurrentScreen(screen as ScreenType);
-  };
-
   /** Profile / account full-screen pages: Back returns to home with account sidebar open (not full shell reset). */
   const backToAccountMenu = () => {
     setCurrentScreen('home');
     setUserSidebarOpen(true);
+  };
+
+  const handleCustomerProfileBack = () => {
+    if (profileFromAccountMenuRef.current) {
+      profileFromAccountMenuRef.current = false;
+      backToAccountMenu();
+      return;
+    }
+    handleBack();
   };
 
   const navigateToPets = () => {
@@ -1537,7 +1579,8 @@ export function CustomerHomeWrapper({
         onViewMyPackages={() => router.push('/my-packages')}
         onViewProfile={() => {
           setUserSidebarOpen(false);
-          router.push('/profile');
+          profileFromAccountMenuRef.current = true;
+          setCurrentScreen('customer-profile');
         }}
         onNavigate={handleAccountNavigate}
       />
@@ -1612,6 +1655,10 @@ export function CustomerHomeWrapper({
             if (screen === 'order-tracking') {
               const orderId = data?.orderId;
               if (data?.orderType === 'meal' && orderId) {
+                if (!isCustomerMealPlansEnabled()) {
+                  toast.info('Meal order tracking is coming soon.');
+                  return;
+                }
                 setSelectedBookingId(orderId);
                 setCurrentScreen('meal-order-tracking');
               } else if (orderId) {
@@ -1764,17 +1811,13 @@ export function CustomerHomeWrapper({
     );
   }
 
-  // ✅ UPDATED: Customer Profile with navigation
   if (currentScreen === 'customer-profile') {
     return (
-      <CustomerScreenWrapper 
-        currentScreen={currentScreen}
-        onNavigate={handleBottomNav}
-        onProfileClick={handleProfileClick}
-        accountSidebar={accountSidebarOverlay}
-      >
-        <CustomerProfile phone={phone} onBack={handleBack} onNavigate={handleCustomerProfileScreenNavigate} />
-      </CustomerScreenWrapper>
+      <CustomerProfileView
+        phone={phone}
+        onBack={handleCustomerProfileBack}
+        onCloseToHome={handleBack}
+      />
     );
   }
   if (currentScreen === 'pet-profile' && selectedPetData)
@@ -3069,6 +3112,21 @@ export function CustomerHomeWrapper({
           onBack={handleBack} 
           onNavigate={(screen, data) => {
             if (screen === 'nutrition-meal-plans') {
+              if (!isCustomerMealPlansEnabled()) {
+                toast.info('Meal plans are coming soon.');
+                return;
+              }
+              if (data?.vendorId) {
+                setMealPlanVendorFocus({
+                  vendorId: String(data.vendorId),
+                  vendorSnapshot:
+                    data.vendorSnapshot && typeof data.vendorSnapshot === 'object'
+                      ? (data.vendorSnapshot as Record<string, unknown>)
+                      : undefined,
+                });
+              } else {
+                setMealPlanVendorFocus(null);
+              }
               setCurrentScreen('nutrition-meal-plans');
             } else if (screen === 'diet-consultation-services') {
               setPreviousScreen('nutritionist');
@@ -3155,6 +3213,8 @@ export function CustomerHomeWrapper({
         <MealPlansList 
           phone={phone} 
           onBack={() => setCurrentScreen('nutritionist')} 
+          vendorFocus={mealPlanVendorFocus}
+          onExitVendorFocus={() => setMealPlanVendorFocus(null)}
           onNavigate={(screen, data) => {
             if (screen === 'meal-order-checkout') {
               setSelectedVendorId(data?.vendorId);
@@ -3166,6 +3226,19 @@ export function CustomerHomeWrapper({
               setCurrentScreen('create-booking');
             } else if (screen === 'pets') {
               navigateToPets();
+            } else if (screen === 'nutrition-meal-plans') {
+              if (data?.vendorId) {
+                setMealPlanVendorFocus({
+                  vendorId: String(data.vendorId),
+                  vendorSnapshot:
+                    data.vendorSnapshot && typeof data.vendorSnapshot === 'object'
+                      ? (data.vendorSnapshot as Record<string, unknown>)
+                      : undefined,
+                });
+              } else {
+                setMealPlanVendorFocus(null);
+              }
+              setCurrentScreen('nutrition-meal-plans');
             } else {
               setCurrentScreen(screen as any);
             }
@@ -3184,6 +3257,7 @@ export function CustomerHomeWrapper({
         onSuccess={(orderId) => {
           toast.success('Order placed successfully');
           setSelectedBookingId(orderId);
+          setMealOrderTrackingBackScreen('nutrition-meal-plans');
           setCurrentScreen('meal-order-tracking');
         }}
       />
@@ -3194,7 +3268,20 @@ export function CustomerHomeWrapper({
       <OrderTrackingScreen
         orderId={selectedBookingId}
         orderType="meal"
-        onBack={() => setCurrentScreen('nutrition-meal-plans')}
+        onBack={() => setCurrentScreen(mealOrderTrackingBackScreen)}
+      />
+    );
+  }
+  if (currentScreen === 'meal-plan-orders') {
+    return (
+      <MealPlanOrdersPanel
+        fixedCustomerPhone={phone}
+        onBack={() => setCurrentScreen('my-bookings')}
+        onTrackOrder={(orderId) => {
+          setSelectedBookingId(orderId);
+          setMealOrderTrackingBackScreen('meal-plan-orders');
+          setCurrentScreen('meal-order-tracking');
+        }}
       />
     );
   }
@@ -3940,7 +4027,7 @@ export function CustomerHomeWrapper({
     return (
       <SupportHelpCenter
         phone={phone}
-        onBack={backToAccountMenu}
+        onBack={backFromWalletHubChild}
         onChatbotNavigate={handleSupportHelpChatbotNavigate}
       />
     );
@@ -3983,12 +4070,12 @@ export function CustomerHomeWrapper({
     onBack={() => setCurrentScreen('order_detail')}
   />;
 
-  // Rewards & Loyalty
+  // Rewards & Points
   if (currentScreen === 'rewards-loyalty')
     return (
       <RewardsLoyaltyPage
         customerPhone={phone}
-        onBack={backToAccountMenu}
+        onBack={backFromWalletHubChild}
         onCloseToHome={handleBack}
       />
     );
@@ -3999,7 +4086,7 @@ export function CustomerHomeWrapper({
       <ReferralSystemPage
         customerPhone={phone}
         customerId={phone}
-        onBack={backToAccountMenu}
+        onBack={backFromWalletHubChild}
         onCloseToHome={handleBack}
       />
     );
@@ -4098,12 +4185,9 @@ export function CustomerHomeWrapper({
       />
     );
   }
-  // profile: map to customer-profile (e.g. from VetBookingRouter tab)
-  if (currentScreen === 'profile') return (
-    <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-      <CustomerProfile phone={phone} onBack={handleBack} onNavigate={handleCustomerProfileScreenNavigate} />
-    </CustomerScreenWrapper>
-  );
+  if (currentScreen === 'profile') {
+    return <CustomerProfileView phone={phone} onBack={handleBack} onCloseToHome={handleBack} />;
+  }
 
   // Emergency Booking
   if (currentScreen === 'emergency-booking') return <EmergencyBookingPage

@@ -178,7 +178,7 @@ export function DietConsultationVendors({ phone, onBack, onNavigate }: DietConsu
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col bg-gray-50 pb-24">
       {/* Orange only on the header band; neutral outer bg avoids seam and footer orange block */}
-      <div className="shrink-0 bg-[#FF8C42] px-6 pt-12 pb-10">
+      <div className="shrink-0 bg-[#FF8C42] px-6 cw-header-safe-top pb-10">
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}

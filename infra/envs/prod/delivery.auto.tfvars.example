@@ -1,0 +1,12 @@
+# Copy to delivery.auto.tfvars (gitignored) before first prod delivery apply.
+#
+# Image build (recommended): CodeBuild after terraform apply with delivery_codebuild_* below:
+#   ./scripts/start-delivery-codebuild-prod.sh
+# CodeBuild builds from GitHub, pushes warmpawz-prod-delivery-svc:latest, rolls ECS.
+
+enable_delivery_stack = true
+delivery_service_image = "057442119249.dkr.ecr.ap-south-1.amazonaws.com/warmpawz-prod-delivery-svc:latest"
+delivery_hibernate_ddl_auto = "validate"
+
+# Required so Terraform does NOT strip vendor/customer/admin.warmpawz.com from CloudFront:
+# prod_cloudfront_certificate_arn = "arn:aws:acm:us-east-1:057442119249:certificate/02b216e5-4696-409a-b595-a4d0f5b6b04b"

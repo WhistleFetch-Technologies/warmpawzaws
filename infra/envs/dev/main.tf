@@ -67,6 +67,8 @@ locals {
   
   # Domain configuration for dev environment
   api_subdomain      = "dev.api.warmpawz.com"
+  # Must match existing HTTP API (see module.api_gateway existing_api_gateway_id) — used for Swagger/OpenAPI Try it out (HTTPS).
+  dev_http_api_invoke_url = "https://z0b3obweb6.execute-api.${var.aws_region}.amazonaws.com"
   admin_subdomain    = "dev.admin.warmpawz.com"
   vendor_subdomain   = "dev.vendor.warmpawz.com"
   customer_subdomain = "dev.customer.warmpawz.com"
@@ -102,6 +104,10 @@ locals {
     # Vendor CloudFront (OFFICIAL - E95171GX1I6HN)
     "https://d1s6ykkj381k58.cloudfront.net",
   ]
+
+  # Java delivery/logistics ECS + API Gateway split (VPC link → internal ALB)
+  delivery_stack_live       = var.enable_delivery_stack && var.delivery_service_image != ""
+  delivery_codebuild_live   = local.delivery_stack_live && var.delivery_codebuild_github_url != ""
 }
 
 # VPC Module
@@ -214,7 +220,7 @@ module "lambda" {
 
   lambda_functions = {
     api-handler = {
-      handler                 = "index.handler"
+      handler                 = "handler.handler"
       runtime                 = "nodejs20.x"
       timeout                 = 60  # Increased from 30s to 60s to handle VPC cold starts and RDS scaling delays
       memory_size             = 1024  # Increased from 512 to reduce cold start time
@@ -236,6 +242,8 @@ module "lambda" {
     # AWS_REGION is reserved by Lambda runtime, cannot be set
     # Lambda functions automatically have AWS_REGION available
     UAT_MODE                    = "true"
+    # Skip meal_orders lead_time_hours validation on POST /meal/orders/create (dev testing only; ignored when ENVIRONMENT/STAGE is prod).
+    BYPASS_24H_MEAL_VALIDATION  = "true"
     NODE_ENV                    = "development"
     DB_HOST                     = module.rds.cluster_endpoint
     DB_NAME                     = module.rds.database_name
@@ -257,7 +265,11 @@ module "lambda" {
     },
     var.uat_jwt_secret != "" ? { UAT_JWT_SECRET = var.uat_jwt_secret } : (
       length(data.aws_ssm_parameter.uat_jwt_secret) > 0 ? { UAT_JWT_SECRET = data.aws_ssm_parameter.uat_jwt_secret[0].value } : {}
-    )
+    ),
+    # Meal dispatch (Lambda) -> Java delivery-service internal ALB HTTP :80 (see meal-dispatch.ts)
+    local.delivery_stack_live ? {
+      DELIVERY_SERVICE_BASE_URL = "http://${module.delivery_service_ecs[0].internal_alb_dns_name}"
+    } : {}
   )
 
   secrets_arns = concat(
@@ -274,6 +286,116 @@ module "lambda" {
   sqs_arns      = [module.sqs.booking_processing_queue_arn, module.sqs.payment_processing_queue_arn]
   dlq_arn       = module.sqs.dlq_arn
   alarm_actions = [module.sns.system_alerts_topic_arn]
+}
+
+# -----------------------------------------------------------------------------
+# Delivery / logistics — Java ECS Fargate + internal ALB
+# Toggle: enable_delivery_stack + delivery_service_image in tfvars; then terraform apply + scripts/deploy-delivery-service.sh for image updates.
+# -----------------------------------------------------------------------------
+resource "aws_security_group" "apigw_delivery_vpc_link" {
+  count = local.delivery_stack_live ? 1 : 0
+
+  name_prefix = "warmpawz-dev-apigw-dlv-vplnk-"
+  description = "API Gateway VPC link ENIs to internal delivery ALB (HTTP)"
+  vpc_id      = module.vpc.vpc_id
+
+  egress {
+    description = "HTTP to internal ALB in VPC"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = [module.vpc.vpc_cidr]
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = {
+    Name        = "warmpawz-dev-apigw-delivery-vpc-link"
+    Environment = local.environment
+  }
+}
+
+module "delivery_service_ecs" {
+  count  = local.delivery_stack_live ? 1 : 0
+  source = "../../modules/delivery-service-ecs"
+
+  environment        = local.environment
+  aws_region         = var.aws_region
+  vpc_id             = module.vpc.vpc_id
+  private_subnet_ids = module.vpc.private_subnet_ids
+  apigw_vpc_link_security_group_ids = [aws_security_group.apigw_delivery_vpc_link[0].id]
+
+  rds_endpoint          = module.rds.cluster_endpoint
+  database_name         = module.rds.database_name
+  rds_secret_arn        = module.rds.secret_arn
+  rds_security_group_id = module.rds.security_group_id
+
+  container_image    = var.delivery_service_image
+  public_api_base_url = "https://${local.api_subdomain}"
+  openapi_public_server_url = local.dev_http_api_invoke_url
+  hibernate_ddl_auto  = var.delivery_hibernate_ddl_auto
+}
+
+module "delivery_codebuild" {
+  count = local.delivery_codebuild_live ? 1 : 0
+
+  source        = "../../modules/codebuild-delivery-service"
+  environment   = local.environment
+  aws_region    = var.aws_region
+
+  service_name_slug       = "delivery"
+  ecr_repository_name     = module.delivery_service_ecs[0].ecr_repository_name
+  ecs_cluster_name        = module.delivery_service_ecs[0].ecs_cluster_name
+  ecs_service_name        = module.delivery_service_ecs[0].ecs_service_name
+  github_repository_url    = var.delivery_codebuild_github_url
+  source_branch           = var.delivery_codebuild_branch_ref
+  codestar_connection_arn   = var.delivery_codebuild_codestar_connection_arn
+  use_github_codeconnection = var.delivery_codebuild_use_github_codeconnection
+}
+
+resource "aws_security_group_rule" "rds_postgres_from_delivery_ecs" {
+  count = local.delivery_stack_live ? 1 : 0
+
+  type              = "ingress"
+  security_group_id = module.rds.security_group_id
+  from_port         = 5432
+  to_port           = 5432
+  protocol          = "tcp"
+  source_security_group_id = module.delivery_service_ecs[0].ecs_task_security_group_id
+  description              = "delivery-service Fargate to shared dev Postgres (Terraform rule)"
+}
+
+# api-handler (VPC Lambda) POSTs meal dispatch to the internal ALB. The ALB SG otherwise only allows
+# API Gateway VPC link ENIs — without this rule, Node fetch fails with a generic "fetch failed".
+resource "aws_security_group_rule" "delivery_internal_alb_ingress_from_lambda" {
+  count = local.delivery_stack_live ? 1 : 0
+
+  type                     = "ingress"
+  security_group_id        = module.delivery_service_ecs[0].alb_security_group_id
+  from_port                = 80
+  to_port                  = 80
+  protocol                 = "tcp"
+  source_security_group_id = module.lambda.lambda_security_group_id
+  description              = "HTTP from API Lambda to internal delivery ALB (meal-dispatch)"
+}
+
+# Interface VPC endpoint for Secrets Manager uses a tight SG; Fargate task ENIs must be allowed (private DNS -> VPCE).
+data "aws_vpc_endpoint" "secretsmanager" {
+  vpc_id       = module.vpc.vpc_id
+  service_name = "com.amazonaws.${var.aws_region}.secretsmanager"
+}
+
+resource "aws_vpc_security_group_ingress_rule" "secretsmanager_vpce_from_delivery_ecs" {
+  for_each = local.delivery_stack_live ? toset(data.aws_vpc_endpoint.secretsmanager.security_group_ids) : toset([])
+
+  security_group_id            = each.value
+  referenced_security_group_id = module.delivery_service_ecs[0].ecs_task_security_group_id
+  description                  = "delivery-service ECS tasks read RDS secret via Secrets Manager VPCE"
+  ip_protocol                  = "tcp"
+  from_port                    = 443
+  to_port                      = 443
 }
 
 # Cognito Module
@@ -346,6 +468,12 @@ module "api_gateway" {
   route53_zone_id    = data.aws_route53_zone.main.zone_id
 
   alarm_actions = [module.sns.system_alerts_topic_arn]
+
+  delivery_java_integration = local.delivery_stack_live ? {
+    vpc_link_subnet_ids         = module.vpc.private_subnet_ids
+    vpc_link_security_group_ids = [aws_security_group.apigw_delivery_vpc_link[0].id]
+    alb_listener_arn            = module.delivery_service_ecs[0].alb_listener_arn
+  } : null
 }
 
 # ACM Certificate Module (for custom domains)

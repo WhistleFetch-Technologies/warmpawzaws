@@ -33,7 +33,14 @@
       // Intentionally NOT setting apiBaseUrl - use NEXT_PUBLIC_API_BASE_URL from .env.local
       uatMode: true,
       environment: 'development',
-      customerEcommerceEnabled: true
+      customerEcommerceEnabled: true,
+      firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+      firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+      firebaseProjectId:         "warmpawz-b9baf",
+      firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+      firebaseMessagingSenderId: "771876271254",
+      firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+      firebaseMeasurementId:     "G-PYF54Y34BP"
     };
     console.log('🔧 Runtime config loaded (localhost - using env var for API URL):', window.__WARMPAWZ_RUNTIME_CONFIG__);
     return;
@@ -65,7 +72,14 @@
       apiBaseUrl: normalizeLegacyDevApiUrl(mapped.apiBaseUrl),
       uatMode: mapped.uatMode,
       environment: mapped.environment,
-      customerEcommerceEnabled: mapped.customerEcommerceEnabled !== false
+      customerEcommerceEnabled: mapped.customerEcommerceEnabled !== false,
+      firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+      firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+      firebaseProjectId:         "warmpawz-b9baf",
+      firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+      firebaseMessagingSenderId: "771876271254",
+      firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+      firebaseMeasurementId:     "G-PYF54Y34BP"
     };
   } else {
     // Fallback to production
@@ -73,7 +87,14 @@
       apiBaseUrl: normalizeLegacyDevApiUrl('https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'),
       uatMode: false,
       environment: 'production',
-      customerEcommerceEnabled: false
+      customerEcommerceEnabled: false,
+      firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+      firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+      firebaseProjectId:         "warmpawz-b9baf",
+      firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+      firebaseMessagingSenderId: "771876271254",
+      firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+      firebaseMeasurementId:     "G-PYF54Y34BP"
     };
   }
   console.log('🔧 Runtime config loaded (deployed):', window.__WARMPAWZ_RUNTIME_CONFIG__);

@@ -128,3 +128,16 @@ variable "existing_api_gateway_id" {
   default     = null
 }
 
+# Option A split: VPC link → internal ALB → Java delivery-service (Fargate)
+variable "delivery_java_integration" {
+  description = "When set, creates a VPC link and HTTP_PROXY integration to the given ALB listener; adds route keys to Java ahead of Lambda catch-all."
+  type = object({
+    vpc_link_subnet_ids         = list(string)
+    vpc_link_security_group_ids = list(string)
+    alb_listener_arn            = string
+    timeout_ms                  = optional(number, 29000)
+    route_keys                  = optional(list(string), null)
+  })
+  default = null
+}
+

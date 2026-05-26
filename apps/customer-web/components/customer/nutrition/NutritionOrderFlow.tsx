@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { ALLERGEN_LABEL, MEAL_CATEGORY_LABEL } from '@/lib/meal-product-display';
 
 // 2D Sketch-style SVG Icons
 const Icons = {
@@ -312,6 +313,22 @@ export default function NutritionOrderFlow({ vendorId, vendorName, customerId, o
                             {pt}
                           </span>
                         ))}
+                        {Array.isArray(metadata.mealCategories) &&
+                          (metadata.mealCategories as string[]).slice(0, 5).map((c: string) => (
+                            <span key={c} className="px-2 py-0.5 bg-teal-50 text-teal-800 rounded text-xs">
+                              {MEAL_CATEGORY_LABEL[c] || c.replace(/_/g, ' ')}
+                            </span>
+                          ))}
+                        {Array.isArray(metadata.allergens) &&
+                          (metadata.allergens as string[]).map((a: string) => (
+                            <span
+                              key={a}
+                              className="px-2 py-0.5 bg-amber-50 text-amber-800 rounded text-xs"
+                              title="Contains allergen"
+                            >
+                              {ALLERGEN_LABEL[a] || a}
+                            </span>
+                          ))}
                       </div>
 
                       {cartItem ? (

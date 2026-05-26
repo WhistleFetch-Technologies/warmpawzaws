@@ -147,13 +147,6 @@ export function SearchResultsPage() {
                 </div>
               )}
 
-              {/* Specialization/Category */}
-              {(data.specialization || data.category) && (
-                <p className="text-sm text-gray-600">
-                  {data.specialization || data.category}
-                </p>
-              )}
-
               {/* Description */}
               {data.description && (
                 <p className="text-sm text-gray-600 line-clamp-2">

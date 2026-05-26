@@ -374,6 +374,12 @@ export function normalizeBulkHeader(raw: string): string {
     .replace(/[()]/g, '');
 }
 
+/** Title is the row classifier — rows without a non-empty Title are ignored during bulk upload. */
+export function getBulkProductTitle(raw: Record<string, unknown>): string {
+  const name = raw.name ?? raw.title;
+  return typeof name === 'string' ? name.trim() : '';
+}
+
 export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   name: 'name',
   productname: 'name',
@@ -562,6 +568,8 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     }
 
     const name = bag.name || '';
+    if (!name.trim()) return;
+
     const description = mergeDescriptionParts(
       bag.description || '',
       bag.key_features || '',

@@ -455,7 +455,7 @@ export function CustomerWallet({ customerPhone, onNavigate }: CustomerWalletProp
               className={`${gridTileClass} bg-stone-50/80 hover:bg-stone-100/90`}
             >
               <span className="text-2xl">⭐</span>
-              <span className="text-[10px] text-center text-gray-600 leading-tight px-0.5">Rewards & points</span>
+              <span className="text-[10px] text-center text-gray-600 leading-tight px-0.5">Rewards & Points</span>
             </button>
             <button
               type="button"

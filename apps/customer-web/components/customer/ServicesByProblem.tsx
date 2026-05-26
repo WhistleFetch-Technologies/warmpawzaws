@@ -236,7 +236,6 @@ export function ServicesByProblem({
                     </div>
                     <p className="text-sm text-gray-500 mb-2">
                       {vendor.serviceCount} service{vendor.serviceCount !== 1 ? 's' : ''}
-                      {vendor.specializations.length > 0 ? ` · ${vendor.specializations.slice(0, 2).join(', ')}` : ''}
                     </p>
                     <div className="flex items-center gap-4 text-sm text-gray-500">
                       <VendorRatingDisplay

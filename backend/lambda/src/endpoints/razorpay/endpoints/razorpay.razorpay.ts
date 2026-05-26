@@ -974,6 +974,20 @@ class VerifyPaymentHandler extends BaseHandler {
           [razorpay_payment_id, payment.id]
         );
 
+        let resolvedPaymentMethod: string | null = null;
+        try {
+          const { fetchRazorpayPaymentMethod } = await import('../../../utils/payments/razorpay-client');
+          resolvedPaymentMethod = await fetchRazorpayPaymentMethod(razorpay_payment_id);
+          if (resolvedPaymentMethod) {
+            await client.query(
+              `UPDATE payments SET payment_method = $1, updated_at = NOW() WHERE id = $2`,
+              [resolvedPaymentMethod, payment.id]
+            );
+          }
+        } catch (methodErr: any) {
+          console.warn('[PAYMENT-VERIFY] Could not resolve Razorpay payment method:', methodErr?.message || methodErr);
+        }
+
         // ✅ FIX: Handle pharmacy orders FIRST (before early return)
         if (pharmacyOrderId) {
           console.log('[PAYMENT-VERIFY] ✅ Processing pharmacy order payment:', {
@@ -1033,6 +1047,7 @@ class VerifyPaymentHandler extends BaseHandler {
             pharmacyOrderId: pharmacyOrderId,
             customerId: payment.customer_id,
             totalAmount: Number(payment.amount ?? 0),
+            paymentMethod: resolvedPaymentMethod || payment.payment_method || null,
           };
         }
 
@@ -1073,6 +1088,7 @@ class VerifyPaymentHandler extends BaseHandler {
             ecommerceOrderId: String(ecommerceOrderId),
             customerId: payment.customer_id,
             totalAmount: Number(payment.amount ?? 0),
+            paymentMethod: resolvedPaymentMethod || payment.payment_method || null,
           };
         }
 
@@ -1086,6 +1102,7 @@ class VerifyPaymentHandler extends BaseHandler {
             bookingId: null,
             customerId: payment.customer_id ?? null,
             totalAmount: Number(payment.amount ?? 0),
+            paymentMethod: resolvedPaymentMethod || payment.payment_method || null,
           };
         }
 
@@ -1248,6 +1265,7 @@ class VerifyPaymentHandler extends BaseHandler {
           bookingId: bookingId,
           customerId: customerIdOut,
           totalAmount: totalAmountOut,
+          paymentMethod: resolvedPaymentMethod || payment.payment_method || null,
           loyaltyBookingKind,
           loyaltyBookVetConsultationForPayment,
         };
@@ -1416,15 +1434,19 @@ class RazorpayWebhookHandler extends BaseHandler {
 
         paymentRecord = result.rows[0];
 
+        const { normalizeRazorpayPaymentMethod } = await import('../../../utils/payments/razorpay-client');
+        const webhookPaymentMethod = normalizeRazorpayPaymentMethod(paymentEntity?.method);
+
         // Update payment: mark completed, fill razorpay_payment_id if missing
         await client.query(
           `UPDATE payments SET 
             payment_status = 'completed',
             razorpay_payment_id = COALESCE(razorpay_payment_id, $1),
+            payment_method = COALESCE($3, payment_method),
             completed_at = COALESCE(completed_at, NOW()),
             updated_at = NOW()
           WHERE id = $2`,
-          [razorpayPaymentId, paymentRecord.id]
+          [razorpayPaymentId, paymentRecord.id, webhookPaymentMethod]
         );
 
         // Update booking if linked

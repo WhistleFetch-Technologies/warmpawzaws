@@ -1,20 +1,45 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { useParams, usePathname, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { 
   Package, MapPin, Truck, Clock, Check, AlertCircle, 
-  Phone, ChevronRight, ArrowLeft, Navigation, RefreshCcw
+  Phone, ChevronRight, ArrowLeft, Navigation, RefreshCcw, MessageCircle, CheckCircle
 } from 'lucide-react';
+import {
+  MealPlanOrderTrackingUI,
+  formatMealOrderDisplayId,
+} from '@/components/customer/tracking/MealPlanOrderTrackingUI';
+import { MealLiveMapSection } from '@/components/customer/tracking/MealLiveMapSection';
+import {
+  resolveEffectiveMealDeliveryState,
+  shouldShowDeliveryRider,
+} from '@warmpawz/shared-types';
+import {
+  extractDestinationCoordinates,
+  extractRiderCoordinates,
+  resolveRiderPhoto,
+} from '@/lib/meal-tracking-utils';
+import { useMealTrackingPoll } from '@/lib/use-meal-tracking-poll';
+import { MealOrderDetailsCollapsible } from '@/components/customer/tracking/MealOrderDetailsCollapsible';
+import { MealCustomerDetailsCard } from '@/components/customer/tracking/MealCustomerDetailsCard';
+import { DeliveryPartnerCallAction } from '@/components/customer/tracking/DeliveryPartnerCallAction';
+import { formatMealOrderDeliveryAddress } from '@/lib/meal-order-tracking-details';
+import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
+import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
 
 interface TrackingData {
   success: boolean;
   orderType: 'ecommerce' | 'pharmacy' | 'meal';
+  customer?: Record<string, unknown> | null;
   order: {
-    id: string;
+    id?: string;
+    order_number?: string;
     orderNumber: string;
     status: string;
     total: number;
+    total_amount?: number;
     createdAt: string;
   };
   tracking: {
@@ -39,9 +64,19 @@ interface TrackingData {
       phone: string;
       photo?: string;
       vehicleNumber?: string;
+      vehicleType?: string;
     };
+    rider?: {
+      name?: string;
+      phone?: string;
+      vehicleType?: string;
+      vehicleNumber?: string;
+    };
+    deliveryOtp?: string | null;
     eta?: number;
+    etaMinutes?: number;
     distanceRemaining?: number;
+    logistics_partner?: string;
     locationHistory?: Array<{ lat: number; lng: number; time: string }>;
   } | null;
 }
@@ -65,31 +100,50 @@ const deliveryStatusSteps = [
 ];
 
 export function TrackingPageClient({ orderId }: { orderId: string }) {
+  const searchParams = useSearchParams();
+  const routeParams = useParams();
+  const pathname = usePathname();
+  const phone = searchParams.get('phone')?.trim() || undefined;
+  const from = searchParams.get('from')?.trim() || undefined;
+
+  /** Static export only pre-renders `/track/placeholder`; real id must come from the client route or URL. */
+  const resolvedOrderId = useMemo(() => {
+    const fromDynamicSegment =
+      typeof routeParams?.orderId === 'string'
+        ? routeParams.orderId
+        : Array.isArray(routeParams?.orderId)
+          ? routeParams.orderId[0] ?? ''
+          : '';
+    const pathSeg =
+      typeof pathname === 'string' ? pathname.match(/^\/track\/([^/?#]+)/)?.[1] : undefined;
+    const decodedPath = pathSeg ? decodeURIComponent(pathSeg) : '';
+
+    const candidates = [fromDynamicSegment, decodedPath, orderId];
+    for (const c of candidates) {
+      const s = String(c || '').trim();
+      if (s && s !== 'placeholder') return s;
+    }
+    return String(orderId || '').trim();
+  }, [orderId, routeParams, pathname]);
+
   const [tracking, setTracking] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const trackingRef = useRef<TrackingData | null>(null);
 
-  useEffect(() => {
-    loadTracking();
-    
-    // Auto-refresh every 30 seconds for active deliveries
-    const interval = setInterval(() => {
-      if (tracking?.tracking?.status && !['delivered', 'cancelled', 'returned'].includes(tracking.tracking.status)) {
-        loadTracking(true);
-      }
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [orderId]);
-
-  const loadTracking = async (silent = false) => {
+  const loadTracking = useCallback(async (silent = false) => {
     try {
       if (!silent) setLoading(true);
       else setRefreshing(true);
       
-      const result = await apiClient.get<TrackingData>(`/customer/tracking/${orderId}`);
+      const qs =
+        phone && phone.trim()
+          ? `?phone=${encodeURIComponent(phone.trim())}`
+          : '';
+      const result = await apiClient.get<TrackingData>(`/customer/tracking/${resolvedOrderId}${qs}`);
       setTracking(result);
+      trackingRef.current = result;
       setError(null);
     } catch (err: any) {
       console.error('Error loading tracking:', err);
@@ -98,7 +152,16 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [resolvedOrderId, phone]);
+
+  useMealTrackingPoll(
+    loadTracking,
+    () => ({
+      orderStatus: trackingRef.current?.order?.status ?? null,
+      logisticsStatus: trackingRef.current?.tracking?.status ?? null,
+    }),
+    [resolvedOrderId, phone],
+  );
 
   const getStatusIndex = (status: string, steps: typeof statusSteps) => {
     // ✅ FIX: Map backend statuses to frontend step keys
@@ -129,6 +192,24 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
       minute: '2-digit',
     });
   };
+
+  if (!isCustomerMealPlansEnabled()) {
+    const backHref =
+      from === 'meal-plans'
+        ? phone
+          ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}`
+          : '/orders/meal-plans'
+        : '/';
+    return (
+      <MealPlansComingSoon
+        title="Order tracking"
+        subtitle="Live meal delivery tracking"
+        onBack={() => {
+          if (typeof window !== 'undefined') window.location.href = backHref;
+        }}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -162,18 +243,215 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
 
   const isHyperlocal = tracking.orderType === 'pharmacy' || tracking.orderType === 'meal';
   const steps = isHyperlocal ? deliveryStatusSteps : statusSteps;
-  // ✅ FIX: Use tracking status if available, otherwise fallback to order status
-  // If no delivery_tracking exists yet, show "Finding Rider" (pending_assignment)
   const trackingStatus = tracking.tracking?.status || (isHyperlocal ? 'pending_assignment' : 'pending');
   const currentStepIndex = getStatusIndex(trackingStatus, steps);
-  const isDelivered = tracking.tracking?.status === 'delivered' || tracking.order.status === 'delivered';
+  const mealDeliveryEff = resolveEffectiveMealDeliveryState(tracking.order.status, tracking.tracking?.status ?? null);
+  const isDelivered =
+    tracking.orderType === 'meal'
+      ? mealDeliveryEff === 'delivered'
+      : tracking.tracking?.status === 'delivered' || tracking.order.status === 'delivered';
+
+  const mealBackHref =
+    from === 'meal-plans'
+      ? phone
+        ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}`
+        : '/orders/meal-plans'
+      : '/';
+
+  const orderTotal = tracking.order.total ?? tracking.order.total_amount;
+
+  if (tracking.orderType === 'meal') {
+    const logisticsStatus = tracking.tracking?.status ?? null;
+    const otp = tracking.tracking?.deliveryOtp;
+    const riderActive =
+      mealDeliveryEff === 'picked_up' ||
+      mealDeliveryEff === 'on_the_way' ||
+      shouldShowDeliveryRider(logisticsStatus);
+    const riderName =
+      tracking.tracking?.rider?.name?.trim() ||
+      tracking.tracking?.deliveryPerson?.name?.trim() ||
+      '';
+    const riderPhone =
+      tracking.tracking?.rider?.phone?.trim() ||
+      tracking.tracking?.deliveryPerson?.phone?.trim() ||
+      '';
+    const showRiderCard =
+      !isDelivered && shouldShowDeliveryRider(logisticsStatus) && Boolean(riderName);
+    const etaMinutes = tracking.tracking?.etaMinutes ?? tracking.tracking?.eta;
+    const riderPhoto = resolveRiderPhoto(tracking.tracking as Record<string, unknown>);
+    const riderCoords = extractRiderCoordinates(tracking.tracking as Record<string, unknown>);
+    const deliveryAddressText = formatMealOrderDeliveryAddress(
+      tracking.order as Record<string, unknown>,
+    );
+    const destination = extractDestinationCoordinates(
+      tracking.order as Record<string, unknown>,
+      deliveryAddressText,
+    );
+
+    return (
+      <MealPlanOrderTrackingUI
+        orderDisplayId={formatMealOrderDisplayId(tracking.order)}
+        orderStatus={tracking.order.status}
+        logisticsStatus={logisticsStatus}
+        totalAmount={orderTotal}
+        backSlot={
+          <a
+            href={mealBackHref}
+            className="p-2 rounded-full hover:bg-white/15 transition text-white"
+            aria-label="Back"
+          >
+            <ArrowLeft className="w-6 h-6" />
+          </a>
+        }
+        headerActions={
+          <button
+            type="button"
+            onClick={() => loadTracking(true)}
+            disabled={refreshing}
+            className="p-2 rounded-full hover:bg-white/15 text-white transition disabled:opacity-50"
+            aria-label="Refresh"
+          >
+            <RefreshCcw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
+        }
+        deliveryOtpBanner={
+          otp &&
+          riderActive &&
+          !isDelivered ? (
+            <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 -mt-2 shadow-sm">
+              <p className="text-sm font-medium text-amber-800 mb-2">
+                Handover OTP — share with delivery partner
+              </p>
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <span className="text-3xl font-mono font-bold text-amber-900 tracking-[0.3em]">{otp}</span>
+                <button
+                  type="button"
+                  onClick={() => otp && navigator.clipboard?.writeText(String(otp))}
+                  className="px-4 py-2 bg-amber-200 text-amber-900 rounded-lg text-sm font-medium"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          ) : undefined
+        }
+        liveTrackingMap={
+          <MealLiveMapSection
+            logisticsPartner={tracking.tracking?.logistics_partner ?? null}
+            logisticsType={
+              (tracking.order as { logistics_type?: string; logisticsType?: string }).logistics_type ??
+              (tracking.order as { logisticsType?: string }).logisticsType ??
+              null
+            }
+            logisticsStatus={logisticsStatus}
+            orderEffectiveState={mealDeliveryEff}
+            riderCoords={riderCoords}
+            destination={destination}
+            etaMinutes={etaMinutes}
+            distanceRemainingKm={tracking.tracking?.distanceRemaining}
+          />
+        }
+        deliveryPartnerCard={
+          showRiderCard ? (
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100/80">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-gradient-to-br from-emerald-100 to-teal-50 rounded-full flex items-center justify-center shrink-0 overflow-hidden">
+                  {riderPhoto || tracking.tracking?.deliveryPerson?.photo ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={riderPhoto || tracking.tracking!.deliveryPerson!.photo}
+                      alt=""
+                      className="w-full h-full rounded-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <Truck className="w-7 h-7 text-teal-600" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900">{riderName}</p>
+                  <p className="text-sm text-gray-500">
+                    {[
+                      tracking.tracking?.rider?.vehicleType ||
+                        tracking.tracking?.deliveryPerson?.vehicleType,
+                      tracking.tracking?.rider?.vehicleNumber ||
+                        tracking.tracking?.deliveryPerson?.vehicleNumber,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ') || 'Delivery partner'}
+                  </p>
+                </div>
+                {riderPhone ? (
+                  <DeliveryPartnerCallAction phone={riderPhone} variant="icon" />
+                ) : null}
+              </div>
+              {etaMinutes != null && Number.isFinite(Number(etaMinutes)) ? (
+                <div className="mt-4 flex items-center gap-3 p-3 bg-teal-50 rounded-xl border border-teal-100">
+                  <Clock className="w-5 h-5 text-teal-600 shrink-0" />
+                  <p className="text-sm font-medium text-teal-900">
+                    Arriving in ~{etaMinutes} minutes
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : undefined
+        }
+        deliveredBanner={
+          isDelivered ? (
+            <div className="bg-gradient-to-r from-green-500 to-teal-500 rounded-2xl p-6 text-white text-center shadow-sm border border-white/20">
+              <CheckCircle className="w-14 h-14 mx-auto mb-3 opacity-95" />
+              <h2 className="text-xl font-bold mb-1">Delivered!</h2>
+              <p className="text-sm text-white/90">
+                {tracking.tracking?.deliveredAt
+                  ? `Delivered ${formatDate(tracking.tracking.deliveredAt)}`
+                  : 'Your meal plan order has been delivered.'}
+              </p>
+              <a
+                href="/support"
+                className="inline-block mt-4 text-sm font-semibold text-white underline underline-offset-2 hover:text-white/90"
+              >
+                Need help?
+              </a>
+            </div>
+          ) : undefined
+        }
+        customerDetailsCard={
+          <MealCustomerDetailsCard
+            order={tracking.order as Record<string, unknown>}
+            customer={tracking.customer ?? null}
+          />
+        }
+        orderDetailsCollapsible={
+          <MealOrderDetailsCollapsible order={tracking.order as Record<string, unknown>} />
+        }
+        floatingChatButton={
+          <a
+            href="/support"
+            className="w-14 h-14 bg-white shadow-lg rounded-full flex items-center justify-center border border-slate-100 hover:bg-slate-50 transition"
+            aria-label="Help"
+          >
+            <MessageCircle className="w-7 h-7 text-slate-600" />
+          </a>
+        }
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white">
       {/* Header */}
       <header className="bg-white border-b sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
-          <a href="/" className="p-2 -ml-2 hover:bg-gray-100 rounded-xl transition">
+          <a
+            href={
+              from === 'meal-plans' && phone
+                ? `/orders/meal-plans?phone=${encodeURIComponent(phone)}`
+                : '/'
+            }
+            className="p-2 -ml-2 hover:bg-gray-100 rounded-xl transition"
+          >
             <ArrowLeft className="w-6 h-6 text-gray-700" />
           </a>
           <h1 className="text-lg font-bold text-gray-900">Track Order</h1>

@@ -120,3 +120,45 @@ variable "existing_nat_gateway_id" {
   default     = null
 }
 
+variable "enable_delivery_stack" {
+  description = "When true and delivery_service_image is set, provisions ECS Fargate + internal ALB for delivery-service and splits API Gateway routes (/logistics/pidge/*, /webhooks/pidge, …) to Java via VPC link."
+  type        = bool
+  default     = false
+}
+
+variable "delivery_service_image" {
+  description = "Full ECR URI for delivery-service (push from scripts/deploy-delivery-service.sh). Ignored unless enable_delivery_stack is true."
+  type        = string
+  default     = ""
+}
+
+variable "delivery_hibernate_ddl_auto" {
+  description = "spring.jpa.hibernate.ddl-auto for ECS tasks (validate recommended on shared RDS)"
+  type        = string
+  default     = "validate"
+}
+
+variable "delivery_codebuild_github_url" {
+  description = "HTTPS Git URL for monorepo. When set with delivery stack enabled, provisions CodeBuild to build/push delivery-service."
+  type        = string
+  default     = ""
+}
+
+variable "delivery_codebuild_branch_ref" {
+  description = "Git ref for CodeBuild source_version (e.g. refs/heads/main)"
+  type        = string
+  default     = "refs/heads/main"
+}
+
+variable "delivery_codebuild_codestar_connection_arn" {
+  description = "Existing CodeConnections (GitHub) ARN for private repos"
+  type        = string
+  default     = ""
+}
+
+variable "delivery_codebuild_use_github_codeconnection" {
+  description = "If true, CodeBuild clones via CodeStar connection"
+  type        = bool
+  default     = false
+}
+

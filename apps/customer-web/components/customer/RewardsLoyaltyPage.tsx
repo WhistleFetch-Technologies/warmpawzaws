@@ -85,6 +85,19 @@ interface RewardItem {
   cash_value?: number;
   type: string;
   image_url?: string;
+  has_redemption_link?: boolean;
+  available_stock?: number;
+}
+
+interface RedeemedRewardItem {
+  redemption_id: string;
+  reward_id: string;
+  name: string;
+  description?: string;
+  points_used: number;
+  redeemed_at: string;
+  redemption_link?: string;
+  coupon_code?: string;
 }
 
 interface PointsHistory {
@@ -114,11 +127,13 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
 
   const [balance, setBalance] = useState<RewardsBalance | null>(null);
   const [rewards, setRewards] = useState<RewardItem[]>([]);
+  const [redeemedRewards, setRedeemedRewards] = useState<RedeemedRewardItem[]>([]);
   const [history, setHistory] = useState<PointsHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'rewards' | 'history'>('rewards');
+  const [redeemedLink, setRedeemedLink] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'rewards' | 'redeemed' | 'history'>('rewards');
   /** Postgres `customers.id` (UUID). API routes `/customer/:customerId/rewards/*` require this, not phone. */
   const [customerId, setCustomerId] = useState<string | null>(() => {
     const p = props.customerId?.trim();
@@ -167,11 +182,12 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
 
       // apiClient rejects non-UUID first path segment for /customer/*/rewards/* (see customerUuidSegmentInPath).
       // Using a phone here fails synchronously — no network entry and empty UI; UUID is required.
-      const [balanceRes, rewardsRes, historyRes, policyRes] = await Promise.all([
+      const [balanceRes, rewardsRes, historyRes, policyRes, redeemedRes] = await Promise.all([
         apiClient.get<any>(`/customer/${id}/rewards/points`).catch(() => null),
         apiClient.get<any>(`/customer/${id}/rewards/available`).catch(() => null),
         apiClient.get<any>(`/customer/${id}/rewards/history`).catch(() => null),
         apiClient.get<any>(`/customer/${id}/loyalty/wallet-redeem-policy`).catch(() => null),
+        apiClient.get<any>(`/customer/${id}/rewards/redeemed`).catch(() => null),
       ]);
 
       const balanceBody = unwrapApiBody(balanceRes);
@@ -233,6 +249,25 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
       if ((historyRaw as any)?.success || histList.length > 0) {
         setHistory(histList);
       }
+
+      const redeemedBody = unwrapApiBody(redeemedRes);
+      const redeemedList = Array.isArray(redeemedBody?.redemptions)
+        ? redeemedBody.redemptions
+        : Array.isArray((redeemedRes as any)?.redemptions)
+          ? (redeemedRes as any).redemptions
+          : [];
+      setRedeemedRewards(
+        redeemedList.map((r: any) => ({
+          redemption_id: String(r.redemption_id ?? r.id ?? ''),
+          reward_id: String(r.reward_id ?? ''),
+          name: String(r.name ?? 'Reward'),
+          description: r.description ? String(r.description) : undefined,
+          points_used: Number(r.points_used ?? 0),
+          redeemed_at: String(r.redeemed_at ?? r.created_at ?? ''),
+          redemption_link: r.redemption_link ? String(r.redemption_link) : undefined,
+          coupon_code: r.coupon_code ? String(r.coupon_code) : undefined,
+        }))
+      );
     } catch (err: any) {
       console.error('Error loading rewards:', err);
       setError(err.message || 'Failed to load rewards');
@@ -269,7 +304,21 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
 
       const redeemBody = unwrapApiBody(response) ?? response;
       if (redeemBody?.success) {
-        setSuccess(`Successfully redeemed: ${reward.name}! Check your rewards.`);
+        const link =
+          (redeemBody as any).redemptionLink ||
+          (redeemBody as any).redemption_link ||
+          null;
+        setRedeemedLink(link ? String(link) : null);
+        const apiMessage =
+          typeof (redeemBody as any).message === 'string'
+            ? String((redeemBody as any).message).trim()
+            : '';
+        setSuccess(
+          apiMessage ||
+            (link
+              ? `Successfully redeemed: ${reward.name}! Open your coupon link below.`
+              : `Successfully redeemed: ${reward.name}!`)
+        );
         const rem = Number(
           (redeemBody as any).points ??
             (redeemBody as any).remainingPoints ??
@@ -372,6 +421,7 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
     service: '✨',
     product: '🎁',
     experience: '🌟',
+    external_link: '🔗',
   };
 
   const headerSubtitle = loading
@@ -383,7 +433,7 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
       <div className="min-h-screen min-h-[100dvh] w-full max-w-customer bg-gradient-to-b from-orange-50 via-amber-50/90 to-orange-50/80 flex flex-col shadow-[0_0_0_1px_rgba(0,0,0,0.04)] sm:shadow-[0_0_48px_rgba(0,0,0,0.06)] sm:border-x border-black/[0.04] pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
         <ServiceDashboardHeader
           className="shrink-0 z-10"
-          serviceName="Rewards & Loyalty"
+          serviceName="Rewards & Points"
           serviceSubtitle={headerSubtitle}
           serviceIcon={Award}
           iconColor="text-white"
@@ -419,16 +469,34 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
               )}
 
               {success && (
-                <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 flex items-center justify-between gap-2">
-                  <span>{success}</span>
-                  <button
-                    type="button"
-                    onClick={() => setSuccess(null)}
-                    className="text-green-400 hover:text-green-600 shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg"
-                    aria-label="Dismiss success message"
-                  >
-                    ✕
-                  </button>
+                <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-xl text-green-700">
+                  <div className="flex items-start justify-between gap-2">
+                    <span>{success}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSuccess(null);
+                        setRedeemedLink(null);
+                      }}
+                      className="text-green-400 hover:text-green-600 shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg"
+                      aria-label="Dismiss success message"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {redeemedLink && (
+                    <div className="mt-3 pt-3 border-t border-green-200">
+                      <a
+                        href={redeemedLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center w-full sm:w-auto px-4 py-2.5 rounded-lg bg-green-600 text-white font-medium hover:bg-green-700 transition"
+                      >
+                        Open coupon link
+                      </a>
+                      <p className="text-xs text-green-800/80 mt-2 break-all">{redeemedLink}</p>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -441,6 +509,7 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
                 >
                   {[
                     { id: 'rewards', label: 'Redeem Points', icon: '🎁' },
+                    { id: 'redeemed', label: 'My Rewards', icon: '🎟️' },
                     { id: 'history', label: 'Points History', icon: '📜' },
                   ].map(tab => (
                     <button
@@ -448,7 +517,7 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
                       type="button"
                       role="tab"
                       aria-selected={activeTab === tab.id}
-                      onClick={() => setActiveTab(tab.id as 'rewards' | 'history')}
+                      onClick={() => setActiveTab(tab.id as 'rewards' | 'redeemed' | 'history')}
                       className={`flex-1 min-h-[44px] py-2 px-1 rounded-lg text-xs font-semibold transition flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 leading-tight ${
                         activeTab === tab.id
                           ? 'bg-orange-500 text-white shadow-sm'
@@ -528,8 +597,12 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
                             <div className="flex-1">
                               <h3 className="font-semibold text-gray-900">{reward.name}</h3>
                               <p className="text-sm text-gray-600 mt-1">{reward.description}</p>
-                              {reward.cash_value && (
-                                <p className="text-xs text-gray-400 mt-2">Worth ₹{reward.cash_value}</p>
+                              {reward.has_redemption_link && (
+                                <p className="text-xs text-orange-500 mt-2">
+                                  {typeof reward.available_stock === 'number'
+                                    ? `${reward.available_stock} coupon${reward.available_stock === 1 ? '' : 's'} left · unique link after redeem`
+                                    : 'Unique coupon link unlocks after redemption'}
+                                </p>
                               )}
                             </div>
                           </div>
@@ -553,6 +626,52 @@ export function RewardsLoyaltyPage(props: RewardsLoyaltyPageProps) {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* My Rewards Tab */}
+              {activeTab === 'redeemed' && (
+                <div className="bg-white rounded-2xl shadow-sm border border-stone-200/80 overflow-hidden">
+                  {redeemedRewards.length === 0 ? (
+                    <div className="p-8 py-10 text-center">
+                      <div className="text-5xl mb-3" aria-hidden>
+                        🎟️
+                      </div>
+                      <p className="text-sm text-gray-600">No redeemed rewards yet</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y">
+                      {redeemedRewards.map((item) => {
+                        const link = item.redemption_link || item.coupon_code;
+                        return (
+                          <div key={item.redemption_id} className="p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-semibold text-gray-900">{item.name}</p>
+                                {item.description && (
+                                  <p className="text-sm text-gray-600 mt-1">{item.description}</p>
+                                )}
+                                <p className="text-xs text-gray-400 mt-2">
+                                  Redeemed {new Date(item.redeemed_at).toLocaleDateString()} ·{' '}
+                                  {item.points_used} points
+                                </p>
+                              </div>
+                            </div>
+                            {link && (
+                              <a
+                                href={link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-3 inline-flex items-center justify-center px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 transition"
+                              >
+                                Open coupon link
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

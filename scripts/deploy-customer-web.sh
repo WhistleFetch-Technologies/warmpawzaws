@@ -99,6 +99,18 @@ else
   CEE_JS="false"
 fi
 
+# Meal plans browse + meal order tracking (off on prod until launch).
+if [ "$PROD" = true ]; then
+  CMP_RAW="${CUSTOMER_MEAL_PLANS_ENABLED:-false}"
+else
+  CMP_RAW="${CUSTOMER_MEAL_PLANS_ENABLED:-true}"
+fi
+if [ "$CMP_RAW" = "true" ] || [ "$CMP_RAW" = "1" ]; then
+  CMP_JS="true"
+else
+  CMP_JS="false"
+fi
+
 if [ "$DEPLOY_ONLY" = true ] && [ -d "dist" ]; then
   echo -e "${GREEN}✅ Skipping build (--deploy-only, dist exists)${NC}"
 else
@@ -116,12 +128,16 @@ else
       "NEXT_PUBLIC_ENVIRONMENT=production"
       "NEXT_PUBLIC_API_BASE_URL=${RESOLVED_API_BASE_URL}"
       "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
+      "NEXT_PUBLIC_FIREBASE_VAPID_KEY=BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw"
+      "NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=${CMP_JS}"
     )
   else
     BUILD_ENV=(
       "NEXT_PUBLIC_ENVIRONMENT=development"
       "NEXT_PUBLIC_API_BASE_URL=${RESOLVED_API_BASE_URL}"
       "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
+      "NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=${CMP_JS}"
+      "NEXT_PUBLIC_FIREBASE_VAPID_KEY=BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw"
     )
   fi
 
@@ -162,7 +178,15 @@ if [ "$PROD" = true ]; then
     apiBaseUrl: "${API_BASE_URL}",
     uatMode: false,
     environment: "production",
-    customerEcommerceEnabled: ${CEE_JS}
+    customerEcommerceEnabled: ${CEE_JS},
+    firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+    firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+    firebaseProjectId:         "warmpawz-b9baf",
+    firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+    firebaseMessagingSenderId: "771876271254",
+    firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+    firebaseMeasurementId:     "G-PYF54Y34BP",
+    customerMealPlansEnabled: ${CMP_JS}
   };
   console.log('🔧 Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
@@ -175,7 +199,15 @@ else
     apiBaseUrl: "${API_BASE_URL}",
     uatMode: true,
     environment: "development",
-    customerEcommerceEnabled: ${CEE_JS}
+    customerEcommerceEnabled: ${CEE_JS},
+    firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+    firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+    firebaseProjectId:         "warmpawz-b9baf",
+    firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+    firebaseMessagingSenderId: "771876271254",
+    firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+    firebaseMeasurementId:     "G-PYF54Y34BP",
+    customerMealPlansEnabled: ${CMP_JS}
   };
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
@@ -183,6 +215,20 @@ EOF
 fi
 
 echo -e "${GREEN}✅ runtime-config.js written (apiBaseUrl -> ${API_BASE_URL})${NC}"
+
+echo -e "${BLUE}🧭 Creating extensionless HTML route aliases...${NC}"
+ALIAS_COUNT=0
+while IFS= read -r htmlfile; do
+  rel_path="${htmlfile#apps/${APP_NAME}/dist/}"
+  alias_path="apps/${APP_NAME}/dist/${rel_path%.html}"
+  # Skip root index aliasing; S3 website/index behavior handles root.
+  if [ "$rel_path" = "index.html" ]; then
+    continue
+  fi
+  cp "$htmlfile" "$alias_path"
+  ALIAS_COUNT=$((ALIAS_COUNT + 1))
+done < <(find "apps/${APP_NAME}/dist" -name "*.html" -type f)
+echo -e "${GREEN}✅ Created ${ALIAS_COUNT} extensionless route aliases${NC}"
 
 echo -e "${BLUE}📤 Uploading to S3 bucket: ${S3_BUCKET}...${NC}"
 aws s3 sync "apps/${APP_NAME}/dist/" "s3://${S3_BUCKET}/" --delete --exclude "*.map"
@@ -193,6 +239,16 @@ else
   echo -e "${YELLOW}❌ Error: S3 upload failed!${NC}"
   exit 1
 fi
+
+echo -e "${BLUE}🧩 Updating extensionless route content-types to text/html...${NC}"
+HTML_ALIAS_UPDATED=0
+while IFS= read -r aliasfile; do
+  rel_path="${aliasfile#apps/${APP_NAME}/dist/}"
+  aws s3 cp "$aliasfile" "s3://${S3_BUCKET}/${rel_path}" \
+    --content-type "text/html; charset=utf-8" >/dev/null
+  HTML_ALIAS_UPDATED=$((HTML_ALIAS_UPDATED + 1))
+done < <(find "apps/${APP_NAME}/dist" -type f ! -name "*.*")
+echo -e "${GREEN}✅ Updated content-type for ${HTML_ALIAS_UPDATED} extensionless routes${NC}"
 
 echo -e "${BLUE}🔄 Invalidating CloudFront cache...${NC}"
 INVALIDATION_ID=$(aws cloudfront create-invalidation \

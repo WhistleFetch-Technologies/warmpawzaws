@@ -16,6 +16,7 @@ import {
   Clock
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { saveGeneratedPdfBlob } from '@/lib/capacitor-pdf-save';
 
 interface Medication {
   name: string;
@@ -376,31 +377,46 @@ export default function PrescriptionDocument({
   };
 
   const handleDownload = async () => {
-    // Use html2canvas and jspdf if available, otherwise just print
     try {
       const html2canvas = (await import('html2canvas')).default;
       const { jsPDF } = await import('jspdf');
-      
-      if (printRef.current) {
-        const canvas = await html2canvas(printRef.current, {
-          scale: 2,
-          useCORS: true,
-          logging: false
-        });
-        
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const imgWidth = 210;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        
-        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-        pdf.save(`Prescription_${prescription.pet.name}_${prescription.prescriptionDate}.pdf`);
+
+      if (!printRef.current) {
+        handlePrint();
+        onDownload?.();
+        return;
+      }
+
+      const canvas = await html2canvas(printRef.current, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const imgWidth = 210;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+      const safePet = String(prescription.pet.name || 'Pet').replace(/[^\w\s-]+/g, '_');
+      const fileName = `Prescription_${safePet}_${prescription.prescriptionDate}.pdf`;
+      const blob = pdf.output('blob');
+
+      const result = await saveGeneratedPdfBlob({
+        blob,
+        fileName,
+        title: `Prescription — ${prescription.pet.name}`,
+        shareText: 'Save the PDF to Drive, Files, or another app.',
+      });
+
+      if (result === 'failed') {
+        handlePrint();
       }
     } catch {
-      // Fallback to print
       handlePrint();
     }
-    
+
     onDownload?.();
   };
 

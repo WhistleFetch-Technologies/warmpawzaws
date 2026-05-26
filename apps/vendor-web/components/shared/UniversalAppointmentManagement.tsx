@@ -63,6 +63,16 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import {
+  buildVendorScheduleBookingsQuery,
+  isTeleScheduleBooking,
+  paginationShowingLabel,
+  scheduleAppointmentsSectionTitle,
+  scheduleEmptyStateMessage,
+  VENDOR_SCHEDULE_PAGE_SIZE,
+  type VendorSchedulePeriod,
+  type VendorScheduleView,
+} from '@/lib/vendor-schedule-bookings';
 
 export type UserType = 'vendor' | 'staff' | 'solo' | 'solo_vendor';
 
@@ -126,8 +136,11 @@ export function UniversalAppointmentManagement({
   userName
 }: UniversalAppointmentManagementProps) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [activeFilter, setActiveFilter] = useState<'today' | 'week' | 'month'>('today');
-  const [activeView, setActiveView] = useState<'consultations' | 'locations'>('consultations');
+  const [schedulePeriod, setSchedulePeriod] = useState<VendorSchedulePeriod>('today');
+  const [activeView, setActiveView] = useState<VendorScheduleView>('consultations');
+  const [bookingsPageIndex, setBookingsPageIndex] = useState(0);
+  const [bookingsTotal, setBookingsTotal] = useState(0);
+  const [bookingsHasMore, setBookingsHasMore] = useState(false);
   const [activeTab, setActiveTab] = useState<'bookings' | 'earnings' | 'payouts'>('bookings');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -241,9 +254,16 @@ export function UniversalAppointmentManagement({
 
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
 
+  const isVendorLikeUser =
+    userType === 'vendor' || userType === 'solo' || userType === 'solo_vendor';
+
+  useEffect(() => {
+    setBookingsPageIndex(0);
+  }, [selectedDate, schedulePeriod, activeView]);
+
   useEffect(() => {
     loadBookings();
-  }, [selectedDate, activeFilter, userId, userType]);
+  }, [selectedDate, schedulePeriod, activeView, bookingsPageIndex, userId, userType]);
 
   useEffect(() => {
     if (activeTab !== 'earnings') return;
@@ -282,23 +302,27 @@ export function UniversalAppointmentManagement({
     try {
       setLoading(true);
       
-      let dateParam = '';
-      if (activeFilter === 'today') {
-        dateParam = `date=${selectedDate}`;
-      } else if (activeFilter === 'week') {
-        dateParam = `startDate=${selectedDate}`;
-      } else if (activeFilter === 'month') {
-        dateParam = `startDate=${selectedDate}`;
+      let queryString = '';
+      if (isVendorLikeUser) {
+        const queryParams = buildVendorScheduleBookingsQuery({
+          schedulePeriod,
+          anchorDate: selectedDate,
+          activeView,
+          pageIndex: bookingsPageIndex,
+          pageSize: VENDOR_SCHEDULE_PAGE_SIZE,
+          statusFilter: 'all',
+        });
+        queryString = `?${new URLSearchParams(queryParams).toString()}`;
+      } else if (schedulePeriod === 'today') {
+        queryString = `?date=${selectedDate}`;
+      } else {
+        queryString = `?period=${schedulePeriod}&anchorDate=${selectedDate}&limit=${VENDOR_SCHEDULE_PAGE_SIZE}&offset=${bookingsPageIndex * VENDOR_SCHEDULE_PAGE_SIZE}`;
       }
-      
+
       const endpoint = getBookingsEndpoint();
-      // Build query string - only include filter=all for vendor endpoints (not staff)
-      const queryParams = dateParam ? `${dateParam}${(userType === 'vendor' || userType === 'solo' || userType === 'solo_vendor') ? '&filter=all' : ''}` : ((userType === 'vendor' || userType === 'solo' || userType === 'solo_vendor') ? 'filter=all' : '');
-      const queryString = queryParams ? `?${queryParams}` : '';
-      
       const [bookingsData, facilityData] = await Promise.all([
         apiClient.get(`${endpoint}${queryString}`) as Promise<any>,
-        (userType === 'vendor' || userType === 'solo' || userType === 'solo_vendor') ? apiClient.get(`/vendor/${userId}/facility`).catch(() => null) as Promise<any> : Promise.resolve(null)
+        isVendorLikeUser ? apiClient.get(`/vendor/${userId}/facility`).catch(() => null) as Promise<any> : Promise.resolve(null)
       ]);
 
       if (bookingsData && bookingsData.success) {
@@ -335,13 +359,15 @@ export function UniversalAppointmentManagement({
         }));
         
         setBookings(mappedBookings);
-        
-        // Update stats
+        setBookingsTotal(Number(bookingsData.total ?? mappedBookings.length));
+        setBookingsHasMore(Boolean(bookingsData.hasMore));
+
+        const teleOnPage = mappedBookings.filter((b: Booking) => isTeleScheduleBooking(b));
         setStats({
-          calls: mappedBookings.filter((b: Booking) => b.communicationType === 'call').length,
-          online: mappedBookings.filter((b: Booking) => b.communicationType === 'video').length,
-          phone: mappedBookings.filter((b: Booking) => b.communicationType === 'call').length,
-          appointments: mappedBookings.length,
+          calls: teleOnPage.length,
+          online: teleOnPage.filter((b: Booking) => b.communicationType === 'video').length,
+          phone: teleOnPage.filter((b: Booking) => b.communicationType === 'call').length,
+          appointments: Number(bookingsData.total ?? mappedBookings.length),
           earnings: mappedBookings
             .filter((b: Booking) => String(b.status).toLowerCase() === 'completed')
             .reduce((sum: number, b: Booking) => sum + Number(b.price || 0), 0),
@@ -771,9 +797,9 @@ export function UniversalAppointmentManagement({
           {/* Filter Tabs */}
           <div className="flex gap-2">
             <button
-              onClick={() => setActiveFilter('today')}
+              onClick={() => setSchedulePeriod('today')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeFilter === 'today'
+                schedulePeriod === 'today'
                   ? 'bg-[#FF8C42] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
@@ -781,9 +807,9 @@ export function UniversalAppointmentManagement({
               Today
             </button>
             <button
-              onClick={() => setActiveFilter('week')}
+              onClick={() => setSchedulePeriod('week')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeFilter === 'week'
+                schedulePeriod === 'week'
                   ? 'bg-[#FF8C42] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
@@ -791,9 +817,9 @@ export function UniversalAppointmentManagement({
               Week
             </button>
             <button
-              onClick={() => setActiveFilter('month')}
+              onClick={() => setSchedulePeriod('month')}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                activeFilter === 'month'
+                schedulePeriod === 'month'
                   ? 'bg-[#FF8C42] text-white'
                   : 'bg-gray-100 text-gray-600'
               }`}
@@ -862,7 +888,11 @@ export function UniversalAppointmentManagement({
 
             {/* Appointments List */}
             <div className="p-4 bg-white">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">Appointments</h3>
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">
+                {isVendorLikeUser
+                  ? scheduleAppointmentsSectionTitle(schedulePeriod, selectedDate)
+                  : 'Appointments'}
+              </h3>
               
               {loading ? (
                 <div className="text-center py-8">
@@ -873,7 +903,9 @@ export function UniversalAppointmentManagement({
                 const activeBookings = bookings.filter(b => b.status !== 'completed');
                 return activeBookings.length === 0 ? (
                   <div className="text-center py-8 text-gray-500 text-sm">
-                    No appointments scheduled
+                    {isVendorLikeUser
+                      ? scheduleEmptyStateMessage(schedulePeriod)
+                      : 'No appointments scheduled'}
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -1059,6 +1091,40 @@ export function UniversalAppointmentManagement({
                       </div>
                     </div>
                     ))}
+                    {isVendorLikeUser &&
+                      (bookingsTotal > VENDOR_SCHEDULE_PAGE_SIZE || bookingsPageIndex > 0) && (
+                        <div className="pt-4 mt-2 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                          <p className="text-xs text-gray-500">
+                            {paginationShowingLabel(
+                              bookingsTotal,
+                              bookingsPageIndex * VENDOR_SCHEDULE_PAGE_SIZE,
+                              activeBookings.length
+                            )}
+                          </p>
+                          <div className="flex gap-2 w-full sm:w-auto">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 sm:flex-none"
+                              disabled={bookingsPageIndex === 0 || loading}
+                              onClick={() => setBookingsPageIndex((p) => Math.max(0, p - 1))}
+                            >
+                              Previous
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 sm:flex-none"
+                              disabled={!bookingsHasMore || loading}
+                              onClick={() => setBookingsPageIndex((p) => p + 1)}
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                   </div>
                 );
               })()}

@@ -580,6 +580,7 @@ export async function insert(
     'conditions',                // loyalty_action_rules.conditions
     'multiplier_conditions',     // loyalty_action_rules.multiplier_conditions
     'metadata_resolvers',        // action_sources.metadata_resolvers
+    'purchase_snapshot',         // meal_orders — selected purchase / subscription snapshot
   ]);
   
   // Also check for columns ending with common JSONB suffixes

@@ -10,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 import { LoyaltySegmentsManagement } from '@/components/admin/loyalty/LoyaltySegmentsManagement';
 import { LoyaltyActionRulesManagement } from '@/components/admin/loyalty/LoyaltyActionRulesManagement';
 import { LoyaltyActionSourcesManagement } from '@/components/admin/loyalty/LoyaltyActionSourcesManagement';
+import { RewardsCatalogManagement } from '@/components/admin/loyalty/RewardsCatalogManagement';
 
 // ============================================================================
 // TYPES
@@ -309,6 +310,10 @@ export default function LoyaltyPage() {
                 <Filter className="w-4 h-4 mr-2" />
                 Segments
               </TabsTrigger>
+              <TabsTrigger value="catalog">
+                <Gift className="w-4 h-4 mr-2" />
+                Rewards Catalog
+              </TabsTrigger>
               <TabsTrigger value="triggers">
                 <Filter className="w-4 h-4 mr-2" />
                 Triggers
@@ -455,6 +460,10 @@ export default function LoyaltyPage() {
 
             <TabsContent value="segments" className="space-y-6">
               <LoyaltySegmentsManagement />
+            </TabsContent>
+
+            <TabsContent value="catalog" className="space-y-6">
+              <RewardsCatalogManagement />
             </TabsContent>
 
             <TabsContent value="triggers" className="space-y-6">

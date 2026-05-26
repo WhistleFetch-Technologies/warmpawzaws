@@ -34,6 +34,11 @@ export default function RootLayout({
   ).toLowerCase();
   const customerEcommerceEnabled =
     customerEcommerceEnabledRaw === 'true' || customerEcommerceEnabledRaw === '1';
+  const customerMealPlansEnabledRaw = (
+    process.env.NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED ?? (isProd ? 'false' : 'true')
+  ).toLowerCase();
+  const customerMealPlansEnabled =
+    customerMealPlansEnabledRaw === 'true' || customerMealPlansEnabledRaw === '1';
 
   return (
     <html lang="en">
@@ -99,20 +104,19 @@ export default function RootLayout({
           Inject production runtime config ONLY when NEXT_PUBLIC_ENVIRONMENT=production.
           This ensures prod:customer, prod:vendor, prod:admin use production API Gateway.
         */}
-        {isProd && (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
                 window.__WARMPAWZ_RUNTIME_CONFIG__ = {
                   apiBaseUrl: ${JSON.stringify(prodApiUrl)},
-                  environment: "production",
-                  uatMode: false,
-                  customerEcommerceEnabled: ${JSON.stringify(customerEcommerceEnabled)}
+                  environment: ${JSON.stringify(isProd ? 'production' : 'development')},
+                  uatMode: ${JSON.stringify(!isProd)},
+                  customerEcommerceEnabled: ${JSON.stringify(customerEcommerceEnabled)},
+                  customerMealPlansEnabled: ${JSON.stringify(customerMealPlansEnabled)}
                 };
               `,
-            }}
-          />
-        )}
+          }}
+        />
         {/* 
           Runtime config injected at deploy-time (static hosting safe).
           For localhost, this file detects localhost and doesn't set apiBaseUrl,

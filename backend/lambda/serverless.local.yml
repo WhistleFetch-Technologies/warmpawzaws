@@ -52,6 +52,11 @@ provider:
     # Feature Flags
     UAT_MODE: ${env:UAT_MODE, 'true'}
 
+    # Java customer-service (optional). When enabled, GET /customer/by-phone tries the microservice first.
+    CUSTOMER_SERVICE_URL: ${env:CUSTOMER_SERVICE_URL, ''}
+    CUSTOMER_SERVICE_ENABLED: ${env:CUSTOMER_SERVICE_ENABLED, 'false'}
+    CUSTOMER_SERVICE_API_KEY: ${env:CUSTOMER_SERVICE_API_KEY, ''}
+
     # Optional: settlement cron PutRule (defaults in code to warmpawz-dev-… when unset)
     SETTLEMENT_CALCULATE_CRON_RULE_NAME: ${env:SETTLEMENT_CALCULATE_CRON_RULE_NAME, ''}
     

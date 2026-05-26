@@ -1,5 +1,9 @@
 # Customer Android UPI checkout fix (Capacitor / WebView)
 
+**iOS (Capacitor):** see [`IOS_RAZORPAY_UPI_FIX.md`](./IOS_RAZORPAY_UPI_FIX.md) for `LSApplicationQueriesSchemes`, `RazorpayBridgeViewController`, and IPA build steps.
+
+**Screen-capture PDF download (Capacitor):** see [`CAPACITOR_SCREEN_CAPTURE_DOWNLOAD.md`](./CAPACITOR_SCREEN_CAPTURE_DOWNLOAD.md) — Web Share save path, no APK rebuild required.
+
 The customer app loads `https://customer.warmpawz.com` inside a Capacitor
 Android WebView and calls Razorpay Standard Checkout (`checkout.js`) via
 `new window.Razorpay(options)`. There is no `react-native-razorpay`, so

@@ -14,6 +14,7 @@
 
 import { Hono } from 'hono';
 import { select, update, query } from '../database/rds-connection';
+import { resolveEffectiveMealDeliveryState } from '../utils/meal-delivery-effective-state';
 
 /**
  * PUT /nutrition/orders/:orderId/preparation-eta
@@ -94,12 +95,14 @@ export function registerNutritionOrderEndpoints(app: Hono) {
         ? Math.max(0, Math.round((new Date(order.estimated_delivery_time).getTime() - Date.now()) / (60 * 1000)))
         : null;
 
+      const effectiveStatus = resolveEffectiveMealDeliveryState(order.status, tracking?.status);
+
       return c.json({
         success: true,
         order: {
           id: order.id,
           status: order.status,
-          trackingStatus: tracking?.status || order.status,
+          trackingStatus: effectiveStatus,
           preparationETA,
         },
         tracking: tracking ? {
@@ -117,10 +120,51 @@ export function registerNutritionOrderEndpoints(app: Hono) {
           } : null,
         } : null,
         steps: [
-          { step: 'placed', status: order.status === 'placed' ? 'completed' : 'pending', timestamp: order.created_at },
-          { step: 'preparing', status: ['preparing', 'ready_for_pickup', 'picked_up', 'on_the_way', 'delivered'].includes(order.status) ? 'completed' : 'pending', timestamp: order.preparation_started_at },
-          { step: 'out_for_delivery', status: ['picked_up', 'on_the_way', 'delivered'].includes(order.status) ? 'completed' : 'pending', timestamp: tracking?.picked_up_at },
-          { step: 'delivered', status: order.status === 'delivered' ? 'completed' : 'pending', timestamp: order.delivered_at },
+          {
+            step: 'order_confirmed',
+            status: ['confirmed', 'accepted', 'preparing', 'ready_for_pickup', 'picked_up', 'on_the_way', 'delivered'].includes(order.status) ? 'completed' : 'pending',
+            timestamp: order.confirmed_at || order.created_at,
+          },
+          {
+            step: 'preparing',
+            status: ['preparing', 'ready_for_pickup', 'picked_up', 'on_the_way', 'delivered'].includes(order.status) ? 'completed' : 'pending',
+            timestamp: order.prep_started_at,
+          },
+          {
+            step: 'ready_for_pickup',
+            status:
+              order.status === 'ready_for_pickup' ||
+              ['picked_up', 'on_the_way', 'delivered'].includes(order.status) ||
+              ['heading_to_pickup', 'at_pickup', 'picked_up', 'on_the_way', 'nearby', 'delivered'].includes(
+                String(tracking?.status || ''),
+              )
+                ? 'completed'
+                : 'pending',
+            timestamp: order.ready_at,
+          },
+          {
+            step: 'picked_up',
+            status:
+              ['picked_up', 'on_the_way', 'delivered'].includes(order.status) ||
+              ['picked_up', 'on_the_way', 'nearby', 'delivered'].includes(String(tracking?.status || ''))
+                ? 'completed'
+                : 'pending',
+            timestamp: order.picked_up_at ?? tracking?.picked_up_at,
+          },
+          {
+            step: 'out_for_delivery',
+            status:
+              ['on_the_way', 'delivered'].includes(order.status) ||
+              ['on_the_way', 'nearby', 'delivered'].includes(String(tracking?.status || ''))
+                ? 'completed'
+                : 'pending',
+            timestamp: tracking?.updated_at,
+          },
+          {
+            step: 'delivered',
+            status: order.status === 'delivered' || tracking?.status === 'delivered' ? 'completed' : 'pending',
+            timestamp: order.delivered_at ?? tracking?.delivered_at,
+          },
         ],
       });
     } catch (error: any) {

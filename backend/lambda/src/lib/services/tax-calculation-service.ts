@@ -8,7 +8,7 @@
 
 import { query } from '../../database/rds-connection';
 import { isGstInterstateSupply, resolveGstStateKey } from '../gst-place-of-supply';
-import { resolveGstRateForCatalogAndRole } from './gst-catalog-role-resolution';
+import { resolveGstRateForCatalogAndRole, type GstApplicationScope } from './gst-catalog-role-resolution';
 
 /** DB NUMERIC / JSON may return rates as strings; normalize for math and API JSON. */
 function coerceRate(value: unknown, fallback: number): number {
@@ -47,6 +47,8 @@ export interface TaxItem {
   serviceStyle?: 'at_center' | 'at_home' | 'tele' | 'hybrid';
   /** vendors.role_id (UUID) for GST role mapping */
   roleId?: string;
+  /** When set with type service + catalogCategoryId, selects tax_categories.gst_application_scope row */
+  gstApplicationScope?: 'service_booking' | 'meal_plan_food' | 'meal_plan_delivery';
   /** When true, `amount` × qty is tax-inclusive; engine derives taxable value as amount/(1+gst%/100). */
   amountIsTaxInclusive?: boolean;
 }
@@ -134,11 +136,15 @@ export class TaxCalculationService {
 
       if (item.type === 'service') {
         if (item.catalogCategoryId) {
+          let scope: GstApplicationScope = 'service_booking';
+          if (item.gstApplicationScope === 'meal_plan_food') scope = 'meal_plan_food';
+          else if (item.gstApplicationScope === 'meal_plan_delivery') scope = 'meal_plan_delivery';
           const resolved = await resolveGstRateForCatalogAndRole(
             item.catalogCategoryId,
-            item.roleId
+            item.roleId,
+            scope,
           );
-          gstRate = coerceRate(resolved.rate, 18);
+          gstRate = coerceRate(resolved.rate, scope === 'service_booking' ? 18 : 0);
         } else {
           gstRate = 18;
         }
@@ -221,7 +227,6 @@ export class TaxCalculationService {
         igstAmount,
         totalTax: taxAmount,
         totalAmount: taxableAmount + taxAmount,
-        taxRuleId: taxRule.id,
         taxRuleName: taxRule.rule_name,
       });
     }
@@ -254,7 +259,6 @@ export class TaxCalculationService {
    * HSN → tax category → (services) catalogue category + role → 18% — not from gst_rules.
    */
   private getDefaultGstComponentRule(): {
-    id: null;
     rule_name: string;
     gst_rate: number;
     cgst_percentage: number;
@@ -262,7 +266,6 @@ export class TaxCalculationService {
     igst_percentage: number;
   } {
     return {
-      id: null,
       rule_name: 'Default GST Rule',
       gst_rate: 18,
       cgst_percentage: 9,

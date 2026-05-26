@@ -24,7 +24,11 @@ import { fetchVendorBankRowsForPayout } from '../../../utils/vendor-bank-for-pay
 import { getErrorMessage, createSafeErrorResponse, ErrorStatusCode } from '../../../utils/error-serialization';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
-import { pickTaxCategoryDisplayRate } from '../../../utils/tax-category-display-rate';
+import {
+  isMealPlanGstScope,
+  parseGstApplicationScope,
+  pickTaxCategoryDisplayRate,
+} from '../../../utils/tax-category-display-rate';
 import { isValidUUID } from '../../../types/entities';
 import {
   listFeeSettingsFromDb,
@@ -32,6 +36,7 @@ import {
   upsertFeeSetting,
   getFeeGlobalsMap,
 } from '../../../utils/admin-fee-settings-db';
+import { computePolicyDeliveryFeeForOrder } from '../../../utils/customer-delivery-fee-quote';
 import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
 import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
 import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
@@ -4574,6 +4579,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           catalog_category_id: row.catalog_category_id ?? null,
           catalog_category_name: row.catalog_category_name ?? null,
           catalog_master_slug: row.catalog_master_slug ?? null,
+          gst_application_scope: row.gst_application_scope ?? null,
           roles: rolesParsed,
           role_ids,
           is_active: row.is_active !== false,
@@ -4594,11 +4600,17 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const catalogCategoryId = body.catalogCategoryId ?? body.catalog_category_id;
       const roleIdsRaw = body.roleIds ?? body.role_ids;
       const { description, defaultGSTRate, isActive, name } = body;
+      const gstApplicationScope = parseGstApplicationScope(
+        body.gstApplicationScope ?? body.gst_application_scope,
+      );
 
       if (!catalogCategoryId || String(catalogCategoryId).trim() === '') {
         return c.json({ success: false, error: 'Catalog category is required' }, 400);
       }
-      if (!Array.isArray(roleIdsRaw) || roleIdsRaw.length === 0) {
+      if (
+        !isMealPlanGstScope(gstApplicationScope) &&
+        (!Array.isArray(roleIdsRaw) || roleIdsRaw.length === 0)
+      ) {
         return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
       }
       const rate =
@@ -4633,6 +4645,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         is_active: isActive !== false,
         created_at: new Date().toISOString(),
         catalog_category_id: String(catalogCategoryId).trim(),
+        gst_application_scope: gstApplicationScope,
       };
 
       let newCategory: any[];
@@ -4654,12 +4667,18 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             if (m2.includes('catalog_category_id') && m2.includes('does not exist')) {
               delete insertPayload.catalog_category_id;
               newCategory = await tryInsertTaxCategory();
+            } else if (m2.includes('gst_application_scope') && m2.includes('does not exist')) {
+              delete insertPayload.gst_application_scope;
+              newCategory = await tryInsertTaxCategory();
             } else {
               throw e2;
             }
           }
         } else if (msg.includes('catalog_category_id') && msg.includes('does not exist')) {
           delete insertPayload.catalog_category_id;
+          newCategory = await tryInsertTaxCategory();
+        } else if (msg.includes('gst_application_scope') && msg.includes('does not exist')) {
+          delete insertPayload.gst_application_scope;
           newCategory = await tryInsertTaxCategory();
         } else {
           throw insErr;
@@ -4668,7 +4687,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const tcId = newCategory[0]?.id;
       const ccid = String(catalogCategoryId).trim();
-      if (tcId) {
+      if (tcId && Array.isArray(roleIdsRaw) && roleIdsRaw.length > 0) {
         for (const rid of roleIdsRaw) {
           const roleId = String(rid).trim();
           if (!roleId) continue;
@@ -4733,6 +4752,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             ? String(catalogCategoryId).trim()
             : null;
       }
+      const gstScopeBody = body.gstApplicationScope ?? body.gst_application_scope;
+      if (gstScopeBody !== undefined && gstScopeBody !== null) {
+        updateData.gst_application_scope = parseGstApplicationScope(gstScopeBody);
+      }
 
       const applyTaxCategoryUpdate = async (): Promise<void> => {
         if (Object.keys(updateData).length === 0) return;
@@ -4750,6 +4773,15 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             await applyTaxCategoryUpdate();
             return;
           }
+          if (
+            updateData.gst_application_scope !== undefined &&
+            msg.includes('gst_application_scope') &&
+            msg.includes('does not exist')
+          ) {
+            delete updateData.gst_application_scope;
+            await applyTaxCategoryUpdate();
+            return;
+          }
           throw updErr;
         }
       };
@@ -4757,36 +4789,43 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const roleIdsRaw = body.roleIds ?? body.role_ids;
       if (Array.isArray(roleIdsRaw)) {
+        const scMeta = await query(
+          `SELECT catalog_category_id::text AS cid, COALESCE(gst_application_scope, 'service_booking')::text AS gs
+           FROM tax_categories WHERE id = $1::uuid LIMIT 1`,
+          [id],
+        );
+        const effScope = String(scMeta.rows?.[0]?.gs || 'service_booking').trim();
         if (roleIdsRaw.length === 0) {
-          return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
-        }
-        let ccid = String(catalogCategoryId || '').trim();
-        if (!ccid) {
-          const cur = await query(
-            `SELECT catalog_category_id::text AS cid FROM tax_categories WHERE id = $1::uuid LIMIT 1`,
-            [id]
-          );
-          ccid = String(cur.rows?.[0]?.cid || '').trim();
-        }
-        if (!ccid) {
-          return c.json(
-            { success: false, error: 'catalogCategoryId is required to update role mapping' },
-            400
-          );
-        }
-        try {
-          await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
-          for (const rid of roleIdsRaw) {
-            const roleId = String(rid).trim();
-            if (!roleId) continue;
-            await query(
-              `INSERT INTO tax_category_roles (tax_category_id, role_id, catalog_category_id)
-               VALUES ($1::uuid, $2::uuid, $3::uuid)`,
-              [id, roleId, ccid]
+          if (effScope === 'meal_plan_food' || effScope === 'meal_plan_delivery') {
+            await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
+          } else {
+            return c.json({ success: false, error: 'At least one applicable role is required' }, 400);
+          }
+        } else {
+          let ccid = String(catalogCategoryId || '').trim();
+          if (!ccid) {
+            ccid = String(scMeta.rows?.[0]?.cid || '').trim();
+          }
+          if (!ccid) {
+            return c.json(
+              { success: false, error: 'catalogCategoryId is required to update role mapping' },
+              400,
             );
           }
-        } catch (e: any) {
-          if (!String(e?.message || '').includes('tax_category_roles')) throw e;
+          try {
+            await query(`DELETE FROM tax_category_roles WHERE tax_category_id = $1::uuid`, [id]);
+            for (const rid of roleIdsRaw) {
+              const roleId = String(rid).trim();
+              if (!roleId) continue;
+              await query(
+                `INSERT INTO tax_category_roles (tax_category_id, role_id, catalog_category_id)
+                 VALUES ($1::uuid, $2::uuid, $3::uuid)`,
+                [id, roleId, ccid],
+              );
+            }
+          } catch (e: any) {
+            if (!String(e?.message || '').includes('tax_category_roles')) throw e;
+          }
         }
       }
 
@@ -5018,6 +5057,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       const serviceStyle = c.req.query('serviceStyle') || 'all';
       const amount = parseFloat(c.req.query('amount') || '0');
       const type = c.req.query('type') || 'booking';
+      const distanceKm = parseFloat(c.req.query('distanceKm') || c.req.query('distance') || '0');
+      const weekend = c.req.query('weekend') === 'true';
+      const festival = c.req.query('festival') === 'true';
+      const rain = c.req.query('rain') === 'true';
 
       const settingsMap = await getFeeGlobalsMap();
 
@@ -5046,10 +5089,16 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       // Delivery fee (only for home services and orders)
       let deliveryFee = 0;
       if (serviceStyle === 'at_home' || type === 'order') {
-        const freeDeliveryThreshold = parseFloat(settingsMap['free_delivery_threshold'] || '500');
-        if (amount < freeDeliveryThreshold || freeDeliveryThreshold === 0) {
-          deliveryFee = parseFloat(settingsMap['delivery_fee_base'] || '30');
-        }
+        const quote = await computePolicyDeliveryFeeForOrder({
+          orderSubtotalInr: amount,
+          distanceKm: Number.isFinite(distanceKm) ? distanceKm : 0,
+          logisticsType: 'warmpawz',
+          weekend,
+          festival,
+          rain,
+        });
+        deliveryFee =
+          quote.success && quote.deliveryFeeInr != null ? quote.deliveryFeeInr : 0;
       }
 
       // Packaging fee (only for orders)
@@ -8858,6 +8907,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const partners = (partnersResult.rows || []).map((p: any) => {
         const config = p.config || {};
+        const hasSecret =
+          !!p.apiKey &&
+          String(p.apiKey).trim() !== '' &&
+          String(p.apiKey).trim() !== '••••••••';
         return {
           id: p.id,
           name: p.name,
@@ -8865,7 +8918,8 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
           enabled: p.enabled !== false,
           baseUrl: p.baseUrl || config.pidgeApiBase || config.baseUrl || null,
           apiEndpoint: p.apiEndpoint || config.apiEndpoint || null,
-          apiKey: p.apiKey ? '••••••••' : null,
+          apiKey: '',
+          apiKeySet: hasSecret,
           categories: config.categories || (typeof p.categories === 'string' ? JSON.parse(p.categories) : []),
           pricing: config.pricing || (typeof p.pricing === 'string' ? JSON.parse(p.pricing) : {}),
           regions: config.regions || (typeof p.regions === 'string' ? JSON.parse(p.regions) : []),
@@ -8929,16 +8983,34 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         partnerRecord.base_url =
           baseUrl != null && String(baseUrl).trim() ? String(baseUrl).trim() : null;
       }
-      if (apiKey && String(apiKey) !== '••••••••') {
-        partnerRecord.api_key = String(apiKey);
+      const apiKeyStr = apiKey != null ? String(apiKey).trim() : '';
+      const isMaskedPlaceholder =
+        apiKeyStr === '' ||
+        apiKeyStr === '••••••••' ||
+        /^[•\u2022*]{4,}$/.test(apiKeyStr);
+      if (apiKeyStr && !isMaskedPlaceholder) {
+        partnerRecord.api_key = apiKeyStr;
       }
 
       await upsert('logistics_partners', partnerRecord, 'partner_id');
 
+      if (String(partner_type) === 'pidge') {
+        try {
+          const { clearPidgeTokenCache } = await import('../../../lib/services/pidge-logistics');
+          clearPidgeTokenCache();
+        } catch {
+          // non-fatal
+        }
+      }
+
+      const partnerResponse = { ...partnerRecord };
+      delete partnerResponse.api_key;
+
       return c.json({
         success: true,
         message: 'Logistics partner saved',
-        partner: partnerRecord,
+        partner: partnerResponse,
+        apiKeyUpdated: Boolean(partnerRecord.api_key),
       });
     } catch (error: unknown) {
       const errorResponse = createSafeErrorResponse(error, 'Internal server error', 500);

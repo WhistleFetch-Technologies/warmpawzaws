@@ -157,3 +157,32 @@ output "shiprocket_secret_arn" {
   description = "Shiprocket secret ARN"
   value       = module.secrets.shiprocket_secret_arn
 }
+
+# Java delivery/logistics ECS (present when enable_delivery_stack + delivery_service_image are set)
+output "delivery_ecr_repository_url" {
+  description = "ECR base URI (tag with :latest or semver after build)"
+  value       = local.delivery_stack_live ? module.delivery_service_ecs[0].ecr_repository_url : null
+}
+
+output "delivery_ecs_cluster_name" {
+  value = local.delivery_stack_live ? module.delivery_service_ecs[0].ecs_cluster_name : null
+}
+
+output "delivery_ecs_service_name" {
+  value = local.delivery_stack_live ? module.delivery_service_ecs[0].ecs_service_name : null
+}
+
+output "delivery_internal_alb_dns" {
+  description = "Internal ALB (VPC-only smoke tests)"
+  value       = local.delivery_stack_live ? module.delivery_service_ecs[0].internal_alb_dns_name : null
+}
+
+output "delivery_codebuild_project_name" {
+  description = "aws codebuild start-build --project-name <this>"
+  value       = local.delivery_codebuild_live ? module.delivery_codebuild[0].codebuild_project_name : null
+}
+
+output "delivery_codestar_connection_arn" {
+  description = "Complete GitHub connection in Console when status=PENDING before first build."
+  value       = local.delivery_codebuild_live ? module.delivery_codebuild[0].codestar_connection_arn : null
+}

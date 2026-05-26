@@ -235,10 +235,6 @@ export function SponsoredProviderCard({
               </Badge>
             </div>
           )}
-          
-          {provider.specialization && (
-            <p className="text-xs text-gray-500 truncate">{provider.specialization}</p>
-          )}
 
           {/* Stats Row */}
           <div className="flex items-center gap-3 text-xs text-gray-500 mt-2">

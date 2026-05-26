@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   Plus, Minus, Save, Upload, Trash2, Clock, Calendar, 
   Leaf, AlertCircle, ChevronDown, ChevronUp, Info, Scale,
@@ -67,11 +67,35 @@ export function MealPlanCreator({ vendorId, existingPlan, onSave, onCancel }: Me
   const [pricePerWeek, setPricePerWeek] = useState(existingPlan?.price_per_week || '');
   const [pricePerMonth, setPricePerMonth] = useState(existingPlan?.price_per_month || '');
 
-  // Preparation & Delivery
-  const [prepTimeMinutes, setPrepTimeMinutes] = useState(existingPlan?.prep_time_minutes || 60);
+  // Preparation & Delivery (prep time is required; empty until set for new plans)
+  const initialPrep =
+    existingPlan?.prep_time_minutes != null && Number(existingPlan.prep_time_minutes) >= 1
+      ? Number(existingPlan.prep_time_minutes)
+      : '';
+  const [prepTimeMinutes, setPrepTimeMinutes] = useState<number | ''>(initialPrep);
   const [shelfLifeDays, setShelfLifeDays] = useState(existingPlan?.shelf_life_days || 1);
   const [leadTimeHours, setLeadTimeHours] = useState(existingPlan?.lead_time_hours || 24);
+  const [leadBounds, setLeadBounds] = useState({ min: 0, max: 72, defaultHours: 24 });
+  const [sameDayEnabled, setSameDayEnabled] = useState(true);
   const [orderCutoffTime, setOrderCutoffTime] = useState(existingPlan?.order_cutoff_time || '18:00');
+
+  useEffect(() => {
+    apiClient
+      .get<{ success?: boolean; bounds?: { minHours: number; maxHours: number; defaultHours: number }; sameDay?: { enabled: boolean } }>(
+        '/vendor/meal-booking-policy',
+      )
+      .then((res) => {
+        if (res?.bounds) {
+          setLeadBounds({
+            min: res.bounds.minHours,
+            max: res.bounds.maxHours,
+            defaultHours: res.bounds.defaultHours,
+          });
+        }
+        if (res?.sameDay) setSameDayEnabled(!!res.sameDay.enabled);
+      })
+      .catch(() => undefined);
+  }, []);
   const [availableDays, setAvailableDays] = useState<string[]>(existingPlan?.available_days || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat']);
   const [deliverySlots, setDeliverySlots] = useState<DeliverySlot[]>(existingPlan?.delivery_slots || [
     { start: '09:00', end: '12:00' },
@@ -134,6 +158,11 @@ export function MealPlanCreator({ vendorId, existingPlan, onSave, onCancel }: Me
       toast.error('Please add at least one ingredient');
       return;
     }
+    const prepMins = prepTimeMinutes === '' ? NaN : Number(prepTimeMinutes);
+    if (!Number.isFinite(prepMins) || prepMins < 1) {
+      toast.error('Please enter preparation time (at least 1 minute)');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -156,7 +185,7 @@ export function MealPlanCreator({ vendorId, existingPlan, onSave, onCancel }: Me
         pricePerMeal: parseFloat(pricePerMeal),
         pricePerWeek: pricePerWeek ? parseFloat(pricePerWeek) : null,
         pricePerMonth: pricePerMonth ? parseFloat(pricePerMonth) : null,
-        prepTimeMinutes,
+        prepTimeMinutes: prepMins,
         shelfLifeDays,
         leadTimeHours,
         orderCutoffTime,
@@ -525,11 +554,25 @@ export function MealPlanCreator({ vendorId, existingPlan, onSave, onCancel }: Me
             <div className="p-4 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Prep Time (mins)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Prep time (minutes) <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="number"
-                    value={prepTimeMinutes}
-                    onChange={(e) => setPrepTimeMinutes(parseInt(e.target.value) || 60)}
+                    min={1}
+                    required
+                    inputMode="numeric"
+                    placeholder="e.g. 60"
+                    value={prepTimeMinutes === '' ? '' : prepTimeMinutes}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === '') {
+                        setPrepTimeMinutes('');
+                        return;
+                      }
+                      const n = parseInt(v, 10);
+                      setPrepTimeMinutes(Number.isNaN(n) ? '' : n);
+                    }}
                     className="w-full p-3 border border-gray-200 rounded-xl"
                   />
                 </div>
@@ -537,10 +580,20 @@ export function MealPlanCreator({ vendorId, existingPlan, onSave, onCancel }: Me
                   <label className="block text-sm font-medium text-gray-700 mb-1">Lead Time (hrs)</label>
                   <input
                     type="number"
+                    min={leadBounds.min}
+                    max={leadBounds.max}
                     value={leadTimeHours}
-                    onChange={(e) => setLeadTimeHours(parseInt(e.target.value) || 24)}
+                    onChange={(e) => {
+                      const n = parseInt(e.target.value, 10);
+                      const v = Number.isFinite(n) ? n : leadBounds.defaultHours;
+                      setLeadTimeHours(Math.min(leadBounds.max, Math.max(leadBounds.min, v)));
+                    }}
                     className="w-full p-3 border border-gray-200 rounded-xl"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Platform allows {leadBounds.min}–{leadBounds.max}h
+                    {sameDayEnabled ? ' (low values enable same-day delivery).' : '.'}
+                  </p>
                 </div>
               </div>
 

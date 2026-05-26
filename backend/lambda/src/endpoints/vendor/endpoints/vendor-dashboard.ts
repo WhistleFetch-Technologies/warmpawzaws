@@ -27,6 +27,7 @@ import {
   sqlAndExcludeSuppressedBookingRows,
   filterBookingsTemporarySuppression,
 } from '../../../utils/temporary-vendor-ui-suppression';
+import { geocodeVendorAddressFields } from '../../../utils/vendor-address-geocode';
 
 // ============================================================================
 // VENDOR DASHBOARD HANDLERS
@@ -71,6 +72,18 @@ class VendorDashboardHandler extends BaseHandler {
             });
             const resolvedTierName = tr.tier;
             const resolvedCommission = tr.commission_percentage;
+            const dashPin = payload.pin || payload.pincode || '';
+            let dashCreateGeo: { latitude: number; longitude: number } | null = null;
+            try {
+              dashCreateGeo = await geocodeVendorAddressFields({
+                address: payload.address || 'Not specified',
+                city: payload.city || 'Not specified',
+                state: payload.state || 'Not specified',
+                pincode: dashPin,
+              });
+            } catch (e: any) {
+              console.warn('[DASHBOARD] Geocode failed (non-fatal):', e?.message);
+            }
             const newVendor = await insert('vendors', {
               id: vendorId,
               phone: identity.phone,
@@ -82,7 +95,7 @@ class VendorDashboardHandler extends BaseHandler {
               address: payload.address || 'Not specified',
               city: payload.city || 'Not specified',
               state: payload.state || 'Not specified',
-              pincode: payload.pin || payload.pincode || '', // Don't use default - require actual pincode
+              pincode: dashPin, // Don't use default - require actual pincode
               status: 'active',
               is_active: true,
               is_deleted: false, // ✅ CRITICAL FIX: Always set to false for new vendors
@@ -90,6 +103,9 @@ class VendorDashboardHandler extends BaseHandler {
               commission_percentage: resolvedCommission,
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
+              ...(dashCreateGeo
+                ? { latitude: dashCreateGeo.latitude, longitude: dashCreateGeo.longitude }
+                : {}),
             });
             vendors = newVendor;
             console.log(`[DASHBOARD] Created vendor record for ${vendorId}`);

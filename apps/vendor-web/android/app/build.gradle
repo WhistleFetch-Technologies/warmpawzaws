@@ -7,13 +7,13 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.warmpawz.vendor"
+    namespace = "com.warmpawz.provider"
     compileSdk = rootProject.ext.compileSdkVersion
     buildFeatures {
         buildConfig = true
     }
     defaultConfig {
-        applicationId "com.warmpawz.vendor"
+        applicationId "com.warmpawz.provider"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 7

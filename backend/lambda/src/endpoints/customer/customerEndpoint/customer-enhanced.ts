@@ -33,6 +33,11 @@ import { isValidUUID } from '../../../types/entities';
 import { presignS3GetUrlIfApplicable } from '../../../utils/s3-media-presign';
 import { findCustomerByPhone } from '../../../utils/customer-phone-lookup';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
+import {
+  resolveCustomerMealPlanOrderDisplayTotals,
+} from '../../../utils/meal-order-pricing';
+import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '../../../utils/meal-delivery-effective-state';
+import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../services/meal-subscription/meal-subscription-operations-service';
 
 // ============================================================================
 // CUSTOMER HANDLERS
@@ -479,27 +484,55 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
 
       // 1. From meal_orders (MealOrderCheckout flow)
       const mealResult = await query(
-        `SELECT mo.*, mp.name as meal_plan_name, v.business_name as vendor_name
+        `SELECT mo.*,
+                COALESCE(
+                  NULLIF(TRIM(mp.name), ''),
+                  NULLIF(TRIM(mp.plan_name), ''),
+                  NULLIF(TRIM(prod.name), '')
+                ) AS meal_plan_name,
+                mp.plan_name AS mp_plan_name,
+                mp.price_per_meal AS mp_price_per_meal,
+                mp.price AS mp_legacy_price,
+                v.business_name AS vendor_name,
+                p.name AS pet_name
          FROM meal_orders mo
          LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
+         LEFT JOIN products prod ON prod.id = mo.meal_plan_id
+           AND prod.category IN ('meal_plan', 'nutrition', 'food')
          LEFT JOIN vendors v ON mo.vendor_id = v.id
+         LEFT JOIN pets p ON mo.pet_id = p.id
          WHERE mo.customer_id = $1
          ORDER BY mo.created_at DESC`,
         [customerId]
       ).catch(() => ({ rows: [] }));
 
+      const safeMoney = (v: unknown) => {
+        if (v === null || v === undefined || v === '') return 0;
+        const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''));
+        return Number.isFinite(n) ? n : 0;
+      };
+
       for (const o of (mealResult as any).rows || []) {
+        const planForPricing = {
+          price_per_meal: o.mp_price_per_meal,
+          price: o.mp_legacy_price,
+        };
+        const { subtotal, total } = resolveCustomerMealPlanOrderDisplayTotals(o, planForPricing);
         allOrders.push({
           id: o.id,
           order_number: o.order_number || o.id?.toString().slice(-8),
           order_type: 'meal_plan_delivery',
           orderType: 'meal_plan_delivery',
           meal_plan_id: o.meal_plan_id,
-          meal_plan_name: o.meal_name || o.meal_plan_name,
+          meal_plan_name: o.meal_name || o.meal_plan_name || o.mp_plan_name,
           pet_id: o.pet_id,
+          pet_name: o.pet_name,
+          quantity: o.quantity,
           vendor_id: o.vendor_id,
           vendor_name: o.vendor_name,
-          total_amount: o.total_amount,
+          subscription_id: o.subscription_id ?? null,
+          subtotal,
+          total_amount: total,
           status: o.status,
           delivery_address: o.delivery_address,
           scheduled_delivery_date: o.scheduled_delivery_date,
@@ -519,7 +552,10 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
             `SELECT o.id, o.order_number, o.order_status as status, o.total_amount, o.shipping_address as delivery_address,
                     o.delivery_date as scheduled_delivery_date, o.delivery_time as scheduled_delivery_slot, o.created_at,
                     o.vendor_id, v.business_name as vendor_name,
-                    (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_plan_name
+                    (SELECT mp.name FROM meal_plan_orders mpo LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id WHERE mpo.order_id = o.id LIMIT 1) as meal_plan_name,
+                    (SELECT mpo.meal_plan_id FROM meal_plan_orders mpo WHERE mpo.order_id = o.id LIMIT 1) as meal_plan_id,
+                    (SELECT p.name FROM meal_plan_orders mpo LEFT JOIN pets p ON p.id = mpo.pet_id WHERE mpo.order_id = o.id LIMIT 1) as pet_name,
+                    (SELECT mpo.quantity FROM meal_plan_orders mpo WHERE mpo.order_id = o.id LIMIT 1) as line_quantity
              FROM orders o
              LEFT JOIN vendors v ON o.vendor_id = v.id
              WHERE o.customer_id = $1 AND o.order_type = 'meal_plan_delivery'
@@ -533,12 +569,14 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
               order_number: o.order_number || o.id?.toString().slice(-8),
               order_type: 'meal_plan_delivery',
               orderType: 'meal_plan_delivery',
-              meal_plan_id: null,
+              meal_plan_id: o.meal_plan_id ?? null,
               meal_plan_name: o.meal_plan_name || 'Meal Plan',
               pet_id: null,
+              pet_name: o.pet_name,
+              quantity: o.line_quantity,
               vendor_id: o.vendor_id,
               vendor_name: o.vendor_name,
-              total_amount: o.total_amount,
+              total_amount: safeMoney(o.total_amount),
               status: o.status,
               delivery_address: o.delivery_address,
               scheduled_delivery_date: o.scheduled_delivery_date,
@@ -554,6 +592,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
 
       // Sort by created_at desc
       allOrders.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+
+      await enrichSubscriptionRowsWithPresignedMealImages(allOrders);
 
       return c.json({ success: true, orders: allOrders });
     } catch (error: any) {
@@ -1670,11 +1710,10 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       let ordersResult: any;
       try {
         ordersResult = await query(
-        `SELECT 
+          `SELECT 
           mo.id,
           mo.order_number,
-          mo.status,
-          mo.tracking_status,
+          mo.status AS meal_order_status,
           mo.created_at,
           mo.delivery_address,
           mo.delivery_latitude,
@@ -1682,22 +1721,30 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           mo.estimated_delivery_time,
           mo.logistics_partner_id,
           v.business_name as vendor_name,
-          v.profile_photo as vendor_photo
+          v.profile_photo as vendor_photo,
+          dt_latest.delivery_tracking_status
         FROM meal_orders mo
         LEFT JOIN vendors v ON mo.vendor_id = v.id
+        LEFT JOIN LATERAL (
+          SELECT dt.status AS delivery_tracking_status
+          FROM delivery_tracking dt
+          WHERE dt.meal_order_id = mo.id
+          ORDER BY dt.updated_at DESC NULLS LAST, dt.created_at DESC
+          LIMIT 1
+        ) dt_latest ON TRUE
         WHERE mo.customer_id = $1
           AND mo.status NOT IN ('delivered', 'cancelled', 'refunded')
-          AND (mo.tracking_status IS NOT NULL OR mo.status IN ('preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'))
         ORDER BY mo.created_at DESC
-        LIMIT 10`,
-        [customer.id]
-      );
+        LIMIT 25`,
+          [customer.id],
+        );
       } catch (error: any) {
         console.warn('[meals/active] Error fetching orders (returning empty):', error?.message);
         return c.json({ success: true, orders: [] }, 200);
       }
 
-      const orders = ((ordersResult as any)?.rows || []).map((order: any) => {
+      const orders = ((ordersResult as any)?.rows || [])
+        .map((order: any) => {
         let deliveryAddress = order.delivery_address;
         try {
           if (typeof order.delivery_address === 'string') {
@@ -1706,20 +1753,27 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
         } catch (_) {
           deliveryAddress = order.delivery_address;
         }
+        const moStatus = order.meal_order_status ?? order.status;
+        const dtStatus = order.delivery_tracking_status ?? null;
+        const effective = resolveEffectiveMealDeliveryState(moStatus, dtStatus);
+        if (isTerminalMealDeliveryState(effective)) {
+          return null;
+        }
         return {
           id: order.id,
           orderId: order.id,
           orderNumber: order.order_number,
           orderType: 'meal',
-          status: order.status,
-          trackingStatus: order.status,
+          status: effective,
+          trackingStatus: effective,
           vendorName: order.vendor_name,
           vendorPhoto: order.vendor_photo,
           deliveryAddress,
           estimatedDeliveryTime: order.estimated_delivery_time,
           createdAt: order.created_at,
         };
-      });
+      })
+        .filter(Boolean);
 
       return c.json({
         success: true,

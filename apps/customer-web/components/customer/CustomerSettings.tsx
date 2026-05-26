@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { bootstrapPushNotifications, teardownPushNotifications } from '@/lib/push-bootstrap';
 import { apiClient } from '@/lib/api-client';
 import {
   PlatformLegalPolicyDialog,
@@ -31,7 +32,6 @@ export function CustomerSettings({ customerPhone, onBack, onNavigate }: Customer
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [fcmToken, setFcmToken] = useState<string | null>(null);
   const [legalOpen, setLegalOpen] = useState(false);
   const [legalType, setLegalType] = useState<PlatformPolicyType | null>(null);
 
@@ -61,14 +61,9 @@ export function CustomerSettings({ customerPhone, onBack, onNavigate }: Customer
   };
 
   const requestNotificationPermission = async () => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      const permission = await Notification.requestPermission();
-      if (permission === 'granted') {
-        // In a real app, you'd get the FCM token here
-        // For now, we'll simulate it
-        setFcmToken('simulated-fcm-token');
-      }
-    }
+    // Permission and token acquisition is handled automatically by
+    // bootstrapPushNotifications which is called from CustomerApp
+    // once the session is ready. Nothing to do here.
   };
 
   const handleToggle = async (key: keyof NotificationSettings) => {
@@ -115,28 +110,37 @@ export function CustomerSettings({ customerPhone, onBack, onNavigate }: Customer
   };
 
   const handleRegisterDevice = async () => {
-    if (!fcmToken) {
-      alert('Notification permission not granted');
-      return;
-    }
-
     setSaving(true);
     try {
-      await apiClient.post('/push/register-device', {
-        phone: customerPhone,
-        fcm_token: fcmToken,
-        platform: 'web',
+      const customerRes = await apiClient.get<any>(
+        `/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`
+      );
+      const userId = customerRes?.customer?.id || customerRes?.id;
+      if (!userId) {
+        alert('Could not resolve customer account. Please try again.');
+        return;
+      }
+      await bootstrapPushNotifications({
+        userId,
+        userType: 'customer',
+        vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+        apiClient,
       });
-      alert('Device registered for push notifications');
+      alert('Device registered for push notifications.');
     } catch (err) {
-      console.error('Error registering device:', err);
-      alert('Failed to register device');
+      console.error('[CustomerSettings] Device registration error:', err);
+      alert('Failed to register device. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const userId = localStorage.getItem('customerId') || '';
+    await teardownPushNotifications({
+      userId,
+      userType: 'customer',
+    });
     localStorage.removeItem('customerPhone');
     localStorage.removeItem('authToken');
     window.location.href = '/auth';

@@ -10,8 +10,9 @@
 import { useState } from 'react';
 import { LogisticsPartnersManager } from './LogisticsPartnersManager';
 import { LogisticsRulesManager } from './LogisticsRulesManager';
+import { CustomerDeliveryFeePolicyManager } from './CustomerDeliveryFeePolicyManager';
 
-type TabType = 'partners' | 'rules';
+type TabType = 'partners' | 'rules' | 'customerFees';
 
 export function LogisticsManagement() {
   const [activeTab, setActiveTab] = useState<TabType>('partners');
@@ -50,6 +51,16 @@ export function LogisticsManagement() {
             >
               Delivery Rules
             </button>
+            <button
+              onClick={() => setActiveTab('customerFees')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'customerFees'
+                  ? 'border-orange-500 text-orange-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Customer delivery fees
+            </button>
           </nav>
         </div>
 
@@ -57,6 +68,7 @@ export function LogisticsManagement() {
         <div className="p-6">
           {activeTab === 'partners' && <LogisticsPartnersManager />}
           {activeTab === 'rules' && <LogisticsRulesManager />}
+          {activeTab === 'customerFees' && <CustomerDeliveryFeePolicyManager />}
         </div>
       </div>
     </div>

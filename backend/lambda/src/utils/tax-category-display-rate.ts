@@ -9,6 +9,19 @@ export function toFiniteDbNum(v: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+export type GstApplicationScope = 'service_booking' | 'meal_plan_food' | 'meal_plan_delivery';
+
+export function parseGstApplicationScope(raw: unknown): GstApplicationScope {
+  const s = String(raw ?? '').trim();
+  if (s === 'meal_plan_food') return 'meal_plan_food';
+  if (s === 'meal_plan_delivery') return 'meal_plan_delivery';
+  return 'service_booking';
+}
+
+export function isMealPlanGstScope(scope: GstApplicationScope): boolean {
+  return scope === 'meal_plan_food' || scope === 'meal_plan_delivery';
+}
+
 export function pickTaxCategoryDisplayRate(row: Record<string, unknown>): number {
   const t = toFiniteDbNum(row.tax_rate);
   const d = toFiniteDbNum(row.default_gst_rate);

@@ -21,6 +21,160 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { fixRewardCatalogTextFields } from '../utils/fix-rupee-mojibake';
 import { isValidUUID } from '../types/entities';
 import { isHiddenLegacyCatalogReward } from '../lib/hidden-rewards-catalog';
+import {
+  isValidIndianMobile,
+  loadCustomerContact,
+  sendRewardCouponSmsAfterRedeem,
+} from '../lib/reward-coupon-sms';
+
+function normalizeCatalogRow(row: Record<string, any>): Record<string, any> {
+  return fixRewardCatalogTextFields(row);
+}
+
+/** Customer catalog — never expose admin redemption URL before redeem. */
+function mapCustomerCatalogReward(row: Record<string, any>): Record<string, any> {
+  const r = normalizeCatalogRow(row);
+  const shared = String(r.redemption_link ?? '').trim();
+  const poolAvailable = parseInt(String(r.links_available ?? '0'), 10) || 0;
+  const isExternal = String(r.type ?? '') === 'external_link';
+  const { redemption_link: _omit, links_available: _pool, ...rest } = r;
+  return {
+    ...rest,
+    has_redemption_link: isExternal || shared.length > 0,
+    available_stock: isExternal ? poolAvailable : undefined,
+    has_shared_link_fallback: shared.length > 0,
+    in_stock: !isExternal || poolAvailable > 0 || shared.length > 0,
+  };
+}
+
+function mapAdminCatalogReward(row: Record<string, any>): Record<string, any> {
+  return normalizeCatalogRow(row);
+}
+
+function isExternalLinkCatalogReward(row: Record<string, any>): boolean {
+  return String(row.type ?? '') === 'external_link';
+}
+
+function sharedCatalogLink(row: Record<string, any>): string {
+  return String(row.redemption_link ?? '').trim();
+}
+
+async function countAvailablePoolLinks(rewardId: string): Promise<number> {
+  try {
+    const r = await query(
+      `SELECT COUNT(*)::int AS c
+       FROM reward_catalog_links
+       WHERE reward_id = $1::uuid AND status = 'available'`,
+      [rewardId]
+    );
+    return parseInt(String(r.rows[0]?.c ?? '0'), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function parseBulkLinkUrls(body: Record<string, unknown>): string[] {
+  const urls: string[] = [];
+  const rawList = body.links;
+  if (Array.isArray(rawList)) {
+    for (const item of rawList) {
+      const s = String(item ?? '').trim();
+      if (s) urls.push(s);
+    }
+  }
+  const rawText = body.linksText ?? body.links_text;
+  if (rawText != null) {
+    for (const line of String(rawText).split(/\r?\n/)) {
+      const s = line.trim();
+      if (s) urls.push(s);
+    }
+  }
+  return [...new Set(urls)];
+}
+
+async function attachAdminLinkPoolCounts(rows: Record<string, any>[]): Promise<Record<string, any>[]> {
+  if (!rows.length) return [];
+  try {
+    const ids = rows.map((r) => r.id);
+    const stats = await query(
+      `SELECT reward_id,
+              COUNT(*) FILTER (WHERE status = 'available')::int AS links_available,
+              COUNT(*) FILTER (WHERE status = 'assigned')::int AS links_assigned
+       FROM reward_catalog_links
+       WHERE reward_id = ANY($1::uuid[])
+       GROUP BY reward_id`,
+      [ids]
+    );
+    const byReward = new Map(
+      stats.rows.map((s: any) => [
+        String(s.reward_id),
+        {
+          links_available: Number(s.links_available ?? 0),
+          links_assigned: Number(s.links_assigned ?? 0),
+        },
+      ])
+    );
+    return rows.map((r) => {
+      const pool = byReward.get(String(r.id)) ?? { links_available: 0, links_assigned: 0 };
+      return { ...mapAdminCatalogReward(r), ...pool };
+    });
+  } catch {
+    return rows.map((r) => ({
+      ...mapAdminCatalogReward(r),
+      links_available: 0,
+      links_assigned: 0,
+    }));
+  }
+}
+
+/** Claim next unique URL from pool inside an open transaction. */
+async function claimUniqueRewardLink(
+  client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> },
+  rewardId: string,
+  customerId: string
+): Promise<{ linkUrl: string; poolLinkId: string } | null> {
+  try {
+    const claimed = await client.query(
+      `UPDATE reward_catalog_links
+       SET status = 'assigned',
+           customer_id = $1::uuid,
+           assigned_at = NOW()
+       WHERE id = (
+         SELECT id FROM reward_catalog_links
+         WHERE reward_id = $2::uuid AND status = 'available'
+         ORDER BY created_at ASC
+         LIMIT 1
+         FOR UPDATE SKIP LOCKED
+       )
+       RETURNING id, link_url`,
+      [customerId, rewardId]
+    );
+    if (claimed.rows.length) {
+      return {
+        poolLinkId: String(claimed.rows[0].id),
+        linkUrl: String(claimed.rows[0].link_url),
+      };
+    }
+  } catch (err: any) {
+    console.warn('[rewards] claimUniqueRewardLink skipped:', err?.message);
+  }
+  return null;
+}
+
+function parsePositiveInt(value: unknown, fallback?: number): number | null {
+  const n = parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(n) || n < 1) return fallback ?? null;
+  return n;
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const u = new URL(value);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 /** When `customer_loyalty_points` counters are NULL/stale, derive lifetime stats from the ledger. */
 async function loyaltyLedgerLifetimeTotals(
@@ -443,21 +597,32 @@ export function registerRewardsEndpoints(app: Hono) {
 
       const rewards = await query(
         `SELECT 
-            id,
-            name,
-            description,
-            points_cost,
-            cash_value,
-            type,
-            image_url
-           FROM rewards_catalog
-           WHERE is_active = true
-           ORDER BY display_order ASC, points_cost ASC`
+            rc.id,
+            rc.name,
+            rc.description,
+            rc.points_cost,
+            rc.cash_value,
+            rc.type,
+            rc.image_url,
+            rc.redemption_link,
+            COALESCE((
+              SELECT COUNT(*)::int
+              FROM reward_catalog_links l
+              WHERE l.reward_id = rc.id AND l.status = 'available'
+            ), 0) AS links_available
+           FROM rewards_catalog rc
+           WHERE rc.is_active = true
+           ORDER BY rc.display_order ASC, rc.points_cost ASC`
       );
 
       const rows = (rewards.rows || [])
-        .map((r) => fixRewardCatalogTextFields(r))
-        .filter((r) => !isHiddenLegacyCatalogReward(String(r.id)));
+        .map((r) => mapCustomerCatalogReward(r))
+        .filter((r) => !isHiddenLegacyCatalogReward(String(r.id)))
+        .filter((r) => {
+          if (!isExternalLinkCatalogReward(r)) return true;
+          const pool = parseInt(String(r.available_stock ?? 0), 10) || 0;
+          return pool > 0 || Boolean(r.has_shared_link_fallback);
+        });
 
       return c.json({
         success: true,
@@ -508,7 +673,7 @@ export function registerRewardsEndpoints(app: Hono) {
         return c.json({ error: 'Reward not found or inactive' }, 404);
       }
 
-      const reward = fixRewardCatalogTextFields(rewards.rows[0]);
+      const reward = normalizeCatalogRow(rewards.rows[0]);
       const cost = parseInt(String(reward.points_cost ?? points), 10);
       if (!Number.isFinite(cost) || cost < 1) {
         return c.json({ error: 'Invalid reward points_cost' }, 400);
@@ -518,9 +683,20 @@ export function registerRewardsEndpoints(app: Hono) {
         return c.json({ error: 'points does not match reward cost' }, 400);
       }
 
-      const cashValue = Math.round((parseFloat(String(reward.cash_value ?? 0)) || 0) * 100) / 100;
+      const isExternalLink = isExternalLinkCatalogReward(reward);
+      const sharedLink = sharedCatalogLink(reward);
+      if (isExternalLink) {
+        const poolAvailable = await countAvailablePoolLinks(String(rewardId));
+        if (poolAvailable === 0 && !sharedLink) {
+          return c.json({ error: 'This reward is currently out of stock.' }, 409);
+        }
+      }
 
-      const { remainingPoints, walletCredited } = await withTransaction(async (client) => {
+      const cashValue = isExternalLink
+        ? 0
+        : Math.round((parseFloat(String(reward.cash_value ?? 0)) || 0) * 100) / 100;
+
+      const { remainingPoints, walletCredited, assignedLink, redemptionId } = await withTransaction(async (client) => {
         const cwCol = await client.query<{ column_name: string }>(
           `SELECT column_name FROM information_schema.columns
            WHERE table_schema = 'public' AND table_name = 'customer_wallets'`
@@ -537,6 +713,20 @@ export function registerRewardsEndpoints(app: Hono) {
         const currentPoints = parseInt(String(prof.rows[0]?.total_points ?? '0'), 10);
         if (currentPoints < cost) {
           throw new Error('INSUFFICIENT_POINTS');
+        }
+
+        let customerLink: string | null = null;
+        let poolLinkId: string | null = null;
+        if (isExternalLink) {
+          const claimed = await claimUniqueRewardLink(client, String(rewardId), customerId);
+          if (claimed) {
+            customerLink = claimed.linkUrl;
+            poolLinkId = claimed.poolLinkId;
+          } else if (sharedLink) {
+            customerLink = sharedLink;
+          } else {
+            throw new Error('OUT_OF_STOCK');
+          }
         }
 
         await client.query(
@@ -556,14 +746,36 @@ export function registerRewardsEndpoints(app: Hono) {
           [customerId, -cost, rewardRefUuid, `Redeemed: ${reward.name}`]
         );
 
+        let redemptionRowId: string | null = null;
         try {
-          await client.query(
-            `INSERT INTO reward_redemptions (customer_id, reward_id, points_used, redeemed_at)
-             VALUES ($1::uuid, $2, $3, NOW())`,
-            [customerId, rewardId, cost]
+          const ins = await client.query(
+            `INSERT INTO reward_redemptions (customer_id, reward_id, points_used, redeemed_at, status, coupon_code)
+             VALUES ($1::uuid, $2, $3, NOW(), $4, $5)
+             RETURNING id`,
+            [
+              customerId,
+              rewardId,
+              cost,
+              isExternalLink ? 'active' : null,
+              isExternalLink ? customerLink : null,
+            ]
           );
+          redemptionRowId = ins.rows[0]?.id ? String(ins.rows[0].id) : null;
         } catch (re: any) {
           console.warn('[rewards/redeem] reward_redemptions insert skipped:', re?.message);
+        }
+
+        if (poolLinkId && redemptionRowId) {
+          try {
+            await client.query(
+              `UPDATE reward_catalog_links
+               SET redemption_id = $1::uuid
+               WHERE id = $2::uuid`,
+              [redemptionRowId, poolLinkId]
+            );
+          } catch (pe: any) {
+            console.warn('[rewards/redeem] pool link redemption_id update skipped:', pe?.message);
+          }
         }
 
         let credited = 0;
@@ -634,30 +846,68 @@ export function registerRewardsEndpoints(app: Hono) {
         return {
           remainingPoints: parseInt(String(after.rows[0]?.total_points ?? '0'), 10),
           walletCredited: credited,
+          assignedLink: customerLink,
+          redemptionId: redemptionRowId,
         };
       });
 
       const profAfter = await select('customer_loyalty_points', { customer_id: customerId });
       const lifetimeOut = await computeDisplayedLifetimeStats(customerId, profAfter[0]);
 
+      const publicReward = mapCustomerCatalogReward(reward);
+
+      let smsNotification:
+        | { attempted: boolean; status: 'queued' | 'skipped'; reason?: string }
+        | undefined;
+
+      if (isExternalLink && assignedLink && redemptionId) {
+        const contact = await loadCustomerContact(customerId);
+        const canSms =
+          Boolean(contact.phone) && isValidIndianMobile(String(contact.phone));
+        smsNotification = canSms
+          ? { attempted: true, status: 'queued' }
+          : { attempted: false, status: 'skipped', reason: 'no_phone' };
+
+        if (canSms) {
+          void sendRewardCouponSmsAfterRedeem({
+            customerId,
+            redemptionId,
+            rewardName: String(reward.name),
+            link: assignedLink,
+            phone: contact.phone,
+            customerName: contact.name,
+          }).catch((err) =>
+            console.error('[rewards/redeem] coupon SMS failed:', err)
+          );
+        }
+      }
+
       return c.json({
         success: true,
-        message:
-          walletCredited > 0
+        message: isExternalLink
+          ? smsNotification?.status === 'queued'
+            ? 'Reward redeemed! Use your coupon link below — we are also sending it to your mobile.'
+            : 'Reward redeemed! Use your unique coupon link below.'
+          : walletCredited > 0
             ? `Reward redeemed. ₹${walletCredited.toFixed(2)} added to your wallet.`
             : 'Reward redeemed successfully',
-        reward,
+        reward: publicReward,
+        redemptionLink: isExternalLink ? assignedLink ?? undefined : undefined,
         remainingPoints,
         points: remainingPoints,
         totalPoints: remainingPoints,
         lifetimePointsEarned: lifetimeOut.earned,
         lifetimePointsRedeemed: lifetimeOut.redeemed,
         walletCredited,
+        smsNotification,
       });
     } catch (error: any) {
       console.error('Error redeeming reward:', error);
       if (error?.message === 'INSUFFICIENT_POINTS') {
         return c.json({ error: 'Insufficient points' }, 400);
+      }
+      if (error?.message === 'OUT_OF_STOCK') {
+        return c.json({ error: 'This reward is currently out of stock.' }, 409);
       }
       if (error?.message === 'LOYALTY_PROFILE_NOT_FOUND') {
         return c.json({ error: 'Loyalty profile not found' }, 404);
@@ -701,7 +951,14 @@ export function registerRewardsEndpoints(app: Hono) {
            LIMIT $2 OFFSET $3`,
         [customerId, limit, offset]
       );
-      const rows = (result.rows || []).map((r) => fixRewardCatalogTextFields(r));
+      const rows = (result.rows || []).map((r) => {
+        const fixed = normalizeCatalogRow(r);
+        const link = String(fixed.coupon_code ?? '').trim();
+        return {
+          ...fixed,
+          redemption_link: link || undefined,
+        };
+      });
 
       return c.json({
         success: true,
@@ -739,11 +996,329 @@ export function registerRewardsEndpoints(app: Hono) {
 
       return c.json({
         success: true,
-        reward: fixRewardCatalogTextFields(rewards.rows[0]),
+        reward: mapCustomerCatalogReward(rewards.rows[0]),
       });
     } catch (error: any) {
       console.error('Error fetching reward details:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/rewards-catalog
+   * List all catalog rewards (admin)
+   */
+  app.get('/admin/rewards-catalog', async (c) => {
+    try {
+      const result = await query(
+        `SELECT *
+         FROM rewards_catalog
+         ORDER BY display_order ASC, points_cost ASC, created_at DESC`
+      );
+      const rewards = await attachAdminLinkPoolCounts(result.rows || []);
+      return c.json({ success: true, rewards, count: rewards.length });
+    } catch (error: any) {
+      console.error('Error fetching admin rewards catalog:', error);
+      return c.json({ success: false, error: error?.message || 'Failed to load catalog' }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/rewards-catalog
+   * Create catalog reward (admin)
+   */
+  app.post('/admin/rewards-catalog', async (c) => {
+    try {
+      const body = await c.req.json();
+      const name = String(body.name ?? '').trim();
+      const description = String(body.description ?? '').trim() || null;
+      const pointsCost = parsePositiveInt(body.points_cost ?? body.pointsCost);
+      const cashValue = parseFloat(String(body.cash_value ?? body.cashValue ?? 0)) || 0;
+      const type = String(body.type ?? 'external_link').trim() || 'external_link';
+      const redemptionLink = String(body.redemption_link ?? body.redemptionLink ?? '').trim() || null;
+      const imageUrl = String(body.image_url ?? body.imageUrl ?? '').trim() || null;
+      const displayOrder = parseInt(String(body.display_order ?? body.displayOrder ?? 0), 10) || 0;
+      const validityDays =
+        body.validity_days != null || body.validityDays != null
+          ? parseInt(String(body.validity_days ?? body.validityDays), 10)
+          : null;
+      const isActive = body.is_active !== false && body.isActive !== false;
+
+      if (!name) {
+        return c.json({ success: false, error: 'name is required' }, 400);
+      }
+      if (!pointsCost) {
+        return c.json({ success: false, error: 'points_cost must be a positive number' }, 400);
+      }
+      if (redemptionLink && !isValidHttpUrl(redemptionLink)) {
+        return c.json({ success: false, error: 'redemption_link must be a valid http(s) URL' }, 400);
+      }
+
+      const inserted = await insert('rewards_catalog', {
+        name,
+        description,
+        points_cost: pointsCost,
+        cash_value: type === 'external_link' ? 0 : cashValue,
+        type,
+        redemption_link: redemptionLink,
+        image_url: imageUrl,
+        validity_days: Number.isFinite(validityDays as number) ? validityDays : null,
+        is_active: isActive,
+        display_order: displayOrder,
+      });
+
+      return c.json({
+        success: true,
+        reward: mapAdminCatalogReward(inserted[0]),
+        message: 'Reward created successfully',
+      });
+    } catch (error: any) {
+      console.error('Error creating catalog reward:', error);
+      return c.json({ success: false, error: error?.message || 'Failed to create reward' }, 500);
+    }
+  });
+
+  /**
+   * PUT /admin/rewards-catalog/:id
+   * Update catalog reward (admin)
+   */
+  app.put('/admin/rewards-catalog/:id', async (c) => {
+    try {
+      const { id } = c.req.param();
+      if (!isValidUUID(String(id))) {
+        return c.json({ success: false, error: 'Invalid reward id' }, 400);
+      }
+
+      const existing = await query(`SELECT * FROM rewards_catalog WHERE id = $1::uuid`, [id]);
+      if (!existing.rows.length) {
+        return c.json({ success: false, error: 'Reward not found' }, 404);
+      }
+
+      const body = await c.req.json();
+      const current = existing.rows[0];
+      const nextType = body.type != null ? String(body.type).trim() : String(current.type ?? '');
+      const nextLinkRaw =
+        body.redemption_link !== undefined || body.redemptionLink !== undefined
+          ? String(body.redemption_link ?? body.redemptionLink ?? '').trim()
+          : String(current.redemption_link ?? '').trim();
+      const nextLink = nextLinkRaw || null;
+
+      if (nextLink && !isValidHttpUrl(nextLink)) {
+        return c.json({ success: false, error: 'redemption_link must be a valid http(s) URL' }, 400);
+      }
+
+      const patch: Record<string, unknown> = { updated_at: new Date() };
+      if (body.name != null) patch.name = String(body.name).trim();
+      if (body.description !== undefined) patch.description = String(body.description ?? '').trim() || null;
+      if (body.points_cost != null || body.pointsCost != null) {
+        const pc = parsePositiveInt(body.points_cost ?? body.pointsCost);
+        if (!pc) return c.json({ success: false, error: 'points_cost must be positive' }, 400);
+        patch.points_cost = pc;
+      }
+      if (body.cash_value != null || body.cashValue != null) {
+        patch.cash_value = parseFloat(String(body.cash_value ?? body.cashValue)) || 0;
+      }
+      if (body.type != null) patch.type = nextType;
+      if (body.redemption_link !== undefined || body.redemptionLink !== undefined) {
+        patch.redemption_link = nextLink;
+      }
+      if (body.image_url !== undefined || body.imageUrl !== undefined) {
+        patch.image_url = String(body.image_url ?? body.imageUrl ?? '').trim() || null;
+      }
+      if (body.display_order != null || body.displayOrder != null) {
+        patch.display_order = parseInt(String(body.display_order ?? body.displayOrder), 10) || 0;
+      }
+      if (body.validity_days !== undefined || body.validityDays !== undefined) {
+        const vd = parseInt(String(body.validity_days ?? body.validityDays), 10);
+        patch.validity_days = Number.isFinite(vd) ? vd : null;
+      }
+      if (body.is_active !== undefined || body.isActive !== undefined) {
+        patch.is_active = body.is_active !== false && body.isActive !== false;
+      }
+      if (nextType === 'external_link') {
+        patch.cash_value = 0;
+      }
+
+      const updated = await update('rewards_catalog', patch, { id });
+      return c.json({
+        success: true,
+        reward: mapAdminCatalogReward(updated[0] ?? { ...current, ...patch }),
+        message: 'Reward updated successfully',
+      });
+    } catch (error: any) {
+      console.error('Error updating catalog reward:', error);
+      return c.json({ success: false, error: error?.message || 'Failed to update reward' }, 500);
+    }
+  });
+
+  /**
+   * DELETE /admin/rewards-catalog/:id
+   * Deactivate catalog reward (admin)
+   */
+  app.delete('/admin/rewards-catalog/:id', async (c) => {
+    try {
+      const { id } = c.req.param();
+      if (!isValidUUID(String(id))) {
+        return c.json({ success: false, error: 'Invalid reward id' }, 400);
+      }
+
+      const updated = await update(
+        'rewards_catalog',
+        { is_active: false, updated_at: new Date() },
+        { id }
+      );
+      if (!updated.length) {
+        return c.json({ success: false, error: 'Reward not found' }, 404);
+      }
+
+      return c.json({ success: true, message: 'Reward deactivated' });
+    } catch (error: any) {
+      console.error('Error deleting catalog reward:', error);
+      return c.json({ success: false, error: error?.message || 'Failed to delete reward' }, 500);
+    }
+  });
+
+  /**
+   * GET /admin/rewards-catalog/:id/link-pool
+   * Pool summary + recent links (admin)
+   */
+  app.get('/admin/rewards-catalog/:id/link-pool', async (c) => {
+    try {
+      const { id } = c.req.param();
+      if (!isValidUUID(String(id))) {
+        return c.json({ success: false, error: 'Invalid reward id' }, 400);
+      }
+
+      const summaryRes = await query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status = 'available')::int AS available,
+           COUNT(*) FILTER (WHERE status = 'assigned')::int AS assigned,
+           COUNT(*)::int AS total
+         FROM reward_catalog_links
+         WHERE reward_id = $1::uuid`,
+        [id]
+      );
+      const summary = summaryRes.rows[0] ?? { available: 0, assigned: 0, total: 0 };
+
+      const recent = await query(
+        `SELECT id, link_url, status, customer_id, assigned_at, created_at
+         FROM reward_catalog_links
+         WHERE reward_id = $1::uuid
+         ORDER BY created_at DESC
+         LIMIT 100`,
+        [id]
+      );
+
+      return c.json({
+        success: true,
+        summary: {
+          available: Number(summary.available ?? 0),
+          assigned: Number(summary.assigned ?? 0),
+          total: Number(summary.total ?? 0),
+        },
+        links: recent.rows || [],
+      });
+    } catch (error: any) {
+      console.error('Error fetching link pool:', error);
+      return c.json({ success: false, error: error?.message || 'Failed to load link pool' }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/rewards-catalog/:id/link-pool
+   * Bulk add unique coupon URLs (one per customer redemption)
+   */
+  app.post('/admin/rewards-catalog/:id/link-pool', async (c) => {
+    try {
+      const { id } = c.req.param();
+      if (!isValidUUID(String(id))) {
+        return c.json({ success: false, error: 'Invalid reward id' }, 400);
+      }
+
+      const existing = await query(`SELECT id FROM rewards_catalog WHERE id = $1::uuid`, [id]);
+      if (!existing.rows.length) {
+        return c.json({ success: false, error: 'Reward not found' }, 404);
+      }
+
+      const body = await c.req.json();
+      const urls = parseBulkLinkUrls(body);
+      if (!urls.length) {
+        return c.json({ success: false, error: 'Provide links (array) or linksText (one URL per line)' }, 400);
+      }
+
+      const invalid = urls.filter((u) => !isValidHttpUrl(u));
+      if (invalid.length) {
+        return c.json(
+          { success: false, error: `Invalid URL(s): ${invalid.slice(0, 3).join(', ')}` },
+          400
+        );
+      }
+
+      let added = 0;
+      let skipped = 0;
+      for (const linkUrl of urls) {
+        const ins = await query(
+          `INSERT INTO reward_catalog_links (reward_id, link_url, status)
+           VALUES ($1::uuid, $2, 'available')
+           ON CONFLICT (reward_id, link_url) DO NOTHING
+           RETURNING id`,
+          [id, linkUrl]
+        );
+        if (ins.rows.length) added += 1;
+        else skipped += 1;
+      }
+
+      const summaryRes = await query(
+        `SELECT COUNT(*) FILTER (WHERE status = 'available')::int AS available,
+                COUNT(*) FILTER (WHERE status = 'assigned')::int AS assigned
+         FROM reward_catalog_links WHERE reward_id = $1::uuid`,
+        [id]
+      );
+
+      return c.json({
+        success: true,
+        added,
+        skipped,
+        summary: {
+          available: Number(summaryRes.rows[0]?.available ?? 0),
+          assigned: Number(summaryRes.rows[0]?.assigned ?? 0),
+        },
+        message: `Added ${added} link(s)${skipped ? `, ${skipped} duplicate(s) skipped` : ''}`,
+      });
+    } catch (error: any) {
+      console.error('Error adding link pool URLs:', error);
+      return c.json({ success: false, error: error?.message || 'Failed to add links' }, 500);
+    }
+  });
+
+  /**
+   * DELETE /admin/rewards-catalog/:id/link-pool/:linkId
+   * Remove an unused link from the pool
+   */
+  app.delete('/admin/rewards-catalog/:id/link-pool/:linkId', async (c) => {
+    try {
+      const { id, linkId } = c.req.param();
+      if (!isValidUUID(String(id)) || !isValidUUID(String(linkId))) {
+        return c.json({ success: false, error: 'Invalid id' }, 400);
+      }
+
+      const del = await query(
+        `DELETE FROM reward_catalog_links
+         WHERE id = $1::uuid AND reward_id = $2::uuid AND status = 'available'
+         RETURNING id`,
+        [linkId, id]
+      );
+      if (!del.rows.length) {
+        return c.json(
+          { success: false, error: 'Link not found or already assigned to a customer' },
+          404
+        );
+      }
+
+      return c.json({ success: true, message: 'Link removed from pool' });
+    } catch (error: any) {
+      console.error('Error deleting pool link:', error);
+      return c.json({ success: false, error: error?.message || 'Failed to delete link' }, 500);
     }
   });
 }

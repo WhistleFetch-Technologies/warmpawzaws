@@ -16,7 +16,7 @@
  */
 
 import { Hono } from 'hono';
-import { select, insert, update, query } from '../../../database/rds-connection';
+import { select, insert, query } from '../../../database/rds-connection';
 import { sendSMS } from '../../../utils/sms-service';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
@@ -27,6 +27,48 @@ import {
   normalizeCustomerNotificationSettings,
   persistCustomerNotificationSettings,
 } from '../../../utils/customer-notification-settings';
+
+async function markNotificationsOpenedByIds(notificationIds: string[]): Promise<void> {
+  if (notificationIds.length === 0) return;
+
+  await query(
+    `UPDATE notifications
+     SET is_read = true,
+         read_at = COALESCE(read_at, NOW()),
+         delivery_status = CASE
+           WHEN delivery_status NOT IN ('opened', 'failed', 'expired') THEN 'opened'::notification_delivery_status
+           ELSE delivery_status
+         END,
+         opened_at = CASE
+           WHEN delivery_status NOT IN ('opened', 'failed', 'expired') THEN NOW()
+           ELSE opened_at
+         END
+     WHERE id = ANY($1::uuid[])`,
+    [notificationIds]
+  );
+
+  await query(
+    `UPDATE notification_delivery_log
+     SET status = 'opened'::notification_delivery_status,
+         opened_at = NOW(),
+         updated_at = NOW()
+     WHERE notification_id = ANY($1::uuid[])
+       AND channel = 'in_app'
+       AND status NOT IN ('opened', 'failed', 'expired')`,
+    [notificationIds]
+  );
+}
+
+async function markAllNotificationsOpenedForRecipient(recipientId: string, recipientType: string): Promise<void> {
+  const result = await query(
+    `SELECT id FROM notifications
+     WHERE recipient_id = $1 AND recipient_type = $2 AND is_read = false`,
+    [recipientId, recipientType]
+  );
+
+  const ids = (result.rows || []).map((row: { id: string }) => row.id);
+  await markNotificationsOpenedByIds(ids);
+}
 
 async function resolveCustomerIdForNotificationPhone(phone: string): Promise<string | null> {
   const raw = decodeURIComponent(String(phone)).trim();
@@ -264,17 +306,17 @@ export function registerNotificationEndpoints(app: Hono) {
     try {
       const { notificationId } = c.req.param();
 
-      const updated = await update('notifications',
-        { id: notificationId },
-        { is_read: true, read_at: new Date() }
-      );
-
-      if (updated.length === 0) {
+      const existing = await query('SELECT id FROM notifications WHERE id = $1', [notificationId]);
+      if ((existing.rows || []).length === 0) {
         return c.json({ error: 'Notification not found' }, 404);
       }
+
+      await markNotificationsOpenedByIds([notificationId]);
+
+      const updated = await query('SELECT * FROM notifications WHERE id = $1', [notificationId]);
       return c.json({
         success: true,
-        notification: updated[0],
+        notification: updated.rows[0],
         message: 'Notification marked as read',
       });
     } catch (error: any) {
@@ -295,10 +337,7 @@ export function registerNotificationEndpoints(app: Hono) {
         return c.json({ error: 'userId and userType are required' }, 400);
       }
 
-      await query(
-        'UPDATE notifications SET is_read = true, read_at = NOW() WHERE recipient_id = $1 AND recipient_type = $2 AND is_read = false',
-        [userId, userType]
-      );
+      await markAllNotificationsOpenedForRecipient(userId, userType);
 
       return c.json({
         success: true,
@@ -443,18 +482,17 @@ export function registerNotificationEndpoints(app: Hono) {
         return c.json({ error: 'notificationId is required' }, 400);
       }
 
-      const updated = await update('notifications',
-        { id: notificationId },
-        { is_read: true, read_at: new Date() }
-      );
-
-      if (updated.length === 0) {
+      const existing = await query('SELECT id FROM notifications WHERE id = $1', [notificationId]);
+      if ((existing.rows || []).length === 0) {
         return c.json({ error: 'Notification not found' }, 404);
       }
 
+      await markNotificationsOpenedByIds([notificationId]);
+
+      const updated = await query('SELECT * FROM notifications WHERE id = $1', [notificationId]);
       return c.json({
         success: true,
-        notification: updated[0],
+        notification: updated.rows[0],
       });
     } catch (error: any) {
       console.error('Error marking notification as read:', error);
@@ -482,12 +520,7 @@ export function registerNotificationEndpoints(app: Hono) {
 
       const customerId = customers[0].id;
 
-      await query(
-        `UPDATE notifications 
-         SET is_read = true, read_at = NOW() 
-         WHERE recipient_id = $1 AND recipient_type = 'customer' AND is_read = false`,
-        [customerId]
-      );
+      await markAllNotificationsOpenedForRecipient(customerId, 'customer');
 
       return c.json({
         success: true,

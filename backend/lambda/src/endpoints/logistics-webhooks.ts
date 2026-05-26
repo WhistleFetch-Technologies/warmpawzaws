@@ -7,8 +7,12 @@
  * - Shiprocket status updates
  * - Delhivery status updates
  * - Dunzo delivery updates
- * - Pidge store-channel status (ecommerce shipments + pharmacy/meal delivery_tracking)
- * 
+ *
+ * Pidge store-channel: DO NOT implement POST /webhooks/pidge here. The Java delivery-service is the sole
+ * logistics authority: it receives Pidge webhooks, maps statuses, updates delivery_tracking + meal_orders,
+ * settlement, idempotency, and OTP/lifecycle APIs. API Gateway routes /webhooks/pidge to Java (VPC link).
+ * This Lambda layer reads DB state for APIs/UI and triggers dispatch initiation only (see meal-dispatch.ts).
+ *
  * Also handles auto-shipment creation and notifications
  * 
  * Date: 2026-01-20
@@ -17,6 +21,10 @@
 
 import { Hono } from 'hono';
 import { select, insert, update, query } from '../database/rds-connection';
+import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
+import { resolveCustomerMealPlanOrderDisplayTotals } from '../utils/meal-order-pricing';
+import { resolveMealOrderIdForSubscriptionDelivery } from '../utils/resolve-meal-order-for-subscription-delivery';
+import { applyLiveTrackingEnrichmentForCustomer } from '../utils/delivery-tracking-enrichment';
 import { logisticsPartnerService } from '../lib/services/logistics-partner-service';
 import {
   getPidgeCredentials,
@@ -25,6 +33,13 @@ import {
   pidgeCreateOrder,
   extractPidgeOrderIdMap,
 } from '../lib/services/pidge-logistics';
+import { resolveEffectiveMealDeliveryState } from '../utils/meal-delivery-effective-state';
+import {
+  buildCustomerMealTrackingOrderPayload,
+  buildMealTrackingCustomerPayload,
+  type MealTrackingOrderSource,
+} from '../utils/meal-tracking-order-payload';
+import { presignS3GetUrlIfApplicable } from '../utils/s3-media-presign';
 
 // Status mappings for different partners
 const SHIPROCKET_STATUS_MAP: Record<string, string> = {
@@ -54,98 +69,7 @@ const DELHIVERY_STATUS_MAP: Record<string, string> = {
   'Cancelled': 'cancelled',
 };
 
-/** Pidge fulfillment.status → internal shipment status (aligned with Shiprocket-style keys). */
-const PIDGE_FULFILLMENT_STATUS_MAP: Record<string, string> = {
-  CANCELLED: 'cancelled',
-  CREATED: 'awb_generated',
-  OUT_FOR_PICKUP: 'pickup_scheduled',
-  REACHED_PICKUP: 'pickup_scheduled',
-  PICKED_UP: 'picked_up',
-  IN_TRANSIT: 'in_transit',
-  OUT_FOR_DELIVERY: 'out_for_delivery',
-  REACHED_DELIVERY: 'out_for_delivery',
-  DELIVERED: 'delivered',
-  DISPOSED: 'delivered',
-  UNDELIVERED: 'out_for_delivery',
-  RTO_OUT_FOR_DELIVERY: 'rto_initiated',
-  RTO_UNDELIVERED: 'rto_initiated',
-  RTO_DELIVERED: 'returned',
-  LOST: 'lost',
-  DAMAGED: 'damaged',
-};
-
-/** Pidge parent order status (lowercase) when fulfillment block missing. */
-const PIDGE_PARENT_STATUS_MAP: Record<string, string> = {
-  pending: 'pending',
-  fulfilled: 'in_transit',
-  completed: 'delivered',
-  cancelled: 'cancelled',
-};
-
-/** shipments.status CHECK (legacy) allows only these values in many DBs. */
-function coercePidgeStatusForShipmentsTable(status: string): string {
-  const allowed = new Set([
-    'created',
-    'awb_generated',
-    'picked_up',
-    'in_transit',
-    'delivered',
-    'returned',
-    'cancelled',
-  ]);
-  if (allowed.has(status)) return status;
-  const map: Record<string, string> = {
-    pending: 'created',
-    pickup_scheduled: 'awb_generated',
-    out_for_delivery: 'in_transit',
-    unknown: 'in_transit',
-    rto_initiated: 'returned',
-    lost: 'cancelled',
-    damaged: 'cancelled',
-  };
-  return map[status] || 'in_transit';
-}
-
-/** Map Pidge fulfillment-derived status to delivery_tracking.status (hyperlocal). */
-function mapPidgeNormalizedToDeliveryTrackingStatus(normalized: string): string {
-  switch (normalized) {
-    case 'delivered':
-      return 'delivered';
-    case 'picked_up':
-      return 'picked_up';
-    case 'cancelled':
-      return 'failed';
-    case 'in_transit':
-    case 'out_for_delivery':
-    case 'unknown':
-      return 'on_the_way';
-    default:
-      return 'heading_to_pickup';
-  }
-}
-
-/** Map Pidge status to pharmacy_orders / meal_orders status when applicable. */
-function mapPidgeNormalizedToPharmacyMealOrderStatus(normalized: string): string | null {
-  switch (normalized) {
-    case 'delivered':
-      return 'delivered';
-    case 'picked_up':
-      return 'picked_up';
-    case 'cancelled':
-      return 'cancelled';
-    case 'in_transit':
-    case 'out_for_delivery':
-    case 'unknown':
-      return 'on_the_way';
-    case 'awb_generated':
-    case 'pickup_scheduled':
-    case 'pending':
-      return 'ready_for_pickup';
-    default:
-      return null;
-  }
-}
-
+/** Line items for Pidge hyperlocal create (POST /logistics/auto-create-shipment). */
 function buildHyperlocalLineItemsForPidge(orderType: string, order: any): Record<string, unknown>[] {
   if (orderType === 'pharmacy') {
     let raw = order.items;
@@ -470,15 +394,22 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
         updated_at: new Date().toISOString(),
       });
 
-      // Update order
+      // Update order (meal may be mirrored from subscription_delivery_id only)
       const orderTable = tracking.pharmacy_order_id ? 'pharmacy_orders' : 'meal_orders';
-      const orderId = tracking.pharmacy_order_id || tracking.meal_order_id;
-      
+      let orderId = tracking.pharmacy_order_id || tracking.meal_order_id;
+      if (!orderId && tracking.subscription_delivery_id) {
+        orderId =
+          (await resolveMealOrderIdForSubscriptionDelivery(String(tracking.subscription_delivery_id))) || null;
+      }
+
       if (orderId) {
         await update(orderTable, { id: orderId }, {
           status: normalizedStatus,
           updated_at: new Date().toISOString(),
         });
+        if (orderTable === 'meal_orders' && normalizedStatus === 'delivered') {
+          await ensureMealOrderSettlementOnDelivered(String(orderId));
+        }
       }
 
       return c.json({ success: true, status: normalizedStatus });
@@ -489,247 +420,9 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
   });
 
   // ============================================================================
-  // PIDGE WEBHOOK (store channel — status / fulfillment updates)
-  // ============================================================================
-
-  /**
-   * GET /webhooks/pidge
-   * Dummy/reference URL helper: shows the path to register in Pidge as "client" webhook URL.
-   * Pidge will POST JSON to POST /webhooks/pidge (same keys as GET order API, not wrapped in data).
-   */
-  app.get('/webhooks/pidge', (c) => {
-    const base = (
-      process.env.PUBLIC_API_BASE_URL ||
-      process.env.API_BASE_URL ||
-      'https://YOUR_API_GATEWAY_OR_DOMAIN'
-    ).replace(/\/$/, '');
-    const clientUrl = `${base}/webhooks/pidge`;
-    return c.json({
-      ok: true,
-      message:
-        'Register clientUrl in Pidge (Channel integration → Webhook URL). For local dev use ngrok/cloudflared so Pidge can reach this host.',
-      clientUrl,
-      method: 'POST',
-      note: 'Optional: set PIDGE_WEBHOOK_BEARER_TOKEN on the server, then send Authorization: Bearer <same token> on webhook requests.',
-    });
-  });
-
-  /**
-   * POST /webhooks/pidge
-   * Ingest Pidge webhook payloads (Bearer optional if PIDGE_WEBHOOK_BEARER_TOKEN is unset).
-   */
-  app.post('/webhooks/pidge', async (c) => {
-    try {
-      const bearerSecret = process.env.PIDGE_WEBHOOK_BEARER_TOKEN;
-      if (bearerSecret) {
-        const auth = c.req.header('Authorization') || '';
-        const expected = `Bearer ${bearerSecret}`;
-        if (auth !== expected) {
-          return c.json({ error: 'Unauthorized' }, 401);
-        }
-      }
-
-      const payload = (await c.req.json()) as Record<string, unknown>;
-      console.log('[PIDGE WEBHOOK] Received:', JSON.stringify(payload).slice(0, 4000));
-
-      const pidgeId =
-        payload.id !== undefined && payload.id !== null ? String(payload.id) : '';
-      const referenceId =
-        payload.reference_id !== undefined && payload.reference_id !== null
-          ? String(payload.reference_id)
-          : '';
-
-      if (!pidgeId) {
-        return c.json({ error: 'Missing id' }, 400);
-      }
-
-      const fulfillment = (payload.fulfillment || {}) as Record<string, unknown>;
-      const ffStatus =
-        typeof fulfillment.status === 'string' ? fulfillment.status.toUpperCase() : '';
-      const parentStatus = String(payload.status || '').toLowerCase();
-
-      let normalizedStatus =
-        (ffStatus && PIDGE_FULFILLMENT_STATUS_MAP[ffStatus]) ||
-        PIDGE_PARENT_STATUS_MAP[parentStatus] ||
-        'unknown';
-
-      const logs = Array.isArray(fulfillment.logs) ? fulfillment.logs : [];
-      const lastLog = logs.length > 0 ? (logs[logs.length - 1] as Record<string, unknown>) : null;
-      const rider = (fulfillment.rider || lastLog?.rider) as Record<string, unknown> | undefined;
-      const lastLocation = lastLog?.location as Record<string, unknown> | undefined;
-
-      const trackCode =
-        typeof fulfillment.track_code === 'string' ? fulfillment.track_code : null;
-
-      let shipment: any = null;
-
-      const byShipment = await query(
-        `SELECT * FROM shipments 
-         WHERE logistics_partner = 'pidge' 
-           AND (shipment_id = $1 OR shipment_id::text = $1)
-         LIMIT 1`,
-        [pidgeId]
-      );
-      if (byShipment.rows.length > 0) {
-        shipment = byShipment.rows[0];
-      }
-
-      if (!shipment && referenceId) {
-        const byRef = await query(
-          `SELECT s.* FROM shipments s
-           INNER JOIN orders o ON o.id = s.order_id
-           WHERE s.logistics_partner = 'pidge'
-             AND (o.order_number = $1 OR o.id::text = $1 OR s.awb_code = $1)
-           LIMIT 1`,
-          [referenceId]
-        );
-        if (byRef.rows.length > 0) shipment = byRef.rows[0];
-      }
-
-      if (!shipment) {
-        const dtResult = await query(
-          `SELECT * FROM delivery_tracking
-           WHERE logistics_partner = 'pidge'
-             AND (external_task_id = $1 OR external_task_id::text = $1)
-           ORDER BY created_at DESC
-           LIMIT 1`,
-          [pidgeId]
-        );
-        if (dtResult.rows.length > 0) {
-          const tracking = dtResult.rows[0];
-          const dtStatus = mapPidgeNormalizedToDeliveryTrackingStatus(normalizedStatus);
-          const riderName =
-            rider && typeof rider.name === 'string' ? rider.name : undefined;
-          const riderPhone =
-            rider && (rider.mobile != null || rider.phone != null)
-              ? String(rider.mobile ?? rider.phone)
-              : undefined;
-
-          await update('delivery_tracking', { id: tracking.id }, {
-            status: dtStatus,
-            tracking_url: trackCode || tracking.tracking_url,
-            delivery_person_name: riderName || tracking.delivery_person_name,
-            delivery_person_phone: riderPhone || tracking.delivery_person_phone,
-            current_lat:
-              lastLocation && typeof lastLocation.latitude === 'number'
-                ? lastLocation.latitude
-                : tracking.current_lat,
-            current_lng:
-              lastLocation && typeof lastLocation.longitude === 'number'
-                ? lastLocation.longitude
-                : tracking.current_lng,
-            picked_up_at:
-              normalizedStatus === 'picked_up'
-                ? new Date().toISOString()
-                : tracking.picked_up_at,
-            delivered_at:
-              normalizedStatus === 'delivered'
-                ? new Date().toISOString()
-                : tracking.delivered_at,
-            updated_at: new Date().toISOString(),
-          });
-
-          const orderTable = tracking.pharmacy_order_id ? 'pharmacy_orders' : 'meal_orders';
-          const hyperlocalOrderId = tracking.pharmacy_order_id || tracking.meal_order_id;
-          const orderStatus = mapPidgeNormalizedToPharmacyMealOrderStatus(normalizedStatus);
-          if (hyperlocalOrderId && orderStatus) {
-            await update(orderTable, { id: hyperlocalOrderId }, {
-              status: orderStatus,
-              updated_at: new Date().toISOString(),
-            });
-          }
-
-          return c.json({
-            success: true,
-            message: 'Pidge webhook processed (hyperlocal)',
-            deliveryTrackingId: tracking.id,
-            status: normalizedStatus,
-          });
-        }
-
-        console.warn('[PIDGE WEBHOOK] Shipment not found for:', { pidgeId, referenceId });
-        return c.json({ success: true, message: 'Shipment not found, ignored' });
-      }
-
-      const previousStatus = shipment.status;
-      const shipmentRowStatus = coercePidgeStatusForShipmentsTable(normalizedStatus);
-
-      await update('shipments', { id: shipment.id }, {
-        status: shipmentRowStatus,
-        awb_code: trackCode || shipment.awb_code,
-        current_location:
-          lastLocation &&
-          typeof lastLocation.latitude === 'number' &&
-          typeof lastLocation.longitude === 'number'
-            ? `${lastLocation.latitude},${lastLocation.longitude}`
-            : shipment.current_location,
-        delivered_at:
-          normalizedStatus === 'delivered' ? new Date().toISOString() : shipment.delivered_at,
-        picked_up_at:
-          normalizedStatus === 'picked_up' ? new Date().toISOString() : shipment.picked_up_at,
-        updated_at: new Date().toISOString(),
-      });
-
-      try {
-        const eventDesc =
-          (lastLog?.remark as string) ||
-          (lastLog?.status as string) ||
-          ffStatus ||
-          parentStatus ||
-          'update';
-        await insert('shipment_tracking_events', {
-          shipment_id: shipment.id,
-          event_type: (lastLog?.status as string) || ffStatus || parentStatus,
-          event_description: eventDesc,
-          location:
-            lastLocation &&
-            typeof lastLocation.latitude === 'number' &&
-            typeof lastLocation.longitude === 'number'
-              ? `${lastLocation.latitude},${lastLocation.longitude}`
-              : null,
-          event_time: lastLog?.timestamp
-            ? new Date(String(lastLog.timestamp)).toISOString()
-            : new Date().toISOString(),
-        });
-      } catch (err) {
-        console.warn(
-          '[PIDGE WEBHOOK] Failed to insert tracking event:',
-          err instanceof Error ? err.message : err
-        );
-      }
-
-      if (shipment.order_id) {
-        await updateOrderStatus(shipment.order_id, normalizedStatus).catch((e) => {
-          console.error('[PIDGE WEBHOOK] Error updating order:', e);
-        });
-      }
-
-      await sendShipmentNotification(shipment.order_id, normalizedStatus, previousStatus, {
-        awb: trackCode || undefined,
-        location:
-          rider && typeof rider.name === 'string'
-            ? `${rider.name}${rider.mobile ? ` (${rider.mobile})` : ''}`
-            : undefined,
-      }).catch((e) => {
-        console.error('[PIDGE WEBHOOK] Error sending notification:', e);
-      });
-
-      return c.json({
-        success: true,
-        message: 'Pidge webhook processed',
-        shipmentId: shipment.id,
-        status: normalizedStatus,
-      });
-    } catch (error: any) {
-      console.error('[PIDGE WEBHOOK] Error:', error);
-      return c.json({ error: error.message }, 500);
-    }
-  });
-
-  // ============================================================================
   // AUTO-SHIPMENT CREATION (Called after payment success)
   // ============================================================================
-  
+
   /**
    * POST /logistics/auto-create-shipment
    * Automatically creates shipment after order payment
@@ -1105,6 +798,31 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
   // ============================================================================
   // CUSTOMER TRACKING ENDPOINT
   // ============================================================================
+
+  function normalizeTrackingPhoneDigits(p: string | undefined | null): string {
+    if (!p) return '';
+    let d = String(p).replace(/\D/g, '');
+    if (d.length > 10 && d.startsWith('91')) d = d.slice(-10);
+    else if (d.length > 10) d = d.slice(-10);
+    return d;
+  }
+
+  async function assertCustomerOwnsOrderForTracking(order: any, queryPhone: string | undefined): Promise<boolean> {
+    if (!queryPhone?.trim()) return true;
+    const want = normalizeTrackingPhoneDigits(queryPhone);
+    if (!want) return true;
+    const candidates = [order.customer_phone, order.shipping_phone, order.phone, order.customerPhone].map((x) =>
+      normalizeTrackingPhoneDigits(x),
+    );
+    if (candidates.some((c) => c && c === want)) return true;
+    const cid = order.customer_id;
+    if (cid) {
+      const r = await query(`SELECT phone FROM customers WHERE id = $1 LIMIT 1`, [cid]).catch(() => ({ rows: [] }));
+      const ph = normalizeTrackingPhoneDigits(r.rows[0]?.phone);
+      if (ph && ph === want) return true;
+    }
+    return false;
+  }
   
   /**
    * GET /customer/tracking/:orderId
@@ -1118,6 +836,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
       // Find order (check multiple tables)
       let order: any = null;
       let orderType = 'ecommerce';
+      let mealOrderSource: MealTrackingOrderSource | null = null;
       
       // Check e-commerce orders
       // Use COALESCE to handle both UUID and order_number lookups safely
@@ -1129,6 +848,11 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
       
       if (result.rows.length > 0) {
         order = result.rows[0];
+        const ot = String(order.order_type || '').toLowerCase();
+        if (ot === 'meal_plan_delivery' || ot === 'nutrition_delivery') {
+          orderType = 'meal';
+          mealOrderSource = 'orders';
+        }
       } else {
         // Check pharmacy orders
         result = await query(
@@ -1140,14 +864,28 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           order = result.rows[0];
           orderType = 'pharmacy';
         } else {
-          // Check meal orders (id only – meal_orders may not have order_number)
+          // Check meal orders (id or human-readable order_number e.g. ML…)
           result = await query(
-            `SELECT * FROM meal_orders WHERE id::text = $1`,
+            `SELECT mo.*,
+                    COALESCE(
+                      NULLIF(TRIM(mp.name), ''),
+                      NULLIF(TRIM(mp.plan_name), ''),
+                      NULLIF(TRIM(prod.name), '')
+                    ) AS meal_plan_name,
+                    mp.price_per_meal AS mp_price_per_meal,
+                    mp.price AS mp_legacy_price
+             FROM meal_orders mo
+             LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
+             LEFT JOIN products prod ON prod.id = mo.meal_plan_id
+               AND prod.category IN ('meal_plan', 'nutrition', 'food')
+             WHERE mo.id::text = $1 OR mo.order_number = $1
+             LIMIT 1`,
             [orderId]
           ).catch(() => ({ rows: [] }));
           if (result.rows.length > 0) {
             order = result.rows[0];
             orderType = 'meal';
+            mealOrderSource = 'meal_orders';
           }
         }
       }
@@ -1156,8 +894,8 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
         return c.json({ error: 'Order not found' }, 404);
       }
 
-      // Security: verify phone if provided
-      if (phone && order.customer_phone !== phone) {
+      const authorized = await assertCustomerOwnsOrderForTracking(order, phone);
+      if (!authorized) {
         return c.json({ error: 'Unauthorized' }, 403);
       }
 
@@ -1211,11 +949,10 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           } : null,
         });
       } else {
-        // Pharmacy/Meal - Get delivery tracking
-        const column = orderType === 'pharmacy' ? 'pharmacy_order_id' : 'meal_order_id';
-        
-        const tracking = await query(
-          `SELECT dt.*,
+        // Pharmacy/Meal - Get delivery tracking (meal: meal_orders.id OR subscription_delivery_id)
+        const trackingSql =
+          orderType === 'pharmacy'
+            ? `SELECT dt.*,
                   COALESCE(
                     json_agg(
                       json_build_object(
@@ -1228,57 +965,176 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
                   ) as location_history
            FROM delivery_tracking dt
            LEFT JOIN delivery_location_history dlh ON dt.id = dlh.tracking_id
-           WHERE dt.${column} = $1
+           WHERE dt.pharmacy_order_id::text = $1
            GROUP BY dt.id
            ORDER BY dt.created_at DESC
-           LIMIT 1`,
-          [order.id]
-        );
+           LIMIT 1`
+            : `SELECT dt.*,
+                  COALESCE(
+                    json_agg(
+                      json_build_object(
+                        'lat', dlh.lat,
+                        'lng', dlh.lng,
+                        'time', dlh.recorded_at
+                      ) ORDER BY dlh.recorded_at DESC
+                    ) FILTER (WHERE dlh.id IS NOT NULL),
+                    '[]'
+                  ) as location_history
+           FROM delivery_tracking dt
+           LEFT JOIN delivery_location_history dlh ON dt.id = dlh.tracking_id
+           WHERE dt.meal_order_id::text = $1 OR dt.subscription_delivery_id::text = $1
+           GROUP BY dt.id
+           ORDER BY dt.created_at DESC
+           LIMIT 1`;
+
+        const tracking = await query(trackingSql, [order.id]).catch(() => ({ rows: [] }));
 
         const deliveryTracking = tracking.rows[0];
+        const rawOrderStatus = order.status ?? order.order_status ?? 'pending';
+        const logisticsRaw = String(deliveryTracking?.status ?? '').trim();
+
+        let displayStatus: string = rawOrderStatus;
+        let trackingStatusOut: string;
+        if (deliveryTracking) {
+          const rawDtStatus = deliveryTracking.status;
+          trackingStatusOut =
+            orderType === 'pharmacy' && rawDtStatus === 'heading_to_pickup'
+              ? 'assigned'
+              : rawDtStatus;
+        } else {
+          trackingStatusOut = 'pending_assignment';
+        }
+
+        // Meals: never let stale logistics rows override terminal meal_orders state (e.g. delivered).
+        if (orderType === 'meal') {
+          const effective = resolveEffectiveMealDeliveryState(rawOrderStatus, logisticsRaw);
+          displayStatus = effective;
+          if (effective === 'delivered' || effective === 'cancelled' || effective === 'failed') {
+            trackingStatusOut = effective === 'delivered' ? 'delivered' : effective;
+          }
+        }
+
+        let mealPlanForTotals: Record<string, unknown> | null = null;
+        if (orderType === 'meal' && mealOrderSource === 'meal_orders') {
+          mealPlanForTotals = {
+            price_per_meal: order.mp_price_per_meal,
+            price: order.mp_legacy_price,
+          };
+        } else if (orderType === 'meal' && mealOrderSource === 'orders') {
+          const mpo = await query(
+            `SELECT mpo.quantity,
+                    mp.name AS meal_plan_name,
+                    mp.plan_name AS mp_plan_name,
+                    mp.price_per_meal,
+                    mp.price AS mp_legacy_price
+             FROM meal_plan_orders mpo
+             LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id
+             WHERE mpo.order_id = $1
+             LIMIT 1`,
+            [order.id]
+          ).catch(() => ({ rows: [] }));
+          const line = mpo.rows[0];
+          if (line) {
+            order.quantity = line.quantity;
+            order.meal_plan_name =
+              line.meal_plan_name || line.mp_plan_name || order.meal_plan_name;
+            mealPlanForTotals = {
+              price_per_meal: line.price_per_meal,
+              price: line.mp_legacy_price,
+            };
+          }
+        }
+
+        const mealDisplayTotals =
+          orderType === 'meal'
+            ? resolveCustomerMealPlanOrderDisplayTotals(order, mealPlanForTotals)
+            : null;
+        const displayTotalAmount =
+          mealDisplayTotals != null ? mealDisplayTotals.total : order.total_amount;
+
+        let trackingPayload: Record<string, unknown> | null = deliveryTracking
+          ? {
+              status: trackingStatusOut,
+              deliveryOtp: deliveryTracking.delivery_otp || null,
+              deliveryPerson: {
+                name: deliveryTracking.delivery_person_name,
+                phone: deliveryTracking.delivery_person_phone,
+                photo: deliveryTracking.delivery_person_photo,
+                vehicleNumber: deliveryTracking.vehicle_number,
+              },
+              currentLocation: deliveryTracking.current_lat
+                ? {
+                    lat: parseFloat(deliveryTracking.current_lat),
+                    lng: parseFloat(deliveryTracking.current_lng),
+                  }
+                : null,
+              eta: deliveryTracking.eta_to_delivery_minutes,
+              etaMinutes: deliveryTracking.eta_to_delivery_minutes,
+              distanceRemaining: deliveryTracking.distance_remaining_km,
+              assignedAt: deliveryTracking.assigned_at,
+              pickedUpAt: deliveryTracking.picked_up_at,
+              deliveredAt: deliveryTracking.delivered_at,
+              trackingUrl: deliveryTracking.tracking_url,
+              locationHistory: deliveryTracking.location_history?.slice(0, 20) || [],
+              logistics_partner: deliveryTracking.logistics_partner,
+            }
+          : {
+              status: orderType === 'meal' ? trackingStatusOut : 'pending_assignment',
+              deliveryOtp: null,
+              deliveryPerson: null,
+            };
+
+        if (deliveryTracking && (orderType === 'meal' || orderType === 'pharmacy')) {
+          const enriched = await applyLiveTrackingEnrichmentForCustomer(
+            orderType,
+            String(order.id),
+            trackingPayload,
+            deliveryTracking.logistics_partner
+          );
+          if (enriched) {
+            trackingPayload = enriched;
+          }
+        }
+
+        let customerPayload: Record<string, unknown> | null = null;
+        if (orderType === 'meal' && order.customer_id) {
+          const custRes = await query(
+            `SELECT id, full_name, phone, profile_photo_url
+             FROM customers WHERE id = $1 LIMIT 1`,
+            [order.customer_id],
+          ).catch(() => ({ rows: [] }));
+          customerPayload = await buildMealTrackingCustomerPayload(
+            custRes.rows[0],
+            order,
+            presignS3GetUrlIfApplicable,
+          );
+        }
 
         return c.json({
           success: true,
           orderType,
-          order: {
-            id: order.id,
-            order_number: order.order_number || order.id?.toString().slice(-8),
-            orderNumber: order.order_number || order.id?.toString().slice(-8),
-            status: order.status,
-            total: order.total_amount,
-            total_amount: order.total_amount,
-            createdAt: order.created_at,
-            created_at: order.created_at,
-          },
-          tracking: deliveryTracking ? {
-            // ✅ FIX: Map backend status to frontend-expected status
-            // 'heading_to_pickup' means rider is assigned and heading to vendor → map to 'assigned' for "Rider Assigned"
-            status: deliveryTracking.status === 'heading_to_pickup' ? 'assigned' : deliveryTracking.status,
-            deliveryOtp: deliveryTracking.delivery_otp || null,
-            deliveryPerson: {
-              name: deliveryTracking.delivery_person_name,
-              phone: deliveryTracking.delivery_person_phone,
-              photo: deliveryTracking.delivery_person_photo,
-              vehicleNumber: deliveryTracking.vehicle_number,
-            },
-            currentLocation: deliveryTracking.current_lat ? {
-              lat: parseFloat(deliveryTracking.current_lat),
-              lng: parseFloat(deliveryTracking.current_lng),
-            } : null,
-            eta: deliveryTracking.eta_to_delivery_minutes,
-            distanceRemaining: deliveryTracking.distance_remaining_km,
-            assignedAt: deliveryTracking.assigned_at,
-            pickedUpAt: deliveryTracking.picked_up_at,
-            deliveredAt: deliveryTracking.delivered_at,
-            trackingUrl: deliveryTracking.tracking_url,
-            locationHistory: deliveryTracking.location_history?.slice(0, 20) || [],
-          } : {
-            // ✅ FIX: When no delivery_tracking exists, show "Finding Rider" (pending_assignment)
-            // This matches the frontend's deliveryStatusSteps which expects 'pending_assignment' for "Finding Rider"
-            status: 'pending_assignment',
-            deliveryOtp: null,
-            deliveryPerson: null,
-          },
+          customer: customerPayload,
+          order:
+            orderType === 'meal' && mealOrderSource
+              ? buildCustomerMealTrackingOrderPayload({
+                  order,
+                  orderSource: mealOrderSource,
+                  displayStatus,
+                  mealDisplayTotals,
+                  mealPlan: mealPlanForTotals,
+                  deliveryTracking: deliveryTracking ?? null,
+                })
+              : {
+                  id: order.id,
+                  order_number: order.order_number || order.id?.toString().slice(-8),
+                  orderNumber: order.order_number || order.id?.toString().slice(-8),
+                  status: displayStatus,
+                  total: displayTotalAmount,
+                  total_amount: displayTotalAmount,
+                  createdAt: order.created_at,
+                  created_at: order.created_at,
+                },
+          tracking: trackingPayload,
         });
       }
     } catch (error: any) {

@@ -1329,12 +1329,13 @@ class ReactivateVendorHandler extends BaseHandler {
         return this.error('Vendor not found', 404);
       }
 
-      // Update vendor to active
+      // Update vendor to active (undo soft-delete so portal and auth see the account)
       await update(
         'vendors',
         { id: vendorId },
         {
           is_active: true,
+          is_deleted: false,
           status: 'approved',
           updated_at: new Date(),
           metadata: {
@@ -1344,6 +1345,19 @@ class ReactivateVendorHandler extends BaseHandler {
           }
         }
       );
+
+      try {
+        const phone = vendors[0].phone ? String(vendors[0].phone).trim() : '';
+        await query(
+          `UPDATE vendor_identity
+           SET is_deleted = false, updated_at = NOW()
+           WHERE vendor_id = $1::uuid
+              OR ($2::text <> '' AND phone = $2)`,
+          [vendorId, phone]
+        );
+      } catch (viErr: any) {
+        console.warn('[ReactivateVendor] vendor_identity is_deleted clear failed (non-fatal):', viErr?.message);
+      }
 
       // Create notification for vendor
       try {
