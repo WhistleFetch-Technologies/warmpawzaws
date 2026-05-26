@@ -87,7 +87,14 @@ cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
 (function() {
   window.__WARMPAWZ_RUNTIME_CONFIG__ = {
     apiBaseUrl: "${API_BASE_URL}",
-    uatMode: true
+    uatMode: true,
+    firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+    firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+    firebaseProjectId:         "warmpawz-b9baf",
+    firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+    firebaseMessagingSenderId: "771876271254",
+    firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+    firebaseMeasurementId:     "G-PYF54Y34BP"
   };
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();

@@ -32,7 +32,14 @@
     window.__WARMPAWZ_RUNTIME_CONFIG__ = {
       // Intentionally NOT setting apiBaseUrl - let env var (http://localhost:3000) be used
       uatMode: true,
-      environment: 'development'
+      environment: 'development',
+      firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+      firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+      firebaseProjectId:         "warmpawz-b9baf",
+      firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+      firebaseMessagingSenderId: "771876271254",
+      firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+      firebaseMeasurementId:     "G-PYF54Y34BP"
     };
     console.log('🔧 Runtime config loaded (localhost - using env var for API URL):', window.__WARMPAWZ_RUNTIME_CONFIG__);
     return;
@@ -46,13 +53,27 @@
     'dev.vendor.warmpawz.com': {
       apiBaseUrl: devApi,
       uatMode: true,
-      environment: 'development'
+      environment: 'development',
+      firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+      firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+      firebaseProjectId:         "warmpawz-b9baf",
+      firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+      firebaseMessagingSenderId: "771876271254",
+      firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+      firebaseMeasurementId:     "G-PYF54Y34BP"
     },
     // Dev vendor CloudFront (alternate domain)
     'd1s6ykkj381k58.cloudfront.net': {
       apiBaseUrl: devApi,
       uatMode: true,
-      environment: 'development'
+      environment: 'development',
+      firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+      firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+      firebaseProjectId:         "warmpawz-b9baf",
+      firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+      firebaseMessagingSenderId: "771876271254",
+      firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+      firebaseMeasurementId:     "G-PYF54Y34BP"
     },
   };
   const mapped = configByHost[host];
@@ -63,7 +84,14 @@
     window.__WARMPAWZ_RUNTIME_CONFIG__ = {
       apiBaseUrl: 'https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com',
       uatMode: false,
-      environment: 'production'
+      environment: 'production',
+      firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+      firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+      firebaseProjectId:         "warmpawz-b9baf",
+      firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+      firebaseMessagingSenderId: "771876271254",
+      firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+      firebaseMeasurementId:     "G-PYF54Y34BP"
     };
   }
   console.log('🔧 Runtime config loaded (deployed):', window.__WARMPAWZ_RUNTIME_CONFIG__);
