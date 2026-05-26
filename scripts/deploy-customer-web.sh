@@ -174,20 +174,23 @@ if [ "$PROD" = true ]; then
   cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
 // Runtime Configuration for Warmpawz ${APP_NAME} (PRODUCTION)
 (function() {
-  window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-    apiBaseUrl: "${API_BASE_URL}",
-    uatMode: false,
-    environment: "production",
-    customerEcommerceEnabled: ${CEE_JS},
-    firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
-    firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
-    firebaseProjectId:         "warmpawz-b9baf",
-    firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
-    firebaseMessagingSenderId: "771876271254",
-    firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
-    firebaseMeasurementId:     "G-PYF54Y34BP",
-    customerMealPlansEnabled: ${CMP_JS}
-  };
+  window.__WARMPAWZ_RUNTIME_CONFIG__ = Object.assign(
+    window.__WARMPAWZ_RUNTIME_CONFIG__ || {},
+    {
+      apiBaseUrl: "${API_BASE_URL}",
+      uatMode: false,
+      environment: "production",
+      customerEcommerceEnabled: ${CEE_JS},
+      firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+      firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+      firebaseProjectId:         "warmpawz-b9baf",
+      firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+      firebaseMessagingSenderId: "771876271254",
+      firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+      firebaseMeasurementId:     "G-PYF54Y34BP",
+      customerMealPlansEnabled: ${CMP_JS}
+    }
+  );
   console.log('🔧 Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
 EOF
@@ -195,20 +198,23 @@ else
   cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
 // Runtime Configuration for Warmpawz ${APP_NAME}
 (function() {
-  window.__WARMPAWZ_RUNTIME_CONFIG__ = {
-    apiBaseUrl: "${API_BASE_URL}",
-    uatMode: true,
-    environment: "development",
-    customerEcommerceEnabled: ${CEE_JS},
-    firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
-    firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
-    firebaseProjectId:         "warmpawz-b9baf",
-    firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
-    firebaseMessagingSenderId: "771876271254",
-    firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
-    firebaseMeasurementId:     "G-PYF54Y34BP",
-    customerMealPlansEnabled: ${CMP_JS}
-  };
+  window.__WARMPAWZ_RUNTIME_CONFIG__ = Object.assign(
+    window.__WARMPAWZ_RUNTIME_CONFIG__ || {},
+    {
+      apiBaseUrl: "${API_BASE_URL}",
+      uatMode: true,
+      environment: "development",
+      customerEcommerceEnabled: ${CEE_JS},
+      firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
+      firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
+      firebaseProjectId:         "warmpawz-b9baf",
+      firebaseStorageBucket:     "warmpawz-b9baf.firebasestorage.app",
+      firebaseMessagingSenderId: "771876271254",
+      firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
+      firebaseMeasurementId:     "G-PYF54Y34BP",
+      customerMealPlansEnabled: ${CMP_JS}
+    }
+  );
   console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
 EOF

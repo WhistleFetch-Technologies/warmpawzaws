@@ -121,6 +121,27 @@ if ($DeployOnly -and (Test-Path "dist")) {
     }
     
     Write-Host "  ✅ Build completed successfully" -ForegroundColor Green
+
+    # Ensure HTML-referenced chunks exist (prevents "Unexpected token '<'" after deploy)
+    $indexPath = Join-Path $vendorWebDir "dist\index.html"
+    if (Test-Path $indexPath) {
+        $indexHtml = Get-Content -Path $indexPath -Raw -Encoding UTF8
+        $chunkRefs = [regex]::Matches($indexHtml, '/_next/static/chunks/([a-zA-Z0-9._-]+\.js)') |
+            ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique
+        $chunksDir = Join-Path $vendorWebDir "dist\_next\static\chunks"
+        $missing = @()
+        foreach ($chunk in $chunkRefs) {
+            if (-not (Test-Path (Join-Path $chunksDir $chunk))) {
+                $missing += $chunk
+            }
+        }
+        if ($missing.Count -gt 0) {
+            Write-Host "  Build incomplete: index.html references missing JS chunks:" -ForegroundColor Red
+            $missing | ForEach-Object { Write-Host "     - $_" -ForegroundColor Red }
+            exit 1
+        }
+        Write-Host "  ✅ Verified $($chunkRefs.Count) JS chunks referenced by index.html" -ForegroundColor Green
+    }
 }
 Write-Host ""
 
@@ -190,6 +211,20 @@ try {
     Write-Host "  ❌ S3 upload failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
+
+# HTML must revalidate immediately when chunk hashes change (avoid stale index + missing .js)
+Write-Host "  Setting short cache on index.html / runtime-config.js..." -ForegroundColor Gray
+foreach ($leaf in @("index.html", "404.html", "runtime-config.js")) {
+    $localFile = Join-Path $distPath $leaf
+    if (Test-Path $localFile) {
+        $ctype = if ($leaf -like "*.html") { "text/html" } else { "application/javascript" }
+        aws s3 cp $localFile "s3://$S3Bucket/$leaf" `
+            --cache-control "public, max-age=0, must-revalidate" `
+            --content-type $ctype `
+            --region $Region 2>&1 | Out-Null
+    }
+}
+Write-Host "  ✅ HTML/config uploaded with must-revalidate" -ForegroundColor Green
 Write-Host ""
 
 # Invalidate CloudFront cache

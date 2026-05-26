@@ -33,8 +33,12 @@ function isProductionEnvironment(): boolean {
   if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_ENVIRONMENT) {
     return process.env.NEXT_PUBLIC_ENVIRONMENT === 'production';
   }
+  // `npm run build` sets NODE_ENV=production even for dev exports. Without an explicit
+  // NEXT_PUBLIC_ENVIRONMENT in the client bundle, do not treat the host as production.
   if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'production') {
-    return process.env.NEXT_PUBLIC_ENVIRONMENT !== 'development';
+    const pubEnv = process.env.NEXT_PUBLIC_ENVIRONMENT;
+    if (pubEnv === 'development') return false;
+    if (pubEnv === 'production') return true;
   }
 
   if (typeof window !== 'undefined' && window.location) {
