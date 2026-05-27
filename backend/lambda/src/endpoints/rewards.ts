@@ -1139,10 +1139,13 @@ export function registerRewardsEndpoints(app: Hono) {
         patch.cash_value = 0;
       }
 
-      const updated = await update('rewards_catalog', patch, { id });
+      const updated = await update('rewards_catalog', { id }, patch);
+      if (!updated.length) {
+        return c.json({ success: false, error: 'Reward not found or not updated' }, 404);
+      }
       return c.json({
         success: true,
-        reward: mapAdminCatalogReward(updated[0] ?? { ...current, ...patch }),
+        reward: mapAdminCatalogReward(updated[0]),
         message: 'Reward updated successfully',
       });
     } catch (error: any) {
@@ -1164,8 +1167,8 @@ export function registerRewardsEndpoints(app: Hono) {
 
       const updated = await update(
         'rewards_catalog',
-        { is_active: false, updated_at: new Date() },
-        { id }
+        { id },
+        { is_active: false, updated_at: new Date() }
       );
       if (!updated.length) {
         return c.json({ success: false, error: 'Reward not found' }, 404);
