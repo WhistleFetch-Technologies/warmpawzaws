@@ -52,19 +52,12 @@ import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '
 import { toast } from 'sonner';
 import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
-
-function customerHomeIconForShopCategory(name: string) {
-  const n = name.toLowerCase();
-  if (n.includes('food')) return <Bone className="w-5 h-5 text-orange-500" />;
-  if (n.includes('toy')) return <Dog className="w-5 h-5 text-blue-500" />;
-  if (n.includes('cloth')) return <Shirt className="w-5 h-5 text-teal-500" />;
-  if (n.includes('accessor')) return <Watch className="w-5 h-5 text-pink-500" />;
-  if (n.includes('medic')) return <Pill className="w-5 h-5 text-red-500" />;
-  if (n.includes('groom')) return <Scissors className="w-5 h-5 text-purple-500" />;
-  if (n.includes('bed')) return <Bed className="w-5 h-5 text-indigo-500" />;
-  if (n.includes('bowl')) return <UtensilsCrossed className="w-5 h-5 text-green-500" />;
-  return <ShoppingBag className="w-5 h-5 text-[#FF8C42]" />;
-}
+import { isNewHomeUiEnabled } from '@/lib/customer-new-home-ui-flag';
+import { CustomerHomePageContent, CustomerHomePageHeader } from '../home/CustomerHomePage';
+import { HOME_CONTENT_SHELL_CLASS } from '../home/shared/HomeContentShell';
+import { buildHomeTopCarouselBanners } from '../home/utils/banner-utils';
+import { customerHomeIconForShopCategory } from '../home/utils/shop-category-icons';
+import type { QuickServiceTile } from '../home/types';
 
 // ============================================================================
 // PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
@@ -491,6 +484,7 @@ export function CustomerHomeComplete({
   );
   // Evaluated lazily so runtime-config.js (which runs before hydration) is already applied.
   const [customerCommerceEnabled] = useState<boolean>(() => isCustomerEcommerceEnabled());
+  const [newHomeUi] = useState<boolean>(() => isNewHomeUiEnabled());
 
   useEffect(() => {
     if (!customerCommerceEnabled) return;
@@ -547,6 +541,71 @@ export function CustomerHomeComplete({
       onNavigate?.(d, data);
     },
     [onNavigate, router]
+  );
+
+  const handleSearchSubmit = useCallback(
+    (searchQuery: string) => {
+      if (searchQuery?.trim()) {
+        router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      }
+    },
+    [router]
+  );
+
+  const handleSearchResultSelect = useCallback(
+    (result: Parameters<NonNullable<React.ComponentProps<typeof EnhancedSearchBar>['onResultSelect']>>[0]) => {
+      if (result.type === 'symptom') {
+        const d = result.data || {};
+        handleNavigation('services_by_problem', {
+          problemId: d.specializationId || result.id,
+          problemTitle: d.name || 'Consult',
+          roleId: d.roleId || 'vet_solo',
+          category: d.categoryId,
+          problem: {
+            allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(d.allowedServiceStyles, {
+              roleId: d.roleId || 'vet_solo',
+              specializationId: d.specializationId || result.id,
+              categoryHint: d.categoryId,
+            }),
+            name: d.name,
+            roleId: d.roleId,
+            category: d.categoryId,
+          },
+        });
+        return;
+      }
+      if (result.type === 'staff' || result.type === 'vendor' || result.type === 'center') {
+        const vendorId = String(result.id || '').trim();
+        if (vendorId) {
+          router.push(`/search?vendorId=${encodeURIComponent(vendorId)}`);
+        } else {
+          const serviceType = result.data?.serviceType || result.data?.services?.[0] || 'vet';
+          handleNavigation(serviceType);
+        }
+        return;
+      }
+      if (result.type === 'service') {
+        const sid = String(result.id || '').trim();
+        if (sid) {
+          router.push(`/booking/${encodeURIComponent(sid)}`);
+        }
+        return;
+      }
+      if (result.type === 'product') {
+        if (!isCustomerEcommerceEnabled()) {
+          toast.info('Shop is coming soon.');
+          return;
+        }
+        handleNavigation('shop');
+        return;
+      }
+      const category = result.category || result.data?.serviceType || result.data?.category || '';
+      if (category) {
+        const targetScreen = serviceNavigationMap[category.toLowerCase()] || 'services';
+        handleNavigation(targetScreen);
+      }
+    },
+    [handleNavigation, router]
   );
 
   const whatsNewAnnouncements = useMemo(
@@ -990,15 +1049,20 @@ export function CustomerHomeComplete({
             const mappedDeals = featuredProducts.slice(0, 3).map((p: any) => {
               const rc = Number(p.reviewCount ?? p.review_count ?? 0) || 0;
               const rt = p.rating != null && p.rating !== '' ? Number(p.rating) : NaN;
+              const salePrice = Number(p.salePrice ?? p.price);
+              const priceValue = Number.isFinite(salePrice) && salePrice > 0 ? salePrice : 999;
+              const images = p.images as string[] | undefined;
               return {
                 id: p.id,
                 title: p.name || 'Pet Products',
-                price: `₹${p.salePrice || p.price || 999}`,
+                price: `₹${priceValue}`,
+                priceValue,
                 originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
                 discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
                 iconType: 'product',
                 rating: rc > 0 && Number.isFinite(rt) && rt > 0 ? rt : undefined,
                 reviewCount: rc,
+                image: Array.isArray(images) && images[0] ? String(images[0]) : undefined,
               };
             });
             setHotDeals(mappedDeals);
@@ -1257,46 +1321,10 @@ export function CustomerHomeComplete({
   }, [phone, refreshKey, quickServiceTiles.length]);
 
   /** Map API + defaults for hero; dedupe defaults by CTA vertical; icons from CTA / metadata */
-  const homeCarouselBanners = useMemo(() => {
-    if (dynamicBanners.length === 0) {
-      return defaultBanners;
-    }
-
-    const fromApi = dynamicBanners.map((b: any) => {
-      const rawCta = String(b.ctaLink ?? b.cta_link ?? '').trim();
-      const screenFromSlash = rawCta.startsWith('/') ? customerPathToScreen(rawCta) : null;
-      const ctaLink = screenFromSlash ?? rawCta;
-      const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
-      const comingSoon = explicitComingSoonFalse ? false : Boolean(b.comingSoon || b.coming_soon);
-      return {
-        id: b.id,
-        title: b.title,
-        subtitle: b.subtitle,
-        gradientFrom: b.gradientFrom || '#FF8C42',
-        gradientTo: b.gradientTo || '#FF6B35',
-        Icon: iconForCustomerHomeApiBanner(b),
-        ctaText: b.ctaText || b.cta_text || 'Learn More',
-        ctaLink,
-        comingSoon,
-      };
-    });
-
-    const coveredTargets = new Set(
-      fromApi.map((b) => normalizeCustomerBannerTarget(b.ctaLink)).filter(Boolean)
-    );
-    const coveredTitles = new Set(
-      fromApi.map((b) => String(b.title || '').toLowerCase().trim()).filter(Boolean)
-    );
-
-    const defaultsNotInApi = defaultBanners.filter((d) => {
-      const key = normalizeCustomerBannerTarget(d.ctaLink);
-      if (key && coveredTargets.has(key)) return false;
-      if (coveredTitles.has(String(d.title || '').toLowerCase().trim())) return false;
-      return true;
-    });
-
-    return [...fromApi, ...defaultsNotInApi].slice(0, 20);
-  }, [dynamicBanners]);
+  const homeCarouselBanners = useMemo(
+    () => buildHomeTopCarouselBanners(dynamicBanners),
+    [dynamicBanners]
+  );
 
   /** Featured Services wide slot — home_middle only; not merged into hero or ForYouSection */
   const featuredMiddleCarouselBanners = useMemo(() => {
@@ -1888,6 +1916,8 @@ export function CustomerHomeComplete({
     title: a.title,
     category: a.category || 'Tips',
     readTime: a.readTime || '5 min',
+    excerpt: a.excerpt,
+    featured: a.featured,
     Icon: a.category === 'Nutrition' ? UtensilsCrossed
       : a.category === 'Insurance' ? Shield
         : a.category === 'Health' ? Heart
@@ -1906,7 +1936,24 @@ export function CustomerHomeComplete({
   return (
     <div className={containerClassName}>
       {/* Header Section - Compact Professional Design - Only show if not using standardized layout */}
-      {!hideHeaderFooter && (
+      {!hideHeaderFooter && newHomeUi ? (
+        <CustomerHomePageHeader
+          userName={userData.name}
+          userProfilePhoto={userProfilePhoto}
+          phone={phone}
+          onProfileClick={onProfileClick}
+          onRefresh={onRefresh}
+          onNavigate={handleNavigation}
+          onOpenNotifications={() => setNotificationModalOpen(true)}
+          notificationUnreadCount={notificationUnreadCount}
+          combinedMessageUnreadCount={combinedMessageUnreadCount}
+          pets={userData.pets}
+          selectedPet={selectedPet}
+          onSelectPet={setSelectedPet}
+          onPetClick={onPetClick}
+          onAddPet={handleAddPet}
+        />
+      ) : !hideHeaderFooter ? (
         <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] cw-header-safe-top cw-header-safe-x pb-3 sm:pb-4">
           {/* Top Row - User Info & Actions */}
           <div className="flex items-center justify-between mb-3 gap-2">
@@ -2064,14 +2111,20 @@ export function CustomerHomeComplete({
             </button>
           )}
         </div>
-      )}
+      ) : null}
 
       {/* Main Scrollable Content */}
       <div
-        className={`bg-white ${hideHeaderFooter ? 'pt-4' : 'rounded-t-[24px] -mt-3 pt-4'} ${hideHeaderFooter ? 'pb-4' : 'pb-6'}`}
+        className={
+          hideHeaderFooter
+            ? 'bg-white pt-4 pb-4'
+            : newHomeUi
+              ? `${HOME_CONTENT_SHELL_CLASS} pb-6`
+              : 'bg-white rounded-t-[24px] -mt-3 pt-4 pb-6'
+        }
       >
-        {/* ✅ Attention Section - Active Bookings with Tracking */}
-        {activeBookings.length > 0 && (
+        {/* ✅ Attention Section - Active Bookings with Tracking (legacy layout only) */}
+        {!newHomeUi && activeBookings.length > 0 && (
           <div className="px-6 mb-4">
             <div className="bg-gradient-to-r from-orange-50 to-red-50 border-2 border-orange-200 rounded-2xl p-4 mb-4">
               <div className="flex items-center gap-3 mb-3">
@@ -2112,75 +2165,70 @@ export function CustomerHomeComplete({
           </div>
         )}
 
-        {/* Universal search bar - top of landing */}
+        {newHomeUi ? (
+          <CustomerHomePageContent
+            customerId={customerId || undefined}
+            onSearch={handleSearchSubmit}
+            onSearchResultSelect={handleSearchResultSelect}
+            services={
+              (serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices) as QuickServiceTile[]
+            }
+            serviceLabelOverride={SERVICE_LABEL_OVERRIDE}
+            onNavigate={handleNavigation}
+            homeCarouselBanners={homeCarouselBanners}
+            activeBookings={activeBookings}
+            onViewBooking={onViewBooking}
+            phone={phone}
+            hotDeals={hotDeals}
+            ecommerceShopCategories={ecommerceShopCategories}
+            customerCommerceEnabled={customerCommerceEnabled}
+            featuredLowerBanners={featuredLowerBanners}
+            whatsNewAnnouncements={whatsNewAnnouncements}
+            onWhatsNewSeeAll={() => handleNavigation('whats-new')}
+            onWhatsNewRowPress={(a) => {
+              if (a.announcementType === 'emergency') return;
+              if (a.id === 'ai' || (a.announcementType === 'feature' && !a.ctaLink?.trim())) {
+                setShowAIChat(true);
+                return;
+              }
+              navigateWhatsNewFromFullPage(router, a, 'row');
+            }}
+            onWhatsNewSosPress={(a) => {
+              if (a.comingSoon && a.announcementType === 'emergency') return;
+              handleNavigation(a.ctaLink?.trim() || 'ambulance');
+            }}
+            adoptionStats={adoptionStats}
+            petCareArticles={articles}
+            onPetCareArticlesSeeAll={() => handleNavigation('articles')}
+            onPetCareArticleClick={(article) => {
+              if (article.slug) {
+                router.push(`/articles?slug=${encodeURIComponent(article.slug)}`);
+              } else if (article.url) {
+                window.open(article.url, '_blank');
+              } else {
+                handleNavigation('article-detail', {
+                  articleId: article.id,
+                  article: { id: article.id, slug: article.slug },
+                });
+              }
+            }}
+          />
+        ) : (
+        <>
+        {/* Universal search bar - legacy layout */}
         <div className="px-4 mb-3">
           <EnhancedSearchBar
             placeholder="Search services, products, vets, groomers..."
             customerId={customerId || undefined}
-            onSearch={(searchQuery) => {
-              if (searchQuery?.trim()) {
-                router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-              }
-            }}
-            onResultSelect={(result) => {
-              console.log('Search result selected:', result);
-              if (result.type === 'symptom') {
-                // Symptom search: drive to problem_grid_flow with specialization so user picks service style then books
-                const d = result.data || {};
-                handleNavigation('services_by_problem', {
-                  problemId: d.specializationId || result.id,
-                  problemTitle: d.name || 'Consult',
-                  roleId: d.roleId || 'vet_solo',
-                  category: d.categoryId,
-                  problem: {
-                    allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(d.allowedServiceStyles, {
-                      roleId: d.roleId || 'vet_solo',
-                      specializationId: d.specializationId || result.id,
-                      categoryHint: d.categoryId,
-                    }),
-                    name: d.name,
-                    roleId: d.roleId,
-                    category: d.categoryId,
-                  },
-                });
-                return;
-              }
-              // Vendor / staff / center: must run before any `result.category` branch (vendors carry category too).
-              if (result.type === 'staff' || result.type === 'vendor' || result.type === 'center') {
-                const vendorId = String(result.id || '').trim();
-                if (vendorId) {
-                  router.push(`/search?vendorId=${encodeURIComponent(vendorId)}`);
-                } else {
-                  const serviceType = result.data?.serviceType || result.data?.services?.[0] || 'vet';
-                  handleNavigation(serviceType);
-                }
-                return;
-              }
-              // Bookable listing: API search uses vendor_services.id — same id GET /services/:id and BookingFlow expect.
-              if (result.type === 'service') {
-                const sid = String(result.id || '').trim();
-                if (sid) {
-                  router.push(`/booking/${encodeURIComponent(sid)}`);
-                }
-                return;
-              }
-              if (result.type === 'product') {
-                if (!isCustomerEcommerceEnabled()) {
-                  toast.info('Shop is coming soon.');
-                  return;
-                }
-                handleNavigation('shop');
-                return;
-              }
-              const category = result.category || result.data?.serviceType || result.data?.category || '';
-              if (category) {
-                const targetScreen = serviceNavigationMap[category.toLowerCase()] || 'services';
-                handleNavigation(targetScreen);
-              }
-            }}
+            onSearch={handleSearchSubmit}
+            onResultSelect={handleSearchResultSelect}
           />
         </div>
+        </>
+        )}
 
+        {!newHomeUi ? (
+        <>
         {/* What's your pet needs? - directly below search (clean landing) */}
         <div className="mb-4 w-full overflow-hidden">
           <div className="px-4 flex items-center justify-between mb-2">
@@ -2311,8 +2359,11 @@ export function CustomerHomeComplete({
             </div>
           </div>
         </div>
+        </>
+        ) : null}
 
         {/* Shop — gated until customerEcommerceEnabled / NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED */}
+        {!newHomeUi ? (
         <div className="mb-4">
           <div className="flex items-center gap-3 px-4 mb-2">
             <div className="flex items-center gap-2">
@@ -2404,8 +2455,9 @@ export function CustomerHomeComplete({
             </div>
           )}
         </div>
+        ) : null}
 
-        {/* Quick Services Grid - Compact */}
+        {!newHomeUi ? (
         <div className="px-4 mb-4">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-black text-sm font-semibold">All Services</h2>
@@ -2476,8 +2528,10 @@ export function CustomerHomeComplete({
             })}
           </div>
         </div>
+        ) : null}
 
         {/* Spotlight: Grooming Services */}
+        {!newHomeUi ? (
         <div className="mb-6">
           <div className="px-6 mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -2541,7 +2595,10 @@ export function CustomerHomeComplete({
             })}
           </div>
         </div>
+        ) : null}
 
+        {!newHomeUi ? (
+        <>
         {/* Vet Services */}
         <div className="mb-6">
           <div className="px-6 mb-4 flex items-center justify-between">
@@ -2603,7 +2660,10 @@ export function CustomerHomeComplete({
             </button>
           </div>
         </div>
+        </>
+        ) : null}
 
+        {!newHomeUi ? (
         <div className="mb-6">
           <div className="px-6 mb-4">
             <h2 className="text-black font-semibold">Special Offers</h2>
@@ -2612,8 +2672,10 @@ export function CustomerHomeComplete({
             <PromotionBanner service="all" maxPromotions={3} onNavigate={handleNavigation} />
           </div>
         </div>
+        ) : null}
 
         {/* Featured Services Mix - Square Boxes */}
+        {!newHomeUi ? (
         <div className="mb-6">
           <div className="px-6 mb-4">
             <h2 className="text-black font-semibold mb-1">Featured Services</h2>
@@ -2826,8 +2888,10 @@ export function CustomerHomeComplete({
             </button>
           </div>
         </div>
+        ) : null}
 
-        {/* What's New Section */}
+        {/* What's New Section — legacy layout only (new home uses CustomerHomePageContent) */}
+        {!newHomeUi ? (
         <div className="mb-6">
           <div className="px-6 mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -2862,8 +2926,10 @@ export function CustomerHomeComplete({
             />
           </div>
         </div>
+        ) : null}
 
         {/* Discover more: For you & Trending - lower on page so landing stays clean */}
+        {!newHomeUi ? (
         <div className="mb-6 mx-4 p-4 rounded-2xl bg-gray-50/80 border border-gray-100">
           <h2 className="text-gray-500 text-xs font-medium uppercase tracking-wider mb-4">Discover more</h2>
           <ForYouSection
@@ -2895,7 +2961,10 @@ export function CustomerHomeComplete({
             />
           </div>
         </div>
+        ) : null}
 
+        {!newHomeUi ? (
+        <>
         {/* Adoption — full section coming soon (not launched) */}
         <div className="mb-6" aria-label="Adoption — coming soon">
           <div className="px-6 mb-4">
@@ -3074,8 +3143,10 @@ export function CustomerHomeComplete({
             </div>
           </div>
         </div>
+        </>
+        ) : null}
 
-        {featuredLowerBanners.length > 0 ? (
+        {!newHomeUi && featuredLowerBanners.length > 0 ? (
           <div className="px-6 mb-6 space-y-4">
             {featuredLowerBanners.map((banner, index) => {
               const slotComingSoon = Boolean((banner as { comingSoon?: boolean }).comingSoon);
@@ -3125,7 +3196,7 @@ export function CustomerHomeComplete({
               );
             })}
           </div>
-        ) : (
+        ) : !newHomeUi ? (
           <>
             {/* Training Services */}
             <div className="px-6 mb-6">
@@ -3196,9 +3267,10 @@ export function CustomerHomeComplete({
               </div>
             </div>
           </>
-        )}
+        ) : null}
 
-        {/* Bottom CTA */}
+        {/* Bottom CTA — legacy layout only */}
+        {!newHomeUi ? (
         <div className="px-6">
           <div className="bg-gradient-to-r from-orange-100 to-pink-100 rounded-3xl p-6 border-2 border-[#FF8C42] text-center">
             <h2 className="text-black font-bold text-lg mb-2">Need Help? 🤝</h2>
@@ -3225,6 +3297,7 @@ export function CustomerHomeComplete({
             </div>
           </div>
         </div>
+        ) : null}
       </div>
 
       {/* AI Assistant Floating Action Button (draggable; tap opens chat) */}

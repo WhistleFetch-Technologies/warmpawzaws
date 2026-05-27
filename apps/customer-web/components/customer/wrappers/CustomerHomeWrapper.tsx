@@ -135,6 +135,8 @@ import { MatingDatingHub } from '../MatingDatingHub';
 import { HomeServiceSelectionEnhanced } from '../HomeServiceSelectionEnhanced';
 import { IntegratedServicesHub } from '../../IntegratedServicesHub';
 import { ProblemGridSelector } from '../ProblemGridSelector';
+import { AllServicesScreen } from '../home/all-services/AllServicesScreen';
+import { isNewHomeUiEnabled } from '@/lib/customer-new-home-ui-flag';
 import { CustomerPlacementBanners } from '../shared/CustomerPlacementBanners';
 import { ServicesByProblem } from '../ServicesByProblem';
 import { ProblemGridFlowRouter, type VendorProfileFromProblemContext } from '../ProblemGridFlowRouter';
@@ -3649,8 +3651,8 @@ export function CustomerHomeWrapper({
   // ✅ NEW: Services Browser
   if (currentScreen === 'services') return <CustomerServicesPage phone={phone} onBack={handleBack} onNavigate={(screen, data) => { 
     if (screen === 'create-booking') { 
-      setSelectedService(data?.serviceId);
-      setSelectedVendorId(data?.vendorId);
+      setSelectedService(String(data?.serviceId ?? ''));
+      setSelectedVendorId(data?.vendorId != null ? String(data.vendorId) : undefined);
       setCurrentScreen('create-booking');
     } else {
       handleNavigateToService(screen, data);
@@ -4273,38 +4275,52 @@ export function CustomerHomeWrapper({
       ? (roleMap[currentServiceType] || { roleId: currentServiceType, roleName: currentServiceType })
       : roleMap['general'];
     
+    const problemGridBack = () => {
+      // Go back to the service that opened problem grid
+      if (currentServiceType === 'groomer') setCurrentScreen('grooming');
+      else if (currentServiceType === 'trainer') setCurrentScreen('training');
+      else if (currentServiceType === 'veterinarian') setCurrentScreen('vet');
+      else if (currentServiceType === 'walker') setCurrentScreen('walker');
+      else if (currentServiceType === 'boarding') setCurrentScreen('boarding');
+      else if (currentServiceType === 'adoption') setCurrentScreen('adoption');
+      else if (currentServiceType === 'sunset') setCurrentScreen('sunset');
+      else if (currentServiceType === 'nutritionist' || currentServiceType === 'pet_nutritionist') setCurrentScreen('nutritionist');
+      else if (currentServiceType === 'behaviorist') setCurrentScreen('behaviorist');
+      else if (pathname === '/services/all') {
+        router.push('/');
+      } else {
+        setCurrentScreen('home');
+      }
+      setCurrentServiceType(null);
+    };
+
+    const problemGridTopSlot =
+      pathname === '/services/all' ? (
+        <CustomerPlacementBanners
+          placement="category"
+          onNavigate={(screen, data) => handleNavigateToService(screen, data)}
+        />
+      ) : undefined;
+
+    if (isNewHomeUiEnabled()) {
+      return (
+        <AllServicesScreen
+          phone={phone}
+          onBack={problemGridBack}
+          onNavigate={(screen, data) => handleNavigateToService(screen, data)}
+          topSlot={problemGridTopSlot}
+        />
+      );
+    }
+
     return (
       <ProblemGridSelector
         roleId={roleInfo.roleId}
         roleName={roleInfo.roleName}
         customerId={phone}
         phone={phone}
-        topSlot={
-          pathname === '/services/all' ? (
-            <CustomerPlacementBanners
-              placement="category"
-              onNavigate={(screen, data) => handleNavigateToService(screen, data)}
-            />
-          ) : undefined
-        }
-        onBack={() => {
-          // Go back to the service that opened problem grid
-          if (currentServiceType === 'groomer') setCurrentScreen('grooming');
-          else if (currentServiceType === 'trainer') setCurrentScreen('training');
-          else if (currentServiceType === 'veterinarian') setCurrentScreen('vet');
-          else if (currentServiceType === 'walker') setCurrentScreen('walker');
-          else if (currentServiceType === 'boarding') setCurrentScreen('boarding');
-          else if (currentServiceType === 'adoption') setCurrentScreen('adoption');
-          else if (currentServiceType === 'sunset') setCurrentScreen('sunset');
-          else if (currentServiceType === 'nutritionist' || currentServiceType === 'pet_nutritionist') setCurrentScreen('nutritionist');
-          else if (currentServiceType === 'behaviorist') setCurrentScreen('behaviorist');
-          else if (pathname === '/services/all') {
-            router.push('/');
-          } else {
-            setCurrentScreen('home');
-          }
-          setCurrentServiceType(null);
-        }}
+        topSlot={problemGridTopSlot}
+        onBack={problemGridBack}
         onProblemSelect={(problem) => {
           const p = problem as any;
           const problemRole =

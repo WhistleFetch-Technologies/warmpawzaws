@@ -13,7 +13,11 @@ import {
   adminBannerPositionFromRow,
   normalizeLocationValue,
   formatAdminBannerLocationLabel,
+  DEFAULT_HOME_HERO_BANNER_IMAGE_PATH,
+  isHomeHeroBannerPosition,
+  resolveHomeHeroBannerImageUrl,
 } from '@/lib/banner-admin';
+import { getCustomerWebBaseUrl } from '@/lib/api-client';
 
 // ============================================================================
 // TYPES
@@ -24,6 +28,7 @@ interface Banner {
   title: string;
   subtitle?: string;
   image_url?: string;
+  imageUrl?: string;
   cta_text?: string;
   cta_link?: string;
   /** DB column */
@@ -124,7 +129,7 @@ export default function BannersPage() {
     initialFormData: {
       title: '',
       subtitle: '',
-      image_url: '',
+      image_url: DEFAULT_HOME_HERO_BANNER_IMAGE_PATH,
       cta_text: '',
       cta_link: '',
       position: 'home_top',
@@ -140,7 +145,7 @@ export default function BannersPage() {
     getDefaultFormData: () => ({
       title: '',
       subtitle: '',
-      image_url: '',
+      image_url: DEFAULT_HOME_HERO_BANNER_IMAGE_PATH,
       cta_text: '',
       cta_link: '',
       position: 'home_top',
@@ -156,7 +161,7 @@ export default function BannersPage() {
     mapItemToFormData: (banner) => ({
       title: banner.title,
       subtitle: banner.subtitle || '',
-      image_url: banner.image_url || '',
+      image_url: banner.image_url || banner.imageUrl || '',
       cta_text: banner.cta_text || '',
       cta_link: banner.cta_link || '',
       position: adminBannerPositionFromRow(banner) as BannerFormData['position'],
@@ -204,10 +209,17 @@ export default function BannersPage() {
       return;
     }
 
+    const payload: BannerFormData = {
+      ...modal.formData,
+      image_url: isHomeHeroBannerPosition(modal.formData.position)
+        ? resolveHomeHeroBannerImageUrl(modal.formData.image_url)
+        : modal.formData.image_url.trim(),
+    };
+
     if (modal.editingItem) {
-      await update(modal.editingItem.id, modal.formData);
+      await update(modal.editingItem.id, payload);
     } else {
-      await create(modal.formData);
+      await create(payload);
     }
 
     if (!crudError) {
@@ -350,9 +362,13 @@ export default function BannersPage() {
               banners.map(banner => (
                 <Card key={banner.id} className="overflow-hidden">
                   <div className="relative h-48 bg-gradient-to-br from-primary/20 to-primary/5">
-                    {banner.image_url ? (
-                      <img 
-                        src={banner.image_url} 
+                    {(banner.image_url || banner.imageUrl) ? (
+                      <img
+                        src={
+                          (banner.image_url || banner.imageUrl || '').startsWith('/')
+                            ? `${getCustomerWebBaseUrl()}${banner.image_url || banner.imageUrl}`
+                            : (banner.image_url || banner.imageUrl)
+                        }
                         alt={banner.title}
                         className="w-full h-full object-cover"
                       />
@@ -467,14 +483,29 @@ export default function BannersPage() {
               </div>
 
               <div>
-                <Label htmlFor="image_url">Image URL</Label>
+                <Label htmlFor="image_url">
+                  Image URL{isHomeHeroBannerPosition(modal.formData.position) ? ' *' : ''}
+                </Label>
                 <Input
                   id="image_url"
-                  type="url"
+                  type="text"
                   value={modal.formData.image_url}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData({ ...modal.formData, image_url: e.target.value })}
-                  placeholder="https://example.com/image.jpg"
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    modal.setFormData({ ...modal.formData, image_url: e.target.value })
+                  }
+                  placeholder={
+                    isHomeHeroBannerPosition(modal.formData.position)
+                      ? DEFAULT_HOME_HERO_BANNER_IMAGE_PATH
+                      : 'https://example.com/image.jpg'
+                  }
                 />
+                {isHomeHeroBannerPosition(modal.formData.position) ? (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Hero carousel requires an image. Default: {DEFAULT_HOME_HERO_BANNER_IMAGE_PATH} on customer
+                    web ({getCustomerWebBaseUrl()}
+                    {DEFAULT_HOME_HERO_BANNER_IMAGE_PATH}).
+                  </p>
+                ) : null}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -501,7 +532,16 @@ export default function BannersPage() {
 
               <div>
                 <Label htmlFor="position">Position *</Label>
-                <Select value={modal.formData.position} onValueChange={(value: any) => modal.setFormData({ ...modal.formData, position: value })}>
+                <Select
+                  value={modal.formData.position}
+                  onValueChange={(value: BannerFormData['position']) => {
+                    const next: BannerFormData = { ...modal.formData, position: value };
+                    if (isHomeHeroBannerPosition(value) && !next.image_url.trim()) {
+                      next.image_url = DEFAULT_HOME_HERO_BANNER_IMAGE_PATH;
+                    }
+                    modal.setFormData(next);
+                  }}
+                >
                   <SelectTrigger id="position">
                     <SelectValue />
                   </SelectTrigger>
