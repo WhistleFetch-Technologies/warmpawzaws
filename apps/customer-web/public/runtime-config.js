@@ -33,7 +33,7 @@
       // Intentionally NOT setting apiBaseUrl - use NEXT_PUBLIC_API_BASE_URL from .env.local
       uatMode: true,
       environment: 'development',
-      customerEcommerceEnabled: false,
+      customerEcommerceEnabled: true,
       firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
       firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
       firebaseProjectId:         "warmpawz-b9baf",
@@ -61,7 +61,7 @@
       apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
       uatMode: true,
       environment: 'development',
-      customerEcommerceEnabled: false
+      customerEcommerceEnabled: true
     },
     // You can extend mappings here if needed, e.g. stage.customer.warmpawz.com
   };

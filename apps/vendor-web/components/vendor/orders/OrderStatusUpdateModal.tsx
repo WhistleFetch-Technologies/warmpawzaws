@@ -15,6 +15,7 @@ interface OrderStatusUpdateModalProps {
   isOpen: boolean;
   onClose: () => void;
   order: Order | null;
+  vendorId?: string;
   onSuccess?: () => void;
 }
 
@@ -29,16 +30,30 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   'refunded': [],
 };
 
+const DELIVERY_PARTNERS = [
+  'Delhivery',
+  'BlueDart',
+  'DTDC',
+  'Shiprocket',
+  'Ekart',
+  'Shadowfax',
+  'Other',
+];
+
 export function OrderStatusUpdateModal({
   isOpen,
   onClose,
   order,
+  vendorId,
   onSuccess
 }: OrderStatusUpdateModalProps) {
   const [loading, setLoading] = useState(false);
   const [newStatus, setNewStatus] = useState<string>('');
   const [trackingNumber, setTrackingNumber] = useState<string>('');
+  const [deliveryPartner, setDeliveryPartner] = useState<string>('');
+  const [trackingUrl, setTrackingUrl] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
+  const [cancellationReason, setCancellationReason] = useState<string>('');
 
   const availableStatuses = order ? STATUS_TRANSITIONS[order.order_status] || [] : [];
 
@@ -46,7 +61,18 @@ export function OrderStatusUpdateModal({
     if (isOpen && availableStatuses.length > 0) {
       setNewStatus(availableStatuses[0]);
     }
+    if (!isOpen) {
+      setCancellationReason('');
+    }
   }, [isOpen, availableStatuses]);
+
+  const resolveVendorId = (): string | null => {
+    if (vendorId) return vendorId;
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('vendorId');
+    }
+    return null;
+  };
 
   const handleSubmit = async () => {
     if (!order || !newStatus) {
@@ -56,18 +82,66 @@ export function OrderStatusUpdateModal({
 
     try {
       setLoading(true);
-      
-      const updateData: any = { status: newStatus };
-      if (trackingNumber) updateData.trackingNumber = trackingNumber;
-      if (notes) updateData.notes = notes;
 
-      await apiClient.put(`/orders/${order.id}/status`, updateData);
+      if (newStatus === 'shipped') {
+        if (!trackingNumber.trim()) {
+          alert('Tracking number is required when marking as shipped');
+          return;
+        }
+        if (!deliveryPartner) {
+          alert('Please select a delivery partner');
+          return;
+        }
+
+        const resolvedVendorId = resolveVendorId();
+        if (!resolvedVendorId) {
+          alert('Vendor session not found');
+          return;
+        }
+
+        const result = await apiClient.post<{ success?: boolean; error?: string }>(
+          `/vendor/${resolvedVendorId}/orders/${order.id}/mark-shipped`,
+          {
+            trackingNumber: trackingNumber.trim(),
+            deliveryPartner,
+            trackingUrl: trackingUrl.trim() || undefined,
+            notes: notes || undefined,
+          }
+        );
+
+        if (result?.error || result?.success === false) {
+          alert(result?.error || 'Failed to mark order as shipped');
+          return;
+        }
+      } else {
+        if (newStatus === 'cancelled' && !cancellationReason.trim()) {
+          alert('Please provide a reason for cancellation. The customer will see this message.');
+          return;
+        }
+
+        const updateData: Record<string, string> = { status: newStatus };
+        if (notes) updateData.notes = notes;
+        if (newStatus === 'cancelled') {
+          updateData.cancellation_reason = cancellationReason.trim();
+        }
+
+        const resolvedVendorId = resolveVendorId();
+        if (resolvedVendorId) {
+          await apiClient.put(`/vendor/${resolvedVendorId}/orders/${order.id}`, updateData);
+        } else {
+          await apiClient.put(`/orders/${order.id}/status`, updateData);
+        }
+      }
+
       alert('Order status updated successfully!');
       onSuccess?.();
       onClose();
       setNewStatus('');
       setTrackingNumber('');
+      setDeliveryPartner('');
+      setTrackingUrl('');
       setNotes('');
+      setCancellationReason('');
     } catch (error: any) {
       console.error('Error updating order status:', error);
       alert(error.message || 'Failed to update order status');
@@ -129,32 +203,79 @@ export function OrderStatusUpdateModal({
           </div>
 
           {newStatus === 'shipped' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tracking Number *
+                </label>
+                <input
+                  type="text"
+                  value={trackingNumber}
+                  onChange={(e) => setTrackingNumber(e.target.value)}
+                  placeholder="e.g., AWB123456789"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Delivery Partner *
+                </label>
+                <select
+                  value={deliveryPartner}
+                  onChange={(e) => setDeliveryPartner(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
+                >
+                  <option value="">Select partner</option>
+                  {DELIVERY_PARTNERS.map((partner) => (
+                    <option key={partner} value={partner}>
+                      {partner}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tracking URL <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="url"
+                  value={trackingUrl}
+                  onChange={(e) => setTrackingUrl(e.target.value)}
+                  placeholder="Auto-generated for known carriers if left blank"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
+                />
+              </div>
+            </>
+          )}
+
+          {newStatus === 'cancelled' ? (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tracking Number
+                Reason for cancellation *
               </label>
-              <input
-                type="text"
-                value={trackingNumber}
-                onChange={(e) => setTrackingNumber(e.target.value)}
-                placeholder="Enter tracking number"
+              <textarea
+                value={cancellationReason}
+                onChange={(e) => setCancellationReason(e.target.value)}
+                placeholder="Tell the customer why this order is being cancelled..."
+                rows={4}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-red-500 focus:ring-2 focus:ring-red-100 outline-none"
+              />
+              <p className="text-xs text-gray-500 mt-1">This message will be shown to the customer.</p>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Notes (Optional)
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Add any notes about this status update..."
+                rows={3}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
               />
             </div>
           )}
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Notes (Optional)
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Add any notes about this status update..."
-              rows={3}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-            />
-          </div>
         </div>
 
         <div className="flex items-center justify-end gap-3 p-6 border-t bg-gray-50">
@@ -167,14 +288,17 @@ export function OrderStatusUpdateModal({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={loading || !newStatus}
+            disabled={
+              loading ||
+              !newStatus ||
+              (newStatus === 'cancelled' && !cancellationReason.trim())
+            }
             className="px-6 py-2 bg-orange-500 text-white rounded-lg font-medium hover:bg-orange-600 transition disabled:opacity-50"
           >
-            {loading ? 'Updating...' : 'Update Status'}
+            {loading ? 'Updating...' : newStatus === 'cancelled' ? 'Cancel Order' : 'Update Status'}
           </button>
         </div>
       </div>
     </div>
   );
 }
-

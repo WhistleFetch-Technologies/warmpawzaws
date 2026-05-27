@@ -89,6 +89,13 @@ export function registerOrderManagementEndpoints(app: Hono) {
         updateData
       );
 
+      if (status === 'confirmed' && order.order_status === 'pending') {
+        const { triggerAutoShipment } = await import('../utils/logistics/trigger-auto-shipment');
+        triggerAutoShipment(orderId, 'ecommerce').catch((e) =>
+          console.error('[ORDER-MGMT] Auto-shipment trigger failed:', e)
+        );
+      }
+
       // ✅ Trigger webhooks
       try {
         const { triggerWebhook } = await import('./webhooks');

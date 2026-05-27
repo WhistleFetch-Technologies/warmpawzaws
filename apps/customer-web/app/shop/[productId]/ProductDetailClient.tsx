@@ -8,12 +8,15 @@ import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
 import {
   mergeLineIntoWarmpawzCartStorage,
+  setLineQuantityInWarmpawzCartStorage,
+  readWarmpawzCartLines,
   CART_UPDATED_EVENT,
-  WARMPAWZ_CART_KEY,
 } from '@/lib/warmpawz-cart-storage';
+import type { WarmpawzCartProductSnapshot } from '@/lib/warmpawz-cart-storage';
 import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
 import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import {
   ArrowLeft, ShoppingCart, Star, Truck, Shield, Tag,
   Package, Store, Check, Plus, Minus, Share2, ChevronRight,
@@ -129,10 +132,11 @@ export default function ProductDetailClient() {
   useEffect(() => {
     if (!wishlistProductId || typeof window === 'undefined') return;
     const sync = () => {
-      const cart = JSON.parse(localStorage.getItem(WARMPAWZ_CART_KEY) || '[]');
-      setIsInCart(
-        cart.some((item: CartItem) => String(item.product_id) === String(wishlistProductId))
+      const line = readWarmpawzCartLines().find(
+        (item) => String(item.product_id) === String(wishlistProductId)
       );
+      setIsInCart(!!line);
+      if (line) setQuantity(Math.max(1, line.quantity));
     };
     sync();
     window.addEventListener(CART_UPDATED_EVENT, sync);
@@ -236,22 +240,29 @@ export default function ProductDetailClient() {
   // ACTIONS
   // ============================================================================
 
-  const mergeLineIntoLocalCart = (): boolean => {
+  const productSnapshot = (): WarmpawzCartProductSnapshot | null => {
+    if (!product) return null;
+    return {
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      original_price: product.original_price,
+      emoji: product.emoji,
+      images: product.images,
+      vendor_name: product.vendor_name,
+      stock: product.stock,
+    };
+  };
+
+  const persistCartQuantity = (qty: number): boolean => {
     if (!product || product.stock === 0) return false;
-    const lineId = wishlistProductId || productId;
-    const ok = mergeLineIntoWarmpawzCartStorage({
-      lineId: String(lineId),
-      quantity,
-      product: {
-        id: product.id,
-        name: product.name,
-        price: product.price,
-        original_price: product.original_price,
-        emoji: product.emoji,
-        images: product.images,
-        vendor_name: product.vendor_name,
-        stock: product.stock,
-      },
+    const snap = productSnapshot();
+    if (!snap) return false;
+    const lineId = String(wishlistProductId || productId);
+    const ok = setLineQuantityInWarmpawzCartStorage({
+      lineId,
+      quantity: qty,
+      product: snap,
       selectedVariations:
         Object.keys(selectedVariations).length > 0 ? selectedVariations : undefined,
     });
@@ -259,19 +270,47 @@ export default function ProductDetailClient() {
     return ok;
   };
 
+  const mergeLineIntoLocalCart = (): boolean => {
+    if (!product || product.stock === 0) return false;
+    const lineId = wishlistProductId || productId;
+    const snap = productSnapshot();
+    if (!snap) return false;
+    const ok = mergeLineIntoWarmpawzCartStorage({
+      lineId: String(lineId),
+      quantity,
+      product: snap,
+      selectedVariations:
+        Object.keys(selectedVariations).length > 0 ? selectedVariations : undefined,
+    });
+    if (ok) setIsInCart(true);
+    return ok;
+  };
+
+  const changeQuantity = (delta: number) => {
+    if (!product) return;
+    const next = Math.max(1, Math.min(product.stock, quantity + delta));
+    setQuantity(next);
+    const lineId = String(wishlistProductId || productId);
+    const inCartNow = readWarmpawzCartLines().some(
+      (item) => String(item.product_id) === lineId
+    );
+    if (inCartNow) persistCartQuantity(next);
+  };
+
   const addToCart = async () => {
     if (!product || product.stock === 0) return;
 
     setAddingToCart(true);
     try {
-      mergeLineIntoLocalCart();
+      if (isInCart) persistCartQuantity(quantity);
+      else mergeLineIntoLocalCart();
     } finally {
       setAddingToCart(false);
     }
   };
 
   const buyNow = () => {
-    if (!mergeLineIntoLocalCart()) return;
+    if (!persistCartQuantity(quantity)) return;
     router.push('/cart?buynow=1');
   };
 
@@ -538,6 +577,11 @@ export default function ProductDetailClient() {
               )}
             </div>
 
+            <SellerProductPromotions
+              vendorId={product.vendor_id}
+              vendorName={product.vendor_name}
+            />
+
             {/* Product Variations */}
             {product.variations && product.variations.length > 0 && (
               <div className="space-y-4">
@@ -578,14 +622,14 @@ export default function ProductDetailClient() {
               <div className="flex items-center gap-4">
                 <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden">
                   <button
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    onClick={() => changeQuantity(-1)}
                     className="p-3 hover:bg-slate-100 transition-colors"
                   >
                     <Minus className="w-5 h-5 text-slate-600" />
                   </button>
                   <span className="w-14 text-center font-semibold text-slate-900">{quantity}</span>
                   <button
-                    onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
+                    onClick={() => changeQuantity(1)}
                     className="p-3 hover:bg-slate-100 transition-colors"
                     disabled={quantity >= product.stock}
                   >

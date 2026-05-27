@@ -8,6 +8,11 @@ import {
   Tag, Percent, Clock, Copy, Check, ArrowLeft,
   ShoppingCart, Star, Sparkles, AlertCircle, Search
 } from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE,
+  isCustomerEcommerceEnabled,
+} from '@/lib/customer-ecommerce-flag';
 
 interface Promotion {
   id: string;
@@ -103,14 +108,16 @@ export default function PromotionsPage() {
                 Save more on pet products
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => router.push('/cart')}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#712796] via-purple-600 to-pink-500 text-white shadow-md shadow-purple-500/25 active:scale-[0.98] transition-transform"
-              aria-label="Open cart"
-            >
-              <ShoppingCart className="h-5 w-5" />
-            </button>
+            {isCustomerEcommerceEnabled() ? (
+              <button
+                type="button"
+                onClick={() => router.push('/cart')}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#712796] via-purple-600 to-pink-500 text-white shadow-md shadow-purple-500/25 active:scale-[0.98] transition-transform"
+                aria-label="Open cart"
+              >
+                <ShoppingCart className="h-5 w-5" />
+              </button>
+            ) : null}
           </div>
         </header>
 
@@ -133,12 +140,16 @@ export default function PromotionsPage() {
               <button
                 type="button"
                 onClick={() => {
+                  if (!isCustomerEcommerceEnabled()) {
+                    toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
+                    return;
+                  }
                   rememberShopBackFromCurrentUrl();
                   router.push('/shop');
                 }}
                 className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-white px-6 text-sm font-semibold text-[#712796] shadow-sm active:scale-[0.98] transition-transform"
               >
-                Shop Now
+                {isCustomerEcommerceEnabled() ? 'Shop Now' : 'Coming Soon'}
               </button>
             </div>
           </div>

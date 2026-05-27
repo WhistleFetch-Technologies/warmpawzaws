@@ -24,12 +24,14 @@ interface OrderDetails {
   id: string;
   order_number: string;
   status: string;
+  order_status?: string;
   items: any[];
   shipping_address: any;
   tracking_number?: string;
   estimated_delivery?: string;
   tracking_history?: TrackingStatus[];
   created_at: string;
+  cancellation_reason?: string;
 }
 
 const statusSteps = [
@@ -57,7 +59,11 @@ export function OrderTrackingView({ orderId, onBack }: OrderTrackingViewProps) {
       
       // PHASE 1.3 FIX: Use correct endpoint /customer/orders/:id instead of /ecommerce/orders/:id
       const response = await apiClient.get<any>(`/customer/orders/${orderId}`);
-      setOrder(response.order || response);
+      const raw = response.order || response;
+      setOrder({
+        ...raw,
+        status: raw.status || raw.order_status || 'pending',
+      });
     } catch (err: any) {
       console.error('Error loading order:', err);
       setError(err.message || 'Failed to load order details');
@@ -157,6 +163,13 @@ export function OrderTrackingView({ orderId, onBack }: OrderTrackingViewProps) {
               </div>
             )}
           </Card>
+
+          {order.status === 'cancelled' && order.cancellation_reason && (
+            <Card className="p-4 border-red-200 bg-red-50">
+              <p className="text-sm font-semibold text-red-800">Order cancelled</p>
+              <p className="text-sm text-red-700 mt-1">{order.cancellation_reason}</p>
+            </Card>
+          )}
 
           {/* Tracking Timeline */}
           <Card className="p-4">

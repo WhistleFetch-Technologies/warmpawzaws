@@ -1,6 +1,7 @@
 'use client';
 
 import { Home as HomeIcon, ShoppingCart, Calendar, User } from 'lucide-react';
+import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 
 interface StandardizedFooterProps {
   currentTab?: 'home' | 'cart' | 'bookings' | 'profile';
@@ -15,7 +16,10 @@ export function StandardizedFooter({
   itemCount = 0,
   maxWidth = 'max-w-customer'
 }: StandardizedFooterProps) {
+  const commerceEnabled = isCustomerEcommerceEnabled();
+
   const handleTabClick = (tab: 'home' | 'cart' | 'bookings' | 'profile') => {
+    if (tab === 'cart' && !commerceEnabled) return;
     if (onTabChange) {
       onTabChange(tab);
     }
@@ -40,22 +44,34 @@ export function StandardizedFooter({
         </button>
         
         {/* Cart Tab */}
-        <button 
-          onClick={() => handleTabClick('cart')}
-          className="flex flex-col items-center gap-1 relative"
-        >
-          <div className="relative">
-            <ShoppingCart className={`w-6 h-6 ${isActive('cart') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-            {itemCount > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                {itemCount}
-              </span>
-            )}
-          </div>
-          <span className={`text-xs ${isActive('cart') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
-            Cart
-          </span>
-        </button>
+        {commerceEnabled ? (
+          <button
+            type="button"
+            onClick={() => handleTabClick('cart')}
+            className="relative flex flex-col items-center gap-1"
+          >
+            <div className="relative">
+              <ShoppingCart className={`w-6 h-6 ${isActive('cart') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+              {itemCount > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {itemCount}
+                </span>
+              )}
+            </div>
+            <span className={`text-xs ${isActive('cart') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
+              Cart
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="relative flex flex-col items-center gap-1 opacity-40 cursor-not-allowed"
+          >
+            <ShoppingCart className="w-6 h-6 text-gray-400" />
+            <span className="text-xs text-gray-400">Soon</span>
+          </button>
+        )}
         
         {/* Bookings Tab */}
         <button 
