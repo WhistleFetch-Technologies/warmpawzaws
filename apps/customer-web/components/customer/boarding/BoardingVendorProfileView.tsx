@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import type { LucideIcon } from 'lucide-react';
 import {
-  Star,
   Clock,
   MapPin,
   Phone,
@@ -21,10 +20,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
-import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 import { StarRating } from '../shared/StarRating';
-import { resolveVendorRating, vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
+import { resolveVendorRating } from '@/lib/resolve-vendor-rating';
 import {
   normalizeBoardingServiceSlug,
   boardingSlugMatchesText,
@@ -292,42 +291,19 @@ export function BoardingVendorProfileView({
   }
 
   const profileVendorId = String(vendor.id ?? vendor.vendorId ?? '').trim();
-  const ratingStat = vendorRatingHeaderStat(
-    {
-      vendorId: profileVendorId,
-      vendorRating: vendor.rating,
-      review_count: vendor.review_count,
-    },
-    profileVendorId
-  );
-  const reviewCount = Number(vendor.review_count ?? 0) || 0;
-  const dashboardStats = [
-    ...(ratingStat
-      ? [{ ...ratingStat, icon: <Star className="w-4 h-4 fill-white" /> }]
-      : []),
-    ...(reviewCount > 0 ? [{ value: `${reviewCount}`, label: 'Reviews' }] : []),
-    {
-      value: `${publishedPlans.length || '—'}`,
-      label: 'Plans',
-      icon: <Building2 className="w-4 h-4" />,
-    },
-  ];
-
   const hasPhotos = heroPhotos.length > 0;
   const fullAddress = [vendor.address, vendor.city, vendor.pincode].filter(Boolean).join(', ');
 
   return (
     <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden border-black/[0.04] bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] sm:border-x sm:shadow-[0_0_48px_rgba(0,0,0,0.06)]">
-      <ServiceDashboardHeader
+      <VendorProfileDashboardHeader
         className="!z-0 isolation-auto"
-        serviceName={vendor.name}
+        serviceName="Pet Boarding"
         serviceSubtitle={headerSubtitle}
         serviceIcon={Building2}
         iconColor="text-white"
-        stats={dashboardStats}
         onBack={onBack}
         showBackButton={true}
-        headerColor="bg-[#FF8C42]"
         bottomEdge="flat"
       />
 

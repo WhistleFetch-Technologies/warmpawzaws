@@ -27,13 +27,6 @@ export default function RootLayout({
   const prodApiUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL ||
     (isProd ? WARMPAWZ_API_GATEWAY_PROD : WARMPAWZ_API_GATEWAY_DEV);
-  // Customer marketplace (build-time switch; runtime-config.js can override on client).
-  // Kept in sync with `lib/customer-ecommerce-flag.ts` and deploy scripts.
-  const customerEcommerceEnabledRaw = (
-    process.env.NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED || 'false'
-  ).toLowerCase();
-  const customerEcommerceEnabled =
-    customerEcommerceEnabledRaw === 'true' || customerEcommerceEnabledRaw === '1';
   const customerMealPlansEnabledRaw = (
     process.env.NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED ?? (isProd ? 'false' : 'true')
   ).toLowerCase();
@@ -111,7 +104,6 @@ export default function RootLayout({
                   apiBaseUrl: ${JSON.stringify(prodApiUrl)},
                   environment: ${JSON.stringify(isProd ? 'production' : 'development')},
                   uatMode: ${JSON.stringify(!isProd)},
-                  customerEcommerceEnabled: ${JSON.stringify(customerEcommerceEnabled)},
                   customerMealPlansEnabled: ${JSON.stringify(customerMealPlansEnabled)}
                 };
               `,

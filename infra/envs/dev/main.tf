@@ -259,6 +259,7 @@ module "lambda" {
     RAZORPAY_SECRET_ARN         = module.secrets.razorpay_secret_arn
     GOOGLE_MAPS_SECRET_ARN      = module.secrets.google_maps_secret_arn
     SHIPROCKET_SECRET_ARN       = module.secrets.shiprocket_secret_arn
+    AFTERSHIP_SECRET_ARN        = module.secrets.aftership_secret_arn
     API_BASE_URL                = "https://${local.api_subdomain}"
     COGNITO_USER_POOL_ID        = module.cognito.user_pool_id
     COGNITO_CLIENT_ID           = module.cognito.customer_web_client_id

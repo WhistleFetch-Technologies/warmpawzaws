@@ -12,6 +12,7 @@ import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { getRoleConfig, RoleId, ServiceStyle } from './roleConfig';
+import { VendorProfileDashboardHeader } from './VendorProfileDashboardHeader';
 import { ServiceDashboardHeader } from './ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
@@ -36,7 +37,7 @@ import {
   hasRatings,
   normalizeRatingCount,
 } from '@/lib/rating-display';
-import { resolveVendorRating, vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
+import { resolveVendorRating } from '@/lib/resolve-vendor-rating';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -882,34 +883,19 @@ export function UniversalServicesByStyle({
       { expectedVendorId: profileVendorId }
     );
     const showProfileRatingPill = profileRatingResolved.shouldShowRating;
-    const ratingHeaderStatEntry = vendorRatingHeaderStat(
-      {
-        vendorId: profileVendorId,
-        vendorRating: profileAvgRaw,
-        vendorReviewCount: profileReviewTotal,
-        averageRating: rating?.averageRating,
-      },
-      profileVendorId
-    );
-
-    const dashboardStats = ratingHeaderStatEntry
-      ? [{ ...ratingHeaderStatEntry, icon: <Star className="w-4 h-4 fill-white" /> }]
-      : [];
 
     return (
       <div className="min-h-screen bg-gray-50 relative overflow-hidden">
         {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
-        <ServiceDashboardHeader
+        <VendorProfileDashboardHeader
           fullWidth
           className="!z-0 isolation-auto"
-          serviceName={providerName}
+          serviceName={config.roleName}
           serviceSubtitle={profileServiceSubtitle}
           serviceIcon={RoleIcon}
           iconColor="text-white"
-          stats={dashboardStats}
           onBack={onBack}
           showBackButton={true}
-          headerColor="bg-[#FF8C42]"
           bottomEdge="flat"
         />
 

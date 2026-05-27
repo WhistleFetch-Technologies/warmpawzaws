@@ -21,6 +21,8 @@ import { query, select, insert, update, deleteRows } from '../../../database/rds
 import { publishToSNS } from '../../../utils/aws/aws-clients';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+import { listVendorServicesForBannerPicker } from '../../../utils/banner-cta-resolver';
+import { getBannerDestinationOptions } from '../../../utils/banner-destination-options';
 
 // ============================================================================
 // CAPABILITY REFRESH SYSTEM
@@ -783,6 +785,48 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await deleteBannerHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  /** Dynamic banner destination options (categories, service styles, vendors). */
+  app.get('/admin/banners/destination-options', async (c) => {
+    try {
+      const categoryId = c.req.query('categoryId') || c.req.query('category_id') || undefined;
+      const options = await getBannerDestinationOptions(categoryId);
+      return c.json({ success: true, ...options });
+    } catch (error: any) {
+      console.error('Error loading banner destination options:', error);
+      return c.json(
+        {
+          success: false,
+          error: error.message || 'Failed to load destination options',
+          categories: [],
+          serviceStyles: [],
+          vendors: [],
+        },
+        500
+      );
+    }
+  });
+
+  /** Published vendor services for banner service picker (optional deep link). */
+  app.get('/admin/vendors/:vendorId/services', async (c) => {
+    try {
+      const vendorId = c.req.param('vendorId');
+      if (!vendorId?.trim()) {
+        return c.json({ success: false, error: 'vendorId is required' }, 400);
+      }
+      const serviceStyle = c.req.query('serviceStyle') || c.req.query('service_style') || undefined;
+      const category = c.req.query('category') || c.req.query('persona') || undefined;
+      const services = await listVendorServicesForBannerPicker({
+        vendorId,
+        serviceStyle,
+        category,
+      });
+      return c.json({ success: true, services, total: services.length });
+    } catch (error: any) {
+      console.error('Error listing vendor services for banner picker:', error);
+      return c.json({ success: false, error: error.message || 'Failed to list services', services: [] }, 500);
+    }
   });
 
   app.get('/admin/banners/locations/states', async (c) => {

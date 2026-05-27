@@ -318,3 +318,56 @@ export function buildServiceScreenMap(): Record<string, string[]> {
 
 /** Frozen singleton for importers that expect a plain object. */
 export const serviceScreenMap: Record<string, string[]> = buildServiceScreenMap();
+
+/** Normalize admin / DB service style to canonical tele | at_home | at_center. */
+export function normalizeBannerServiceStyle(raw: unknown): string {
+  const style = normalizeCategoryToken(String(raw ?? ''));
+  if (!style) return 'at_center';
+  if (style === 'online') return 'tele';
+  if (style === 'clinic' || style === 'center' || style === 'at_clinic') return 'at_center';
+  if (style === 'home' || style === 'home_visit') return 'at_home';
+  if (style === 'tele' || style === 'at_home' || style === 'at_center') return style;
+  return style;
+}
+
+const SERVICE_STYLE_LABELS: Record<string, string> = {
+  at_center: 'Clinic visit / At center',
+  at_home: 'Home / At home',
+  tele: 'Tele consultation',
+};
+
+/** Human-readable label for a canonical service style. */
+export function labelForBannerServiceStyle(style: string): string {
+  const key = normalizeBannerServiceStyle(style);
+  return SERVICE_STYLE_LABELS[key] ?? key;
+}
+
+/**
+ * Maps customer home screen + service style to the style-specific landing screen.
+ * Used by banner CTA resolver and promotion navigation.
+ */
+export function resolveCustomerScreenForCategoryAndStyle(
+  customerScreen: string | null | undefined,
+  serviceStyle: unknown
+): string {
+  const screen = normalizeServiceKey(customerScreen);
+  const style = normalizeBannerServiceStyle(serviceStyle);
+  if (!screen) return '';
+
+  if (screen === 'vet') {
+    if (style === 'tele') return 'vet-tele-consultation';
+    if (style === 'at_home') return 'vet-home-visit';
+    return 'vet';
+  }
+  if (screen === 'grooming') {
+    if (style === 'at_home') return 'grooming_home';
+    if (style === 'at_center') return 'grooming_center';
+    return 'grooming';
+  }
+  if (screen === 'training') {
+    if (style === 'at_home') return 'training_home';
+    if (style === 'at_center') return 'training_center';
+    return 'training';
+  }
+  return screen;
+}
