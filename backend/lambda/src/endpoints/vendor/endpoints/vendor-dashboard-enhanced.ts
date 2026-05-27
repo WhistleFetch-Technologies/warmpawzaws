@@ -17,11 +17,14 @@
 
 import { Hono } from 'hono';
 import { select, query } from '../../../database/rds-connection';
-import { resolveVendorId } from '../../../utils/vendor-resolve';
+import { resolveVendorId, resolveVendorIdsForLedger } from '../../../utils/vendor-resolve';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { MIN_VENDOR_PAYOUT_REQUEST_AMOUNT_INR } from '../../../lib/constants/vendor-payout';
-import { backfillMissingVendorEarningsForVendorIds } from '../../../utils/vendor-earnings-on-completion';
+import {
+  backfillMissingVendorEarningsForVendorIds,
+  realignPendingVendorEarningsForVendorIds,
+} from '../../../utils/vendor-earnings-on-completion';
 import {
   backfillMissingMealDeliverySettlementsForVendorIds,
   sumPendingDeliverySettlementNetPayout,
@@ -54,32 +57,55 @@ function safeMoneyAmount(raw: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+const EARNINGS_PERIOD_TZ = 'Asia/Kolkata';
+
+function formatYmdInTimeZone(d: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d);
+}
+
+/** SQL predicate: realized/delivery timestamp within earnings period (IST calendar boundaries). */
+function sqlTimestampInEarningsPeriod(period: string, columnExpr: string): string {
+  const col = columnExpr;
+  switch (period) {
+    case 'day':
+      return `(${col} IS NOT NULL AND ${col} >= (timezone('${EARNINGS_PERIOD_TZ}', now()))::date::timestamp AT TIME ZONE '${EARNINGS_PERIOD_TZ}' AND ${col} < ((timezone('${EARNINGS_PERIOD_TZ}', now()))::date + interval '1 day')::timestamp AT TIME ZONE '${EARNINGS_PERIOD_TZ}')`;
+    case 'week':
+      return `(${col} IS NOT NULL AND ${col} >= ((timezone('${EARNINGS_PERIOD_TZ}', now()))::date - interval '6 days')::timestamp AT TIME ZONE '${EARNINGS_PERIOD_TZ}')`;
+    case 'month':
+      return `(${col} IS NOT NULL AND ${col} >= date_trunc('month', timezone('${EARNINGS_PERIOD_TZ}', now())) AT TIME ZONE '${EARNINGS_PERIOD_TZ}')`;
+    case 'year':
+      return `(${col} IS NOT NULL AND ${col} >= date_trunc('year', timezone('${EARNINGS_PERIOD_TZ}', now())) AT TIME ZONE '${EARNINGS_PERIOD_TZ}')`;
+    default:
+      return 'TRUE';
+  }
+}
+
 function buildDailyBreakdownLast7Days(
   earningsRows: Array<{ realized_at?: string | null; amount?: string | number | null }>,
   ref: Date = new Date()
 ): Array<{ day: string; date: string; amount: number }> {
   const shortDay = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-  const formatLocalYmd = (d: Date) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
   const byKey = new Map<string, number>();
   for (const e of earningsRows) {
     if (!e?.realized_at) continue;
-    const k = formatLocalYmd(new Date(e.realized_at));
+    const k = formatYmdInTimeZone(new Date(e.realized_at), EARNINGS_PERIOD_TZ);
     const a = parseFloat(String(e.amount ?? '0'));
     if (!Number.isFinite(a)) continue;
     byKey.set(k, (byKey.get(k) || 0) + a);
   }
   const out: Array<{ day: string; date: string; amount: number }> = [];
   for (let i = 6; i >= 0; i--) {
-    const d = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() - i, 12, 0, 0, 0);
-    const key = formatLocalYmd(d);
+    const d = new Date(ref.getTime() - i * 24 * 60 * 60 * 1000);
+    const key = formatYmdInTimeZone(d, EARNINGS_PERIOD_TZ);
+    const weekday = new Intl.DateTimeFormat('en-US', { timeZone: EARNINGS_PERIOD_TZ, weekday: 'short' }).format(d);
     const raw = byKey.get(key) || 0;
     const amt = Math.round(raw * 100) / 100;
-    out.push({ day: shortDay[d.getDay()] ?? '—', date: key, amount: amt });
+    out.push({ day: weekday.slice(0, 3), date: key, amount: amt });
   }
   return out;
 }
@@ -91,34 +117,7 @@ const VENDOR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
  * so clinic/center earnings stored under sibling vendor rows still appear for the logged-in account.
  */
 async function expandVendorIdsForEarningsContext(paramVendorId: string): Promise<string[]> {
-  const trimmed = (paramVendorId || '').trim();
-  if (!VENDOR_UUID_RE.test(trimmed)) return [];
-  const ids = new Set<string>([trimmed]);
-  let resolved = trimmed;
-  try {
-    resolved = await resolveVendorId(trimmed);
-    if (VENDOR_UUID_RE.test(resolved)) ids.add(resolved);
-  } catch {
-    /* keep trimmed only */
-  }
-  try {
-    const cr = await query(
-      `SELECT center_id FROM vendors WHERE id = $1::uuid OR id = $2::uuid LIMIT 1`,
-      [resolved, trimmed]
-    ).catch(() => ({ rows: [] as { center_id?: string }[] }));
-    const cid = cr.rows?.[0]?.center_id;
-    if (cid) {
-      const sib = await query(`SELECT id FROM vendors WHERE center_id = $1::uuid`, [cid]).catch(() => ({
-        rows: [] as { id: string }[],
-      }));
-      for (const row of sib.rows || []) {
-        if (row?.id && VENDOR_UUID_RE.test(String(row.id))) ids.add(String(row.id));
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-  return [...ids];
+  return resolveVendorIdsForLedger(paramVendorId);
 }
 
 export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
@@ -755,36 +754,29 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       let vendorIdsForEarnings = await expandVendorIdsForEarningsContext(paramVendorId);
       if (vendorIdsForEarnings.length === 0) vendorIdsForEarnings = [vendorId];
       console.log(
-        `💰 [EARNINGS] Fetching earnings for vendor: ${paramVendorId} (resolved: ${vendorId}, idCount: ${vendorIdsForEarnings.length}), period: ${period}`
+        `💰 [EARNINGS] Fetching earnings for vendor: ${paramVendorId} (canonical: ${vendorId}, ledgerIds: ${vendorIdsForEarnings.join(',')}), period: ${period}`
       );
 
-      await backfillMissingVendorEarningsForVendorIds(vendorIdsForEarnings, '[EARNINGS-BACKFILL]');
+      const earningsBackfilled = await backfillMissingVendorEarningsForVendorIds(
+        vendorIdsForEarnings,
+        '[EARNINGS-BACKFILL]',
+        500
+      );
+      await realignPendingVendorEarningsForVendorIds(
+        vendorIdsForEarnings,
+        100,
+        '[EARNINGS-REALIGN]'
+      );
       await backfillMissingMealDeliverySettlementsForVendorIds(
         vendorIdsForEarnings,
         '[EARNINGS-MEAL-SETTLEMENT-BACKFILL]',
       );
 
-      // Calculate date range
-      const now = new Date();
-      let startDate = new Date();
-
-      switch (period) {
-        case 'day':
-          startDate.setHours(0, 0, 0, 0);
-          break;
-        case 'week':
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case 'month':
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-          break;
-        case 'year':
-          startDate = new Date(now.getFullYear(), 0, 1);
-          break;
-        case 'lifetime':
-          startDate = new Date(0);
-          break;
-      }
+      const periodScoped = period !== 'lifetime';
+      const vePeriodSql = periodScoped
+        ? ` AND ${sqlTimestampInEarningsPeriod(period, 've.realized_at')}`
+        : '';
+      const dsDeliveredCol = 'COALESCE(ds.order_delivered_at, ds.created_at)';
 
       // Get vendor_earnings records (center-aware: align with GET /vendor/bookings/:id sibling vendors)
       const earnSupCtx = getTemporaryVendorSuppressionParams();
@@ -792,12 +784,12 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         ? ` AND ${sqlExcludeSuppressedVendorEarningsRows('ve', 2, 3)}`
         : '';
       const earnVeFragRanged = earnSupCtx
-        ? ` AND ${sqlExcludeSuppressedVendorEarningsRows('ve', 3, 4)}`
+        ? ` AND ${sqlExcludeSuppressedVendorEarningsRows('ve', 2, 3)}`
         : '';
       const earningsBookingSelect = `ve.*,
            b.booking_date,
            b.service_id,
-           COALESCE(sc.display_name, sc.service_name, s.name, vs.service_name, b.service_name, 'Service') as service_name,
+           COALESCE(sc.display_name, sc.service_name, s.name, vs.service_name, 'Service') as service_name,
            c.full_name as customer_name`;
       const earningsBookingJoins = `
            LEFT JOIN bookings b ON ve.booking_id = b.id
@@ -810,44 +802,29 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           ? `SELECT ${earningsBookingSelect}
            FROM vendor_earnings ve${earningsBookingJoins}
            WHERE ve.vendor_id = ANY($1::uuid[])${earnVeFragLifetime}
-           ORDER BY ve.realized_at DESC`
+           ORDER BY ve.realized_at DESC NULLS LAST`
           : `SELECT ${earningsBookingSelect}
            FROM vendor_earnings ve${earningsBookingJoins}
-           WHERE ve.vendor_id = ANY($1::uuid[])
-             AND ve.realized_at >= $2${earnVeFragRanged}
-           ORDER BY ve.realized_at DESC`;
+           WHERE ve.vendor_id = ANY($1::uuid[])${vePeriodSql}${earnVeFragRanged}
+           ORDER BY ve.realized_at DESC NULLS LAST`;
 
       const earningsResult = await query(
         earningsQuery,
-        period === 'lifetime'
-          ? [vendorIdsForEarnings, ...(earnSupCtx ? [earnSupCtx.vendorIds, earnSupCtx.cutoffDateIst] : [])]
-          : [
-              vendorIdsForEarnings,
-              startDate.toISOString(),
-              ...(earnSupCtx ? [earnSupCtx.vendorIds, earnSupCtx.cutoffDateIst] : []),
-            ]
-      ).catch(() => ({ rows: [] }));
+        [vendorIdsForEarnings, ...(earnSupCtx ? [earnSupCtx.vendorIds, earnSupCtx.cutoffDateIst] : [])]
+      );
 
       const earnings = earningsResult.rows || [];
 
-      const settlementsSql =
-        period === 'lifetime'
-          ? `SELECT id, vendor_id, meal_order_id, pharmacy_order_id, order_amount, commission_amount, commission_rate,
+      const dsPeriodSql = periodScoped
+        ? ` AND ${sqlTimestampInEarningsPeriod(period, dsDeliveredCol)}`
+        : '';
+      const settlementsSql = `SELECT id, vendor_id, meal_order_id, pharmacy_order_id, order_amount, commission_amount, commission_rate,
                     net_payout, status, order_delivered_at, created_at, actual_payout_date
              FROM delivery_settlements
-             WHERE vendor_id = ANY($1::uuid[])
-             ORDER BY COALESCE(order_delivered_at, created_at) DESC`
-          : `SELECT id, vendor_id, meal_order_id, pharmacy_order_id, order_amount, commission_amount, commission_rate,
-                    net_payout, status, order_delivered_at, created_at, actual_payout_date
-             FROM delivery_settlements
-             WHERE vendor_id = ANY($1::uuid[])
-               AND COALESCE(order_delivered_at, created_at) >= $2
+             WHERE vendor_id = ANY($1::uuid[])${dsPeriodSql}
              ORDER BY COALESCE(order_delivered_at, created_at) DESC`;
 
-      const settlementsResult = await query(
-        settlementsSql,
-        period === 'lifetime' ? [vendorIdsForEarnings] : [vendorIdsForEarnings, startDate.toISOString()],
-      ).catch(() => ({ rows: [] }));
+      const settlementsResult = await query(settlementsSql, [vendorIdsForEarnings]).catch(() => ({ rows: [] }));
 
       const settlementRows = settlementsResult.rows || [];
 
@@ -879,7 +856,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           summary.paidOut += amount;
         }
 
-        if (e.realized_at && new Date(e.realized_at) >= startDate) {
+        if (period === 'lifetime') {
+          if (e.realized_at) summary.thisPeriod += amount;
+        } else {
           summary.thisPeriod += amount;
         }
       });
@@ -904,8 +883,10 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           summary.paidOut += amount;
         }
 
-        const realizedAt = ds.order_delivered_at || ds.created_at;
-        if (realizedAt && new Date(realizedAt) >= startDate) {
+        if (period === 'lifetime') {
+          const realizedAt = ds.order_delivered_at || ds.created_at;
+          if (realizedAt) summary.thisPeriod += amount;
+        } else {
           summary.thisPeriod += amount;
         }
       });
@@ -986,6 +967,9 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       return c.json({
         success: true,
+        canonicalVendorId: vendorId,
+        ledgerVendorIds: vendorIdsForEarnings,
+        earningsBackfilled,
         dailyBreakdown,
         dailyEarnings: dailyBreakdown,
         earnings: {
@@ -1043,33 +1027,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         `💳 [TRANSACTIONS] Fetching transactions for vendor: ${paramVendorId} (resolved: ${vendorId}, idCount: ${vendorIdsForTx.length}), period: ${period}, limit: ${limit}`
       );
 
-      await backfillMissingVendorEarningsForVendorIds(vendorIdsForTx, '[TRANSACTIONS-EARNINGS-BACKFILL]');
+      await backfillMissingVendorEarningsForVendorIds(vendorIdsForTx, '[TRANSACTIONS-EARNINGS-BACKFILL]', 500);
       await backfillMissingMealDeliverySettlementsForVendorIds(
         vendorIdsForTx,
         '[TRANSACTIONS-MEAL-SETTLEMENT-BACKFILL]',
       );
 
-      // Calculate date range
-      const now = new Date();
-      let startDate = new Date();
-
-      switch (period) {
-        case 'day':
-          startDate.setHours(0, 0, 0, 0);
-          break;
-        case 'week':
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case 'month':
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-          break;
-        case 'year':
-          startDate = new Date(now.getFullYear(), 0, 1);
-          break;
-        case 'lifetime':
-          startDate = new Date(0);
-          break;
-      }
+      const txPeriodScoped = period !== 'lifetime';
+      const veTxPeriodSql = txPeriodScoped
+        ? ` AND ${sqlTimestampInEarningsPeriod(period, 've.realized_at')}`
+        : '';
 
       // Prefer vendor_earnings (source of truth for earnings) when available
       const hasVendorEarnings = await query(
@@ -1098,10 +1065,8 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           WHERE ve.vendor_id = ANY($1::uuid[])`;
         const veParamsDyn: unknown[] = [vendorIdsForTx];
         let veP = 2;
-        if (period !== 'lifetime') {
-          veSqlBuilt += `\n AND ve.realized_at >= $${veP}`;
-          veParamsDyn.push(startDate.toISOString());
-          veP++;
+        if (txPeriodScoped) {
+          veSqlBuilt += veTxPeriodSql;
         }
         if (txSupCtx) {
           veSqlBuilt += `\n AND ${sqlExcludeSuppressedVendorEarningsRows('ve', veP, veP + 1)}`;
@@ -1133,95 +1098,19 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         });
       }
 
-      if (transactions.length === 0) {
-        // Fallback to bookings
-        const txSupBk = getTemporaryVendorSuppressionParams();
-        let fbSql = `
-          SELECT 
-            b.id,
-            b.booking_date as date,
-            b.completed_at as created_at,
-            s.name as service_name,
-            COALESCE(s.name, b.service_name, 'Service') as service,
-            c.full_name as customer_name,
-            c.phone as customer_phone,
-            b.total_amount as amount,
-            b.status,
-            CASE 
-              WHEN b.status = 'completed' THEN 'completed'
-              WHEN b.status = 'cancelled' THEN 'cancelled'
-              ELSE 'pending'
-            END as transaction_status,
-            'booking' as type
-          FROM bookings b
-          LEFT JOIN services s ON b.service_id = s.id
-          LEFT JOIN customers c ON b.customer_id = c.id
-          WHERE b.vendor_id = $1
-            AND b.status IN ('completed', 'confirmed', 'pending', 'cancelled')`;
-        const fbParams: unknown[] = [vendorId];
-        let fbP = 2;
-        fbSql += sqlAndExcludeSuppressedBookingRows(
-          'b',
-          txSupBk ? fbP : undefined,
-          txSupBk ? fbP + 1 : undefined,
-        );
-        if (txSupBk) {
-          fbParams.push(txSupBk.vendorIds, txSupBk.cutoffDateIst);
-          fbP += 2;
-        }
-        if (period !== 'lifetime') {
-          fbSql += `\n AND b.created_at >= $${fbP}`;
-          fbParams.push(startDate.toISOString());
-          fbP++;
-        }
-        fbSql += `\n ORDER BY b.created_at DESC\n LIMIT $${fbP}`;
-        fbParams.push(limit);
-
-        const result = await query(fbSql, fbParams).catch(() => ({ rows: [] }));
-        const rows = result.rows || [];
-        transactions = rows.map((t: any) => {
-          const svcName = t.service_name || t.service || 'Service';
-          return {
-            id: t.id,
-            date: t.date || t.created_at,
-            createdAt: t.created_at,
-            created_at: t.created_at,
-            serviceName: svcName,
-            service: svcName,
-            customerName: t.customer_name || 'Customer',
-            customer: t.customer_name || 'Customer',
-            amount: parseFloat(t.amount || '0'),
-            price: parseFloat(t.amount || '0'),
-            status: t.transaction_status || t.status || 'completed',
-            type: t.type || 'booking',
-            description: `Booking - ${svcName}`,
-          };
-        });
-      }
-
       // Meal/pharmacy hyperlocal delivery settlements (vendor_earnings only covers bookings)
-      const dsSql =
-        period === 'lifetime'
-          ? `SELECT ds.id, ds.meal_order_id, ds.pharmacy_order_id, ds.net_payout, ds.status,
+      const dsTxPeriodSql = txPeriodScoped
+        ? ` AND ${sqlTimestampInEarningsPeriod(period, 'COALESCE(ds.order_delivered_at, ds.created_at)')}`
+        : '';
+      const dsSql = `SELECT ds.id, ds.meal_order_id, ds.pharmacy_order_id, ds.net_payout, ds.status,
                     ds.order_delivered_at, ds.created_at, mo.order_number, c.full_name AS customer_name
              FROM delivery_settlements ds
              LEFT JOIN meal_orders mo ON ds.meal_order_id = mo.id
              LEFT JOIN customers c ON mo.customer_id = c.id
-             WHERE ds.vendor_id = ANY($1::uuid[])
-             ORDER BY COALESCE(ds.order_delivered_at, ds.created_at) DESC`
-          : `SELECT ds.id, ds.meal_order_id, ds.pharmacy_order_id, ds.net_payout, ds.status,
-                    ds.order_delivered_at, ds.created_at, mo.order_number, c.full_name AS customer_name
-             FROM delivery_settlements ds
-             LEFT JOIN meal_orders mo ON ds.meal_order_id = mo.id
-             LEFT JOIN customers c ON mo.customer_id = c.id
-             WHERE ds.vendor_id = ANY($1::uuid[])
-               AND COALESCE(ds.order_delivered_at, ds.created_at) >= $2
+             WHERE ds.vendor_id = ANY($1::uuid[])${dsTxPeriodSql}
              ORDER BY COALESCE(ds.order_delivered_at, ds.created_at) DESC`;
 
-      const dsResult = await query(
-        dsSql,
-        period === 'lifetime' ? [vendorIdsForTx] : [vendorIdsForTx, startDate.toISOString()],
-      ).catch(() => ({ rows: [] }));
+      const dsResult = await query(dsSql, [vendorIdsForTx]).catch(() => ({ rows: [] }));
 
       const deliveryTx = (dsResult.rows || []).map((ds: any) => {
         const credited = ds.order_delivered_at || ds.created_at;

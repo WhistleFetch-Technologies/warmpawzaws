@@ -10,6 +10,11 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { resolveLedgerVendorId } from '@/lib/vendor-ledger-id';
+import {
+  fetchVendorEarningsSummary,
+  resolveSessionVendorIdForEarnings,
+} from '@/lib/load-vendor-earnings-summary';
 import { 
   TrendingUp, Award, CreditCard, 
   CheckCircle, Clock, XCircle, Download, 
@@ -159,10 +164,23 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [upgradeTermsAccepted, setUpgradeTermsAccepted] = useState(false);
   const [upgradeSettlementSchedule, setUpgradeSettlementSchedule] = useState<'monthly' | 'weekly_4'>('monthly');
+  const [ledgerVendorId, setLedgerVendorId] = useState(vendorId);
 
   useEffect(() => {
-    loadAllData();
-  }, [vendorId, period]);
+    let cancelled = false;
+    (async () => {
+      const sessionId = resolveSessionVendorIdForEarnings(vendorId);
+      const id = await resolveLedgerVendorId(sessionId, { forceProfileRefresh: true });
+      if (!cancelled) setLedgerVendorId(id);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [vendorId]);
+
+  useEffect(() => {
+    if (ledgerVendorId) loadAllData();
+  }, [ledgerVendorId, period]);
 
   const loadAllData = async () => {
     setLoading(true);
@@ -204,7 +222,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
 
   const loadTierInfo = async () => {
     try {
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/tier`).catch(() => null);
+      const response = await apiClient.get<any>(`/vendor/${ledgerVendorId}/tier`).catch(() => null);
       
       // Handle different API response shapes: response.tier, response itself, or response.data
       const t = response?.tier ?? response?.data?.tier ?? response;
@@ -296,8 +314,8 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   const loadAnalytics = async () => {
     try {
       const [dashboardRes, settlementsRes] = await Promise.all([
-        apiClient.get<any>(`/vendor/${vendorId}/dashboard?timeframe=${period}`).catch(() => null),
-        apiClient.get<any>(`/vendor/${vendorId}/settlements?summary=true`).catch(() => null)
+        apiClient.get<any>(`/vendor/${ledgerVendorId}/dashboard?timeframe=${period}`).catch(() => null),
+        apiClient.get<any>(`/vendor/${ledgerVendorId}/settlements?summary=true`).catch(() => null)
       ]);
       
       const stats = dashboardRes?.stats || dashboardRes?.data?.stats || {};
@@ -329,7 +347,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
 
   const loadSettlements = async () => {
     try {
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/settlements?limit=20`).catch(() => null);
+      const response = await apiClient.get<any>(`/vendor/${ledgerVendorId}/settlements?limit=20`).catch(() => null);
       if (!response) {
         setSettlements([]);
         setPayoutHistory([]);
@@ -349,24 +367,17 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
 
   const loadEarnings = async () => {
     try {
-      const [todayRes, weekRes, monthRes, totalRes] = await Promise.all([
-        apiClient.get<any>(`/vendor/${vendorId}/earnings?period=day`).catch(() => null),
-        apiClient.get<any>(`/vendor/${vendorId}/earnings?period=week`).catch(() => null),
-        apiClient.get<any>(`/vendor/${vendorId}/earnings?period=month`).catch(() => null),
-        apiClient.get<any>(`/vendor/${vendorId}/earnings?period=lifetime`).catch(() => null)
-      ]);
-      // API returns { success, earnings: { totalEarnings, thisPeriod, pendingSettlement, transactions, totalBookings, ... }, period }
-      const e = (v: any) => v?.earnings;
+      const summary = await fetchVendorEarningsSummary(ledgerVendorId);
       setEarnings({
-        totalEarnings: e(totalRes)?.totalEarnings ?? 0,
-        pendingSettlement: e(totalRes)?.pendingSettlement ?? 0,
-        thisMonth: e(monthRes)?.thisPeriod ?? e(monthRes)?.totalEarnings ?? 0,
-        lastMonth: e(monthRes)?.lastMonthEarnings ?? 0,
-        thisWeek: e(weekRes)?.thisPeriod ?? e(weekRes)?.totalEarnings ?? 0,
-        today: e(todayRes)?.thisPeriod ?? e(todayRes)?.totalEarnings ?? 0,
-        totalBookings: e(totalRes)?.totalBookings ?? (e(totalRes)?.transactions?.length ?? 0),
-        completedBookings: e(totalRes)?.completedBookings ?? 0,
-        avgBookingValue: e(totalRes)?.averageBookingValue ?? 0
+        totalEarnings: summary.total,
+        pendingSettlement: summary.pending,
+        thisMonth: summary.thisMonth,
+        lastMonth: summary.lastMonthEarnings,
+        thisWeek: summary.thisWeek,
+        today: summary.today,
+        totalBookings: summary.totalBookings,
+        completedBookings: summary.completedBookings,
+        avgBookingValue: summary.averageBookingValue,
       });
     } catch (error) {
       console.error('Failed to fetch earnings:', error);
@@ -375,7 +386,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
 
   const loadTransactions = async () => {
     try {
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/transactions?period=${period}&limit=10`).catch(() => null);
+      const response = await apiClient.get<any>(`/vendor/${ledgerVendorId}/transactions?period=${period}&limit=10`).catch(() => null);
       const list = response?.transactions;
       setTransactions(Array.isArray(list) ? list : []);
     } catch (error) {
@@ -386,7 +397,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
 
   const loadBankAccount = async () => {
     try {
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/bank-details`).catch(() => null);
+      const response = await apiClient.get<any>(`/vendor/${ledgerVendorId}/bank-details`).catch(() => null);
       if (response?.bankDetails) {
         const b = response.bankDetails;
         setBankAccount(b);
@@ -433,7 +444,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     setRequestingPayout(true);
     try {
       const response = await apiClient.post<any>('/settlements/request', {
-        vendorId,
+        vendorId: ledgerVendorId,
         amount: availableAmount
       });
       
@@ -485,7 +496,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
     setShowUpgradeModal(false);
 
     try {
-      const response = await apiClient.post<any>(`/vendor/${vendorId}/tier/upgrade`, {
+      const response = await apiClient.post<any>(`/vendor/${ledgerVendorId}/tier/upgrade`, {
         newTier: nextTierName,
         paymentMethod: 'settlement_deduction',
         subscriptionPeriod: 'monthly',
@@ -515,7 +526,7 @@ export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp
   const handleViewBreakup = async (settlementId: string) => {
     setLoadingBreakup(true);
     try {
-      const response = await apiClient.get<any>(`/vendor/${vendorId}/settlements/${settlementId}/breakup`);
+      const response = await apiClient.get<any>(`/vendor/${ledgerVendorId}/settlements/${settlementId}/breakup`);
       if (response?.breakup) {
         setSelectedSettlementBreakup(response);
         setShowBreakupModal(true);

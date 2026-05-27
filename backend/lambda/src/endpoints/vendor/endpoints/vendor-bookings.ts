@@ -516,6 +516,14 @@ export function registerVendorBookingsEndpoints(app: Hono) {
 
       const updated = await update('bookings', { id: bookingId }, updateData);
 
+      if (status === 'completed' && oldStatus !== 'completed') {
+        const { ensureVendorEarningsForCompletedBooking, syncPackageSessionEarningsAfterBookingComplete } =
+          await import('../../../utils/vendor-earnings-on-completion');
+        const row = (updated[0] || { ...booking, ...updateData }) as Record<string, unknown>;
+        await ensureVendorEarningsForCompletedBooking(row, bookingId, '[VENDOR-STATUS-COMPLETE]');
+        await syncPackageSessionEarningsAfterBookingComplete(bookingId, '[VENDOR-STATUS-COMPLETE]');
+      }
+
       // Log status change if status actually changed
       if (oldStatus !== status) {
         await logBookingStatusChange(

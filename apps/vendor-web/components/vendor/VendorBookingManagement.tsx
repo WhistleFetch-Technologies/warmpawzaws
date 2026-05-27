@@ -3,6 +3,11 @@
 import { useState, useEffect, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { resolveLedgerVendorId } from '@/lib/vendor-ledger-id';
+import {
+  fetchVendorEarningsSummary,
+  resolveSessionVendorIdForEarnings,
+} from '@/lib/load-vendor-earnings-summary';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
 import {
   VENDOR_MIN_PAYOUT_REQUEST_HELP_TEXT,
@@ -304,6 +309,7 @@ export function VendorBookingManagement({
     }>;
   } | null>(null);
   const [earningsLoading, setEarningsLoading] = useState(false);
+  const [earningsError, setEarningsError] = useState<string | null>(null);
   const [tierInfo, setTierInfo] = useState<{
     name?: string;
     current?: string;
@@ -514,12 +520,12 @@ export function VendorBookingManagement({
     loadBookings();
   }, [selectedDate, schedulePeriod, bookingsPageIndex]);
   
-  // Load earnings when Earnings tab is shown (vendorId must be set; not tied to bookings date filter)
+  // Load earnings when Earnings tab is shown (uses localStorage vendorId when /earnings already synced)
   useEffect(() => {
-    if (activeTab === 'earnings' && vendorId) {
-      loadEarningsData();
+    if (activeTab === 'earnings') {
+      loadEarningsData(true);
     }
-  }, [activeTab, vendorId]);
+  }, [activeTab, vendorId, vendorData?.id]);
   
   // Load payouts data when payouts tab is active
   useEffect(() => {
@@ -740,114 +746,49 @@ export function VendorBookingManagement({
     }
   };
 
-  const loadEarningsData = async () => {
-    if (!vendorId) return;
+  const loadEarningsData = async (forceProfileRefresh = false) => {
+    const sessionId = resolveSessionVendorIdForEarnings(vendorId, vendorData?.id);
+    if (!sessionId) {
+      setEarningsError('Vendor account not loaded. Please refresh the page.');
+      return;
+    }
     try {
       setEarningsLoading(true);
-      console.log('💰 [VENDOR-UI] Loading earnings data for vendor:', vendorId);
-      
-      // Fetch earnings, transactions, and tier in parallel
-      const [todayData, weekData, monthData, totalData, transactionsData, tierRes] = await Promise.all([
-        apiClient.get(`/vendor/${vendorId}/earnings?period=day`).catch(() => null) as Promise<any>,
-        apiClient.get(`/vendor/${vendorId}/earnings?period=week`).catch(() => null) as Promise<any>,
-        apiClient.get(`/vendor/${vendorId}/earnings?period=month`).catch(() => null) as Promise<any>,
-        apiClient.get(`/vendor/${vendorId}/earnings?period=lifetime`).catch(() => null) as Promise<any>,
-        apiClient.get(`/vendor/${vendorId}/transactions?period=month&limit=25`).catch(() => null) as Promise<any>,
-        apiClient.get(`/vendor/${vendorId}/tier`).catch(() => null) as Promise<any>,
-      ]);
+      setEarningsError(null);
+      const summary = await fetchVendorEarningsSummary(sessionId, { forceProfileRefresh });
+      const ledgerVendorId = summary.ledgerVendorId;
 
+      console.log('💰 [VENDOR-UI] Earnings loaded (ledger)', ledgerVendorId, {
+        total: summary.total,
+        pending: summary.pending,
+        txnCount: summary.transactions.length,
+      });
+
+      const tierRes = (await apiClient
+        .get(`/vendor/${ledgerVendorId}/tier`)
+        .catch(() => null)) as { tier?: Record<string, unknown> } | null;
       if (tierRes?.tier) {
         setTierInfo(tierRes.tier);
       } else {
         setTierInfo(null);
       }
-      
-      console.log('📊 [VENDOR-UI] Earnings API responses:', { todayData, weekData, monthData, totalData, transactionsData });
-      
-      const fromApi =
-        weekData?.earnings?.dailyBreakdown ||
-        weekData?.earnings?.dailyEarnings ||
-        weekData?.dailyBreakdown ||
-        weekData?.dailyEarnings;
-      let dailyTrend: Array<{ day: string; amount: number }>;
-      if (Array.isArray(fromApi) && fromApi.length > 0) {
-        dailyTrend = fromApi.map((d: any, index: number) => ({
-          day: d.day || d.date || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index] || '',
-          amount: Number(d.amount ?? d.earnings ?? 0) || 0,
-        }));
-      } else {
-        const weekTx = weekData?.earnings?.transactions;
-        const built = Array.isArray(weekTx) && weekTx.length > 0 ? buildDailyTrendFromEarningTransactions(weekTx) : null;
-        dailyTrend =
-          built && built.some((x) => x.amount > 0)
-            ? built
-            : [
-                { day: 'Mon', amount: 0 },
-                { day: 'Tue', amount: 0 },
-                { day: 'Wed', amount: 0 },
-                { day: 'Thu', amount: 0 },
-                { day: 'Fri', amount: 0 },
-                { day: 'Sat', amount: 0 },
-                { day: 'Sun', amount: 0 },
-              ];
-      }
-      
-      // Prefer earnings API transactions (includes meal delivery settlements); fall back to /transactions
-      const txFromEarnings = totalData?.earnings?.transactions || monthData?.earnings?.transactions || [];
-      const txFromDedicated = transactionsData?.transactions || transactionsData?.data || [];
-      const txSource = txFromEarnings.length > 0 ? txFromEarnings : txFromDedicated;
 
-      const transactions = txSource.slice(0, 15).map((t: any) => {
-        const credited =
-          t.realizedAt ||
-          t.realized_at ||
-          t.createdAt ||
-          t.created_at ||
-          t.date ||
-          new Date().toISOString().split('T')[0];
-        return {
-          id: String(t.id || t.transactionId || Math.random()),
-          date: credited,
-          service: t.serviceName || t.service_name || t.service || 'Service',
-          amount: Number(t.amount || t.price || 0) || 0,
-          status: t.status || 'completed',
-          customer: t.customerName || t.customer_name || t.customer || 'Customer',
-        };
-      });
-      
-      // API returns { success, earnings: { totalEarnings, thisPeriod, ... }, period } - extract numbers only
-      const eNum = (res: any, field: 'thisPeriod' | 'totalEarnings') => {
-        const earn = res?.earnings;
-        if (earn && typeof earn === 'object') return Number(earn[field]) || 0;
-        return Number(res?.[field] ?? res?.totalEarnings) || 0;
-      };
       setEarningsData({
-        today: eNum(todayData, 'thisPeriod') || eNum(todayData, 'totalEarnings'),
-        thisWeek: eNum(weekData, 'thisPeriod') || eNum(weekData, 'totalEarnings'),
-        thisMonth: eNum(monthData, 'thisPeriod') || eNum(monthData, 'totalEarnings'),
-        pending: Number(totalData?.earnings?.pendingSettlement ?? totalData?.pendingSettlement ?? totalData?.pending ?? monthData?.earnings?.pendingSettlement ?? 0) || 0,
-        total: eNum(totalData, 'totalEarnings'),
-        transactions,
-        dailyTrend: dailyTrend.map((d: any, index: number) => ({
-          day: d.day || d.date || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][index],
-          amount: d.amount || d.earnings || 0,
-        })),
+        today: summary.today,
+        thisWeek: summary.thisWeek,
+        thisMonth: summary.thisMonth,
+        pending: summary.pending,
+        total: summary.total,
+        transactions: summary.transactions,
+        dailyTrend: summary.dailyTrend,
       });
-      
-      console.log('✅ [VENDOR-UI] Earnings data loaded successfully');
     } catch (error) {
       console.error('❌ Error loading earnings:', error);
       setTierInfo(null);
-      // Set empty data on error
-      setEarningsData({
-        today: 0,
-        thisWeek: 0,
-        thisMonth: 0,
-        pending: 0,
-        total: 0,
-        transactions: [],
-        dailyTrend: [],
-      });
+      const message =
+        error instanceof Error ? error.message : 'Could not load earnings. Please try again.';
+      setEarningsError(message);
+      setEarningsData(null);
     } finally {
       setEarningsLoading(false);
     }
@@ -856,15 +797,16 @@ export function VendorBookingManagement({
   const loadPayoutsData = async () => {
     try {
       setPayoutsLoading(true);
-      console.log('🏦 [VENDOR-UI] Loading payouts data for vendor:', vendorId);
+      const ledgerVendorId = await resolveLedgerVendorId(vendorId || vendorData?.id || '');
+      console.log('🏦 [VENDOR-UI] Loading payouts data for vendor:', ledgerVendorId);
       
       // Fetch settlements/payouts data and bank details in parallel
       const [settlementsData, settlementsSummary, bankData, policyData] = await Promise.all([
-        apiClient.get(`/vendor/${vendorId}/settlements?limit=10`).catch(() => null) as Promise<any>,
-        apiClient.get(`/vendor/${vendorId}/settlements?summary=true`).catch(() => null) as Promise<any>,
-        apiClient.get(`/vendor/${vendorId}/bank-details`).catch(() => apiClient.get(`/vendor/${vendorId}/bank-account`).catch(() => null)) as Promise<any>,
+        apiClient.get(`/vendor/${ledgerVendorId}/settlements?limit=10`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${ledgerVendorId}/settlements?summary=true`).catch(() => null) as Promise<any>,
+        apiClient.get(`/vendor/${ledgerVendorId}/bank-details`).catch(() => apiClient.get(`/vendor/${ledgerVendorId}/bank-account`).catch(() => null)) as Promise<any>,
         apiClient
-          .get(`/settlements/policy?vendorId=${encodeURIComponent(vendorId)}`)
+          .get(`/settlements/policy?vendorId=${encodeURIComponent(ledgerVendorId)}`)
           .catch(() => null) as Promise<any>,
       ]);
       
@@ -1150,6 +1092,9 @@ export function VendorBookingManagement({
       if (data?.success !== false) {
         toast.success(data?.message || 'Booking completed successfully!');
         loadBookings();
+        if (activeTab === 'earnings') {
+          void loadEarningsData(true);
+        }
       } else {
         toast.error(data?.error || 'Failed to complete booking');
       }
@@ -1183,6 +1128,9 @@ export function VendorBookingManagement({
         setShowOTPModal(false);
         alert('✅ Booking completed successfully!');
         loadBookings(); // Reload bookings
+        if (activeTab === 'earnings') {
+          void loadEarningsData(true);
+        }
       } else {
         setOtpError(data.error || 'Invalid OTP. Please try again.');
       }
@@ -1792,6 +1740,13 @@ export function VendorBookingManagement({
               <div className="p-8 flex items-center justify-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF8C42]"></div>
               </div>
+            ) : earningsError ? (
+              <div className="p-6 text-center space-y-3">
+                <p className="text-sm text-red-600">{earningsError}</p>
+                <Button type="button" variant="outline" onClick={() => loadEarningsData(true)}>
+                  Retry
+                </Button>
+              </div>
             ) : (
               <>
                 {/* Tier summary + upgrade (full flow on /earnings) */}
@@ -1889,8 +1844,12 @@ export function VendorBookingManagement({
                   <h3 className="font-semibold text-gray-900 mb-1">Recent Transactions</h3>
                   <p className="text-xs text-gray-500 mb-3">Amounts credited to your account (may differ from appointment date).</p>
                   {(!earningsData?.transactions || earningsData.transactions.length === 0) ? (
-                    <div className="text-center py-8 text-gray-500 text-sm">
-                      No transactions yet
+                    <div className="text-center py-8 text-gray-500 text-sm space-y-1">
+                      <p>No credited earnings yet</p>
+                      <p className="text-xs text-gray-400">
+                        Complete a booking to record your share (after tier commission). Amounts appear here once the
+                        appointment is marked completed.
+                      </p>
                     </div>
                   ) : (
                     <div className="space-y-2">
