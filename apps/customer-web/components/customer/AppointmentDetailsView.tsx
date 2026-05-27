@@ -12,6 +12,10 @@ import {
 } from '@/lib/customer-id-storage';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import {
+  derivePaymentSourcesFromBooking,
+  bookingSourcesHasGatewayPayment,
+} from '@/lib/payment-display-utils';
 
 type AppointmentRefundEstimate = {
   percentage: number;
@@ -189,6 +193,10 @@ export function AppointmentDetailsView({
   const openCancelAppointmentModal = () => {
     setCancelReason('');
     setEstimatedRefund(null);
+    const sources = derivePaymentSourcesFromBooking(appointment ?? {});
+    if (!bookingSourcesHasGatewayPayment(sources)) {
+      setRefundMethod('wallet');
+    }
     setShowCancelModal(true);
     void loadRefundPreview();
   };
@@ -594,7 +602,11 @@ export function AppointmentDetailsView({
       </div>
 
       {/* Cancel Modal */}
-      {showCancelModal && (
+      {showCancelModal && (() => {
+        const canRefundToOriginal = bookingSourcesHasGatewayPayment(
+          derivePaymentSourcesFromBooking(appointment ?? {})
+        );
+        return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
@@ -676,12 +688,14 @@ export function AppointmentDetailsView({
                   </button>
 
                   <button
-                    onClick={() => setRefundMethod('original')}
+                    type="button"
+                    onClick={() => canRefundToOriginal && setRefundMethod('original')}
+                    disabled={!canRefundToOriginal}
                     className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
                       refundMethod === 'original'
                         ? 'border-[#FF8C42] bg-orange-50'
                         : 'border-gray-200 hover:border-gray-300 bg-white'
-                    }`}
+                    } ${!canRefundToOriginal ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <div className="flex items-center gap-3">
                       <Navigation className={`w-5 h-5 ${refundMethod === 'original' ? 'text-[#FF8C42]' : 'text-gray-500'}`} />
@@ -690,7 +704,9 @@ export function AppointmentDetailsView({
                           Refund to Original Payment
                         </p>
                         <p className="text-xs text-gray-600">
-                          Refund to original payment method (typically 5–7 business days; fees per policy)
+                          {canRefundToOriginal
+                            ? 'Refund to card/UPI (5–7 business days). Wallet portion returns to wallet if split-paid.'
+                            : 'Unavailable for wallet-only payments.'}
                         </p>
                       </div>
                     </div>
@@ -737,7 +753,8 @@ export function AppointmentDetailsView({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </>
   );
 }

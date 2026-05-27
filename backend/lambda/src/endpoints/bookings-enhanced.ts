@@ -2573,52 +2573,38 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
                   'Cancellation succeeded but wallet refund could not run (missing customer on booking). Please contact support with your booking ID.',
               };
             } else if (refundMethod === 'original') {
-              const payments = await query(
-                `SELECT id FROM payments
-                 WHERE booking_id = $1::uuid
-                   AND payment_status IN ('completed', 'partially_refunded')
-                 ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END
-                 LIMIT 1`,
-                [bookingId]
-              );
-              if (payments.rows.length > 0) {
-                const paymentId = payments.rows[0].id;
-                const refundRequests = await query(
-                  `INSERT INTO refunds (
-                    payment_id,
-                    booking_id,
-                    customer_id,
-                    vendor_id,
-                    refund_amount,
-                    refund_reason,
-                    refund_status,
-                    refund_method,
-                    requested_at
-                  ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW())
-                  RETURNING *`,
-                  [
-                    paymentId,
-                    bookingId,
-                    customerIdForRefund ?? (currentBooking as any).customer_id,
-                    currentBooking.vendor_id || null,
-                    refundAmount,
-                    `Booking cancellation: ${reason} (${refundPercentage}% refund)`,
-                  ]
-                ).catch(() => ({ rows: [] }));
-
+              try {
+                const { processBookingOriginalPaymentRefund } = await import(
+                  '../utils/payments/booking-original-refund'
+                );
+                const originalResult = await processBookingOriginalPaymentRefund({
+                  bookingId,
+                  customerId: String(customerIdForRefund),
+                  vendorId: currentBooking.vendor_id ? String(currentBooking.vendor_id) : null,
+                  refundAmount,
+                  refundPercentage,
+                  reason: `Booking cancellation: ${reason} (${refundPercentage}% refund)`,
+                  initiatedBy: 'customer',
+                  label: 'booking',
+                });
                 refundInfo = {
-                  refundId: refundRequests.rows[0]?.id,
+                  refundId: originalResult.refundId,
+                  amount: originalResult.totalAmount,
+                  percentage: refundPercentage,
+                  method: 'original',
+                  status: originalResult.status === 'completed' ? 'completed' : 'processing',
+                  message: originalResult.message,
+                };
+              } catch (originalErr: unknown) {
+                console.error('[CancelBooking] Original-method refund failed:', originalErr);
+                refundInfo = {
                   amount: refundAmount,
                   percentage: refundPercentage,
                   method: 'original',
-                  status: 'pending',
-                  message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method in 3-7 business days`,
+                  status: 'failed',
+                  message:
+                    'Cancellation succeeded but refund to original payment method failed. Please contact support with your booking ID.',
                 };
-              } else {
-                console.warn(
-                  '[CancelBooking] Original-method refund skipped: no completed payment for booking',
-                  bookingId
-                );
               }
             }
           } else {

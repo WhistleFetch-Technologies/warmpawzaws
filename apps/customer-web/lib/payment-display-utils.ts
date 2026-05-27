@@ -93,3 +93,8 @@ export function normalizePaymentSources(raw: unknown): PaymentSource[] {
     })
     .filter(Boolean) as PaymentSource[];
 }
+
+/** True when the customer paid via card/UPI/netbanking (not wallet-only). */
+export function bookingSourcesHasGatewayPayment(sources: PaymentSource[]): boolean {
+  return sources.some((s) => s.method !== 'wallet' && s.amount > 0.009);
+}

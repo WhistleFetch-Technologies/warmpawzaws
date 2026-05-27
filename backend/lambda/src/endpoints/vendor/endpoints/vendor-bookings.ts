@@ -696,7 +696,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         booking,
         vendorCancellationReason,
         cancellation_reason,
-        { refundMethod: 'wallet' }
+        { refundMethod: 'original' }
       ).catch((e: any) => {
         console.warn('[vendor/cancel] refund apply failed:', e?.message);
         return null;
@@ -879,7 +879,7 @@ export function registerVendorBookingsEndpoints(app: Hono) {
         bookingRowForRefund,
         vendorCancellationReason,
         cancellation_reason,
-        { refundMethod: 'wallet' }
+        { refundMethod: 'original' }
       ).catch((e: any) => {
         console.warn('[vendor/decline] refund apply failed:', e?.message);
         return null;

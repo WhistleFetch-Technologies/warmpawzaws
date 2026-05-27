@@ -1840,7 +1840,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         booking,
         vendorCancellationReason,
         cancellation_reason,
-        { refundMethod: 'wallet' }
+        { refundMethod: 'original' }
       ).catch((e: any) => {
         console.warn('[vendor/reject] refund apply failed:', e?.message);
         return null;

@@ -21,6 +21,7 @@ import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import {
   derivePaymentSourcesFromBooking,
   formatPaymentSourcesShortLabel,
+  bookingSourcesHasGatewayPayment,
 } from '@/lib/payment-display-utils';
 import type { PaymentSource } from '@/lib/payment-display-utils';
 
@@ -531,6 +532,10 @@ export function MyBookings({
   const openCancelModal = (booking: Booking, e: React.MouseEvent) => {
     e.stopPropagation();
     setEstimatedRefund(null);
+    setCancellationReason('');
+    if (!bookingSourcesHasGatewayPayment(booking.paymentSources ?? [])) {
+      setRefundMethod('wallet');
+    }
     loadRefundPreview(booking);
     setShowCancelModal(booking.bookingId);
   };
@@ -1171,7 +1176,12 @@ export function MyBookings({
       </div>
 
       {/* ✅ Cancel Booking Modal */}
-      {showCancelModal && (
+      {showCancelModal && (() => {
+        const cancelModalBooking = bookings.find((b) => b.bookingId === showCancelModal);
+        const canRefundToOriginal = bookingSourcesHasGatewayPayment(
+          cancelModalBooking?.paymentSources ?? []
+        );
+        return (
         <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between mb-4">
@@ -1245,11 +1255,13 @@ export function MyBookings({
                     <span className="font-medium">Warmpawz Wallet</span>
                   </button>
                   <button
-                    onClick={() => setRefundMethod('original')}
+                    type="button"
+                    onClick={() => canRefundToOriginal && setRefundMethod('original')}
+                    disabled={!canRefundToOriginal}
                     className={`flex-1 p-3 rounded-lg border-2 flex items-center justify-center gap-2 ${refundMethod === 'original'
                         ? 'border-orange-500 bg-orange-50'
                         : 'border-gray-200 hover:border-gray-300'
-                      }`}
+                      } ${!canRefundToOriginal ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <CreditCard className="w-5 h-5" />
                     <span className="font-medium">Original Payment</span>
@@ -1258,7 +1270,9 @@ export function MyBookings({
                 <p className="text-xs text-gray-500 mt-2">
                   {refundMethod === 'wallet'
                     ? 'Instant credit to your Warmpawz wallet for future bookings'
-                    : 'Refund to original payment method (3-7 business days)'}
+                    : canRefundToOriginal
+                      ? 'Refund to original payment method (5–7 business days). Wallet portion returns to wallet if split-paid.'
+                      : 'Original payment refund is unavailable for wallet-only bookings.'}
                 </p>
               </div>
             )}
@@ -1292,7 +1306,8 @@ export function MyBookings({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ✅ Reschedule Booking Modal */}
       {showRescheduleModal && (

@@ -16,14 +16,11 @@
 import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
-import { query, select, insert, update, withTransaction } from '../database/rds-connection';
+import { query, select, withTransaction } from '../database/rds-connection';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
 import { logAuditEntry } from '../utils/audit-log';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
-
-// Maximum amount for auto-approval (in INR)
-const AUTO_APPROVAL_THRESHOLD = 5000.00;
 
 // ============================================================================
 // REFUND HANDLERS
@@ -144,140 +141,65 @@ class CreateRefundHandler extends BaseHandler {
 
     // Calculate total refunded so far
     const { rows: existingRefunds } = await query(
-      `SELECT COALESCE(SUM(amount), 0) AS total_refunded 
+      `SELECT COALESCE(SUM(refund_amount), 0) AS total_refunded 
        FROM refunds 
-       WHERE payment_id = $1 AND refund_status IN ('completed', 'processing', 'approved')`,
+       WHERE payment_id = $1::uuid AND refund_status IN ('completed', 'processing', 'approved', 'processed')`,
       [paymentId]
     );
 
-    const totalRefunded = parseFloat(existingRefunds[0].total_refunded || '0');
-    const availableToRefund = payment.amount - totalRefunded;
+    const totalRefunded = parseFloat(existingRefunds[0]?.total_refunded || '0');
+    const availableToRefund = parseFloat(String(payment.amount)) - totalRefunded;
 
-    if (amount > availableToRefund) {
-      return this.error(`Only ${availableToRefund} available to refund`, 400);
+    if (refundAmount > availableToRefund + 0.01) {
+      return this.error(`Only ₹${availableToRefund.toFixed(2)} available to refund`, 400);
     }
 
-    // Determine if auto-approval applies
-    const requiresApproval = amount > AUTO_APPROVAL_THRESHOLD;
-    const initialStatus = requiresApproval ? 'pending' : 'auto_approved';
+    const resolvedBookingId = bookingId || payment.booking_id;
+    const customerId = payment.customer_id;
 
-    // Create refund in transaction
-    const result = await withTransaction(async (client) => {
-      // Insert refund record
-      const refundResult = await client.query(
-        `INSERT INTO refunds (
-          payment_id, booking_id, amount, reason, refund_type, 
-          refund_status, razorpay_payment_id, idempotency_key
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING *`,
-        [
-          paymentId,
-          bookingId || null,
-          amount,
-          reason,
-          refundType || 'partial',
-          initialStatus,
-          payment.razorpay_payment_id,
-          idempotencyKey || null,
-        ]
-      );
+    if (!resolvedBookingId || !customerId) {
+      return this.error('Booking ID and customer required for automatic Razorpay refund', 400);
+    }
 
-      const refund = refundResult.rows[0];
+    try {
+      const { processBookingOriginalPaymentRefund } = await import('../utils/payments/booking-original-refund');
+      const result = await processBookingOriginalPaymentRefund({
+        bookingId: String(resolvedBookingId),
+        customerId: String(customerId),
+        vendorId: payment.vendor_id ? String(payment.vendor_id) : null,
+        refundAmount: parseFloat(String(refundAmount)),
+        reason: String(reason),
+        initiatedBy: 'admin',
+      });
 
-      // Update payment status
-      const newPaymentStatus =
-        amount === availableToRefund ? 'refunded' : 'partially_refunded';
+      const response = {
+        refundId: result.refundId,
+        paymentId,
+        amount: result.totalAmount,
+        status: result.status,
+        requiresApproval: false,
+        razorpayRefundId: result.razorpayRefundId,
+        message: result.message,
+      };
 
-      await client.query(
-        `UPDATE payments 
-         SET payment_status = $1, updated_at = NOW()
-         WHERE id = $2`,
-        [newPaymentStatus, paymentId]
-      );
-
-      // If auto-approved, initiate refund process immediately
-      if (!requiresApproval) {
-        await client.query(
-          `UPDATE refunds SET refund_status = 'processing', updated_at = NOW() WHERE id = $1`,
-          [refund.id]
-        );
-
-        // Integrate with Razorpay refund API
-        try {
-          const { getRazorpayClient } = require('../utils/razorpay-client');
-          const razorpay = getRazorpayClient();
-          
-          // Get payment details
-          const payments = await select('payments', { id: refund.payment_id });
-          if (payments.length > 0 && payments[0].razorpay_payment_id) {
-            const refundResult = await razorpay.payments.refund({
-              payment_id: payments[0].razorpay_payment_id,
-              amount: Math.round(refund.amount * 100), // Convert to paise
-            });
-            
-            // Update refund with Razorpay refund ID
-            await client.query(
-              `UPDATE refunds 
-               SET razorpay_refund_id = $1, refund_status = 'processed', processed_at = NOW(), updated_at = NOW()
-               WHERE id = $2`,
-              [refundResult.id, refund.id]
-            );
-            
-            console.log(`✅ Razorpay refund processed: ${refundResult.id}`);
-          } else {
-            console.warn(`⚠️ Payment not found or missing Razorpay payment ID for refund ${refund.id}`);
-          }
-        } catch (error: any) {
-          console.error('Error processing Razorpay refund:', error);
-          // Update refund status to failed
-          await client.query(
-            `UPDATE refunds SET refund_status = 'failed', updated_at = NOW() WHERE id = $1`,
-            [refund.id]
-          );
-          throw error;
-        }
+      if (idempotencyKey && result.refundId) {
+        await storeIdempotencyKey(idempotencyKey, 'refund', result.refundId, response, 200);
       }
 
-      return { refund, newPaymentStatus };
-    });
+      await logAuditEntry({
+        entityType: 'refund',
+        entityId: result.refundId || paymentId,
+        action: 'create',
+        newValues: { amount: refundAmount, status: result.status, autoApproved: true },
+        actorType: 'system',
+        requestId,
+      });
 
-    // Log audit entry
-    await logAuditEntry({
-      entityType: 'refund',
-      entityId: result.refund.id,
-      action: 'create',
-      newValues: {
-        amount,
-        status: initialStatus,
-        autoApproved: !requiresApproval,
-      },
-      actorType: 'system',
-      requestId,
-    });
-
-    const response = {
-      refundId: result.refund.id,
-      paymentId,
-      amount: parseFloat(amount),
-      status: initialStatus,
-      requiresApproval,
-      message: requiresApproval
-        ? 'Refund request created, pending admin approval'
-        : 'Refund auto-approved and processing',
-    };
-
-    // Store idempotency key
-    if (idempotencyKey) {
-      await storeIdempotencyKey(
-        idempotencyKey,
-        'refund',
-        result.refund.id,
-        response,
-        200
-      );
+      return this.success(response);
+    } catch (error: any) {
+      console.error('[CreateRefundHandler] automatic refund failed:', error);
+      return this.error(error.message || 'Refund processing failed', 502);
     }
-
-    return this.success(response);
   }
 }
 
@@ -287,7 +209,7 @@ class ApproveRefundHandler extends BaseHandler {
     const body = this.parseBody(context.event);
     const { approved, adminComment } = body;
     const requestId = context.event.requestContext?.requestId;
-    const adminId = context.userId; // From auth token
+    const adminId = context.userId;
 
     if (!refundId) {
       return this.error('Refund ID is required', 400);
@@ -300,91 +222,63 @@ class ApproveRefundHandler extends BaseHandler {
 
     const refund = refunds[0];
 
-    // Validate current status
-    if (refund.refund_status !== 'pending') {
-      return this.error('Refund not in pending state', 400);
+    if (refund.refund_status !== 'pending' && refund.refund_status !== 'approved') {
+      return this.error(`Refund not in pending state (current: ${refund.refund_status})`, 400);
     }
 
-    const newStatus = approved ? 'approved' : 'rejected';
-
-    // Update refund status
-    await withTransaction(async (client) => {
-      await client.query(
-        `UPDATE refunds 
-         SET refund_status = $1, admin_comment = $2, updated_at = NOW()
-         WHERE id = $3`,
-        [newStatus, adminComment || null, refundId]
-      );
-
-      // If approved, initiate refund
-      if (approved) {
+    if (!approved) {
+      await withTransaction(async (client) => {
         await client.query(
-          `UPDATE refunds SET refund_status = 'processing', updated_at = NOW() WHERE id = $1`,
-          [refundId]
+          `UPDATE refunds SET refund_status = 'rejected', admin_comment = $2, updated_at = NOW() WHERE id = $1::uuid`,
+          [refundId, adminComment || null]
         );
+      });
 
-        // Integrate with Razorpay refund API
-        try {
-          const { getRazorpayClient } = require('../utils/razorpay-client');
-          const razorpay = getRazorpayClient();
-          
-          // Get payment details
-          const payments = await select('payments', { id: refund.payment_id });
-          if (payments.length > 0 && payments[0].razorpay_payment_id) {
-            const refundResult = await razorpay.payments.refund({
-              payment_id: payments[0].razorpay_payment_id,
-              amount: Math.round(refund.amount * 100), // Convert to paise
-            });
-            
-            // Update refund with Razorpay refund ID
-            await client.query(
-              `UPDATE refunds 
-               SET razorpay_refund_id = $1, refund_status = 'processed', processed_at = NOW(), updated_at = NOW()
-               WHERE id = $2`,
-              [refundResult.id, refund.id]
-            );
-            
-            console.log(`✅ Razorpay refund processed: ${refundResult.id}`);
-          } else {
-            console.warn(`⚠️ Payment not found or missing Razorpay payment ID for refund ${refund.id}`);
-          }
-        } catch (error: any) {
-          console.error('Error processing Razorpay refund:', error);
-          // Update refund status to failed
-          await client.query(
-            `UPDATE refunds SET refund_status = 'failed', updated_at = NOW() WHERE id = $1`,
-            [refund.id]
-          );
-          throw error;
-        }
-      } else {
-        // If rejected, revert payment status
-        await client.query(
-          `UPDATE payments 
-           SET payment_status = 'completed', updated_at = NOW()
-           WHERE id = $1`,
-          [refund.payment_id]
-        );
-      }
-    });
+      await logAuditEntry({
+        entityType: 'refund',
+        entityId: refundId,
+        action: 'reject',
+        oldValues: { status: refund.refund_status },
+        newValues: { status: 'rejected', adminComment },
+        actorId: adminId,
+        actorType: 'admin',
+        requestId,
+      });
 
-    // Log audit entry
-    await logAuditEntry({
-      entityType: 'refund',
-      entityId: refundId,
-      action: approved ? 'approve' : 'reject',
-      oldValues: { status: 'pending' },
-      newValues: { status: newStatus, adminComment },
-      actorId: adminId,
-      actorType: 'admin',
-      requestId,
-    });
+      return this.success({
+        refundId,
+        status: 'rejected',
+        message: 'Refund rejected',
+      });
+    }
 
-    return this.success({
-      refundId,
-      status: newStatus,
-      message: approved ? 'Refund approved and processing' : 'Refund rejected',
-    });
+    try {
+      const { processExistingPendingRefund } = await import('../utils/payments/booking-original-refund');
+      const result = await processExistingPendingRefund(refundId, {
+        adminComment,
+      });
+
+      await logAuditEntry({
+        entityType: 'refund',
+        entityId: refundId,
+        action: 'approve',
+        oldValues: { status: 'pending' },
+        newValues: { status: result.status, adminComment },
+        actorId: adminId,
+        actorType: 'admin',
+        requestId,
+      });
+
+      return this.success({
+        refundId,
+        status: result.status,
+        razorpayRefundId: result.razorpayRefundId,
+        message: result.message || 'Refund approved and processing',
+      });
+    } catch (error: any) {
+      console.error('[ApproveRefundHandler] failed:', error);
+      return this.error(error.message || 'Refund processing failed', 502);
+    }
   }
 }
 

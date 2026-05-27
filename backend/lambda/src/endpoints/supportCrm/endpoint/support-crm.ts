@@ -649,59 +649,73 @@ export function registerSupportCrmEndpoints(app: Hono) {
           break;
         case 'refund':
         case 'partial_refund':
-          // Process actual refund through Razorpay if booking has payment
+          {
           const ticket = tickets[0];
           let refundResult = null;
           
-          if (ticket.booking_id) {
+          if (ticket.booking_id && ticket.customer_id) {
             try {
-              // Get payment for this booking
               const payments = await query(
-                `SELECT * FROM payments WHERE booking_id = $1 AND status = 'captured' ORDER BY created_at DESC LIMIT 1`,
+                `SELECT id, amount::text, payment_status FROM payments
+                 WHERE booking_id = $1::uuid
+                   AND payment_status IN ('completed', 'partially_refunded')
+                 ORDER BY created_at DESC LIMIT 1`,
                 [ticket.booking_id]
               );
               
               if (payments.rows.length > 0) {
                 const payment = payments.rows[0];
-                const refundAmount = actionData.amount || payment.amount;
-                
-                // Create refund record
-                const refundRecord = await insert('refunds', {
-                  payment_id: payment.id,
-                  booking_id: ticket.booking_id,
-                  customer_id: ticket.customer_id,
-                  vendor_id: ticket.vendor_id,
-                  refund_amount: refundAmount,
-                  refund_reason: actionData.reason || 'Support ticket refund',
-                  refund_status: 'pending',
-                  support_ticket_id: ticketId,
-                  requested_at: new Date().toISOString(),
+                const paymentAmount = parseFloat(String(payment.amount ?? '0')) || 0;
+                const refundAmount = actionData.amount != null
+                  ? parseFloat(String(actionData.amount))
+                  : paymentAmount;
+
+                if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+                  throw new Error('Invalid refund amount');
+                }
+
+                const { processBookingOriginalPaymentRefund } = await import(
+                  '../../../utils/payments/booking-original-refund'
+                );
+                const processed = await processBookingOriginalPaymentRefund({
+                  bookingId: String(ticket.booking_id),
+                  customerId: String(ticket.customer_id),
+                  vendorId: ticket.vendor_id ? String(ticket.vendor_id) : null,
+                  refundAmount,
+                  reason: actionData.reason || `Support ticket refund (${action})`,
+                  initiatedBy: 'support',
                 });
-                
-                // Update ticket with refund info
-                updateData.refund_id = refundRecord[0]?.id;
-                updateData.refund_amount = refundAmount;
-                updateData.refund_status = 'pending';
-                
+
+                updateData.refund_id = processed.refundId;
+                updateData.refund_amount = processed.totalAmount;
+                updateData.refund_status = processed.status === 'failed' ? 'failed' : 'processing';
+
                 refundResult = {
-                  refundId: refundRecord[0]?.id,
-                  amount: refundAmount,
-                  status: 'pending',
-                  message: 'Refund request created. Will be processed within 5-7 business days.',
+                  refundId: processed.refundId,
+                  amount: processed.totalAmount,
+                  status: processed.status,
+                  razorpayRefundId: processed.razorpayRefundId,
+                  walletCredited: processed.walletCredited,
+                  message: processed.message,
                 };
                 
-                console.log(`✅ [CRM] Refund created for ticket ${ticketId}: ₹${refundAmount}`);
+                console.log(`✅ [CRM] Refund processed for ticket ${ticketId}: ₹${processed.totalAmount}`);
               } else {
-                // No payment found - just log the request
-                console.log(`⚠️ [CRM] No captured payment found for booking ${ticket.booking_id}`);
+                console.log(`⚠️ [CRM] No completed payment found for booking ${ticket.booking_id}`);
+                refundResult = {
+                  status: 'failed',
+                  message: 'No completed payment found for this booking',
+                };
               }
             } catch (refundError: any) {
               console.error('Error processing refund:', refundError);
-              // Continue with metadata logging even if refund creation fails
+              refundResult = {
+                status: 'failed',
+                message: refundError.message || 'Refund processing failed',
+              };
             }
           }
           
-          // Always update metadata for audit trail
           updateData.metadata = {
             ...(ticket.metadata || {}),
             refund_requested: true,
@@ -711,6 +725,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
             refund_requested_at: new Date().toISOString(),
             refund_result: refundResult,
           };
+          }
           break;
         default:
           return c.json({ error: `Unknown action: ${action}` }, 400);

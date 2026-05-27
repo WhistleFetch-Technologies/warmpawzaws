@@ -480,13 +480,39 @@ class CancelAppointmentHandler extends BaseHandler {
                     'Cancellation succeeded but wallet refund failed. Please contact support with your appointment ID.',
                 };
               }
-            } else if (paymentId) {
-              await query(
-                `INSERT INTO refunds (payment_id, booking_id, customer_id, vendor_id, refund_amount, refund_reason, refund_status, refund_method, requested_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW())`,
-                [paymentId, bookingId, customerIdForRefund, bookingRow.vendor_id || null, refundAmount, `Appointment cancellation: ${reason || 'No reason'} (${refundPercentage}% refund)`]
-              ).catch(() => null);
-              refundInfo = { amount: refundAmount, percentage: refundPercentage, method: 'original', status: 'pending', message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method` };
+            } else if (refundMethod === 'original' || String(refundMethod).toLowerCase() === 'original') {
+              try {
+                const { processBookingOriginalPaymentRefund } = await import(
+                  '../../../utils/payments/booking-original-refund'
+                );
+                const originalResult = await processBookingOriginalPaymentRefund({
+                  bookingId: String(bookingId),
+                  customerId: customerIdForRefund,
+                  vendorId: bookingRow.vendor_id ? String(bookingRow.vendor_id) : null,
+                  refundAmount,
+                  refundPercentage,
+                  reason: `Appointment cancellation: ${reason || 'No reason'} (${refundPercentage}% refund)`,
+                  initiatedBy: 'customer',
+                  label: 'appointment',
+                });
+                refundInfo = {
+                  amount: originalResult.totalAmount,
+                  percentage: refundPercentage,
+                  method: 'original',
+                  status: originalResult.status === 'completed' ? 'completed' : 'processing',
+                  message: originalResult.message,
+                };
+              } catch (e) {
+                console.error('[appointments] original refund failed:', e);
+                refundInfo = {
+                  amount: refundAmount,
+                  percentage: refundPercentage,
+                  method: 'original',
+                  status: 'failed',
+                  message:
+                    'Cancellation succeeded but refund to original payment method failed. Please contact support with your appointment ID.',
+                };
+              }
             }
           }
         } catch (refundErr: any) {

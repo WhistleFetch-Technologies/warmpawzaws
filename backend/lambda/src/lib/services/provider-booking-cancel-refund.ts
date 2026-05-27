@@ -1,6 +1,6 @@
 /**
  * Provider-initiated booking cancellation: validate admin refund-tier reason slug,
- * preview refund from vendor_refund_tiers, apply wallet or original-method refund request.
+ * preview refund from vendor_refund_tiers, apply wallet or original-method refund.
  */
 
 import { query } from '../../database/rds-connection';
@@ -10,6 +10,7 @@ import {
   type BookingForPolicy,
 } from './cancellation-policy-service';
 import { hasCustomerPaidCapture } from './refundable-base';
+import { processBookingOriginalPaymentRefund } from '../../utils/payments/booking-original-refund';
 
 export const VENDOR_CANCELLATION_REASON_SLUGS = ['emergency', 'operational', 'technical'] as const;
 export type VendorCancellationReasonSlug = (typeof VENDOR_CANCELLATION_REASON_SLUGS)[number];
@@ -47,6 +48,8 @@ export type ProviderCancelRefundInfo = {
   walletBalanceAfter?: number;
   /** True when refund row already existed (idempotent). */
   alreadyCredited?: boolean;
+  refundId?: string;
+  razorpayRefundId?: string;
 };
 
 /** PG rows are snake_case; some API layers use camelCase — normalize so refund math and wallet credit always see the same fields. */
@@ -92,7 +95,7 @@ export async function applyRefundAfterProviderCancellation(
   refundReasonSummary: string,
   options?: { refundMethod?: 'wallet' | 'original' }
 ): Promise<ProviderCancelRefundInfo | null> {
-  const refundMethod = options?.refundMethod ?? 'wallet';
+  const refundMethod = options?.refundMethod ?? 'original';
   const row = normalizeBookingRowForRefund(bookingRow);
   const bookingId = String(row.id);
   const hasPaid = await hasCustomerPaidCapture(bookingId, {
@@ -127,16 +130,6 @@ export async function applyRefundAfterProviderCancellation(
       };
     }
 
-    const payments = await query(
-      `SELECT id FROM payments
-       WHERE booking_id = $1::uuid
-         AND payment_status IN ('completed', 'partially_refunded')
-       ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END
-       LIMIT 1`,
-      [bookingId]
-    ).catch(() => ({ rows: [] as { id: string }[] }));
-    const paymentId = (payments as any).rows?.[0]?.id;
-
     const customerIdForWallet = row.customer_id ? String(row.customer_id) : '';
     if (refundMethod === 'wallet' && customerIdForWallet) {
       try {
@@ -168,39 +161,43 @@ export async function applyRefundAfterProviderCancellation(
       });
     }
 
-    if (paymentId) {
-      await query(
-        `INSERT INTO refunds (
-          payment_id,
-          booking_id,
-          customer_id,
-          vendor_id,
-          refund_amount,
-          refund_reason,
-          refund_status,
-          refund_method,
-          requested_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW())`,
-        [
-          paymentId,
-          bookingId,
-          row.customer_id,
-          row.vendor_id || null,
-          refundAmount,
-          `${refundReasonSummary} (${refundPercentage}% refund)`,
-        ]
-      ).catch(() => null);
+    if (!customerIdForWallet) {
+      console.warn('[provider-cancel-refund] original-method refund skipped: no customer_id', bookingId);
+      return null;
+    }
+
+    try {
+      const result = await processBookingOriginalPaymentRefund({
+        bookingId,
+        customerId: customerIdForWallet,
+        vendorId: row.vendor_id ? String(row.vendor_id) : null,
+        refundAmount,
+        refundPercentage,
+        reason: `${refundReasonSummary} (${refundPercentage}% refund)`,
+        initiatedBy: 'vendor',
+        label: 'booking',
+      });
+
+      return {
+        amount: result.totalAmount,
+        percentage: refundPercentage,
+        method: 'original',
+        status: result.status === 'failed' ? 'failed' : result.status === 'completed' ? 'completed' : 'processing',
+        message: result.message,
+        refundId: result.refundId,
+        razorpayRefundId: result.razorpayRefundId,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Original payment refund failed';
+      console.error('[provider-cancel-refund] original refund failed:', msg, bookingId);
       return {
         amount: refundAmount,
         percentage: refundPercentage,
         method: 'original',
-        status: 'pending',
-        message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method in 3–7 business days.`,
+        status: 'failed',
+        message: `Refund could not be processed automatically: ${msg}. Please contact support.`,
       };
     }
-
-    console.warn('[provider-cancel-refund] No completed payment for original-method refund', bookingId);
-    return null;
   } catch (err: any) {
     console.error('[provider-cancel-refund] preview/apply failed:', err?.message);
     return null;
