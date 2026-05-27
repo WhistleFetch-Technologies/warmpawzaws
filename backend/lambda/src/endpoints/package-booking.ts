@@ -52,6 +52,7 @@ import {
 } from '../utils/vendor-package-razorpay-flow';
 import { quotePackagePricing, resolvePackagePolicySnapshot } from '../utils/package-pricing';
 import { createPackageBookingsAfterPayment } from '../utils/package-bookings';
+import { fireVendorAppointmentScheduledSms } from '../lib/vendor-appointment-sms';
 import { checkIdempotencyKey, storeIdempotencyKey } from '../utils/idempotency';
 
 function parseJsonObject(raw: unknown): Record<string, unknown> | null {
@@ -580,6 +581,15 @@ async function syncVendorPackagePurchaseToBookingAndNotify(params: {
       });
     } catch (notifErr) {
       console.warn('[purchase-from-vendor-service] vendor notification failed:', notifErr);
+    }
+
+    if (bookingId) {
+      fireVendorAppointmentScheduledSms({
+        vendorId,
+        bookingId,
+        bookingDate,
+        bookingTime,
+      });
     }
 
     return bookingId;

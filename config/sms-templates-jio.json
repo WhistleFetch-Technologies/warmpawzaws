@@ -107,8 +107,21 @@
       ]
     },
     {
+      "id": "vendor_appointment_scheduled",
+      "jioTemplateName": "Warmpawz Appointment Scheduled",
+      "jioTemplateId": "1207177977337281970",
+      "message": "Warmpawz: Hi {#var#}, you have a new appointment on {#var#} at {#var#}.",
+      "variables": [
+        { "key": "vendorFirstName", "jioTag": "var", "maxLength": 30 },
+        { "key": "appointmentDate", "jioTag": "var", "maxLength": 40 },
+        { "key": "appointmentTime", "jioTag": "var", "maxLength": 40 }
+      ],
+      "_note": "Active on Jio (26-05-2026). Sent to vendor phone on booking confirmation."
+    },
+    {
       "id": "vendor_new_booking",
       "jioTemplateName": "Warmpawz Vendor New Booking",
+      "jioTemplateId": "",
       "message": "Warmpawz: New booking {#alphanumeric#} – {#alphanumeric#} on {#alphanumeric#} at {#alphanumeric#}. View: {#url#}",
       "variables": [
         { "key": "bookingId", "jioTag": "alphanumeric", "maxLength": 40 },
@@ -249,15 +262,14 @@
     },
     {
       "id": "reward_coupon_redeemed",
-      "jioTemplateName": "Warmpawz Reward Coupon Redeemed",
-      "jioTemplateId": "",
-      "message": "Warmpawz: Hi {#alphanumeric#}, your {#alphanumeric#} coupon is ready. Link: {#url#}. View in app under Rewards and Points.",
+      "jioTemplateName": "Warmpawz Reward Coupon Redeem",
+      "jioTemplateId": "1207177977818616933",
+      "message": "Warmpawz: Hi {#var#}, your {#var#} coupon is ready. View it in the Rewards and Points section of the app.",
       "variables": [
-        { "key": "customerFirstName", "jioTag": "alphanumeric", "maxLength": 30 },
-        { "key": "rewardName", "jioTag": "alphanumeric", "maxLength": 40 },
-        { "key": "couponLink", "jioTag": "url" }
+        { "key": "customerFirstName", "jioTag": "var", "maxLength": 30 },
+        { "key": "rewardName", "jioTag": "var", "maxLength": 40 }
       ],
-      "_note": "Register in Jio True Connect; set jioTemplateId here and SMS_REWARD_COUPON_TEMPLATE_ID on prod Lambda."
+      "_note": "Active on Jio (26-05-2026). SMS_REWARD_COUPON_TEMPLATE_ID on prod Lambda defaults to jioTemplateId."
     }
   ]
 }

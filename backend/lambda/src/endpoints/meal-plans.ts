@@ -71,6 +71,7 @@ import {
   isPidgeMealLogistics,
   vendorBlockedMealStatusForPidge,
 } from '../utils/meal-order-vendor-delivery-guard';
+import { fireVendorMealOrderScheduledSms } from '../lib/vendor-appointment-sms';
 
 async function mealBookingPolicyPreviewExtras(
   plan: Record<string, unknown>,
@@ -1495,7 +1496,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         confirmed_at: new Date().toISOString(),
       });
 
-      // TODO: Send notification to vendor
+      const orders = await select('meal_orders', { id: orderId });
+      if (orders[0]) {
+        fireVendorMealOrderScheduledSms(orders[0] as Record<string, unknown>);
+      }
 
       return c.json({
         success: true,

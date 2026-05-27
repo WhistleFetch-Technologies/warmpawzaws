@@ -49,6 +49,7 @@ import {
 import { sqlPackagePurchaseHasBookableSlot } from '../../../utils/package-session-eligibility';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
 import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
+import { sendVendorAppointmentScheduledSms } from '../../../lib/vendor-appointment-sms';
 import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import {
@@ -1812,6 +1813,14 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             }),
             is_read: false,
             created_at: new Date(),
+          });
+          void sendVendorAppointmentScheduledSms({
+            vendorId: booking.vendor_id,
+            bookingId: booking.id,
+            bookingDate: booking.booking_date,
+            bookingTime: booking.booking_time,
+          }).catch((smsErr) => {
+            console.warn('[BOOKING-CREATE] vendor appointment SMS failed:', smsErr?.message || smsErr);
           });
         } catch (notifErr) {
           console.warn('Failed to create vendor notification for new booking:', notifErr);
