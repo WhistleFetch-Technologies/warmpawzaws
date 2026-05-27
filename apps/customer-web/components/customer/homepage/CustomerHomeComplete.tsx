@@ -42,6 +42,8 @@ import { PresignableImage } from '@/components/shared/PresignableImage';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { customerPathToScreen } from '@/lib/promotion-navigation';
 import { iconForCustomerHomeApiBanner, normalizeCustomerBannerTarget } from '@/lib/customer-banner-icons';
+import { navigateBannerCta } from '@/lib/banner-cta-navigation';
+import { isVendorBannerCta } from '@/lib/banner-cta-parse';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import {
   mapCatalogSlugToLaunchServiceId,
@@ -545,6 +547,31 @@ export function CustomerHomeComplete({
         return;
       }
       onNavigate?.(d, data);
+    },
+    [onNavigate, router]
+  );
+
+  const handleBannerClick = useCallback(
+    async (banner: {
+      ctaLink?: string;
+      title?: string;
+      subtitle?: string;
+      metadata?: unknown;
+      navTarget?: { kind: string; screen?: string; path?: string; data?: Record<string, unknown> };
+    }) => {
+      if (!banner?.ctaLink && !banner?.navTarget && !banner?.metadata) return;
+      await navigateBannerCta(
+        {
+          ctaLink: banner.ctaLink,
+          title: banner.title,
+          subtitle: banner.subtitle,
+          metadata: banner.metadata,
+          navTarget: banner.navTarget as Parameters<typeof navigateBannerCta>[0]['navTarget'],
+          returnScreen: 'home',
+        },
+        onNavigate,
+        router
+      );
     },
     [onNavigate, router]
   );
@@ -1264,7 +1291,8 @@ export function CustomerHomeComplete({
 
     const fromApi = dynamicBanners.map((b: any) => {
       const rawCta = String(b.ctaLink ?? b.cta_link ?? '').trim();
-      const screenFromSlash = rawCta.startsWith('/') ? customerPathToScreen(rawCta) : null;
+      const screenFromSlash =
+        rawCta.startsWith('/') && !isVendorBannerCta(rawCta) ? customerPathToScreen(rawCta) : null;
       const ctaLink = screenFromSlash ?? rawCta;
       const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
       const comingSoon = explicitComingSoonFalse ? false : Boolean(b.comingSoon || b.coming_soon);
@@ -1277,6 +1305,8 @@ export function CustomerHomeComplete({
         Icon: iconForCustomerHomeApiBanner(b),
         ctaText: b.ctaText || b.cta_text || 'Learn More',
         ctaLink,
+        navTarget: b.navTarget ?? null,
+        metadata: b.metadata ?? null,
         comingSoon,
       };
     });
@@ -1303,7 +1333,8 @@ export function CustomerHomeComplete({
     if (dynamicMiddleBanners.length === 0) return [];
     return dynamicMiddleBanners.map((b: any) => {
       const rawCta = String(b.ctaLink ?? b.cta_link ?? '').trim();
-      const screenFromSlash = rawCta.startsWith('/') ? customerPathToScreen(rawCta) : null;
+      const screenFromSlash =
+        rawCta.startsWith('/') && !isVendorBannerCta(rawCta) ? customerPathToScreen(rawCta) : null;
       const ctaLink = screenFromSlash ?? rawCta;
       const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
       const comingSoon = explicitComingSoonFalse ? false : Boolean(b.comingSoon || b.coming_soon);
@@ -1317,6 +1348,8 @@ export function CustomerHomeComplete({
         Icon: iconForCustomerHomeApiBanner(b),
         ctaText: b.ctaText || b.cta_text || 'Learn More',
         ctaLink,
+        navTarget: b.navTarget ?? null,
+        metadata: b.metadata ?? null,
         comingSoon,
       };
     });
@@ -1326,7 +1359,8 @@ export function CustomerHomeComplete({
     if (dynamicLowerBanners.length === 0) return [];
     return dynamicLowerBanners.map((b: any) => {
       const rawCta = String(b.ctaLink ?? b.cta_link ?? '').trim();
-      const screenFromSlash = rawCta.startsWith('/') ? customerPathToScreen(rawCta) : null;
+      const screenFromSlash =
+        rawCta.startsWith('/') && !isVendorBannerCta(rawCta) ? customerPathToScreen(rawCta) : null;
       const ctaLink = screenFromSlash ?? rawCta;
       const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
       const comingSoon = explicitComingSoonFalse ? false : Boolean(b.comingSoon || b.coming_soon);
@@ -1340,6 +1374,8 @@ export function CustomerHomeComplete({
         Icon: iconForCustomerHomeApiBanner(b),
         ctaText: b.ctaText || b.cta_text || 'Learn More',
         ctaLink,
+        navTarget: b.navTarget ?? null,
+        metadata: b.metadata ?? null,
         comingSoon,
       };
     });
@@ -2275,7 +2311,7 @@ export function CustomerHomeComplete({
                               }).catch(() => { }); // Silent fail for tracking
                             }
                             // Navigate (screen id, path, or external URL)
-                            banner.ctaLink && handleNavigation(String(banner.ctaLink));
+                            banner.ctaLink && void handleBannerClick(banner);
                           }}
                         >
                           {banner.ctaText || 'Claim Now'}
@@ -2312,7 +2348,7 @@ export function CustomerHomeComplete({
           </div>
         </div>
 
-        {/* Shop — gated until customerEcommerceEnabled / NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED */}
+        {/* Shop — gated by isCustomerEcommerceEnabled() until prod launch */}
         <div className="mb-4">
           <div className="flex items-center gap-3 px-4 mb-2">
             <div className="flex items-center gap-2">
@@ -2705,7 +2741,7 @@ export function CustomerHomeComplete({
                                     .post(`/banners/${banner.id}/click`, { source: 'home_middle_featured' })
                                     .catch(() => {});
                                 }
-                                banner.ctaLink && handleNavigation(String(banner.ctaLink));
+                                banner.ctaLink && void handleBannerClick(banner);
                               }}
                             >
                               {banner.ctaText || 'Learn More'}
@@ -3111,7 +3147,7 @@ export function CustomerHomeComplete({
                                 .post(`/banners/${banner.id}/click`, { source: 'home_lower_featured' })
                                 .catch(() => {});
                             }
-                            banner.ctaLink && handleNavigation(String(banner.ctaLink));
+                            banner.ctaLink && void handleBannerClick(banner);
                           }}
                           className="bg-white text-indigo-600 px-5 py-2.5 rounded-full text-sm font-medium"
                         >

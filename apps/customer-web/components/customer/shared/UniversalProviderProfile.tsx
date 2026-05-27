@@ -460,23 +460,6 @@ export function UniversalProviderProfile({
     onProceedToPayment(bookingData);
   };
 
-  // Get service style config
-  const getStyleConfig = () => {
-    switch (serviceStyle) {
-      case 'tele':
-        return { icon: Video, color: 'blue', label: 'Video Consultation' };
-      case 'at_home':
-        return { icon: Home, color: 'orange', label: 'Home Visit' };
-      case 'at_center':
-        return { icon: Building2, color: 'green', label: 'Center Visit' };
-      default:
-        return { icon: User, color: 'gray', label: 'Service' };
-    }
-  };
-
-  const styleConfig = getStyleConfig();
-  const StyleIcon = styleConfig.icon;
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header with Provider Photo */}
@@ -557,42 +540,18 @@ export function UniversalProviderProfile({
                 {provider.qualifications && (
                   <p className="text-sm text-gray-500 truncate">{provider.qualifications}</p>
                 )}
-                
-              </div>
-            </div>
 
-            {/* Stats */}
-            <div className="flex items-center justify-between mt-4 pt-4 border-t">
-              <VendorRatingDisplay
-                row={{
-                  vendorId: provider.vendorId ?? provider.id,
-                  vendorRating: provider.rating,
-                  vendorReviewCount: provider.reviewCount,
-                }}
-                vendorId={String(provider.vendorId ?? provider.id ?? '')}
-                className="text-center"
-                starsClassName="w-4 h-4"
-                textClassName="text-xs text-gray-500"
-              />
-              <div className="text-center">
-                <div className="font-bold text-gray-900">{provider.experienceYears || 0}+</div>
-                <p className="text-xs text-gray-500">Years Exp</p>
-              </div>
-              {provider.distance != null && (
-                <div className="text-center">
-                  <div className="font-bold text-gray-900">
-                    {Number(provider.distance) < 1
-                      ? `${Math.round(Number(provider.distance) * 1000)} m`
-                      : `${Math.round(Number(provider.distance))} km`}
-                  </div>
-                  <p className="text-xs text-gray-500">away</p>
-                </div>
-              )}
-              <div className="text-center">
-                <div className="flex items-center justify-center">
-                  <StyleIcon className={`w-5 h-5 text-${styleConfig.color}-500`} />
-                </div>
-                <p className="text-xs text-gray-500">{styleConfig.label}</p>
+                <VendorRatingDisplay
+                  row={{
+                    vendorId: provider.vendorId ?? provider.id,
+                    vendorRating: provider.rating,
+                    vendorReviewCount: provider.reviewCount,
+                  }}
+                  vendorId={String(provider.vendorId ?? provider.id ?? '')}
+                  className="mt-2"
+                  starsClassName="w-4 h-4"
+                  textClassName="text-xs text-gray-500"
+                />
               </div>
             </div>
           </Card>

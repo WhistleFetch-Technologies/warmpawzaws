@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { customerPathToScreen } from '@/lib/promotion-navigation';
+import { navigateBannerCta, type BannerNavTarget } from '@/lib/banner-cta-navigation';
 import { iconForCustomerHomeApiBanner } from '@/lib/customer-banner-icons';
 import type { LucideIcon } from 'lucide-react';
 
@@ -24,6 +24,8 @@ type BannerVM = {
   imageUrl?: string;
   ctaText: string;
   ctaLink?: string;
+  navTarget?: BannerNavTarget | null;
+  metadata?: unknown;
   Icon: LucideIcon;
 };
 
@@ -50,6 +52,8 @@ function mapApiBanner(b: Record<string, unknown>, index: number): BannerVM {
     imageUrl: imageUrlValue != null ? String(imageUrlValue).trim() || undefined : undefined,
     ctaText: String(b.ctaText ?? b.cta_text ?? 'Learn More'),
     ctaLink: b.ctaLink != null ? String(b.ctaLink) : b.cta_link != null ? String(b.cta_link) : undefined,
+    navTarget: (b.navTarget as BannerNavTarget | undefined) ?? null,
+    metadata: b.metadata ?? null,
     Icon: iconForCustomerHomeApiBanner(b),
   };
 }
@@ -59,37 +63,37 @@ const CLICK_SOURCE: Record<Placement, string> = {
   checkout: 'checkout',
 };
 
+const RETURN_SCREEN: Record<Placement, string | undefined> = {
+  category: 'problem_grid',
+  checkout: undefined,
+};
+
 /** Fetches and renders CMS banners for category (All Services) or checkout. Home hero/middle are only on the home page. */
 export function CustomerPlacementBanners({ placement, onNavigate, className = '' }: CustomerPlacementBannersProps) {
   const router = useRouter();
   const [banners, setBanners] = useState<BannerVM[]>([]);
   const [ix, setIx] = useState(0);
   const count = banners.length;
+  const isCheckout = placement === 'checkout';
 
-  const handleCta = useCallback(
-    (dest: string | undefined) => {
-      const d = (dest ?? '').trim();
-      if (!d) return;
-      if (/^https?:\/\//i.test(d) || d.startsWith('//')) {
-        window.location.assign(d.startsWith('//') ? `https:${d}` : d);
-        return;
-      }
-      if (/^(mailto:|tel:)/i.test(d)) {
-        window.location.href = d;
-        return;
-      }
-      if (d.startsWith('/')) {
-        const screen = customerPathToScreen(d);
-        if (screen) {
-          onNavigate?.(screen, undefined);
-          return;
-        }
-        router.push(d);
-        return;
-      }
-      onNavigate?.(d, undefined);
+  const handleBannerClick = useCallback(
+    async (banner: BannerVM) => {
+      if (isCheckout) return;
+      if (!banner.ctaLink && !banner.navTarget && !banner.metadata) return;
+      await navigateBannerCta(
+        {
+          ctaLink: banner.ctaLink,
+          title: banner.title,
+          subtitle: banner.subtitle,
+          metadata: banner.metadata,
+          navTarget: banner.navTarget,
+          returnScreen: RETURN_SCREEN[placement],
+        },
+        onNavigate as ((dest: string, data?: Record<string, unknown>) => void) | undefined,
+        router
+      );
     },
-    [onNavigate, router]
+    [isCheckout, onNavigate, placement, router]
   );
 
   useEffect(() => {
@@ -142,18 +146,22 @@ export function CustomerPlacementBanners({ placement, onNavigate, className = ''
               <div className="min-w-0 flex-1">
                 <h3 className="font-bold text-sm leading-tight line-clamp-2">{banner.title}</h3>
                 {banner.subtitle ? <p className="text-xs text-white/90 mt-1 line-clamp-2">{banner.subtitle}</p> : null}
-                <button
-                  type="button"
-                  className="mt-3 inline-block bg-white/95 text-[#FF8C42] px-3 py-1.5 rounded-full text-xs font-semibold"
-                  onClick={() => {
-                    if (banner.id) {
-                      apiClient.post(`/banners/${banner.id}/click`, { source }).catch(() => {});
-                    }
-                    handleCta(banner.ctaLink);
-                  }}
-                >
-                  {banner.ctaText}
-                </button>
+                {isCheckout ? (
+                  <p className="mt-3 inline-block text-xs font-medium text-white/90">{banner.ctaText}</p>
+                ) : (
+                  <button
+                    type="button"
+                    className="mt-3 inline-block bg-white/95 text-[#FF8C42] px-3 py-1.5 rounded-full text-xs font-semibold"
+                    onClick={() => {
+                      if (banner.id) {
+                        apiClient.post(`/banners/${banner.id}/click`, { source }).catch(() => {});
+                      }
+                      void handleBannerClick(banner);
+                    }}
+                  >
+                    {banner.ctaText}
+                  </button>
+                )}
               </div>
               {banner.imageUrl ? null : <banner.Icon className="w-8 h-8 shrink-0 text-white/95" aria-hidden />}
             </div>

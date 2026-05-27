@@ -430,19 +430,35 @@ class DeleteVendorProductHandler extends BaseHandler {
         [productId]
       );
 
-      if (parseInt(orders.rows[0]?.count || '0', 10) > 0) {
-        // Soft delete - mark as inactive instead
-        await update('products', { id: productId }, { is_active: false });
+      const orderCount = parseInt(orders.rows[0]?.count || '0', 10);
+      if (orderCount > 0) {
+        const deactivatePayload: Record<string, unknown> = { is_active: false };
+        try {
+          const colCheck = await query(
+            `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'status'`,
+          );
+          if ((colCheck.rows || []).length > 0) {
+            deactivatePayload.status = 'inactive';
+          }
+        } catch {
+          /* status column optional on older DBs */
+        }
+        await update('products', { id: productId }, deactivatePayload);
         return this.success({
-          message: 'Product deactivated (has existing orders)',
+          action: 'deactivated',
+          deactivated: true,
+          message:
+            'Product removed from your catalog. It has past orders, so it was archived for order history and is no longer visible to customers.',
         });
       }
 
       // Hard delete if no orders
-      await deleteRows('products', { id: productId, vendor_id: vendorId });
+      await deleteRows('products', { id: productId, vendor_id: resolvedVendorId });
 
       return this.success({
-        message: 'Product deleted successfully',
+        action: 'deleted',
+        deactivated: false,
+        message: 'Product deleted successfully.',
       });
     } catch (error: any) {
       console.error('Error deleting product:', error);

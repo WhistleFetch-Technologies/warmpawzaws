@@ -9,6 +9,7 @@ import {
   getCarrierDisplayName,
   normalizeCarrierKey,
 } from '../../utils/logistics/carrier-patterns';
+import { shipmentPincodeFieldsForInsert } from './shipment-pincodes';
 
 export interface MarkShippedInput {
   vendorId: string;
@@ -93,8 +94,10 @@ export async function markOrderShippedByVendor(input: MarkShippedInput): Promise
   if (existingShipment.rows.length > 0) {
     await update('shipments', { id: existingShipment.rows[0].id }, shipmentData);
   } else {
+    const vendors = await select('vendors', { id: vendorId });
     await insert('shipments', {
       ...shipmentData,
+      ...shipmentPincodeFieldsForInsert(order, vendors[0]),
       created_at: now,
     });
   }

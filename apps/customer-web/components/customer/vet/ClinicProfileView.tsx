@@ -6,13 +6,12 @@ import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { formatAverageForDisplay } from '@/lib/rating-display';
-import { vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
-import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { StandardizedFooter } from '../shared/StandardizedFooter';
 
 interface ClinicProfileViewProps {
@@ -236,41 +235,21 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
     );
   }
 
-  const clinicVendorId = String(clinic.vendor_id ?? clinic.vendorId ?? clinicId ?? '').trim();
-  const ratingStat = vendorRatingHeaderStat(
-    {
-      vendorId: clinicVendorId,
-      vendorRating: clinic.rating,
-      review_count: clinic.review_count,
-    },
-    clinicVendorId
-  );
-  const rc = Number(clinic.review_count ?? 0) || 0;
-  const dashboardStats = [
-    ...(ratingStat
-      ? [{ ...ratingStat, icon: <Star className="w-4 h-4 fill-white" /> }]
-      : []),
-    ...(rc > 0 ? [{ value: `${rc}`, label: 'Reviews' }] : []),
-    {
-      value: clinic.services?.length ? `${clinic.services.length}` : '10+',
-      label: 'Services',
-      icon: <Stethoscope className="w-4 h-4" />,
-    },
-  ];
+  const clinicHeaderSubtitle = clinic.city?.trim()
+    ? `Veterinary care · ${clinic.city.trim()}`
+    : 'Veterinary care services';
 
   return (
     <div className="mx-auto flex min-h-screen min-h-[100dvh] w-full max-w-customer flex-col bg-gray-50">
       {/* ✅ FIX: Use ServiceDashboardHeader for consistent Frame UI */}
-      <ServiceDashboardHeader
+      <VendorProfileDashboardHeader
         fullWidth
-        serviceName={clinic.name}
-        serviceSubtitle="Veterinary Clinic"
+        serviceName="Veterinary Clinic"
+        serviceSubtitle={clinicHeaderSubtitle}
         serviceIcon={Building2}
         iconColor="text-white"
-        stats={dashboardStats}
         onBack={onBack}
         showBackButton={true}
-        headerColor="bg-[#FF8C42]"
         sheetToneClass="bg-white"
       />
 

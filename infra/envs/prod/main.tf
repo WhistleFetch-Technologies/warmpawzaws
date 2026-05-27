@@ -260,6 +260,7 @@ module "lambda" {
       RAZORPAY_SECRET_ARN                 = module.secrets.razorpay_secret_arn
       GOOGLE_MAPS_SECRET_ARN              = module.secrets.google_maps_secret_arn
       SHIPROCKET_SECRET_ARN               = module.secrets.shiprocket_secret_arn
+      AFTERSHIP_SECRET_ARN                = module.secrets.aftership_secret_arn
       OPENSEARCH_ENDPOINT                 = module.opensearch.domain_endpoint
     },
     local.delivery_stack_live ? {

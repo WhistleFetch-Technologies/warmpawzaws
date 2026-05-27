@@ -229,7 +229,6 @@ async function deployCustomerWeb(clockOffset) {
     apiBaseUrl: CUSTOMER_API_URL,
     uatMode: !PROD,
     environment: PROD ? 'production' : 'development',
-    customerEcommerceEnabled: false,
   }, null, 4)};\n  console.log('Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);\n})();\n`;
   writeFileSync(path.join(distDir, 'runtime-config.js'), runtimeCfg);
   console.log(`  customer runtime-config.js → ${CUSTOMER_API_URL}`);

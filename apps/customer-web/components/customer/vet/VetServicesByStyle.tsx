@@ -10,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 import { ServicePricingDisplay } from '../ServicePricingDisplay'; // ✅ FIX GAP-7.1: Vendor discount display
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
+import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
@@ -21,7 +22,6 @@ import {
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
-import { vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 
@@ -446,19 +446,25 @@ export function VetServicesByStyle({
           ? 'Home Visit'
           : 'Clinic Visit';
 
-    // ✅ FIX: Prepare stats for ServiceDashboardHeader
+    const profileHeaderTitle =
+      serviceStyle === 'at_center'
+        ? 'Vet Clinic'
+        : serviceStyle === 'at_home'
+          ? 'Home Visit'
+          : serviceStyle === 'tele'
+            ? 'Tele Consultation'
+            : serviceTypeName || 'Veterinary Services';
+    const profileHeaderSubtitle =
+      serviceStyle === 'at_center'
+        ? 'Visit our veterinary clinics'
+        : serviceStyle === 'at_home'
+          ? 'Vet comes to you'
+          : serviceStyle === 'tele'
+            ? 'Video consultation with vet'
+            : 'Professional pet healthcare';
     const profileVendorId = String(
       vendorId ?? profileProvider.id ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
     ).trim();
-    const ratingHeaderStatEntry = vendorRatingHeaderStat(
-      {
-        vendorId: profileVendorId,
-        vendorRating: profileProvider.rating,
-        vendorReviewCount: profileProvider.reviewCount,
-      },
-      profileVendorId
-    );
-    const dashboardStats = ratingHeaderStatEntry ? [ratingHeaderStatEntry] : [];
 
     return (
       <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden bg-gray-50">
@@ -466,17 +472,15 @@ export function VetServicesByStyle({
           Same as CustomerHomeComplete: `rounded-t-[24px] -mt-3` on the block below a flat
           orange header so the “bow” is the rounded top of the next surface (image here, white on home).
         */}
-        <ServiceDashboardHeader
+        <VendorProfileDashboardHeader
           fullWidth
           className="!z-0 isolation-auto"
-          serviceName={providerName}
-          serviceSubtitle={profileServiceSubtitle}
+          serviceName={profileHeaderTitle}
+          serviceSubtitle={profileHeaderSubtitle}
           serviceIcon={Stethoscope}
           iconColor="text-white"
-          stats={dashboardStats}
           onBack={onBack}
           showBackButton={true}
-          headerColor="bg-[#FF8C42]"
           bottomEdge="flat"
         />
         <div className="relative z-0 w-full flex-1">

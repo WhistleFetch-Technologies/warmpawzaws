@@ -33,7 +33,6 @@
       // Intentionally NOT setting apiBaseUrl - use NEXT_PUBLIC_API_BASE_URL from .env.local
       uatMode: true,
       environment: 'development',
-      customerEcommerceEnabled: true,
       firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
       firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
       firebaseProjectId:         "warmpawz-b9baf",
@@ -60,8 +59,7 @@
     'dev.customer.warmpawz.com': {
       apiBaseUrl: 'https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com',
       uatMode: true,
-      environment: 'development',
-      customerEcommerceEnabled: true
+      environment: 'development'
     },
     // You can extend mappings here if needed, e.g. stage.customer.warmpawz.com
   };
@@ -72,7 +70,6 @@
       apiBaseUrl: normalizeLegacyDevApiUrl(mapped.apiBaseUrl),
       uatMode: mapped.uatMode,
       environment: mapped.environment,
-      customerEcommerceEnabled: mapped.customerEcommerceEnabled !== false,
       firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
       firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
       firebaseProjectId:         "warmpawz-b9baf",
@@ -87,7 +84,6 @@
       apiBaseUrl: normalizeLegacyDevApiUrl('https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com'),
       uatMode: false,
       environment: 'production',
-      customerEcommerceEnabled: false,
       firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
       firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
       firebaseProjectId:         "warmpawz-b9baf",

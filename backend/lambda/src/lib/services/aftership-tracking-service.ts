@@ -8,6 +8,8 @@ const AFTERSHIP_API_BASE = 'https://api.aftership.com/tracking/2025-01';
 export interface AfterShipCredentials {
   api_key: string;
   webhook_secret?: string;
+  /** AfterShip dashboard export uses api_secret for webhook HMAC verification */
+  api_secret?: string;
 }
 
 export interface AfterShipTrackingResult {
@@ -30,7 +32,10 @@ async function getCredentials(): Promise<AfterShipCredentials | null> {
 
   const fromSecret = await getSecretJson<AfterShipCredentials>('aftership');
   if (fromSecret?.api_key) {
-    cachedCredentials = fromSecret;
+    cachedCredentials = {
+      api_key: fromSecret.api_key,
+      webhook_secret: fromSecret.webhook_secret || fromSecret.api_secret,
+    };
     return cachedCredentials;
   }
 

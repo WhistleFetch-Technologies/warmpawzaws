@@ -46,6 +46,21 @@ variable "shiprocket_password" {
   sensitive   = true
 }
 
+# AfterShip (vendor-managed shipping tracking)
+variable "aftership_api_key" {
+  description = "AfterShip API key (optional; secret can be set via AWS CLI/Console instead)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "aftership_api_secret" {
+  description = "AfterShip API secret for webhook verification"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 # Push Notifications Configuration
 variable "enable_push_notifications" {
   description = "Enable Android push notifications (requires FCM server key)"

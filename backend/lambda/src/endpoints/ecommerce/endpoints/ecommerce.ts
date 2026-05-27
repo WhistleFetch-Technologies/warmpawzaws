@@ -24,6 +24,7 @@ import {
   sqlExcludeSuppressedSettlementRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
 import { isValidUUID } from '../../../types/entities';
+import { prepareStorefrontProductRow, prepareStorefrontProductRows } from '../../../utils/s3-media-presign';
 
 /** Only admin-approved products appear on the public storefront (see products.status + is_active). */
 const STOREFRONT_PRODUCT_SQL = `
@@ -68,9 +69,13 @@ export function registerEcommerceEndpoints(app: Hono) {
         return c.json({ error: 'Product not found' }, 404);
       }
 
+      const product = await prepareStorefrontProductRow(
+        products.rows[0] as Record<string, unknown>,
+      );
+
       return c.json({
         success: true,
-        product: products.rows[0],
+        product,
       });
     } catch (error: any) {
       console.error(`${logLabel} Error fetching product:`, error);
@@ -163,10 +168,13 @@ export function registerEcommerceEndpoints(app: Hono) {
         throw error;
       }
 
+      const rows = (products?.rows || []) as Record<string, unknown>[];
+      const signedProducts = await prepareStorefrontProductRows(rows);
+
       return c.json({
         success: true,
-        products: products?.rows || [],
-        total: products?.rows?.length || 0,
+        products: signedProducts,
+        total: signedProducts.length,
       });
     } catch (error: any) {
       console.error('[products] Error fetching products:', error);
@@ -247,10 +255,13 @@ export function registerEcommerceEndpoints(app: Hono) {
         throw error;
       }
 
+      const rows = (products?.rows || []) as Record<string, unknown>[];
+      const signedProducts = await prepareStorefrontProductRows(rows);
+
       return c.json({
         success: true,
-        products: products?.rows || [],
-        total: products?.rows?.length || 0,
+        products: signedProducts,
+        total: signedProducts.length,
       });
     } catch (error: any) {
       console.error('Error fetching ecommerce products:', error);

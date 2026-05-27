@@ -85,6 +85,33 @@ resource "aws_secretsmanager_secret_version" "shiprocket" {
   })
 }
 
+# AfterShip tracking (vendor-managed shipping)
+resource "aws_secretsmanager_secret" "aftership" {
+  name                    = "warmpawz/${var.environment}/aftership"
+  description             = "AfterShip API credentials for vendor-managed shipment tracking"
+  recovery_window_in_days = var.environment == "prod" ? 30 : 0
+
+  tags = {
+    Name        = "warmpawz-${var.environment}-aftership"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    prevent_destroy       = true
+    create_before_destroy = true
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "aftership" {
+  count     = var.aftership_api_key != "" ? 1 : 0
+  secret_id = aws_secretsmanager_secret.aftership.id
+  secret_string = jsonencode({
+    api_key        = var.aftership_api_key
+    api_secret     = var.aftership_api_secret
+    webhook_secret = var.aftership_api_secret
+  })
+}
+
 # SNS Platform Application for Push Notifications (Android)
 # Note: aws_sns_platform_application doesn't support tags
 resource "aws_sns_platform_application" "android_customer" {

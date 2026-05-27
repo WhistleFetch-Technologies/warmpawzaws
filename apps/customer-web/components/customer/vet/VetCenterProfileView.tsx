@@ -220,20 +220,6 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="text-center py-0 bg-gray-50 rounded-lg">
-              <div className="text-lg font-bold text-gray-900">{services.length}+</div>
-              <div className="text-xs text-gray-500">Services</div>
-            </div>
-            <div className="text-center py-0 bg-gray-50 rounded-lg">
-              <div className="text-lg font-bold text-gray-900">{facility.vets || 2}+</div>
-              <div className="text-xs text-gray-500">Vets</div>
-            </div>
-            <div className="text-center py-0 bg-gray-50 rounded-lg">
-              <div className="text-lg font-bold text-gray-900">24/7</div>
-              <div className="text-xs text-gray-500">Emergency</div>
-            </div>
-          </div>
         </div>
 
         {/* Tabs */}
