@@ -12,6 +12,7 @@ import {
   FileText,
   ChevronRight,
   RefreshCw,
+  Calendar,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
@@ -21,7 +22,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { apiClient, supportCrmApi } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
-import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+import { SUPPORT_INITIAL_TAB_KEY, clearSupportBookingContext, type SupportBookingContext } from '@/lib/support-contact';
 
 const AIChatbotWidget = dynamic(
   () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
@@ -43,6 +44,8 @@ interface Ticket {
   priority: string;
   category?: string;
   created_at: string;
+  booking_id?: string;
+  metadata?: Record<string, unknown>;
 }
 
 interface SupportHelpCenterProps {
@@ -50,6 +53,8 @@ interface SupportHelpCenterProps {
   onBack: () => void;
   onCloseToHome?: () => void;
   initialTab?: 'faq' | 'contact' | 'tickets';
+  /** When set, contact form creates a booking-linked ticket for refunds. */
+  bookingContext?: SupportBookingContext | null;
   /** In-app shell: route chatbot deep-links (services, support). Defaults to Next router for `/…` only. */
   onChatbotNavigate?: (dest: string, data?: unknown) => void;
 }
@@ -59,17 +64,21 @@ export function SupportHelpCenter({
   onBack,
   onCloseToHome,
   initialTab,
+  bookingContext,
   onChatbotNavigate,
 }: SupportHelpCenterProps) {
   const router = useRouter();
+  const isBookingTicket = Boolean(bookingContext?.bookingId);
   const [showAIChat, setShowAIChat] = useState(false);
   const [activeTab, setActiveTab] = useState<'faq' | 'contact' | 'tickets'>('faq');
   const [searchQuery, setSearchQuery] = useState('');
-  const [showContactForm, setShowContactForm] = useState(false);
+  const [showContactForm, setShowContactForm] = useState(Boolean(bookingContext?.bookingId));
   const [contactForm, setContactForm] = useState({
-    subject: '',
+    subject: bookingContext?.serviceName
+      ? `Help with booking: ${bookingContext.serviceName}`
+      : '',
     message: '',
-    category: 'general'
+    category: bookingContext?.bookingId ? 'billing' : 'general',
   });
   const [submitting, setSubmitting] = useState(false);
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -102,6 +111,21 @@ export function SupportHelpCenter({
       /* ignore */
     }
   }, [initialTab]);
+
+  useEffect(() => {
+    if (!bookingContext?.bookingId) return;
+    setActiveTab('contact');
+    setShowContactForm(true);
+    setContactForm((prev) => ({
+      ...prev,
+      subject:
+        prev.subject.trim() ||
+        (bookingContext.serviceName
+          ? `Help with booking: ${bookingContext.serviceName}`
+          : `Help with booking #${bookingContext.bookingId.slice(0, 8)}`),
+      category: 'billing',
+    }));
+  }, [bookingContext?.bookingId, bookingContext?.serviceName]);
 
   const loadTickets = useCallback(async () => {
     if (!phone) return;
@@ -248,18 +272,33 @@ export function SupportHelpCenter({
 
     try {
       setSubmitting(true);
+      const customerId = getResolvedCustomerId() || undefined;
       const response = await apiClient.post<any>('/support/tickets', {
         subject: contactForm.subject,
         message: contactForm.message,
         category: contactForm.category,
+        customerId,
         customerPhone: phone,
+        bookingId: bookingContext?.bookingId,
         source: 'customer',
-        priority: 'medium',
+        priority: isBookingTicket ? 'high' : 'medium',
+        metadata: isBookingTicket
+          ? { ticket_type: 'booking', booking_context: bookingContext }
+          : { ticket_type: 'general' },
       });
 
       if (response.success || response.ticketId) {
-        toast.success('Support ticket created successfully! We will get back to you soon.');
-        setContactForm({ subject: '', message: '', category: 'general' });
+        toast.success(
+          isBookingTicket
+            ? 'Booking support ticket created. Our team can review payment and refunds for this booking.'
+            : 'Support ticket created successfully! We will get back to you soon.'
+        );
+        clearSupportBookingContext();
+        setContactForm({
+          subject: '',
+          message: '',
+          category: isBookingTicket ? 'billing' : 'general',
+        });
         setShowContactForm(false);
         setActiveTab('tickets');
         void loadTickets();
@@ -421,6 +460,20 @@ export function SupportHelpCenter({
                     </div>
                     <button
                       type="button"
+                      onClick={() => setShowContactForm(true)}
+                      className="flex w-full items-center gap-3 rounded-lg p-3 mt-2 text-left bg-white border border-blue-100 hover:bg-blue-50/80 transition-colors"
+                    >
+                      <div className="w-10 h-10 bg-[#FF8C42]/10 rounded-lg flex items-center justify-center shrink-0">
+                        <FileText className="w-5 h-5 text-[#FF8C42]" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Submit a support ticket</p>
+                        <p className="text-sm text-gray-600">General account, app, or policy questions</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-gray-400 ml-auto shrink-0" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setShowAIChat(true)}
                       className="flex w-full items-center gap-3 rounded-lg p-1 -m-1 text-left hover:bg-blue-100/60 transition-colors"
                     >
@@ -437,7 +490,33 @@ export function SupportHelpCenter({
               </>
             ) : (
               <Card className="p-4">
-                <h3 className="font-semibold text-gray-900 mb-4">Create Support Ticket</h3>
+                <h3 className="font-semibold text-gray-900 mb-4">
+                  {isBookingTicket ? 'Help with this booking' : 'Create Support Ticket'}
+                </h3>
+                {isBookingTicket && bookingContext && (
+                  <div className="mb-4 rounded-xl border border-[#FF8C42]/30 bg-[#FFF3E8] p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-[#FF8C42]/15 flex items-center justify-center shrink-0">
+                        <Calendar className="w-5 h-5 text-[#FF8C42]" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">Booking-linked ticket</p>
+                        <p className="text-sm text-gray-700 truncate">
+                          {bookingContext.serviceName || 'Service booking'}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1 font-mono">
+                          ID: {bookingContext.bookingId.slice(0, 8)}…
+                        </p>
+                        {bookingContext.vendorName && (
+                          <p className="text-xs text-gray-600 mt-1">{bookingContext.vendorName}</p>
+                        )}
+                        <p className="text-xs text-[#FF8C42] mt-2">
+                          Support can review payment and process refunds for this booking.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
@@ -445,6 +524,7 @@ export function SupportHelpCenter({
                       value={contactForm.category}
                       onChange={(e) => setContactForm({ ...contactForm, category: e.target.value })}
                       className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42]"
+                      disabled={isBookingTicket}
                     >
                       {/* Values must match support_tickets.category CHECK in DB */}
                       <option value="general">General Inquiry</option>
@@ -482,7 +562,12 @@ export function SupportHelpCenter({
                       variant="outline"
                       onClick={() => {
                         setShowContactForm(false);
-                        setContactForm({ subject: '', message: '', category: 'general' });
+                        clearSupportBookingContext();
+                        setContactForm({
+                          subject: '',
+                          message: '',
+                          category: isBookingTicket ? 'billing' : 'general',
+                        });
                       }}
                       className="flex-1"
                     >
@@ -493,7 +578,7 @@ export function SupportHelpCenter({
                       disabled={submitting}
                       className="flex-1 bg-gradient-to-r from-[#FF8C42] to-[#FF6B9D] hover:from-[#FF7A29] hover:to-[#FF5A8D] text-white"
                     >
-                      {submitting ? 'Submitting...' : 'Submit'}
+                      {submitting ? 'Submitting...' : isBookingTicket ? 'Submit booking ticket' : 'Submit'}
                     </Button>
                   </div>
                 </div>
@@ -581,8 +666,22 @@ export function SupportHelpCenter({
                         <Card className="p-4 transition-shadow hover:shadow-md cursor-pointer active:scale-[0.99]">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
                                 <SupportTicketStatusBadge status={ticket.status} />
+                                {(ticket.booking_id ||
+                                  (ticket.metadata as Record<string, unknown> | undefined)?.ticket_type ===
+                                    'booking') && (
+                                  <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded bg-blue-100 text-blue-700">
+                                    Booking
+                                  </span>
+                                )}
+                                {!(ticket.booking_id ||
+                                  (ticket.metadata as Record<string, unknown> | undefined)?.ticket_type ===
+                                    'booking') && (
+                                  <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded bg-gray-100 text-gray-600">
+                                    General
+                                  </span>
+                                )}
                                 {ticket.ticket_number && (
                                   <span className="text-xs text-gray-400">{ticket.ticket_number}</span>
                                 )}

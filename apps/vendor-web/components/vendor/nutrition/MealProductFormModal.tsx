@@ -186,7 +186,12 @@ export function MealProductFormModal({
           '60',
       ),
       packWeightGrams: String(
-        md.packWeightGrams ?? md.pack_weight_grams ?? md.weightGrams ?? md.weight_g ?? '',
+        (editingProduct as { pack_weight_grams?: number }).pack_weight_grams ??
+          md.packWeightGrams ??
+          md.pack_weight_grams ??
+          md.weightGrams ??
+          md.weight_g ??
+          '',
       ),
       leadTimeHours: String(
         md.leadTimeHours ??
@@ -206,6 +211,10 @@ export function MealProductFormModal({
       storageInstructions: (md.storageInstructions as string) || '',
       shelfLifeDays: String(md.shelfLifeDays ?? md.shelfLife ?? '7'),
       purchaseType: (() => {
+        const ptCol = String((editingProduct as { purchase_type?: string }).purchase_type || '').toUpperCase();
+        if (ptCol === 'WEEKLY_PLAN' || ptCol === 'MONTHLY_PLAN' || ptCol === 'ONE_TIME') {
+          return ptCol as MealProductFormState['purchaseType'];
+        }
         const pt = String(md.purchaseType || '').toUpperCase();
         if (pt === 'WEEKLY_PLAN' || pt === 'MONTHLY_PLAN' || pt === 'ONE_TIME') return pt as MealProductFormState['purchaseType'];
         const dt = String(md.deliveryType || '').toUpperCase();
@@ -213,17 +222,30 @@ export function MealProductFormModal({
         if (dt === 'MONTHLY_SUBSCRIPTION') return 'MONTHLY_PLAN';
         return 'ONE_TIME';
       })(),
-      deliveryDays: Array.isArray(md.deliveryDays)
-        ? (md.deliveryDays as unknown[]).map((x) => String(x).toUpperCase()).filter(Boolean)
-        : [],
+      deliveryDays: (() => {
+        const fromCol = (editingProduct as { delivery_days?: string[] }).delivery_days;
+        if (Array.isArray(fromCol) && fromCol.length) {
+          return fromCol.map((x) => String(x).toUpperCase()).filter(Boolean);
+        }
+        return Array.isArray(md.deliveryDays)
+          ? (md.deliveryDays as unknown[]).map((x) => String(x).toUpperCase()).filter(Boolean)
+          : [];
+      })(),
       mealsPerDeliveryPreset: (() => {
         const pr = md.mealsPerDeliveryPreset;
         if (pr === '1' || pr === '2' || pr === '3' || pr === 'CUSTOM') return pr as MealsPerDeliveryPreset;
+        const mpd = (editingProduct as { meals_per_delivery?: number }).meals_per_delivery;
+        if (mpd === 1) return '1';
+        if (mpd === 3) return '3';
         return '2';
       })(),
       mealsPerDeliveryCustom:
         md.mealsPerDeliveryPreset === 'CUSTOM' ? String(md.mealsPerDeliveryCustom ?? md.mealsPerDelivery ?? '') : '',
       deliveryFrequency: (() => {
+        const fromCol = String((editingProduct as { delivery_frequency?: string }).delivery_frequency || '').toUpperCase();
+        if (DELIVERY_FREQUENCY_OPTIONS.some((x) => x.value === fromCol)) {
+          return fromCol as MealProductFormState['deliveryFrequency'];
+        }
         const f = String(md.deliveryFrequency || '').toUpperCase();
         if (DELIVERY_FREQUENCY_OPTIONS.some((x) => x.value === f)) return f as MealProductFormState['deliveryFrequency'];
         return '';

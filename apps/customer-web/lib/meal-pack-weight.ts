@@ -20,6 +20,11 @@ export function resolvePackWeightGrams(
   plan: Record<string, unknown> | null | undefined,
   dietary?: Record<string, unknown>,
 ): number | null {
+  const col = plan?.pack_weight_grams;
+  if (col != null && col !== '') {
+    const n = typeof col === 'number' ? col : parseInt(String(col), 10);
+    if (Number.isFinite(n) && n >= 1 && n <= 50_000) return n;
+  }
   const d = dietary ?? parsePlanDietaryForWeight(plan);
   const keys = ['packWeightGrams', 'pack_weight_grams', 'weightGrams', 'weight_g'] as const;
   for (const k of keys) {

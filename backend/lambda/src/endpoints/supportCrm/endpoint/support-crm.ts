@@ -24,6 +24,13 @@ import { generateSupportTicketNumber } from '../../../utils/support-ticket-numbe
 import { isValidUUID } from '../../../types/entities';
 import { invokeBedrock } from '../../../utils/bedrock-client';
 import { buildSupportTicketsListQuery } from '../build-support-tickets-list-query';
+import {
+  validateBookingTicketLink,
+  buildBookingSnapshot,
+  buildPaymentSnapshot,
+  enrichSupportTicket,
+  mapTicketForCrmList,
+} from '../support-ticket-helpers';
 
 export function registerSupportCrmEndpoints(app: Hono) {
   /**
@@ -65,20 +72,54 @@ export function registerSupportCrmEndpoints(app: Hono) {
           ? metaAttachments
           : [];
 
+      let resolvedBookingId: string | null = bookingId || null;
+      let resolvedCustomerId: string | null = customerId || null;
+      let resolvedVendorId: string | null = null;
+      let resolvedCategory = category || null;
+      let ticketType: 'general' | 'booking' = 'general';
+      let bookingSnapshot = null;
+      let paymentSnapshot = null;
+
+      if (resolvedBookingId) {
+        try {
+          const linked = await validateBookingTicketLink(resolvedBookingId, resolvedCustomerId);
+          resolvedCustomerId = linked.resolvedCustomerId;
+          resolvedVendorId = linked.vendorId;
+        } catch (linkErr: any) {
+          return c.json({ error: linkErr.message || 'Invalid booking link' }, 400);
+        }
+        ticketType = 'booking';
+        if (!resolvedCategory || resolvedCategory === 'general') {
+          resolvedCategory = 'billing';
+        }
+        bookingSnapshot = await buildBookingSnapshot(resolvedBookingId);
+        paymentSnapshot = await buildPaymentSnapshot(resolvedBookingId);
+      } else {
+        ticketType = 'general';
+        if (!resolvedCategory) resolvedCategory = 'general';
+      }
+
       // Create support ticket
       const ticket = await insert('support_tickets', {
         ticket_number: generateSupportTicketNumber(),
-        customer_id: customerId || null,
+        customer_id: resolvedCustomerId || null,
         customer_phone: customerPhone || null,
+        vendor_id: resolvedVendorId || null,
         subject,
         message,
         source,
         priority,
-        category: category || null,
-        booking_id: bookingId || null,
+        category: resolvedCategory,
+        booking_id: resolvedBookingId,
         order_id: orderId || null,
         status: 'open',
-        metadata: { ...metaRest, attachments: attachmentList },
+        metadata: {
+          ...metaRest,
+          attachments: attachmentList,
+          ticket_type: ticketType,
+          ...(bookingSnapshot ? { booking_snapshot: bookingSnapshot } : {}),
+          ...(paymentSnapshot ? { payment_snapshot: paymentSnapshot } : {}),
+        },
         created_at: new Date().toISOString(),
       });
 
@@ -244,9 +285,20 @@ export function registerSupportCrmEndpoints(app: Hono) {
         }
       }
 
+      const enrichment = await enrichSupportTicket(ticket);
+
       return c.json({
         success: true,
-        ticket,
+        ticket: {
+          ...ticket,
+          ticket_type: enrichment.ticketType,
+          ticketType: enrichment.ticketType,
+        },
+        ticketType: enrichment.ticketType,
+        bookingContext: enrichment.bookingContext,
+        paymentContext: enrichment.paymentContext,
+        isRefundable: enrichment.isRefundable,
+        refundBlockReason: enrichment.refundBlockReason,
         responses: responses.rows || [],
         aiConversation,
       });
@@ -442,6 +494,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
     try {
       const status = c.req.query('status');
       const priority = c.req.query('priority');
+      const ticketType = c.req.query('ticketType');
       const limit = parseInt(c.req.query('limit') || '50', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
 
@@ -474,27 +527,23 @@ export function registerSupportCrmEndpoints(app: Hono) {
         paramIndex++;
       }
 
+      if (ticketType === 'booking') {
+        queryStr += ` AND t.booking_id IS NOT NULL`;
+      } else if (ticketType === 'general') {
+        queryStr += ` AND t.booking_id IS NULL`;
+      }
+
       queryStr += ` ORDER BY t.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
       const tickets = await query(queryStr, params);
 
-      const safeTickets = (tickets.rows || []).map((t: any) => ({
-        id: String(t.id || ''),
-        customerId: t.customer_id ? String(t.customer_id) : '',
-        subject: String(t.subject || ''),
-        // Use message as primary content, fallback to description
-        description: String(t.message || t.description || ''),
-        status: String(t.status || 'open'),
-        priority: String(t.priority || 'medium'),
-        source: String(t.source || 'customer'),
-        createdAt: String(t.created_at || ''),
-        assignedTo: t.assigned_agent_id ? String(t.assigned_agent_id) : undefined,
-        assignedAgent: t.assigned_agent_name || undefined,
-        category: t.category || undefined,
-        customerName: t.customer_name || '',
-        customerEmail: t.customer_email || '',
-      }));
+      const safeTickets = await Promise.all(
+        (tickets.rows || []).map(async (t: any) => {
+          const enrichment = await enrichSupportTicket(t);
+          return mapTicketForCrmList(t, enrichment);
+        })
+      );
 
       return c.json({
         success: true,
@@ -651,9 +700,20 @@ export function registerSupportCrmEndpoints(app: Hono) {
         case 'partial_refund':
           {
           const ticket = tickets[0];
-          let refundResult = null;
-          
-          if (ticket.booking_id && ticket.customer_id) {
+          let refundResult: Record<string, unknown> | null = null;
+          let refundProcessed = false;
+
+          if (!ticket.booking_id) {
+            refundResult = {
+              status: 'failed',
+              message: 'This is a general ticket with no booking linked. Attach a booking before processing a refund.',
+            };
+          } else if (!ticket.customer_id) {
+            refundResult = {
+              status: 'failed',
+              message: 'Ticket is missing customer_id required for refunds.',
+            };
+          } else {
             try {
               const payments = await query(
                 `SELECT id, amount::text, payment_status FROM payments
@@ -674,6 +734,13 @@ export function registerSupportCrmEndpoints(app: Hono) {
                   throw new Error('Invalid refund amount');
                 }
 
+                const paymentSnapshot = await buildPaymentSnapshot(String(ticket.booking_id));
+                if (paymentSnapshot && refundAmount > paymentSnapshot.refundableBalance + 0.01) {
+                  throw new Error(
+                    `Refund amount exceeds refundable balance (₹${paymentSnapshot.refundableBalance.toFixed(2)})`
+                  );
+                }
+
                 const { processBookingOriginalPaymentRefund } = await import(
                   '../../../utils/payments/booking-original-refund'
                 );
@@ -684,6 +751,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
                   refundAmount,
                   reason: actionData.reason || `Support ticket refund (${action})`,
                   initiatedBy: 'support',
+                  supportTicketId: ticketId,
                 });
 
                 updateData.refund_id = processed.refundId;
@@ -698,6 +766,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
                   walletCredited: processed.walletCredited,
                   message: processed.message,
                 };
+                refundProcessed = processed.status !== 'failed';
                 
                 console.log(`✅ [CRM] Refund processed for ticket ${ticketId}: ₹${processed.totalAmount}`);
               } else {
@@ -718,6 +787,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
           
           updateData.metadata = {
             ...(ticket.metadata || {}),
+            ticket_type: 'booking',
             refund_requested: true,
             refund_amount: actionData.amount,
             refund_reason: actionData.reason,
@@ -725,6 +795,46 @@ export function registerSupportCrmEndpoints(app: Hono) {
             refund_requested_at: new Date().toISOString(),
             refund_result: refundResult,
           };
+
+          const updatedRefund = await update('support_tickets', { id: ticketId }, updateData);
+
+          return c.json({
+            success: refundProcessed,
+            refundProcessed,
+            ticket: updatedRefund[0],
+            refundResult,
+            message: refundProcessed
+              ? `Refund initiated for ticket ${action}`
+              : (refundResult?.message as string) || 'Refund could not be processed',
+          });
+          }
+        case 'attach_booking':
+          {
+          const ticket = tickets[0];
+          const attachBookingId = actionData.bookingId || actionData.booking_id;
+          if (!attachBookingId) {
+            return c.json({ error: 'bookingId is required to attach a booking' }, 400);
+          }
+          const linked = await validateBookingTicketLink(
+            String(attachBookingId),
+            ticket.customer_id ? String(ticket.customer_id) : actionData.customerId
+          );
+          const bookingSnapshot = await buildBookingSnapshot(String(attachBookingId));
+          const paymentSnapshot = await buildPaymentSnapshot(String(attachBookingId));
+          updateData.booking_id = attachBookingId;
+          updateData.customer_id = linked.resolvedCustomerId;
+          updateData.vendor_id = linked.vendorId;
+          updateData.metadata = {
+            ...(ticket.metadata || {}),
+            ticket_type: 'booking',
+            booking_snapshot: bookingSnapshot,
+            payment_snapshot: paymentSnapshot,
+            attached_at: new Date().toISOString(),
+            attached_by: 'admin',
+          };
+          if (!ticket.category || ticket.category === 'general') {
+            updateData.category = 'billing';
+          }
           }
           break;
         default:
@@ -1034,7 +1144,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
         priority: 'medium',
         category: 'service',
         status: 'open',
-        metadata: { ...crmContext, attachments: [] },
+        metadata: { ...crmContext, attachments: [], ticket_type: 'booking' },
         created_at: new Date().toISOString(),
       });
 

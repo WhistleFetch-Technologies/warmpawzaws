@@ -27,6 +27,8 @@ import {
 	Phone,
 	Mail,
 	Tag,
+	Link2,
+	Calendar,
 } from "lucide-react";
 
 import {
@@ -59,13 +61,47 @@ const BRAND_ORANGE_LIGHT = "#FFF3E8";
 const BRAND_ORANGE_DARK = "#E07830";
 
 // Types
+interface BookingSummary {
+	serviceName?: string;
+	status?: string;
+	amount?: number;
+	scheduledDate?: string;
+}
+
+interface BookingContextPanel {
+	id: string;
+	status: string;
+	serviceName?: string;
+	serviceStyle?: string;
+	scheduledDate?: string;
+	scheduledTime?: string;
+	amount?: number;
+	vendorId?: string;
+	vendorName?: string;
+	paymentStatus?: string;
+}
+
+interface PaymentContextPanel {
+	paymentId?: string;
+	totalPaid: number;
+	walletPaid: number;
+	gatewayPaid: number;
+	refundedSoFar: number;
+	refundableBalance: number;
+	paymentMethod?: string;
+	razorpayPaymentId?: string;
+	paymentStatus?: string;
+	hasGatewayPayment: boolean;
+}
+
 interface Ticket {
 	id: string;
 	customerId: string;
+	customerName?: string;
 	subject: string;
 	description: string;
 	status: "open" | "in_progress" | "resolved" | "closed" | "escalated";
-	priority: "low" | "medium" | "high";
+	priority: "low" | "medium" | "high" | "urgent";
 	source: string;
 	createdAt: string;
 	messages?: TicketMessage[];
@@ -74,6 +110,17 @@ interface Ticket {
 	category?: string;
 	metadata?: Record<string, unknown>;
 	aiConversation?: Array<Record<string, unknown>>;
+	ticketType?: "general" | "booking";
+	bookingId?: string;
+	vendorId?: string;
+	isRefundable?: boolean;
+	refundBlockReason?: string;
+	bookingSummary?: BookingSummary;
+	refundableBalance?: number;
+	bookingContext?: BookingContextPanel | null;
+	paymentContext?: PaymentContextPanel | null;
+	refundRequested?: boolean;
+	refundStatus?: string;
 }
 
 interface TicketMessage {
@@ -122,8 +169,12 @@ export default function SupportCRM() {
 	const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
 	const [replyText, setReplyText] = useState("");
 	const [filterStatus, setFilterStatus] = useState("all");
+	const [filterTicketType, setFilterTicketType] = useState<"all" | "general" | "booking">("all");
 	const [showRefundModal, setShowRefundModal] = useState(false);
 	const [showPartialRefundModal, setShowPartialRefundModal] = useState(false);
+	const [showAttachBookingModal, setShowAttachBookingModal] = useState(false);
+	const [attachBookingId, setAttachBookingId] = useState("");
+	const [attachBookingLoading, setAttachBookingLoading] = useState(false);
 	const [partialRefundAmount, setPartialRefundAmount] = useState("");
 	const [partialRefundReason, setPartialRefundReason] = useState("");
 	const [agents, setAgents] = useState<Agent[]>([]);
@@ -157,6 +208,10 @@ export default function SupportCRM() {
 		
 		return () => clearInterval(refreshInterval);
 	}, []);
+
+	useEffect(() => {
+		loadTickets();
+	}, [filterTicketType]);
 
 	// Calculate average response time from ticket data
 	const calculateAvgResponseTime = (ticketList: Ticket[]): string => {
@@ -195,9 +250,10 @@ export default function SupportCRM() {
 	const loadTickets = async () => {
 		setLoading(true);
 		try {
-			// Try to get stats from dedicated endpoint first
+			const ticketTypeQuery =
+				filterTicketType !== "all" ? `?ticketType=${filterTicketType}` : "";
 			const [ticketsRes, statsRes] = await Promise.all([
-				apiClient.get<any>("/crm/tickets"),
+				apiClient.get<any>(`/crm/tickets${ticketTypeQuery}`),
 				apiClient.get<any>("/crm/stats").catch(() => null),
 			]);
 			
@@ -278,6 +334,7 @@ export default function SupportCRM() {
 				const fullTicket: Ticket = {
 					id: raw.id,
 					customerId: raw.customer_id || '',
+					customerName: raw.customer_name || res.customerName,
 					subject: raw.subject || '',
 					description: raw.message || raw.description || '',
 					status: raw.status || 'open',
@@ -290,6 +347,15 @@ export default function SupportCRM() {
 					messages,
 					metadata: meta,
 					aiConversation: Array.isArray(res.aiConversation) ? res.aiConversation : undefined,
+					ticketType: (res.ticketType || raw.ticket_type || (raw.booking_id ? 'booking' : 'general')) as 'general' | 'booking',
+					bookingId: raw.booking_id ? String(raw.booking_id) : undefined,
+					vendorId: raw.vendor_id ? String(raw.vendor_id) : undefined,
+					isRefundable: Boolean(res.isRefundable),
+					refundBlockReason: res.refundBlockReason,
+					bookingContext: res.bookingContext ?? null,
+					paymentContext: res.paymentContext ?? null,
+					refundRequested: meta?.refund_requested === true,
+					refundStatus: (raw.refund_status as string | undefined) || (meta?.refund_result as Record<string, unknown> | undefined)?.status as string | undefined,
 				};
 				setSuggestedReplies([]);
 				setSelectedTicket(fullTicket);
@@ -371,7 +437,7 @@ export default function SupportCRM() {
 				undefined,
 				selectedAgentId
 			);
-			if (success) {
+			if (success.ok) {
 				setShowAssignModal(false);
 				setSelectedAgentId("");
 				toast.success("Ticket assigned successfully");
@@ -469,9 +535,10 @@ export default function SupportCRM() {
 		action: string,
 		amount?: number,
 		reason?: string,
-		assignTo?: string
-	): Promise<boolean> => {
-		if (!selectedTicket) return false;
+		assignTo?: string,
+		extra?: Record<string, unknown>
+	): Promise<{ ok: boolean; message?: string; refundProcessed?: boolean }> => {
+		if (!selectedTicket) return { ok: false };
 
 		try {
 			const res = await apiClient.post<any>("/crm/action", {
@@ -480,13 +547,23 @@ export default function SupportCRM() {
 				amount,
 				reason,
 				assignTo,
+				...extra,
 			});
 
-			if (res.success) {
-				await loadTickets();
-				return true;
+			await loadTickets();
+			if (selectedTicket) {
+				await loadTicketDetails(selectedTicket.id);
 			}
-			return false;
+
+			if (action === "refund" || action === "partial_refund") {
+				return {
+					ok: Boolean(res.refundProcessed),
+					message: res.message,
+					refundProcessed: Boolean(res.refundProcessed),
+				};
+			}
+
+			return { ok: Boolean(res.success) };
 		} catch (error: any) {
 			console.error("Error processing action:", error);
 			throw error;
@@ -497,15 +574,13 @@ export default function SupportCRM() {
 		if (!selectedTicket) return;
 
 		try {
-			const success = await handleAction("refund", 500, "Full refund");
+			const result = await handleAction("refund", undefined, "Full refund requested by admin");
 
-			if (success) {
+			if (result.refundProcessed) {
 				setShowRefundModal(false);
-				toast.success(
-					"Refund process initiated for Ticket #" + selectedTicket.id
-				);
+				toast.success("Refund initiated for Ticket #" + selectedTicket.id.slice(0, 8));
 			} else {
-				toast.error("Failed to process refund. Please try again.");
+				toast.error(result.message || "Refund could not be processed. Link a booking with a completed payment.");
 			}
 		} catch (error: any) {
 			console.error("Error processing refund:", error);
@@ -529,14 +604,20 @@ export default function SupportCRM() {
 
 		if (!selectedTicket) return;
 
+		const maxRefundable = selectedTicket.paymentContext?.refundableBalance;
+		if (maxRefundable != null && parseFloat(partialRefundAmount) > maxRefundable + 0.01) {
+			toast.error(`Amount exceeds refundable balance (₹${maxRefundable.toFixed(2)})`);
+			return;
+		}
+
 		try {
-			const success = await handleAction(
+			const result = await handleAction(
 				"partial_refund",
 				parseFloat(partialRefundAmount),
 				partialRefundReason.trim()
 			);
 
-			if (success) {
+			if (result.refundProcessed) {
 				const refundAmount = partialRefundAmount || "0";
 				const formattedAmount = parseFloat(refundAmount).toLocaleString(
 					"en-IN",
@@ -547,14 +628,14 @@ export default function SupportCRM() {
 				);
 
 				toast.success(
-					`Partial refund of ₹${formattedAmount} processed successfully`
+					`Partial refund of ₹${formattedAmount} initiated successfully`
 				);
 
 				setShowPartialRefundModal(false);
 				setPartialRefundAmount("");
 				setPartialRefundReason("");
 			} else {
-				toast.error("Failed to process partial refund. Please try again.");
+				toast.error(result.message || "Refund could not be processed.");
 			}
 		} catch (error: any) {
 			console.error("Error processing partial refund:", error);
@@ -562,6 +643,30 @@ export default function SupportCRM() {
 				error?.message ||
 				"Network error. Please check your connection and try again.";
 			toast.error(errorMessage);
+		}
+	};
+
+	const handleAttachBooking = async () => {
+		if (!selectedTicket || !attachBookingId.trim()) {
+			toast.error("Enter a booking ID");
+			return;
+		}
+		setAttachBookingLoading(true);
+		try {
+			const result = await handleAction("attach_booking", undefined, undefined, undefined, {
+				bookingId: attachBookingId.trim(),
+			});
+			if (result.ok) {
+				toast.success("Booking linked to ticket");
+				setShowAttachBookingModal(false);
+				setAttachBookingId("");
+			} else {
+				toast.error("Could not attach booking");
+			}
+		} catch (error: any) {
+			toast.error(error?.message || "Failed to attach booking");
+		} finally {
+			setAttachBookingLoading(false);
 		}
 	};
 
@@ -578,9 +683,17 @@ export default function SupportCRM() {
 		}
 	};
 
-	const filteredTickets = tickets.filter(
-		(t) => filterStatus === "all" || t.status === filterStatus
-	);
+	const filteredTickets = tickets.filter((t) => {
+		const statusOk = filterStatus === "all" || t.status === filterStatus;
+		const typeOk =
+			filterTicketType === "all" ||
+			(filterTicketType === "booking" && t.ticketType === "booking") ||
+			(filterTicketType === "general" && (t.ticketType === "general" || !t.ticketType));
+		return statusOk && typeOk;
+	});
+
+	const isBookingTicket = (t: Ticket | null | undefined) => t?.ticketType === "booking" || Boolean(t?.bookingId);
+	const canProcessRefund = (t: Ticket | null | undefined) => Boolean(t?.isRefundable);
 
 	const ticketHasAssignee = (t: Ticket | null | undefined) =>
 		Boolean(t && (t.assignedTo || t.assignedAgent));
@@ -749,7 +862,26 @@ export default function SupportCRM() {
 					{/* Ticket List Sidebar */}
 					<div className="w-[380px] border-r border-gray-200 bg-white flex flex-col">
 						{/* Filter Header */}
-						<div className="p-4 border-b border-gray-100 bg-gray-50/50">
+						<div className="p-4 border-b border-gray-100 bg-gray-50/50 space-y-3">
+							<div className="flex gap-2 overflow-x-auto pb-1">
+								{[
+									{ value: "all", label: "All types" },
+									{ value: "booking", label: "Booking" },
+									{ value: "general", label: "General" },
+								].map((filter) => (
+									<button
+										key={filter.value}
+										onClick={() => setFilterTicketType(filter.value as "all" | "general" | "booking")}
+										className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+											filterTicketType === filter.value
+												? "bg-blue-600 text-white shadow-md"
+												: "bg-white text-gray-600 border border-gray-200 hover:border-blue-300"
+										}`}
+									>
+										{filter.label}
+									</button>
+								))}
+							</div>
 							<div className="flex gap-2 overflow-x-auto pb-1">
 								{[
 									{ value: "all", label: "All", count: stats.totalTickets },
@@ -809,6 +941,18 @@ export default function SupportCRM() {
 												<span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${getPriorityColor(ticket.priority)}`}>
 													{ticket.priority}
 												</span>
+												<span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+													isBookingTicket(ticket)
+														? "bg-blue-100 text-blue-700"
+														: "bg-gray-100 text-gray-600"
+												}`}>
+													{isBookingTicket(ticket) ? "Booking" : "General"}
+												</span>
+												{ticket.isRefundable && (
+													<span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-700">
+														Refundable
+													</span>
+												)}
 											</div>
 											<span className="text-xs text-gray-400">
 												{new Date(ticket.createdAt).toLocaleDateString()}
@@ -820,6 +964,12 @@ export default function SupportCRM() {
 										<p className="text-sm text-gray-500 line-clamp-2">
 											{ticket.description}
 										</p>
+										{ticket.bookingSummary?.serviceName && (
+											<p className="text-xs text-blue-600 mt-1 truncate">
+												{ticket.bookingSummary.serviceName}
+												{ticket.bookingId ? ` · ${ticket.bookingId.slice(0, 8)}…` : ""}
+											</p>
+										)}
 										<div className="mt-3 flex items-center justify-between">
 											<div className="flex items-center gap-2">
 												{ticket.category && (
@@ -871,6 +1021,21 @@ export default function SupportCRM() {
 														{selectedTicket.category}
 													</Badge>
 												)}
+												<Badge
+													variant="outline"
+													className={`text-xs uppercase ${
+														isBookingTicket(selectedTicket)
+															? "bg-blue-50 text-blue-700 border-blue-200"
+															: "bg-gray-50 text-gray-600"
+													}`}
+												>
+													{isBookingTicket(selectedTicket) ? "Booking ticket" : "General ticket"}
+												</Badge>
+												{canProcessRefund(selectedTicket) && (
+													<Badge className="text-xs bg-green-100 text-green-700 border-green-200">
+														Refundable
+													</Badge>
+												)}
 											</div>
 											<h2 className="text-xl font-bold text-gray-900 mb-2">
 												{selectedTicket.subject}
@@ -878,8 +1043,14 @@ export default function SupportCRM() {
 											<div className="flex items-center gap-4 text-sm text-gray-500 flex-wrap">
 												<div className="flex items-center gap-1.5 bg-gray-100 px-2 py-1 rounded">
 													<User className="w-4 h-4 text-gray-400" /> 
-													<span>{selectedTicket.customerId.slice(0, 8) || "N/A"}</span>
+													<span>{selectedTicket.customerName || selectedTicket.customerId.slice(0, 8) || "N/A"}</span>
 												</div>
+												{selectedTicket.bookingId && (
+													<div className="flex items-center gap-1.5 bg-blue-50 px-2 py-1 rounded border border-blue-100">
+														<Calendar className="w-4 h-4 text-blue-500" />
+														<span className="font-mono text-xs">{selectedTicket.bookingId.slice(0, 8)}…</span>
+													</div>
+												)}
 												<div className="flex items-center gap-1.5 bg-gray-100 px-2 py-1 rounded">
 													<Clock className="w-4 h-4 text-gray-400" />
 													<span>{new Date(selectedTicket.createdAt).toLocaleString()}</span>
@@ -963,23 +1134,49 @@ export default function SupportCRM() {
 											</Button>
 										)}
 										<div className="flex-1"></div>
-										<Button
-											size="sm"
-											variant="outline"
-											className="border-[#FF8C42]/30 text-[#FF8C42] hover:bg-[#FFF3E8]"
-											onClick={() => setShowPartialRefundModal(true)}
-										>
-											<IndianRupee className="w-4 h-4 mr-1.5" />
-											Partial Refund
-										</Button>
-										<Button
-											size="sm"
-											variant="destructive"
-											onClick={() => setShowRefundModal(true)}
-										>
-											<IndianRupee className="w-4 h-4 mr-1.5" />
-											Full Refund
-										</Button>
+										{!isBookingTicket(selectedTicket) && (
+											<Button
+												size="sm"
+												variant="outline"
+												className="border-blue-200 text-blue-600 hover:bg-blue-50"
+												onClick={() => setShowAttachBookingModal(true)}
+											>
+												<Link2 className="w-4 h-4 mr-1.5" />
+												Attach booking
+											</Button>
+										)}
+										{canProcessRefund(selectedTicket) ? (
+											<>
+												<Button
+													size="sm"
+													variant="outline"
+													className="border-[#FF8C42]/30 text-[#FF8C42] hover:bg-[#FFF3E8]"
+													onClick={() => setShowPartialRefundModal(true)}
+												>
+													<IndianRupee className="w-4 h-4 mr-1.5" />
+													Partial Refund
+												</Button>
+												<Button
+													size="sm"
+													variant="destructive"
+													onClick={() => setShowRefundModal(true)}
+												>
+													<IndianRupee className="w-4 h-4 mr-1.5" />
+													Full Refund
+												</Button>
+											</>
+										) : (
+											<Button
+												size="sm"
+												variant="outline"
+												disabled
+												className="border-gray-200 text-gray-400"
+												title={selectedTicket.refundBlockReason || "Refunds require a booking-linked ticket with payment"}
+											>
+												<IndianRupee className="w-4 h-4 mr-1.5" />
+												Refund unavailable
+											</Button>
+										)}
 										<Button
 											size="sm"
 											variant="outline"
@@ -990,6 +1187,48 @@ export default function SupportCRM() {
 											Care Plan
 										</Button>
 									</div>
+
+									{isBookingTicket(selectedTicket) && (
+										<div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+											<Card className="p-4 border-blue-100 bg-blue-50/40">
+												<h4 className="text-sm font-bold text-gray-800 mb-3">Booking</h4>
+												{selectedTicket.bookingContext ? (
+													<div className="space-y-2 text-sm">
+														<p><span className="text-gray-500">Service:</span> {selectedTicket.bookingContext.serviceName || "—"}</p>
+														<p><span className="text-gray-500">Status:</span> {selectedTicket.bookingContext.status}</p>
+														<p><span className="text-gray-500">Vendor:</span> {selectedTicket.bookingContext.vendorName || "—"}</p>
+														<p><span className="text-gray-500">Date:</span> {selectedTicket.bookingContext.scheduledDate || "—"} {selectedTicket.bookingContext.scheduledTime || ""}</p>
+														<p><span className="text-gray-500">Amount:</span> {selectedTicket.bookingContext.amount != null ? `₹${selectedTicket.bookingContext.amount}` : "—"}</p>
+														<p className="font-mono text-xs text-gray-500 break-all">ID: {selectedTicket.bookingId}</p>
+													</div>
+												) : (
+													<p className="text-sm text-gray-600 font-mono break-all">{selectedTicket.bookingId}</p>
+												)}
+											</Card>
+											<Card className="p-4 border-green-100 bg-green-50/40">
+												<h4 className="text-sm font-bold text-gray-800 mb-3">Payment & refund</h4>
+												{selectedTicket.paymentContext ? (
+													<div className="space-y-2 text-sm">
+														<p><span className="text-gray-500">Paid:</span> ₹{selectedTicket.paymentContext.totalPaid.toFixed(2)}</p>
+														<p><span className="text-gray-500">Wallet:</span> ₹{selectedTicket.paymentContext.walletPaid.toFixed(2)} · <span className="text-gray-500">Gateway:</span> ₹{selectedTicket.paymentContext.gatewayPaid.toFixed(2)}</p>
+														<p><span className="text-gray-500">Refunded:</span> ₹{selectedTicket.paymentContext.refundedSoFar.toFixed(2)}</p>
+														<p className="font-semibold text-green-800"><span className="text-gray-500 font-normal">Refundable now:</span> ₹{selectedTicket.paymentContext.refundableBalance.toFixed(2)}</p>
+														{selectedTicket.paymentContext.razorpayPaymentId && (
+															<p className="font-mono text-xs text-gray-500 break-all">Razorpay: {selectedTicket.paymentContext.razorpayPaymentId}</p>
+														)}
+													</div>
+												) : (
+													<p className="text-sm text-amber-800">{selectedTicket.refundBlockReason || "No payment data for this booking."}</p>
+												)}
+											</Card>
+										</div>
+									)}
+
+									{!isBookingTicket(selectedTicket) && (
+										<div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+											General inquiry ticket — refunds are disabled until a booking is attached.
+										</div>
+									)}
 								</div>
 
 								{/* Conversation Area */}
@@ -1010,14 +1249,44 @@ export default function SupportCRM() {
 										</p>
 									</div>
 
+									{selectedTicket.metadata?.refund_result != null && (
+										<div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+											<h4 className="text-sm font-bold text-gray-800 mb-2">Refund status</h4>
+											{(() => {
+												const rr = selectedTicket.metadata?.refund_result as Record<string, unknown> | null;
+												if (!rr) return null;
+												return (
+													<div className="space-y-1 text-sm text-gray-700">
+														<p><span className="text-gray-500">Status:</span> {String(rr.status ?? "—")}</p>
+														{rr.amount != null && <p><span className="text-gray-500">Amount:</span> ₹{Number(rr.amount).toFixed(2)}</p>}
+														{rr.refundId != null && <p className="font-mono text-xs break-all"><span className="text-gray-500 font-sans">Refund ID:</span> {String(rr.refundId)}</p>}
+														{rr.razorpayRefundId != null && <p className="font-mono text-xs break-all"><span className="text-gray-500 font-sans">Razorpay:</span> {String(rr.razorpayRefundId)}</p>}
+														{rr.walletCredited != null && Number(rr.walletCredited) > 0 && (
+															<p><span className="text-gray-500">Wallet credited:</span> ₹{Number(rr.walletCredited).toFixed(2)}</p>
+														)}
+														{rr.message != null && <p className="text-gray-600">{String(rr.message)}</p>}
+													</div>
+												);
+											})()}
+										</div>
+									)}
+
 									{selectedTicket.metadata &&
-										Object.keys(selectedTicket.metadata).length > 0 && (
-											<div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-												<h4 className="text-sm font-bold text-gray-800 mb-2">Ticket metadata</h4>
-												<pre className="text-xs text-gray-600 whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto">
-													{JSON.stringify(selectedTicket.metadata, null, 2)}
+										Object.keys(selectedTicket.metadata).filter((k) => k !== "refund_result" && k !== "attachments").length > 0 && (
+											<details className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+												<summary className="text-sm font-bold text-gray-800 cursor-pointer">Additional metadata</summary>
+												<pre className="text-xs text-gray-600 whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto mt-2">
+													{JSON.stringify(
+														Object.fromEntries(
+															Object.entries(selectedTicket.metadata).filter(
+																([k]) => k !== "refund_result" && k !== "attachments"
+															)
+														),
+														null,
+														2
+													)}
 												</pre>
-											</div>
+											</details>
 										)}
 
 									{selectedTicket.aiConversation && selectedTicket.aiConversation.length > 0 && (
@@ -1237,8 +1506,13 @@ export default function SupportCRM() {
 							<div>
 								<p className="text-sm font-semibold text-gray-800">Partial Refund</p>
 								<p className="text-xs text-gray-600 mt-1">
-									The specified amount will be refunded via Razorpay within 5-7 business days.
+									Refund goes to the customer — wallet portion instantly, Razorpay portion in 5–7 business days.
 								</p>
+								{selectedTicket?.paymentContext && (
+									<p className="text-xs font-semibold text-green-800 mt-2">
+										Max refundable: ₹{selectedTicket.paymentContext.refundableBalance.toFixed(2)}
+									</p>
+								)}
 							</div>
 						</div>
 						<div>
@@ -1289,6 +1563,41 @@ export default function SupportCRM() {
 						>
 							<IndianRupee className="w-4 h-4 mr-1.5" />
 							Process Partial Refund
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			<Dialog open={showAttachBookingModal} onOpenChange={setShowAttachBookingModal}>
+				<DialogContent className="sm:max-w-md">
+					<DialogHeader>
+						<DialogTitle className="flex items-center gap-2">
+							<Link2 className="w-5 h-5 text-blue-600" />
+							Attach booking to ticket
+						</DialogTitle>
+						<DialogDescription>
+							Link this general ticket to a booking so refunds can be processed for the paying customer.
+						</DialogDescription>
+					</DialogHeader>
+					<div className="py-4">
+						<label className="text-sm font-medium text-gray-700 mb-1.5 block">Booking ID *</label>
+						<Input
+							value={attachBookingId}
+							onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAttachBookingId(e.target.value)}
+							placeholder="Paste booking UUID"
+							className="font-mono text-sm"
+						/>
+					</div>
+					<DialogFooter className="gap-2">
+						<Button variant="outline" onClick={() => setShowAttachBookingModal(false)}>
+							Cancel
+						</Button>
+						<Button
+							onClick={handleAttachBooking}
+							disabled={attachBookingLoading || !attachBookingId.trim()}
+							className="bg-blue-600 hover:bg-blue-700 text-white"
+						>
+							{attachBookingLoading ? "Linking…" : "Attach booking"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>

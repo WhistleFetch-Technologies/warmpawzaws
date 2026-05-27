@@ -1,5 +1,5 @@
 /**
- * Pack weight (grams) for meal products — stored in meal_plans.dietary_requirements JSON.
+ * Pack weight (grams) for meal products — meal_plans.pack_weight_grams column (preferred) or dietary JSON.
  */
 
 export function resolvePackWeightGramsFromDietary(
@@ -36,4 +36,15 @@ export function parseMealPlanDietaryJson(raw: unknown): Record<string, unknown> 
     }
   }
   return {};
+}
+
+export function resolvePackWeightGramsFromPlanRow(
+  plan: Record<string, unknown>,
+): number | null {
+  const col = plan.pack_weight_grams;
+  if (col != null && col !== '') {
+    const n = typeof col === 'number' ? col : parseInt(String(col), 10);
+    if (Number.isFinite(n) && n >= 1 && n <= 50_000) return n;
+  }
+  return resolvePackWeightGramsFromDietary(parseMealPlanDietaryJson(plan.dietary_requirements));
 }

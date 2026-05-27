@@ -36,6 +36,8 @@ import {
   resolveSameDayAllowedForPlan,
 } from '../utils/meal-booking-policy';
 import { parseOrderCutoffHm } from '../utils/meal-product-timing';
+import { resolvePackWeightGramsFromPlanRow } from '../utils/meal-pack-weight';
+import { mergeMealPlanCatalogForApi } from '../utils/meal-product-persistence';
 import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr, resolveMealPurchaseSubtotalInr } from '../utils/meal-order-pricing';
 import { ensureMealPlanMirrorForProductCheckout, normalizeProductRowToMealPlanShape, resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
 import {
@@ -1409,8 +1411,16 @@ export function registerMealPlanEndpoints(app: Hono) {
       );
       const totalAmount = Math.round((totalAmountBeforeGst + mealGstOrder.totalGstAmount) * 100) / 100;
 
+      const catalogSnap = mergeMealPlanCatalogForApi(plan as Record<string, unknown>, plan.dietary_requirements);
+      const packWeightGrams = resolvePackWeightGramsFromPlanRow(plan as Record<string, unknown>);
+
       const purchase_snapshot = {
         purchaseType: expectedPurchaseType,
+        packWeightGrams: packWeightGrams ?? undefined,
+        mealsPerDelivery: catalogSnap.mealsPerDelivery,
+        deliveryDays: catalogSnap.deliveryDays,
+        deliveryFrequency: catalogSnap.deliveryFrequency,
+        mealsPerDay: catalogSnap.mealsPerDay,
         subscriptionConfig: subscriptionConfigSnap,
         deliveryAddress: {
           ...normalizedAddress,

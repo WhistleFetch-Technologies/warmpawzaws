@@ -794,18 +794,25 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       const earnVeFragRanged = earnSupCtx
         ? ` AND ${sqlExcludeSuppressedVendorEarningsRows('ve', 3, 4)}`
         : '';
+      const earningsBookingSelect = `ve.*,
+           b.booking_date,
+           b.service_id,
+           COALESCE(sc.display_name, sc.service_name, s.name, vs.service_name, b.service_name, 'Service') as service_name,
+           c.full_name as customer_name`;
+      const earningsBookingJoins = `
+           LEFT JOIN bookings b ON ve.booking_id = b.id
+           LEFT JOIN service_catalog sc ON b.service_id = sc.id
+           LEFT JOIN services s ON b.service_id = s.id
+           LEFT JOIN vendor_services vs ON b.service_id = vs.id
+           LEFT JOIN customers c ON b.customer_id = c.id`;
       const earningsQuery =
         period === 'lifetime'
-          ? `SELECT ve.*, b.booking_date, b.service_id, s.name as service_name
-           FROM vendor_earnings ve
-           LEFT JOIN bookings b ON ve.booking_id = b.id
-           LEFT JOIN services s ON b.service_id = s.id
+          ? `SELECT ${earningsBookingSelect}
+           FROM vendor_earnings ve${earningsBookingJoins}
            WHERE ve.vendor_id = ANY($1::uuid[])${earnVeFragLifetime}
            ORDER BY ve.realized_at DESC`
-          : `SELECT ve.*, b.booking_date, b.service_id, s.name as service_name
-           FROM vendor_earnings ve
-           LEFT JOIN bookings b ON ve.booking_id = b.id
-           LEFT JOIN services s ON b.service_id = s.id
+          : `SELECT ${earningsBookingSelect}
+           FROM vendor_earnings ve${earningsBookingJoins}
            WHERE ve.vendor_id = ANY($1::uuid[])
              AND ve.realized_at >= $2${earnVeFragRanged}
            ORDER BY ve.realized_at DESC`;
@@ -913,6 +920,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         bookingId: e.booking_id,
         bookingDate: e.booking_date,
         serviceName: e.service_name || 'Service',
+        customerName: e.customer_name || 'Customer',
         amount: safeMoneyAmount(e.amount),
         commission: safeMoneyAmount(e.commission_amount),
         totalAmount: safeMoneyAmount(e.total_amount),

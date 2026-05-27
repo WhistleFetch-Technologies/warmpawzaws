@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { MapPin, Calendar, Clock, User, Phone, Mail, Navigation, X, AlertTriangle, Wallet as WalletIcon, Video, MessageSquare } from 'lucide-react';
+import { MapPin, Calendar, Clock, User, Phone, Mail, Navigation, X, AlertTriangle, Wallet as WalletIcon, Video, MessageSquare, HelpCircle } from 'lucide-react';
+import { navigateToBookingSupport } from '@/lib/support-contact';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import {
@@ -554,8 +555,6 @@ export function AppointmentDetailsView({
         {isTeleActive && (
           <Button
             onClick={() => {
-              // Open chat - can navigate to booking details with chat mode
-              // This will need proper navigation handler
               window.location.href = `/booking/${appointmentId}?chat=true`;
             }}
             variant="outline"
@@ -565,6 +564,25 @@ export function AppointmentDetailsView({
             Chat with Provider
           </Button>
         )}
+
+        <Button
+          onClick={() => {
+            const bookingId = String(appointment?.bookingId || appointment?.id || appointmentId);
+            navigateToBookingSupport(router, {
+              bookingId,
+              serviceName: appointment?.serviceName,
+              bookingDate: appointment?.date,
+              amount: appointment?.amount,
+              status: appointment?.status,
+              vendorName: appointment?.vendorName || vendor?.clinicName,
+            });
+          }}
+          variant="outline"
+          className="w-full mt-3 border-[#FF8C42]/40 text-[#FF8C42] hover:bg-[#FFF3E8]"
+        >
+          <HelpCircle className="w-4 h-4 mr-2" />
+          Need help with this booking
+        </Button>
 
         {/* Cancellation Info (if cancelled) */}
         {appointment.status === 'cancelled' && (

@@ -808,10 +808,10 @@ export function VendorBookingManagement({
         return {
           id: String(t.id || t.transactionId || Math.random()),
           date: credited,
-          service: t.serviceName || t.service || 'Service',
+          service: t.serviceName || t.service_name || t.service || 'Service',
           amount: Number(t.amount || t.price || 0) || 0,
           status: t.status || 'completed',
-          customer: t.customerName || t.customer || 'Customer',
+          customer: t.customerName || t.customer_name || t.customer || 'Customer',
         };
       });
       
