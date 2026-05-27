@@ -256,6 +256,13 @@ export default function SupportCRM() {
 				apiClient.get<any>(`/crm/tickets${ticketTypeQuery}`),
 				apiClient.get<any>("/crm/stats").catch(() => null),
 			]);
+
+			const rawStats = statsRes?.stats ?? statsRes ?? {};
+			const parseStat = (snake: string, camel: string, fallback = 0) => {
+				const v = rawStats[snake] ?? rawStats[camel];
+				const n = Number(v);
+				return Number.isFinite(n) ? n : fallback;
+			};
 			
 			if (ticketsRes.success) {
 				const rawList = ticketsRes.tickets || [];
@@ -266,25 +273,30 @@ export default function SupportCRM() {
 				}));
 				setTickets(ticketList);
 				
-				// Calculate stats - use API stats if available, otherwise calculate locally
 				const today = new Date().toDateString();
-				const todayTickets = ticketList.filter((t: Ticket) => 
+				const todayTicketsFromList = ticketList.filter((t: Ticket) => 
 					new Date(t.createdAt).toDateString() === today
 				).length;
-				
-				const avgResponseTime = statsRes?.avgResponseTime || calculateAvgResponseTime(ticketList);
+
+				// Top-row stats always reflect all tickets (from /crm/stats), not type filter
+				const avgHours = parseStat("avg_resolution_hours", "avgResolutionHours", 0);
+				const avgResponseTime =
+					statsRes?.avgResponseTime ||
+					(avgHours > 0
+						? avgHours < 1
+							? `${Math.round(avgHours * 60)}m`
+							: `${Math.round(avgHours)}h`
+						: calculateAvgResponseTime(ticketList));
 				
 				setStats({
-					totalTickets: statsRes?.totalTickets ?? ticketList.length,
-					openTickets: statsRes?.openTickets ?? ticketList.filter((t: Ticket) => t.status === 'open').length,
-					inProgressTickets: statsRes?.inProgressTickets ?? ticketList.filter((t: Ticket) => t.status === 'in_progress').length,
-					resolvedTickets: statsRes?.resolvedTickets ?? ticketList.filter((t: Ticket) => t.status === 'resolved' || t.status === 'closed').length,
-					escalatedTickets: statsRes?.escalatedTickets ?? ticketList.filter((t: Ticket) => t.status === 'escalated').length,
+					totalTickets: parseStat("total_tickets", "totalTickets", ticketList.length),
+					openTickets: parseStat("open_tickets", "openTickets", ticketList.filter((t) => t.status === "open").length),
+					inProgressTickets: parseStat("in_progress_tickets", "inProgressTickets", ticketList.filter((t) => t.status === "in_progress").length),
+					resolvedTickets: parseStat("resolved_tickets", "resolvedTickets", ticketList.filter((t) => t.status === "resolved" || t.status === "closed").length),
+					escalatedTickets: parseStat("escalated_tickets", "escalatedTickets", ticketList.filter((t) => t.status === "escalated").length),
 					avgResponseTime,
-					todayTickets: statsRes?.todayTickets ?? todayTickets,
-					pendingRefunds: statsRes?.pendingRefunds ?? ticketList.filter((t: Ticket) => 
-						(t as any).refundStatus === 'pending'
-					).length,
+					todayTickets: parseStat("today_tickets", "todayTickets", todayTicketsFromList),
+					pendingRefunds: parseStat("pending_refunds", "pendingRefunds", ticketList.filter((t) => t.refundRequested && !t.refundStatus).length),
 				});
 				
 				// Reload selected ticket if it exists
@@ -296,6 +308,8 @@ export default function SupportCRM() {
 						loadTicketDetails(updated.id);
 					}
 				}
+			} else {
+				toast.error(ticketsRes?.error || "Failed to load support tickets");
 			}
 		} catch (error) {
 			console.error("Failed to load tickets:", error);

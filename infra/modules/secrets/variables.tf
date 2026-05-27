@@ -66,6 +66,13 @@ variable "fcm_server_key" {
   sensitive   = true
 }
 
+variable "firebase_service_account_json" {
+  description = "Firebase Admin SDK service account JSON for FCM HTTP v1 API (project_id, private_key, client_email). Stored in Secrets Manager as warmpawz/{env}/firebase."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "apns_certificate" {
   description = "Apple Push Notification Service certificate (required if enable_ios_push is true)"
   type        = string

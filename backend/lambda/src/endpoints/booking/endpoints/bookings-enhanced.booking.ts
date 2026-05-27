@@ -35,7 +35,10 @@ import { validateServiceAvailability } from '../../../utils/service-availability
 import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../../../utils/entity-extractor';
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
-import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
+import {
+  previewCustomerCancellationRefundByMethod,
+  normalizeCustomerCancellationRefundMethod,
+} from '../../../lib/services/cancellation-policy-service';
 import { computeHoursUntilBookingStart } from '../../../lib/utils/booking-start-wall-time';
 import { hasCustomerPaidCapture } from '../../../lib/services/refundable-base';
 import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
@@ -3006,12 +3009,14 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
 class GetRefundPreviewHandler extends BaseHandlerEnhanced {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    const { bookingId } = body;
+    const { bookingId, refundMethod: refundMethodRaw } = body;
     const requestId = context.requestId;
 
     if (!bookingId) {
       return this.error('bookingId is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
+
+    const refundMethod = normalizeCustomerCancellationRefundMethod(refundMethodRaw);
 
     try {
       // Get booking details
@@ -3021,7 +3026,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
       }
 
       const booking = bookings[0];
-      const preview = await previewCustomerCancellationRefund({
+      const bookingForPolicy = {
         id: bookingId,
         vendor_id: booking.vendor_id,
         service_id: booking.service_id,
@@ -3033,24 +3038,34 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
         vendor_timezone: (booking as any).vendor_timezone ?? null,
         total_amount: booking.total_amount,
         discount_amount: booking.discount_amount,
-      });
+      };
+      const preview = await previewCustomerCancellationRefundByMethod(bookingForPolicy, refundMethod);
 
       const platformFeeNonRefundable = Math.round(preview.platformFeeNonRefundable * 100) / 100;
+      const refundAmountRounded = Math.round(preview.refundAmount * 100) / 100;
+      const message =
+        refundMethod === 'wallet'
+          ? refundAmountRounded > 0
+            ? `₹${refundAmountRounded} will be credited to your Warmpawz wallet (100% refund; cancellation policy does not apply)`
+            : 'No refund amount available for wallet credit'
+          : refundAmountRounded > 0
+            ? `₹${refundAmountRounded} will be refunded per cancellation policy (${Math.round(preview.refundPercentage)}%)`
+            : 'No refund available per cancellation policy';
+
       return this.success({
+        refundMethod,
         refund: {
           eligible: preview.refundPercentage > 0 || preview.refundAmount > 0,
-          refundAmount: Math.round(preview.refundAmount * 100) / 100,
+          refundAmount: refundAmountRounded,
           refundPercentage: Math.round(preview.refundPercentage),
           cancellationFee: Math.round(preview.cancellationFee * 100) / 100,
           source: preview.source,
           policyApplied: preview.policyApplied,
           refundableCustomerPaidBase: Math.round(preview.refundableCustomerPaidBase * 100) / 100,
           platformFeeNonRefundable,
-          platformFeeApplies: platformFeeNonRefundable > 0,
+          platformFeeApplies: refundMethod === 'original' && platformFeeNonRefundable > 0,
           hoursUntilBooking: Math.round((preview.hoursUntilBooking ?? 0) * 100) / 100,
-          message: preview.refundAmount > 0
-            ? `₹${Math.round(preview.refundAmount * 100) / 100} will be refunded to your original payment method`
-            : 'No refund available for this booking',
+          message,
         },
       }, requestId);
     } catch (error: unknown) {
@@ -3305,19 +3320,22 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       let refundInfo = null;
       if (bookingPaidForRefund) {
         try {
-          const preview = await previewCustomerCancellationRefund({
-            id: bookingId,
-            vendor_id: currentBooking.vendor_id,
-            service_id: currentBooking.service_id,
-            service_type: currentBooking.service_type,
-            booking_datetime: currentBooking.booking_datetime || null,
-            scheduled_at: currentBooking.scheduled_at || null,
-            booking_date: currentBooking.booking_date,
-            booking_time: currentBooking.booking_time,
-            vendor_timezone: (currentBooking as any).vendor_timezone ?? null,
-            total_amount: currentBooking.total_amount,
-            discount_amount: currentBooking.discount_amount,
-          });
+          const preview = await previewCustomerCancellationRefundByMethod(
+            {
+              id: bookingId,
+              vendor_id: currentBooking.vendor_id,
+              service_id: currentBooking.service_id,
+              service_type: currentBooking.service_type,
+              booking_datetime: currentBooking.booking_datetime || null,
+              scheduled_at: currentBooking.scheduled_at || null,
+              booking_date: currentBooking.booking_date,
+              booking_time: currentBooking.booking_time,
+              vendor_timezone: (currentBooking as any).vendor_timezone ?? null,
+              total_amount: currentBooking.total_amount,
+              discount_amount: currentBooking.discount_amount,
+            },
+            refundMethod
+          );
           const refundAmount = Math.round(preview.refundAmount * 100) / 100;
           const refundPercentage = preview.refundPercentage;
           

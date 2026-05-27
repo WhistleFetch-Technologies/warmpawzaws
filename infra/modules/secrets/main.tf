@@ -85,6 +85,30 @@ resource "aws_secretsmanager_secret_version" "shiprocket" {
   })
 }
 
+# Firebase Admin SDK service account (FCM HTTP v1 — used by backend/lambda firebase-client.ts)
+resource "aws_secretsmanager_secret" "firebase" {
+  count                   = var.firebase_service_account_json != "" ? 1 : 0
+  name                    = "warmpawz/${var.environment}/firebase"
+  description             = "Firebase Admin SDK service account for push notifications"
+  recovery_window_in_days = var.environment == "prod" ? 30 : 0
+
+  tags = {
+    Name        = "warmpawz-${var.environment}-firebase"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    prevent_destroy       = true
+    create_before_destroy = true
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "firebase" {
+  count     = var.firebase_service_account_json != "" ? 1 : 0
+  secret_id = aws_secretsmanager_secret.firebase[0].id
+  secret_string = var.firebase_service_account_json
+}
+
 # SNS Platform Application for Push Notifications (Android)
 # Note: aws_sns_platform_application doesn't support tags
 resource "aws_sns_platform_application" "android_customer" {

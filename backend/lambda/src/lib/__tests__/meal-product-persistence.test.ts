@@ -1,4 +1,6 @@
 import {
+  dietTypeFromDbColumn,
+  dietTypeToDbColumn,
   mergeMealPlanCatalogForApi,
   resolveMealsPerDayColumn,
   resolveMealsPerDeliveryColumn,
@@ -46,6 +48,13 @@ describe('meal-product-persistence', () => {
     p.deliveryFrequency = 'DAILY';
     expect(resolveMealsPerDayColumn('MONTHLY_PLAN', p)).toBe(2);
     expect(resolveMealsPerDeliveryColumn('MONTHLY_PLAN', p)).toBeNull();
+  });
+
+  it('diet_type maps to PG array or scalar by column type', () => {
+    expect(dietTypeToDbColumn('Non-Veg', true)).toEqual(['Non-Veg']);
+    expect(dietTypeToDbColumn('Veg', false)).toBe('Veg');
+    expect(dietTypeFromDbColumn(['Non-Veg'])).toBe('Non-Veg');
+    expect(dietTypeFromDbColumn('Egg')).toBe('Egg');
   });
 
   it('merge prefers columns over JSON', () => {

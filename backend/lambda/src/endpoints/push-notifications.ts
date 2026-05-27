@@ -193,7 +193,6 @@ export function registerPushNotificationEndpoints(app: Hono) {
       });
 
       return c.json(result);
-      return c.json(result);
     } catch (error: any) {
       console.error('Error sending push notification:', error);
       return c.json({ error: error.message }, 500);

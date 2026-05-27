@@ -17,7 +17,10 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query } from '../../../database/rds-connection';
-import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
+import {
+  previewCustomerCancellationRefundByMethod,
+  normalizeCustomerCancellationRefundMethod,
+} from '../../../lib/services/cancellation-policy-service';
 import { hasCustomerPaidCapture } from '../../../lib/services/refundable-base';
 import { computeHoursUntilBookingStart } from '../../../lib/utils/booking-start-wall-time';
 import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
@@ -428,19 +431,22 @@ class CancelAppointmentHandler extends BaseHandler {
       );
       if (bookingPaidForRefund) {
         try {
-          const preview = await previewCustomerCancellationRefund({
-            id: bookingId,
-            vendor_id: bookingRow.vendor_id,
-            service_id: bookingRow.service_id,
-            service_type: bookingRow.service_type,
-            booking_datetime: (bookingRow as any).booking_datetime ?? null,
-            scheduled_at: (bookingRow as any).scheduled_at ?? null,
-            booking_date: String(bookingRow.booking_date),
-            booking_time: String(bookingRow.booking_time),
-            vendor_timezone: (bookingRow as any).vendor_timezone ?? null,
-            total_amount: bookingRow.total_amount,
-            discount_amount: (bookingRow as any).discount_amount ?? null,
-          });
+          const preview = await previewCustomerCancellationRefundByMethod(
+            {
+              id: bookingId,
+              vendor_id: bookingRow.vendor_id,
+              service_id: bookingRow.service_id,
+              service_type: bookingRow.service_type,
+              booking_datetime: (bookingRow as any).booking_datetime ?? null,
+              scheduled_at: (bookingRow as any).scheduled_at ?? null,
+              booking_date: String(bookingRow.booking_date),
+              booking_time: String(bookingRow.booking_time),
+              vendor_timezone: (bookingRow as any).vendor_timezone ?? null,
+              total_amount: bookingRow.total_amount,
+              discount_amount: (bookingRow as any).discount_amount ?? null,
+            },
+            normalizeCustomerCancellationRefundMethod(refundMethod)
+          );
           const refundAmount = Math.round(preview.refundAmount * 100) / 100;
           const refundPercentage = preview.refundPercentage;
           if (refundAmount > 0) {

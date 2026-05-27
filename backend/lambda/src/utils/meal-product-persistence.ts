@@ -7,6 +7,7 @@
  */
 
 import type { MealsPerDayPreset, PurchaseType } from '../constants/meal-product-enums';
+import { query } from '../database/rds-connection';
 import {
   mealsPerDayColumnFromPreset,
   resolveMealsPerDeliveryNumeric,
@@ -21,6 +22,40 @@ import {
 export { resolvePackWeightGramsFromPlanRow };
 
 export type MealPlanColumnSet = Set<string>;
+
+let cachedMealPlanDietTypeIsArray: boolean | null = null;
+
+/** Legacy meal_plans.diet_type is VARCHAR(50)[] (migration 200); 1021 adds scalar only when column missing. */
+export async function mealPlanDietTypeColumnIsArray(): Promise<boolean> {
+  if (cachedMealPlanDietTypeIsArray != null) return cachedMealPlanDietTypeIsArray;
+  try {
+    const r = await query(
+      `SELECT data_type FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'meal_plans' AND column_name = 'diet_type'
+       LIMIT 1`,
+    );
+    cachedMealPlanDietTypeIsArray = String(r.rows?.[0]?.data_type || '').toUpperCase() === 'ARRAY';
+  } catch {
+    cachedMealPlanDietTypeIsArray = true;
+  }
+  return cachedMealPlanDietTypeIsArray;
+}
+
+export function dietTypeFromDbColumn(dt: unknown): string | undefined {
+  if (dt == null) return undefined;
+  if (Array.isArray(dt)) {
+    const first = dt.find((x) => typeof x === 'string' && String(x).trim());
+    return first ? String(first).trim() : undefined;
+  }
+  if (typeof dt === 'string' && dt.trim()) return dt.trim();
+  return undefined;
+}
+
+export function dietTypeToDbColumn(dietType: string, isArrayColumn: boolean): string | string[] {
+  const t = String(dietType || '').trim();
+  if (!t) return isArrayColumn ? [] : '';
+  return isArrayColumn ? [t] : t;
+}
 
 /** meals_per_day column value; null for weekly (use meals_per_delivery). */
 export function resolveMealsPerDayColumn(
@@ -86,8 +121,9 @@ export function buildMealPlanRowFromProduct(
   parsed: MealProductParsedCore,
   dietaryPayload: Record<string, unknown>,
   mpCols: MealPlanColumnSet,
-  opts: { mealImageUrl?: string },
+  opts: { mealImageUrl?: string; dietTypeColumnIsArray?: boolean },
 ): Record<string, unknown> {
+  const dietTypeIsArray = opts.dietTypeColumnIsArray !== false;
   const pt = parsed.purchaseType;
   const mealsPerDay = resolveMealsPerDayColumn(pt, parsed);
   const mealsPerDelivery = resolveMealsPerDeliveryColumn(pt, parsed);
@@ -139,7 +175,9 @@ export function buildMealPlanRowFromProduct(
     row.recommended_plan_weeks = parsed.recommendedPlanLengthWeeks;
   }
   if (mpCols.has('preparation_type')) row.preparation_type = parsed.preparationType;
-  if (mpCols.has('diet_type')) row.diet_type = parsed.dietType;
+  if (mpCols.has('diet_type')) {
+    row.diet_type = dietTypeToDbColumn(parsed.dietType, dietTypeIsArray);
+  }
   if (mpCols.has('pet_types') && parsed.petTypes?.length) row.pet_types = parsed.petTypes;
   if (mpCols.has('meal_categories') && parsed.mealCategories?.length) {
     row.meal_categories = parsed.mealCategories;
@@ -158,9 +196,10 @@ export function pushMealPlanStructuredUpdates(
   mpCols: MealPlanColumnSet,
   parsed: MealProductParsedCore,
   dietaryPayload: Record<string, unknown>,
-  opts: { mealImageUrl?: string },
+  opts: { mealImageUrl?: string; dietTypeColumnIsArray?: boolean },
   ctx: { nextPh: number; extras: string; mpParams: unknown[] },
 ): void {
+  const dietTypeIsArray = opts.dietTypeColumnIsArray !== false;
   let { nextPh, extras, mpParams } = ctx;
   const pt = parsed.purchaseType;
 
@@ -203,7 +242,7 @@ export function pushMealPlanStructuredUpdates(
     push('recommended_plan_weeks', parsed.recommendedPlanLengthWeeks);
   }
   push('preparation_type', parsed.preparationType);
-  push('diet_type', parsed.dietType);
+  push('diet_type', dietTypeToDbColumn(parsed.dietType, dietTypeIsArray));
   if (parsed.petTypes?.length) push('pet_types', parsed.petTypes);
   if (parsed.mealCategories?.length) push('meal_categories', parsed.mealCategories);
   if (parsed.medicalConditionTags?.length) {
@@ -285,7 +324,7 @@ export function mergeMealPlanCatalogForApi(
       (typeof mp.meal_image_url === 'string' && mp.meal_image_url) ||
       d.mealImageUrl,
     preparationType: mp.preparation_type || d.preparationType,
-    dietType: mp.diet_type || d.dietType,
+    dietType: dietTypeFromDbColumn(mp.diet_type) || d.dietType,
     petTypes: Array.isArray(mp.pet_types) ? mp.pet_types : d.petTypes,
     mealCategories: Array.isArray(mp.meal_categories) ? mp.meal_categories : d.mealCategories,
     medicalConditionTags: Array.isArray(mp.medical_condition_tags)

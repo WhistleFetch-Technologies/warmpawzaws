@@ -39,7 +39,7 @@ function HelpPageContent() {
   }, [searchParams]);
 
   const shellClass =
-    'w-full max-w-customer min-h-[100dvh] mx-auto flex flex-col bg-[#FAF6F0] rounded-t-3xl overflow-hidden shadow-[0_0_0_1px_rgba(0,0,0,0.04)]';
+    'w-full max-w-customer h-[100dvh] mx-auto flex flex-col overflow-hidden bg-[#FAF6F0] rounded-t-3xl shadow-[0_0_0_1px_rgba(0,0,0,0.04)]';
 
   if (!phone) {
     return (
@@ -56,8 +56,8 @@ function HelpPageContent() {
   }
 
   return (
-    <div className="min-h-[100dvh] flex justify-center bg-[#FAF6F0]">
-      <div className={`${shellClass} overflow-y-auto overscroll-y-contain`}>
+    <div className="h-[100dvh] flex justify-center bg-[#FAF6F0] overflow-hidden">
+      <div className={shellClass}>
         <SupportHelpCenter
           phone={phone}
           onBack={() => handleHelpPageBack(router)}

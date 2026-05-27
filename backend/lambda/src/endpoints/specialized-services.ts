@@ -55,6 +55,7 @@ import {
 } from '../utils/meal-product-dietary';
 import {
   buildMealPlanRowFromProduct,
+  mealPlanDietTypeColumnIsArray,
   mergeMealPlanCatalogForApi,
   pushMealPlanStructuredUpdates,
   resolveMealsPerDayColumn,
@@ -2090,12 +2091,13 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
 
       // Prefer meal_plans (legacy nutrition catalog); fall back to products only on schema-level failures.
       const mpCols = await getPublicTableColumns('meal_plans');
+      const dietTypeIsArray = await mealPlanDietTypeColumnIsArray();
       const mealPlanRow = buildMealPlanRowFromProduct(
         vendorId,
         parsedCore,
         dietaryPayload,
         mpCols,
-        { mealImageUrl },
+        { mealImageUrl, dietTypeColumnIsArray: dietTypeIsArray },
       );
 
       try {
@@ -2277,6 +2279,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       );
       if (mealPlanCheck.rows?.length > 0) {
         const mpCols = await getPublicTableColumns('meal_plans');
+        const dietTypeIsArray = await mealPlanDietTypeColumnIsArray();
         const parsedCore = p as MealProductParsedCore;
         const mealsPerDayCol = resolveMealsPerDayColumn(parsedCore.purchaseType, parsedCore);
         const mpParams: unknown[] = [
@@ -2290,6 +2293,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         const updateCtx = { nextPh: 6, extras: '', mpParams };
         pushMealPlanStructuredUpdates(mpCols, parsedCore, dietaryPayload, {
           mealImageUrl: resolvedMealImageUrl ?? undefined,
+          dietTypeColumnIsArray: dietTypeIsArray,
         }, updateCtx);
         const idPh = updateCtx.nextPh + 1;
         const vendorPh = updateCtx.nextPh + 2;

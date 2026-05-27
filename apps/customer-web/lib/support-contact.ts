@@ -40,7 +40,7 @@ export function storeSupportBookingContext(ctx: SupportBookingContext): void {
   if (typeof window === 'undefined') return;
   try {
     sessionStorage.setItem(SUPPORT_BOOKING_CONTEXT_KEY, JSON.stringify(ctx));
-    sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, 'contact');
+    sessionStorage.setItem(SUPPORT_INITIAL_TAB_KEY, 'tickets');
   } catch {
     /* ignore */
   }

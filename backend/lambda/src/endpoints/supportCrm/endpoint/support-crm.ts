@@ -92,8 +92,12 @@ export function registerSupportCrmEndpoints(app: Hono) {
         if (!resolvedCategory || resolvedCategory === 'general') {
           resolvedCategory = 'billing';
         }
-        bookingSnapshot = await buildBookingSnapshot(resolvedBookingId);
-        paymentSnapshot = await buildPaymentSnapshot(resolvedBookingId);
+        try {
+          bookingSnapshot = await buildBookingSnapshot(resolvedBookingId);
+          paymentSnapshot = await buildPaymentSnapshot(resolvedBookingId);
+        } catch (snapErr) {
+          console.warn('[support/tickets] booking snapshot failed (ticket will still be created):', snapErr);
+        }
       } else {
         ticketType = 'general';
         if (!resolvedCategory) resolvedCategory = 'general';
@@ -495,7 +499,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       const status = c.req.query('status');
       const priority = c.req.query('priority');
       const ticketType = c.req.query('ticketType');
-      const limit = parseInt(c.req.query('limit') || '50', 10);
+      const limit = parseInt(c.req.query('limit') || '100', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
 
       let queryStr = `
@@ -540,8 +544,13 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
       const safeTickets = await Promise.all(
         (tickets.rows || []).map(async (t: any) => {
-          const enrichment = await enrichSupportTicket(t);
-          return mapTicketForCrmList(t, enrichment);
+          try {
+            const enrichment = await enrichSupportTicket(t);
+            return mapTicketForCrmList(t, enrichment);
+          } catch (err) {
+            console.warn('[CRM] ticket enrichment failed:', t?.id, err);
+            return mapTicketForCrmList(t);
+          }
         })
       );
 
@@ -552,7 +561,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching CRM tickets:', error);
-      return c.json({ success: true, tickets: [], count: 0 });
+      return c.json({ success: false, error: error.message || 'Failed to fetch tickets', tickets: [], count: 0 }, 500);
     }
   });
 

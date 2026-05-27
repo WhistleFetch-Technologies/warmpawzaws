@@ -81,37 +81,43 @@ export async function validateBookingTicketLink(
 }
 
 export async function buildBookingSnapshot(bookingId: string): Promise<BookingSnapshot | null> {
-  const res = await query(
-    `SELECT b.id::text, b.status, b.booking_date, b.booking_time, b.total_amount::text,
-            b.payment_status, b.service_style, b.vendor_id::text,
-            COALESCE(s.name, b.service_name, b.service_type) AS service_name,
-            v.business_name AS vendor_name
-     FROM bookings b
-     LEFT JOIN services s ON b.service_id = s.id
-     LEFT JOIN vendors v ON b.vendor_id = v.id
-     WHERE b.id = $1::uuid
-     LIMIT 1`,
-    [bookingId]
-  );
-  const row = (res as { rows?: Record<string, unknown>[] }).rows?.[0];
-  if (!row?.id) return null;
+  try {
+    const res = await query(
+      `SELECT b.id::text, b.status, b.booking_date, b.booking_time, b.total_amount::text,
+              b.payment_status, b.service_style, b.service_type, b.vendor_id::text,
+              COALESCE(s.name, b.service_type) AS service_name,
+              v.business_name AS vendor_name
+       FROM bookings b
+       LEFT JOIN services s ON b.service_id = s.id
+       LEFT JOIN vendors v ON b.vendor_id = v.id
+       WHERE b.id = $1::uuid
+       LIMIT 1`,
+      [bookingId]
+    );
+    const row = (res as { rows?: Record<string, unknown>[] }).rows?.[0];
+    if (!row?.id) return null;
 
-  return {
-    id: String(row.id),
-    status: String(row.status ?? ''),
-    serviceName: row.service_name ? String(row.service_name) : undefined,
-    serviceStyle: row.service_style ? String(row.service_style) : undefined,
-    scheduledDate: row.booking_date ? String(row.booking_date) : undefined,
-    scheduledTime: row.booking_time ? String(row.booking_time) : undefined,
-    amount: parseFloat(String(row.total_amount ?? '0')) || 0,
-    vendorId: row.vendor_id ? String(row.vendor_id) : undefined,
-    vendorName: row.vendor_name ? String(row.vendor_name) : undefined,
-    paymentStatus: row.payment_status ? String(row.payment_status) : undefined,
-  };
+    return {
+      id: String(row.id),
+      status: String(row.status ?? ''),
+      serviceName: row.service_name ? String(row.service_name) : undefined,
+      serviceStyle: row.service_style ? String(row.service_style) : undefined,
+      scheduledDate: row.booking_date ? String(row.booking_date) : undefined,
+      scheduledTime: row.booking_time ? String(row.booking_time) : undefined,
+      amount: parseFloat(String(row.total_amount ?? '0')) || 0,
+      vendorId: row.vendor_id ? String(row.vendor_id) : undefined,
+      vendorName: row.vendor_name ? String(row.vendor_name) : undefined,
+      paymentStatus: row.payment_status ? String(row.payment_status) : undefined,
+    };
+  } catch (err) {
+    console.warn('[support-ticket-helpers] buildBookingSnapshot failed:', err);
+    return null;
+  }
 }
 
 export async function buildPaymentSnapshot(bookingId: string): Promise<PaymentSnapshot | null> {
-  const payRes = await query(
+  try {
+    const payRes = await query(
     `SELECT id::text, amount::text, payment_method, payment_status, razorpay_payment_id
      FROM payments
      WHERE booking_id = $1::uuid
@@ -163,52 +169,67 @@ export async function buildPaymentSnapshot(bookingId: string): Promise<PaymentSn
     paymentStatus: payment?.payment_status ? String(payment.payment_status) : undefined,
     hasGatewayPayment,
   };
+  } catch (err) {
+    console.warn('[support-ticket-helpers] buildPaymentSnapshot failed:', err);
+    return null;
+  }
 }
 
 export async function enrichSupportTicket(row: Record<string, unknown>): Promise<SupportTicketEnrichment> {
-  const ticketType = deriveTicketType(row as { booking_id?: string | null; metadata?: unknown });
-  const bookingId = row.booking_id ? String(row.booking_id) : null;
+  try {
+    const ticketType = deriveTicketType(row as { booking_id?: string | null; metadata?: unknown });
+    const bookingId = row.booking_id ? String(row.booking_id) : null;
 
-  if (ticketType !== 'booking' || !bookingId) {
+    if (ticketType !== 'booking' || !bookingId) {
+      return {
+        ticketType: 'general',
+        bookingContext: null,
+        paymentContext: null,
+        isRefundable: false,
+        refundBlockReason: 'General tickets are not linked to a booking. Attach a booking to process refunds.',
+      };
+    }
+
+    const bookingContext = await buildBookingSnapshot(bookingId);
+    const paymentContext = await buildPaymentSnapshot(bookingId);
+    const hasCustomer = !!row.customer_id;
+
+    if (!hasCustomer) {
+      return {
+        ticketType: 'booking',
+        bookingContext,
+        paymentContext,
+        isRefundable: false,
+        refundBlockReason: 'Ticket is missing customer_id.',
+      };
+    }
+
+    if (!paymentContext || paymentContext.refundableBalance <= 0.009) {
+      return {
+        ticketType: 'booking',
+        bookingContext,
+        paymentContext,
+        isRefundable: false,
+        refundBlockReason: 'No completed payment with refundable balance for this booking.',
+      };
+    }
+
     return {
-      ticketType: 'general',
+      ticketType: 'booking',
+      bookingContext,
+      paymentContext,
+      isRefundable: true,
+    };
+  } catch (err) {
+    console.warn('[support-ticket-helpers] enrichSupportTicket failed:', err);
+    return {
+      ticketType: deriveTicketType(row as { booking_id?: string | null; metadata?: unknown }),
       bookingContext: null,
       paymentContext: null,
       isRefundable: false,
-      refundBlockReason: 'General tickets are not linked to a booking. Attach a booking to process refunds.',
+      refundBlockReason: 'Could not load booking payment context.',
     };
   }
-
-  const bookingContext = await buildBookingSnapshot(bookingId);
-  const paymentContext = await buildPaymentSnapshot(bookingId);
-  const hasCustomer = !!row.customer_id;
-
-  if (!hasCustomer) {
-    return {
-      ticketType: 'booking',
-      bookingContext,
-      paymentContext,
-      isRefundable: false,
-      refundBlockReason: 'Ticket is missing customer_id.',
-    };
-  }
-
-  if (!paymentContext || paymentContext.refundableBalance <= 0.009) {
-    return {
-      ticketType: 'booking',
-      bookingContext,
-      paymentContext,
-      isRefundable: false,
-      refundBlockReason: 'No completed payment with refundable balance for this booking.',
-    };
-  }
-
-  return {
-    ticketType: 'booking',
-    bookingContext,
-    paymentContext,
-    isRefundable: true,
-  };
 }
 
 export function mapTicketForCrmList(t: Record<string, unknown>, enrichment?: SupportTicketEnrichment) {
