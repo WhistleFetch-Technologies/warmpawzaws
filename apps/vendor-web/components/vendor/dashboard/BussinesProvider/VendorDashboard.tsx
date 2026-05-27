@@ -68,6 +68,8 @@ import {
   SHOW_VENDOR_FOOTER_REPORTING_TAB,
   getVendorDashboardRatingPresentation,
   mergeVendorDashboardStats,
+  mapDashboardBookingToScheduleItem,
+  matchesScheduleTypeFilter,
 } from '../helpers';
 import {
   isMealOrderScheduleItem,
@@ -375,16 +377,9 @@ export function VendorDashboard({
       // Prepare all fetch promises based on capabilities
       const today = new Date().toISOString().split('T')[0];
 
-      // ✅ OPTIMIZATION: Split critical and non-critical data
-      // Critical data: dashboard stats + schedule (needed for initial render)
+      // Critical data: dashboard stats + schedule (single API; timeframe applied server-side)
       const criticalPromises: Promise<any>[] = [
-        // 1. Always fetch dashboard stats
         apiClient.get(`/vendor/${vendorId}/dashboard?timeframe=${activeTab}`).catch(() => ({ success: false })),
-
-        // 2. Fetch schedule for non-pharmacy vendors (all service providers receive bookings)
-        !isPharmacy
-          ? apiClient.get(`/vendor/${vendorId}/bookings/today`).catch(() => ({ success: false, bookings: [] }))
-          : Promise.resolve({ success: false, bookings: [] })
       ];
 
       // Non-critical data: notifications, watchlist, services (can load after)
@@ -409,7 +404,7 @@ export function VendorDashboard({
       ];
 
       // ✅ OPTIMIZATION: Execute critical fetches first, hide loading screen ASAP
-      const [dashboardRes, scheduleRes] = await Promise.all(criticalPromises);
+      const [dashboardRes] = await Promise.all(criticalPromises);
 
       // ✅ OPTIMIZATION: Parse JSON responses in parallel
       const criticalParsing = [];
@@ -426,114 +421,18 @@ export function VendorDashboard({
               )
             );
             setVendor(dashboardRes.vendor || vendorData);
-            // ✅ FIX: Use bookings from dashboard response (sorted by date/time, includes upcoming)
-            if (dashboardRes.bookings && dashboardRes.bookings.length > 0) {
-              console.log(`✅ [DASHBOARD] Loaded ${dashboardRes.bookings.length} bookings from dashboard`);
-              // Transform API response to match ScheduleItem interface
-              // ✅ FIX: Filter out completed bookings from main dashboard view
-              const transformedBookings: ScheduleItem[] = dashboardRes.bookings
-                .filter((b: any) => b.status !== 'completed')
-                .map((b: any) => ({
-                id: b.id || b.booking_id,
-                bookingId: b.id || b.booking_id,
-                time: b.booking_time ? formatBookingTime(b.booking_time) : 'N/A',
-                duration: b.duration_minutes || 30,
-                petName: b.pet_name || 'Pet',
-                petBreed: b.pet_breed,
-                customerName: b.customer_name || 'Customer',
-                customerPhone: b.customer_phone || '',
-                customerId: b.customerId ?? b.customer_id ?? undefined,
-                serviceName: b.service_name || 'Service',
-                serviceType: b.service_type || 'at_center',
-                status: b.status || 'pending',
-                price: parseFloat(b.total_amount || '0'),
-                address: b.address || '',
-                specialInstructions: b.notes,
-                hasPrescription: b.hasPrescription || false,
-                hasUnreadMessages: b.hasUnreadMessages || false,
-                unreadMessageCount: b.unreadMessageCount || 0,
-                chatEnabled: b.chatEnabled || true,
-                isFollowUp: b.isFollowUp || false,
-                // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
-                // Check both camelCase (from enriched endpoint) and snake_case (from raw DB) formats
-                isRescheduled: Boolean(b.isRescheduled || b.rescheduledAt || b.rescheduled_at),
-                rescheduledAt: b.rescheduledAt || b.rescheduled_at || null,
-                packagePurchaseId: b.packagePurchaseId ?? b.package_purchase_id,
-                packageSessionNumber:
-                  b.packageSessionNumber != null
-                    ? Number(b.packageSessionNumber)
-                    : b.package_session_number != null
-                      ? Number(b.package_session_number)
-                      : undefined,
-                packageTotalSessions:
-                  b.packageTotalSessions != null
-                    ? Number(b.packageTotalSessions)
-                    : b.package_total_sessions != null
-                      ? Number(b.package_total_sessions)
-                      : b.total_sessions != null
-                        ? Number(b.total_sessions)
-                        : undefined,
-                isPackageSession: Boolean(b.isPackageSession ?? b.is_package_session),
-              }));
-              setTodaySchedule(transformedBookings);
+            const rawBookings = Array.isArray(dashboardRes.bookings) ? dashboardRes.bookings : [];
+            const transformedBookings = rawBookings
+              .filter((b: Record<string, unknown>) => b.status !== 'completed')
+              .map((b: Record<string, unknown>) => mapDashboardBookingToScheduleItem(b, 'at_center'));
+            setTodaySchedule(transformedBookings);
+            if (rawBookings.length > 0) {
+              console.log(`✅ [DASHBOARD] Loaded ${transformedBookings.length} bookings from dashboard`);
             }
           })
         );
-      }
-
-      // ✅ FIX: Only use scheduleRes if dashboardRes didn't have bookings; ensure each item has bookingId so Details works
-      if (scheduleRes && scheduleRes.success && scheduleRes.bookings?.length > 0) {
-        criticalParsing.push(
-          Promise.resolve().then(() => {
-            const scheduleBookings = (scheduleRes.bookings || scheduleRes.schedule || []) as any[];
-            // ✅ FIX: Filter out completed bookings from main dashboard view
-            const mapped: ScheduleItem[] = scheduleBookings
-              .filter((b: any) => b.status !== 'completed')
-              .map((b: any) => ({
-              id: b.id || b.booking_id,
-              bookingId: b.id || b.booking_id,
-              time: b.booking_time ? formatBookingTime(b.booking_time) : 'N/A',
-              duration: b.duration_minutes ?? 30,
-              petName: b.pet_name || 'Pet',
-              petBreed: b.pet_breed,
-              customerName: b.customer_name || 'Customer',
-              customerPhone: b.customer_phone || '',
-              customerId: b.customerId ?? b.customer_id ?? undefined,
-              serviceName: b.service_name || 'Service',
-              serviceType: b.service_type || 'at_center',
-              status: b.status || 'pending',
-              price: parseFloat(b.total_amount || '0'),
-              address: b.address || '',
-              specialInstructions: b.notes,
-              hasPrescription: b.hasPrescription || false,
-              hasUnreadMessages: b.hasUnreadMessages || false,
-              unreadMessageCount: b.unreadMessageCount || 0,
-              chatEnabled: b.chatEnabled !== false,
-              isFollowUp: b.isFollowUp || false,
-              // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
-              // Check both camelCase (from enriched endpoint) and snake_case (from raw DB) formats
-              isRescheduled: Boolean(b.isRescheduled || b.rescheduledAt || b.rescheduled_at),
-              rescheduledAt: b.rescheduledAt || b.rescheduled_at || null,
-              packagePurchaseId: b.packagePurchaseId ?? b.package_purchase_id,
-              packageSessionNumber:
-                b.packageSessionNumber != null
-                  ? Number(b.packageSessionNumber)
-                  : b.package_session_number != null
-                    ? Number(b.package_session_number)
-                    : undefined,
-              packageTotalSessions:
-                b.packageTotalSessions != null
-                  ? Number(b.packageTotalSessions)
-                  : b.package_total_sessions != null
-                    ? Number(b.package_total_sessions)
-                    : b.total_sessions != null
-                      ? Number(b.total_sessions)
-                      : undefined,
-              isPackageSession: Boolean(b.isPackageSession ?? b.is_package_session),
-            }));
-            setTodaySchedule((prev: ScheduleItem[]) => prev.length > 0 ? prev : mapped);
-          })
-        );
+      } else {
+        setTodaySchedule([]);
       }
 
       // Wait for critical parsing to complete
@@ -1678,15 +1577,10 @@ export function VendorDashboard({
               const filteredBookings = todaySchedule.filter((appointment) => {
                 if (showingMealOrders) return false;
                 if (appointmentTypeFilter === 'all') return true;
-                const typeMap: Record<string, string> = {
-                  at_center: 'clinic',
-                  clinic: 'clinic',
-                  at_home: 'home',
-                  home: 'home',
-                  tele: 'tele',
-                  teleconsultation: 'tele',
-                };
-                return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
+                return matchesScheduleTypeFilter(
+                  appointment.serviceType || 'at_center',
+                  appointmentTypeFilter
+                );
               });
               const scheduleItems = showingMealOrders
                 ? mealOrderSchedule

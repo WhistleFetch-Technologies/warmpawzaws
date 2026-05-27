@@ -35,6 +35,7 @@ import {
   sqlExcludeSuppressedVendorCreatedRows,
   sqlExcludeSuppressedVendorEarningsRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
+import { resolveVendorDashboardTimeframeRange } from '../../../utils/vendor-dashboard-timeframe';
 
 /** Last 7 local calendar days with summed vendor_earnings amounts (for vendor earnings chart). */
 /** Map delivery_settlements.status to vendor_earnings-like status for dashboard summaries. */
@@ -169,20 +170,14 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       const now = new Date();
       const today = now.toISOString().split('T')[0];
-      let startDate = new Date();
+      const { startDate: startDateStr, endDate: endDateStr } = resolveVendorDashboardTimeframeRange(
+        timeframe,
+        today
+      );
 
-      if (timeframe === 'today') {
-        startDate = new Date(today);
-      } else if (timeframe === 'week') {
-        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      } else if (timeframe === 'month') {
-        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      }
-
-      const startDateStr = startDate.toISOString().split('T')[0];
       const tb = getTemporaryVendorSuppressionParams();
-      const bookSupp1 = sqlAndExcludeSuppressedBookingRows('b', tb ? 3 : undefined, tb ? 4 : undefined);
-      const bookSupp2 = sqlAndExcludeSuppressedBookingRows('b', tb ? 4 : undefined, tb ? 5 : undefined);
+      const bookSupp1 = sqlAndExcludeSuppressedBookingRows('b', tb ? 4 : undefined, tb ? 5 : undefined);
+      const bookSupp2 = sqlAndExcludeSuppressedBookingRows('b', tb ? 5 : undefined, tb ? 6 : undefined);
       const bookSuppTail = tb ? [tb.vendorIds, tb.cutoffDateIst] : [];
       const bookings = vendorIds.length === 1
         ? await query(
@@ -198,11 +193,12 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
              LEFT JOIN customers c ON b.customer_id = c.id
              WHERE b.vendor_id = $1 
                AND b.booking_date >= $2
+               AND b.booking_date <= $3
                AND b.status != 'pending_payment'
                AND b.status != 'cancelled'
                ${bookSupp1}
              ORDER BY b.booking_date ASC, b.booking_time ASC`,
-            [resolvedVendorId, startDateStr, ...bookSuppTail]
+            [resolvedVendorId, startDateStr, endDateStr, ...bookSuppTail]
           ).catch(() => ({ rows: [] }))
         : await query(
             `SELECT b.*,
@@ -217,11 +213,12 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
              LEFT JOIN customers c ON b.customer_id = c.id
              WHERE (b.vendor_id = $1 OR b.vendor_id = $2)
                AND b.booking_date >= $3
+               AND b.booking_date <= $4
                AND b.status != 'pending_payment'
                AND b.status != 'cancelled'
                ${bookSupp2}
              ORDER BY b.booking_date ASC, b.booking_time ASC`,
-            [vendorIds[0], vendorIds[1], startDateStr, ...bookSuppTail]
+            [vendorIds[0], vendorIds[1], startDateStr, endDateStr, ...bookSuppTail]
           ).catch(() => ({ rows: [] }));
 
       // Calculate stats (bookings)
@@ -236,7 +233,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
       };
 
       for (const booking of bookings.rows) {
-        if (['confirmed', 'pending'].includes(booking.status)) {
+        if (['confirmed', 'pending', 'in_progress'].includes(booking.status)) {
           stats.appointments++;
         }
 
@@ -288,6 +285,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         otp_code: b.otp_code,
         otp_verified: b.otp_verified,
         service_type: b.service_type,
+        service_style: b.service_style,
         notes: b.notes,
       }));
 
@@ -361,40 +359,44 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
 
       // Get today's date
       const today = new Date().toISOString().split('T')[0];
+      const { startDate: startDateStr, endDate: endDateStr } = resolveVendorDashboardTimeframeRange(
+        timeframe,
+        today
+      );
       const temporarySuppressionMain = getTemporaryVendorSuppressionParams();
       const supMainTail = temporarySuppressionMain
         ? [temporarySuppressionMain.vendorIds, temporarySuppressionMain.cutoffDateIst]
         : [];
       const mainStatFrag1 = sqlAndExcludeSuppressedBookingRows(
         'b',
-        temporarySuppressionMain ? 3 : undefined,
-        temporarySuppressionMain ? 4 : undefined,
-      );
-      const mainStatFrag2 = sqlAndExcludeSuppressedBookingRows(
-        'b',
         temporarySuppressionMain ? 4 : undefined,
         temporarySuppressionMain ? 5 : undefined,
       );
+      const mainStatFrag2 = sqlAndExcludeSuppressedBookingRows(
+        'b',
+        temporarySuppressionMain ? 5 : undefined,
+        temporarySuppressionMain ? 6 : undefined,
+      );
 
-      // Get bookings stats (include both identity and vendor id so center/clinic bookings count)
+      // Get bookings stats scoped to the selected timeframe
       const [statsParam1, statsParam2] = vendorIds.length >= 2 ? [vendorIds[0], vendorIds[1]] : [vendorIds[0], vendorIds[0]];
       const bookingsStatsQuery = vendorIds.length === 1
         ? `SELECT 
-          COUNT(*) FILTER (WHERE b.booking_date = $1 AND b.status IN ('pending', 'confirmed')) as today_bookings,
-          COUNT(*) FILTER (WHERE b.status IN ('pending', 'confirmed')) as pending_bookings,
-          COUNT(*) FILTER (WHERE b.booking_date = $1 AND b.status = 'completed') as completed_today
+          COUNT(*) FILTER (WHERE b.booking_date >= $1 AND b.booking_date <= $2 AND b.status IN ('pending', 'confirmed', 'in_progress')) as today_bookings,
+          COUNT(*) FILTER (WHERE b.booking_date >= $1 AND b.booking_date <= $2 AND b.status IN ('pending', 'confirmed', 'in_progress')) as pending_bookings,
+          COUNT(*) FILTER (WHERE b.booking_date >= $1 AND b.booking_date <= $2 AND b.status = 'completed') as completed_today
         FROM bookings b
-        WHERE b.vendor_id = $2${mainStatFrag1}`
+        WHERE b.vendor_id = $3${mainStatFrag1}`
         : `SELECT 
-          COUNT(*) FILTER (WHERE b.booking_date = $1 AND b.status IN ('pending', 'confirmed')) as today_bookings,
-          COUNT(*) FILTER (WHERE b.status IN ('pending', 'confirmed')) as pending_bookings,
-          COUNT(*) FILTER (WHERE b.booking_date = $1 AND b.status = 'completed') as completed_today
+          COUNT(*) FILTER (WHERE b.booking_date >= $1 AND b.booking_date <= $2 AND b.status IN ('pending', 'confirmed', 'in_progress')) as today_bookings,
+          COUNT(*) FILTER (WHERE b.booking_date >= $1 AND b.booking_date <= $2 AND b.status IN ('pending', 'confirmed', 'in_progress')) as pending_bookings,
+          COUNT(*) FILTER (WHERE b.booking_date >= $1 AND b.booking_date <= $2 AND b.status = 'completed') as completed_today
         FROM bookings b
-        WHERE (b.vendor_id = $2 OR b.vendor_id = $3)${mainStatFrag2}`;
+        WHERE (b.vendor_id = $3 OR b.vendor_id = $4)${mainStatFrag2}`;
       const bookingsStatsParams =
         vendorIds.length === 1
-          ? [today, statsParam1, ...supMainTail]
-          : [today, statsParam1, statsParam2, ...supMainTail];
+          ? [startDateStr, endDateStr, statsParam1, ...supMainTail]
+          : [startDateStr, endDateStr, statsParam1, statsParam2, ...supMainTail];
       const bookingsStats = await query(bookingsStatsQuery, bookingsStatsParams).catch(() => ({ rows: [{ today_bookings: '0', pending_bookings: '0', completed_today: '0' }] }));
 
       // Prefer vendor_earnings (source of truth) when available; fallback to bookings
@@ -464,26 +466,16 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
           ? parseFloat(avgDash.toFixed(1))
           : null;
 
-      // ✅ FIX: Get bookings for display (vendor_id IN resolved/param), include service_catalog for center/clinic service names
-      let startDate = new Date();
-      if (timeframe === 'today') {
-        startDate = new Date(today);
-      } else if (timeframe === 'week') {
-        startDate.setDate(startDate.getDate() - 7);
-      } else if (timeframe === 'month') {
-        startDate.setMonth(startDate.getMonth() - 1);
-      }
-
-      const startDateStr = startDate.toISOString().split('T')[0];
+      // Get bookings for display within the selected timeframe
       const listSup1 = sqlAndExcludeSuppressedBookingRows(
-        'b',
-        temporarySuppressionMain ? 3 : undefined,
-        temporarySuppressionMain ? 4 : undefined,
-      );
-      const listSup2 = sqlAndExcludeSuppressedBookingRows(
         'b',
         temporarySuppressionMain ? 4 : undefined,
         temporarySuppressionMain ? 5 : undefined,
+      );
+      const listSup2 = sqlAndExcludeSuppressedBookingRows(
+        'b',
+        temporarySuppressionMain ? 5 : undefined,
+        temporarySuppressionMain ? 6 : undefined,
       );
 
       const bookingsQuery = vendorIds.length === 1
@@ -499,6 +491,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
          LEFT JOIN customers c ON b.customer_id = c.id
          WHERE b.vendor_id = $1 
            AND b.booking_date >= $2
+           AND b.booking_date <= $3
            AND b.status != 'pending_payment'
            AND b.status != 'cancelled'
            ${listSup1}
@@ -515,14 +508,15 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
          LEFT JOIN customers c ON b.customer_id = c.id
          WHERE (b.vendor_id = $1 OR b.vendor_id = $2)
            AND b.booking_date >= $3
+           AND b.booking_date <= $4
            AND b.status != 'pending_payment'
            AND b.status != 'cancelled'
            ${listSup2}
          ORDER BY b.booking_date ASC, b.booking_time ASC`;
       const bookingsParams =
         vendorIds.length === 1
-          ? [resolvedVendorId, startDateStr, ...supMainTail]
-          : [vendorIds[0], vendorIds[1], startDateStr, ...supMainTail];
+          ? [resolvedVendorId, startDateStr, endDateStr, ...supMainTail]
+          : [vendorIds[0], vendorIds[1], startDateStr, endDateStr, ...supMainTail];
       const bookingsResult = await query(bookingsQuery, bookingsParams).catch(() => ({ rows: [] }));
 
       // Transform bookings for frontend
@@ -543,6 +537,7 @@ export function registerVendorDashboardEnhancedEndpoints(app: Hono) {
         otp_code: b.otp_code,
         otp_verified: b.otp_verified,
         service_type: b.service_type,
+        service_style: b.service_style,
         notes: b.notes,
       }));
 

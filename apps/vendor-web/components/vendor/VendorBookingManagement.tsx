@@ -74,7 +74,6 @@ import {
   scheduleEmptyStateMessage,
   VENDOR_SCHEDULE_PAGE_SIZE,
   type VendorSchedulePeriod,
-  type VendorScheduleView,
 } from '@/lib/vendor-schedule-bookings';
 
 /** 7-day chart when API omits dailyBreakdown: bucket by credited-at (realizedAt). */
@@ -266,7 +265,6 @@ export function VendorBookingManagement({
   const hasTeleService = !isSoloGroomer && allowedServiceStyles.includes('tele');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [schedulePeriod, setSchedulePeriod] = useState<VendorSchedulePeriod>('today');
-  const [activeView, setActiveView] = useState<VendorScheduleView>('consultations');
   const [bookingsPageIndex, setBookingsPageIndex] = useState(0);
   const [bookingsTotal, setBookingsTotal] = useState(0);
   const [bookingsHasMore, setBookingsHasMore] = useState(false);
@@ -510,11 +508,11 @@ export function VendorBookingManagement({
 
   useEffect(() => {
     setBookingsPageIndex(0);
-  }, [selectedDate, schedulePeriod, activeView]);
+  }, [selectedDate, schedulePeriod]);
 
   useEffect(() => {
     loadBookings();
-  }, [selectedDate, schedulePeriod, activeView, bookingsPageIndex]);
+  }, [selectedDate, schedulePeriod, bookingsPageIndex]);
   
   // Load earnings when Earnings tab is shown (vendorId must be set; not tied to bookings date filter)
   useEffect(() => {
@@ -537,7 +535,6 @@ export function VendorBookingManagement({
       console.log('🔍 [VENDOR-UI] Loading bookings with filters:', {
         anchorDate: selectedDate,
         schedulePeriod,
-        activeView,
         page: bookingsPageIndex,
         vendorId,
       });
@@ -545,14 +542,10 @@ export function VendorBookingManagement({
       const queryParams = buildVendorScheduleBookingsQuery({
         schedulePeriod,
         anchorDate: selectedDate,
-        activeView,
         pageIndex: bookingsPageIndex,
         pageSize: VENDOR_SCHEDULE_PAGE_SIZE,
         statusFilter: 'all',
       });
-      if (!hasTeleService) {
-        delete queryParams.view;
-      }
       const qs = new URLSearchParams(queryParams).toString();
 
       const [bookingsData, availabilityData] = await Promise.all([
@@ -1320,34 +1313,6 @@ export function VendorBookingManagement({
         {/* BOOKINGS TAB CONTENT */}
         {activeTab === 'bookings' && (
           <>
-            {/* View Toggle - Hide for solo groomers (no tele consultations) */}
-            {hasTeleService && (
-              <div className="p-4 bg-white border-b border-gray-100">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setActiveView('consultations')}
-                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      activeView === 'consultations'
-                        ? 'bg-gray-900 text-white'
-                        : 'bg-gray-100 text-gray-600'
-                    }`}
-                  >
-                    All Consultations
-                  </button>
-                  <button
-                    onClick={() => setActiveView('locations')}
-                    className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      activeView === 'locations'
-                        ? 'bg-gray-900 text-white'
-                        : 'bg-gray-100 text-gray-600'
-                    }`}
-                  >
-                    All Locations
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* Instant Consultations Stats - Hide for solo groomers (no tele services) */}
             {hasTeleService && isInstantTeleUiEnabled() && (
               <div className="p-4 bg-white border-b border-gray-100">
