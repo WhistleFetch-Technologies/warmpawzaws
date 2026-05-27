@@ -111,6 +111,7 @@ export type MealProductDietaryInput = {
   allergens: string[];
   preparationType: string;
   packSize?: string;
+  packWeightGrams: number;
 };
 
 /** Builds persisted JSON for meal_plans.dietary_requirements / products.metadata. */
@@ -174,6 +175,7 @@ export function mealProductParsedToDietaryJson(
     allergens: parsed.allergens,
     preparationType: parsed.preparationType,
     mealsPerDay: mealsPerDayColumn,
+    packWeightGrams: parsed.packWeightGrams,
   };
   if (opts.mealImageUrl) base.mealImageUrl = opts.mealImageUrl;
   if (parsed.packSize) base.packSize = parsed.packSize;

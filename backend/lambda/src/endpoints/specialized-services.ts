@@ -62,11 +62,23 @@ import {
   deleteOrDeactivateMealPlanForVendor,
   isMealPlanFkViolation,
 } from '../utils/meal-plan-vendor-delete';
-import {
-  clampLeadTimeHoursForPlatform,
-  fetchPlatformMealBookingPolicy,
-} from '../utils/meal-booking-policy';
+import { clampLeadTimeHours } from '../utils/meal-booking-policy';
 import { parseOrderCutoffHm } from '../utils/meal-product-timing';
+
+function mealOrderDeliveryTimeDisplay(o: Record<string, unknown>): string | null {
+  const raw = o.scheduled_delivery_slot;
+  if (raw == null || raw === '') return null;
+  try {
+    const slot =
+      typeof raw === 'string'
+        ? (JSON.parse(raw) as { start?: string })
+        : (raw as { start?: string });
+    const start = slot?.start;
+    return typeof start === 'string' && start.trim() ? start.trim() : null;
+  } catch {
+    return null;
+  }
+}
 import {
   buildMealKitchenAvailabilityPayload,
   fetchMealKitchenAvailabilityForVendor,
@@ -78,19 +90,25 @@ import {
 } from '../utils/meal-order-settlement';
 
 /** Coerce DB/API money fields so vendor UI never receives NaN or bogus strings. */
-/** Clamp booking lead time / cutoff to platform policy before persisting meal catalog rows. */
-async function applyPlatformMealTimingToParsed<
+/** Require vendor lead time + order cutoff before persisting meal catalog rows. */
+function validateVendorMealTimingFromParsed<
   T extends { leadTimeHours?: number; orderCutoffTime?: string; preparationLeadTime: number },
->(p: T): Promise<T & { leadTimeHours: number; orderCutoffTime: string }> {
-  const policy = await fetchPlatformMealBookingPolicy();
-  const leadTimeHours = clampLeadTimeHoursForPlatform(
-    p.leadTimeHours != null && Number.isFinite(Number(p.leadTimeHours))
-      ? Number(p.leadTimeHours)
-      : policy.leadTime.defaultHours,
-    policy,
-  );
-  const orderCutoffTime = parseOrderCutoffHm(p.orderCutoffTime) || policy.orderCutoff.time;
-  return { ...p, leadTimeHours, orderCutoffTime };
+>(p: T): { ok: true; data: T & { leadTimeHours: number; orderCutoffTime: string } } | { ok: false; error: string } {
+  if (p.leadTimeHours == null || !Number.isFinite(Number(p.leadTimeHours))) {
+    return { ok: false, error: 'leadTimeHours is required (0–72)' };
+  }
+  const orderCutoffTime = parseOrderCutoffHm(p.orderCutoffTime);
+  if (!orderCutoffTime) {
+    return { ok: false, error: 'orderCutoffTime is required (HH:mm, e.g. 18:00)' };
+  }
+  return {
+    ok: true,
+    data: {
+      ...p,
+      leadTimeHours: clampLeadTimeHours(Number(p.leadTimeHours)),
+      orderCutoffTime,
+    },
+  };
 }
 
 function safeMoney(v: unknown): number {
@@ -1805,7 +1823,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    * Each item includes `metadata` (or merged specs) with optional catalog keys:
    * mealCategories, medicalConditionTags, feedingInstructions, storageInstructions, shelfLifeDays,
    * deliveryType, mealsPerDayPreset, mealsPerDayCustom, allergens, preparationType, ingredients (string[]),
-   * nutritionalValue, petTypes, dietType, preparationLeadTime, mealImageUrl.
+   * nutritionalValue, petTypes, dietType, preparationLeadTime, mealImageUrl, packWeightGrams.
    */
   app.get("/vendor/:vendorId/meal-products", async (c) => {
     try {
@@ -2064,8 +2082,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       if (!parsed.success) {
         return c.json({ error: formatMealProductZodError(parsed.error) }, 400);
       }
-      const pTimed = await applyPlatformMealTimingToParsed(parsed.data);
-      const p = pTimed;
+      const timingValidated = validateVendorMealTimingFromParsed(parsed.data);
+      if (!timingValidated.ok) {
+        return c.json({ error: timingValidated.error }, 400);
+      }
+      const p = timingValidated.data;
 
       const mealImageUrl = p.mealImageUrl
         ? stripS3PresignQueryFromUrl(String(p.mealImageUrl).trim())
@@ -2260,8 +2281,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       if (!parsed.success) {
         return c.json({ error: formatMealProductZodError(parsed.error) }, 400);
       }
-      const pTimed = await applyPlatformMealTimingToParsed(parsed.data);
-      const p = pTimed;
+      const timingValidated = validateVendorMealTimingFromParsed(parsed.data);
+      if (!timingValidated.ok) {
+        return c.json({ error: timingValidated.error }, 400);
+      }
+      const p = timingValidated.data;
 
       const dietaryPayload = mealProductParsedToDietaryJson(p as MealProductDietaryInput, {
         mealImageUrl: resolvedMealImageUrl ?? undefined,
@@ -2673,6 +2697,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           items: [],
           delivery_address: typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address,
           subtotal: lineSubtotal,
+          delivery_time_display: mealOrderDeliveryTimeDisplay(o as Record<string, unknown>),
         });
       }
 

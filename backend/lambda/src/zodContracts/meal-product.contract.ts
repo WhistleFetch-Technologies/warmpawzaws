@@ -100,6 +100,14 @@ function coerceMealProductRaw(raw: unknown): unknown {
   if (o.prepTimeMinutes != null && o.prepTimeMinutes !== '' && o.preparationLeadTime == null) {
     o.preparationLeadTime = o.prepTimeMinutes;
   }
+  if (o.packWeightGrams == null || o.packWeightGrams === '') {
+    for (const k of ['pack_weight_grams', 'weightGrams', 'weight_g'] as const) {
+      if (o[k] != null && o[k] !== '') {
+        o.packWeightGrams = o[k];
+        break;
+      }
+    }
+  }
   return o;
 }
 
@@ -111,6 +119,13 @@ const mealProductInnerSchema = z
       .transform((v) => (v == null ? '' : String(v).trim()))
       .pipe(z.string().min(1, 'Description is required')),
     price: z.coerce.number().finite().positive('Price must be positive'),
+
+    /** Per-pack / per-serving weight in grams (Pidge courier + customer catalog). */
+    packWeightGrams: z.coerce
+      .number()
+      .int('Pack weight must be a whole number of grams')
+      .min(1, 'Pack weight must be at least 1 g')
+      .max(50_000, 'Pack weight must be at most 50000 g'),
 
     mealImageUrl: z
       .union([z.string(), z.null(), z.undefined()])
@@ -249,14 +264,22 @@ const mealProductInnerSchema = z
     /** Kitchen prep duration in minutes (not booking lead time). */
     preparationLeadTime: z.coerce.number().int().min(1).max(24 * 60).optional().default(60),
     /** Minimum hours before first delivery slot (booking policy). */
-    leadTimeHours: z.coerce.number().int().min(0).max(168).optional(),
+    leadTimeHours: z.coerce.number().int().min(0).max(72),
     orderCutoffTime: z
-      .union([z.string(), z.null(), z.undefined()])
-      .optional()
+      .string()
+      .min(1, 'orderCutoffTime is required')
       .transform((v) => {
-        if (v == null || v === '') return undefined;
         const t = String(v).trim();
-        return /^([01]?\d|2[0-3]):([0-5]\d)$/.test(t) ? t : undefined;
+        if (!/^([01]?\d|2[0-3]):([0-5]\d)$/.test(t)) {
+          throw new z.ZodError([
+            {
+              code: 'custom',
+              message: 'orderCutoffTime must be HH:mm (e.g. 18:00)',
+              path: ['orderCutoffTime'],
+            },
+          ]);
+        }
+        return t;
       }),
     stockQuantity: z.coerce.number().int().min(0).optional(),
     packSize: z
