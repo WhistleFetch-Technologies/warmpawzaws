@@ -763,9 +763,11 @@ export function registerSupportCrmEndpoints(app: Hono) {
                   supportTicketId: ticketId,
                 });
 
+                const ticketRefundStatus =
+                  processed.status === 'failed' ? 'failed' : 'processing';
                 updateData.refund_id = processed.refundId;
                 updateData.refund_amount = processed.totalAmount;
-                updateData.refund_status = processed.status === 'failed' ? 'failed' : 'processing';
+                updateData.refund_status = ticketRefundStatus;
 
                 refundResult = {
                   refundId: processed.refundId,
@@ -793,15 +795,17 @@ export function registerSupportCrmEndpoints(app: Hono) {
               };
             }
           }
-          
+
           updateData.metadata = {
             ...(ticket.metadata || {}),
             ticket_type: 'booking',
             refund_requested: true,
-            refund_amount: actionData.amount,
+            refund_amount: actionData.amount ?? refundResult?.amount,
             refund_reason: actionData.reason,
             refund_type: action === 'partial_refund' ? 'partial' : 'full',
             refund_requested_at: new Date().toISOString(),
+            refund_id: refundResult?.refundId ?? updateData.refund_id ?? null,
+            refund_status: updateData.refund_status ?? refundResult?.status ?? null,
             refund_result: refundResult,
           };
 
