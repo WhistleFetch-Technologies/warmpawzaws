@@ -28,7 +28,7 @@ export default function RootLayout({
     process.env.NEXT_PUBLIC_API_BASE_URL ||
     (isProd ? WARMPAWZ_API_GATEWAY_PROD : WARMPAWZ_API_GATEWAY_DEV);
   const customerMealPlansEnabledRaw = (
-    process.env.NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED ?? (isProd ? 'false' : 'true')
+    process.env.NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED ?? 'true'
   ).toLowerCase();
   const customerMealPlansEnabled =
     customerMealPlansEnabledRaw === 'true' || customerMealPlansEnabledRaw === '1';
