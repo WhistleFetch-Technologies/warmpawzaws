@@ -107,6 +107,12 @@ export default function ShopPage() {
   // ============================================================================
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const cat = new URLSearchParams(window.location.search).get('category');
+    if (cat) setSelectedCategory(cat);
+  }, []);
+
+  useEffect(() => {
     loadData();
     loadCart();
     loadCustomerData();

@@ -538,6 +538,11 @@ export function CustomerHomeComplete({
         return;
       }
       if (d.startsWith('/')) {
+        const pathOnly = d.split('?')[0]?.split('#')[0] ?? d;
+        if (pathOnly === '/shop') {
+          onNavigate?.('shop', data);
+          return;
+        }
         const screenFromPath = customerPathToScreen(d);
         if (screenFromPath) {
           onNavigate?.(screenFromPath, data);

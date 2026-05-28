@@ -2,6 +2,7 @@ import type { AppRouterInstance } from 'next/navigation';
 import {
   rememberHelpBackFromCurrentUrl,
   rememberPromotionsBackFromCurrentUrl,
+  rememberShopBackFromCurrentUrl,
 } from '@/lib/go-back-or-replace';
 
 /** Route account-menu actions from standalone Next.js pages (search, my-packages, etc.). */
@@ -11,6 +12,7 @@ export function navigateFromStandaloneAccountMenu(router: AppRouterInstance, pat
     return;
   }
   if (path === 'shop') {
+    rememberShopBackFromCurrentUrl();
     router.push('/shop');
     return;
   }
