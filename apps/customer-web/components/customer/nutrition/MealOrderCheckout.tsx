@@ -20,6 +20,7 @@ import { SubscriptionCheckoutContainer } from '@/components/customer/meal-subscr
 import { resolveCustomerPublicAssetUrl } from '@/lib/public-asset-url';
 import { isMealKitchenClosed, mealKitchenClosedMessage } from '@/lib/meal-kitchen-availability';
 import { MealKitchenStatusBanner } from '@/components/customer/nutrition/MealKitchenStatusBanner';
+import { earliestDeliveryYmd, minDeliveryTimeHm } from '@/lib/meal-checkout-schedule';
 
 interface MealOrderCheckoutProps {
   phone: string;
@@ -44,7 +45,9 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
     convenienceFee?: number;
     totalAmount: number;
     leadTimeHours: number;
+    orderCutoffTime?: string;
     bookingPolicy?: {
+      orderCutoffTime?: string;
       earliestDeliveryAt?: string;
       sameDayAllowed?: boolean;
       effectiveLeadTimeHours?: number;
@@ -90,17 +93,26 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       q.set('customerLat', String(effectiveLat));
       q.set('customerLng', String(effectiveLng));
     }
-    if (scheduledDate) {
+    if (scheduledDate && scheduledTime) {
       q.set('scheduledDeliveryDate', scheduledDate);
-      if (scheduledTime) q.set('deliveryTime', scheduledTime);
+      q.set('deliveryTime', scheduledTime);
+      apiClient
+        .get(`/meal-plans/${mealPlanId}/order-preview?${q.toString()}`)
+        .then((res: any) => {
+          if (res.success) setPreview(res);
+        })
+        .catch(() => setPreview(null));
+    } else if (scheduledDate && !scheduledTime) {
+      setPreview((prev) =>
+        prev
+          ? {
+              ...prev,
+              deliveryAllowed: undefined,
+              deliveryPolicyMessage: 'Select a delivery time to check availability for this date.',
+            }
+          : prev,
+      );
     }
-
-    apiClient
-      .get(`/meal-plans/${mealPlanId}/order-preview?${q.toString()}`)
-      .then((res: any) => {
-        if (res.success) setPreview(res);
-      })
-      .catch(() => setPreview(null));
   }, [mealPlanId, quantity, addressId, addresses, scheduledDate, scheduledTime]);
 
   const loadData = async () => {
@@ -286,20 +298,21 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
     );
   }
 
-  const minDate = new Date();
-  minDate.setHours(0, 0, 0, 0);
-  const earliestRaw = preview?.bookingPolicy?.earliestDeliveryAt;
-  if (earliestRaw) {
-    minDate.setTime(new Date(earliestRaw).getTime());
-  } else {
-    const leadHours = preview?.leadTimeHours ?? 24;
-    minDate.setTime(minDate.getTime() + leadHours * 60 * 60 * 1000);
-  }
-  const minDateStr = minDate.toISOString().split('T')[0];
   const leadHours = preview?.leadTimeHours ?? 24;
+  const earliestRaw = preview?.bookingPolicy?.earliestDeliveryAt;
+  const minDateStr = earliestDeliveryYmd(earliestRaw, leadHours);
+  const orderCutoffDisplay =
+    preview?.orderCutoffTime || preview?.bookingPolicy?.orderCutoffTime || '';
   const sameDayHint = preview?.bookingPolicy?.sameDayAllowed
-    ? ' Same-day delivery may be available for this plan.'
+    ? ` Same-day delivery may be available${orderCutoffDisplay ? ` (order by ${orderCutoffDisplay} today)` : ''}.`
     : '';
+  const minTimeStr =
+    scheduledDate && preview
+      ? minDeliveryTimeHm(scheduledDate, earliestRaw, leadHours)
+      : undefined;
+  const checkoutBlocked =
+    preview?.deliveryAllowed === false ||
+    (scheduledDate && scheduledTime && preview?.deliveryAllowed === undefined);
 
   return (
     <div className="min-h-screen bg-orange-50 max-w-md mx-auto pb-24">
@@ -334,6 +347,9 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
                   Meal price: ₹{preview.subtotal}
                 </p>
               )}
+              {catalog?.packWeightLabel ? (
+                <p className="text-xs font-medium text-slate-600 mt-0.5">{catalog.packWeightLabel}</p>
+              ) : null}
             </div>
           </div>
 
@@ -348,6 +364,12 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
                   <p>
                     <span className="text-slate-500 font-medium">Pricing: </span>
                     {catalog.customerPricingLine}
+                  </p>
+                ) : null}
+                {catalog.packWeightLabel ? (
+                  <p>
+                    <span className="text-slate-500 font-medium">Pack weight: </span>
+                    {catalog.packWeightLabel}
                   </p>
                 ) : null}
                 {catalog.customerBenefits.length > 0 ? (
@@ -504,6 +526,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
               type="time"
               value={scheduledTime}
               onChange={(e) => setScheduledTime(e.target.value)}
+              min={minTimeStr}
               required
             />
           </div>
@@ -589,7 +612,8 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
             Boolean(preview.deliveryQuoteMessage) ||
             !scheduledDate ||
             !scheduledTime ||
-            (pets.length > 0 && !petId)
+            (pets.length > 0 && !petId) ||
+            checkoutBlocked
           }
         >
           {`Continue to pay ₹${preview?.totalAmount ?? 0}`}

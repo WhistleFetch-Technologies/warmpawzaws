@@ -2,15 +2,16 @@
  * ============================================================================
  * FIREBASE PUSH NOTIFICATION CLIENT
  * ============================================================================
- * 
+ *
  * Handles push notifications via Firebase Cloud Messaging (FCM)
  * for mobile apps (iOS + Android)
- * 
- * ✅ IMPORTANT: firebase-admin is optional and loaded lazily to avoid
- * bundling issues in Lambda. Push notifications will be disabled if
- * firebase-admin is not installed.
- * 
- * Date: 2025-01-02
+ *
+ * Credentials (first match wins):
+ *   1. FIREBASE_SERVICE_ACCOUNT_JSON env var (full service account JSON)
+ *   2. AWS Secrets Manager secret warmpawz/{stage}/firebase
+ *   3. FIREBASE_PROJECT_ID + FIREBASE_PRIVATE_KEY + FIREBASE_CLIENT_EMAIL
+ *
+ * firebase-admin is loaded at runtime from dist/node_modules (see package-lambda.js).
  * ============================================================================
  */
 
@@ -18,6 +19,57 @@ let admin: any = null;
 let firebaseAvailable = false;
 let firebaseLoadAttempted = false;
 let firebaseApp: any | null = null;
+
+type FirebaseServiceAccount = {
+  projectId: string;
+  privateKey: string;
+  clientEmail: string;
+};
+
+let configPromise: Promise<FirebaseServiceAccount | null> | null = null;
+
+function normalizeServiceAccount(raw: Record<string, string | undefined>): FirebaseServiceAccount | null {
+  const projectId = raw.projectId || raw.project_id;
+  const privateKey = (raw.privateKey || raw.private_key)?.replace(/\\n/g, '\n');
+  const clientEmail = raw.clientEmail || raw.client_email;
+
+  if (!projectId || !privateKey || !clientEmail) {
+    return null;
+  }
+
+  return { projectId, privateKey, clientEmail };
+}
+
+async function resolveFirebaseConfig(): Promise<FirebaseServiceAccount | null> {
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    try {
+      const parsed = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON) as Record<string, string>;
+      const fromEnv = normalizeServiceAccount(parsed);
+      if (fromEnv) {
+        return fromEnv;
+      }
+    } catch (error) {
+      console.error('[Firebase] Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON:', error);
+    }
+  }
+
+  try {
+    const { getSecretJson } = await import('./aws/secrets-manager');
+    const fromSecret = await getSecretJson<Record<string, string>>('firebase');
+    const normalized = fromSecret ? normalizeServiceAccount(fromSecret) : null;
+    if (normalized) {
+      return normalized;
+    }
+  } catch (error) {
+    console.warn('[Firebase] Could not load warmpawz/{stage}/firebase secret:', error);
+  }
+
+  return normalizeServiceAccount({
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+  });
+}
 
 /**
  * Lazy load firebase-admin module
@@ -27,18 +79,19 @@ function loadFirebaseAdmin(): boolean {
   if (firebaseLoadAttempted) {
     return firebaseAvailable;
   }
-  
+
   firebaseLoadAttempted = true;
-  
+
   try {
-    // Use eval to prevent esbuild from bundling firebase-admin
-    // This allows the module to be external and loaded at runtime if available
     admin = eval('require')('firebase-admin');
     firebaseAvailable = true;
     console.log('[Firebase] Module loaded successfully');
     return true;
-  } catch (e) {
-    console.warn('[Firebase] firebase-admin not available - push notifications disabled');
+  } catch (error) {
+    console.warn(
+      '[Firebase] firebase-admin not available — ensure api-handler.zip includes dist/node_modules/firebase-admin:',
+      error
+    );
     firebaseAvailable = false;
     return false;
   }
@@ -47,26 +100,27 @@ function loadFirebaseAdmin(): boolean {
 /**
  * Initialize Firebase Admin SDK
  */
-function initializeFirebase(): any {
+async function initializeFirebase(): Promise<any> {
   if (!loadFirebaseAdmin()) {
-    throw new Error('Firebase not available - push notifications disabled');
+    throw new Error(
+      'Firebase not available — firebase-admin module missing from Lambda package. Redeploy with npm run build.'
+    );
   }
 
   if (firebaseApp) {
     return firebaseApp;
   }
 
-  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT_JSON
-    ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)
-    : {
-        projectId: process.env.FIREBASE_PROJECT_ID,
-        privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      };
+  if (!configPromise) {
+    configPromise = resolveFirebaseConfig();
+  }
 
-  if (!serviceAccount.projectId) {
-    console.warn('[Firebase] Missing Firebase configuration - push notifications will be disabled');
-    throw new Error('Firebase configuration not found');
+  const serviceAccount = await configPromise;
+  if (!serviceAccount) {
+    console.warn('[Firebase] Missing Firebase configuration');
+    throw new Error(
+      'Firebase configuration not found — set FIREBASE_* env vars or Secrets Manager secret warmpawz/{stage}/firebase'
+    );
   }
 
   try {
@@ -74,7 +128,7 @@ function initializeFirebase(): any {
       credential: admin.credential.cert(serviceAccount),
       projectId: serviceAccount.projectId,
     });
-    console.log('[Firebase] Initialized successfully');
+    console.log('[Firebase] Initialized successfully for project', serviceAccount.projectId);
     return firebaseApp;
   } catch (error) {
     console.error('[Firebase] Initialization error:', error);
@@ -85,16 +139,19 @@ function initializeFirebase(): any {
 /**
  * Get Firebase messaging instance
  */
-export function getFirebaseMessaging(): any {
+async function getFirebaseMessaging(): Promise<any> {
   if (!loadFirebaseAdmin()) {
-    throw new Error('Firebase not available');
+    throw new Error(
+      'Firebase not available — firebase-admin module missing from Lambda package. Redeploy with npm run build.'
+    );
   }
-  const app = initializeFirebase();
+
+  const app = await initializeFirebase();
   return admin.messaging(app);
 }
 
 /**
- * Check if Firebase is available
+ * Check if Firebase module is present in the Lambda package
  */
 export function isFirebaseAvailable(): boolean {
   return loadFirebaseAdmin();
@@ -121,8 +178,8 @@ export async function sendPushToDevice(
   payload: PushNotificationPayload
 ): Promise<PushNotificationResult> {
   try {
-    const messaging = getFirebaseMessaging();
-    
+    const messaging = await getFirebaseMessaging();
+
     const message: any = {
       token: fcmToken,
       notification: {
@@ -150,22 +207,21 @@ export async function sendPushToDevice(
 
     const response = await messaging.send(message);
     console.log('[Firebase] Push sent successfully:', response);
-    
+
     return {
       success: true,
       messageId: response,
     };
   } catch (error: any) {
     console.error('[Firebase] Push notification error:', error);
-    
-    // Handle specific FCM errors
+
     if (error.code === 'messaging/registration-token-not-registered') {
       return {
         success: false,
         error: 'Invalid or expired FCM token',
       };
     }
-    
+
     return {
       success: false,
       error: error.message,
@@ -185,8 +241,8 @@ export async function sendPushToMultipleDevices(
   }
 
   try {
-    const messaging = getFirebaseMessaging();
-    
+    const messaging = await getFirebaseMessaging();
+
     const message: any = {
       tokens: fcmTokens,
       notification: {
@@ -213,7 +269,7 @@ export async function sendPushToMultipleDevices(
     };
 
     const response = await messaging.sendEachForMulticast(message);
-    
+
     const results: PushNotificationResult[] = response.responses.map((r: any) => ({
       success: r.success,
       messageId: r.messageId,
@@ -221,7 +277,7 @@ export async function sendPushToMultipleDevices(
     }));
 
     console.log(`[Firebase] Multicast: ${response.successCount} success, ${response.failureCount} failed`);
-    
+
     return {
       successCount: response.successCount,
       failureCount: response.failureCount,
@@ -245,8 +301,8 @@ export async function sendPushToTopic(
   payload: PushNotificationPayload
 ): Promise<PushNotificationResult> {
   try {
-    const messaging = getFirebaseMessaging();
-    
+    const messaging = await getFirebaseMessaging();
+
     const message: any = {
       topic: topic,
       notification: {
@@ -272,7 +328,7 @@ export async function sendPushToTopic(
 
     const response = await messaging.send(message);
     console.log('[Firebase] Topic push sent:', response);
-    
+
     return {
       success: true,
       messageId: response,
@@ -294,7 +350,7 @@ export async function subscribeToTopic(
   topic: string
 ): Promise<boolean> {
   try {
-    const messaging = getFirebaseMessaging();
+    const messaging = await getFirebaseMessaging();
     await messaging.subscribeToTopic(fcmToken, topic);
     console.log(`[Firebase] Subscribed to topic: ${topic}`);
     return true;
@@ -312,7 +368,7 @@ export async function unsubscribeFromTopic(
   topic: string
 ): Promise<boolean> {
   try {
-    const messaging = getFirebaseMessaging();
+    const messaging = await getFirebaseMessaging();
     await messaging.unsubscribeFromTopic(fcmToken, topic);
     console.log(`[Firebase] Unsubscribed from topic: ${topic}`);
     return true;
@@ -407,4 +463,3 @@ export const PushTemplates = {
     data: { type: 'promotion' },
   }),
 };
-

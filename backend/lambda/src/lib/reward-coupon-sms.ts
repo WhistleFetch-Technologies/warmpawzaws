@@ -28,7 +28,6 @@ export function isValidIndianMobile(phone: string): boolean {
 export function buildRewardCouponSmsMessage(params: {
   customerName?: string | null;
   rewardName: string;
-  link: string;
 }): string {
   return buildRewardCouponSmsBody(params);
 }
@@ -156,7 +155,6 @@ export async function sendRewardCouponSmsAfterRedeem(params: {
   const message = buildRewardCouponSmsMessage({
     customerName,
     rewardName: params.rewardName,
-    link,
   });
 
   const templateId = JIO_REWARD_COUPON_TEMPLATE_ID || undefined;

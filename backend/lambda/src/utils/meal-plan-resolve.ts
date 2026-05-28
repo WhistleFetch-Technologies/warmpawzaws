@@ -378,7 +378,13 @@ export async function ensureMealPlanMirrorForProductCheckout(resolved: Record<st
   const ds = parseJsonLoose(resolved.delivery_slots);
   candidates.delivery_slots = Array.isArray(ds) ? ds : [];
 
-  if (colSet.has('meals_per_day')) {
+  const purchaseTypeNorm = normalizePurchaseType(dr as Record<string, unknown>);
+  if (colSet.has('meals_per_delivery') && purchaseTypeNorm === 'WEEKLY_PLAN') {
+    const m = dr.mealsPerDelivery ?? dr.meals_per_delivery;
+    const n = typeof m === 'number' ? m : parseInt(String(m || '2'), 10);
+    if (Number.isFinite(n) && n >= 1) candidates.meals_per_delivery = Math.min(50, n);
+  }
+  if (colSet.has('meals_per_day') && purchaseTypeNorm !== 'WEEKLY_PLAN') {
     const m = dr.mealsPerDay;
     const n = typeof m === 'number' ? m : parseInt(String(m || '1'), 10);
     candidates.meals_per_day = Number.isFinite(n) && n >= 1 ? Math.min(50, n) : 1;

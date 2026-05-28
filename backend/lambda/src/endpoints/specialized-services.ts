@@ -51,10 +51,16 @@ import { fetchVendorMealOrdersForVendorIds } from '../utils/fetch-vendor-meal-or
 import { processSubscriptionVendorParentBookingFullRefund } from '../utils/meal-subscription-parent-booking-refund';
 import {
   mealProductParsedToDietaryJson,
-  mealsPerDayColumnFromPreset,
   type MealProductDietaryInput,
 } from '../utils/meal-product-dietary';
-import type { MealsPerDayPreset } from '../constants/meal-product-enums';
+import {
+  buildMealPlanRowFromProduct,
+  mealPlanDietTypeColumnIsArray,
+  mergeMealPlanCatalogForApi,
+  pushMealPlanStructuredUpdates,
+  resolveMealsPerDayColumn,
+  type MealProductParsedCore,
+} from '../utils/meal-product-persistence';
 import { formatMealProductZodError, parseMealProductRequest } from '../zodContracts/meal-product.contract';
 import { resolveEffectiveMealDeliveryState } from '../utils/meal-delivery-effective-state';
 import { resolveMealCatalogDisplayName } from '../utils/meal-plan-resolve';
@@ -62,11 +68,23 @@ import {
   deleteOrDeactivateMealPlanForVendor,
   isMealPlanFkViolation,
 } from '../utils/meal-plan-vendor-delete';
-import {
-  clampLeadTimeHoursForPlatform,
-  fetchPlatformMealBookingPolicy,
-} from '../utils/meal-booking-policy';
+import { clampLeadTimeHours } from '../utils/meal-booking-policy';
 import { parseOrderCutoffHm } from '../utils/meal-product-timing';
+
+function mealOrderDeliveryTimeDisplay(o: Record<string, unknown>): string | null {
+  const raw = o.scheduled_delivery_slot;
+  if (raw == null || raw === '') return null;
+  try {
+    const slot =
+      typeof raw === 'string'
+        ? (JSON.parse(raw) as { start?: string })
+        : (raw as { start?: string });
+    const start = slot?.start;
+    return typeof start === 'string' && start.trim() ? start.trim() : null;
+  } catch {
+    return null;
+  }
+}
 import {
   buildMealKitchenAvailabilityPayload,
   fetchMealKitchenAvailabilityForVendor,
@@ -78,19 +96,25 @@ import {
 } from '../utils/meal-order-settlement';
 
 /** Coerce DB/API money fields so vendor UI never receives NaN or bogus strings. */
-/** Clamp booking lead time / cutoff to platform policy before persisting meal catalog rows. */
-async function applyPlatformMealTimingToParsed<
+/** Require vendor lead time + order cutoff before persisting meal catalog rows. */
+function validateVendorMealTimingFromParsed<
   T extends { leadTimeHours?: number; orderCutoffTime?: string; preparationLeadTime: number },
->(p: T): Promise<T & { leadTimeHours: number; orderCutoffTime: string }> {
-  const policy = await fetchPlatformMealBookingPolicy();
-  const leadTimeHours = clampLeadTimeHoursForPlatform(
-    p.leadTimeHours != null && Number.isFinite(Number(p.leadTimeHours))
-      ? Number(p.leadTimeHours)
-      : policy.leadTime.defaultHours,
-    policy,
-  );
-  const orderCutoffTime = parseOrderCutoffHm(p.orderCutoffTime) || policy.orderCutoff.time;
-  return { ...p, leadTimeHours, orderCutoffTime };
+>(p: T): { ok: true; data: T & { leadTimeHours: number; orderCutoffTime: string } } | { ok: false; error: string } {
+  if (p.leadTimeHours == null || !Number.isFinite(Number(p.leadTimeHours))) {
+    return { ok: false, error: 'leadTimeHours is required (0–72)' };
+  }
+  const orderCutoffTime = parseOrderCutoffHm(p.orderCutoffTime);
+  if (!orderCutoffTime) {
+    return { ok: false, error: 'orderCutoffTime is required (HH:mm, e.g. 18:00)' };
+  }
+  return {
+    ok: true,
+    data: {
+      ...p,
+      leadTimeHours: clampLeadTimeHours(Number(p.leadTimeHours)),
+      orderCutoffTime,
+    },
+  };
 }
 
 function safeMoney(v: unknown): number {
@@ -1805,7 +1829,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
    * Each item includes `metadata` (or merged specs) with optional catalog keys:
    * mealCategories, medicalConditionTags, feedingInstructions, storageInstructions, shelfLifeDays,
    * deliveryType, mealsPerDayPreset, mealsPerDayCustom, allergens, preparationType, ingredients (string[]),
-   * nutritionalValue, petTypes, dietType, preparationLeadTime, mealImageUrl.
+   * nutritionalValue, petTypes, dietType, preparationLeadTime, mealImageUrl, packWeightGrams.
    */
   app.get("/vendor/:vendorId/meal-products", async (c) => {
     try {
@@ -1888,24 +1912,8 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               ? JSON.parse(mp.dietary_requirements)
               : (mp.dietary_requirements || {});
           } catch (_) {}
-          const dietForApi = await presignMealImageUrlInRecord(dietaryReqs as Record<string, unknown>);
-          const prepMins =
-            mp.prep_time_minutes != null
-              ? Number(mp.prep_time_minutes)
-              : (dietForApi.prepTimeMinutes ?? dietForApi.preparationLeadTime);
-          const leadHrs = mp.lead_time_hours != null ? Number(mp.lead_time_hours) : dietForApi.leadTimeHours;
-          const cutoff =
-            typeof mp.order_cutoff_time === 'string' && mp.order_cutoff_time
-              ? mp.order_cutoff_time
-              : dietForApi.orderCutoffTime;
-          const metadata = {
-            ...dietForApi,
-            ...(prepMins != null && Number.isFinite(Number(prepMins))
-              ? { prepTimeMinutes: Number(prepMins), preparationLeadTime: Number(prepMins) }
-              : {}),
-            ...(leadHrs != null && Number.isFinite(Number(leadHrs)) ? { leadTimeHours: Number(leadHrs) } : {}),
-            ...(typeof cutoff === 'string' && cutoff ? { orderCutoffTime: cutoff } : {}),
-          };
+          const merged = mergeMealPlanCatalogForApi(mp as Record<string, unknown>, dietaryReqs);
+          const metadata = await presignMealImageUrlInRecord(merged);
           list.push({
             id: mp.id,
             name: mp.plan_name,
@@ -1914,13 +1922,18 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             price: mp.price_per_meal ?? mp.price,
             category: 'meal_plan',
             metadata,
+            purchase_type: mp.purchase_type ?? metadata.purchaseType,
+            pack_weight_grams: mp.pack_weight_grams ?? metadata.packWeightGrams,
+            meals_per_delivery: mp.meals_per_delivery ?? metadata.mealsPerDelivery,
+            delivery_days: mp.delivery_days ?? metadata.deliveryDays,
+            delivery_frequency: mp.delivery_frequency ?? metadata.deliveryFrequency,
             prep_time_minutes: mp.prep_time_minutes,
             lead_time_hours: mp.lead_time_hours,
             order_cutoff_time: mp.order_cutoff_time,
-            petTypes: dietaryReqs.petTypes || [],
-            dietType: dietaryReqs.dietType,
-            ingredients: dietaryReqs.ingredients || [],
-            nutritionalValue: dietaryReqs.nutritionalValue || {},
+            petTypes: metadata.petTypes || [],
+            dietType: metadata.dietType,
+            ingredients: metadata.ingredients || [],
+            nutritionalValue: metadata.nutritionalValue || {},
             duration_days: mp.duration_days,
             meals_per_day: mp.meals_per_day,
             is_active: mp.is_active,
@@ -2064,39 +2077,28 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       if (!parsed.success) {
         return c.json({ error: formatMealProductZodError(parsed.error) }, 400);
       }
-      const pTimed = await applyPlatformMealTimingToParsed(parsed.data);
-      const p = pTimed;
+      const timingValidated = validateVendorMealTimingFromParsed(parsed.data);
+      if (!timingValidated.ok) {
+        return c.json({ error: timingValidated.error }, 400);
+      }
+      const p = timingValidated.data;
 
       const mealImageUrl = p.mealImageUrl
         ? stripS3PresignQueryFromUrl(String(p.mealImageUrl).trim())
         : undefined;
       const dietaryPayload = mealProductParsedToDietaryJson(p as MealProductDietaryInput, { mealImageUrl });
+      const parsedCore = p as MealProductParsedCore;
 
       // Prefer meal_plans (legacy nutrition catalog); fall back to products only on schema-level failures.
       const mpCols = await getPublicTableColumns('meal_plans');
-      const mealPlanRow: Record<string, unknown> = {
-        vendor_id: vendorId,
-        plan_name: p.name,
-        description: p.description,
-        price_per_meal: p.price,
-        price: p.price,
-        duration_days: p.shelfLifeDays,
-        meals_per_day: Number(dietaryPayload.mealsPerDay ?? mealsPerDayColumnFromPreset(p.mealsPerDayPreset as MealsPerDayPreset)),
-        dietary_requirements: JSON.stringify(dietaryPayload),
-        is_active: true,
-      };
-      if (mpCols.has('purchase_type')) mealPlanRow.purchase_type = p.purchaseType;
-      if (mpCols.has('subscription_config')) {
-        mealPlanRow.subscription_config = dietaryPayload.subscriptionConfig ?? {};
-      }
-      if (mpCols.has('prep_time_minutes')) mealPlanRow.prep_time_minutes = p.preparationLeadTime;
-      if (mpCols.has('lead_time_hours')) mealPlanRow.lead_time_hours = p.leadTimeHours;
-      if (mpCols.has('order_cutoff_time')) mealPlanRow.order_cutoff_time = p.orderCutoffTime;
-      if (mpCols.has('shelf_life_days')) mealPlanRow.shelf_life_days = p.shelfLifeDays;
-      if (mpCols.has('storage_instructions')) mealPlanRow.storage_instructions = p.storageInstructions ?? null;
-      if (mpCols.has('serving_instructions')) mealPlanRow.serving_instructions = p.feedingInstructions ?? null;
-      if (mpCols.has('allergens') && p.allergens?.length) mealPlanRow.allergens = p.allergens;
-      if (mpCols.has('ingredients')) mealPlanRow.ingredients = JSON.stringify(p.ingredients);
+      const dietTypeIsArray = await mealPlanDietTypeColumnIsArray();
+      const mealPlanRow = buildMealPlanRowFromProduct(
+        vendorId,
+        parsedCore,
+        dietaryPayload,
+        mpCols,
+        { mealImageUrl, dietTypeColumnIsArray: dietTypeIsArray },
+      );
 
       try {
         const mealPlan = await insert('meal_plans', mealPlanRow as any);
@@ -2260,8 +2262,11 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       if (!parsed.success) {
         return c.json({ error: formatMealProductZodError(parsed.error) }, 400);
       }
-      const pTimed = await applyPlatformMealTimingToParsed(parsed.data);
-      const p = pTimed;
+      const timingValidated = validateVendorMealTimingFromParsed(parsed.data);
+      if (!timingValidated.ok) {
+        return c.json({ error: timingValidated.error }, 400);
+      }
+      const p = timingValidated.data;
 
       const dietaryPayload = mealProductParsedToDietaryJson(p as MealProductDietaryInput, {
         mealImageUrl: resolvedMealImageUrl ?? undefined,
@@ -2274,69 +2279,25 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       );
       if (mealPlanCheck.rows?.length > 0) {
         const mpCols = await getPublicTableColumns('meal_plans');
+        const dietTypeIsArray = await mealPlanDietTypeColumnIsArray();
+        const parsedCore = p as MealProductParsedCore;
+        const mealsPerDayCol = resolveMealsPerDayColumn(parsedCore.purchaseType, parsedCore);
         const mpParams: unknown[] = [
           data.name ?? data.plan_name,
           data.description,
           data.price,
           p.shelfLifeDays,
-          Number(dietaryPayload.mealsPerDay ?? mealsPerDayColumnFromPreset(p.mealsPerDayPreset as MealsPerDayPreset)),
+          mealsPerDayCol,
           JSON.stringify(dietaryPayload),
         ];
-        let nextPh = 6;
-        let extras = '';
-        if (mpCols.has('prep_time_minutes')) {
-          nextPh += 1;
-          extras += `, prep_time_minutes = COALESCE($${nextPh}, prep_time_minutes)`;
-          mpParams.push(p.preparationLeadTime);
-        }
-        if (mpCols.has('lead_time_hours')) {
-          nextPh += 1;
-          extras += `, lead_time_hours = COALESCE($${nextPh}, lead_time_hours)`;
-          mpParams.push(p.leadTimeHours);
-        }
-        if (mpCols.has('order_cutoff_time')) {
-          nextPh += 1;
-          extras += `, order_cutoff_time = COALESCE($${nextPh}, order_cutoff_time)`;
-          mpParams.push(p.orderCutoffTime);
-        }
-        if (mpCols.has('shelf_life_days')) {
-          nextPh += 1;
-          extras += `, shelf_life_days = COALESCE($${nextPh}, shelf_life_days)`;
-          mpParams.push(p.shelfLifeDays);
-        }
-        if (mpCols.has('storage_instructions')) {
-          nextPh += 1;
-          extras += `, storage_instructions = COALESCE($${nextPh}, storage_instructions)`;
-          mpParams.push(p.storageInstructions ?? null);
-        }
-        if (mpCols.has('serving_instructions')) {
-          nextPh += 1;
-          extras += `, serving_instructions = COALESCE($${nextPh}, serving_instructions)`;
-          mpParams.push(p.feedingInstructions ?? null);
-        }
-        if (mpCols.has('allergens')) {
-          nextPh += 1;
-          extras += `, allergens = $${nextPh}`;
-          mpParams.push(p.allergens ?? []);
-        }
-        if (mpCols.has('ingredients')) {
-          nextPh += 1;
-          extras += `, ingredients = $${nextPh}::jsonb`;
-          mpParams.push(JSON.stringify(p.ingredients));
-        }
-        if (mpCols.has('purchase_type')) {
-          nextPh += 1;
-          extras += `, purchase_type = $${nextPh}`;
-          mpParams.push(p.purchaseType);
-        }
-        if (mpCols.has('subscription_config')) {
-          nextPh += 1;
-          extras += `, subscription_config = $${nextPh}::jsonb`;
-          mpParams.push(JSON.stringify(dietaryPayload.subscriptionConfig ?? {}));
-        }
-        const idPh = nextPh + 1;
-        const vendorPh = nextPh + 2;
-        mpParams.push(productId, vendorId);
+        const updateCtx = { nextPh: 6, extras: '', mpParams };
+        pushMealPlanStructuredUpdates(mpCols, parsedCore, dietaryPayload, {
+          mealImageUrl: resolvedMealImageUrl ?? undefined,
+          dietTypeColumnIsArray: dietTypeIsArray,
+        }, updateCtx);
+        const idPh = updateCtx.nextPh + 1;
+        const vendorPh = updateCtx.nextPh + 2;
+        updateCtx.mpParams.push(productId, vendorId);
         await query(
           `UPDATE meal_plans SET 
             plan_name = COALESCE($1, plan_name),
@@ -2344,10 +2305,10 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             price_per_meal = COALESCE($3, price_per_meal),
             duration_days = COALESCE($4, duration_days),
             meals_per_day = COALESCE($5, meals_per_day),
-            dietary_requirements = COALESCE($6::jsonb, dietary_requirements)${extras},
+            dietary_requirements = COALESCE($6::jsonb, dietary_requirements)${updateCtx.extras},
             updated_at = NOW()
            WHERE id = $${idPh} AND vendor_id = $${vendorPh}`,
-          mpParams,
+          updateCtx.mpParams,
         );
         return c.json({ success: true, message: 'Product updated' });
       }
@@ -2673,6 +2634,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           items: [],
           delivery_address: typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address,
           subtotal: lineSubtotal,
+          delivery_time_display: mealOrderDeliveryTimeDisplay(o as Record<string, unknown>),
         });
       }
 

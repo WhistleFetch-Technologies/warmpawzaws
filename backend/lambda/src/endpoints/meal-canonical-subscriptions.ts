@@ -14,6 +14,7 @@ import {
 } from '../services/meal-subscription/meal-subscription-canonical-service';
 import { assertVendorAcceptingMealOrders } from '../utils/meal-kitchen-availability';
 import { resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
+import { fireVendorMealSubscriptionScheduledSms } from '../lib/vendor-appointment-sms';
 import {
   activateCanonicalSubscriptionAfterPayment,
   applyWalletDebitToPendingMealSubscription,
@@ -141,6 +142,13 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
       }
 
       const { subscription, deliveriesInserted } = await createCanonicalSubscription(input);
+
+      if (String(subscription.lifecycle_status || '') === 'active') {
+        fireVendorMealSubscriptionScheduledSms(
+          String(subscription.id || ''),
+          String(subscription.vendor_id || planVendorId || '')
+        );
+      }
 
       return c.json({
         success: true,
@@ -290,6 +298,7 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
       if (!sub) {
         return c.json({ success: false, error: 'Subscription not found' }, 404);
       }
+      fireVendorMealSubscriptionScheduledSms(String(sub.id || id), String(sub.vendor_id || ''));
       return c.json({ success: true, subscription: sub });
     } catch (e: unknown) {
       const err = e as { message?: string; statusCode?: number };

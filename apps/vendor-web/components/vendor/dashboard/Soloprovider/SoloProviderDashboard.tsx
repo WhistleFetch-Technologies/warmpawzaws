@@ -73,6 +73,8 @@ import {
   SHOW_VENDOR_FOOTER_REPORTING_TAB,
   getVendorDashboardRatingPresentation,
   mergeVendorDashboardStats,
+  mapDashboardBookingToScheduleItem,
+  matchesScheduleTypeFilter,
 } from '../helpers';
 import {
   isMealOrderScheduleItem,
@@ -237,50 +239,14 @@ export function SoloProviderDashboard({
         );
         setVendor(dashboardRes.vendor || dashboardRes.data?.vendor || vendorData);
 
-        // Transform bookings
+        // Transform bookings for the selected timeframe
         const bookings = dashboardRes.bookings || dashboardRes.data?.bookings || [];
-        if (bookings.length > 0) {
-          const transformedBookings: ScheduleItem[] = bookings.map((b: any) => ({
-            id: b.id || b.booking_id,
-            bookingId: b.id || b.booking_id,
-            time: b.booking_time ? formatBookingTime(b.booking_time) : 'N/A',
-            duration: b.duration_minutes || 30,
-            petName: b.pet_name || 'Pet',
-            petBreed: b.pet_breed,
-            customerName: b.customer_name || 'Customer',
-            customerPhone: b.customer_phone || '',
-            customerId: b.customerId ?? b.customer_id ?? undefined,
-            serviceName: b.service_name || 'Service',
-            serviceType: b.service_type || 'at_home',
-            status: b.status || 'pending',
-            price: parseFloat(b.total_amount || '0'),
-            address: b.address || '',
-            specialInstructions: b.notes,
-            hasUnreadMessages: b.hasUnreadMessages || false,
-            unreadMessageCount: b.unreadMessageCount || 0,
-            chatEnabled: b.chatEnabled || true,
-            isFollowUp: b.isFollowUp || false,
-            // Track rescheduled bookings: true if booking was rescheduled (has rescheduled_at timestamp)
-            isRescheduled: b.isRescheduled || b.rescheduled_at != null,
-            rescheduledAt: b.rescheduled_at || null,
-            packagePurchaseId: b.packagePurchaseId ?? b.package_purchase_id,
-            packageSessionNumber:
-              b.packageSessionNumber != null
-                ? Number(b.packageSessionNumber)
-                : b.package_session_number != null
-                  ? Number(b.package_session_number)
-                  : undefined,
-            packageTotalSessions:
-              b.packageTotalSessions != null
-                ? Number(b.packageTotalSessions)
-                : b.package_total_sessions != null
-                  ? Number(b.package_total_sessions)
-                  : b.total_sessions != null
-                    ? Number(b.total_sessions)
-                    : undefined,
-          }));
-          setTodaySchedule(transformedBookings);
-        }
+        const transformedBookings: ScheduleItem[] = (Array.isArray(bookings) ? bookings : [])
+          .filter((b: Record<string, unknown>) => b.status !== 'completed')
+          .map((b: Record<string, unknown>) =>
+            mapDashboardBookingToScheduleItem(b, 'at_home') as ScheduleItem
+          );
+        setTodaySchedule(transformedBookings);
       }
 
       if (isNutritionist) {
@@ -1027,13 +993,10 @@ export function SoloProviderDashboard({
               const filteredBookings = todaySchedule.filter((appointment) => {
                 if (showingMealOrders) return false;
                 if (appointmentTypeFilter === 'all') return true;
-                const typeMap: Record<string, string> = {
-                  at_home: 'home',
-                  home: 'home',
-                  tele: 'tele',
-                  teleconsultation: 'tele',
-                };
-                return typeMap[appointment.serviceType?.toLowerCase()] === appointmentTypeFilter;
+                return matchesScheduleTypeFilter(
+                  appointment.serviceType || 'at_home',
+                  appointmentTypeFilter
+                );
               });
               const scheduleItems = showingMealOrders
                 ? mealOrderSchedule

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star, Navigation, Upload, Key, Eye, EyeOff } from 'lucide-react';
+import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star, Navigation, Upload, Key, Eye, EyeOff, HelpCircle } from 'lucide-react';
+import { navigateToBookingSupport } from '@/lib/support-contact';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
@@ -1408,6 +1409,25 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                   )}
                 </Button>
               )}
+
+              <Button
+                onClick={() => {
+                  onClose();
+                  navigateToBookingSupport(router, {
+                    bookingId: String(booking.id || bookingId),
+                    serviceName: booking.serviceName || booking.service_name,
+                    bookingDate: booking.date || booking.booking_date,
+                    amount: booking.amount ?? booking.total_amount,
+                    status: booking.status,
+                    vendorName: booking.vendorName || booking.vendor_name,
+                  });
+                }}
+                variant="outline"
+                className="w-full mt-3 border-[#FF8C42]/40 text-[#FF8C42] hover:bg-[#FFF3E8] py-3 rounded-xl flex items-center justify-center gap-2"
+              >
+                <HelpCircle className="w-5 h-5" />
+                Need help with this booking
+              </Button>
             </div>
           </div>
         )}

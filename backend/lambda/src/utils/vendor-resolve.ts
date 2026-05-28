@@ -7,8 +7,11 @@
  * services, availability, earnings, etc. all work without "Vendor not found".
  * Idempotent: safe to call on every request; creates at most once per identity.
  */
-import { select, insert } from '../database/rds-connection';
+import { query, select, insert } from '../database/rds-connection';
 import { extractProfilePhotoFromApplication, extractPincodeFromPayload } from './extract-profile-photo';
+
+const VENDOR_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function resolveVendorId(paramVendorId: string): Promise<string> {
   const trimmed = (paramVendorId || '').trim();
@@ -94,4 +97,61 @@ export async function resolveVendorId(paramVendorId: string): Promise<string> {
     console.warn('[VendorResolve] Auto-create vendor failed:', err?.message);
   }
   return trimmed;
+}
+
+/**
+ * All vendors.id values that should see the same vendor_earnings ledger for this login.
+ * Earnings rows are always stored on vendors.id; the app often sends vendor_identity.id after OTP.
+ */
+export async function resolveVendorIdsForLedger(paramVendorId: string): Promise<string[]> {
+  const trimmed = (paramVendorId || '').trim();
+  if (!trimmed || !VENDOR_UUID_RE.test(trimmed)) return [];
+
+  const canonical = await resolveVendorId(trimmed);
+  const ids = new Set<string>();
+  if (canonical && VENDOR_UUID_RE.test(canonical)) ids.add(canonical);
+  if (trimmed !== canonical && VENDOR_UUID_RE.test(trimmed)) ids.add(trimmed);
+
+  try {
+    const link = await query(
+      `SELECT DISTINCT v.id::text AS id
+       FROM vendors v
+       WHERE v.id = $1::uuid
+          OR (
+            $2::uuid IS NOT NULL
+            AND v.phone IS NOT NULL
+            AND v.phone IN (
+              SELECT phone FROM vendors WHERE id = $1::uuid AND phone IS NOT NULL
+              UNION
+              SELECT phone FROM vendor_identity WHERE id = $2::uuid AND phone IS NOT NULL
+            )
+          )`,
+      [canonical, trimmed !== canonical ? trimmed : null]
+    );
+    for (const row of link.rows || []) {
+      if (row?.id && VENDOR_UUID_RE.test(String(row.id))) ids.add(String(row.id));
+    }
+  } catch (err: unknown) {
+    console.warn('[VendorResolve] resolveVendorIdsForLedger phone link:', (err as Error)?.message);
+  }
+
+  try {
+    const cr = await query(
+      `SELECT center_id FROM vendors WHERE id = $1::uuid LIMIT 1`,
+      [canonical]
+    ).catch(() => ({ rows: [] as { center_id?: string }[] }));
+    const cid = cr.rows?.[0]?.center_id;
+    if (cid) {
+      const sib = await query(`SELECT id::text AS id FROM vendors WHERE center_id = $1::uuid`, [cid]).catch(
+        () => ({ rows: [] as { id: string }[] })
+      );
+      for (const row of sib.rows || []) {
+        if (row?.id && VENDOR_UUID_RE.test(String(row.id))) ids.add(String(row.id));
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return ids.size > 0 ? [...ids] : canonical ? [canonical] : [trimmed];
 }

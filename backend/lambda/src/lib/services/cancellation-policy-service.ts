@@ -197,7 +197,13 @@ export function computeRefundFromTier(
   };
 }
 
-export type RefundSource = 'vendor_refund_tiers' | 'booking_cancellation_rules' | 'default';
+export type RefundSource =
+  | 'vendor_refund_tiers'
+  | 'booking_cancellation_rules'
+  | 'default'
+  | 'wallet_full_refund';
+
+export type CustomerCancellationRefundMethod = 'wallet' | 'original';
 
 /**
  * Unified preview for customer cancellation refunds.
@@ -302,6 +308,45 @@ export async function previewCustomerCancellationRefund(booking: BookingForPolic
     platformFeeNonRefundable,
     hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
   };
+}
+
+/**
+ * Wallet refunds on customer cancel: 100% of what the customer paid (no cancellation policy).
+ */
+export async function previewWalletFullCancellationRefund(booking: BookingForPolicy) {
+  const paidBreakdown = await getRefundableCustomerPaidBreakdown(booking.id, booking);
+  const fullAmount = Math.round(
+    (paidBreakdown.refundableBase + paidBreakdown.platformFeeNonRefundable) * 100
+  ) / 100;
+  const hoursRaw = computeHoursUntilBookingStart(booking);
+  const hoursUntilBooking = Number.isFinite(hoursRaw) ? hoursRaw : 0;
+
+  return {
+    refundAmount: fullAmount,
+    refundPercentage: 100,
+    cancellationFee: 0,
+    source: 'wallet_full_refund' as RefundSource,
+    policyApplied: false,
+    refundableCustomerPaidBase: fullAmount,
+    platformFeeNonRefundable: 0,
+    hoursUntilBooking: Math.round(hoursUntilBooking * 100) / 100,
+  };
+}
+
+export function normalizeCustomerCancellationRefundMethod(
+  value: unknown
+): CustomerCancellationRefundMethod {
+  return String(value || 'original').toLowerCase() === 'wallet' ? 'wallet' : 'original';
+}
+
+export async function previewCustomerCancellationRefundByMethod(
+  booking: BookingForPolicy,
+  refundMethod: CustomerCancellationRefundMethod
+) {
+  if (refundMethod === 'wallet') {
+    return previewWalletFullCancellationRefund(booking);
+  }
+  return previewCustomerCancellationRefund(booking);
 }
 
 /**

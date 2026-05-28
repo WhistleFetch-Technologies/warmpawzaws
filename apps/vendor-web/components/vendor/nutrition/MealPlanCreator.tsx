@@ -75,27 +75,9 @@ export function MealPlanCreator({ vendorId, existingPlan, onSave, onCancel }: Me
   const [prepTimeMinutes, setPrepTimeMinutes] = useState<number | ''>(initialPrep);
   const [shelfLifeDays, setShelfLifeDays] = useState(existingPlan?.shelf_life_days || 1);
   const [leadTimeHours, setLeadTimeHours] = useState(existingPlan?.lead_time_hours || 24);
-  const [leadBounds, setLeadBounds] = useState({ min: 0, max: 72, defaultHours: 24 });
-  const [sameDayEnabled, setSameDayEnabled] = useState(true);
+  const leadBounds = { min: 0, max: 72, defaultHours: 24 };
+  const sameDayEnabled = leadTimeHours <= 24;
   const [orderCutoffTime, setOrderCutoffTime] = useState(existingPlan?.order_cutoff_time || '18:00');
-
-  useEffect(() => {
-    apiClient
-      .get<{ success?: boolean; bounds?: { minHours: number; maxHours: number; defaultHours: number }; sameDay?: { enabled: boolean } }>(
-        '/vendor/meal-booking-policy',
-      )
-      .then((res) => {
-        if (res?.bounds) {
-          setLeadBounds({
-            min: res.bounds.minHours,
-            max: res.bounds.maxHours,
-            defaultHours: res.bounds.defaultHours,
-          });
-        }
-        if (res?.sameDay) setSameDayEnabled(!!res.sameDay.enabled);
-      })
-      .catch(() => undefined);
-  }, []);
   const [availableDays, setAvailableDays] = useState<string[]>(existingPlan?.available_days || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat']);
   const [deliverySlots, setDeliverySlots] = useState<DeliverySlot[]>(existingPlan?.delivery_slots || [
     { start: '09:00', end: '12:00' },

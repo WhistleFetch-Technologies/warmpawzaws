@@ -7448,28 +7448,19 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       const refund = refunds[0];
 
-      if (refund.refund_status !== 'pending') {
+      if (refund.refund_status !== 'pending' && refund.refund_status !== 'approved') {
         return c.json({ success: false, error: 'Refund not in pending state' }, 400);
       }
 
-      // Update refund status to approved (will trigger processing)
-      await update('refunds', { id: refundId }, {
-        refund_status: 'approved',
-        admin_comment: notes || null,
-        updated_at: new Date().toISOString(),
-      });
-
-      // Trigger refund processing (this would normally be done by a background job)
-      // For now, we'll mark it as processing
-      await update('refunds', { id: refundId }, {
-        refund_status: 'processing',
-        updated_at: new Date().toISOString(),
-      });
+      const { processExistingPendingRefund } = await import('../../../utils/payments/booking-original-refund');
+      const result = await processExistingPendingRefund(refundId, { adminComment: notes || null });
 
       return c.json({
         success: true,
-        message: 'Refund approved and processing',
+        message: result.message || 'Refund approved and processing',
         refund_id: refundId,
+        razorpay_refund_id: result.razorpayRefundId,
+        status: result.status,
       });
     } catch (error: any) {
       console.error('Error approving refund:', error);

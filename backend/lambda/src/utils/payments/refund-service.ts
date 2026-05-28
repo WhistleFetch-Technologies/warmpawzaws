@@ -2,23 +2,18 @@
  * ============================================================================
  * REFUND SERVICE - Generic Refund Processing Utility
  * ============================================================================
- * 
- * A reusable service for processing refunds across the application.
- * Handles:
- * - Refund record creation
- * - Razorpay refund API integration
- * - Payment status updates
- * - Customer notifications (SNS)
- * - Booking status updates (optional)
- * 
- * Date: 2026-03-03
+ *
+ * Delegates booking refunds to booking-original-refund orchestrator.
  * ============================================================================
  */
 
-import { query, select, insert, update, withTransaction } from '../../database/rds-connection';
-import { getRazorpayClient } from '../../utils/payments/razorpay-client';
+import { query, withTransaction } from '../../database/rds-connection';
 import { publishToSNS } from '../aws/aws-clients';
 import { BookingPaymentStatus } from '../../endpoints/constants';
+import {
+  processBookingOriginalPaymentRefund,
+  processExistingPendingRefund,
+} from './booking-original-refund';
 
 export interface RefundRequest {
   paymentId: string;
@@ -29,13 +24,15 @@ export interface RefundRequest {
   initiatedBy?: 'customer' | 'vendor' | 'admin' | 'system';
   metadata?: Record<string, any>;
   skipNotification?: boolean;
-  skipRazorpayRefund?: boolean; // For testing or manual refunds
+  skipRazorpayRefund?: boolean;
+  customerId?: string;
+  vendorId?: string;
 }
 
 export interface RefundResult {
   refundId: string;
   razorpayRefundId?: string;
-  status: 'pending' | 'processing' | 'processed' | 'failed';
+  status: 'pending' | 'processing' | 'processed' | 'failed' | 'completed';
   amount: number;
   paymentStatus: string;
   bookingStatus?: string;
@@ -52,9 +49,6 @@ export interface RefundNotificationOptions {
   customSubject?: string;
 }
 
-/**
- * Check if a refund already exists for a payment
- */
 export async function checkExistingRefund(paymentId: string): Promise<{
   exists: boolean;
   refundId?: string;
@@ -64,9 +58,9 @@ export async function checkExistingRefund(paymentId: string): Promise<{
     const result = await query(
       `SELECT id, refund_status 
        FROM refunds 
-       WHERE payment_id = $1 
-         AND refund_status NOT IN ('failed', 'cancelled')
-       ORDER BY created_at DESC 
+       WHERE payment_id = $1::uuid
+         AND refund_status NOT IN ('failed', 'rejected')
+       ORDER BY requested_at DESC NULLS LAST
        LIMIT 1`,
       [paymentId]
     );
@@ -86,9 +80,6 @@ export async function checkExistingRefund(paymentId: string): Promise<{
   }
 }
 
-/**
- * Get payment details including Razorpay payment ID
- */
 export async function getPaymentDetails(paymentId: string): Promise<{
   id: string;
   booking_id?: string;
@@ -99,10 +90,10 @@ export async function getPaymentDetails(paymentId: string): Promise<{
 } | null> {
   try {
     const result = await query(
-      `SELECT p.id, p.booking_id, p.customer_id, p.amount, 
+      `SELECT p.id, p.booking_id, p.customer_id, p.amount::text, 
               p.razorpay_payment_id, p.payment_status
        FROM payments p
-       WHERE p.id = $1`,
+       WHERE p.id = $1::uuid`,
       [paymentId]
     );
 
@@ -124,50 +115,16 @@ export async function getPaymentDetails(paymentId: string): Promise<{
   }
 }
 
-/**
- * Process Razorpay refund
- */
-async function processRazorpayRefund(
-  razorpayPaymentId: string,
-  amount: number,
-  reason: string,
-  metadata?: Record<string, any>
-): Promise<{ id: string; status: string }> {
-  try {
-    const razorpay = getRazorpayClient();
-    const refundResult = await razorpay.payments.refund({
-      payment_id: razorpayPaymentId,
-      amount: Math.round(amount * 100), // Convert to paise
-      notes: {
-        reason: reason,
-        ...metadata,
-      },
-    });
-
-    return {
-      id: refundResult.id,
-      status: refundResult.status === 'processed' ? 'processed' : 'processing',
-    };
-  } catch (error: any) {
-    console.error('[refund-service] Razorpay refund error:', error);
-    throw error;
-  }
-}
-
-/**
- * Send refund notification to customer via SNS
- */
 export async function sendRefundNotification(
   options: RefundNotificationOptions
 ): Promise<void> {
   try {
     const { customerId, bookingId, amount, reason, refundId, customMessage, customSubject } = options;
 
-    // Get customer details
     const customerResult = await query(
       `SELECT phone, email, full_name, name 
        FROM customers 
-       WHERE id = $1`,
+       WHERE id = $1::uuid`,
       [customerId]
     );
 
@@ -180,7 +137,6 @@ export async function sendRefundNotification(
     const customerName = customer.full_name || customer.name || 'Customer';
     const bookingRef = bookingId ? `#${bookingId.substring(0, 8)}` : '';
 
-    // Default messages
     const smsMessage = customMessage || 
       `Your payment of ₹${amount}${bookingRef ? ` for booking ${bookingRef}` : ''} has been refunded. ${reason}. Refund will be processed within 5-7 business days.`;
 
@@ -195,7 +151,6 @@ export async function sendRefundNotification(
       `If you have any questions, please contact our support team.\n\n` +
       `Thank you,\nWarmpawz Team`;
 
-    // Send SMS notification
     if (customer.phone) {
       await publishToSNS('customer-notifications', {
         type: 'sms',
@@ -206,7 +161,6 @@ export async function sendRefundNotification(
       });
     }
 
-    // Send email notification
     if (customer.email) {
       await publishToSNS('customer-notifications', {
         type: 'email',
@@ -218,7 +172,6 @@ export async function sendRefundNotification(
       });
     }
 
-    // Publish to payment-events topic
     await publishToSNS('payment-events', {
       event_type: 'refund_initiated',
       booking_id: bookingId || null,
@@ -232,13 +185,11 @@ export async function sendRefundNotification(
     console.log(`[refund-service] ✅ Notification sent to customer ${customerId}`);
   } catch (error: any) {
     console.error('[refund-service] Error sending notification:', error);
-    // Don't throw - notification failure shouldn't block refund
   }
 }
 
 /**
- * Main function to process a refund
- * This is the generic function that can be used anywhere in the codebase
+ * Process a refund — uses booking orchestrator when bookingId is available.
  */
 export async function processRefund(request: RefundRequest): Promise<RefundResult> {
   const {
@@ -246,219 +197,116 @@ export async function processRefund(request: RefundRequest): Promise<RefundResul
     bookingId,
     amount,
     reason,
-    refundType = 'full',
     initiatedBy = 'system',
-    metadata = {},
     skipNotification = false,
     skipRazorpayRefund = false,
+    customerId: customerIdParam,
+    vendorId,
   } = request;
 
-  // Validate amount
   if (amount <= 0) {
     throw new Error('Refund amount must be greater than 0');
   }
 
-  // Get payment details
   const payment = await getPaymentDetails(paymentId);
   if (!payment) {
     throw new Error(`Payment ${paymentId} not found`);
   }
 
-  // Validate amount doesn't exceed payment amount
   if (amount > payment.amount) {
     throw new Error(`Refund amount (${amount}) exceeds payment amount (${payment.amount})`);
   }
 
-  // Check for existing refunds
-  const existingRefund = await checkExistingRefund(paymentId);
-  if (existingRefund.exists) {
-    throw new Error(
-      `Refund already exists for payment ${paymentId}. Refund ID: ${existingRefund.refundId}, Status: ${existingRefund.status}`
-    );
-  }
-
-  // Validate payment can be refunded
   if (!['completed', 'partially_refunded'].includes(payment.payment_status)) {
     throw new Error(`Payment cannot be refunded in current state: ${payment.payment_status}`);
   }
 
-  // Calculate total already refunded
-  const { rows: refundedRows } = await query(
-    `SELECT COALESCE(SUM(amount), 0) AS total_refunded 
-     FROM refunds 
-     WHERE payment_id = $1 
-       AND refund_status IN ('processed', 'processing', 'approved')`,
-    [paymentId]
-  );
+  const resolvedBookingId = bookingId || payment.booking_id;
+  const resolvedCustomerId = customerIdParam || payment.customer_id;
 
-  const totalRefunded = parseFloat(refundedRows[0]?.total_refunded || '0');
-  const availableToRefund = payment.amount - totalRefunded;
-
-  if (amount > availableToRefund) {
-    throw new Error(
-      `Only ₹${availableToRefund} available to refund. Requested: ₹${amount}`
-    );
+  if (skipRazorpayRefund) {
+    return await withTransaction(async (client) => {
+      const ins = await client.query(
+        `INSERT INTO refunds (
+          payment_id, booking_id, customer_id, refund_amount, refund_reason,
+          refund_status, refund_method, requested_at, processed_at
+        ) VALUES ($1, $2, $3, $4, $5, 'completed', 'original', NOW(), NOW())
+        RETURNING id::text`,
+        [paymentId, resolvedBookingId || null, resolvedCustomerId, amount, reason]
+      );
+      return {
+        refundId: ins.rows[0].id,
+        status: 'completed' as const,
+        amount,
+        paymentStatus: payment.payment_status,
+        message: 'Manual refund recorded',
+      };
+    });
   }
 
-  // Process refund in transaction
-  return await withTransaction(async (client) => {
-    // Create refund record
-    const refundResult = await client.query(
-      `INSERT INTO refunds (
-        payment_id, booking_id, amount, reason, refund_type,
-        refund_status, razorpay_payment_id, initiated_by, metadata,
-        created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
-      RETURNING *`,
-      [
-        paymentId,
-        bookingId || payment.booking_id || null,
-        amount,
-        reason,
-        refundType,
-        'processing',
-        payment.razorpay_payment_id || null,
-        initiatedBy,
-        metadata ? JSON.stringify(metadata) : null,
-      ]
-    );
-
-    const refund = refundResult.rows[0];
-    let razorpayRefundId: string | undefined;
-    let finalStatus: 'pending' | 'processing' | 'processed' | 'failed' = 'processing';
-
-    // Process Razorpay refund if payment ID exists and not skipped
-    if (payment.razorpay_payment_id && !skipRazorpayRefund) {
-      try {
-        const razorpayResult = await processRazorpayRefund(
-          payment.razorpay_payment_id,
-          amount,
-          reason,
-          { booking_id: bookingId || payment.booking_id, ...metadata }
-        );
-
-        razorpayRefundId = razorpayResult.id;
-        finalStatus = razorpayResult.status === 'processed' ? 'processed' : 'processing';
-
-        // Update refund record with Razorpay refund ID
-        await client.query(
-          `UPDATE refunds 
-           SET razorpay_refund_id = $1, refund_status = $2, 
-               processed_at = NOW(), updated_at = NOW()
-           WHERE id = $3`,
-          [razorpayRefundId, finalStatus, refund.id]
-        );
-
-        console.log(`[refund-service] ✅ Razorpay refund processed: ${razorpayRefundId}`);
-      } catch (error: any) {
-        console.error('[refund-service] Razorpay refund failed:', error);
-        // Update refund status to failed
-        await client.query(
-          `UPDATE refunds 
-           SET refund_status = 'failed', updated_at = NOW()
-           WHERE id = $1`,
-          [refund.id]
-        );
-        throw error;
-      }
-    } else if (skipRazorpayRefund) {
-      // If skipping Razorpay, mark as processed (manual refund)
-      await client.query(
-        `UPDATE refunds 
-         SET refund_status = 'processed', updated_at = NOW()
-         WHERE id = $1`,
-        [refund.id]
-      );
-      finalStatus = 'processed';
-    }
-
-    // Update payment status
-    const newPaymentStatus =
-      amount === availableToRefund ? BookingPaymentStatus.REFUNDED : 'partially_refunded';
-
-    await client.query(
-      `UPDATE payments 
-       SET payment_status = $1, updated_at = NOW()
-       WHERE id = $2`,
-      [newPaymentStatus, paymentId]
-    );
-
-    // Update booking payment status if booking exists
-    let bookingStatus: string | undefined;
-    if (bookingId || payment.booking_id) {
-      const finalBookingId = bookingId || payment.booking_id;
-      await client.query(
-        `UPDATE bookings 
-         SET payment_status = $1, updated_at = NOW()
-         WHERE id = $2`,
-        [newPaymentStatus, finalBookingId]
-      );
-      bookingStatus = newPaymentStatus;
-    }
-
-    // Send notification if not skipped
-    if (!skipNotification) {
-      // Use setImmediate to send notification after transaction commits
-      setImmediate(async () => {
-        try {
-          await sendRefundNotification({
-            customerId: payment.customer_id,
-            bookingId: bookingId || payment.booking_id,
-            amount: amount,
-            reason: reason,
-            refundId: refund.id,
-          });
-        } catch (error) {
-          console.error('[refund-service] Notification error (non-blocking):', error);
-        }
-      });
-    }
+  if (resolvedBookingId && resolvedCustomerId) {
+    const result = await processBookingOriginalPaymentRefund({
+      bookingId: String(resolvedBookingId),
+      customerId: String(resolvedCustomerId),
+      vendorId: vendorId || null,
+      refundAmount: amount,
+      reason,
+      initiatedBy,
+      skipNotification,
+    });
 
     return {
-      refundId: refund.id,
-      razorpayRefundId,
-      status: finalStatus,
-      amount: parseFloat(amount.toString()),
-      paymentStatus: newPaymentStatus,
-      bookingStatus,
-      message: finalStatus === 'processed'
-        ? 'Refund processed successfully'
-        : 'Refund is being processed',
+      refundId: result.refundId || '',
+      razorpayRefundId: result.razorpayRefundId,
+      status: result.status === 'completed' ? 'completed' : result.status === 'failed' ? 'failed' : 'processing',
+      amount: result.totalAmount,
+      paymentStatus:
+        result.status === 'failed' ? payment.payment_status : BookingPaymentStatus.REFUNDED,
+      bookingStatus: BookingPaymentStatus.REFUNDED,
+      message: result.message,
     };
-  });
+  }
+
+  throw new Error('Booking ID and customer ID required for automatic Razorpay refund');
 }
 
-/**
- * Convenience function for instant tele rejection refund
- */
 export async function processInstantTeleRejectionRefund(
   bookingId: string,
   customerId: string,
   amount: number,
   vendorName: string
 ): Promise<RefundResult> {
-  // Get payment ID from booking
   const bookingResult = await query(
-    `SELECT payment_id FROM bookings WHERE id = $1`,
+    `SELECT payment_id FROM bookings WHERE id = $1::uuid`,
     [bookingId]
   );
 
   if (bookingResult.rows.length === 0 || !bookingResult.rows[0].payment_id) {
-    throw new Error(`Payment not found for booking ${bookingId}`);
+    const payments = await query(
+      `SELECT id FROM payments WHERE booking_id = $1::uuid AND payment_status = 'completed' LIMIT 1`,
+      [bookingId]
+    );
+    if (payments.rows.length === 0) {
+      throw new Error(`Payment not found for booking ${bookingId}`);
+    }
+    return processRefund({
+      paymentId: payments.rows[0].id,
+      bookingId,
+      customerId,
+      amount,
+      reason: `Vendor rejected instant tele consultation: ${vendorName}`,
+      initiatedBy: 'system',
+    });
   }
 
-  const paymentId = bookingResult.rows[0].payment_id;
-
-  return await processRefund({
-    paymentId,
+  return processRefund({
+    paymentId: bookingResult.rows[0].payment_id,
     bookingId,
+    customerId,
     amount,
     reason: `Vendor rejected instant tele consultation: ${vendorName}`,
-    refundType: 'full',
     initiatedBy: 'system',
-    metadata: {
-      source: 'instant_tele_rejection',
-      vendor_name: vendorName,
-    },
   });
 }
+
+export { processExistingPendingRefund };

@@ -11,7 +11,7 @@
     "build:skip-ts": "npm run clean && npm run build:bundle && npm run package",
     "build:bundle": "node esbuild.config.js",
     "build:legacy": "npm run clean && tsc && npm run package",
-    "package": "powershell -Command \"Compress-Archive -Path dist\\* -DestinationPath api-handler.zip -Force; if (Test-Path 'dist\\loyalty-consumer.js') { Compress-Archive -LiteralPath 'dist\\loyalty-consumer.js' -DestinationPath 'loyalty-consumer.zip' -Force }\"",
+    "package": "node scripts/package-lambda.js",
     "test": "jest",
     "test:local": "./test-local.sh",
     "test:sentry": "node scripts/test-sentry.js",

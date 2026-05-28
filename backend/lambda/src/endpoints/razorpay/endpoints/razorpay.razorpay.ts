@@ -1624,9 +1624,8 @@ class RazorpayWebhookHandler extends BaseHandler {
     } else if (event === 'refund.created' || event === 'refund.processed') {
       const refund = payload_data.refund.entity;
       
-      // ✅ SQL: Get payment details to calculate refund status
       const { rows: paymentRows } = await query(
-        `SELECT id, booking_id, amount, payment_status 
+        `SELECT id, booking_id, amount::text, payment_status, customer_id
          FROM payments 
          WHERE razorpay_payment_id = $1`,
         [refund.payment_id]
@@ -1638,84 +1637,95 @@ class RazorpayWebhookHandler extends BaseHandler {
       }
 
       const payment = paymentRows[0];
-      const refundAmount = refund.amount / 100; // Convert from paise
+      const refundAmount = refund.amount / 100;
       const paymentAmount = parseFloat(payment.amount || '0');
 
-      // Calculate total refunded including this refund
       const { rows: refundedRows } = await query(
-        `SELECT COALESCE(SUM(amount), 0) AS total_refunded 
+        `SELECT COALESCE(SUM(refund_amount), 0) AS total_refunded 
          FROM refunds 
-         WHERE payment_id = $1 
-           AND refund_status IN ('processed', 'processing', 'approved', 'completed')`,
-        [payment.id]
+         WHERE payment_id = $1::uuid
+           AND refund_status IN ('processed', 'processing', 'approved', 'completed')
+           AND (razorpay_refund_id IS NULL OR razorpay_refund_id <> $2)`,
+        [payment.id, refund.id]
       );
 
       const totalRefunded = parseFloat(refundedRows[0]?.total_refunded || '0') + refundAmount;
-      const isFullRefund = totalRefunded >= paymentAmount;
+      const isFullRefund = totalRefunded >= paymentAmount - 0.01;
       
       const newPaymentStatus = isFullRefund 
         ? PaymentTransactionStatus.REFUNDED 
         : PaymentTransactionStatus.PARTIALLY_REFUNDED;
 
-      // ✅ SQL: Process refund in transaction
+      const webhookRefundStatus =
+        refund.status === 'processed' ? 'completed' : 'processing';
+
       await withTransaction(async (client) => {
-        // Create or update refund record
-        const { rows: existingRefund } = await client.query(
+        const { rows: existingByRzId } = await client.query(
           `SELECT id FROM refunds WHERE razorpay_refund_id = $1`,
           [refund.id]
         );
 
-        if (existingRefund.length === 0) {
-          // Create new refund record
-          await client.query(
-            `INSERT INTO refunds (
-              payment_id, booking_id, amount, reason, refund_type,
-              refund_status, razorpay_refund_id, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
-            [
-              payment.id,
-              payment.booking_id || null,
-              refundAmount,
-              refund.notes?.reason || null,
-              isFullRefund ? 'full' : 'partial',
-              refund.status === 'processed' ? 'processed' : 'processing',
-              refund.id,
-            ]
-          );
-        } else {
-          // Update existing refund record
+        if (existingByRzId.length > 0) {
           await client.query(
             `UPDATE refunds 
              SET refund_status = $1, 
-                 amount = $2,
-                 updated_at = NOW()
+                 refund_amount = $2,
+                 processed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE processed_at END
              WHERE razorpay_refund_id = $3`,
-            [
-              refund.status === 'processed' ? 'processed' : 'processing',
-              refundAmount,
-              refund.id,
-            ]
+            [webhookRefundStatus, refundAmount, refund.id]
           );
+        } else {
+          const { rows: pendingRow } = await client.query(
+            `SELECT id FROM refunds
+             WHERE payment_id = $1::uuid
+               AND razorpay_refund_id IS NULL
+               AND refund_status IN ('pending', 'processing', 'approved')
+             ORDER BY requested_at DESC NULLS LAST
+             LIMIT 1`,
+            [payment.id]
+          );
+
+          if (pendingRow.length > 0) {
+            await client.query(
+              `UPDATE refunds SET
+                 razorpay_refund_id = $1,
+                 refund_status = $2,
+                 refund_amount = $3,
+                 processed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE processed_at END
+               WHERE id = $4::uuid`,
+              [refund.id, webhookRefundStatus, refundAmount, pendingRow[0].id]
+            );
+          } else {
+            await client.query(
+              `INSERT INTO refunds (
+                payment_id, booking_id, customer_id, refund_amount, refund_reason,
+                refund_status, refund_method, razorpay_refund_id, requested_at, processed_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, 'original', $7, NOW(), NOW())`,
+              [
+                payment.id,
+                payment.booking_id || null,
+                payment.customer_id || null,
+                refundAmount,
+                refund.notes?.reason || 'Razorpay webhook refund',
+                webhookRefundStatus,
+                refund.id,
+              ]
+            );
+          }
         }
 
-        // ✅ Update payments table payment_status
         await client.query(
-          `UPDATE payments 
-           SET payment_status = $1, updated_at = NOW()
-           WHERE id = $2`,
+          `UPDATE payments SET payment_status = $1, updated_at = NOW() WHERE id = $2::uuid`,
           [newPaymentStatus, payment.id]
         );
 
-        // ✅ Update booking payment status if booking exists
         if (payment.booking_id) {
           const bookingPaymentStatus = isFullRefund 
             ? BookingPaymentStatus.REFUNDED 
             : BookingPaymentStatus.PARTIAL;
           
           await client.query(
-            `UPDATE bookings 
-             SET payment_status = $1, updated_at = NOW()
-             WHERE id = $2`,
+            `UPDATE bookings SET payment_status = $1, updated_at = NOW() WHERE id = $2::uuid`,
             [bookingPaymentStatus, payment.booking_id]
           );
         }

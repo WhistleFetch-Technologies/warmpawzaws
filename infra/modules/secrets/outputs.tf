@@ -15,6 +15,9 @@ output "shiprocket_secret_arn" {
   value       = aws_secretsmanager_secret.shiprocket.arn
 }
 
+output "firebase_secret_arn" {
+  description = "ARN of the Firebase Admin SDK secret (null when firebase_service_account_json is unset)"
+  value       = var.firebase_service_account_json != "" ? aws_secretsmanager_secret.firebase[0].arn : null
 output "aftership_secret_arn" {
   description = "ARN of the AfterShip secret"
   value       = aws_secretsmanager_secret.aftership.arn
@@ -22,12 +25,15 @@ output "aftership_secret_arn" {
 
 output "all_secret_arns" {
   description = "List of all secret ARNs"
-  value = [
-    aws_secretsmanager_secret.razorpay.arn,
-    aws_secretsmanager_secret.google_maps.arn,
-    aws_secretsmanager_secret.shiprocket.arn,
-    aws_secretsmanager_secret.aftership.arn,
-  ]
+value = concat(
+    [
+      aws_secretsmanager_secret.razorpay.arn,
+      aws_secretsmanager_secret.google_maps.arn,
+      aws_secretsmanager_secret.shiprocket.arn,
+      aws_secretsmanager_secret.aftership.arn,
+    ],
+    var.firebase_service_account_json != "" ? [aws_secretsmanager_secret.firebase[0].arn] : []
+  )
 }
 
 output "sns_android_customer_arn" {
