@@ -67,7 +67,7 @@ export function WhatsNewAnnouncementList({
             key={announcement.id}
             role={rowClickable ? 'button' : undefined}
             tabIndex={rowClickable ? 0 : undefined}
-            className={`relative overflow-hidden bg-gradient-to-r ${bgGradient} rounded-2xl p-4 border flex items-center gap-4 ${
+            className={`group relative overflow-hidden bg-gradient-to-r ${bgGradient} rounded-2xl p-4 border flex items-center gap-4 ${
               rowClickable ? 'cursor-pointer' : ''
             }`}
             onClick={() => {
@@ -82,7 +82,7 @@ export function WhatsNewAnnouncementList({
           >
             <WhatsNewCardBackground announcement={announcement} />
             <div
-              className={`relative z-[1] flex h-16 w-16 flex-shrink-0 items-center justify-center ${
+              className={`relative z-[1] flex h-16 w-16 flex-shrink-0 items-center justify-center transition-transform duration-300 ease-out group-hover:scale-110 ${
                 isEmergency && !emergencySoon ? 'animate-pulse' : ''
               }`}
             >
@@ -90,10 +90,10 @@ export function WhatsNewAnnouncementList({
                 <img
                   src={iconImage}
                   alt=""
-                  className="h-full w-full object-contain"
+                  className="h-full w-full object-contain transition-transform duration-300 ease-out"
                 />
               ) : announcement.icon ? (
-                <span className="text-2xl">{announcement.icon}</span>
+                <span className="text-2xl transition-transform duration-300 ease-out">{announcement.icon}</span>
               ) : null}
             </div>
             <div className="relative z-[1] flex-1 min-w-0">

@@ -11,8 +11,93 @@ import { buildHomeTopCarouselBanners } from '../utils/banner-utils';
 import { extractProductImageUrl } from '../utils/product-image';
 import type { HomeCarouselBanner } from '../types';
 import type { Pet, UserData } from '../../homepage/constants/interface';
+import type { RetryConfig } from '@/lib/error-handling';
 
 export type { HomeCarouselBanner };
+
+/** Shorter retry/timeout for home-critical profile + pets (avoid 5×30s blocking the shell). */
+export const HOME_CRITICAL_GET_RETRY: Partial<RetryConfig> = { maxRetries: 1 };
+export const HOME_CRITICAL_TIMEOUT_MS = 10_000;
+
+export function readCachedPetsFromStorage(): Pet[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const rawPets = localStorage.getItem('customerPets');
+    if (rawPets) {
+      const parsed = JSON.parse(rawPets);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed as Pet[];
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const rawData = localStorage.getItem('customerData');
+    if (rawData) {
+      const data = JSON.parse(rawData);
+      if (Array.isArray(data?.pets) && data.pets.length > 0) return data.pets as Pet[];
+    }
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+export function readCachedProfileName(phone: string): { name: string; photo?: string } {
+  if (typeof window === 'undefined') return { name: 'User' };
+  try {
+    const raw = localStorage.getItem('customerData');
+    if (!raw) return { name: 'User' };
+    const profile = JSON.parse(raw);
+    return {
+      name: String(profile.firstName || profile.name || 'User'),
+      photo: String(
+        profile.photo || profile.profile_photo_url || profile.profilePhoto || profile.profile_image_url || ''
+      ),
+    };
+  } catch {
+    return { name: 'User' };
+  }
+}
+
+export function hydrateInitialUserData(phone: string): UserData {
+  const cachedProfile = readCachedProfileName(phone);
+  return {
+    name: cachedProfile.name,
+    phone,
+    pets: readCachedPetsFromStorage(),
+    journeyType: '',
+  };
+}
+
+export function persistPetsToLocalStorage(pets: Pet[]): void {
+  if (typeof window === 'undefined' || pets.length === 0) return;
+  try {
+    localStorage.setItem('customerPets', JSON.stringify(pets));
+    const raw = localStorage.getItem('customerData');
+    if (raw) {
+      const data = JSON.parse(raw);
+      localStorage.setItem('customerData', JSON.stringify({ ...data, pets }));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+export function parsePetsFromApiResponse(petsResp: unknown): Pet[] {
+  if (!petsResp || typeof petsResp !== 'object') return [];
+  const resp = petsResp as Record<string, unknown>;
+  if (Array.isArray(petsResp)) return petsResp as Pet[];
+  if (Array.isArray(resp.pets)) return resp.pets as Pet[];
+  if (
+    resp.pets &&
+    typeof resp.pets === 'object' &&
+    Array.isArray((resp.pets as { pets?: Pet[] }).pets)
+  ) {
+    return (resp.pets as { pets: Pet[] }).pets;
+  }
+  if (resp.success && Array.isArray(resp.data)) return resp.data as Pet[];
+  return [];
+}
 
 export interface UseHomePageDataOptions {
   phone: string;
@@ -43,7 +128,11 @@ async function resolveCustomerLocation(phone: string): Promise<{ city: string; s
   if (!city || !state) {
     try {
       const profileResponse = await apiClient
-        .get(`/customer/profile?phone=${encodeURIComponent(phone)}`)
+        .get(
+          `/customer/profile?phone=${encodeURIComponent(phone)}`,
+          HOME_CRITICAL_GET_RETRY,
+          HOME_CRITICAL_TIMEOUT_MS
+        )
         .catch(() => null);
       const profile = profileResponse as Record<string, unknown> | null;
       const profileLocation = serviceBaseOnpincode(profile, (profile?.pincode as string) || '');
@@ -90,8 +179,6 @@ function mapApiBanner(b: Record<string, unknown>, defaults?: { gradientFrom?: st
   };
 }
 
-// mapApiBanner retained for middle/lower banner mappers below; hero uses buildHomeTopCarouselBanners.
-
 /**
  * Core home page data fetching: profile, pets, banners, services, unread counts.
  * Extracted from CustomerHomeComplete — behavior preserved for new modular sections.
@@ -102,10 +189,13 @@ export function useHomePageData({
   notificationInboxVersion = 0,
   messagesInboxVersion = 0,
 }: UseHomePageDataOptions) {
-  const [userData, setUserData] = useState<UserData>({ name: 'User', phone: '', pets: [] });
-  const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
-  const [userProfilePhoto, setUserProfilePhoto] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [userData, setUserData] = useState<UserData>(() => hydrateInitialUserData(phone));
+  const [selectedPet, setSelectedPet] = useState<Pet | null>(() => {
+    const pets = readCachedPetsFromStorage();
+    return pets[0] ?? null;
+  });
+  const [userProfilePhoto, setUserProfilePhoto] = useState(() => readCachedProfileName(phone).photo || '');
+  const [petsLoading, setPetsLoading] = useState(() => readCachedPetsFromStorage().length === 0);
   const [customerId, setCustomerId] = useState('');
 
   const [dynamicBanners, setDynamicBanners] = useState<Record<string, unknown>[]>([]);
@@ -126,11 +216,20 @@ export function useHomePageData({
   const [customerCommerceEnabled] = useState<boolean>(() => isCustomerEcommerceEnabled());
 
   const loadUserData = useCallback(async () => {
+    const hadCachedPets = readCachedPetsFromStorage().length > 0;
+    if (!hadCachedPets) setPetsLoading(true);
     try {
-      setLoading(true);
       const [profileResult, petsResult] = await Promise.allSettled([
-        apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`),
-        apiClient.get(`/customer/pets/${encodeURIComponent(phone)}`),
+        apiClient.get(
+          `/customer/profile?phone=${encodeURIComponent(phone)}`,
+          HOME_CRITICAL_GET_RETRY,
+          HOME_CRITICAL_TIMEOUT_MS
+        ),
+        apiClient.get(
+          `/customer/pets/${encodeURIComponent(phone)}`,
+          HOME_CRITICAL_GET_RETRY,
+          HOME_CRITICAL_TIMEOUT_MS
+        ),
       ]);
 
       if (profileResult.status === 'fulfilled') {
@@ -148,51 +247,31 @@ export function useHomePageData({
           if (Array.isArray(profilePets) && profilePets.length > 0) {
             setUserData((prev) => ({ ...prev, pets: profilePets as Pet[] }));
             setSelectedPet((prev) => prev ?? (profilePets[0] as Pet));
+            persistPetsToLocalStorage(profilePets as Pet[]);
           }
         }
       } else if (profileResult.status === 'rejected') {
-        const cachedProfile = localStorage.getItem('customerData');
-        if (cachedProfile) {
-          try {
-            const profile = JSON.parse(cachedProfile);
-            setUserData((prev) => ({
-              ...prev,
-              name: profile.firstName || profile.name || 'User',
-              phone,
-            }));
-          } catch {
-            /* ignore */
-          }
-        }
+        const cachedProfile = readCachedProfileName(phone);
+        setUserData((prev) => ({
+          ...prev,
+          name: cachedProfile.name,
+          phone,
+        }));
+        if (cachedProfile.photo) setUserProfilePhoto(cachedProfile.photo);
       }
 
       if (petsResult.status === 'fulfilled') {
-        const petsResp = petsResult.value as Record<string, unknown>;
-        if (petsResp && (petsResp.success || petsResp.pets)) {
-          let pets: Pet[] = [];
-          if (Array.isArray(petsResp)) {
-            pets = petsResp as Pet[];
-          } else if (Array.isArray(petsResp.pets)) {
-            pets = petsResp.pets as Pet[];
-          } else if (
-            petsResp.pets &&
-            typeof petsResp.pets === 'object' &&
-            Array.isArray((petsResp.pets as { pets?: Pet[] }).pets)
-          ) {
-            pets = (petsResp.pets as { pets: Pet[] }).pets;
-          } else if (petsResp.success && Array.isArray(petsResp.data)) {
-            pets = petsResp.data as Pet[];
-          }
-          if (pets.length > 0) {
-            setUserData((prev) => ({ ...prev, pets }));
-            setSelectedPet((prev) => prev ?? pets[0]);
-          }
+        const pets = parsePetsFromApiResponse(petsResult.value);
+        if (pets.length > 0) {
+          setUserData((prev) => ({ ...prev, pets }));
+          setSelectedPet((prev) => prev ?? pets[0]);
+          persistPetsToLocalStorage(pets);
         }
       }
     } catch {
-      /* silent — fallbacks in state */
+      /* silent — cached pets remain visible */
     } finally {
-      setLoading(false);
+      setPetsLoading(false);
     }
   }, [phone]);
 
@@ -357,8 +436,20 @@ export function useHomePageData({
   useEffect(() => {
     if (!phone) return;
     void loadUserData();
-    void loadServicesFromAPI();
-    void loadDynamicContent();
+    let cancelled = false;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        if (cancelled) return;
+        void loadServicesFromAPI();
+        void loadDynamicContent();
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
   }, [phone, refreshKey, loadUserData, loadServicesFromAPI, loadDynamicContent]);
 
   useEffect(() => {
@@ -463,7 +554,7 @@ export function useHomePageData({
     selectedPet,
     setSelectedPet,
     userProfilePhoto,
-    loading,
+    petsLoading,
     customerId,
     dynamicBanners,
     dynamicMiddleBanners,

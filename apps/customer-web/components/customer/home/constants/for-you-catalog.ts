@@ -10,6 +10,13 @@ export interface ForYouCatalogEntry {
 
 export const FOR_YOU_CATALOG: ForYouCatalogEntry[] = [
   {
+    id: 'vet',
+    title: 'Vet Consultation',
+    description: 'Consultations & checkups',
+    screen: 'vet',
+    imageUrl: HOME_CATEGORY_IMAGE_URLS.vet,
+  },
+  {
     id: 'grooming',
     title: 'Grooming',
     description: 'Salon & at-home grooming',
@@ -17,15 +24,8 @@ export const FOR_YOU_CATALOG: ForYouCatalogEntry[] = [
     imageUrl: HOME_CATEGORY_IMAGE_URLS.grooming,
   },
   {
-    id: 'vet',
-    title: 'Vet Checkup',
-    description: 'Consultations & checkups',
-    screen: 'vet',
-    imageUrl: HOME_CATEGORY_IMAGE_URLS.vet,
-  },
-  {
     id: 'walker',
-    title: 'Daily Walk',
+    title: 'Dog Walking',
     description: 'Walks & exercise',
     screen: 'walker',
     imageUrl: HOME_CATEGORY_IMAGE_URLS.walker,

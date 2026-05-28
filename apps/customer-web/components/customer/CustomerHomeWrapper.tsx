@@ -1,3 +1,7 @@
+/**
+ * Legacy reference implementation for lazy `next/dynamic` screen imports.
+ * Production shell: `wrappers/CustomerHomeWrapper.tsx` (used by CustomerApp).
+ */
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';

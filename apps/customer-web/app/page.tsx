@@ -27,7 +27,12 @@ export default function HomePage() {
   const router = useRouter();
   const [session, setSession] = useState<CustomerSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [homeGateReady, setHomeGateReady] = useState(false);
+  const [homeGateReady, setHomeGateReady] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get('service')) return true;
+    return readProfileCompleted() && readOnboardingCompleted();
+  });
   const hasRedirected = useRef(false);
 
   useEffect(() => {

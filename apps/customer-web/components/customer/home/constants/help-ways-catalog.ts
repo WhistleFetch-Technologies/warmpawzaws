@@ -13,7 +13,7 @@ export const HELP_WAYS_CATALOG: HelpWayCatalogEntry[] = [
   {
     id: 'insurance',
     title: 'Insurance',
-    description: 'Full coverage plans',
+    description: 'Full coverage plans for complete peace of mind.',
     screen: 'insurance',
     categoryId: 'insurance',
     imageUrl: HOME_CATEGORY_IMAGE_URLS.vet,
@@ -21,7 +21,7 @@ export const HELP_WAYS_CATALOG: HelpWayCatalogEntry[] = [
   {
     id: 'nutrition',
     title: 'Nutrition',
-    description: 'Meal plans & diet advice',
+    description: 'Personalized meal plans & expert diet advice.',
     screen: 'nutritionist',
     categoryId: 'nutritionist',
     imageUrl: HOME_CATEGORY_IMAGE_URLS.nutritionist,
@@ -29,7 +29,7 @@ export const HELP_WAYS_CATALOG: HelpWayCatalogEntry[] = [
   {
     id: 'training',
     title: 'Training',
-    description: 'Obedience & skills',
+    description: 'Build good behavior with expert-led training.',
     screen: 'training',
     categoryId: 'training',
     imageUrl: HOME_CATEGORY_IMAGE_URLS.training,
@@ -37,7 +37,7 @@ export const HELP_WAYS_CATALOG: HelpWayCatalogEntry[] = [
   {
     id: 'shop',
     title: 'Pet Products',
-    description: 'Food, toys & essentials',
+    description: 'Food, toys & essentials for happy pets.',
     screen: 'shop',
     categoryId: 'shop',
     imageUrl: HOME_CATEGORY_IMAGE_URLS.shop,

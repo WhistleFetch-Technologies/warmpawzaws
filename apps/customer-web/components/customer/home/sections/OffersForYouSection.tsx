@@ -36,7 +36,7 @@ interface ResolvedOffer {
   onCtaClick?: () => void;
 }
 
-function OfferImage({ src, alt }: { src: string; alt: string }) {
+function OfferThumbnail({ src, alt }: { src: string; alt: string }) {
   if (src.startsWith('/') && !src.includes('amazonaws.com')) {
     return (
       <Image
@@ -54,6 +54,27 @@ function OfferImage({ src, alt }: { src: string; alt: string }) {
       src={src}
       alt={alt}
       className="h-[7.5rem] w-[7.5rem] object-contain"
+    />
+  );
+}
+
+function CmsBannerImage({ src, alt }: { src: string; alt: string }) {
+  if (src.startsWith('/') && !src.includes('amazonaws.com')) {
+    return (
+      <Image
+        src={src}
+        alt={alt}
+        fill
+        className="object-cover object-center"
+        unoptimized
+      />
+    );
+  }
+  return (
+    <PresignableImage
+      src={src}
+      alt={alt}
+      className="absolute inset-0 h-full w-full object-cover object-center"
     />
   );
 }
@@ -202,6 +223,43 @@ function OffersForYouSectionComponent({
 
   if (!offer) return null;
 
+  const cmsBanner = lowerBanners[0];
+  const isCmsBannerWithImage = Boolean(cmsBanner?.imageUrl);
+
+  if (isCmsBannerWithImage) {
+    return (
+      <div className={`mb-6 px-4 ${className}`}>
+        <div className="relative min-h-[11rem] overflow-hidden rounded-3xl">
+          <CmsBannerImage src={offer.imageUrl} alt={offer.title} />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/45 to-black/20" />
+          <div className="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-white/10" />
+          <div className="relative z-10 flex min-h-[11rem] flex-col justify-center p-6 text-white">
+            <span className="mb-2 inline-block w-fit rounded-full bg-white/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide">
+              {offer.pillLabel}
+            </span>
+            <h2 className="mb-1 line-clamp-2 text-lg font-bold">{offer.title}</h2>
+            {offer.subtitle ? (
+              <p className="mb-4 line-clamp-2 text-sm text-white/90">{offer.subtitle}</p>
+            ) : null}
+            {offer.comingSoon ? (
+              <span className="inline-block w-fit cursor-not-allowed rounded-full bg-white/85 px-5 py-2.5 text-sm font-medium text-[#FF8C42]/70">
+                {offer.ctaText}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={offer.onCtaClick}
+                className="w-fit rounded-full bg-white px-5 py-2.5 text-sm font-medium text-indigo-600"
+              >
+                {offer.ctaText}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`mb-6 px-4 ${className}`}>
       <div className="relative overflow-hidden rounded-3xl bg-[#FFF0E6] px-5 py-5">
@@ -231,7 +289,7 @@ function OffersForYouSectionComponent({
             )}
           </div>
           <div className="shrink-0">
-            <OfferImage src={offer.imageUrl} alt={offer.title} />
+            <OfferThumbnail src={offer.imageUrl} alt={offer.title} />
           </div>
         </div>
       </div>

@@ -717,8 +717,12 @@ export class ApiClient {
   
   private offlineQueue?: import('./error-handling').OfflineQueue;
 
-  async get<T>(endpoint: string, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
-    return this.request<T>(endpoint, { method: 'GET' }, retryConfig);
+  async get<T>(
+    endpoint: string,
+    retryConfig?: Partial<import('./error-handling').RetryConfig>,
+    customTimeoutMs?: number
+  ): Promise<T> {
+    return this.request<T>(endpoint, { method: 'GET' }, retryConfig, customTimeoutMs);
   }
 
   /**

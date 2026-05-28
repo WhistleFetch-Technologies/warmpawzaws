@@ -66,5 +66,14 @@ export function PresignableImage({ src, alt, className, onUnavailable }: Props) 
 
   if (!current || unavailable) return null;
 
-  return <img src={current} alt={alt} className={className} onError={onError} />;
+  return (
+    <img
+      src={current}
+      alt={alt}
+      className={className}
+      loading="lazy"
+      decoding="async"
+      onError={onError}
+    />
+  );
 }

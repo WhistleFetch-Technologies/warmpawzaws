@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { readHomeSessionCache, writeHomeSessionCache } from '@/lib/home-session-cache';
 import { getCategoryCardImageUrl } from '../constants/category-card-images';
 import {
   FOR_YOU_CATALOG,
@@ -34,14 +35,23 @@ function mapApiService(raw: Record<string, unknown>, index: number): ForYouRecom
 
 /** Personalized picks from recommended-services API with static catalog fallback. */
 export function useForYouRecommendations(phone?: string) {
-  const [apiItems, setApiItems] = useState<ForYouRecommendationItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [apiItems, setApiItems] = useState<ForYouRecommendationItem[]>(() => {
+    if (!phone) return [];
+    return readHomeSessionCache<ForYouRecommendationItem[]>(phone, 'for_you') ?? [];
+  });
+  const [loading, setLoading] = useState(() => {
+    if (!phone) return false;
+    const cached = readHomeSessionCache<ForYouRecommendationItem[]>(phone, 'for_you');
+    return !(Array.isArray(cached) && cached.length > 0);
+  });
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      setLoading(true);
+      const hadCache =
+        (readHomeSessionCache<ForYouRecommendationItem[]>(phone, 'for_you')?.length ?? 0) > 0;
+      if (!hadCache) setLoading(true);
       if (!phone) {
         setApiItems([]);
         setLoading(false);
@@ -59,6 +69,7 @@ export function useForYouRecommendations(phone?: string) {
             .map((row, index) => mapApiService(row, index))
             .filter((row): row is ForYouRecommendationItem => row != null);
           setApiItems(mapped);
+          if (mapped.length > 0) writeHomeSessionCache(phone, 'for_you', mapped);
         } else {
           setApiItems([]);
         }

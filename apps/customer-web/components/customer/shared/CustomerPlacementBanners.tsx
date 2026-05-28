@@ -13,6 +13,8 @@ export type CustomerPlacementBannersProps = {
   placement: Placement;
   onNavigate?: (screen: string, data?: unknown) => void;
   className?: string;
+  /** Extra classes on the banner shell (height, radius, etc.) */
+  shellClassName?: string;
 };
 
 type BannerVM = {
@@ -60,7 +62,12 @@ const CLICK_SOURCE: Record<Placement, string> = {
 };
 
 /** Fetches and renders CMS banners for category (All Services) or checkout. Home hero/middle are only on the home page. */
-export function CustomerPlacementBanners({ placement, onNavigate, className = '' }: CustomerPlacementBannersProps) {
+export function CustomerPlacementBanners({
+  placement,
+  onNavigate,
+  className = '',
+  shellClassName = '',
+}: CustomerPlacementBannersProps) {
   const router = useRouter();
   const [banners, setBanners] = useState<BannerVM[]>([]);
   const [ix, setIx] = useState(0);
@@ -124,11 +131,18 @@ export function CustomerPlacementBanners({ placement, onNavigate, className = ''
 
   return (
     <div className={className}>
-      <div className="relative overflow-hidden rounded-2xl min-h-[140px] text-white shadow-md">
+      <div
+        className={`relative h-[152px] overflow-hidden rounded-2xl text-white shadow-md ${shellClassName}`}
+      >
         {banners.map((banner, index) => (
           <div
             key={banner.id}
-            className={`${index === ix ? 'block' : 'hidden'}`}
+            aria-hidden={index !== ix}
+            className={`absolute inset-0 transition-opacity duration-300 ${
+              index === ix
+                ? 'pointer-events-auto z-10 opacity-100'
+                : 'pointer-events-none z-0 opacity-0'
+            }`}
             style={{
               backgroundImage: banner.imageUrl
                 ? `linear-gradient(90deg, rgba(0, 0, 0, 0.58) 0%, rgba(0, 0, 0, 0.35) 45%, rgba(0, 0, 0, 0.15) 100%), url("${banner.imageUrl}")`
@@ -138,13 +152,15 @@ export function CustomerPlacementBanners({ placement, onNavigate, className = ''
               backgroundRepeat: 'no-repeat',
             }}
           >
-            <div className="p-4 flex items-start justify-between gap-3">
+            <div className="flex h-full items-start justify-between gap-3 p-4">
               <div className="min-w-0 flex-1">
-                <h3 className="font-bold text-sm leading-tight line-clamp-2">{banner.title}</h3>
-                {banner.subtitle ? <p className="text-xs text-white/90 mt-1 line-clamp-2">{banner.subtitle}</p> : null}
+                <h3 className="line-clamp-2 text-sm font-bold leading-tight">{banner.title}</h3>
+                {banner.subtitle ? (
+                  <p className="mt-1 line-clamp-2 text-xs text-white/90">{banner.subtitle}</p>
+                ) : null}
                 <button
                   type="button"
-                  className="mt-3 inline-block bg-white/95 text-[#FF8C42] px-3 py-1.5 rounded-full text-xs font-semibold"
+                  className="mt-3 inline-block rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold text-[#FF8C42]"
                   onClick={() => {
                     if (banner.id) {
                       apiClient.post(`/banners/${banner.id}/click`, { source }).catch(() => {});
@@ -155,12 +171,14 @@ export function CustomerPlacementBanners({ placement, onNavigate, className = ''
                   {banner.ctaText}
                 </button>
               </div>
-              {banner.imageUrl ? null : <banner.Icon className="w-8 h-8 shrink-0 text-white/95" aria-hidden />}
+              {banner.imageUrl ? null : (
+                <banner.Icon className="h-8 w-8 shrink-0 text-white/95" aria-hidden />
+              )}
             </div>
           </div>
         ))}
         {count > 1 ? (
-          <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
+          <div className="absolute bottom-2 left-0 right-0 z-20 flex justify-center gap-1.5">
             {banners.map((b, i) => (
               <button
                 key={b.id}

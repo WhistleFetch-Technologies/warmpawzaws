@@ -12,6 +12,7 @@ export interface PetStripSectionProps {
   onSelectPet: (pet: Pet) => void;
   onPetClick?: (petId: string) => void;
   onAddPet: () => void;
+  petsLoading?: boolean;
 }
 
 function PetTypeFallbackIcon({
@@ -73,7 +74,17 @@ function PetStripSectionComponent({
   onSelectPet,
   onPetClick,
   onAddPet,
+  petsLoading = false,
 }: PetStripSectionProps) {
+  if (petsLoading && pets.length === 0) {
+    return (
+      <div className="flex items-center gap-2 py-2">
+        <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+        <span className="text-white/80 text-xs">Loading pets...</span>
+      </div>
+    );
+  }
+
   if (pets.length === 0) {
     return (
       <div>

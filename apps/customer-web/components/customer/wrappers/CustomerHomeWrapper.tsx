@@ -4,79 +4,29 @@ import { useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useCustomerShellAnalytics } from '@/hooks/useCustomerShellAnalytics';
 import { setClientShellScreenForErrors } from '@/lib/client-error-reporting';
+import dynamic from 'next/dynamic';
 import { CustomerHomeComplete as CustomerHome } from '../homepage/CustomerHomeComplete';
 import { UserAccountSidebar } from '../UserAccountSidebar';
-import { CustomerPetDetails } from '../CustomerPetDetails';
-import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
-import { WalkerService } from '../WalkerService';
-import { WalkerDashboard } from '../walker/WalkerDashboard';
-import { WalkerBookingRouter } from '../walker/WalkerBookingRouter';
-import { WalkLiveTrackingView } from '../walker/WalkLiveTrackingView';
-import { CustomerSidebar } from '../CustomerSidebar';
-import { PetBookingDetails } from '../PetBookingDetails';
-import { PetQuickView } from '../PetQuickView';
-import { AddPetModal } from '../AddPetModal';
 import { NotAvailable } from '../NotAvailable';
-import { VetServiceRouter } from '../VetServiceRouter';
-import { VetBookingFlow } from '../vet/VetBookingFlow';
-import { VetBookingRouter } from '../vet/VetBookingRouter';
-import { VetDoctorDetails } from '../vet/VetDoctorDetails';
-import { ClinicListView } from '../vet/ClinicListView';
-import { ClinicProfileView } from '../vet/ClinicProfileView';
-import { VetServicesByStyle } from '../vet/VetServicesByStyle';
-import { TeleConsultationRouter } from '../vet/TeleConsultationRouter';
-import { HomeVisitRouter } from '../vet/HomeVisitRouter';
-import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
+import { CustomerScreenWrapper } from '../CustomerScreenWrapper';
+import { SERVICE_CONFIGS } from '../home-services/UniversalHomeServiceRouter';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
-import { GroomingServiceRouter } from '../GroomingServiceRouter';
-import { GroomingServicesByStyle } from '../grooming/GroomingServicesByStyle';
-import { TrainingServiceRouter } from '../TrainingServiceRouter';
-import { GroomingBookingRouter } from '../grooming/GroomingBookingRouter';
-import { UniversalServicesByStyle } from '../shared/UniversalServicesByStyle';
-import { BoardingServiceRouter } from '../BoardingServiceRouter';
-import { BoardingBookingRouter } from '../boarding/BoardingBookingRouter';
-import { BoardingVendorListView } from '../boarding/BoardingVendorListView';
-import { PetSittingVendorListView } from '../boarding/PetSittingVendorListView';
-import { BoardingVendorProfileView } from '../boarding/BoardingVendorProfileView';
-import { HomeServiceProviderProfile, SERVICE_CONFIGS } from '../home-services';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
-import { PetSitterServiceRouter } from '../PetSitterServiceRouter';
-import { AdoptionServiceRouter } from '../AdoptionServiceRouter';
-import { SunsetServiceRouter } from '../SunsetServiceRouter';
-import { CustomerProfileView } from '../CustomerProfileView';
-import { PetProfile } from '../PetProfile';
-import { PetProfileDashboard } from '../PetProfileDashboard';
-import { InsuranceServicesLanding } from '../InsuranceServicesLanding';
-import { PetCafeServicesLanding } from '../PetCafeServicesLanding';
-import { PharmacyServicesLanding } from '../PharmacyServicesLanding';
-import { PharmacyStore } from '../PharmacyStore';
-import { PharmacyCheckout } from '../PharmacyCheckout';
-import { PhotographyServicesLanding } from '../PhotographyServicesLanding';
-import { BreederServicesLanding } from '../BreederServicesLanding';
-import { AmbulanceServicesLanding } from '../AmbulanceServicesLanding';
-import { RelocationServicesLanding } from '../RelocationServicesLanding';
-import { ResortServicesLanding } from '../ResortServicesLanding';
-import { PetHolidayServicesLanding } from '../PetHolidayServicesLanding';
-import { ShopDashboard } from '../ShopDashboard';
-import { ProductDetailPage } from '../ProductDetailPage';
-import { ShoppingCartView } from '../ShoppingCartView';
-import { CheckoutView } from '../CheckoutView';
-import { OrderSuccessView } from '../OrderSuccessView';
-import { OrderHistoryPage } from '../../shop/OrderHistoryPage';
-import { AddressBookPage } from '../../shop/AddressBookPage';
-import { WalletPage } from '../../shop/WalletPage';
-import { OrderDetailView } from '../OrderDetailView';
-import { ProductReviewsView } from '../ProductReviewsView';
-import { VendorProfileDetail } from '../VendorProfileDetail';
-import { SupportHelpCenter } from '../SupportHelpCenter';
-import { OrderTrackingView } from '../OrderTrackingView';
-import { ProblemCategoryMapper } from '../../admin/ProblemCategoryMapper';
+import type { VendorProfileFromProblemContext } from '../ProblemGridFlowRouter';
 import { apiClient } from '@/lib/api-client';
+import {
+  HOME_CRITICAL_GET_RETRY,
+  HOME_CRITICAL_TIMEOUT_MS,
+  readCachedPetsFromStorage,
+  readCachedProfileName,
+  persistPetsToLocalStorage,
+  parsePetsFromApiResponse,
+} from '../home/hooks/useHomePageData';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
@@ -98,97 +48,134 @@ import { useNotificationService } from '../useNotificationService';
 import { toast } from 'sonner';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { useCart } from '@/context/CartContext';
-import { MyBookings } from '../booking/MyBookings';
 import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMessagesModalProvider';
-import { AppointmentsList } from '../AppointmentsList';
-import { AppointmentDetailsView } from '../AppointmentDetailsView';
-import { RescheduleAppointmentView } from '../RescheduleAppointmentView';
-// import { WalletView } from './WalletView';
-
-// ✅ NEW IMPORTS FOR GAP FIXES
-import { PetCafeListingZomatoStyle } from '../PetCafeListingZomatoStyle';
-import { ResortBoardingBookingEnhanced } from '../ResortBoardingBookingEnhanced';
-import { CafeReservationFlow } from '../CafeReservationFlow';
-import { BreederCatalogView } from '../BreederCatalogView';
-import { AmbulanceSOS } from '../AmbulanceSOS';
-import { AmbulanceSubServiceFlow } from '../AmbulanceSubServiceFlow';
-import { AdoptionQuestionnaire } from '../AdoptionQuestionnaire';
-import { CustomerServicesPage } from '../CustomerServicesPage';
-import { CustomerBookingsPage } from '../CustomerBookingsPage';
-import { CreateBookingPage } from '../booking/CreateBookingPage';
-import { CustomerPetsPage } from '../CustomerPetsPage';
-import { OrderTrackingPage } from '../../shop/OrderTrackingPage';
-
-// ✅ P2 CUSTOMER APP ENHANCEMENTS - Recently Developed UI Components
-import { MultiPetBookingPage } from '../MultiPetBookingPage';
-import { ReturnRequestPage } from '../ReturnRequestPage';
-import { RewardsLoyaltyPage } from '../RewardsLoyaltyPage';
-import { ReferralSystemPage } from '../ReferralSystemPage';
-import { PackageBookingPage } from '../PackageBookingPage';
-import { EmergencyBookingPage } from '../EmergencyBookingPage';
-import { CheckInCheckOutPage } from '../CheckInCheckOutPage';
-import { MedicalRecordsPage } from '../MedicalRecordsPage';
-import { WalletPage as CustomerWalletPage } from '../WalletPage';
-
-// ✅ PEER TO PEER SERVICE - P2P Matchmaking
-import { MatingDatingHub } from '../MatingDatingHub';
-import { HomeServiceSelectionEnhanced } from '../HomeServiceSelectionEnhanced';
-import { IntegratedServicesHub } from '../../IntegratedServicesHub';
-import { ProblemGridSelector } from '../ProblemGridSelector';
-import { AllServicesScreen } from '../home/all-services/AllServicesScreen';
 import { isNewHomeUiEnabled } from '@/lib/customer-new-home-ui-flag';
-import { CustomerPlacementBanners } from '../shared/CustomerPlacementBanners';
-import { ServicesByProblem } from '../ServicesByProblem';
-import { ProblemGridFlowRouter, type VendorProfileFromProblemContext } from '../ProblemGridFlowRouter';
-import { MealPlansList } from '../nutrition/MealPlansList';
-import { ExpertNutritionistsList } from '../nutrition/ExpertNutritionistsList';
-import { MealOrderCheckout } from '../nutrition/MealOrderCheckout';
-import { MealPlanOrdersPanel } from '../meal-plans/MealPlanOrdersPanel';
-import { NutritionistTeleRouter } from '../nutrition/NutritionistTeleRouter';
-import { NutritionistBookingRouter } from '../nutrition/NutritionistBookingRouter';
-import { DietConsultationVendors } from '../nutrition/DietConsultationVendors';
-import { OrderTrackingScreen } from '../tracking/OrderTrackingScreen';
-import { DiagnosticsServicesLanding } from '../DiagnosticsServicesLanding';
-import { DiagnosticsReportViewer, SampleCollectionTracker } from '../diagnostics';
-import { DiagnosticsBookingFlow } from '../specialized/DiagnosticsBookingFlow';
-import { PharmacyOrderFlow } from '../specialized/PharmacyOrderFlow';
-import { PharmacyOrderStatus } from '../pharmacy/PharmacyOrderStatus';
-import { CustomerScreenWrapper } from '../CustomerScreenWrapper';
-import { StandardizedHeader } from '../shared/StandardizedHeader'; // ✅ FIX: Import for consistent UI
-import { TrackingPageClient } from '@/app/tracking/[bookingId]/TrackingPageClient'; // ✅ GPS Live Tracking
-import dynamic from 'next/dynamic';
-import { NutritionistServicesLanding } from '../nutrition/NutritionistServicesLanding';
 
-// ✅ Dynamically import video call component to avoid SSR issues with Chime SDK
-// Use default import since ChimeVideoCall is exported as default
-const ChimeVideoCall = dynamic(
-  () => import('../../teleCommunication/ChimeVideoCall'),
-  { 
-    ssr: false, 
-    loading: () => <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500"></div></div> 
-  }
+// ============================================================================
+// Lazy-loaded shell screens (pattern aligned with components/customer/CustomerHomeWrapper.tsx)
+// ============================================================================
+const LoadingSpinner = () => (
+  <div className="flex min-h-[200px] items-center justify-center">
+    <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-orange-500" />
+  </div>
 );
 
-/** Client-only: date chips use local "today"; SSR/UTC mismatch caused wrong ?date= vs visible label. */
-const TrainingBookingRouter = dynamic(
-  () => import('../training/TrainingBookingRouter').then((m) => ({ default: m.TrainingBookingRouter })),
-  { ssr: false, loading: () => <div className="flex items-center justify-center min-h-[40vh]"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-orange-500" /></div> }
-);
-
-const UniversalHomeServiceRouter = dynamic(
-  () =>
-    import('../home-services/UniversalHomeServiceRouter').then((mod) => ({
-      default: mod.UniversalHomeServiceRouter,
-    })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-b-2 border-orange-500" />
-      </div>
-    ),
-  }
-);
+const CustomerPetDetails = dynamic(() => import('../CustomerPetDetails').then((m) => ({ default: m.CustomerPetDetails })), { loading: LoadingSpinner });
+const EnhancedAddPetModal = dynamic(() => import('../EnhancedAddPetModal').then((m) => ({ default: m.EnhancedAddPetModal })), { loading: LoadingSpinner, ssr: false });
+const WalkerService = dynamic(() => import('../WalkerService').then((m) => ({ default: m.WalkerService })), { loading: LoadingSpinner });
+const WalkerDashboard = dynamic(() => import('../walker/WalkerDashboard').then((m) => ({ default: m.WalkerDashboard })), { loading: LoadingSpinner });
+const WalkerBookingRouter = dynamic(() => import('../walker/WalkerBookingRouter').then((m) => ({ default: m.WalkerBookingRouter })), { loading: LoadingSpinner });
+const WalkLiveTrackingView = dynamic(() => import('../walker/WalkLiveTrackingView').then((m) => ({ default: m.WalkLiveTrackingView })), { loading: LoadingSpinner });
+const CustomerSidebar = dynamic(() => import('../CustomerSidebar').then((m) => ({ default: m.CustomerSidebar })), { loading: LoadingSpinner });
+const PetBookingDetails = dynamic(() => import('../PetBookingDetails').then((m) => ({ default: m.PetBookingDetails })), { loading: LoadingSpinner });
+const PetQuickView = dynamic(() => import('../PetQuickView').then((m) => ({ default: m.PetQuickView })), { loading: LoadingSpinner });
+const AddPetModal = dynamic(() => import('../AddPetModal').then((m) => ({ default: m.AddPetModal })), { loading: LoadingSpinner });
+const VetServiceRouter = dynamic(() => import('../VetServiceRouter').then((m) => ({ default: m.VetServiceRouter })), { loading: LoadingSpinner });
+const VetBookingFlow = dynamic(() => import('../vet/VetBookingFlow').then((m) => ({ default: m.VetBookingFlow })), { loading: LoadingSpinner });
+const VetBookingRouter = dynamic(() => import('../vet/VetBookingRouter').then((m) => ({ default: m.VetBookingRouter })), { loading: LoadingSpinner });
+const VetDoctorDetails = dynamic(() => import('../vet/VetDoctorDetails').then((m) => ({ default: m.VetDoctorDetails })), { loading: LoadingSpinner });
+const ClinicListView = dynamic(() => import('../vet/ClinicListView').then((m) => ({ default: m.ClinicListView })), { loading: LoadingSpinner });
+const ClinicProfileView = dynamic(() => import('../vet/ClinicProfileView').then((m) => ({ default: m.ClinicProfileView })), { loading: LoadingSpinner });
+const VetServicesByStyle = dynamic(() => import('../vet/VetServicesByStyle').then((m) => ({ default: m.VetServicesByStyle })), { loading: LoadingSpinner });
+const TeleConsultationRouter = dynamic(() => import('../vet/TeleConsultationRouter').then((m) => ({ default: m.TeleConsultationRouter })), { loading: LoadingSpinner, ssr: false });
+const HomeVisitRouter = dynamic(() => import('../vet/HomeVisitRouter').then((m) => ({ default: m.HomeVisitRouter })), { loading: LoadingSpinner });
+const UniversalPaymentPage = dynamic(() => import('../payment/UniversalPaymentPage').then((m) => ({ default: m.UniversalPaymentPage })), { loading: LoadingSpinner });
+const GroomingServiceRouter = dynamic(() => import('../GroomingServiceRouter').then((m) => ({ default: m.GroomingServiceRouter })), { loading: LoadingSpinner });
+const GroomingServicesByStyle = dynamic(() => import('../grooming/GroomingServicesByStyle').then((m) => ({ default: m.GroomingServicesByStyle })), { loading: LoadingSpinner });
+const TrainingServiceRouter = dynamic(() => import('../TrainingServiceRouter').then((m) => ({ default: m.TrainingServiceRouter })), { loading: LoadingSpinner });
+const GroomingBookingRouter = dynamic(() => import('../grooming/GroomingBookingRouter').then((m) => ({ default: m.GroomingBookingRouter })), { loading: LoadingSpinner });
+const UniversalServicesByStyle = dynamic(() => import('../shared/UniversalServicesByStyle').then((m) => ({ default: m.UniversalServicesByStyle })), { loading: LoadingSpinner });
+const BoardingServiceRouter = dynamic(() => import('../BoardingServiceRouter').then((m) => ({ default: m.BoardingServiceRouter })), { loading: LoadingSpinner });
+const BoardingBookingRouter = dynamic(() => import('../boarding/BoardingBookingRouter').then((m) => ({ default: m.BoardingBookingRouter })), { loading: LoadingSpinner });
+const BoardingVendorListView = dynamic(() => import('../boarding/BoardingVendorListView').then((m) => ({ default: m.BoardingVendorListView })), { loading: LoadingSpinner });
+const PetSittingVendorListView = dynamic(() => import('../boarding/PetSittingVendorListView').then((m) => ({ default: m.PetSittingVendorListView })), { loading: LoadingSpinner });
+const BoardingVendorProfileView = dynamic(() => import('../boarding/BoardingVendorProfileView').then((m) => ({ default: m.BoardingVendorProfileView })), { loading: LoadingSpinner });
+const HomeServiceProviderProfile = dynamic(() => import('../home-services/HomeServiceProviderProfile').then((m) => ({ default: m.HomeServiceProviderProfile })), { loading: LoadingSpinner });
+const PetSitterServiceRouter = dynamic(() => import('../PetSitterServiceRouter').then((m) => ({ default: m.PetSitterServiceRouter })), { loading: LoadingSpinner });
+const AdoptionServiceRouter = dynamic(() => import('../AdoptionServiceRouter').then((m) => ({ default: m.AdoptionServiceRouter })), { loading: LoadingSpinner });
+const SunsetServiceRouter = dynamic(() => import('../SunsetServiceRouter').then((m) => ({ default: m.SunsetServiceRouter })), { loading: LoadingSpinner });
+const CustomerProfileView = dynamic(() => import('../CustomerProfileView').then((m) => ({ default: m.CustomerProfileView })), { loading: LoadingSpinner });
+const PetProfile = dynamic(() => import('../PetProfile').then((m) => ({ default: m.PetProfile })), { loading: LoadingSpinner });
+const PetProfileDashboard = dynamic(() => import('../PetProfileDashboard').then((m) => ({ default: m.PetProfileDashboard })), { loading: LoadingSpinner });
+const InsuranceServicesLanding = dynamic(() => import('../InsuranceServicesLanding').then((m) => ({ default: m.InsuranceServicesLanding })), { loading: LoadingSpinner });
+const InsuranceProvider = dynamic(() => import('../insurance/InsuranceProvider').then((m) => ({ default: m.InsuranceProvider })), { loading: LoadingSpinner });
+const PetCafeServicesLanding = dynamic(() => import('../PetCafeServicesLanding').then((m) => ({ default: m.PetCafeServicesLanding })), { loading: LoadingSpinner });
+const PharmacyServicesLanding = dynamic(() => import('../PharmacyServicesLanding').then((m) => ({ default: m.PharmacyServicesLanding })), { loading: LoadingSpinner });
+const PharmacyStore = dynamic(() => import('../PharmacyStore').then((m) => ({ default: m.PharmacyStore })), { loading: LoadingSpinner });
+const PharmacyCheckout = dynamic(() => import('../PharmacyCheckout').then((m) => ({ default: m.PharmacyCheckout })), { loading: LoadingSpinner });
+const PhotographyServicesLanding = dynamic(() => import('../PhotographyServicesLanding').then((m) => ({ default: m.PhotographyServicesLanding })), { loading: LoadingSpinner });
+const BreederServicesLanding = dynamic(() => import('../BreederServicesLanding').then((m) => ({ default: m.BreederServicesLanding })), { loading: LoadingSpinner });
+const AmbulanceServicesLanding = dynamic(() => import('../AmbulanceServicesLanding').then((m) => ({ default: m.AmbulanceServicesLanding })), { loading: LoadingSpinner });
+const RelocationServicesLanding = dynamic(() => import('../RelocationServicesLanding').then((m) => ({ default: m.RelocationServicesLanding })), { loading: LoadingSpinner });
+const ResortServicesLanding = dynamic(() => import('../ResortServicesLanding').then((m) => ({ default: m.ResortServicesLanding })), { loading: LoadingSpinner });
+const PetHolidayServicesLanding = dynamic(() => import('../PetHolidayServicesLanding').then((m) => ({ default: m.PetHolidayServicesLanding })), { loading: LoadingSpinner });
+const ShopDashboard = dynamic(() => import('../ShopDashboard').then((m) => ({ default: m.ShopDashboard })), { loading: LoadingSpinner });
+const ProductDetailPage = dynamic(() => import('../ProductDetailPage').then((m) => ({ default: m.ProductDetailPage })), { loading: LoadingSpinner });
+const ShoppingCartView = dynamic(() => import('../ShoppingCartView').then((m) => ({ default: m.ShoppingCartView })), { loading: LoadingSpinner });
+const CheckoutView = dynamic(() => import('../CheckoutView').then((m) => ({ default: m.CheckoutView })), { loading: LoadingSpinner });
+const OrderSuccessView = dynamic(() => import('../OrderSuccessView').then((m) => ({ default: m.OrderSuccessView })), { loading: LoadingSpinner });
+const OrderHistoryPage = dynamic(() => import('../../shop/OrderHistoryPage').then((m) => ({ default: m.OrderHistoryPage })), { loading: LoadingSpinner });
+const AddressBookPage = dynamic(() => import('../../shop/AddressBookPage').then((m) => ({ default: m.AddressBookPage })), { loading: LoadingSpinner });
+const WalletPage = dynamic(() => import('../../shop/WalletPage').then((m) => ({ default: m.WalletPage })), { loading: LoadingSpinner });
+const OrderDetailView = dynamic(() => import('../OrderDetailView').then((m) => ({ default: m.OrderDetailView })), { loading: LoadingSpinner });
+const ProductReviewsView = dynamic(() => import('../ProductReviewsView').then((m) => ({ default: m.ProductReviewsView })), { loading: LoadingSpinner });
+const VendorProfileDetail = dynamic(() => import('../VendorProfileDetail').then((m) => ({ default: m.VendorProfileDetail })), { loading: LoadingSpinner });
+const SupportHelpCenter = dynamic(() => import('../SupportHelpCenter').then((m) => ({ default: m.SupportHelpCenter })), { loading: LoadingSpinner });
+const OrderTrackingView = dynamic(() => import('../OrderTrackingView').then((m) => ({ default: m.OrderTrackingView })), { loading: LoadingSpinner });
+const ProblemCategoryMapper = dynamic(() => import('../../admin/ProblemCategoryMapper').then((m) => ({ default: m.ProblemCategoryMapper })), { loading: LoadingSpinner });
+const MyBookings = dynamic(() => import('../booking/MyBookings').then((m) => ({ default: m.MyBookings })), { loading: LoadingSpinner });
+const AppointmentsList = dynamic(() => import('../AppointmentsList').then((m) => ({ default: m.AppointmentsList })), { loading: LoadingSpinner });
+const AppointmentDetailsView = dynamic(() => import('../AppointmentDetailsView').then((m) => ({ default: m.AppointmentDetailsView })), { loading: LoadingSpinner });
+const RescheduleAppointmentView = dynamic(() => import('../RescheduleAppointmentView').then((m) => ({ default: m.RescheduleAppointmentView })), { loading: LoadingSpinner });
+const PetCafeListingZomatoStyle = dynamic(() => import('../PetCafeListingZomatoStyle').then((m) => ({ default: m.PetCafeListingZomatoStyle })), { loading: LoadingSpinner });
+const ResortBoardingBookingEnhanced = dynamic(() => import('../ResortBoardingBookingEnhanced').then((m) => ({ default: m.ResortBoardingBookingEnhanced })), { loading: LoadingSpinner });
+const CafeReservationFlow = dynamic(() => import('../CafeReservationFlow').then((m) => ({ default: m.CafeReservationFlow })), { loading: LoadingSpinner });
+const BreederCatalogView = dynamic(() => import('../BreederCatalogView').then((m) => ({ default: m.BreederCatalogView })), { loading: LoadingSpinner });
+const AmbulanceSOS = dynamic(() => import('../AmbulanceSOS').then((m) => ({ default: m.AmbulanceSOS })), { loading: LoadingSpinner });
+const AmbulanceSubServiceFlow = dynamic(() => import('../AmbulanceSubServiceFlow').then((m) => ({ default: m.AmbulanceSubServiceFlow })), { loading: LoadingSpinner });
+const AdoptionQuestionnaire = dynamic(() => import('../AdoptionQuestionnaire').then((m) => ({ default: m.AdoptionQuestionnaire })), { loading: LoadingSpinner });
+const CustomerServicesPage = dynamic(() => import('../CustomerServicesPage').then((m) => ({ default: m.CustomerServicesPage })), { loading: LoadingSpinner });
+const CustomerBookingsPage = dynamic(() => import('../CustomerBookingsPage').then((m) => ({ default: m.CustomerBookingsPage })), { loading: LoadingSpinner });
+const CreateBookingPage = dynamic(() => import('../booking/CreateBookingPage').then((m) => ({ default: m.CreateBookingPage })), { loading: LoadingSpinner });
+const CustomerPetsPage = dynamic(() => import('../CustomerPetsPage').then((m) => ({ default: m.CustomerPetsPage })), { loading: LoadingSpinner });
+const OrderTrackingPage = dynamic(() => import('../../shop/OrderTrackingPage').then((m) => ({ default: m.OrderTrackingPage })), { loading: LoadingSpinner });
+const MultiPetBookingPage = dynamic(() => import('../MultiPetBookingPage').then((m) => ({ default: m.MultiPetBookingPage })), { loading: LoadingSpinner });
+const ReturnRequestPage = dynamic(() => import('../ReturnRequestPage').then((m) => ({ default: m.ReturnRequestPage })), { loading: LoadingSpinner });
+const RewardsLoyaltyPage = dynamic(() => import('../RewardsLoyaltyPage').then((m) => ({ default: m.RewardsLoyaltyPage })), { loading: LoadingSpinner });
+const ReferralSystemPage = dynamic(() => import('../ReferralSystemPage').then((m) => ({ default: m.ReferralSystemPage })), { loading: LoadingSpinner });
+const PackageBookingPage = dynamic(() => import('../PackageBookingPage').then((m) => ({ default: m.PackageBookingPage })), { loading: LoadingSpinner });
+const EmergencyBookingPage = dynamic(() => import('../EmergencyBookingPage').then((m) => ({ default: m.EmergencyBookingPage })), { loading: LoadingSpinner });
+const CheckInCheckOutPage = dynamic(() => import('../CheckInCheckOutPage').then((m) => ({ default: m.CheckInCheckOutPage })), { loading: LoadingSpinner });
+const MedicalRecordsPage = dynamic(() => import('../MedicalRecordsPage').then((m) => ({ default: m.MedicalRecordsPage })), { loading: LoadingSpinner });
+const CustomerWalletPage = dynamic(() => import('../WalletPage').then((m) => ({ default: m.WalletPage })), { loading: LoadingSpinner });
+const MatingDatingHub = dynamic(() => import('../MatingDatingHub').then((m) => ({ default: m.MatingDatingHub })), { loading: LoadingSpinner });
+const HomeServiceSelectionEnhanced = dynamic(() => import('../HomeServiceSelectionEnhanced').then((m) => ({ default: m.HomeServiceSelectionEnhanced })), { loading: LoadingSpinner });
+const IntegratedServicesHub = dynamic(() => import('../../IntegratedServicesHub').then((m) => ({ default: m.IntegratedServicesHub })), { loading: LoadingSpinner });
+const ProblemGridSelector = dynamic(() => import('../ProblemGridSelector').then((m) => ({ default: m.ProblemGridSelector })), { loading: LoadingSpinner });
+const AllServicesScreen = dynamic(() => import('../home/all-services/AllServicesScreen').then((m) => ({ default: m.AllServicesScreen })), { loading: LoadingSpinner });
+const CustomerPlacementBanners = dynamic(() => import('../shared/CustomerPlacementBanners').then((m) => ({ default: m.CustomerPlacementBanners })), { loading: LoadingSpinner });
+const ServicesByProblem = dynamic(() => import('../ServicesByProblem').then((m) => ({ default: m.ServicesByProblem })), { loading: LoadingSpinner });
+const ProblemGridFlowRouter = dynamic(() => import('../ProblemGridFlowRouter').then((m) => ({ default: m.ProblemGridFlowRouter })), { loading: LoadingSpinner });
+const MealPlansList = dynamic(() => import('../nutrition/MealPlansList').then((m) => ({ default: m.MealPlansList })), { loading: LoadingSpinner });
+const ExpertNutritionistsList = dynamic(() => import('../nutrition/ExpertNutritionistsList').then((m) => ({ default: m.ExpertNutritionistsList })), { loading: LoadingSpinner });
+const MealOrderCheckout = dynamic(() => import('../nutrition/MealOrderCheckout').then((m) => ({ default: m.MealOrderCheckout })), { loading: LoadingSpinner });
+const MealPlanOrdersPanel = dynamic(() => import('../meal-plans/MealPlanOrdersPanel').then((m) => ({ default: m.MealPlanOrdersPanel })), { loading: LoadingSpinner });
+const NutritionistTeleRouter = dynamic(() => import('../nutrition/NutritionistTeleRouter').then((m) => ({ default: m.NutritionistTeleRouter })), { loading: LoadingSpinner });
+const NutritionistBookingRouter = dynamic(() => import('../nutrition/NutritionistBookingRouter').then((m) => ({ default: m.NutritionistBookingRouter })), { loading: LoadingSpinner });
+const DietConsultationVendors = dynamic(() => import('../nutrition/DietConsultationVendors').then((m) => ({ default: m.DietConsultationVendors })), { loading: LoadingSpinner });
+const OrderTrackingScreen = dynamic(() => import('../tracking/OrderTrackingScreen').then((m) => ({ default: m.OrderTrackingScreen })), { loading: LoadingSpinner });
+const DiagnosticsServicesLanding = dynamic(() => import('../DiagnosticsServicesLanding').then((m) => ({ default: m.DiagnosticsServicesLanding })), { loading: LoadingSpinner });
+const DiagnosticsReportViewer = dynamic(() => import('../diagnostics/DiagnosticsReportViewer').then((m) => ({ default: m.DiagnosticsReportViewer })), { loading: LoadingSpinner });
+const SampleCollectionTracker = dynamic(() => import('../diagnostics/SampleCollectionTracker').then((m) => ({ default: m.SampleCollectionTracker })), { loading: LoadingSpinner });
+const DiagnosticsBookingFlow = dynamic(() => import('../specialized/DiagnosticsBookingFlow').then((m) => ({ default: m.DiagnosticsBookingFlow })), { loading: LoadingSpinner });
+const PharmacyOrderFlow = dynamic(() => import('../specialized/PharmacyOrderFlow').then((m) => ({ default: m.PharmacyOrderFlow })), { loading: LoadingSpinner });
+const PharmacyOrderStatus = dynamic(() => import('../pharmacy/PharmacyOrderStatus').then((m) => ({ default: m.PharmacyOrderStatus })), { loading: LoadingSpinner });
+const StandardizedHeader = dynamic(() => import('../shared/StandardizedHeader').then((m) => ({ default: m.StandardizedHeader })), { loading: LoadingSpinner });
+const TrackingPageClient = dynamic(() => import('@/app/tracking/[bookingId]/TrackingPageClient').then((m) => ({ default: m.TrackingPageClient })), { loading: LoadingSpinner, ssr: false });
+const NutritionistServicesLanding = dynamic(() => import('../nutrition/NutritionistServicesLanding').then((m) => ({ default: m.NutritionistServicesLanding })), { loading: LoadingSpinner });
+const ChimeVideoCall = dynamic(() => import('../../teleCommunication/ChimeVideoCall'), { ssr: false, loading: LoadingSpinner });
+const TrainingBookingRouter = dynamic(() => import('../training/TrainingBookingRouter').then((m) => ({ default: m.TrainingBookingRouter })), { ssr: false, loading: LoadingSpinner });
+const UniversalHomeServiceRouter = dynamic(() => import('../home-services/UniversalHomeServiceRouter').then((m) => ({ default: m.UniversalHomeServiceRouter })), { ssr: false, loading: LoadingSpinner });
 
 type ScreenType = 
   | 'home' 
@@ -382,7 +369,6 @@ export function CustomerHomeWrapper({
     'pharmacy_checkout',
   ]);
 
-  console.log('CustomerHomeWrapper: Rendering with phone:', phone);
   const router = useRouter();
   const pathname = usePathname() || '/';
   const searchParams = useSearchParams();
@@ -516,10 +502,15 @@ export function CustomerHomeWrapper({
   const { openMessages } = useCustomerBookingMessagesModal();
 
   // ✅ FIX: User profile state for consistent header display
-  const [userName, setUserName] = useState<string>('User');
-  const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(undefined);
-  const [pets, setPets] = useState<any[]>([]);
-  const [selectedPet, setSelectedPet] = useState<any | null>(null);
+  const [userName, setUserName] = useState<string>(() => readCachedProfileName(phone).name);
+  const [userProfilePhoto, setUserProfilePhoto] = useState<string | undefined>(
+    () => readCachedProfileName(phone).photo
+  );
+  const [pets, setPets] = useState<any[]>(() => readCachedPetsFromStorage());
+  const [selectedPet, setSelectedPet] = useState<any | null>(() => {
+    const cached = readCachedPetsFromStorage();
+    return cached[0] ?? null;
+  });
 
   /** After `/shop` or `/promotions` back: restore embedded screen (same URL `/` as home). */
   useEffect(() => {
@@ -568,38 +559,62 @@ export function CustomerHomeWrapper({
     return () => window.removeEventListener('orderMedicineFromPrescription', handleOrderMedicineFromPrescription as EventListener);
   }, []);
 
-  // ✅ FIX: Load user profile for header display
+  // Header profile/pets: hydrate from cache immediately, refresh in background (CustomerHomeComplete owns home pets UI).
   useEffect(() => {
+    if (!phone) return;
+
+    const cachedPets = readCachedPetsFromStorage();
+    if (cachedPets.length > 0) {
+      setPets(cachedPets);
+      setSelectedPet((prev) => prev ?? cachedPets[0]);
+    }
+    const cachedProfile = readCachedProfileName(phone);
+    setUserName(cachedProfile.name);
+    if (cachedProfile.photo) setUserProfilePhoto(cachedProfile.photo);
+
     const loadUserProfile = async () => {
       try {
-        const profileResponse = await apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`) as any;
-        if (profileResponse?.profile || profileResponse) {
-          const profile = profileResponse.profile || profileResponse;
-          setUserName(profile.name || profile.fullName || profile.full_name || 'User');
-          setUserProfilePhoto(
-            profile.profilePhoto ||
-              profile.profile_photo_url ||
-              profile.profile_image_url ||
-              profile.photo
-          );
+        const [profileResult, petsResult] = await Promise.allSettled([
+          apiClient.get(
+            `/customer/profile?phone=${encodeURIComponent(phone)}`,
+            HOME_CRITICAL_GET_RETRY,
+            HOME_CRITICAL_TIMEOUT_MS
+          ),
+          apiClient.get(
+            `/customer/pets/${encodeURIComponent(phone)}`,
+            HOME_CRITICAL_GET_RETRY,
+            HOME_CRITICAL_TIMEOUT_MS
+          ),
+        ]);
+
+        if (profileResult.status === 'fulfilled') {
+          const profileResponse = profileResult.value as any;
+          if (profileResponse?.profile || profileResponse) {
+            const profile = profileResponse.profile || profileResponse;
+            setUserName(profile.name || profile.fullName || profile.full_name || profile.firstName || 'User');
+            setUserProfilePhoto(
+              profile.profilePhoto ||
+                profile.profile_photo_url ||
+                profile.profile_image_url ||
+                profile.photo
+            );
+          }
         }
-        
-        // Also load pets for header pet selector
-        const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
-        if (petsResponse?.pets) {
-          setPets(petsResponse.pets);
-          if (petsResponse.pets.length > 0 && !selectedPet) {
-            setSelectedPet(petsResponse.pets[0]);
+
+        if (petsResult.status === 'fulfilled') {
+          const pets = parsePetsFromApiResponse(petsResult.value);
+          if (pets.length > 0) {
+            setPets(pets);
+            setSelectedPet((prev) => prev ?? pets[0]);
+            persistPetsToLocalStorage(pets);
           }
         }
       } catch (error) {
         console.error('[CustomerHomeWrapper] Error loading user profile:', error);
       }
     };
-    
-    if (phone) {
-      loadUserProfile();
-    }
+
+    void loadUserProfile();
   }, [phone]);
 
   const syncTeleConsultUrl = useCallback(
@@ -621,7 +636,9 @@ export function CustomerHomeWrapper({
     if (sp.get('service') !== 'tele') return;
     const url = buildTeleInstantAutoPayBookingUrl();
     if (url) {
-      console.log('[CustomerHomeWrapper] service=tele in URL → redirect to instant auto-pay booking:', url);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[CustomerHomeWrapper] service=tele in URL → redirect to instant auto-pay booking:', url);
+      }
       router.replace(url);
       return;
     }
@@ -654,7 +671,9 @@ export function CustomerHomeWrapper({
     phone: phone,
     enabled: !!phone,
     onNewNotification: async (notification) => {
-      console.log('📬 [CUSTOMER-HOME] Notification received:', notification);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('📬 [CUSTOMER-HOME] Notification received:', notification);
+      }
       if (notification.type === 'chat_message' && notification.bookingId) {
         try {
           const data = await apiClient.get<{ booking: { id: string; vendorId: string; vendorName: string; customerPhone: string } }>(`/customer/bookings/${notification.bookingId}`);
@@ -920,7 +939,7 @@ export function CustomerHomeWrapper({
     else if (service === 'home') {
       handleBack();
     } else {
-      if (typeof console !== 'undefined' && console.warn) {
+      if (process.env.NODE_ENV === 'development') {
         console.warn('[CustomerHomeWrapper] Unhandled navigate service:', service);
       }
       toast.message('That action is not available here. Try refreshing the page if this keeps happening.');
@@ -949,7 +968,9 @@ export function CustomerHomeWrapper({
   };
 
   const handleVetNavigate = (screen: string, data?: any) => {
-    console.log('🔵 [handleVetNavigate] Navigating to:', screen, data);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔵 [handleVetNavigate] Navigating to:', screen, data);
+    }
     if (screen === 'vet-vendor-profile' && data) {
       const legacy = normalizeLegacyVetVendorProfilePayload(data as Record<string, unknown>);
       if (!legacy.id) {
@@ -1016,7 +1037,9 @@ export function CustomerHomeWrapper({
       setCurrentScreen('vet-home-visit');
     }
     else if (screen === 'pharmacy') {
-      console.log('🔵 [handleVetNavigate] Setting pharmacy landing (Medicine)');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔵 [handleVetNavigate] Setting pharmacy landing (Medicine)');
+      }
       setCurrentScreen('pharmacy');
     }
     else if (screen === 'pharmacy_store') {
@@ -1029,7 +1052,9 @@ export function CustomerHomeWrapper({
       screen === 'lab' ||
       screen === 'vet-lab-tests'
     ) {
-      console.log('🔵 [handleVetNavigate] Setting lab-diagnostics screen');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔵 [handleVetNavigate] Setting lab-diagnostics screen');
+      }
       setLabDiagnosticsReturnScreen('vet');
       setCurrentScreen('lab-diagnostics');
     }
@@ -1078,7 +1103,9 @@ export function CustomerHomeWrapper({
     }
     else {
       // ✅ FIX: Fallback - try to navigate to the screen directly
-      console.log('🔵 [handleVetNavigate] Unhandled screen, attempting direct navigation:', screen);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('🔵 [handleVetNavigate] Unhandled screen, attempting direct navigation:', screen);
+      }
       setCurrentScreen(screen as any);
     }
   };
@@ -1515,7 +1542,9 @@ export function CustomerHomeWrapper({
   };
 
   const handleReorderMedicine = (medications: any[], prescriptionId?: string, _bookingId?: string) => {
-    console.log('Reordering medicines:', medications, prescriptionId);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Reordering medicines:', medications, prescriptionId);
+    }
     // ✅ From My Bookings → vet appointment → prescription: open medicine delivery flow (prescription → address → broadcast → invoice → pay)
     if (prescriptionId) {
       setPrescriptionOrderData({ prescriptionId });
@@ -2513,7 +2542,9 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'grooming') {
     return renderScreenWithLayout('grooming',
       <GroomingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => { 
-        console.log('🟢 [CustomerHomeWrapper] Grooming navigation:', screen, data);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🟢 [CustomerHomeWrapper] Grooming navigation:', screen, data);
+        }
         if (screen === 'appointment-details') { 
           setSelectedAppointmentId(data?.appointmentId); 
           setCurrentScreen('appointment-details'); 
@@ -2535,11 +2566,15 @@ export function CustomerHomeWrapper({
           });
           setCurrentScreen('grooming-booking');
         } else if (screen === 'problem_grid') {
-          console.log('🟢 [CustomerHomeWrapper] Setting problem_grid screen');
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🟢 [CustomerHomeWrapper] Setting problem_grid screen');
+          }
           setCurrentServiceType('groomer');
           setCurrentScreen('problem_grid');
         } else if (screen === 'problem_selected') {
-          console.log('🟢 [CustomerHomeWrapper] Setting problem_selected screen:', data);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🟢 [CustomerHomeWrapper] Setting problem_selected screen:', data);
+          }
           if (data?.problemId && !data?.problemTitle) {
             setSelectedProblem({ id: data.problemId, title: 'Loading...', roleId: 'groomer' });
           } else {
@@ -2548,11 +2583,15 @@ export function CustomerHomeWrapper({
           setProblemGridSpecialization(data?.problemId || undefined);
           setCurrentScreen('problem_grid_flow');
         } else if (screen === 'grooming_center' || screen === 'at_center') {
-          console.log('🟢 [CustomerHomeWrapper] Setting grooming_center screen');
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🟢 [CustomerHomeWrapper] Setting grooming_center screen');
+          }
           setGroomingCenterProfileVendorId(null);
           setCurrentScreen('grooming_center');
         } else if (screen === 'grooming_home' || screen === 'at_home') {
-          console.log('🟢 [CustomerHomeWrapper] Setting grooming_home screen');
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🟢 [CustomerHomeWrapper] Setting grooming_home screen');
+          }
           setGroomingHomeProfileVendorId(null);
           setCurrentScreen('grooming_home');
         } else if (screen === 'add-address') {
@@ -2582,7 +2621,9 @@ export function CustomerHomeWrapper({
             setCurrentScreen('grooming_center');
           }
         } else {
-          console.warn('🟡 [CustomerHomeWrapper] Unhandled grooming navigation:', screen, data);
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('🟡 [CustomerHomeWrapper] Unhandled grooming navigation:', screen, data);
+          }
           setCurrentScreen(screen as any);
         }
       }} />,
@@ -2593,7 +2634,9 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'training') {
     return renderScreenWithLayout('training',
       <TrainingServiceRouter phone={phone} onBack={handleBack} onViewBooking={handleViewBooking} onNavigate={(screen, data) => {
-        console.log('🟢 [CustomerHomeWrapper] Training navigation:', screen, data);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('🟢 [CustomerHomeWrapper] Training navigation:', screen, data);
+        }
         if (screen === 'create-booking' || screen === 'training-booking' || screen === 'booking') {
           setPreviousScreen('training');
           setSelectedVendorId(data?.vendorId);
@@ -2639,7 +2682,9 @@ export function CustomerHomeWrapper({
           setWalkerServiceData(Object.keys(payload).length ? payload : vid ? { vendorId: vid } : null);
           setCurrentScreen('purchase-package');
         } else {
-          console.warn('🟡 [CustomerHomeWrapper] Unhandled training navigation:', screen, data);
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('🟡 [CustomerHomeWrapper] Unhandled training navigation:', screen, data);
+          }
           setCurrentScreen(screen as any);
         }
       }} />,
@@ -2931,8 +2976,8 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'insurance') {
     return renderScreenWithLayout('insurance',
       <InsuranceServicesLanding phone={phone} onBack={handleBack} onNavigate={(screen, data) => {
-        if (screen === 'insurance_policy_purchase') {
-          setSelectedVendorId(data?.vendorId);
+        if (screen === 'insurance_policy_purchase' || screen === 'insurance_provider') {
+          setSelectedVendorId(data?.vendorId || data?.provider?.id);
           setCurrentScreen('insurance_provider');
         } else if (screen === 'create-booking') {
           setSelectedVendorId(data?.vendorId);
@@ -2944,6 +2989,17 @@ export function CustomerHomeWrapper({
         }
       }} />,
       { title: 'Pet Insurance', subtitle: 'Protect your furry friend', showBackButton: true }
+    );
+  }
+
+  if (currentScreen === 'insurance_provider') {
+    return (
+      <InsuranceProvider
+        phone={phone}
+        vendorId={selectedVendorId}
+        onBack={() => setCurrentScreen('insurance')}
+        onNavigate={(screen) => handleNavigateToService(screen)}
+      />
     );
   }
   
@@ -4308,7 +4364,6 @@ export function CustomerHomeWrapper({
           phone={phone}
           onBack={problemGridBack}
           onNavigate={(screen, data) => handleNavigateToService(screen, data)}
-          topSlot={problemGridTopSlot}
         />
       );
     }

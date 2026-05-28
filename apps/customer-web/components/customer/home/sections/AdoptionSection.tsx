@@ -100,7 +100,7 @@ function AdoptionSectionComponent({
         />
 
         {/* Header */}
-        <div className="relative mb-4 flex items-start gap-3">
+        <div className="relative mb-4 flex flex-col gap-3 sm:flex-row sm:items-start">
           <div className="min-w-0 flex-1">
             <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-rose-200/80 bg-white/70 px-2.5 py-1 text-[10px] font-medium text-[#FF4D6D] shadow-sm backdrop-blur-sm">
               <Sparkles className="h-3 w-3" aria-hidden />
@@ -121,12 +121,12 @@ function AdoptionSectionComponent({
               </span>
             </div>
 
-            <p className="max-w-[14rem] text-xs leading-relaxed text-gray-600">
+            <p className="text-xs leading-relaxed text-gray-600 sm:max-w-[14rem]">
               Coming soon — adoption and rehoming when we launch. Find your perfect companion then.
             </p>
           </div>
 
-          <div className="relative h-[6rem] w-[7rem] shrink-0">
+          <div className="relative mx-auto h-[5rem] w-[5.5rem] shrink-0 sm:mx-0 sm:h-[6rem] sm:w-[7rem]">
             <div
               className="absolute inset-x-0 bottom-1 top-3 rounded-[48%] bg-gradient-to-br from-[#FFD6E0] to-[#FFE8EE] shadow-inner"
               aria-hidden
@@ -152,33 +152,33 @@ function AdoptionSectionComponent({
         </div>
 
         {/* Teaser stats */}
-        <div className="relative mb-4 flex gap-2">
-          <div className="flex flex-1 items-center gap-2 rounded-2xl border border-white/80 bg-white/60 px-3 py-2 shadow-sm backdrop-blur-sm">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-100 text-xs" aria-hidden>
+        <div className="relative mb-4 grid grid-cols-2 gap-2">
+          <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/80 bg-white/60 px-2.5 py-2 shadow-sm backdrop-blur-sm sm:px-3">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs" aria-hidden>
               🐾
             </span>
             <div className="min-w-0">
               <p className="text-[11px] font-bold text-gray-900">{stats.adoptable}</p>
-              <p className="truncate text-[9px] text-gray-500">pets waiting</p>
+              <p className="text-[9px] leading-tight text-gray-500">pets waiting</p>
             </div>
           </div>
-          <div className="flex flex-1 items-center gap-2 rounded-2xl border border-white/80 bg-white/60 px-3 py-2 shadow-sm backdrop-blur-sm">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-orange-100 text-xs" aria-hidden>
+          <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/80 bg-white/60 px-2.5 py-2 shadow-sm backdrop-blur-sm sm:px-3">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-orange-100 text-xs" aria-hidden>
               🏠
             </span>
             <div className="min-w-0">
               <p className="text-[11px] font-bold text-gray-900">{stats.rehoming}</p>
-              <p className="truncate text-[9px] text-gray-500">rehoming stories</p>
+              <p className="text-[9px] leading-tight text-gray-500">rehoming stories</p>
             </div>
           </div>
         </div>
 
-        {/* Cards */}
-        <div className="pointer-events-none relative grid grid-cols-2 gap-3 select-none">
+        {/* Cards — single column on mobile to avoid cramped side-by-side layout */}
+        <div className="pointer-events-none relative grid grid-cols-1 gap-3 select-none sm:grid-cols-2">
           {ADOPTION_CARDS.map((card, index) => (
             <div
               key={card.title}
-              className={`adopt-card-enter relative flex min-h-[10rem] overflow-hidden rounded-3xl bg-gradient-to-br ring-1 ${card.accentRing} ${card.cardGradient}`}
+              className={`adopt-card-enter relative min-h-[9.5rem] overflow-hidden rounded-3xl bg-gradient-to-br ring-1 ${card.accentRing} ${card.cardGradient}`}
               style={{
                 animationDelay: `${index * 120}ms`,
                 boxShadow: `0 6px 24px ${card.glowColor}`,
@@ -189,18 +189,18 @@ function AdoptionSectionComponent({
                 aria-hidden
               />
 
-              <div className="relative z-10 flex min-w-0 flex-1 flex-col p-3.5 pr-2">
+              <div className="relative z-10 flex min-w-0 flex-col p-3.5 pb-3 pr-[5rem]">
                 <div
-                  className={`mb-2.5 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br shadow-md ${card.iconBg}`}
+                  className={`mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br shadow-md ${card.iconBg}`}
                   aria-hidden
                 >
                   <card.Icon className="h-[18px] w-[18px] text-white" strokeWidth={2.25} />
                 </div>
 
-                <h3 className="mb-0.5 text-[13px] font-bold leading-tight text-gray-900">
+                <h3 className="mb-0.5 text-sm font-bold leading-snug text-gray-900">
                   {card.title}
                 </h3>
-                <p className="mb-3 text-[11px] leading-snug text-gray-600">
+                <p className="mb-2.5 text-xs leading-snug text-gray-600">
                   {card.description}
                 </p>
 
@@ -210,20 +210,18 @@ function AdoptionSectionComponent({
                 </span>
               </div>
 
-              <div className="relative flex w-[4.75rem] shrink-0 flex-col justify-end">
-                <div
-                  className="adopt-pet-pop relative h-[4.75rem] w-full"
-                  style={{ animationDelay: `${index * 200 + 400}ms` }}
-                >
-                  <Image
-                    src={card.imageUrl}
-                    alt={card.imageAlt}
-                    fill
-                    className="object-contain object-bottom"
-                    sizes="76px"
-                    unoptimized
-                  />
-                </div>
+              <div
+                className="adopt-pet-pop pointer-events-none absolute bottom-0 right-0 h-[5rem] w-[5rem]"
+                style={{ animationDelay: `${index * 200 + 400}ms` }}
+              >
+                <Image
+                  src={card.imageUrl}
+                  alt={card.imageAlt}
+                  fill
+                  className="object-contain object-bottom"
+                  sizes="(max-width: 640px) 80px, 76px"
+                  unoptimized
+                />
               </div>
             </div>
           ))}

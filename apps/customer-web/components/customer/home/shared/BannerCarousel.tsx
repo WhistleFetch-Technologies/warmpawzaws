@@ -27,14 +27,13 @@ function resolveBannerImageUrl(banner: HomeCarouselBanner): string {
 }
 
 function BannerHeroImage({ src, alt }: { src: string; alt: string }) {
-  if (src.startsWith('/')) {
+  if (src.startsWith('/') && !src.includes('amazonaws.com')) {
     return (
       <Image
         src={src}
         alt={alt}
-        width={112}
-        height={112}
-        className="h-full w-full object-contain object-bottom"
+        fill
+        className="object-cover object-center"
         unoptimized
       />
     );
@@ -44,13 +43,13 @@ function BannerHeroImage({ src, alt }: { src: string; alt: string }) {
       <PresignableImage
         src={src}
         alt={alt}
-        className="h-full w-full object-cover object-center"
+        className="absolute inset-0 h-full w-full object-cover object-center"
       />
     );
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={alt} className="h-full w-full object-cover object-center" />
+    <img src={src} alt={alt} className="absolute inset-0 h-full w-full object-cover object-center" />
   );
 }
 
@@ -95,16 +94,8 @@ function BannerCarouselComponent({
             >
               {hasHeroImage ? (
                 <>
-                  <div
-                    className="absolute inset-0"
-                    style={{
-                      background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
-                    }}
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-black/25 to-transparent" />
-                  <div className="absolute bottom-0 right-0 top-0 w-[42%] min-w-[7rem]">
-                    <BannerHeroImage src={imageUrl} alt="" />
-                  </div>
+                  <BannerHeroImage src={imageUrl} alt={banner.title} />
+                  <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/45 to-black/20" />
                 </>
               ) : null}
 
@@ -154,9 +145,7 @@ function BannerCarouselComponent({
                   <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-white/20">
                     <banner.Icon className="h-7 w-7 text-white" />
                   </div>
-                ) : (
-                  <div className="w-[42%] min-w-[7rem] shrink-0" aria-hidden />
-                )}
+                ) : null}
               </div>
             </div>
           );

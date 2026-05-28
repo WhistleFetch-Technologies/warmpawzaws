@@ -54,6 +54,7 @@ export interface CustomerHomePageHeaderProps {
   onSelectPet: (pet: Pet) => void;
   onPetClick?: (petId: string) => void;
   onAddPet: () => void;
+  petsLoading?: boolean;
 }
 
 export interface CustomerHomePageContentProps {
@@ -96,6 +97,7 @@ function CustomerHomePageHeaderComponent({
   onSelectPet,
   onPetClick,
   onAddPet,
+  petsLoading = false,
 }: CustomerHomePageHeaderProps) {
   return (
     <HomeHeaderShell>
@@ -116,6 +118,7 @@ function CustomerHomePageHeaderComponent({
         onSelectPet={onSelectPet}
         onPetClick={onPetClick}
         onAddPet={onAddPet}
+        petsLoading={petsLoading}
       />
     </HomeHeaderShell>
   );
@@ -191,7 +194,7 @@ function CustomerHomePageContentComponent({
         onSeeAll={onPetCareArticlesSeeAll}
       />
       <MoreServicesSection onNavigate={onNavigate} />
-      <HomeLowerBannersSection lowerBanners={featuredLowerBanners} onNavigate={onNavigate} />
+      <HomeLowerBannersSection lowerBanners={featuredLowerBanners.slice(1)} onNavigate={onNavigate} />
       <NeedHelpSection onNavigate={onNavigate} />
     </>
   );

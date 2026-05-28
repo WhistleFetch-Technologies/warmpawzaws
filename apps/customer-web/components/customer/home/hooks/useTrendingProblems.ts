@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { readTrendingCache, writeTrendingCache } from '@/lib/home-session-cache';
 
 export interface TrendingProblem {
   problemId: string;
@@ -41,14 +42,21 @@ function dedupeTrendingProblems(raw: TrendingProblem[]): TrendingProblem[] {
 
 /** Ranked trending problems from GET /customer/problems/trending. */
 export function useTrendingProblems(limit = 5) {
-  const [items, setItems] = useState<TrendingProblem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [items, setItems] = useState<TrendingProblem[]>(() => {
+    const cached = readTrendingCache<TrendingProblem[]>();
+    return Array.isArray(cached) ? cached.slice(0, limit) : [];
+  });
+  const [loading, setLoading] = useState(() => {
+    const cached = readTrendingCache<TrendingProblem[]>();
+    return !(Array.isArray(cached) && cached.length > 0);
+  });
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      setLoading(true);
+      const hadCache = (readTrendingCache<TrendingProblem[]>()?.length ?? 0) > 0;
+      if (!hadCache) setLoading(true);
       try {
         const data = await apiClient.get<{
           trending?: TrendingProblem[];
@@ -56,10 +64,12 @@ export function useTrendingProblems(limit = 5) {
         }>('/customer/problems/trending');
         if (cancelled) return;
         const rawTrending = data.data?.trending || data.trending || [];
-        setItems(dedupeTrendingProblems(rawTrending).slice(0, limit));
+        const next = dedupeTrendingProblems(rawTrending).slice(0, limit);
+        setItems(next);
+        if (next.length > 0) writeTrendingCache(next);
       } catch (error) {
         console.error('Error fetching trending problems:', error);
-        if (!cancelled) setItems([]);
+        if (!cancelled && !hadCache) setItems([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
