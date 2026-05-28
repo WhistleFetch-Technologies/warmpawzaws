@@ -40,6 +40,7 @@ echo "Importing Secrets Manager secrets..."
 terraform import 'module.secrets.aws_secretsmanager_secret.razorpay' warmpawz/dev/razorpay || echo "Secret may not exist or already imported"
 terraform import 'module.secrets.aws_secretsmanager_secret.google_maps' warmpawz/dev/google-maps || echo "Secret may not exist or already imported"
 terraform import 'module.secrets.aws_secretsmanager_secret.shiprocket' warmpawz/dev/shiprocket || echo "Secret may not exist or already imported"
+terraform import 'module.secrets.aws_secretsmanager_secret.aftership' warmpawz/dev/aftership || echo "Secret may not exist or already imported"
 
 echo "✅ Import complete!"
 echo "⚠️  Note: Some resources may need manual import or may not exist"

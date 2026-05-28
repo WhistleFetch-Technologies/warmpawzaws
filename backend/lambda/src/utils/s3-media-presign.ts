@@ -76,6 +76,52 @@ export async function presignProductImagesJsonb(raw: unknown): Promise<unknown> 
   );
 }
 
+/** Normalize products.images from JSONB, JSON string, or a single URL into a string array. */
+export function normalizeProductImagesField(raw: unknown): string[] {
+  if (raw == null || raw === '') return [];
+  if (Array.isArray(raw)) {
+    return raw.map((x) => String(x ?? '').trim()).filter(Boolean);
+  }
+  if (typeof raw === 'string') {
+    const s = raw.trim();
+    if (!s) return [];
+    if (s.startsWith('[') || s.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(s);
+        if (Array.isArray(parsed)) {
+          return parsed.map((x) => String(x ?? '').trim()).filter(Boolean);
+        }
+        if (typeof parsed === 'string' && parsed.trim()) {
+          return [parsed.trim()];
+        }
+      } catch {
+        /* single URL or malformed JSON — treat as one URL below */
+      }
+    }
+    return [s];
+  }
+  return [];
+}
+
+/**
+ * Public storefront: normalize images + presign private S3 URLs (same as vendor catalog APIs).
+ */
+export async function prepareStorefrontProductRow(
+  row: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = { ...row };
+  if ('images' in out) {
+    out.images = normalizeProductImagesField(out.images);
+  }
+  return presignProductRowForDisplay(out);
+}
+
+export async function prepareStorefrontProductRows(
+  rows: Record<string, unknown>[],
+): Promise<Record<string, unknown>[]> {
+  return Promise.all(rows.map((r) => prepareStorefrontProductRow(r)));
+}
+
 /** Presign product.images and metadata.images for API responses (private S3 bucket). */
 export async function presignProductRowForDisplay(row: Record<string, unknown>): Promise<Record<string, unknown>> {
   const out: Record<string, unknown> = { ...row };

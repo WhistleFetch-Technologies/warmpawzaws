@@ -12,6 +12,7 @@ import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
 import { CARRIER_PATTERNS, buildTrackingUrl, getCarrierDisplayName, normalizeCarrierKey } from '../utils/logistics/carrier-patterns';
 import { markOrderShippedByVendor } from '../utils/logistics/vendor-mark-shipped';
+import { shipmentPincodeFieldsForInsert } from '../utils/logistics/shipment-pincodes';
 import { syncVendorManagedShipments } from '../jobs/vendor-shipment-tracking-processor';
 
 export function registerSelfManagedLogisticsEndpoints(app: Hono) {
@@ -180,8 +181,12 @@ export function registerSelfManagedLogisticsEndpoints(app: Hono) {
       if (existingShipment.rows.length > 0) {
         await update('shipments', { id: existingShipment.rows[0].id }, shipmentData);
       } else {
+        const vendors = order.vendor_id
+          ? await select('vendors', { id: order.vendor_id })
+          : [];
         await insert('shipments', {
           ...shipmentData,
+          ...shipmentPincodeFieldsForInsert(order, vendors[0]),
           created_at: new Date().toISOString(),
         });
       }

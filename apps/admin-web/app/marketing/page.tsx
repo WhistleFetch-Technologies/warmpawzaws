@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 
 import {
 	Dialog,
@@ -56,6 +56,16 @@ import {
 	formatAdminBannerPlacementLabel,
 	adminBannerPositionFromRow,
 	normalizeLocationValue,
+	BANNER_SELECT_EMPTY,
+	buildBannerCtaLink,
+	buildBannerMetadata,
+	parseBannerTargetFromAdminRow,
+	normalizeBannerServiceStyle,
+	validateBannerSaveTarget,
+	isCheckoutBannerPosition,
+	type BannerDestinationCategory,
+	type BannerDestinationServiceStyle,
+	type BannerDestinationVendor,
 } from "@/lib/banner-admin";
 import { toast, Toaster } from "sonner";
 import {
@@ -85,7 +95,6 @@ export default function MarketingPromotionsTab() {
 		subtitle: "",
 		image_url: "",
 		cta_text: "Shop Now",
-		cta_link: "",
 		position: "home_top",
 		is_active: true,
 		start_date: new Date().toISOString().split("T")[0],
@@ -98,6 +107,14 @@ export default function MarketingPromotionsTab() {
 	});
 	const [bannerGeoStates, setBannerGeoStates] = useState<string[]>([]);
 	const [bannerGeoCities, setBannerGeoCities] = useState<string[]>([]);
+	const [bannerCtaPersona, setBannerCtaPersona] = useState("");
+	const [bannerCtaServiceStyle, setBannerCtaServiceStyle] = useState("");
+	const [bannerCtaVendorId, setBannerCtaVendorId] = useState("");
+	const [bannerCtaTargetMode, setBannerCtaTargetMode] = useState<"none" | "service_type" | "vendor">("none");
+	const [bannerDestinationCategories, setBannerDestinationCategories] = useState<BannerDestinationCategory[]>([]);
+	const [bannerDestinationServiceStyles, setBannerDestinationServiceStyles] = useState<BannerDestinationServiceStyle[]>([]);
+	const [bannerDestinationVendors, setBannerDestinationVendors] = useState<BannerDestinationVendor[]>([]);
+	const [bannerDestinationLoading, setBannerDestinationLoading] = useState(false);
 	
 	// Articles State
 	const [articles, setArticles] = useState<any[]>([]);
@@ -180,6 +197,7 @@ export default function MarketingPromotionsTab() {
 			loadVendors();
 		} else if (activeTab === "banners") {
 			loadBanners();
+			loadVendors();
 		} else if (activeTab === "articles") {
 			loadArticles();
 		} else if (activeTab === "announcements") {
@@ -194,6 +212,40 @@ export default function MarketingPromotionsTab() {
 			loadBannerGeoStates();
 		}
 	}, [activeTab]);
+
+	useEffect(() => {
+		if (showBannerModal) {
+			void loadBannerDestinationOptions(bannerCtaPersona || undefined);
+		}
+	}, [showBannerModal, bannerCtaPersona]);
+
+	const loadBannerDestinationOptions = async (categoryId?: string) => {
+		setBannerDestinationLoading(true);
+		try {
+			const query = categoryId
+				? `?categoryId=${encodeURIComponent(categoryId)}`
+				: "";
+			const data = await apiClient.get<any>(`/admin/banners/destination-options${query}`);
+			const categories = Array.isArray(data?.categories) ? data.categories : [];
+			setBannerDestinationCategories(categories);
+			if (categoryId) {
+				setBannerDestinationServiceStyles(
+					Array.isArray(data?.serviceStyles) ? data.serviceStyles : []
+				);
+				setBannerDestinationVendors(Array.isArray(data?.vendors) ? data.vendors : []);
+			} else {
+				setBannerDestinationServiceStyles([]);
+				setBannerDestinationVendors([]);
+			}
+		} catch (error) {
+			console.error("Error loading banner destination options:", error);
+			setBannerDestinationCategories([]);
+			setBannerDestinationServiceStyles([]);
+			setBannerDestinationVendors([]);
+		} finally {
+			setBannerDestinationLoading(false);
+		}
+	};
 
 	useEffect(() => {
 		if (!bannerForm.target_state) {
@@ -719,20 +771,81 @@ export default function MarketingPromotionsTab() {
 	};
 
 	const handleSaveBanner = async () => {
+		const isCheckout = isCheckoutBannerPosition(bannerForm.position);
+
+		const validation = validateBannerSaveTarget({
+			position: bannerForm.position,
+			categoryId: bannerCtaPersona,
+			targetMode: bannerCtaTargetMode,
+			serviceStyle: bannerCtaServiceStyle,
+			vendorId: bannerCtaVendorId,
+		});
+		if (!validation.ok) {
+			toast.error(validation.message);
+			return;
+		}
+
+		const selectedCategory = bannerDestinationCategories.find(
+			(c) => c.categoryId === bannerCtaPersona
+		);
+		const customerScreen = selectedCategory?.customerScreen || bannerCtaPersona;
+
+		const vendorFromList = bannerDestinationVendors.find((v) => v.id === bannerCtaVendorId);
+		const vendorFromLegacy = bannerCtaVendorId
+			? availableVendors.find(
+					(v) => v.id === bannerCtaVendorId || v.vendorId === bannerCtaVendorId
+				)
+			: undefined;
+		const vendorName = String(
+			vendorFromList?.businessName ||
+				vendorFromLegacy?.businessName ||
+				vendorFromLegacy?.business_name ||
+				vendorFromLegacy?.fullName ||
+				vendorFromLegacy?.name ||
+				""
+		).trim();
+
+		let targetLevel: "category" | "service_type" | "vendor" = "category";
+		if (bannerCtaTargetMode === "service_type") targetLevel = "service_type";
+		if (bannerCtaTargetMode === "vendor") targetLevel = "vendor";
+
+		const metadata = buildBannerMetadata({
+			gradientFrom: bannerForm.gradient_from,
+			gradientTo: bannerForm.gradient_to,
+			bannerTarget: isCheckout
+				? null
+				: {
+						categoryId: bannerCtaPersona,
+						customerScreen,
+						targetLevel,
+						serviceStyle:
+							bannerCtaTargetMode === "service_type" ? bannerCtaServiceStyle : undefined,
+						vendorId: bannerCtaTargetMode === "vendor" ? bannerCtaVendorId : undefined,
+						vendorName: bannerCtaTargetMode === "vendor" ? vendorName || undefined : undefined,
+						vendorServiceId: null,
+						persona: customerScreen,
+					},
+		});
+		const ctaLink = isCheckout
+			? ""
+			: bannerCtaTargetMode === "vendor" && vendorName
+				? buildBannerCtaLink(customerScreen, vendorName)
+				: String(editingBanner?.linkUrl || editingBanner?.cta_link || "").trim();
+
 		try {
 			if (editingBanner) {
 				await apiClient.put(`/admin/banners/${editingBanner.id}`, {
 					title: bannerForm.title,
 					description: bannerForm.subtitle,
 					imageUrl: bannerForm.image_url,
-					linkUrl: bannerForm.cta_link,
+					linkUrl: ctaLink,
 					position: bannerForm.position,
 					priority: bannerForm.display_order,
 					startDate: bannerForm.start_date,
 					endDate: bannerForm.end_date || null,
 					isActive: bannerForm.is_active,
 					ctaText: bannerForm.cta_text,
-					metadata: { gradient_from: bannerForm.gradient_from, gradient_to: bannerForm.gradient_to },
+					metadata,
 					targetState: normalizeLocationValue(bannerForm.target_state),
 					targetCity: normalizeLocationValue(bannerForm.target_city),
 				});
@@ -741,14 +854,14 @@ export default function MarketingPromotionsTab() {
 					title: bannerForm.title,
 					description: bannerForm.subtitle,
 					imageUrl: bannerForm.image_url,
-					linkUrl: bannerForm.cta_link,
+					linkUrl: ctaLink,
 					position: bannerForm.position,
 					priority: bannerForm.display_order,
 					startDate: bannerForm.start_date,
 					endDate: bannerForm.end_date || null,
 					isActive: bannerForm.is_active,
 					ctaText: bannerForm.cta_text,
-					metadata: { gradient_from: bannerForm.gradient_from, gradient_to: bannerForm.gradient_to },
+					metadata,
 					targetState: normalizeLocationValue(bannerForm.target_state),
 					targetCity: normalizeLocationValue(bannerForm.target_city),
 				});
@@ -776,12 +889,17 @@ export default function MarketingPromotionsTab() {
 
 	const resetBannerForm = () => {
 		setEditingBanner(null);
+		setBannerCtaPersona("");
+		setBannerCtaServiceStyle("");
+		setBannerCtaVendorId("");
+		setBannerCtaTargetMode("none");
+		setBannerDestinationServiceStyles([]);
+		setBannerDestinationVendors([]);
 		setBannerForm({
 			title: "",
 			subtitle: "",
 			image_url: "",
 			cta_text: "Shop Now",
-			cta_link: "",
 			position: "home_top",
 			is_active: true,
 			start_date: new Date().toISOString().split("T")[0],
@@ -794,21 +912,137 @@ export default function MarketingPromotionsTab() {
 		});
 	};
 
+	const getBannerVendorName = (vendorId: string) => {
+		const fromOptions = bannerDestinationVendors.find((v) => v.id === vendorId);
+		if (fromOptions?.businessName) return fromOptions.businessName;
+		const vendor = availableVendors.find(
+			(v) => v.id === vendorId || v.vendorId === vendorId
+		);
+		return String(
+			vendor?.businessName || vendor?.business_name || vendor?.fullName || vendor?.name || ""
+		).trim();
+	};
+
+	const handleBannerCtaPersonaChange = (value: string) => {
+		if (value === BANNER_SELECT_EMPTY) {
+			setBannerCtaPersona("");
+			setBannerCtaServiceStyle("");
+			setBannerCtaVendorId("");
+			setBannerCtaTargetMode("none");
+			return;
+		}
+		setBannerCtaPersona(value);
+		setBannerCtaServiceStyle("");
+		setBannerCtaVendorId("");
+		setBannerCtaTargetMode("none");
+	};
+
+	const handleBannerCtaTargetModeChange = (mode: "none" | "service_type" | "vendor") => {
+		setBannerCtaTargetMode(mode);
+		if (mode === "none") {
+			setBannerCtaServiceStyle("");
+			setBannerCtaVendorId("");
+		} else if (mode === "service_type") {
+			setBannerCtaVendorId("");
+		} else {
+			setBannerCtaServiceStyle("");
+		}
+	};
+
+	const handleBannerCtaServiceStyleChange = (value: string) => {
+		if (value === BANNER_SELECT_EMPTY) {
+			setBannerCtaServiceStyle("");
+			return;
+		}
+		setBannerCtaServiceStyle(value);
+	};
+
+	const handleBannerCtaVendorChange = (value: string) => {
+		if (value === BANNER_SELECT_EMPTY) {
+			setBannerCtaVendorId("");
+			return;
+		}
+		setBannerCtaVendorId(value);
+	};
+
+	const bannerVendorOptions = useMemo(() => {
+		const list = [...bannerDestinationVendors];
+		const selectedId = bannerCtaVendorId.trim();
+		if (
+			selectedId &&
+			!list.some((v) => String(v.id || "") === selectedId)
+		) {
+			list.unshift({
+				id: selectedId,
+				businessName: getBannerVendorName(selectedId) || "Selected vendor",
+			});
+		}
+		list.sort((a, b) =>
+			String(a.businessName || "").localeCompare(String(b.businessName || ""))
+		);
+		return list;
+	}, [bannerDestinationVendors, bannerCtaVendorId]);
+
+	const bannerSelectTriggerClass =
+		"w-full h-10 bg-white min-w-0 [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate";
+
 	const openEditBannerModal = (banner: any) => {
+		const meta =
+			banner.metadata && typeof banner.metadata === "object" ? banner.metadata : {};
+		const storedTarget = parseBannerTargetFromAdminRow(banner as Record<string, unknown>);
+
+		const ctaLink = String(banner.cta_link || banner.linkUrl || "").trim();
+		const ctaSegments = ctaLink.replace(/^\/+/, "").split("/").filter(Boolean);
+		const parsedPersona = ctaSegments[0] || "";
+		const parsedVendorName = decodeURIComponent(ctaSegments.slice(1).join("/")).trim();
+		const matchedVendor = availableVendors.find((v) => {
+			const name = String(v.businessName || v.business_name || v.fullName || v.name || "").trim();
+			return (
+				(storedTarget?.vendorId && (v.id === storedTarget.vendorId || v.vendorId === storedTarget.vendorId)) ||
+				name.toLowerCase() === parsedVendorName.toLowerCase()
+			);
+		});
+
+		const categoryId =
+			storedTarget?.categoryId ||
+			storedTarget?.persona ||
+			parsedPersona ||
+			"";
+		const serviceStyleRaw = storedTarget?.serviceStyle;
+		const serviceStyle =
+			serviceStyleRaw != null && String(serviceStyleRaw).trim()
+				? normalizeBannerServiceStyle(serviceStyleRaw)
+				: "";
+		const vendorId = storedTarget?.vendorId || matchedVendor?.id || matchedVendor?.vendorId || "";
+
+		setBannerCtaPersona(categoryId);
+		if (storedTarget?.targetLevel === "vendor" || vendorId) {
+			setBannerCtaTargetMode("vendor");
+			setBannerCtaVendorId(String(vendorId));
+			setBannerCtaServiceStyle("");
+		} else if (storedTarget?.targetLevel === "service_type" || serviceStyle) {
+			setBannerCtaTargetMode("service_type");
+			setBannerCtaVendorId("");
+			setBannerCtaServiceStyle(serviceStyle);
+		} else {
+			setBannerCtaTargetMode("none");
+			setBannerCtaVendorId("");
+			setBannerCtaServiceStyle("");
+		}
+
 		setEditingBanner(banner);
 		setBannerForm({
 			title: banner.title || "",
 			subtitle: banner.subtitle || banner.description || "",
 			image_url: banner.image_url || banner.imageUrl || "",
-			cta_text: banner.cta_text || banner.ctaText || "Shop Now",
-			cta_link: banner.cta_link || banner.linkUrl || "",
+			cta_text: banner.cta_text || banner.ctaText || "Book Now",
 			position: (banner.position as string) || adminBannerPositionFromRow(banner),
 			is_active: banner.is_active !== false,
 			start_date: banner.start_date ? new Date(banner.start_date).toISOString().split("T")[0] : "",
 			end_date: banner.end_date ? new Date(banner.end_date).toISOString().split("T")[0] : "",
 			display_order: banner.display_order || banner.priority || 0,
-			gradient_from: banner.metadata?.gradient_from || "#FF8C42",
-			gradient_to: banner.metadata?.gradient_to || "#FF6B35",
+			gradient_from: (meta as any).gradient_from || "#FF8C42",
+			gradient_to: (meta as any).gradient_to || "#FF6B35",
 			target_state: normalizeLocationValue(banner.target_state || banner.targetState) || "",
 			target_city: normalizeLocationValue(banner.target_city || banner.targetCity) || "",
 		});
@@ -2280,7 +2514,7 @@ export default function MarketingPromotionsTab() {
 
 			{/* BANNER MODAL */}
 			<Dialog open={showBannerModal} onOpenChange={setShowBannerModal}>
-				<DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+				<DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
 					<DialogHeader>
 						<DialogTitle>
 							{editingBanner ? "Edit Banner" : "Create New Banner"}
@@ -2293,12 +2527,15 @@ export default function MarketingPromotionsTab() {
 					<div className="grid gap-4 py-4">
 						<div className="grid grid-cols-2 gap-4">
 							<div>
-								<Label>Title *</Label>
+								<Label>Title (service name)</Label>
 								<Input
 									value={bannerForm.title}
 									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, title: e.target.value })}
-									placeholder="e.g. Get 50% OFF"
+									placeholder="e.g. CRP + Rabies Vaccination"
 								/>
+								<p className="text-xs text-gray-500 mt-1">
+									Must match the vendor&apos;s published service name. Used to open the correct booking (home / clinic / tele).
+								</p>
 							</div>
 							<div>
 								<Label>Subtitle</Label>
@@ -2311,7 +2548,7 @@ export default function MarketingPromotionsTab() {
 						</div>
 
 						<div>
-							<Label>Image URL (optional)</Label>
+							<Label>Image URL</Label>
 							<Input
 								value={bannerForm.image_url}
 								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, image_url: e.target.value })}
@@ -2355,23 +2592,151 @@ export default function MarketingPromotionsTab() {
 							</div>
 						</div>
 
-						<div className="grid grid-cols-2 gap-4">
+						<div>
+							<Label>CTA Button Text</Label>
+							<Input
+								value={bannerForm.cta_text}
+								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, cta_text: e.target.value })}
+								placeholder="Book Now"
+							/>
+						</div>
+
+						<div className="rounded-lg border border-dashed border-gray-200 p-4 bg-gray-50/80 space-y-4">
+							{isCheckoutBannerPosition(bannerForm.position) ? (
+								<p className="text-sm text-gray-600">
+									Checkout banners are informational only — no destination or redirect is configured.
+								</p>
+							) : (
+								<>
 							<div>
-								<Label>CTA Button Text</Label>
-								<Input
-									value={bannerForm.cta_text}
-									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, cta_text: e.target.value })}
-									placeholder="Claim Now"
-								/>
+								<p className="text-sm font-medium text-gray-900">Banner destination</p>
+								<p className="text-xs text-gray-500 mt-0.5">
+									Pick a category, then choose service type or vendor using the option below.
+								</p>
 							</div>
-							<div>
-								<Label>CTA Link</Label>
-								<Input
-									value={bannerForm.cta_link}
-									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, cta_link: e.target.value })}
-									placeholder="/grooming"
-								/>
+
+							<div className="space-y-4">
+								<div className="space-y-1.5 min-w-0">
+									<Label>Service category</Label>
+									<Select
+										value={bannerCtaPersona || BANNER_SELECT_EMPTY}
+										onValueChange={handleBannerCtaPersonaChange}
+									>
+										<SelectTrigger className={bannerSelectTriggerClass}>
+											<SelectValue placeholder="Select" />
+										</SelectTrigger>
+										<SelectContent position="popper" className="z-[200] max-h-60">
+											<SelectItem value={BANNER_SELECT_EMPTY}>Select</SelectItem>
+											{bannerDestinationCategories.map((c) => (
+												<SelectItem key={c.categoryId} value={c.categoryId}>
+													{c.name}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+
+								{bannerCtaPersona ? (
+									<div className="space-y-2">
+										<Label>Route by</Label>
+										<div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
+											<label className="flex items-center gap-2 cursor-pointer">
+												<input
+													type="radio"
+													name="bannerCtaTargetMode"
+													checked={bannerCtaTargetMode === "none"}
+													onChange={() => handleBannerCtaTargetModeChange("none")}
+													className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+												/>
+												<span className="text-sm text-gray-900">Category page only</span>
+											</label>
+											<label className="flex items-center gap-2 cursor-pointer">
+												<input
+													type="radio"
+													name="bannerCtaTargetMode"
+													checked={bannerCtaTargetMode === "service_type"}
+													onChange={() => handleBannerCtaTargetModeChange("service_type")}
+													className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+												/>
+												<span className="text-sm text-gray-900">Service type</span>
+											</label>
+											<label className="flex items-center gap-2 cursor-pointer">
+												<input
+													type="radio"
+													name="bannerCtaTargetMode"
+													checked={bannerCtaTargetMode === "vendor"}
+													onChange={() => handleBannerCtaTargetModeChange("vendor")}
+													className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+												/>
+												<span className="text-sm text-gray-900">Vendor</span>
+											</label>
+										</div>
+									</div>
+								) : null}
+
+								{bannerCtaPersona && bannerCtaTargetMode === "service_type" ? (
+									<div className="space-y-1.5 min-w-0">
+										<Label>Service type</Label>
+										<Select
+											value={bannerCtaServiceStyle || BANNER_SELECT_EMPTY}
+											onValueChange={handleBannerCtaServiceStyleChange}
+										>
+											<SelectTrigger className={bannerSelectTriggerClass}>
+												<SelectValue placeholder="Select" />
+											</SelectTrigger>
+											<SelectContent position="popper" className="z-[200] max-h-60">
+												<SelectItem value={BANNER_SELECT_EMPTY}>Select</SelectItem>
+												{bannerDestinationServiceStyles.length === 0 ? (
+													<SelectItem value="__loading__" disabled>
+														{bannerDestinationLoading ? "Loading…" : "No service types for this category"}
+													</SelectItem>
+												) : (
+													bannerDestinationServiceStyles.map((s) => (
+														<SelectItem key={s.value} value={s.value}>
+															{s.label}
+														</SelectItem>
+													))
+												)}
+											</SelectContent>
+										</Select>
+									</div>
+								) : null}
+
+								{bannerCtaPersona && bannerCtaTargetMode === "vendor" ? (
+									<div className="space-y-1.5 min-w-0">
+										<Label>Vendor</Label>
+										<Select
+											value={bannerCtaVendorId || BANNER_SELECT_EMPTY}
+											onValueChange={handleBannerCtaVendorChange}
+										>
+											<SelectTrigger className={bannerSelectTriggerClass}>
+												<SelectValue placeholder="Select" />
+											</SelectTrigger>
+											<SelectContent position="popper" className="z-[200] max-h-60">
+												<SelectItem value={BANNER_SELECT_EMPTY}>Select</SelectItem>
+												{bannerVendorOptions.length === 0 ? (
+													<SelectItem value="__loading__" disabled>
+														{bannerDestinationLoading ? "Loading vendors…" : "No vendors for this category"}
+													</SelectItem>
+												) : (
+													bannerVendorOptions.map((vendor) => {
+														const id = String(vendor.id || "").trim();
+														if (!id) return null;
+														const label = vendor.businessName || "Vendor";
+														return (
+															<SelectItem key={id} value={id}>
+																{label}
+															</SelectItem>
+														);
+													})
+												)}
+											</SelectContent>
+										</Select>
+									</div>
+								) : null}
 							</div>
+								</>
+							)}
 						</div>
 
 						<div className="grid grid-cols-2 gap-4">
@@ -2379,7 +2744,15 @@ export default function MarketingPromotionsTab() {
 								<Label>Position</Label>
 								<Select
 									value={bannerForm.position}
-									onValueChange={(v: string) => setBannerForm({ ...bannerForm, position: v })}
+									onValueChange={(v: string) => {
+										setBannerForm({ ...bannerForm, position: v });
+										if (isCheckoutBannerPosition(v)) {
+											setBannerCtaPersona("");
+											setBannerCtaServiceStyle("");
+											setBannerCtaVendorId("");
+											setBannerCtaTargetMode("none");
+										}
+									}}
 								>
 									<SelectTrigger>
 										<SelectValue />
@@ -2469,7 +2842,7 @@ export default function MarketingPromotionsTab() {
 								/>
 							</div>
 							<div>
-								<Label>End Date (optional)</Label>
+								<Label>End Date</Label>
 								<Input
 									type="date"
 									value={bannerForm.end_date}

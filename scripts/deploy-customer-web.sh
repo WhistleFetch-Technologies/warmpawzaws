@@ -88,17 +88,6 @@ else
 fi
 RESOLVED_API_BASE_URL="${RESOLVED_API_BASE_URL%/}"
 
-# Customer marketplace toggle (shop / cart / wishlist / shop orders / checkout).
-# Hard-off everywhere until launch — both dev and prod default to disabled so the
-# customer-facing app shows "Coming Soon" surfaces. Opt in for an internal beta by
-# exporting CUSTOMER_ECOMMERCE_ENABLED=true before running the deploy script.
-CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-false}"
-if [ "$CEE_RAW" = "true" ] || [ "$CEE_RAW" = "1" ]; then
-  CEE_JS="true"
-else
-  CEE_JS="false"
-fi
-
 # Meal plans browse + meal order tracking (off on prod until launch).
 if [ "$PROD" = true ]; then
   CMP_RAW="${CUSTOMER_MEAL_PLANS_ENABLED:-false}"
@@ -127,7 +116,6 @@ else
     BUILD_ENV=(
       "NEXT_PUBLIC_ENVIRONMENT=production"
       "NEXT_PUBLIC_API_BASE_URL=${RESOLVED_API_BASE_URL}"
-      "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
       "NEXT_PUBLIC_FIREBASE_VAPID_KEY=BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw"
       "NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=${CMP_JS}"
     )
@@ -135,7 +123,6 @@ else
     BUILD_ENV=(
       "NEXT_PUBLIC_ENVIRONMENT=development"
       "NEXT_PUBLIC_API_BASE_URL=${RESOLVED_API_BASE_URL}"
-      "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
       "NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=${CMP_JS}"
       "NEXT_PUBLIC_FIREBASE_VAPID_KEY=BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw"
     )
@@ -180,7 +167,6 @@ if [ "$PROD" = true ]; then
       apiBaseUrl: "${API_BASE_URL}",
       uatMode: false,
       environment: "production",
-      customerEcommerceEnabled: ${CEE_JS},
       firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
       firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
       firebaseProjectId:         "warmpawz-b9baf",
@@ -204,7 +190,6 @@ else
       apiBaseUrl: "${API_BASE_URL}",
       uatMode: true,
       environment: "development",
-      customerEcommerceEnabled: ${CEE_JS},
       firebaseApiKey:            "AIzaSyBeLXF4iovrl6J4NaWmwlgkj9hiAHRW4Zs",
       firebaseAuthDomain:        "warmpawz-b9baf.firebaseapp.com",
       firebaseProjectId:         "warmpawz-b9baf",
