@@ -23,23 +23,24 @@ function SearchFilterSectionComponent({
   const router = useRouter();
 
   return (
-    <div className={`px-4 mt-5 mb-3 flex gap-2 items-start ${className}`}>
+    <div className={`px-4 mt-[14px] mb-3 flex gap-2 items-center ${className}`}>
       <div className="min-w-0 flex-1">
         <EnhancedSearchBar
           placeholder={placeholder}
           customerId={customerId}
           onSearch={onSearch}
           onResultSelect={onResultSelect}
+          compact
           className="shadow-sm"
         />
       </div>
       <button
         type="button"
         onClick={() => router.push('/search')}
-        className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm transition-all hover:bg-gray-50 active:scale-95"
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm transition-all hover:bg-gray-50 active:scale-95"
         aria-label="Open search and filters"
       >
-        <SlidersHorizontal className="h-5 w-5 text-gray-600" />
+        <SlidersHorizontal className="h-4 w-4 text-gray-600" />
       </button>
     </div>
   );

@@ -10,7 +10,7 @@ import {
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users,
   GraduationCap, Coffee, Shield, Sparkles,
   Phone, Video, Building2, Bone, BookOpen, Wheat, Bot, Menu, Settings, Palmtree, Pill,
-  Navigation, AlertCircle, FlaskConical, MessageSquare, RefreshCw,
+  Navigation, AlertCircle, FlaskConical, MessageSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -240,7 +240,6 @@ export function CustomerHomeComplete({
   onOpenMenu,
   onOpenCategoryMapper,
   refreshKey = 0,
-  onRefresh,
   hideHeaderFooter = false // ✅ NEW: Default to showing header/footer
 }: CustomerHomeCompleteProps) {
   const router = useRouter();
@@ -2063,7 +2062,6 @@ export function CustomerHomeComplete({
           userProfilePhoto={userProfilePhoto}
           phone={phone}
           onProfileClick={onProfileClick}
-          onRefresh={onRefresh}
           onNavigate={handleNavigation}
           onOpenNotifications={() => setNotificationModalOpen(true)}
           notificationUnreadCount={notificationUnreadCount}
@@ -2112,15 +2110,6 @@ export function CustomerHomeComplete({
                 size="sm"
                 showBalance={true}
               />
-              <button
-                type="button"
-                onClick={onRefresh}
-                className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
-                aria-label="Refresh home"
-                title="Refresh"
-              >
-                <RefreshCw className="w-[18px] h-[18px] text-white" strokeWidth={2} />
-              </button>
               <button
                 type="button"
                 onClick={() => handleNavigation('booking-messages')}

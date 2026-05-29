@@ -2,7 +2,7 @@
 
 import React, { memo } from 'react';
 import Image from 'next/image';
-import { ChevronRight, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { HorizontalScrollRow } from '../shared/HorizontalScrollRow';
 import { usePopularServiceCatalog } from '../hooks/usePopularServiceCatalog';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
@@ -24,18 +24,11 @@ function PopularServicesSectionComponent({
 
   return (
     <div className={`mb-6 ${className}`}>
-      <div className="mb-3 flex items-center justify-between px-4">
+      <div className="mb-3 flex items-center px-4">
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-[#FF8C42]" />
           <h2 className="font-semibold text-gray-900">Popular Services</h2>
         </div>
-        <button
-          type="button"
-          onClick={() => onNavigate('/services/all')}
-          className="flex items-center gap-1 text-xs font-medium text-[#FF8C42]"
-        >
-          View all <ChevronRight className="h-4 w-4" />
-        </button>
       </div>
 
       <HorizontalScrollRow gapClassName="gap-4" paddingClassName="px-4">
@@ -101,5 +94,5 @@ function PopularServicesSectionComponent({
   );
 }
 
-/** Category spotlight cards — header "View all" opens the full services catalog. */
+/** Category spotlight cards for popular pet services on the home page. */
 export const PopularServicesSection = memo(PopularServicesSectionComponent);

@@ -7,6 +7,7 @@ type Props = {
   src?: string | null;
   alt: string;
   className?: string;
+  style?: React.CSSProperties;
   /** Called when the image cannot be displayed (including after S3 refresh attempt). */
   onUnavailable?: () => void;
 };
@@ -14,7 +15,7 @@ type Props = {
 /**
  * Renders an image; on load error, tries GET /storage/refresh-url for private S3 objects.
  */
-export function PresignableImage({ src, alt, className, onUnavailable }: Props) {
+export function PresignableImage({ src, alt, className, style, onUnavailable }: Props) {
   const [current, setCurrent] = useState(src || '');
   const [triedRefresh, setTriedRefresh] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
@@ -67,6 +68,7 @@ export function PresignableImage({ src, alt, className, onUnavailable }: Props) 
       src={current}
       alt={alt}
       className={className}
+      style={style}
       loading="lazy"
       decoding="async"
       onError={onError}
