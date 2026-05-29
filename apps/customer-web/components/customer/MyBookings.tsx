@@ -15,6 +15,7 @@ import { copyTextToClipboard } from '@/lib/shareUtils';
 import {
   derivePaymentSourcesFromBooking,
   formatPaymentSourcesShortLabel,
+  bookingSourcesHasGatewayPayment,
 } from '@/lib/payment-display-utils';
 import type { PaymentSource } from '@/lib/payment-display-utils';
 import {
@@ -154,10 +155,13 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   const [cancellationReason, setCancellationReason] = useState('');
   const [refundMethod, setRefundMethod] = useState<'wallet' | 'original'>('wallet');
   const [processing, setProcessing] = useState(false);
+  const [refundPreviewLoading, setRefundPreviewLoading] = useState(false);
   const [estimatedRefund, setEstimatedRefund] = useState<{
     percentage: number;
     amount: number;
     platformFeeApplies?: boolean;
+    source?: string;
+    policyApplied?: boolean;
   } | null>(null);
   // ✅ FIX: Add state for review modal
   const [showReviewModal, setShowReviewModal] = useState<{ bookingId: string; vendorId: string; serviceName: string } | null>(null);
@@ -357,16 +361,19 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
     toast.success('OTP copied to clipboard');
   };
 
-  // ✅ Load refund preview based on actual backend policy (refund tiers / rules)
-  const loadRefundPreview = async (booking: Booking) => {
+  // ✅ Load refund preview (wallet = 100%; original = cancellation policy)
+  const loadRefundPreview = async (booking: Booking, method: 'wallet' | 'original') => {
+    setRefundPreviewLoading(true);
     try {
       const ps = String(booking.paymentStatus || '').toLowerCase();
-      // Preview uses ledger + policy; allow any paid-like state (backend also treats wallet debits as paid for cancel).
       if (ps && !['paid', 'completed', 'pending_payment'].includes(ps)) {
         setEstimatedRefund({ percentage: 0, amount: 0 });
         return;
       }
-      const result = await apiClient.post('/customer/bookings/refund-preview', { bookingId: booking.bookingId }) as any;
+      const result = await apiClient.post('/customer/bookings/refund-preview', {
+        bookingId: booking.bookingId,
+        refundMethod: method,
+      }) as any;
       const payload = (result as any)?.data ?? result;
       const refund = payload?.refund ?? payload;
       if (refund && typeof refund.refundPercentage === 'number') {
@@ -376,6 +383,8 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
           platformFeeApplies:
             refund.platformFeeApplies === true ||
             (typeof refund.platformFeeNonRefundable === 'number' && refund.platformFeeNonRefundable > 0),
+          source: refund.source,
+          policyApplied: refund.policyApplied,
         });
       } else {
         setEstimatedRefund({ percentage: 0, amount: 0 });
@@ -383,8 +392,18 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
     } catch (error) {
       console.error('Error loading refund preview:', error);
       setEstimatedRefund({ percentage: 0, amount: 0 });
+    } finally {
+      setRefundPreviewLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!showCancelModal) return;
+    const booking = bookings.find((b) => b.bookingId === showCancelModal);
+    if (booking) {
+      void loadRefundPreview(booking, refundMethod);
+    }
+  }, [showCancelModal, refundMethod]);
 
   // ✅ Handle cancel booking
   const handleCancelBooking = async (bookingId: string) => {
@@ -432,7 +451,10 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
   const openCancelModal = (booking: Booking, e: React.MouseEvent) => {
     e.stopPropagation();
     setEstimatedRefund(null);
-    loadRefundPreview(booking);
+    setCancellationReason('');
+    if (!bookingSourcesHasGatewayPayment(booking.paymentSources ?? [])) {
+      setRefundMethod('wallet');
+    }
     setShowCancelModal(booking.bookingId);
   };
 
@@ -1028,7 +1050,12 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
       </div>
 
       {/* ✅ Cancel Booking Modal */}
-      {showCancelModal && (
+      {showCancelModal && (() => {
+        const cancelModalBooking = bookings.find((b) => b.bookingId === showCancelModal);
+        const canRefundToOriginal = bookingSourcesHasGatewayPayment(
+          cancelModalBooking?.paymentSources ?? []
+        );
+        return (
         <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between mb-4">
@@ -1048,36 +1075,6 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
               </button>
             </div>
 
-            {/* Refund Policy Info */}
-            {estimatedRefund && (
-              <div className="mb-4 p-4 bg-blue-50 rounded-lg">
-                <h4 className="font-medium text-blue-800 mb-2">Refund Information</h4>
-                <p className="text-sm text-blue-700">
-                  Based on our refund policy, you will receive{' '}
-                  <span className="font-semibold">{estimatedRefund.percentage}%</span> refund.
-                </p>
-                {estimatedRefund.platformFeeApplies && (
-                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
-                    Platform fee is not refundable.
-                  </p>
-                )}
-                <p className="text-lg font-bold text-blue-800 mt-1">
-                  Estimated Refund: {formatPriceWithSymbol(estimatedRefund.amount)}
-                </p>
-              </div>
-            )}
-
-            {/* Reason Input */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">Reason for cancellation *</label>
-              <textarea
-                value={cancellationReason}
-                onChange={(e) => setCancellationReason(e.target.value)}
-                placeholder="Please provide a reason for cancellation..."
-                className="w-full p-3 border rounded-lg resize-none h-24 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-              />
-            </div>
-
             {/* Refund Method Selection */}
             {estimatedRefund && estimatedRefund.amount > 0 && (
               <div className="mb-4">
@@ -1095,12 +1092,14 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                     <span className="font-medium">Warmpawz Wallet</span>
                   </button>
                   <button
-                    onClick={() => setRefundMethod('original')}
+                    type="button"
+                    onClick={() => canRefundToOriginal && setRefundMethod('original')}
+                    disabled={!canRefundToOriginal}
                     className={`flex-1 p-3 rounded-lg border-2 flex items-center justify-center gap-2 ${
                       refundMethod === 'original' 
                         ? 'border-orange-500 bg-orange-50' 
                         : 'border-gray-200 hover:border-gray-300'
-                    }`}
+                    } ${!canRefundToOriginal ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <CreditCard className="w-5 h-5" />
                     <span className="font-medium">Original Payment</span>
@@ -1108,11 +1107,60 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
                 </div>
                 <p className="text-xs text-gray-500 mt-2">
                   {refundMethod === 'wallet' 
-                    ? 'Instant credit to your Warmpawz wallet for future bookings' 
-                    : 'Refund to original payment method (3-7 business days)'}
+                    ? '100% refund to your Warmpawz wallet — cancellation policy does not apply' 
+                    : canRefundToOriginal
+                      ? 'Refund per cancellation policy to original payment (5–7 business days). Wallet portion returns to wallet if split-paid.'
+                      : 'Original payment refund is unavailable for wallet-only bookings.'}
                 </p>
               </div>
             )}
+
+            {/* Refund estimate */}
+            {(refundPreviewLoading || estimatedRefund) && (
+              <div className="mb-4 p-4 bg-blue-50 rounded-lg">
+                <h4 className="font-medium text-blue-800 mb-2">Refund Information</h4>
+                {refundPreviewLoading && !estimatedRefund ? (
+                  <p className="text-sm text-blue-700">Loading refund estimate…</p>
+                ) : estimatedRefund ? (
+                  <>
+                    <p className="text-sm text-blue-700">
+                      {refundMethod === 'wallet' ? (
+                        <>
+                          <span className="font-semibold">100%</span> refund to Warmpawz wallet
+                          <span className="block text-xs text-blue-600 mt-1">
+                            Cancellation policy does not apply for wallet refunds
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          Based on cancellation policy, you will receive{' '}
+                          <span className="font-semibold">{estimatedRefund.percentage}%</span> refund.
+                        </>
+                      )}
+                    </p>
+                    {refundMethod === 'original' && estimatedRefund.platformFeeApplies && (
+                      <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
+                        Platform fee is not refundable.
+                      </p>
+                    )}
+                    <p className="text-lg font-bold text-blue-800 mt-1">
+                      Estimated Refund: {formatPriceWithSymbol(estimatedRefund.amount)}
+                    </p>
+                  </>
+                ) : null}
+              </div>
+            )}
+
+            {/* Reason Input */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">Reason for cancellation *</label>
+              <textarea
+                value={cancellationReason}
+                onChange={(e) => setCancellationReason(e.target.value)}
+                placeholder="Please provide a reason for cancellation..."
+                className="w-full p-3 border rounded-lg resize-none h-24 focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              />
+            </div>
 
             {/* Action Buttons */}
             <div className="flex gap-3">
@@ -1143,7 +1191,8 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ✅ Reschedule Booking Modal */}
       {showRescheduleModal && (

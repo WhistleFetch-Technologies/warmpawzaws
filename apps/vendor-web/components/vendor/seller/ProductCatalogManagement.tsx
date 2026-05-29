@@ -5,9 +5,15 @@ import {
   Plus, Search, Filter, Edit2, Trash2, Eye, Package,
   Grid, List, ChevronDown, X, Upload, IndianRupee, Tag,
   Check, AlertCircle, Image as ImageIcon, MapPin,   RefreshCcw,
-  FileSpreadsheet,
+  FileSpreadsheet, Archive,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import {
+  getVendorDisplayStatus,
+  getVendorDisplayStatusLabel,
+  isRemovedFromCatalog,
+} from '@/lib/vendor-product-display-status';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { BulkProductUpload } from '@/components/vendor/products/BulkProductUpload';
 
@@ -23,22 +29,6 @@ function stripAwsPresignFromProductImageUrl(url: string): string {
     /* ignore */
   }
   return url;
-}
-
-/**
- * Badge label for vendor catalog.
- * When admin sets status to active, treat as live unless is_active is explicitly false
- * (avoids showing "pending" forever when is_active is null/undefined in older rows).
- */
-function getVendorDisplayStatus(product: Pick<Product, 'status' | 'is_active'>): string {
-  const s = String(product.status ?? '').trim().toLowerCase();
-  if (s === 'rejected') return 'rejected';
-  if (s === 'draft') return 'draft';
-  if (s === 'active' && product.is_active !== false) return 'active';
-  if (s === 'active' && product.is_active === false) return 'pending';
-  if (!s) return 'pending';
-  if (s === 'pending_approval' || s === 'submit_for_approval' || s === 'submitted') return 'pending';
-  return s;
 }
 
 interface ProductCatalogManagementProps {
@@ -71,8 +61,11 @@ function productMatchesCategory(product: Product, selectedCategory: string): boo
 }
 
 function productMatchesStatusFilter(product: Product, selectedStatus: string): boolean {
-  if (selectedStatus === 'all') return true;
   const displayStatus = getVendorDisplayStatus(product);
+  if (selectedStatus === 'all') {
+    // Hide archived/removed products from the default catalog view
+    return displayStatus !== 'inactive';
+  }
   if (selectedStatus === 'out_of_stock') {
     const stock = Number(product.stock);
     return displayStatus === 'out_of_stock' || (!Number.isNaN(stock) && stock <= 0);
@@ -131,14 +124,39 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
   };
 
   const handleDeleteProduct = async (productId: string) => {
-    if (!confirm('Are you sure you want to delete this product?')) return;
-    
+    const product = products.find((p) => p.id === productId);
+    if (product && isRemovedFromCatalog(product)) {
+      toast.info('This product is already removed from your catalog.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Remove this product from your catalog?\n\n' +
+        '• Products with past orders will be archived (hidden from your shop and customers) but kept for order records.\n' +
+        '• Products with no orders will be permanently deleted.',
+    );
+    if (!confirmed) return;
+
     try {
-      await apiClient.delete(`/vendor/${sellerId}/products/${productId}`);
+      const res = await apiClient.delete<{
+        message?: string;
+        action?: 'deactivated' | 'deleted';
+        deactivated?: boolean;
+      }>(`/vendor/${sellerId}/products/${productId}`);
+
+      if (res?.action === 'deactivated' || res?.deactivated) {
+        toast.success(
+          res.message ||
+            'Product removed from your catalog. Past orders are preserved in order history.',
+          { duration: 6000 },
+        );
+      } else {
+        toast.success(res?.message || 'Product deleted successfully.');
+      }
       loadProducts();
     } catch (error) {
       console.error('Error deleting product:', error);
-      alert('Failed to delete product');
+      toast.error('Failed to remove product. Please try again.');
     }
   };
 
@@ -164,19 +182,27 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
-      'active': 'bg-emerald-100 text-emerald-700 border-emerald-200',
-      'pending': 'bg-amber-100 text-amber-700 border-amber-200',
-      'pending_approval': 'bg-amber-100 text-amber-700 border-amber-200',
-      'draft': 'bg-slate-100 text-slate-700 border-slate-200',
-      'rejected': 'bg-red-100 text-red-700 border-red-200',
-      'out_of_stock': 'bg-orange-100 text-orange-700 border-orange-200'
+      active: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+      pending: 'bg-amber-100 text-amber-700 border-amber-200',
+      pending_approval: 'bg-amber-100 text-amber-700 border-amber-200',
+      draft: 'bg-slate-100 text-slate-700 border-slate-200',
+      rejected: 'bg-red-100 text-red-700 border-red-200',
+      inactive: 'bg-slate-200 text-slate-600 border-slate-300',
+      out_of_stock: 'bg-orange-100 text-orange-700 border-orange-200',
     };
-    
+
+    const label = getVendorDisplayStatusLabel(status);
+
     return (
-      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${styles[status] || 'bg-slate-100 text-slate-700'}`}>
+      <span
+        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border ${styles[status] || 'bg-slate-100 text-slate-700'}`}
+      >
         {status === 'active' && <Check className="w-3 h-3" />}
-        {status === 'pending' && <AlertCircle className="w-3 h-3" />}
-        {status?.replace('_', ' ')}
+        {(status === 'pending' || status === 'pending_approval') && (
+          <AlertCircle className="w-3 h-3" />
+        )}
+        {status === 'inactive' && <Archive className="w-3 h-3" />}
+        {label}
       </span>
     );
   };
@@ -256,6 +282,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
             <option value="all">All Status</option>
             <option value="active">Active</option>
             <option value="pending">Pending Approval</option>
+            <option value="inactive">Removed</option>
             <option value="rejected">Rejected</option>
             <option value="draft">Draft</option>
             <option value="out_of_stock">Out of Stock</option>
@@ -294,10 +321,11 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
           </div>
           <h3 className="text-xl font-semibold text-slate-900">No products found</h3>
           <p className="text-slate-500 mt-2 max-w-md mx-auto">
-            {products.length === 0 
-              ? "Start building your catalog by adding your first product."
-              : "Try adjusting your filters to find what you're looking for."
-            }
+            {products.length === 0
+              ? 'Start building your catalog by adding your first product.'
+              : selectedStatus === 'inactive'
+                ? 'No removed products. Items with past orders are archived here after you delete them.'
+                : 'Try adjusting your filters to find what you\'re looking for.'}
           </p>
           {products.length === 0 && (
             <button
@@ -340,8 +368,11 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredProducts.map(product => (
-                <tr key={product.id} className="hover:bg-slate-50 transition-colors">
+              {filteredProducts.map(product => {
+                const removed = isRemovedFromCatalog(product);
+                const displayStatus = getVendorDisplayStatus(product);
+                return (
+                <tr key={product.id} className={`hover:bg-slate-50 transition-colors ${removed ? 'opacity-75' : ''}`}>
                   <td className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl flex items-center justify-center text-2xl">
@@ -372,28 +403,36 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
                       {product.stock}
                     </span>
                   </td>
-                  <td className="p-4 text-center">{getStatusBadge(getVendorDisplayStatus(product))}</td>
+                  <td className="p-4 text-center">{getStatusBadge(displayStatus)}</td>
                   <td className="p-4 text-right">
                     <div className="flex justify-end gap-2">
+                      {!removed && (
                       <button 
                         onClick={() => {
                           setEditingProduct(product);
                           setShowAddModal(true);
                         }}
                         className="p-2 hover:bg-orange-50 text-slate-600 hover:text-orange-600 rounded-lg transition-colors"
+                        title="Edit"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
+                      )}
+                      {!removed ? (
                       <button 
                         onClick={() => handleDeleteProduct(product.id)}
                         className="p-2 hover:bg-red-50 text-slate-600 hover:text-red-600 rounded-lg transition-colors"
+                        title="Remove from catalog"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
+                      ) : (
+                        <span className="text-xs text-slate-500 px-2 py-1">Archived</span>
+                      )}
                     </div>
                   </td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>
@@ -431,8 +470,11 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
 }
 
 function ProductCard({ product, categories, onEdit, onDelete, getStatusBadge }: any) {
+  const removed = isRemovedFromCatalog(product);
+  const displayStatus = getVendorDisplayStatus(product);
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden hover:shadow-xl transition-all duration-300 group">
+    <div className={`bg-white rounded-2xl border overflow-hidden hover:shadow-xl transition-all duration-300 group ${removed ? 'border-slate-200 opacity-75' : 'border-slate-100'}`}>
       <div className="aspect-square bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center text-7xl relative">
         {product.images?.[0] ? (
           <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
@@ -440,7 +482,7 @@ function ProductCard({ product, categories, onEdit, onDelete, getStatusBadge }: 
           <span>{product.emoji || '📦'}</span>
         )}
         <div className="absolute top-3 right-3">
-          {getStatusBadge(getVendorDisplayStatus(product))}
+          {getStatusBadge(displayStatus)}
         </div>
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
       </div>
@@ -465,18 +507,26 @@ function ProductCard({ product, categories, onEdit, onDelete, getStatusBadge }: 
         </div>
         
         <div className="flex gap-2 mt-4">
-          <button
-            onClick={onEdit}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-50 transition-colors"
-          >
-            <Edit2 className="w-4 h-4" /> Edit
-          </button>
-          <button
-            onClick={onDelete}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-red-200 text-red-600 rounded-xl font-medium hover:bg-red-50 transition-colors"
-          >
-            <Trash2 className="w-4 h-4" /> Delete
-          </button>
+          {!removed && (
+            <button
+              onClick={onEdit}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-slate-200 text-slate-700 rounded-xl font-medium hover:bg-slate-50 transition-colors"
+            >
+              <Edit2 className="w-4 h-4" /> Edit
+            </button>
+          )}
+          {!removed ? (
+            <button
+              onClick={onDelete}
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 border border-red-200 text-red-600 rounded-xl font-medium hover:bg-red-50 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" /> Remove
+            </button>
+          ) : (
+            <p className="flex-1 text-center text-xs text-slate-500 py-2.5 px-2">
+              Archived — kept for order history
+            </p>
+          )}
         </div>
       </div>
     </div>

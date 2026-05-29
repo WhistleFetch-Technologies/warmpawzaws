@@ -3,6 +3,8 @@
  * (handleNavigateToService / setCurrentScreen).
  */
 
+import { resolveCustomerScreenForCategoryAndStyle } from '@warmpawz/service-launch-mappings';
+
 /** Normalized service slugs / aliases → screen id. Kept in sync with `backend/lambda/src/utils/featured-vendor-service-context.ts` for GET /customer/featured-vendors. */
 const SLUG_TO_SCREEN: Record<string, string> = {
   shop: 'shop',
@@ -146,6 +148,8 @@ function styleAwareScreenFromPromo(promo: Record<string, unknown>): string | nul
       promo.serviceCategory ??
       promo.target_category ??
       promo.targetCategory ??
+      promo.customerScreen ??
+      promo.customer_screen ??
       ''
   ).trim();
   const rawStyle = String(
@@ -160,21 +164,8 @@ function styleAwareScreenFromPromo(promo: Record<string, unknown>): string | nul
 
   if (!category || category === 'all') return null;
 
-  if (category === 'vet' || category === 'veterinary' || category === 'veterinarian') {
-    if (style === 'tele' || style === 'online') return 'vet-tele-consultation';
-    if (style === 'at_home' || style === 'home' || style === 'home_visit') return 'vet-home-visit';
-    return 'vet';
-  }
-  if (category === 'grooming') {
-    if (style === 'at_home' || style === 'home' || style === 'home_visit') return 'grooming_home';
-    if (style === 'at_center' || style === 'center' || style === 'clinic') return 'grooming_center';
-    return 'grooming';
-  }
-  if (category === 'training') {
-    if (style === 'at_home' || style === 'home' || style === 'home_visit') return 'training_home';
-    if (style === 'at_center' || style === 'center' || style === 'clinic') return 'training_center';
-    return 'training';
-  }
+  const mapped = resolveCustomerScreenForCategoryAndStyle(category, style);
+  if (mapped) return mapped;
   return SLUG_TO_SCREEN[category] ?? null;
 }
 
@@ -185,21 +176,8 @@ function styleAwareScreenFromApplicableServices(slugs: string[]): string | null 
   if (!categoryToken) return null;
 
   const style = normalizeStyleAlias(styleToken ? styleToken.replace(/^style:/, '') : '');
-  if (categoryToken === 'vet' || categoryToken === 'veterinary' || categoryToken === 'veterinarian') {
-    if (style === 'tele') return 'vet-tele-consultation';
-    if (style === 'at_home') return 'vet-home-visit';
-    return 'vet';
-  }
-  if (categoryToken === 'grooming') {
-    if (style === 'at_home') return 'grooming_home';
-    if (style === 'at_center') return 'grooming_center';
-    return 'grooming';
-  }
-  if (categoryToken === 'training') {
-    if (style === 'at_home') return 'training_home';
-    if (style === 'at_center') return 'training_center';
-    return 'training';
-  }
+  const mapped = resolveCustomerScreenForCategoryAndStyle(categoryToken, style);
+  if (mapped) return mapped;
   return SLUG_TO_SCREEN[categoryToken] ?? null;
 }
 

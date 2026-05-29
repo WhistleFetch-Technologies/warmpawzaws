@@ -17,7 +17,6 @@ type RuntimeConfig = {
   websocketUrl?: string;
   uatMode?: boolean;
   environment?: string;
-  customerEcommerceEnabled?: boolean;
   customerMealPlansEnabled?: boolean;
 };
 

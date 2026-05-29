@@ -164,25 +164,6 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-3 mt-4">
-            <Card className="p-3 text-center">
-              <div className="text-lg font-bold text-[#FF8C42]">{products.length}+</div>
-              <div className="text-xs text-gray-600 mt-1">Products</div>
-            </Card>
-            <Card className="p-3 text-center">
-              <div className="text-lg font-bold text-[#FF8C42]">
-                {totalReviews > 0 && averageRating > 0
-                  ? averageRating.toFixed(1)
-                  : '—'}
-              </div>
-              <div className="text-xs text-gray-600 mt-1">Rating</div>
-            </Card>
-            <Card className="p-3 text-center">
-              <div className="text-lg font-bold text-[#FF8C42]">{vendor.orderCount || '0'}+</div>
-              <div className="text-xs text-gray-600 mt-1">Orders</div>
-            </Card>
-          </div>
         </div>
 
         {/* Tabs */}

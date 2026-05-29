@@ -218,6 +218,7 @@ export function SellerHubSidebar({
 
 interface SellerHubMainPanelsProps {
   activeTab: SellerHubTab;
+  onTabChange: (tab: SellerHubTab) => void;
   vendorData: any;
   settingsRef?: RefObject<SellerSettingsHandle | null>;
   inventoryRef?: RefObject<InventoryManagementHandle | null>;
@@ -225,6 +226,7 @@ interface SellerHubMainPanelsProps {
 
 export function SellerHubMainPanels({
   activeTab,
+  onTabChange,
   vendorData,
   settingsRef,
   inventoryRef,
@@ -239,7 +241,13 @@ export function SellerHubMainPanels({
 
   return (
     <>
-      {activeTab === 'dashboard' && <SellerDashboard sellerId={sellerId} sellerName={sellerName} />}
+      {activeTab === 'dashboard' && (
+        <SellerDashboard
+          sellerId={sellerId}
+          sellerName={sellerName}
+          onViewAllOrders={() => onTabChange('orders')}
+        />
+      )}
       {activeTab === 'products' && <ProductCatalogManagement sellerId={sellerId} />}
       {activeTab === 'inventory' && (
         <InventoryManagement ref={inventoryRef} sellerId={sellerId} />

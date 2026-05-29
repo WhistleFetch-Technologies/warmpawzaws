@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import { customerPathToScreen } from '@/lib/promotion-navigation';
+import { isVendorBannerCta } from '@/lib/banner-cta-parse';
 import { iconForCustomerHomeApiBanner, normalizeCustomerBannerTarget } from '@/lib/customer-banner-icons';
 import { defaultBanners } from '../../homepage/constants';
 import type { HomeCarouselBanner } from '../types';
@@ -9,7 +10,8 @@ function mapApiBannerRecord(
   defaults?: { gradientFrom?: string; gradientTo?: string }
 ): HomeCarouselBanner {
   const rawCta = String(b.ctaLink ?? b.cta_link ?? '').trim();
-  const screenFromSlash = rawCta.startsWith('/') ? customerPathToScreen(rawCta) : null;
+  const screenFromSlash =
+    rawCta.startsWith('/') && !isVendorBannerCta(rawCta) ? customerPathToScreen(rawCta) : null;
   const ctaLink = screenFromSlash ?? rawCta;
   const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
   const comingSoon = explicitComingSoonFalse ? false : Boolean(b.comingSoon || b.coming_soon);
@@ -23,6 +25,8 @@ function mapApiBannerRecord(
     Icon: iconForCustomerHomeApiBanner(b) as ComponentType<{ className?: string }>,
     ctaText: String(b.ctaText || b.cta_text || 'Learn More'),
     ctaLink,
+    navTarget: (b.navTarget as HomeCarouselBanner['navTarget']) ?? null,
+    metadata: b.metadata ?? null,
     comingSoon,
   };
 }

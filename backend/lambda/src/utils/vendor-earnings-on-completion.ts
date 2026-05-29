@@ -1,131 +1,649 @@
 /**
+
  * Create vendor_earnings + bump vendor totals when a booking is marked completed.
+
  * Used by vendor complete, staff complete, and any other completion path so the
+
  * dashboard (which prefers vendor_earnings) stays in sync.
+
  */
-import { query } from '../database/rds-connection';
+
+import { query, select } from '../database/rds-connection';
+
+import {
+
+  backfillPackageSessionEarningsForCompletedBookings,
+
+  completePackageSessionForBooking,
+
+  type SqlClient,
+
+} from './package-session-sync';
+
 import { resolveVendorId } from './vendor-resolve';
+
 import { getVendorCommissionRate, isCanonicalPackageParentBooking } from './vendor-commission-rate';
 
+import { loadBookingServiceSnapshot } from './booking-service-snapshot';
+
+import { resolveVendorVisibleBookingAmount } from './entity-extractor';
+
+
+
 function pickBookingRealizedAtIso(booking: Record<string, unknown>): string | undefined {
+
   const raw = booking.completed_at ?? booking.completedAt ?? booking.updated_at ?? booking.updatedAt;
+
   if (raw == null || raw === '') return undefined;
+
   const d = new Date(String(raw));
+
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+
 }
 
-export async function ensureVendorEarningsForCompletedBooking(
+
+
+/** Gross booking value used for tier commission (prefer total_amount, then base_price). */
+
+export function resolveBookingGrossForVendorEarnings(booking: Record<string, unknown>): number {
+
+  const total = parseFloat(String(booking.total_amount ?? booking.totalAmount ?? ''));
+
+  const base = parseFloat(String(booking.base_price ?? booking.basePrice ?? ''));
+
+  const amount = parseFloat(String(booking.amount ?? ''));
+
+  if (Number.isFinite(total) && total > 0) return total;
+
+  if (Number.isFinite(base) && base > 0) return base;
+
+  if (Number.isFinite(amount) && amount > 0) return amount;
+
+  return 0;
+
+}
+
+/**
+ * Gross used for tier commission: vendor list / configured service price when known,
+ * not customer checkout total (GST, platform fee, etc. on top of list price).
+ */
+export async function resolveLedgerGrossForVendorCommission(
   booking: Record<string, unknown>,
+  bookingId: string
+): Promise<number> {
+  const bookingRow = await syncBookingGrossFromPaidSources(bookingId);
+  const merged = { ...booking, ...bookingRow };
+  const checkoutGross = resolveBookingGrossForVendorEarnings(merged);
+
+  const rawVendorId = String(merged.vendor_id ?? merged.vendorId ?? '');
+  const serviceId = String(merged.service_id ?? merged.serviceId ?? '');
+  let visible = 0;
+  if (rawVendorId && serviceId) {
+    const snap = await loadBookingServiceSnapshot(rawVendorId, serviceId);
+    visible = resolveVendorVisibleBookingAmount(merged, { serviceSnap: snap ?? undefined });
+  } else {
+    visible = resolveVendorVisibleBookingAmount(merged, {});
+  }
+
+  if (visible > 0) {
+    if (checkoutGross <= 0 || visible <= checkoutGross + 0.01) {
+      return Math.round(visible * 100) / 100;
+    }
+  }
+  return checkoutGross > 0 ? Math.round(checkoutGross * 100) / 100 : 0;
+}
+
+/**
+
+ * Persist gross on the booking row from completed payment when checkout left total_amount at 0.
+
+ * Earnings and settlements must read the same source of truth as finance (payments), not UI list price.
+
+ */
+
+export async function syncBookingGrossFromPaidSources(
+
+  bookingId: string
+
+): Promise<Record<string, unknown>> {
+
+  const rows = await select('bookings', { id: bookingId });
+
+  if (!rows.length) return {};
+
+  const existing = rows[0] as Record<string, unknown>;
+
+  if (resolveBookingGrossForVendorEarnings(existing) > 0) return existing;
+
+
+
+  const payRes = await query(
+
+    `SELECT COALESCE(total_amount, amount, 0)::numeric AS amt
+
+     FROM payments
+
+     WHERE booking_id = $1::uuid
+
+       AND payment_status IN ('completed', 'paid', 'partially_refunded')
+
+     ORDER BY created_at DESC
+
+     LIMIT 1`,
+
+    [bookingId]
+
+  ).catch(() => ({ rows: [] as { amt?: string | number }[] }));
+
+
+
+  const fromPay = Number(payRes.rows?.[0]?.amt);
+
+  if (!Number.isFinite(fromPay) || fromPay <= 0) return existing;
+
+
+
+  await query(
+
+    `UPDATE bookings
+
+     SET total_amount = $1::numeric,
+
+         base_price = CASE WHEN COALESCE(base_price, 0) <= 0 THEN $1::numeric ELSE base_price END,
+
+         updated_at = NOW()
+
+     WHERE id = $2::uuid`,
+
+    [fromPay, bookingId]
+
+  ).catch(() => undefined);
+
+
+
+  return {
+
+    ...existing,
+
+    total_amount: fromPay,
+
+    base_price: fromPay,
+
+  };
+
+}
+
+
+
+async function resolveCenterIdForVendorIds(vendorIds: string[]): Promise<string | null> {
+
+  if (vendorIds.length === 0) return null;
+
+  const r = await query(
+
+    `SELECT center_id FROM vendors WHERE id = ANY($1::uuid[]) AND center_id IS NOT NULL LIMIT 1`,
+
+    [vendorIds]
+
+  ).catch(() => ({ rows: [] as { center_id?: string }[] }));
+
+  const cid = r.rows?.[0]?.center_id;
+
+  return cid ? String(cid) : null;
+
+}
+
+
+
+export async function ensureVendorEarningsForCompletedBooking(
+
+  booking: Record<string, unknown>,
+
   bookingId: string,
+
   logPrefix = '[EARNINGS]',
+
   options?: { realizedAt?: string }
+
 ): Promise<boolean> {
+
   if (isCanonicalPackageParentBooking(booking)) return false;
 
+
+
   try {
-    const rawVendorId = String(booking.vendor_id ?? '');
+
+    const rawVendorId = String(booking.vendor_id ?? booking.vendorId ?? '');
+
+    if (!rawVendorId) return false;
+
+
+
     const earningsVendorId = await resolveVendorId(rawVendorId);
+
     const commissionRate = await getVendorCommissionRate(earningsVendorId);
-    const totalAmount = parseFloat(String(booking.total_amount ?? '0'));
+
+    const totalAmount = await resolveLedgerGrossForVendorCommission(booking, bookingId);
+
     const commissionAmount = Math.round((totalAmount * commissionRate) / 100 * 100) / 100;
+
     const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
 
-    if (vendorAmount <= 0) return false;
+
+
+    if (vendorAmount <= 0) {
+
+      console.warn(
+
+        `${logPrefix} Skip earnings booking ${bookingId}: gross=${totalAmount} commission=${commissionRate}% vendorNet=${vendorAmount}`
+
+      );
+
+      return false;
+
+    }
+
+
+
+    const merged = { ...booking, ...(await syncBookingGrossFromPaidSources(bookingId)) };
 
     const realizedAt =
-      options?.realizedAt ?? pickBookingRealizedAtIso(booking) ?? new Date().toISOString();
 
-    // Atomic: parallel backfill / dashboard requests must not double-insert for one booking
+      options?.realizedAt ?? pickBookingRealizedAtIso(merged) ?? new Date().toISOString();
+
+
+
     const inserted = await query(
+
       `INSERT INTO vendor_earnings (
+
          vendor_id, booking_id, amount, commission_amount, total_amount, commission_rate, status, realized_at
+
        )
+
        SELECT $1::uuid, $2::uuid, $3::numeric, $4::numeric, $5::numeric, $6::numeric, 'pending', $7::timestamptz
+
        WHERE NOT EXISTS (SELECT 1 FROM vendor_earnings WHERE booking_id = $2::uuid)
+
          AND $3::numeric > 0
+
        RETURNING id`,
+
       [
+
         earningsVendorId,
+
         bookingId,
+
         vendorAmount,
+
         commissionAmount,
+
         totalAmount,
+
         commissionRate,
+
         realizedAt,
+
       ]
+
     ).catch(() => ({ rows: [] as { id: string }[] }));
+
+
 
     if (!inserted.rows?.length) return false;
 
+
+
     await query(
+
       `UPDATE vendors 
+
        SET pending_payout = COALESCE(pending_payout, 0) + $1,
+
            total_earnings = COALESCE(total_earnings, 0) + $1,
+
            updated_at = NOW()
+
        WHERE id = $2`,
+
       [vendorAmount, earningsVendorId]
+
     ).catch((err: unknown) =>
+
       console.warn(`${logPrefix} vendor totals update:`, (err as Error)?.message)
+
     );
+
     return true;
+
   } catch (error: unknown) {
+
     console.error(`${logPrefix} Failed to create earnings after booking completion:`, error);
+
     return false;
+
   }
+
 }
+
+
 
 const DEFAULT_BACKFILL_LIMIT = 200;
 
-/**
- * Idempotent: creates vendor_earnings for completed bookings under these vendor ids
- * that never got a row (e.g. staff completed before API wrote earnings).
- * Uses same commission + package-parent rules as completion handlers.
- */
+
+
 export async function backfillMissingVendorEarningsForVendorIds(
+
   vendorIds: string[],
+
   logPrefix = '[EARNINGS-BACKFILL]',
+
   limit = DEFAULT_BACKFILL_LIMIT
+
+): Promise<number> {
+
+  const unique = [...new Set((vendorIds || []).filter(Boolean))];
+
+  if (unique.length === 0) return 0;
+
+
+
+  const hasTable = await query(
+
+    `SELECT EXISTS (
+
+       SELECT 1 FROM information_schema.tables
+
+       WHERE table_schema = 'public' AND table_name = 'vendor_earnings'
+
+     ) as ex`
+
+  )
+
+    .then((r) => Boolean(r.rows[0]?.ex))
+
+    .catch(() => false);
+
+  if (!hasTable) return 0;
+
+
+
+  const centerId = await resolveCenterIdForVendorIds(unique);
+
+  const cappedLimit = Math.min(Math.max(1, limit), 500);
+
+
+
+  const missing = centerId
+
+    ? await query(
+
+        `SELECT b.*
+
+         FROM bookings b
+
+         LEFT JOIN vendors v ON v.id = b.vendor_id
+
+         WHERE b.status = 'completed'
+
+           AND (
+
+             b.vendor_id = ANY($1::uuid[])
+
+             OR (v.center_id = $2::uuid AND v.center_id IS NOT NULL)
+
+           )
+
+           AND NOT EXISTS (SELECT 1 FROM vendor_earnings ve WHERE ve.booking_id = b.id)
+
+         ORDER BY COALESCE(b.completed_at::timestamptz, b.updated_at::timestamptz) DESC NULLS LAST
+
+         LIMIT $3`,
+
+        [unique, centerId, cappedLimit]
+
+      ).catch(() => ({ rows: [] as Record<string, unknown>[] }))
+
+    : await query(
+
+        `SELECT b.*
+
+         FROM bookings b
+
+         WHERE b.status = 'completed'
+
+           AND b.vendor_id = ANY($1::uuid[])
+
+           AND NOT EXISTS (SELECT 1 FROM vendor_earnings ve WHERE ve.booking_id = b.id)
+
+         ORDER BY COALESCE(b.completed_at::timestamptz, b.updated_at::timestamptz) DESC NULLS LAST
+
+         LIMIT $2`,
+
+        [unique, cappedLimit]
+
+      ).catch(() => ({ rows: [] as Record<string, unknown>[] }));
+
+
+
+  const rows = missing.rows || [];
+
+  let created = 0;
+
+  for (const b of rows) {
+
+    const id = String(b.id ?? '');
+
+    if (!id) continue;
+
+    const realizedAt = pickBookingRealizedAtIso(b);
+
+    if (
+
+      await ensureVendorEarningsForCompletedBooking(b, id, logPrefix, {
+
+        realizedAt,
+
+      })
+
+    ) {
+
+      created += 1;
+
+    }
+
+  }
+
+
+
+  let packageCreated = 0;
+
+  try {
+
+    packageCreated = await backfillPackageSessionEarningsForCompletedBookings(
+
+      { query } as SqlClient,
+
+      unique,
+
+      logPrefix,
+
+      cappedLimit
+
+    );
+
+  } catch (pkgErr: unknown) {
+
+    console.warn(`${logPrefix} package session earnings backfill:`, (pkgErr as Error)?.message);
+
+  }
+
+
+
+  const totalCreated = created + packageCreated;
+
+  if (totalCreated > 0) {
+
+    console.log(
+
+      `${logPrefix} Created ${totalCreated} vendor_earnings row(s) (${created} booking, ${packageCreated} package session)`
+
+    );
+
+  }
+
+  return totalCreated;
+
+}
+
+
+
+export async function syncPackageSessionEarningsAfterBookingComplete(
+
+  bookingId: string,
+
+  logPrefix = '[EARNINGS-PACKAGE-SYNC]'
+
+): Promise<void> {
+
+  try {
+
+    const db: SqlClient = { query };
+
+    await completePackageSessionForBooking(db, bookingId);
+
+  } catch (err: unknown) {
+
+    console.warn(`${logPrefix} package session sync for ${bookingId}:`, (err as Error)?.message);
+
+  }
+
+}
+
+
+
+/** Idempotent: create vendor_earnings when booking is already completed but ledger row is missing. */
+
+/** Adjust pending ledger row when commission was taken on checkout total instead of list price. */
+export async function realignPendingVendorEarningsForBooking(
+  bookingId: string,
+  booking: Record<string, unknown>,
+  logPrefix = '[EARNINGS-REALIGN]'
+): Promise<boolean> {
+  const veRes = await query(
+    `SELECT id, vendor_id, amount, commission_amount, total_amount, status
+     FROM vendor_earnings WHERE booking_id = $1::uuid LIMIT 1`,
+    [bookingId]
+  ).catch(() => ({ rows: [] as Record<string, unknown>[] }));
+  const ve = veRes.rows?.[0];
+  if (!ve || String(ve.status ?? '') !== 'pending') return false;
+
+  const gross = await resolveLedgerGrossForVendorCommission(booking, bookingId);
+  const prevGross = Number(ve.total_amount ?? 0);
+  if (!Number.isFinite(gross) || gross <= 0 || Math.abs(prevGross - gross) < 0.01) return false;
+
+  const earningsVendorId = String(ve.vendor_id ?? '');
+  const commissionRate = await getVendorCommissionRate(earningsVendorId);
+  const commissionAmount = Math.round((gross * commissionRate) / 100 * 100) / 100;
+  const vendorAmount = Math.round((gross - commissionAmount) * 100) / 100;
+  const prevVendorAmount = Number(ve.amount ?? 0);
+  const delta = Math.round((vendorAmount - prevVendorAmount) * 100) / 100;
+  if (Math.abs(delta) < 0.01) return false;
+
+  await query(
+    `UPDATE vendor_earnings
+     SET amount = $1::numeric, commission_amount = $2::numeric, total_amount = $3::numeric, commission_rate = $4::numeric
+     WHERE id = $5::uuid`,
+    [vendorAmount, commissionAmount, gross, commissionRate, ve.id]
+  ).catch(() => undefined);
+
+  await query(
+    `UPDATE vendors
+     SET pending_payout = GREATEST(COALESCE(pending_payout, 0) + $1, 0),
+         total_earnings = GREATEST(COALESCE(total_earnings, 0) + $1, 0),
+         updated_at = NOW()
+     WHERE id = $2::uuid`,
+    [delta, earningsVendorId]
+  ).catch((err: unknown) =>
+    console.warn(`${logPrefix} vendor totals realign:`, (err as Error)?.message)
+  );
+
+  console.log(
+    `${logPrefix} booking ${bookingId}: gross ${prevGross} → ${gross}, vendor ${prevVendorAmount} → ${vendorAmount}`
+  );
+  return true;
+}
+
+export async function realignPendingVendorEarningsForVendorIds(
+  vendorIds: string[],
+  limit = 80,
+  logPrefix = '[EARNINGS-REALIGN]'
 ): Promise<number> {
   const unique = [...new Set((vendorIds || []).filter(Boolean))];
   if (unique.length === 0) return 0;
 
-  const hasTable = await query(
-    `SELECT EXISTS (
-       SELECT 1 FROM information_schema.tables
-       WHERE table_schema = 'public' AND table_name = 'vendor_earnings'
-     ) as ex`
-  )
-    .then((r) => Boolean(r.rows[0]?.ex))
-    .catch(() => false);
-  if (!hasTable) return 0;
-
-  const missing = await query(
+  const rows = await query(
     `SELECT b.*
-     FROM bookings b
-     WHERE b.status = 'completed'
-       AND b.vendor_id = ANY($1::uuid[])
-       AND NOT EXISTS (SELECT 1 FROM vendor_earnings ve WHERE ve.booking_id = b.id)
-     ORDER BY COALESCE(b.completed_at::timestamptz, b.updated_at::timestamptz) DESC NULLS LAST
+     FROM vendor_earnings ve
+     JOIN bookings b ON b.id = ve.booking_id
+     WHERE ve.vendor_id = ANY($1::uuid[])
+       AND ve.status = 'pending'
+       AND b.status = 'completed'
+     ORDER BY ve.realized_at DESC NULLS LAST
      LIMIT $2`,
-    [unique, Math.min(Math.max(1, limit), 500)]
+    [unique, Math.min(Math.max(1, limit), 200)]
   ).catch(() => ({ rows: [] as Record<string, unknown>[] }));
 
-  const rows = missing.rows || [];
-  let created = 0;
-  for (const b of rows) {
+  let n = 0;
+  for (const b of rows.rows || []) {
     const id = String(b.id ?? '');
     if (!id) continue;
-    const realizedAt = pickBookingRealizedAtIso(b);
-    if (
-      await ensureVendorEarningsForCompletedBooking(b, id, logPrefix, {
-        realizedAt,
-      })
-    ) {
-      created += 1;
-    }
+    if (await realignPendingVendorEarningsForBooking(id, b, logPrefix)) n += 1;
   }
-  if (created > 0) {
-    console.log(`${logPrefix} Created ${created} vendor_earnings row(s) for ${rows.length} candidate booking(s)`);
-  }
-  return created;
+  return n;
 }
+
+export async function repairVendorEarningsIfCompletedBookingMissing(
+
+  bookingId: string,
+
+  logPrefix = '[EARNINGS-REPAIR]'
+
+): Promise<boolean> {
+
+  const rows = await select('bookings', { id: bookingId });
+
+  if (!rows.length) return false;
+
+  const booking = rows[0] as Record<string, unknown>;
+
+  if (String(booking.status ?? '') !== 'completed') return false;
+
+  const existing = await query(
+
+    `SELECT 1 FROM vendor_earnings WHERE booking_id = $1::uuid LIMIT 1`,
+
+    [bookingId]
+
+  ).catch(() => ({ rows: [] }));
+
+  if ((existing.rows?.length ?? 0) > 0) {
+    await realignPendingVendorEarningsForBooking(bookingId, booking, logPrefix);
+    return false;
+  }
+
+  const created = await ensureVendorEarningsForCompletedBooking(booking, bookingId, logPrefix);
+
+  if (created) {
+
+    await syncPackageSessionEarningsAfterBookingComplete(bookingId, logPrefix);
+
+  }
+
+  return created;
+
+}
+
+

@@ -25,6 +25,8 @@ type CustomerInitialScreen =
   | 'pet-boarding-vendors'
   | 'pet-boarding-profile';
 
+import type { InitialBannerNavigation } from '@/lib/banner-cta-navigation';
+
 interface CustomerAppProps {
   initialSession: CustomerSession;
   /** When set (e.g. /services/all), refresh keeps this screen instead of resetting to home */
@@ -33,6 +35,8 @@ interface CustomerAppProps {
   petBoardingVendorId?: string;
   /** Query param service= slug for boarding list/profile context */
   petBoardingServiceSlug?: string;
+  /** Deep link: /vet/Vendor Name — resolved banner navigation */
+  initialBannerNavigation?: InitialBannerNavigation | null;
 }
 
 export function CustomerApp({
@@ -40,6 +44,7 @@ export function CustomerApp({
   initialScreen = 'home',
   petBoardingVendorId,
   petBoardingServiceSlug,
+  initialBannerNavigation,
 }: CustomerAppProps) {
   const [session, setSession] = useState<CustomerSession>(initialSession);
 
@@ -103,6 +108,7 @@ export function CustomerApp({
         initialScreen={initialScreen}
         petBoardingVendorId={petBoardingVendorId}
         petBoardingServiceSlug={petBoardingServiceSlug}
+        initialBannerNavigation={initialBannerNavigation ?? undefined}
         onNavigate={handleLogoutNavigate}
       />
     </CustomerBookingMessagesModalProvider>

@@ -19,6 +19,10 @@ import {
   resolveFeaturedVendorsRequestScreen,
   canonicalScreenForSpotlightRow,
 } from '../../../utils/featured-vendor-service-context';
+import {
+  enrichBannersWithNavTargets,
+  resolveBannerCtaNavigation,
+} from '../../../utils/banner-cta-resolver';
 
 export function registerCustomerContentEndpoints(app: Hono) {
   /**
@@ -103,7 +107,7 @@ export function registerCustomerContentEndpoints(app: Hono) {
       const legacyHeroTitles = new Set(['Get 50% OFF', 'Premium Pet Food']);
 
       // Map banners to frontend format (type exposed as position for backward compat)
-      const banners = (bannersResult.rows || [])
+      const rawBanners = (bannersResult.rows || [])
         .filter((b: any) => !legacyHeroTitles.has(String(b.title || '').trim()))
         .map((b: any) => {
         const meta = parseMetadata(b.metadata);
@@ -122,8 +126,11 @@ export function registerCustomerContentEndpoints(app: Hono) {
         gradientFrom: (meta.gradient_from as string) || '#FF8C42',
         gradientTo: (meta.gradient_to as string) || '#FF6B35',
         icon: meta.icon,
+        metadata: meta,
         };
       });
+
+      const banners = await enrichBannersWithNavTargets(rawBanners);
 
       return c.json({
         success: true,
@@ -160,6 +167,48 @@ export function registerCustomerContentEndpoints(app: Hono) {
    */
   app.get("/marketing/banners", async (c) => {
     return app.fetch(new Request(c.req.url.replace('/marketing/banners', '/customer/banners'), c.req.raw));
+  });
+
+  /**
+   * GET /customer/banners/resolve-cta
+   * Resolve `/persona/vendor-name` + banner title → booking navigation (fallback when navTarget absent).
+   */
+  app.get("/customer/banners/resolve-cta", async (c) => {
+    try {
+      const ctaLink = c.req.query('ctaLink') || c.req.query('cta_link') || '';
+      const title = c.req.query('title') || c.req.query('serviceName') || '';
+      const subtitle = c.req.query('subtitle') || '';
+      const vendorId = c.req.query('vendorId') || c.req.query('vendor_id') || '';
+      const vendorServiceId = c.req.query('vendorServiceId') || c.req.query('vendor_service_id') || '';
+      const serviceStyle = c.req.query('serviceStyle') || c.req.query('service_style') || '';
+
+      let metadata: Record<string, unknown> | undefined;
+      const metadataRaw = c.req.query('metadata');
+      if (metadataRaw) {
+        try {
+          metadata = JSON.parse(metadataRaw);
+        } catch {
+          metadata = undefined;
+        }
+      }
+
+      const navTarget = await resolveBannerCtaNavigation({
+        ctaLink,
+        title,
+        subtitle,
+        metadata,
+        vendorId: vendorId || undefined,
+        vendorServiceId: vendorServiceId || undefined,
+        serviceStyle: serviceStyle || undefined,
+      });
+      if (!navTarget) {
+        return c.json({ success: false, error: 'Could not resolve banner CTA' }, 404);
+      }
+      return c.json({ success: true, navTarget });
+    } catch (error: any) {
+      console.error('Error resolving banner CTA:', error);
+      return c.json({ success: false, error: error.message || 'Failed to resolve banner CTA' }, 500);
+    }
   });
 
   /**

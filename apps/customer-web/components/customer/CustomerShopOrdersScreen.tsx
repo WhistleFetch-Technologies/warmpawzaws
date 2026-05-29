@@ -79,6 +79,18 @@ const statusConfig: Record<string, { badge: string; icon: typeof Clock; label: s
   returned: { badge: 'bg-orange-100 text-orange-800', icon: RefreshCcw, label: 'Returned' },
 };
 
+function getOrderStatusDisplay(order: Order): { badge: string; icon: typeof Clock; label: string } {
+  const base = statusConfig[order.status] || statusConfig.pending;
+  if (order.status === 'pending' && order.payment_status === 'paid') {
+    return {
+      ...base,
+      badge: 'bg-amber-100 text-amber-800',
+      label: 'Paid — awaiting seller',
+    };
+  }
+  return base;
+}
+
 function normalizeItems(items: unknown): OrderItem[] {
   if (!Array.isArray(items)) return [];
   return items.map((it: any, idx: number) => ({
@@ -487,7 +499,7 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
           <div className="space-y-4 pb-4">
             {filteredOrders.map((order) => {
               const isExpanded = expandedOrder === order.id;
-              const config = statusConfig[order.status] || statusConfig.pending;
+              const config = getOrderStatusDisplay(order);
               const StatusIcon = config.icon;
 
               return (

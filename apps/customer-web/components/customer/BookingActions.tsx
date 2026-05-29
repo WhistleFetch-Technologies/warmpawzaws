@@ -36,7 +36,10 @@ export function BookingActions({ booking, phone, onSuccess }: BookingActionsProp
   // Calculate refund preview when cancel modal opens
   const fetchRefundPreview = async () => {
     try {
-      const result = await apiClient.post('/customer/bookings/refund-preview', { bookingId: booking.id }) as any;
+      const result = await apiClient.post('/customer/bookings/refund-preview', {
+        bookingId: booking.id,
+        refundMethod: 'wallet',
+      }) as any;
       const payload = result?.data ?? result;
       setRefundPreview(payload?.refund ?? payload);
     } catch (error) {

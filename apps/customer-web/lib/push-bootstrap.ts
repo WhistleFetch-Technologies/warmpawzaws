@@ -135,9 +135,33 @@ async function setupForegroundPushListener(): Promise<void> {
  * @capacitor/push-notifications plugin. Returns null on any failure.
  * Dynamic import ensures this code path never loads in the browser context.
  */
+/**
+ * Loads @capacitor/push-notifications only in the native Capacitor shell.
+ * webpackIgnore keeps Next.js from requiring this package during web dev/build.
+ */
+async function importCapacitorPushModule(): Promise<{
+  PushNotifications: {
+    requestPermissions: () => Promise<{ receive: string }>;
+    register: () => Promise<void>;
+    addListener: (
+      event: string,
+      handler: (payload: { value?: string } | unknown) => void
+    ) => Promise<{ remove: () => void }>;
+    removeAllListeners: () => Promise<void>;
+  };
+} | null> {
+  try {
+    return await import(/* webpackIgnore: true */ '@capacitor/push-notifications');
+  } catch {
+    return null;
+  }
+}
+
 async function getTokenFromCapacitor(): Promise<string | null> {
   try {
-    const { PushNotifications } = await import('@capacitor/push-notifications');
+    const mod = await importCapacitorPushModule();
+    if (!mod?.PushNotifications) return null;
+    const { PushNotifications } = mod;
     const permResult = await PushNotifications.requestPermissions();
     if (permResult.receive !== 'granted') {
       console.warn('[push-bootstrap] Capacitor push permission denied');

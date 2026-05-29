@@ -70,6 +70,7 @@ function defaultForm() {
     dietType: 'Non-Veg',
     petTypes: ['Dog'] as string[],
     preparationTime: '60',
+    packWeightGrams: '',
     leadTimeHours: '24',
     orderCutoffTime: '18:00',
     mealImageUrl: '',
@@ -184,6 +185,14 @@ export function MealProductFormModal({
           md.preparationLeadTime ??
           '60',
       ),
+      packWeightGrams: String(
+        (editingProduct as { pack_weight_grams?: number }).pack_weight_grams ??
+          md.packWeightGrams ??
+          md.pack_weight_grams ??
+          md.weightGrams ??
+          md.weight_g ??
+          '',
+      ),
       leadTimeHours: String(
         md.leadTimeHours ??
           editingProduct.lead_time_hours ??
@@ -202,6 +211,10 @@ export function MealProductFormModal({
       storageInstructions: (md.storageInstructions as string) || '',
       shelfLifeDays: String(md.shelfLifeDays ?? md.shelfLife ?? '7'),
       purchaseType: (() => {
+        const ptCol = String((editingProduct as { purchase_type?: string }).purchase_type || '').toUpperCase();
+        if (ptCol === 'WEEKLY_PLAN' || ptCol === 'MONTHLY_PLAN' || ptCol === 'ONE_TIME') {
+          return ptCol as MealProductFormState['purchaseType'];
+        }
         const pt = String(md.purchaseType || '').toUpperCase();
         if (pt === 'WEEKLY_PLAN' || pt === 'MONTHLY_PLAN' || pt === 'ONE_TIME') return pt as MealProductFormState['purchaseType'];
         const dt = String(md.deliveryType || '').toUpperCase();
@@ -209,17 +222,30 @@ export function MealProductFormModal({
         if (dt === 'MONTHLY_SUBSCRIPTION') return 'MONTHLY_PLAN';
         return 'ONE_TIME';
       })(),
-      deliveryDays: Array.isArray(md.deliveryDays)
-        ? (md.deliveryDays as unknown[]).map((x) => String(x).toUpperCase()).filter(Boolean)
-        : [],
+      deliveryDays: (() => {
+        const fromCol = (editingProduct as { delivery_days?: string[] }).delivery_days;
+        if (Array.isArray(fromCol) && fromCol.length) {
+          return fromCol.map((x) => String(x).toUpperCase()).filter(Boolean);
+        }
+        return Array.isArray(md.deliveryDays)
+          ? (md.deliveryDays as unknown[]).map((x) => String(x).toUpperCase()).filter(Boolean)
+          : [];
+      })(),
       mealsPerDeliveryPreset: (() => {
         const pr = md.mealsPerDeliveryPreset;
         if (pr === '1' || pr === '2' || pr === '3' || pr === 'CUSTOM') return pr as MealsPerDeliveryPreset;
+        const mpd = (editingProduct as { meals_per_delivery?: number }).meals_per_delivery;
+        if (mpd === 1) return '1';
+        if (mpd === 3) return '3';
         return '2';
       })(),
       mealsPerDeliveryCustom:
         md.mealsPerDeliveryPreset === 'CUSTOM' ? String(md.mealsPerDeliveryCustom ?? md.mealsPerDelivery ?? '') : '',
       deliveryFrequency: (() => {
+        const fromCol = String((editingProduct as { delivery_frequency?: string }).delivery_frequency || '').toUpperCase();
+        if (DELIVERY_FREQUENCY_OPTIONS.some((x) => x.value === fromCol)) {
+          return fromCol as MealProductFormState['deliveryFrequency'];
+        }
         const f = String(md.deliveryFrequency || '').toUpperCase();
         if (DELIVERY_FREQUENCY_OPTIONS.some((x) => x.value === f)) return f as MealProductFormState['deliveryFrequency'];
         return '';
@@ -240,29 +266,12 @@ export function MealProductFormModal({
         : 'FRESH_COOKED') as MealProductFormState['preparationType'],
       suitableFor: Array.isArray(md.suitableFor) ? (md.suitableFor as string[]) : [],
     });
+    const leadH = parseInt(
+      String(md.leadTimeHours ?? editingProduct.lead_time_hours ?? leadBounds.defaultHours),
+      10,
+    );
+    setSameDayEnabled(Number.isFinite(leadH) && leadH <= 24);
   }, [editingProduct, leadBounds.defaultHours]);
-
-  useEffect(() => {
-    if (!open) return;
-    apiClient
-      .get<{
-        success?: boolean;
-        bounds?: { minHours: number; maxHours: number; defaultHours: number };
-        sameDay?: { enabled: boolean };
-        orderCutoff?: { time: string };
-      }>('/vendor/meal-booking-policy')
-      .then((res) => {
-        if (res?.bounds) {
-          setLeadBounds({
-            min: res.bounds.minHours,
-            max: res.bounds.maxHours,
-            defaultHours: res.bounds.defaultHours,
-          });
-        }
-        if (res?.sameDay) setSameDayEnabled(!!res.sameDay.enabled);
-      })
-      .catch(() => undefined);
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -395,6 +404,10 @@ export function MealProductFormModal({
     if (!Number.isFinite(prepMins) || prepMins < 1 || prepMins > 24 * 60) {
       err.preparationTime = 'Prep time is required (1–1440 minutes)';
     }
+    const packG = parseInt(String(form.packWeightGrams).trim(), 10);
+    if (!Number.isFinite(packG) || packG < 1 || packG > 50_000) {
+      err.packWeightGrams = 'Pack weight is required (1–50000 grams)';
+    }
     const leadHrs = parseInt(String(form.leadTimeHours).trim(), 10);
     if (!Number.isFinite(leadHrs) || leadHrs < leadBounds.min || leadHrs > leadBounds.max) {
       err.leadTimeHours = `Lead time must be ${leadBounds.min}–${leadBounds.max} hours`;
@@ -417,6 +430,7 @@ export function MealProductFormModal({
     const price = parseFloat(form.price);
     const shelfLifeDays = parseInt(form.shelfLifeDays, 10);
     const preparationLeadTime = parseInt(String(form.preparationTime).trim(), 10);
+    const packWeightGrams = parseInt(String(form.packWeightGrams).trim(), 10);
     const leadTimeHours = parseInt(String(form.leadTimeHours).trim(), 10);
     const orderCutoffTime = form.orderCutoffTime.trim();
 
@@ -476,6 +490,7 @@ export function MealProductFormModal({
       petTypes: form.petTypes,
       preparationLeadTime,
       prepTimeMinutes: preparationLeadTime,
+      packWeightGrams,
       leadTimeHours,
       orderCutoffTime,
     };
@@ -521,8 +536,8 @@ export function MealProductFormModal({
             {editingProduct ? 'Edit meal product' : 'Add meal product'}
           </h2>
           <p className="text-xs text-slate-500 mt-1">
-            Required: meal name, description, image, price, prep time (minutes), lead time (hours), order cutoff,
-            categories, pet types, ingredients, preparation type, purchase options, and shelf life (days).
+            Required: meal name, description, image, price, pack weight (g), prep time (minutes), lead time (hours),
+            order cutoff, categories, pet types, ingredients, preparation type, purchase options, and shelf life (days).
           </p>
         </div>
 
@@ -652,6 +667,30 @@ export function MealProductFormModal({
                 <p className="text-xs text-slate-500 mt-1">Kitchen time to prepare one order.</p>
               </div>
               <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="pack-weight-g">
+                  Pack weight (g) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="pack-weight-g"
+                  type="number"
+                  min={1}
+                  max={50000}
+                  required
+                  value={form.packWeightGrams}
+                  onChange={(e) => setForm((p) => ({ ...p, packWeightGrams: e.target.value }))}
+                  className={`w-full px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 ${
+                    fieldErrors.packWeightGrams ? 'border-red-300' : 'border-slate-200'
+                  }`}
+                  placeholder="e.g. 500"
+                  aria-invalid={Boolean(fieldErrors.packWeightGrams)}
+                />
+                {fieldErrors.packWeightGrams ? (
+                  <p className="text-xs text-red-600 mt-1">{fieldErrors.packWeightGrams}</p>
+                ) : (
+                  <p className="text-xs text-slate-500 mt-1">Weight per pack for courier (Pidge) and customer catalog.</p>
+                )}
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1" htmlFor="lead-time-hrs">
                   Lead time (hrs) <span className="text-red-500">*</span>
                 </label>
@@ -665,10 +704,12 @@ export function MealProductFormModal({
                   onChange={(e) => {
                     const n = parseInt(e.target.value, 10);
                     const v = Number.isFinite(n) ? n : leadBounds.defaultHours;
+                    const clamped = Math.min(leadBounds.max, Math.max(leadBounds.min, v));
                     setForm((p) => ({
                       ...p,
-                      leadTimeHours: String(Math.min(leadBounds.max, Math.max(leadBounds.min, v))),
+                      leadTimeHours: String(clamped),
                     }));
+                    setSameDayEnabled(clamped <= 24);
                   }}
                   className={`w-full px-3 py-2.5 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500 ${
                     fieldErrors.leadTimeHours ? 'border-red-300' : 'border-slate-200'

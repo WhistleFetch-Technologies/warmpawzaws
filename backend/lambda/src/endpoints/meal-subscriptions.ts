@@ -18,6 +18,7 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update, withTransaction } from '../database/rds-connection';
+import { fireVendorAppointmentScheduledSms, fireVendorMealOrderScheduledSms } from '../lib/vendor-appointment-sms';
 
 // ============================================================================
 // TYPES
@@ -273,6 +274,17 @@ class CreateMealSubscriptionHandler extends BaseHandler {
         return sub;
       });
 
+      const deliveryDate =
+        nextDeliveryDate instanceof Date
+          ? nextDeliveryDate.toISOString().slice(0, 10)
+          : String(nextDeliveryDate).slice(0, 10);
+      fireVendorAppointmentScheduledSms({
+        vendorId,
+        bookingId: String(subscription.id),
+        bookingDate: deliveryDate,
+        bookingTime: preferredDeliveryTime || '09:00:00',
+      });
+
       return this.success({
         success: true,
         subscriptionId: subscription.id,
@@ -480,7 +492,7 @@ class ProcessSubscriptionRenewalsHandler extends BaseHandler {
       for (const sub of dueSubscriptions) {
         try {
           // Create new delivery order
-          await insert('meal_orders', {
+          const orderRows = await insert('meal_orders', {
             subscription_id: sub.id,
             customer_id: sub.customer_id,
             vendor_id: sub.vendor_id,
@@ -493,6 +505,7 @@ class ProcessSubscriptionRenewalsHandler extends BaseHandler {
             delivery_instructions: sub.delivery_instructions,
             created_at: new Date(),
           });
+          const mealOrder = orderRows[0] as Record<string, unknown> | undefined;
 
           // Calculate next delivery date
           const nextDate = calculateNextDeliveryDate(
@@ -539,6 +552,17 @@ class ProcessSubscriptionRenewalsHandler extends BaseHandler {
             requires_action: true,
             created_at: new Date(),
           });
+
+          if (mealOrder) {
+            fireVendorMealOrderScheduledSms({
+              ...mealOrder,
+              delivery_date: mealOrder.delivery_date || sub.next_delivery_date,
+              scheduled_delivery_date: mealOrder.delivery_date || sub.next_delivery_date,
+              scheduled_delivery_slot: sub.preferred_delivery_time
+                ? { start: String(sub.preferred_delivery_time).slice(0, 5) }
+                : undefined,
+            });
+          }
 
           processed.push({
             subscriptionId: sub.id,

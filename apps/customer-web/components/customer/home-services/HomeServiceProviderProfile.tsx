@@ -13,10 +13,10 @@ import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties }
 import type { LucideIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
-import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { StarRating } from '../shared/StarRating';
-import { resolveVendorRating, vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
+import { resolveVendorRating } from '@/lib/resolve-vendor-rating';
 import {
   Star,
   MapPin,
@@ -28,7 +28,6 @@ import {
   Image as ImageIcon,
   X,
   Award,
-  Users,
   Footprints,
   Scissors,
   GraduationCap,
@@ -65,6 +64,17 @@ const HOME_SERVICE_CONTEXT_LABEL: Record<HomeServiceType, string> = {
   behaviourist: 'At your home',
   sitter: 'In your home',
   diagnostics: 'At-home collection',
+};
+
+/** Hub-style header subtitle — vendor name lives in the identity card below. */
+const HOME_SERVICE_HEADER_SUBTITLE: Record<HomeServiceType, string> = {
+  walker: 'Professional pet walking services',
+  grooming: 'At-home grooming services',
+  training: 'Professional pet training services',
+  veterinary: 'Veterinary care at your home',
+  behaviourist: 'Pet behaviour consultation',
+  sitter: 'Trusted in-home pet sitting',
+  diagnostics: 'At-home sample collection',
 };
 
 function profileHeroPlaceholderIcon(serviceType: HomeServiceType): LucideIcon {
@@ -477,36 +487,6 @@ export function HomeServiceProviderProfile({
   );
   const hasPhotos = heroPhotos.length > 0;
   const PlaceholderIcon = profileHeroPlaceholderIcon(serviceType);
-  const dashboardStats = useMemo(() => {
-    if (!provider) return [];
-    const vid = String(provider.vendorId ?? vendorId ?? '').trim();
-    const ratingStat = vendorRatingHeaderStat(
-      {
-        vendorId: vid,
-        vendorRating: provider.rating,
-        vendorReviewCount: provider.reviewCount,
-      },
-      vid
-    );
-    const stats: Array<{ value: string; label: string; icon?: React.ReactNode }> = [];
-    if (ratingStat) {
-      stats.push({ ...ratingStat, icon: <Star className="w-4 h-4 fill-white" /> });
-    }
-    if (provider.reviewCount > 0) {
-      stats.push({ value: String(provider.reviewCount), label: 'Reviews' });
-    }
-    stats.push({
-      value:
-        provider.serviceCount > 0
-          ? `${provider.serviceCount}+`
-          : String(Math.max(provider.services.length, 0)),
-      label: provider.serviceCount > 0 ? 'Bookings' : 'Services',
-      icon: <Users className="w-4 h-4" />,
-    });
-    return stats;
-  }, [provider, vendorId]);
-  const headerSubtitle = `${config.displayName} · ${config.priceUnit}`;
-
   const tabs: { id: TabType; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'services', label: 'Services' },
@@ -551,16 +531,14 @@ export function HomeServiceProviderProfile({
 
   return (
     <div className="mx-auto flex min-h-[100dvh] min-h-screen w-full max-w-customer flex-col overflow-x-hidden border-black/[0.04] bg-gray-50 shadow-[0_0_0_1px_rgba(0,0,0,0.04)] sm:border-x sm:shadow-[0_0_48px_rgba(0,0,0,0.06)]">
-      <ServiceDashboardHeader
+      <VendorProfileDashboardHeader
         className="!z-0 isolation-auto"
-        serviceName={provider.businessName}
-        serviceSubtitle={headerSubtitle}
+        serviceName={config.displayName}
+        serviceSubtitle={HOME_SERVICE_HEADER_SUBTITLE[serviceType]}
         serviceIcon={<span className="text-2xl leading-none">{config.icon}</span>}
         iconColor="text-white"
-        stats={dashboardStats}
         onBack={onBack}
         showBackButton
-        headerColor="bg-[#FF8C42]"
         bottomEdge="flat"
       />
 

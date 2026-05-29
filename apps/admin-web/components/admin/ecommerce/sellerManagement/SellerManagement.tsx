@@ -3,11 +3,13 @@
 import { useState, useEffect, type ChangeEvent } from 'react';
 import { Store, Search, Eye, CheckCircle, XCircle } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { SellerDetailsModal, type SellerSummary } from './SellerDetailsModal';
 
 export function SellerManagement() {
-  const [sellers, setSellers] = useState<any[]>([]);
+  const [sellers, setSellers] = useState<SellerSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSeller, setSelectedSeller] = useState<SellerSummary | null>(null);
 
   useEffect(() => {
     loadSellers();
@@ -20,20 +22,23 @@ export function SellerManagement() {
       const vendors = (data as any).vendors || [];
       
       // Map API response (snake_case) to component format (camelCase)
-      const mappedSellers = vendors.map((vendor: any) => ({
-        id: vendor.id,
-        businessName: vendor.business_name || vendor.businessName,
-        ownerName: vendor.owner_name || vendor.ownerName,
-        phone: vendor.phone,
-        email: vendor.email,
-        // For e-commerce sellers: Active if is_active is true
+      const mappedSellers: SellerSummary[] = vendors.map((vendor: Record<string, unknown>) => ({
+        id: String(vendor.id),
+        businessName:
+          (vendor.business_name as string) || (vendor.businessName as string),
+        ownerName: (vendor.owner_name as string) || (vendor.ownerName as string),
+        phone: vendor.phone as string | undefined,
+        email: vendor.email as string | undefined,
         isActive: vendor.is_active === true,
-        status: vendor.status,
-        sellerStatus: vendor.seller_status,
+        status: vendor.status as string | undefined,
+        sellerStatus: vendor.seller_status as string | undefined,
         products:
-          (typeof vendor.active_product_count === 'number' ? vendor.active_product_count : null) ??
+          (typeof vendor.active_product_count === 'number'
+            ? vendor.active_product_count
+            : null) ??
           (typeof vendor.product_count === 'number' ? vendor.product_count : null) ??
           0,
+        listVendor: vendor,
       }));
       
       setSellers(mappedSellers);
@@ -173,7 +178,14 @@ export function SellerManagement() {
                     </td>
                     <td className="px-6 py-4 text-right text-gray-600">₹0</td>
                     <td className="px-6 py-4 text-center">
-                      <button className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSeller(seller)}
+                        className="p-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                        title="View seller details"
+                        aria-label={`View details for ${seller.businessName || seller.ownerName || 'seller'}`}
+                        data-testid="viewSellerButton"
+                      >
                         <Eye className="w-4 h-4" />
                       </button>
                     </td>
@@ -184,6 +196,13 @@ export function SellerManagement() {
           </table>
         </div>
       </div>
+
+      {selectedSeller && (
+        <SellerDetailsModal
+          seller={selectedSeller}
+          onClose={() => setSelectedSeller(null)}
+        />
+      )}
     </div>
   );
 }

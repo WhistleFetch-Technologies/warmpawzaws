@@ -54,7 +54,10 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
   const [updating, setUpdating] = useState(false);
   const [trackingNumber, setTrackingNumber] = useState('');
   const [deliveryPartner, setDeliveryPartner] = useState('');
+  const [trackingUrl, setTrackingUrl] = useState('');
   const [showShippingModal, setShowShippingModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState('');
 
   useEffect(() => {
     loadOrders();
@@ -73,20 +76,71 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
     }
   };
 
-  const updateOrderStatus = async (orderId: string, newStatus: string, trackingNum?: string, partner?: string) => {
+  const markOrderAsShipped = async (
+    orderId: string,
+    trackingNum: string,
+    partner: string,
+    url?: string
+  ) => {
     try {
       setUpdating(true);
-      const payload: any = { status: newStatus };
-      
-      if (trackingNum) {
-        payload.tracking_number = trackingNum;
+
+      const result = await apiClient.post<{
+        success: boolean;
+        error?: string;
+        tracking?: { awb: string; trackingUrl?: string | null };
+      }>(`/vendor/${sellerId}/orders/${orderId}/mark-shipped`, {
+        trackingNumber: trackingNum,
+        deliveryPartner: partner || 'Other',
+        trackingUrl: url || undefined,
+      });
+
+      if (result?.error || result?.success === false) {
+        alert(result?.error || 'Failed to mark order as shipped');
+        return;
       }
-      if (partner) {
-        payload.delivery_partner = partner;
+
+      setOrders(orders.map(o =>
+        o.id === orderId
+          ? { ...o, status: 'shipped', order_status: 'shipped', tracking_number: trackingNum }
+          : o
+      ));
+
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder({
+          ...selectedOrder,
+          status: 'shipped',
+          order_status: 'shipped',
+          tracking_number: trackingNum,
+        });
       }
-      
+
+      setShowShippingModal(false);
+      setTrackingNumber('');
+      setDeliveryPartner('');
+      setTrackingUrl('');
+    } catch (error: any) {
+      console.error('Error marking order shipped:', error);
+      alert(error.message || 'Failed to mark order as shipped');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const updateOrderStatus = async (
+    orderId: string,
+    newStatus: string,
+    reason?: string
+  ) => {
+    try {
+      setUpdating(true);
+      const payload: Record<string, string> = { status: newStatus };
+      if (newStatus === 'cancelled' && reason) {
+        payload.cancellation_reason = reason;
+      }
+
       const result = await apiClient.put<{ success: boolean; error?: string }>(
-        `/vendor/${sellerId}/orders/${orderId}`, 
+        `/vendor/${sellerId}/orders/${orderId}`,
         payload
       );
       
@@ -95,26 +149,31 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
         return;
       }
       
-      // Update local state
-      setOrders(orders.map(o => 
-        o.id === orderId 
-          ? { ...o, status: newStatus, order_status: newStatus, tracking_number: trackingNum || o.tracking_number } 
+      setOrders(orders.map(o =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: newStatus,
+              order_status: newStatus,
+              ...(newStatus === 'cancelled' && reason ? { cancellation_reason: reason } : {}),
+            }
           : o
       ));
-      
+
       if (selectedOrder?.id === orderId) {
-        setSelectedOrder({ 
-          ...selectedOrder, 
-          status: newStatus, 
+        setSelectedOrder({
+          ...selectedOrder,
+          status: newStatus,
           order_status: newStatus,
-          tracking_number: trackingNum || selectedOrder.tracking_number 
+          ...(newStatus === 'cancelled' && reason ? { cancellation_reason: reason } : {}),
         });
       }
-      
-      setShowShippingModal(false);
-      setTrackingNumber('');
-      setDeliveryPartner('');
-      
+
+      if (newStatus === 'cancelled') {
+        setShowCancelModal(false);
+        setCancellationReason('');
+      }
+
     } catch (error: any) {
       console.error('Error updating order:', error);
       alert(error.message || 'Failed to update order status');
@@ -126,6 +185,9 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
   const handleStatusAction = (orderId: string, newStatus: string, requiresTracking?: boolean) => {
     if (requiresTracking) {
       setShowShippingModal(true);
+    } else if (newStatus === 'cancelled') {
+      setCancellationReason('');
+      setShowCancelModal(true);
     } else {
       updateOrderStatus(orderId, newStatus);
     }
@@ -340,6 +402,17 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
                   </div>
                 )}
 
+                {(selectedOrder.status === 'cancelled' || selectedOrder.order_status === 'cancelled') &&
+                  selectedOrder.cancellation_reason && (
+                  <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 px-3 py-2 rounded-lg mb-4">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium">Cancellation reason</p>
+                      <p>{selectedOrder.cancellation_reason}</p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex flex-wrap gap-2">
                   {(STATUS_TRANSITIONS[selectedOrder.status || selectedOrder.order_status] || []).map((transition) => (
@@ -450,6 +523,71 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
         </div>
       )}
 
+      {/* Cancel Order Modal */}
+      {showCancelModal && selectedOrder && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl">
+            <div className="p-6 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <XCircle className="w-5 h-5 text-red-600" />
+                Cancel Order
+              </h3>
+              <p className="text-sm text-slate-500 mt-1">
+                Tell the customer why you are cancelling this order. They will see this message.
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Reason for cancellation *
+                </label>
+                <textarea
+                  value={cancellationReason}
+                  onChange={(e) => setCancellationReason(e.target.value)}
+                  placeholder="e.g. Item out of stock, unable to ship to this pincode..."
+                  rows={4}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 resize-none"
+                />
+              </div>
+
+              {!cancellationReason.trim() && (
+                <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>A cancellation reason is required</span>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-slate-100 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowCancelModal(false);
+                  setCancellationReason('');
+                }}
+                className="flex-1 px-4 py-3 border border-slate-200 rounded-xl font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                Back
+              </button>
+              <button
+                onClick={() =>
+                  updateOrderStatus(selectedOrder.id, 'cancelled', cancellationReason.trim())
+                }
+                disabled={!cancellationReason.trim() || updating}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {updating ? (
+                  <RefreshCcw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <XCircle className="w-4 h-4" />
+                )}
+                Confirm Cancellation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Shipping Modal */}
       {showShippingModal && selectedOrder && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
@@ -496,6 +634,19 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
                 </select>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Tracking URL <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="url"
+                  value={trackingUrl}
+                  onChange={(e) => setTrackingUrl(e.target.value)}
+                  placeholder="Auto-generated for Delhivery, BlueDart, DTDC if left blank"
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
+                />
+              </div>
+
               {!trackingNumber && (
                 <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
                   <AlertCircle className="w-4 h-4" />
@@ -510,14 +661,15 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
                   setShowShippingModal(false);
                   setTrackingNumber('');
                   setDeliveryPartner('');
+                  setTrackingUrl('');
                 }}
                 className="flex-1 px-4 py-3 border border-slate-200 rounded-xl font-medium text-slate-700 hover:bg-slate-50 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={() => updateOrderStatus(selectedOrder.id, 'shipped', trackingNumber, deliveryPartner)}
-                disabled={!trackingNumber || updating}
+                onClick={() => markOrderAsShipped(selectedOrder.id, trackingNumber, deliveryPartner, trackingUrl)}
+                disabled={!trackingNumber || !deliveryPartner || updating}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {updating ? (

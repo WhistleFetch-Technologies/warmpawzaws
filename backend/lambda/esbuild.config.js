@@ -121,7 +121,7 @@ esbuild.build({
     'pg-native',      // Native PostgreSQL module (we use pure JS pg instead)
     '@opensearch-project/opensearch',
     '@opensearch-project/opensearch/aws',
-    'firebase-admin', // Not used in Lambda, exclude to reduce bundle size
+    'firebase-admin', // Loaded at runtime from dist/node_modules (see scripts/package-lambda.js)
     '@grpc/grpc-js',  // Has corrupt source map; not needed at Lambda runtime
     // ✅ FIX: These MUST be bundled for Lambda to work:
     // - 'pg' - PostgreSQL driver (removed from external)

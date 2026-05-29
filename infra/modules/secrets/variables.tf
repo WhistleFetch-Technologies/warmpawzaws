@@ -46,6 +46,21 @@ variable "shiprocket_password" {
   sensitive   = true
 }
 
+# AfterShip (vendor-managed shipping tracking)
+variable "aftership_api_key" {
+  description = "AfterShip API key (optional; secret can be set via AWS CLI/Console instead)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "aftership_api_secret" {
+  description = "AfterShip API secret for webhook verification"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 # Push Notifications Configuration
 variable "enable_push_notifications" {
   description = "Enable Android push notifications (requires FCM server key)"
@@ -61,6 +76,13 @@ variable "enable_ios_push" {
 
 variable "fcm_server_key" {
   description = "Firebase Cloud Messaging server key (required if enable_push_notifications is true)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "firebase_service_account_json" {
+  description = "Firebase Admin SDK service account JSON for FCM HTTP v1 API (project_id, private_key, client_email). Stored in Secrets Manager as warmpawz/{env}/firebase."
   type        = string
   default     = ""
   sensitive   = true

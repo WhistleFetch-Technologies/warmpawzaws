@@ -37,7 +37,10 @@ export function CancelBookingModal({
     try {
       setLoadingRefundInfo(true);
       // Get booking details to show refund info if payment was made
-      const bookingResponse = await apiClient.post('/customer/bookings/refund-preview', { bookingId }) as any;
+      const bookingResponse = await apiClient.post('/customer/bookings/refund-preview', {
+        bookingId,
+        refundMethod: 'wallet',
+      }) as any;
       const booking = bookingResponse.booking || bookingResponse;
       // Use refund preview response
       if (bookingResponse.refund) {

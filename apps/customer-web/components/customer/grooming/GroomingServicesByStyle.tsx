@@ -9,6 +9,7 @@ import { apiClient } from '@/lib/api-client';
 import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebGroomingTrainingEmbedVendorId } from '@/lib/customer-vendor-profile-navigation';
+import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
@@ -18,7 +19,6 @@ import {
   isVendorServicePackageRow,
 } from '@/lib/vendor-package-purchase-nav';
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
-import { vendorRatingHeaderStat } from '@/lib/resolve-vendor-rating';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
@@ -640,17 +640,6 @@ export function GroomingServicesByStyle({
     const profileVendorId = String(
       vendorId ?? profileProvider.id ?? pickCustomerVendorAccountId(vendor as Record<string, unknown>) ?? ''
     ).trim();
-    const profileRatingStat = vendorRatingHeaderStat(
-      {
-        vendorId: profileVendorId,
-        vendorRating: rating?.averageRating ?? profileProvider.rating,
-        vendorReviewCount: rating?.totalReviews ?? profileProvider.reviewCount,
-      },
-      profileVendorId
-    );
-    const profileDashboardStats = profileRatingStat
-      ? [{ ...profileRatingStat, icon: <Star className="w-4 h-4 fill-white" /> }]
-      : [];
     
     const getServiceTitle = () => {
       if (serviceStyle === 'at_center') return 'Grooming Center';
@@ -667,17 +656,15 @@ export function GroomingServicesByStyle({
     return (
       <div className="min-h-screen bg-gray-50 relative overflow-hidden">
         {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
-        <ServiceDashboardHeader
+        <VendorProfileDashboardHeader
           fullWidth
           className="!z-0 isolation-auto"
           serviceName={getServiceTitle()}
           serviceSubtitle={getServiceSubtitle()}
           serviceIcon={Scissors}
           iconColor="text-white"
-          stats={profileDashboardStats}
           onBack={onBack}
           showBackButton={true}
-          headerColor="bg-[#FF8C42]"
           bottomEdge="flat"
         />
         <div className="relative z-0 mx-auto w-full max-w-customer">

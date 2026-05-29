@@ -14,9 +14,20 @@
 
 import { Hono } from 'hono';
 import { select, query } from '../../../database/rds-connection';
+import { triggerAutoShipment } from '../../../utils/logistics/trigger-auto-shipment';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
+
+function resolveOrderCancellationReason(body: Record<string, unknown>): string | null {
+  const raw =
+    body.cancellation_reason ??
+    body.cancellationReason ??
+    body.reason;
+  if (raw == null) return null;
+  const trimmed = String(raw).trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
 // ============================================================================
 // GET /vendor/:vendorId/orders - List vendor orders
@@ -407,7 +418,8 @@ export function registerVendorOrdersEndpoints(app: Hono) {
     try {
       const { vendorId, orderId } = c.req.param();
       const body = await c.req.json();
-      const { status, tracking_number, delivery_partner, notes } = body;
+      const { status, tracking_number, delivery_partner } = body;
+      const cancellationReason = resolveOrderCancellationReason(body);
       
       if (!status) {
         return c.json({ error: 'Status is required' }, 400);
@@ -416,6 +428,10 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       const validStatuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'returned'];
       if (!validStatuses.includes(status)) {
         return c.json({ error: 'Invalid status' }, 400);
+      }
+
+      if (status === 'cancelled' && !cancellationReason) {
+        return c.json({ error: 'Cancellation reason is required when cancelling an order' }, 400);
       }
 
       // Business rules for status transitions
@@ -479,16 +495,26 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       // Add cancelled timestamp
       if (status === 'cancelled') {
         updates.push('cancelled_at = NOW()');
+        updates.push(`cancellation_reason = $${paramIndex}`);
+        params.splice(paramIndex - 1, 0, cancellationReason);
+        paramIndex++;
       }
 
       const updateQuery = `UPDATE orders SET ${updates.join(', ')} WHERE id = $2 AND vendor_id = $3`;
       await query(updateQuery, params);
 
+      if (status === 'confirmed' && currentStatus === 'pending') {
+        triggerAutoShipment(orderId, 'ecommerce').catch((e) =>
+          console.error('[VENDOR-ORDERS] Auto-shipment trigger failed:', e)
+        );
+      }
+
       return c.json({ 
         success: true, 
         message: `Order status updated to ${status}`,
         order_id: orderId,
-        status: status
+        status: status,
+        cancellation_reason: status === 'cancelled' ? cancellationReason : undefined,
       });
     } catch (error: any) {
       console.error('Error updating order status:', error);
@@ -502,7 +528,8 @@ export function registerVendorOrdersEndpoints(app: Hono) {
     try {
       const { vendorId, orderId } = c.req.param();
       const body = await c.req.json();
-      const { status, tracking_number, delivery_partner, notes } = body;
+      const { status, tracking_number, delivery_partner } = body;
+      const cancellationReason = resolveOrderCancellationReason(body);
       
       if (!status) {
         return c.json({ error: 'Status is required' }, 400);
@@ -511,6 +538,10 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       const validStatuses = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'returned'];
       if (!validStatuses.includes(status)) {
         return c.json({ error: 'Invalid status' }, 400);
+      }
+
+      if (status === 'cancelled' && !cancellationReason) {
+        return c.json({ error: 'Cancellation reason is required when cancelling an order' }, 400);
       }
 
       // Get current order status for validation
@@ -566,6 +597,7 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       // Add cancelled timestamp
       if (status === 'cancelled') {
         updateFields.cancelled_at = new Date().toISOString();
+        updateFields.cancellation_reason = cancellationReason;
       }
 
       // Build SET clause
@@ -578,11 +610,18 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         values
       );
 
+      if (status === 'confirmed' && currentStatus === 'pending') {
+        triggerAutoShipment(orderId, 'ecommerce').catch((e) =>
+          console.error('[VENDOR-ORDERS] Auto-shipment trigger failed:', e)
+        );
+      }
+
       return c.json({ 
         success: true, 
         message: `Order status updated to ${status}`,
         order_id: orderId,
-        status: status
+        status: status,
+        cancellation_reason: status === 'cancelled' ? cancellationReason : undefined,
       });
     } catch (error: any) {
       console.error('Error updating order:', error);

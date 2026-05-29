@@ -43,7 +43,11 @@ import { validateBody } from 'src/middleware/validation-middleware';
 import z from 'zod';
 import { BookingStatus, gps_tracking_sessions, ServiceStyle, OtpAction } from 'src/endpoints/constants';
 import { resolvePlannedServiceDurationMinutesFromBookingId } from 'src/lib/booking-service-duration';
-import { ensureVendorEarningsForCompletedBooking } from '../../../utils/vendor-earnings-on-completion';
+import {
+  ensureVendorEarningsForCompletedBooking,
+  repairVendorEarningsIfCompletedBookingMissing,
+  syncPackageSessionEarningsAfterBookingComplete,
+} from '../../../utils/vendor-earnings-on-completion';
 
 /**
  * Helper function to get the correct OTP for a booking based on action and service type
@@ -374,9 +378,23 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ error: 'Unauthorized: This booking belongs to another vendor' }, 403);
       }
 
-      // Check if booking is already completed
-      if (booking.status === BookingStatus.COMPLETED || booking.status === BookingStatus.CANCELLED) {
-        return c.json({ error: 'Booking is already completed' }, 400);
+      if (booking.status === BookingStatus.CANCELLED) {
+        return c.json({ error: 'Booking is cancelled' }, 400);
+      }
+
+      if (booking.status === BookingStatus.COMPLETED) {
+        const repaired = await repairVendorEarningsIfCompletedBookingMissing(
+          bookingId,
+          '[COMPLETE-BOOKING-REPAIR]'
+        );
+        return c.json({
+          success: true,
+          booking,
+          repaired,
+          message: repaired
+            ? 'Earnings recorded for this completed booking.'
+            : 'Booking is already completed.',
+        });
       }
 
       // For tele/video consultations, no OTP required - completed via prescription upload or video call end
@@ -393,11 +411,14 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         );
 
 
+        const teleRows = await select('bookings', { id: bookingId });
+        const teleBooking = (teleRows[0] || updated[0] || booking) as Record<string, unknown>;
         await ensureVendorEarningsForCompletedBooking(
-          booking as Record<string, unknown>,
+          teleBooking,
           bookingId,
           '[COMPLETE-BOOKING-TELE]'
         );
+        await syncPackageSessionEarningsAfterBookingComplete(bookingId, '[COMPLETE-BOOKING-TELE]');
 
         return c.json({ success: true, booking: updated[0], message: 'Tele consultation completed successfully!' });
       }
@@ -478,18 +499,14 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         console.log(`[COMPLETE-BOOKING] No active GPS tracking session found for booking ${bookingId} (checked ${activeSessions.length} session(s))`);
       }
 
+      const refreshedRows = await select('bookings', { id: bookingId });
+      const refreshedBooking = (refreshedRows[0] || updated[0] || booking) as Record<string, unknown>;
       await ensureVendorEarningsForCompletedBooking(
-        booking as Record<string, unknown>,
+        refreshedBooking,
         bookingId,
         '[COMPLETE-BOOKING]'
       );
-
-      try {
-        const db: SqlClient = { query } as SqlClient;
-        await completePackageSessionForBooking(db, bookingId);
-      } catch (pssErr: any) {
-        console.warn('[COMPLETE-BOOKING] package session sync:', pssErr?.message);
-      }
+      await syncPackageSessionEarningsAfterBookingComplete(bookingId, '[COMPLETE-BOOKING]');
 
       return c.json({
         success: true,
@@ -1686,6 +1703,13 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
           status: 'completed',
           completed_at: new Date().toISOString()
         });
+        const refreshedRows = await select('bookings', { id: bookingId });
+        const refreshedBooking = (refreshedRows[0] || booking) as Record<string, unknown>;
+        await ensureVendorEarningsForCompletedBooking(
+          refreshedBooking,
+          bookingId,
+          '[OTP-VERIFY-COMPLETE]'
+        );
       } else if (mappedAction === OtpAction.START) {
         newStatus = 'in_progress';
         await update('bookings', { id: bookingId }, {
@@ -1744,12 +1768,21 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         return c.json({ error: 'Booking not found' }, 404);
       }
 
+      const booking = bookings[0];
+      const oldStatus = booking.status;
+
       const updateData: any = { status };
       if (note) updateData.notes = note;
       if (status === 'completed') updateData.completed_at = new Date().toISOString();
       if (status === 'confirmed') updateData.confirmed_at = new Date().toISOString();
 
       const updated = await update('bookings', { id: bookingId }, updateData);
+
+      if (status === 'completed' && oldStatus !== 'completed') {
+        const row = (updated[0] || { ...booking, ...updateData }) as Record<string, unknown>;
+        await ensureVendorEarningsForCompletedBooking(row, bookingId, '[VENDOR-POST-STATUS-COMPLETE]');
+        await syncPackageSessionEarningsAfterBookingComplete(bookingId, '[VENDOR-POST-STATUS-COMPLETE]');
+      }
 
       return c.json({
         success: true,
@@ -1840,7 +1873,7 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         booking,
         vendorCancellationReason,
         cancellation_reason,
-        { refundMethod: 'wallet' }
+        { refundMethod: 'original' }
       ).catch((e: any) => {
         console.warn('[vendor/reject] refund apply failed:', e?.message);
         return null;

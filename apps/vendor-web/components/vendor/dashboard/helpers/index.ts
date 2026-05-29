@@ -1,4 +1,85 @@
 import type { Dashboardstats } from '../types';
+import type { VendorScheduleTypeFilter } from '@/lib/vendor-meal-order-schedule';
+
+/** Prefer service_style when present (canonical for booking location type). */
+export function resolveScheduleServiceType(booking: {
+  service_type?: string;
+  service_style?: string;
+  serviceType?: string;
+  serviceStyle?: string;
+}): string {
+  return String(
+    booking.service_style ||
+      booking.serviceStyle ||
+      booking.service_type ||
+      booking.serviceType ||
+      'at_center'
+  ).toLowerCase();
+}
+
+export function matchesScheduleTypeFilter(
+  serviceType: string,
+  filter: VendorScheduleTypeFilter
+): boolean {
+  if (filter === 'all' || filter === 'meal_orders') return filter === 'all';
+  const typeMap: Record<string, string> = {
+    at_center: 'clinic',
+    clinic: 'clinic',
+    at_clinic: 'clinic',
+    at_home: 'home',
+    home: 'home',
+    home_visit: 'home',
+    tele: 'tele',
+    teleconsultation: 'tele',
+    online: 'tele',
+    video_consultation: 'tele',
+  };
+  return typeMap[serviceType.toLowerCase()] === filter;
+}
+
+export function mapDashboardBookingToScheduleItem(b: Record<string, unknown>, defaultServiceType = 'at_center') {
+  const serviceType = resolveScheduleServiceType(b as Parameters<typeof resolveScheduleServiceType>[0]) || defaultServiceType;
+  return {
+    id: (b.id || b.booking_id) as string,
+    bookingId: (b.id || b.booking_id) as string,
+    time: b.booking_time ? formatBookingTime(String(b.booking_time)) : 'N/A',
+    duration: Number(b.duration_minutes) || 30,
+    petName: (b.pet_name as string) || 'Pet',
+    petBreed: b.pet_breed as string | undefined,
+    customerName: (b.customer_name as string) || 'Customer',
+    customerPhone: (b.customer_phone as string) || '',
+    customerId: (b.customerId ?? b.customer_id) as string | undefined,
+    serviceName: (b.service_name as string) || 'Service',
+    serviceType,
+    status: (b.status as string) || 'pending',
+    price: parseFloat(String(b.total_amount || '0')),
+    address: (b.address as string) || '',
+    specialInstructions: b.notes as string | undefined,
+    hasPrescription: Boolean(b.hasPrescription),
+    hasUnreadMessages: Boolean(b.hasUnreadMessages),
+    unreadMessageCount: Number(b.unreadMessageCount) || 0,
+    chatEnabled: b.chatEnabled !== false,
+    isFollowUp: Boolean(b.isFollowUp),
+    isRescheduled: Boolean(b.isRescheduled || b.rescheduledAt || b.rescheduled_at),
+    rescheduledAt: (b.rescheduledAt || b.rescheduled_at) as string | null | undefined,
+    packagePurchaseId: b.packagePurchaseId ?? b.package_purchase_id,
+    packageSessionNumber:
+      b.packageSessionNumber != null
+        ? Number(b.packageSessionNumber)
+        : b.package_session_number != null
+          ? Number(b.package_session_number)
+          : undefined,
+    packageTotalSessions:
+      b.packageTotalSessions != null
+        ? Number(b.packageTotalSessions)
+        : b.package_total_sessions != null
+          ? Number(b.package_total_sessions)
+          : b.total_sessions != null
+            ? Number(b.total_sessions)
+            : undefined,
+    isPackageSession: Boolean(b.isPackageSession ?? b.is_package_session),
+  };
+}
 
 /** UI copy + a11y for vendor dashboard rating (no fake averages when review count is zero). */
 export interface VendorDashboardRatingPresentation {

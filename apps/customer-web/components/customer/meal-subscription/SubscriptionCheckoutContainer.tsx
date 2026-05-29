@@ -437,6 +437,9 @@ export function SubscriptionCheckoutContainer({
             {catalog?.dietTypeLabel && (
               <p className="text-xs text-slate-500 mt-1">Diet: {catalog.dietTypeLabel}</p>
             )}
+            {catalog?.packWeightLabel ? (
+              <p className="text-xs font-medium text-slate-600 mt-1">{catalog.packWeightLabel}</p>
+            ) : null}
           </div>
         </Card>
 

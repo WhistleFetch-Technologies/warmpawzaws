@@ -24,6 +24,7 @@
 
 import { query } from '../database/rds-connection';
 import { geocodeVendorAddressFields } from './vendor-address-geocode';
+import { resolvePackWeightGramsFromPlanRow } from './meal-pack-weight';
 
 export interface DispatchResult {
   ok: boolean;
@@ -152,6 +153,8 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
               mo.delivery_address, mo.customer_lat, mo.customer_lng, mo.scheduled_delivery_date,
               mo.meal_plan_id, mo.prep_minutes, mo.prep_started_at, mo.expected_ready_at,
               mp.prep_time_minutes AS plan_prep_minutes, mp.name AS plan_name, mp.price_per_meal AS plan_price,
+              mp.pack_weight_grams AS plan_pack_weight_grams,
+              mp.dietary_requirements AS plan_dietary_requirements,
               v.business_name AS vendor_name, v.phone AS vendor_phone, v.email AS vendor_email,
               v.address AS vendor_address, v.city AS vendor_city, v.state AS vendor_state,
               v.pincode AS vendor_pincode, v.landmark AS vendor_landmark,
@@ -231,6 +234,18 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
     const billAmount = pickNumber(row.total_amount) ?? 0;
     const planName = pickString((row as Record<string, unknown>).plan_name) || 'Meal Order';
     const planPrice = pickNumber((row as Record<string, unknown>).plan_price) ?? billAmount;
+    const packWeightGrams = resolvePackWeightGramsFromPlanRow({
+      pack_weight_grams: (row as Record<string, unknown>).plan_pack_weight_grams,
+      dietary_requirements: (row as Record<string, unknown>).plan_dietary_requirements,
+    });
+    if (packWeightGrams == null) {
+      console.warn(`[meal-dispatch] missing packWeightGrams mealOrderId=${mealOrderId} mealPlanId=${row.meal_plan_id}`);
+      return {
+        ok: false,
+        error:
+          'Cannot schedule delivery: this meal product has no pack weight (grams). Edit the meal product and set pack weight, then try again.',
+      };
+    }
 
     const vendorEmail = pickString((row as Record<string, unknown>).vendor_email);
     const customerEmail = pickString((row as Record<string, unknown>).customer_email);
@@ -293,7 +308,7 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
           sku: String((row as Record<string, unknown>).meal_plan_id ?? ''),
           price: planPrice,
           quantity: 1,
-          weight_g: 500,
+          weight_g: packWeightGrams,
         },
       ],
       billAmount,

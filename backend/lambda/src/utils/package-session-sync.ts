@@ -243,11 +243,13 @@ async function accrueVendorEarningsForPackageSessionChild(
     }
 
     const parentRes = await db.query(
-      `SELECT vendor_id::text AS vendor_id, total_amount::numeric AS total_amount
-       FROM bookings
-       WHERE package_purchase_id = $1::uuid
-         AND COALESCE(is_package_session, false) = false
-         AND parent_booking_id IS NULL
+      `SELECT b.vendor_id::text AS vendor_id, b.total_amount::numeric AS total_amount,
+              COALESCE(pp.total_with_tax, pp.amount, pp.package_price, 0)::numeric AS purchase_amount
+       FROM bookings b
+       LEFT JOIN package_purchases pp ON pp.id = b.package_purchase_id
+       WHERE b.package_purchase_id = $1::uuid
+         AND COALESCE(b.is_package_session, false) = false
+         AND b.parent_booking_id IS NULL
        LIMIT 1`,
       [packagePurchaseId]
     );
@@ -256,7 +258,10 @@ async function accrueVendorEarningsForPackageSessionChild(
       return;
     }
 
-    const parentTotal = Number(parentRow.total_amount);
+    let parentTotal = Number(parentRow.total_amount);
+    if (!Number.isFinite(parentTotal) || parentTotal <= 0) {
+      parentTotal = Number(parentRow.purchase_amount);
+    }
     if (!Number.isFinite(parentTotal) || parentTotal <= 0) {
       return;
     }
@@ -492,4 +497,71 @@ export async function completePackageSessionForBooking(
       [packagePurchaseId]
     ).catch(() => undefined);
   }
+}
+
+/**
+ * Idempotent backfill: completed package session child bookings with no vendor_earnings row.
+ * Used when GET /vendor/:id/earnings runs backfill (session may already be marked completed).
+ */
+export async function backfillPackageSessionEarningsForCompletedBookings(
+  db: SqlClient,
+  vendorIds: string[],
+  logPrefix = '[EARNINGS-PACKAGE-BACKFILL]',
+  limit = 200
+): Promise<number> {
+  const unique = [...new Set((vendorIds || []).filter(Boolean))];
+  if (unique.length === 0) return 0;
+
+  const cappedLimit = Math.min(Math.max(1, limit), 500);
+  const missing = await db
+    .query(
+      `SELECT b.id::text AS id
+       FROM bookings b
+       WHERE b.status = 'completed'
+         AND b.vendor_id = ANY($1::uuid[])
+         AND b.package_purchase_id IS NOT NULL
+         AND COALESCE(b.is_package_session, false) = true
+         AND NOT EXISTS (SELECT 1 FROM vendor_earnings ve WHERE ve.booking_id = b.id)
+       ORDER BY COALESCE(b.completed_at::timestamptz, b.updated_at::timestamptz) DESC NULLS LAST
+       LIMIT $2`,
+      [unique, cappedLimit]
+    )
+    .catch(() => ({ rows: [] as { id?: string }[] }));
+
+  let created = 0;
+  for (const row of missing.rows || []) {
+    const childId = String(row.id ?? '');
+    if (!childId) continue;
+    const before = await db
+      .query(`SELECT 1 FROM vendor_earnings WHERE booking_id = $1::uuid LIMIT 1`, [childId])
+      .catch(() => ({ rowCount: 0 }));
+    if ((before.rowCount ?? 0) > 0) continue;
+
+    const pkgRes = await db
+      .query(
+        `SELECT package_purchase_id::text AS package_purchase_id
+         FROM bookings WHERE id = $1::uuid LIMIT 1`,
+        [childId]
+      )
+      .catch(() => ({ rows: [] as { package_purchase_id?: string }[] }));
+    const packagePurchaseId = pkgRes.rows?.[0]?.package_purchase_id;
+    if (!packagePurchaseId) continue;
+
+    await accrueVendorEarningsForPackageSessionChild(db, {
+      packagePurchaseId,
+      childBookingId: childId,
+    });
+
+    const after = await db
+      .query(`SELECT 1 FROM vendor_earnings WHERE booking_id = $1::uuid LIMIT 1`, [childId])
+      .catch(() => ({ rowCount: 0 }));
+    if ((after.rowCount ?? 0) > 0) {
+      created += 1;
+    }
+  }
+
+  if (created > 0) {
+    console.log(`${logPrefix} Created ${created} package session vendor_earnings row(s)`);
+  }
+  return created;
 }

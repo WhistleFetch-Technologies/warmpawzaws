@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { MapPin, Calendar, Clock, User, Phone, Mail, Navigation, X, AlertTriangle, Wallet as WalletIcon, Video, MessageSquare } from 'lucide-react';
+import { MapPin, Calendar, Clock, User, Phone, Mail, Navigation, X, AlertTriangle, Wallet as WalletIcon, Video, MessageSquare, HelpCircle } from 'lucide-react';
+import { navigateToBookingSupport } from '@/lib/support-contact';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import {
@@ -12,6 +13,10 @@ import {
 } from '@/lib/customer-id-storage';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import { formatPriceWithSymbol } from '@/lib/booking-display-utils';
+import {
+  derivePaymentSourcesFromBooking,
+  bookingSourcesHasGatewayPayment,
+} from '@/lib/payment-display-utils';
 
 type AppointmentRefundEstimate = {
   percentage: number;
@@ -19,6 +24,7 @@ type AppointmentRefundEstimate = {
   platformFeeApplies: boolean;
   source?: string;
   eligible?: boolean;
+  policyApplied?: boolean;
 };
 
 interface AppointmentDetailsViewProps {
@@ -148,7 +154,7 @@ export function AppointmentDetailsView({
     loadAppointmentDetails();
   }, [loadAppointmentDetails]);
 
-  const loadRefundPreview = useCallback(async () => {
+  const loadRefundPreview = useCallback(async (method: 'wallet' | 'original') => {
     const id = appointmentId.trim();
     if (!id) return;
     setRefundPreviewLoading(true);
@@ -163,6 +169,7 @@ export function AppointmentDetailsView({
       }
       const result = (await apiClient.post('/customer/bookings/refund-preview', {
         bookingId: id,
+        refundMethod: method,
       })) as Record<string, unknown>;
       const payload = (result as any)?.data ?? result;
       const refund = (payload as any)?.refund ?? payload;
@@ -175,6 +182,7 @@ export function AppointmentDetailsView({
             (typeof refund.platformFeeNonRefundable === 'number' && refund.platformFeeNonRefundable > 0),
           source: typeof refund.source === 'string' ? refund.source : undefined,
           eligible: typeof refund.eligible === 'boolean' ? refund.eligible : undefined,
+          policyApplied: refund.policyApplied === true,
         });
       } else {
         setEstimatedRefund({ percentage: 0, amount: 0, platformFeeApplies: false });
@@ -186,11 +194,19 @@ export function AppointmentDetailsView({
     }
   }, [appointmentId, appointment?.payment_status, appointment?.paymentStatus]);
 
+  useEffect(() => {
+    if (!showCancelModal) return;
+    void loadRefundPreview(refundMethod);
+  }, [showCancelModal, refundMethod, loadRefundPreview]);
+
   const openCancelAppointmentModal = () => {
     setCancelReason('');
     setEstimatedRefund(null);
+    const sources = derivePaymentSourcesFromBooking(appointment ?? {});
+    if (!bookingSourcesHasGatewayPayment(sources)) {
+      setRefundMethod('wallet');
+    }
     setShowCancelModal(true);
-    void loadRefundPreview();
   };
 
   if (!appointmentId || appointmentId === 'undefined' || !appointmentId.trim()) {
@@ -546,8 +562,6 @@ export function AppointmentDetailsView({
         {isTeleActive && (
           <Button
             onClick={() => {
-              // Open chat - can navigate to booking details with chat mode
-              // This will need proper navigation handler
               window.location.href = `/booking/${appointmentId}?chat=true`;
             }}
             variant="outline"
@@ -557,6 +571,25 @@ export function AppointmentDetailsView({
             Chat with Provider
           </Button>
         )}
+
+        <Button
+          onClick={() => {
+            const bookingId = String(appointment?.bookingId || appointment?.id || appointmentId);
+            navigateToBookingSupport(router, {
+              bookingId,
+              serviceName: appointment?.serviceName,
+              bookingDate: appointment?.date,
+              amount: appointment?.amount,
+              status: appointment?.status,
+              vendorName: appointment?.vendorName || vendor?.clinicName,
+            });
+          }}
+          variant="outline"
+          className="w-full mt-3 border-[#FF8C42]/40 text-[#FF8C42] hover:bg-[#FFF3E8]"
+        >
+          <HelpCircle className="w-4 h-4 mr-2" />
+          Need help with this booking
+        </Button>
 
         {/* Cancellation Info (if cancelled) */}
         {appointment.status === 'cancelled' && (
@@ -594,7 +627,11 @@ export function AppointmentDetailsView({
       </div>
 
       {/* Cancel Modal */}
-      {showCancelModal && (
+      {showCancelModal && (() => {
+        const canRefundToOriginal = bookingSourcesHasGatewayPayment(
+          derivePaymentSourcesFromBooking(appointment ?? {})
+        );
+        return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
@@ -611,43 +648,7 @@ export function AppointmentDetailsView({
             </div>
 
             <div className="space-y-4">
-              {refundPreviewLoading && !estimatedRefund && (
-                <p className="text-sm text-gray-600">Loading refund estimate…</p>
-              )}
-
-              {estimatedRefund && (
-                <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
-                  <h4 className="font-medium text-blue-800 mb-2">Refund Information</h4>
-                  <p className="text-sm text-blue-700">
-                    Refund as per policy{' '}
-                    <span className="font-semibold">{estimatedRefund.percentage}%</span>
-                    {estimatedRefund.source ? (
-                      <span className="block text-xs text-blue-600 mt-1">
-                        Source:{' '}
-                        {estimatedRefund.source === 'vendor_refund_tiers'
-                          ? 'vendor refund tiers'
-                          : estimatedRefund.source}
-                      </span>
-                    ) : null}
-                  </p>
-                  {estimatedRefund.platformFeeApplies && (
-                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
-                      Platform fee is not refundable.
-                    </p>
-                  )}
-                  <p className="text-lg font-bold text-blue-800 mt-1">
-                    Estimated Refund: {formatPriceWithSymbol(estimatedRefund.amount)}
-                  </p>
-                </div>
-              )}
-
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                <p className="text-sm text-yellow-900">
-                  Cancellation and fees follow the policy above and your payment method choice.
-                </p>
-              </div>
-
-              {/* Refund Method Selection — same behaviour as My Bookings (only when a monetary refund applies) */}
+              {/* Refund Method Selection */}
               {estimatedRefund && estimatedRefund.amount > 0 && (
               <div>
                 <label className="block text-sm text-gray-700 mb-2">
@@ -669,19 +670,21 @@ export function AppointmentDetailsView({
                           Refund to Wallet
                         </p>
                         <p className="text-xs text-gray-600">
-                          Instant credit to your wallet (per cancellation policy)
+                          100% refund to wallet — cancellation policy does not apply
                         </p>
                       </div>
                     </div>
                   </button>
 
                   <button
-                    onClick={() => setRefundMethod('original')}
+                    type="button"
+                    onClick={() => canRefundToOriginal && setRefundMethod('original')}
+                    disabled={!canRefundToOriginal}
                     className={`w-full p-3 rounded-lg border-2 transition-all text-left ${
                       refundMethod === 'original'
                         ? 'border-[#FF8C42] bg-orange-50'
                         : 'border-gray-200 hover:border-gray-300 bg-white'
-                    }`}
+                    } ${!canRefundToOriginal ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     <div className="flex items-center gap-3">
                       <Navigation className={`w-5 h-5 ${refundMethod === 'original' ? 'text-[#FF8C42]' : 'text-gray-500'}`} />
@@ -690,7 +693,9 @@ export function AppointmentDetailsView({
                           Refund to Original Payment
                         </p>
                         <p className="text-xs text-gray-600">
-                          Refund to original payment method (typically 5–7 business days; fees per policy)
+                          {canRefundToOriginal
+                            ? 'Refund per cancellation policy to card/UPI (5–7 business days). Wallet portion returns to wallet if split-paid.'
+                            : 'Unavailable for wallet-only payments.'}
                         </p>
                       </div>
                     </div>
@@ -698,6 +703,57 @@ export function AppointmentDetailsView({
                 </div>
               </div>
               )}
+
+              {(refundPreviewLoading || estimatedRefund) && (
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                  <h4 className="font-medium text-blue-800 mb-2">Refund Information</h4>
+                  {refundPreviewLoading && !estimatedRefund ? (
+                    <p className="text-sm text-gray-600">Loading refund estimate…</p>
+                  ) : estimatedRefund ? (
+                    <>
+                      <p className="text-sm text-blue-700">
+                        {refundMethod === 'wallet' ? (
+                          <>
+                            <span className="font-semibold">100%</span> refund to Warmpawz wallet
+                            <span className="block text-xs text-blue-600 mt-1">
+                              Cancellation policy does not apply for wallet refunds
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            Refund as per cancellation policy{' '}
+                            <span className="font-semibold">{estimatedRefund.percentage}%</span>
+                            {estimatedRefund.source && estimatedRefund.source !== 'wallet_full_refund' ? (
+                              <span className="block text-xs text-blue-600 mt-1">
+                                Source:{' '}
+                                {estimatedRefund.source === 'vendor_refund_tiers'
+                                  ? 'vendor refund tiers'
+                                  : estimatedRefund.source.replace(/_/g, ' ')}
+                              </span>
+                            ) : null}
+                          </>
+                        )}
+                      </p>
+                      {refundMethod === 'original' && estimatedRefund.platformFeeApplies && (
+                        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-md px-2 py-1.5 mt-2">
+                          Platform fee is not refundable.
+                        </p>
+                      )}
+                      <p className="text-lg font-bold text-blue-800 mt-1">
+                        Estimated Refund: {formatPriceWithSymbol(estimatedRefund.amount)}
+                      </p>
+                    </>
+                  ) : null}
+                </div>
+              )}
+
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                <p className="text-sm text-yellow-900">
+                  {refundMethod === 'wallet'
+                    ? 'Wallet refunds are 100% with no cancellation policy deductions.'
+                    : 'Original payment refunds follow the cancellation policy shown above.'}
+                </p>
+              </div>
 
               {/* Cancellation Reason */}
               <div>
@@ -737,7 +793,8 @@ export function AppointmentDetailsView({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </>
   );
 }

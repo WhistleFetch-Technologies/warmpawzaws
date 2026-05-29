@@ -18,6 +18,7 @@
  */
 
 import { query, insert } from '../database/rds-connection';
+import { fireVendorAppointmentScheduledSms } from '../lib/vendor-appointment-sms';
 import type { VendorPackageComputation } from './vendor-package-razorpay-flow';
 
 /** Same generator used by `bookings-enhanced.booking.ts` so format matches normal bookings. */
@@ -349,6 +350,13 @@ export async function createPackageBookingsAfterPayment(
     }
     sessionBookingIds.push(childId);
 
+    fireVendorAppointmentScheduledSms({
+      vendorId,
+      bookingId: childId,
+      bookingDate: dateStr,
+      bookingTime: timeStr,
+    });
+
     await query(
       `UPDATE package_scheduled_sessions
        SET booking_id = $1::uuid,
@@ -359,6 +367,15 @@ export async function createPackageBookingsAfterPayment(
        WHERE package_purchase_id = $4::uuid AND session_number = $5`,
       [childId, dateStr, timeStr, purchaseRowId, sessionNumber]
     ).catch(() => undefined);
+  }
+
+  if (sessionBookingIds.length === 0 && parentBookingId) {
+    fireVendorAppointmentScheduledSms({
+      vendorId,
+      bookingId: parentBookingId,
+      bookingDate: parentDate,
+      bookingTime: parentTime,
+    });
   }
 
   return { parentBookingId, sessionBookingIds };

@@ -22,6 +22,8 @@ export interface HomeCarouselBanner {
   ctaLink: string;
   comingSoon?: boolean;
   imageUrl?: string;
+  navTarget?: { kind: string; screen?: string; path?: string; data?: Record<string, unknown> } | null;
+  metadata?: unknown;
 }
 
 /** Screens always shown as non-interactive “coming soon” on home (product policy). */

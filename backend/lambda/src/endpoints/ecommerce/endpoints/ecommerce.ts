@@ -24,6 +24,7 @@ import {
   sqlExcludeSuppressedSettlementRows,
 } from '../../../utils/temporary-vendor-ui-suppression';
 import { isValidUUID } from '../../../types/entities';
+import { prepareStorefrontProductRow, prepareStorefrontProductRows } from '../../../utils/s3-media-presign';
 
 /** Only admin-approved products appear on the public storefront (see products.status + is_active). */
 const STOREFRONT_PRODUCT_SQL = `
@@ -68,9 +69,13 @@ export function registerEcommerceEndpoints(app: Hono) {
         return c.json({ error: 'Product not found' }, 404);
       }
 
+      const product = await prepareStorefrontProductRow(
+        products.rows[0] as Record<string, unknown>,
+      );
+
       return c.json({
         success: true,
-        product: products.rows[0],
+        product,
       });
     } catch (error: any) {
       console.error(`${logLabel} Error fetching product:`, error);
@@ -163,10 +168,13 @@ export function registerEcommerceEndpoints(app: Hono) {
         throw error;
       }
 
+      const rows = (products?.rows || []) as Record<string, unknown>[];
+      const signedProducts = await prepareStorefrontProductRows(rows);
+
       return c.json({
         success: true,
-        products: products?.rows || [],
-        total: products?.rows?.length || 0,
+        products: signedProducts,
+        total: signedProducts.length,
       });
     } catch (error: any) {
       console.error('[products] Error fetching products:', error);
@@ -247,10 +255,13 @@ export function registerEcommerceEndpoints(app: Hono) {
         throw error;
       }
 
+      const rows = (products?.rows || []) as Record<string, unknown>[];
+      const signedProducts = await prepareStorefrontProductRows(rows);
+
       return c.json({
         success: true,
-        products: products?.rows || [],
-        total: products?.rows?.length || 0,
+        products: signedProducts,
+        total: signedProducts.length,
       });
     } catch (error: any) {
       console.error('Error fetching ecommerce products:', error);
@@ -1658,6 +1669,71 @@ export function registerEcommerceEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching e-commerce vendors list:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * GET /ecommerce/vendors/:vendorId
+   * Seller profile with product and order stats (admin seller detail view)
+   */
+  app.get("/ecommerce/vendors/:vendorId", async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      if (!vendorId) {
+        return c.json({ error: 'Vendor ID is required' }, 400);
+      }
+
+      const result = await query(
+        `SELECT 
+          v.*,
+          r.id as role_id,
+          r.name as role_name,
+          r.display_name as role_display_name,
+          COALESCE(pc_total.product_count, 0) as product_count,
+          COALESCE(pc_active.active_product_count, 0) as active_product_count,
+          COALESCE(rev_stats.total_revenue, 0) as total_revenue,
+          COALESCE(rev_stats.total_orders, 0) as total_orders,
+          COALESCE(rev_stats.pending_orders, 0) as pending_orders
+        FROM vendors v
+        LEFT JOIN roles r ON v.role_id = r.id
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS product_count
+          FROM products p
+          WHERE p.vendor_id = v.id
+        ) pc_total ON true
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS active_product_count
+          FROM products p
+          WHERE p.vendor_id = v.id
+            AND p.is_active = true
+            AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
+        ) pc_active ON true
+        LEFT JOIN LATERAL (
+          SELECT 
+            COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status = 'delivered'), 0) as total_revenue,
+            COUNT(o.id) FILTER (WHERE o.order_status = 'delivered')::int as total_orders,
+            COUNT(o.id) FILTER (
+              WHERE o.order_status IN ('pending', 'confirmed', 'processing', 'shipped')
+            )::int as pending_orders
+          FROM orders o
+          WHERE o.vendor_id = v.id
+        ) rev_stats ON true
+        WHERE v.id = $1
+          AND (v.is_deleted IS NULL OR v.is_deleted = false)`,
+        [vendorId]
+      );
+
+      if (!result.rows.length) {
+        return c.json({ error: 'Seller not found' }, 404);
+      }
+
+      return c.json({
+        success: true,
+        vendor: result.rows[0],
+      });
+    } catch (error: any) {
+      console.error('Error fetching e-commerce vendor details:', error);
       return c.json({ error: error.message }, 500);
     }
   });

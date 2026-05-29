@@ -162,6 +162,7 @@ import { registerRecommendationEndpoints } from '../endpoints/recommendations';
 import { registerWishlistEndpoints } from '../endpoints/wishlist';
 import { registerProductVariationsEndpoints } from '../endpoints/product-variations';
 import { registerSelfManagedLogisticsEndpoints } from '../endpoints/self-managed-logistics';
+import { registerTrackingWebhookEndpoints } from '../endpoints/tracking-webhooks';
 import { registerTaxInvoicePdfEndpoints } from '../endpoints/tax-invoice-pdf';
 import { registerReviewsEnhancedEndpoints } from '../endpoints/reviews-enhanced';
 import { registerReturnsEnhancedEndpoints } from '../endpoints/returns-enhanced';
@@ -178,7 +179,6 @@ import { registerCustomerEndpointsEnhanced } from 'src/endpoints/customer/custom
 import { registerAdminSellersEndpoints } from 'src/endpoints/admin/endpoints/admin-sellers';
 import { registerCustomerContentEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-content';
 import { registerCustomerDeliveryFeePolicyEndpoints } from '../endpoints/customer-delivery-fee-policy-endpoints';
-import { registerMealBookingPolicyEndpoints } from '../endpoints/meal-booking-policy-endpoints';
 import { registerCustomerPhoneConvenienceEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-phone-convenience';
 import { registerCustomerBookingHistoryEndpoints } from 'src/endpoints/customer/customerEndpoint/customer-booking-history';
 import { registerAdminGovernanceEndpoints } from 'src/endpoints/admin/endpoints/admin-governance';
@@ -604,7 +604,6 @@ registerServiceDiscoveryEndpoints(app); // /customer/vendors/search, /customer/d
 registerServiceCatalogEndpoints(app); // /services/:serviceId - before /customer/:customerId
 registerCustomerContentEndpoints(app); // /customer/banners, /customer/articles, /customer/announcements - before /customer/:customerId
 registerCustomerDeliveryFeePolicyEndpoints(app); // /customer/delivery-fee-policy, /customer/delivery-fee/calculate, /admin/delivery-fee-policy
-registerMealBookingPolicyEndpoints(app); // /admin/meal-booking-policy, /vendor/meal-booking-policy
 // ✅ CRITICAL ROUTE ORDERING: Specific routes MUST come before parameterized routes
 // /customer/bookings/active is registered in registerCustomerPhoneConvenienceEndpoints
 // This ensures "active" is not interpreted as a UUID in /customer/:customerId route
@@ -772,6 +771,7 @@ registerRecommendationEndpoints(app); // "Also bought", trending, personalized r
 registerWishlistEndpoints(app); // Customer wishlist management
 registerProductVariationsEndpoints(app); // Product variations (size, color, weight)
 registerSelfManagedLogisticsEndpoints(app); // Self-managed logistics with tracking URL
+registerTrackingWebhookEndpoints(app); // AfterShip webhooks for vendor-managed shipping
 registerTaxInvoicePdfEndpoints(app); // GST tax invoice PDF generation
 registerReviewsEnhancedEndpoints(app); // Enhanced booking reviews
 registerReturnsEnhancedEndpoints(app); // Complete return/refund management

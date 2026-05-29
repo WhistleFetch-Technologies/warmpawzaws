@@ -5,9 +5,19 @@
 
 import type { PurchaseType } from '../constants/meal-product-enums';
 import { PURCHASE_TYPE_VALUES } from '../constants/meal-product-enums';
+import { mergeMealPlanCatalogForApi } from './meal-product-persistence';
 
 export function parseMealCatalogDiet(planOrDiet: Record<string, unknown> | null | undefined): Record<string, unknown> {
   if (!planOrDiet) return {};
+  if (
+    planOrDiet.plan_name != null ||
+    planOrDiet.price_per_meal != null ||
+    planOrDiet.vendor_id != null ||
+    planOrDiet.purchase_type != null
+  ) {
+    const raw = planOrDiet.dietary_requirements ?? planOrDiet.metadata;
+    return mergeMealPlanCatalogForApi(planOrDiet, raw);
+  }
   const raw = planOrDiet.dietary_requirements ?? planOrDiet.metadata;
   if (raw == null) return {};
   if (typeof raw === 'string') {
@@ -46,7 +56,8 @@ export function safePositiveInt(v: unknown, fallback: number): number {
 }
 
 export function resolveMealsPerDeliveryFromDiet(diet: Record<string, unknown>): number {
-  const direct = diet.mealsPerDelivery;
+  const col = diet.meals_per_delivery ?? diet.mealsPerDelivery;
+  const direct = col;
   if (direct != null && direct !== '') {
     const n = typeof direct === 'number' ? direct : parseInt(String(direct), 10);
     if (Number.isFinite(n) && n >= 1) return Math.min(n, 50);
