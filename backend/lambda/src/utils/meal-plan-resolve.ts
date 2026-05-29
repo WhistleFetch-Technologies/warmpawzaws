@@ -129,6 +129,30 @@ async function enrichMealPlanRowGstHintsFromProduct(row: Record<string, unknown>
 }
 
 /**
+ * Nutrition SKUs are stored in `products` and mirrored into `meal_plans` with the same id.
+ * Merge lists for vendor catalog APIs without showing duplicates — prefer `meal_plans` rows.
+ */
+export function dedupeMealPlanCatalogRows(
+  fromMealPlans: Record<string, unknown>[],
+  fromProducts: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const row of fromProducts) {
+    const id = String(row.id ?? '').trim();
+    if (id) byId.set(id, row);
+  }
+  for (const row of fromMealPlans) {
+    const id = String(row.id ?? '').trim();
+    if (id) byId.set(id, row);
+  }
+  return [...byId.values()].sort((a, b) => {
+    const ta = a.created_at ? new Date(String(a.created_at)).getTime() : 0;
+    const tb = b.created_at ? new Date(String(b.created_at)).getTime() : 0;
+    return tb - ta;
+  });
+}
+
+/**
  * Maps a `products` row (meal_plan / nutrition / food) to a row shaped like `meal_plans`
  * for catalog parity with `resolveMealPlanOrProductById`.
  */
