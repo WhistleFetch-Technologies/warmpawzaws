@@ -872,8 +872,7 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
                       NULLIF(TRIM(mp.plan_name), ''),
                       NULLIF(TRIM(prod.name), '')
                     ) AS meal_plan_name,
-                    mp.price_per_meal AS mp_price_per_meal,
-                    mp.price AS mp_legacy_price
+                    mp.price_per_meal AS mp_price_per_meal
              FROM meal_orders mo
              LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
              LEFT JOIN products prod ON prod.id = mo.meal_plan_id
@@ -1018,15 +1017,13 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
         if (orderType === 'meal' && mealOrderSource === 'meal_orders') {
           mealPlanForTotals = {
             price_per_meal: order.mp_price_per_meal,
-            price: order.mp_legacy_price,
           };
         } else if (orderType === 'meal' && mealOrderSource === 'orders') {
           const mpo = await query(
             `SELECT mpo.quantity,
                     mp.name AS meal_plan_name,
                     mp.plan_name AS mp_plan_name,
-                    mp.price_per_meal,
-                    mp.price AS mp_legacy_price
+                    mp.price_per_meal
              FROM meal_plan_orders mpo
              LEFT JOIN meal_plans mp ON mpo.meal_plan_id = mp.id
              WHERE mpo.order_id = $1
@@ -1040,7 +1037,6 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
               line.meal_plan_name || line.mp_plan_name || order.meal_plan_name;
             mealPlanForTotals = {
               price_per_meal: line.price_per_meal,
-              price: line.mp_legacy_price,
             };
           }
         }

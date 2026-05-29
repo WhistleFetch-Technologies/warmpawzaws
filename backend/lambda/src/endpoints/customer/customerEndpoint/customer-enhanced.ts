@@ -492,7 +492,6 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
                 ) AS meal_plan_name,
                 mp.plan_name AS mp_plan_name,
                 mp.price_per_meal AS mp_price_per_meal,
-                mp.price AS mp_legacy_price,
                 v.business_name AS vendor_name,
                 p.name AS pet_name
          FROM meal_orders mo
@@ -515,7 +514,6 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       for (const o of (mealResult as any).rows || []) {
         const planForPricing = {
           price_per_meal: o.mp_price_per_meal,
-          price: o.mp_legacy_price,
         };
         const { subtotal, total } = resolveCustomerMealPlanOrderDisplayTotals(o, planForPricing);
         allOrders.push({

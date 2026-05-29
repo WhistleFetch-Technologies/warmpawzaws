@@ -20,7 +20,13 @@ import { SubscriptionCheckoutContainer } from '@/components/customer/meal-subscr
 import { resolveCustomerPublicAssetUrl } from '@/lib/public-asset-url';
 import { isMealKitchenClosed, mealKitchenClosedMessage } from '@/lib/meal-kitchen-availability';
 import { MealKitchenStatusBanner } from '@/components/customer/nutrition/MealKitchenStatusBanner';
-import { earliestDeliveryYmd, minDeliveryTimeHm } from '@/lib/meal-checkout-schedule';
+import {
+  computeEarliestDeliveryYmd,
+  earliestDeliveryYmd,
+  evaluateMealDeliverySlot,
+  extractMealSchedulePolicy,
+  minDeliveryTimeHm,
+} from '@/lib/meal-checkout-schedule';
 
 interface MealOrderCheckoutProps {
   phone: string;
@@ -83,36 +89,27 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
     const selected = addresses.find((a) => a.id === addressId);
     const addrLat = selected?.coordinates?.lat ?? selected?.latitude ?? selected?.lat;
     const addrLng = selected?.coordinates?.lng ?? selected?.longitude ?? selected?.lng;
-    const effectiveLat = addrLat;
-    const effectiveLng = addrLng;
 
     const q = new URLSearchParams();
     q.set('quantity', String(quantity));
     q.set('logisticsType', 'warmpawz');
-    if (effectiveLat != null && effectiveLng != null) {
-      q.set('customerLat', String(effectiveLat));
-      q.set('customerLng', String(effectiveLng));
+    if (addrLat != null && addrLng != null) {
+      q.set('customerLat', String(addrLat));
+      q.set('customerLng', String(addrLng));
     }
     if (scheduledDate && scheduledTime) {
       q.set('scheduledDeliveryDate', scheduledDate);
       q.set('deliveryTime', scheduledTime);
-      apiClient
-        .get(`/meal-plans/${mealPlanId}/order-preview?${q.toString()}`)
-        .then((res: any) => {
-          if (res.success) setPreview(res);
-        })
-        .catch(() => setPreview(null));
-    } else if (scheduledDate && !scheduledTime) {
-      setPreview((prev) =>
-        prev
-          ? {
-              ...prev,
-              deliveryAllowed: undefined,
-              deliveryPolicyMessage: 'Select a delivery time to check availability for this date.',
-            }
-          : prev,
-      );
     }
+
+    apiClient
+      .get(`/meal-plans/${mealPlanId}/order-preview?${q.toString()}`)
+      .then((res: any) => {
+        if (res.success) setPreview(res);
+      })
+      .catch(() => {
+        if (!scheduledDate && !scheduledTime) setPreview(null);
+      });
   }, [mealPlanId, quantity, addressId, addresses, scheduledDate, scheduledTime]);
 
   const loadData = async () => {
@@ -224,6 +221,13 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
       toast.error(preview.deliveryPolicyMessage || `Order must be at least ${preview.leadTimeHours} hours before delivery`);
       return;
     }
+    if (schedulePolicy && scheduledDate && scheduledTime) {
+      const slot = evaluateMealDeliverySlot(scheduledDate, scheduledTime, schedulePolicy);
+      if (!slot.allowed) {
+        toast.error(slot.message || 'Selected delivery time is not available');
+        return;
+      }
+    }
     if (!petId && pets.length > 0) {
       toast.error('Please select a pet');
       return;
@@ -298,21 +302,51 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
     );
   }
 
-  const leadHours = preview?.leadTimeHours ?? 24;
-  const earliestRaw = preview?.bookingPolicy?.earliestDeliveryAt;
-  const minDateStr = earliestDeliveryYmd(earliestRaw, leadHours);
+  const schedulePolicy = mealPlan
+    ? extractMealSchedulePolicy(mealPlan as Record<string, unknown>)
+    : null;
+  const leadHours = preview?.leadTimeHours ?? schedulePolicy?.leadTimeHours ?? 24;
+  const earliestRaw = preview?.bookingPolicy?.earliestDeliveryAt ?? schedulePolicy?.earliestDeliveryAt;
+  const minDateStr = schedulePolicy
+    ? computeEarliestDeliveryYmd(schedulePolicy)
+    : earliestDeliveryYmd(earliestRaw, leadHours);
   const orderCutoffDisplay =
-    preview?.orderCutoffTime || preview?.bookingPolicy?.orderCutoffTime || '';
-  const sameDayHint = preview?.bookingPolicy?.sameDayAllowed
+    preview?.orderCutoffTime ||
+    preview?.bookingPolicy?.orderCutoffTime ||
+    schedulePolicy?.orderCutoffTime ||
+    '';
+  const sameDayAllowed =
+    preview?.bookingPolicy?.sameDayAllowed ?? schedulePolicy?.sameDayAllowed ?? leadHours <= 24;
+  const sameDayHint = sameDayAllowed
     ? ` Same-day delivery may be available${orderCutoffDisplay ? ` (order by ${orderCutoffDisplay} today)` : ''}.`
     : '';
   const minTimeStr =
-    scheduledDate && preview
+    scheduledDate && (preview || schedulePolicy)
       ? minDeliveryTimeHm(scheduledDate, earliestRaw, leadHours)
       : undefined;
+  const clientSlotCheck =
+    scheduledDate && scheduledTime && schedulePolicy
+      ? evaluateMealDeliverySlot(scheduledDate, scheduledTime, schedulePolicy)
+      : null;
+  const scheduleError =
+    clientSlotCheck && !clientSlotCheck.allowed
+      ? clientSlotCheck.message
+      : preview?.deliveryAllowed === false
+        ? preview.deliveryPolicyMessage
+        : scheduledDate && !scheduledTime
+          ? 'Select a delivery time.'
+          : null;
   const checkoutBlocked =
-    preview?.deliveryAllowed === false ||
-    (scheduledDate && scheduledTime && preview?.deliveryAllowed === undefined);
+    Boolean(scheduleError) ||
+    (scheduledDate && scheduledTime && preview?.deliveryAllowed === false);
+
+  const handleScheduledDateChange = (value: string) => {
+    setScheduledDate(value);
+    if (scheduledTime && schedulePolicy) {
+      const slot = evaluateMealDeliverySlot(value, scheduledTime, schedulePolicy);
+      if (!slot.allowed) setScheduledTime('');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-orange-50 max-w-md mx-auto pb-24">
@@ -515,7 +549,7 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
             <Input
               type="date"
               value={scheduledDate}
-              onChange={(e) => setScheduledDate(e.target.value)}
+              onChange={(e) => handleScheduledDateChange(e.target.value)}
               min={minDateStr}
               required
             />
@@ -532,10 +566,12 @@ export function MealOrderCheckout({ phone, mealPlanId, vendorId, onBack, onSucce
           </div>
         </div>
         <p className="text-xs text-slate-600 -mt-2">
-          Order at least {leadHours} hour{leadHours === 1 ? '' : 's'} before delivery.{sameDayHint}
+          Order at least {leadHours} hour{leadHours === 1 ? '' : 's'} before delivery.
+          {orderCutoffDisplay ? ` Orders for today must be placed before ${orderCutoffDisplay}.` : ''}
+          {sameDayHint}
         </p>
-        {preview?.deliveryPolicyMessage && preview.deliveryAllowed === false ? (
-          <p className="text-xs text-red-700">{preview.deliveryPolicyMessage}</p>
+        {scheduleError ? (
+          <p className="text-xs text-red-700">{scheduleError}</p>
         ) : null}
 
         <div>

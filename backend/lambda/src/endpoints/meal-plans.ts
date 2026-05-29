@@ -39,6 +39,7 @@ import { parseOrderCutoffHm } from '../utils/meal-product-timing';
 import { resolvePackWeightGramsFromPlanRow } from '../utils/meal-pack-weight';
 import { mergeMealPlanCatalogForApi } from '../utils/meal-product-persistence';
 import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr, resolveMealPurchaseSubtotalInr } from '../utils/meal-order-pricing';
+import { generateMealOrderNumber } from '../utils/meal-order-number';
 import { ensureMealPlanMirrorForProductCheckout, normalizeProductRowToMealPlanShape, resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
 import {
   assertVendorAcceptingMealOrders,
@@ -1464,6 +1465,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       };
       if (moCols.has('purchase_type')) mealOrderRow.purchase_type = expectedPurchaseType;
       if (moCols.has('purchase_snapshot')) mealOrderRow.purchase_snapshot = purchase_snapshot;
+      if (moCols.has('order_number')) mealOrderRow.order_number = generateMealOrderNumber();
       // Snapshot meal_plans.prep_time_minutes so the vendor "Start Preparing" status update can
       // align Pidge promised_prep_time with the catalog declared prep time without a join.
       if (moCols.has('prep_minutes')) {
