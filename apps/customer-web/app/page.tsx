@@ -5,12 +5,12 @@ import { useRouter } from 'next/navigation';
 import { CustomerApp } from '@/components/customer/CustomerApp';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
-import {
-  readProfileCompleted,
-  readOnboardingCompleted,
-  applyUnifiedProfileToCustomerLocalStorage,
-} from '@/lib/customer-flow-guards';
+import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
 import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
+import {
+  ensureCustomerProfileAndPets,
+  resetHomeBootstrapForPhone,
+} from '@/lib/customer-home-bootstrap';
 
 interface CustomerSession {
   phone: string;
@@ -27,7 +27,12 @@ export default function HomePage() {
   const router = useRouter();
   const [session, setSession] = useState<CustomerSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [homeGateReady, setHomeGateReady] = useState(false);
+  const [homeGateReady, setHomeGateReady] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get('service')) return true;
+    return readProfileCompleted() && readOnboardingCompleted();
+  });
   const hasRedirected = useRef(false);
 
   useEffect(() => {
@@ -56,42 +61,29 @@ export default function HomePage() {
       };
       setSession(cachedSession);
       setIsLoading(false);
+      resetHomeBootstrapForPhone(storedPhone);
 
-      // Refresh profile in background; update session when done.
-      (async () => {
-        try {
-          const { apiClient } = require('@/lib/api-client');
-          const profileResponse: any = await apiClient.getOrUndefinedIfNotFound(
-            `/customer/profile/unified/${storedPhone}`
-          );
-          if (profileResponse?.profile) {
-            const data = profileResponse.profile;
-            localStorage.setItem('customerData', JSON.stringify(data));
-            persistCustomerDatabaseId(data);
-            applyUnifiedProfileToCustomerLocalStorage(data, storedPhone);
-            const onboardingStatus = data.onboarding_status || data.onboardingStatus;
-            const effectiveOnboarded = readOnboardingCompleted();
-            setSession({
-              phone: storedPhone,
-              sessionToken: storedToken,
-              verified: true,
-              customer: data,
-              hasCompletedOnboarding: effectiveOnboarded,
-              hasPets: !!(data.pets?.length),
-              isNewUser: !effectiveOnboarded && (onboardingStatus === 'INIT' || onboardingStatus === 'PHONE_VERIFIED'),
-            });
-          }
-        } catch (apiError: any) {
-          if (
-            apiError?.code !== 'CORS_ERROR' &&
-            apiError?.statusCode !== 404 &&
-            typeof window !== 'undefined' &&
-            process.env.NODE_ENV === 'development'
-          ) {
-            console.error('Error fetching customer profile (background):', apiError);
-          }
-        }
-      })();
+      // Single coordinated profile + pets refresh (deduped with home bootstrap).
+      void ensureCustomerProfileAndPets(storedPhone).refreshPromise.then((result) => {
+        const data = result.profile;
+        if (!data) return;
+        localStorage.setItem('customerData', JSON.stringify(data));
+        persistCustomerDatabaseId(data);
+        const onboardingStatus = data.onboarding_status || data.onboardingStatus;
+        const effectiveOnboarded = readOnboardingCompleted();
+        const pets = result.pets.length > 0 ? result.pets : data.pets;
+        setSession({
+          phone: storedPhone,
+          sessionToken: storedToken,
+          verified: true,
+          customer: { ...data, pets },
+          hasCompletedOnboarding: effectiveOnboarded,
+          hasPets: !!(Array.isArray(pets) && pets.length),
+          isNewUser:
+            !effectiveOnboarded &&
+            (onboardingStatus === 'INIT' || onboardingStatus === 'PHONE_VERIFIED'),
+        });
+      });
       return;
     }
 
@@ -145,7 +137,10 @@ export default function HomePage() {
     return null; 
   }
 
-  if (!homeGateReady) {
+  const skipGateSpinner =
+    typeof window !== 'undefined' && readProfileCompleted() && readOnboardingCompleted();
+
+  if (!homeGateReady && !skipGateSpinner) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-center">

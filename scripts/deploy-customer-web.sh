@@ -196,10 +196,12 @@ if [ "$PROD" = true ]; then
 EOF
 else
   cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
-// Runtime Configuration for Warmpawz ${APP_NAME}
+// Runtime Configuration for Warmpawz ${APP_NAME} (DEV)
 (function() {
+  'use strict';
+  var existing = window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
   window.__WARMPAWZ_RUNTIME_CONFIG__ = Object.assign(
-    window.__WARMPAWZ_RUNTIME_CONFIG__ || {},
+    existing,
     {
       apiBaseUrl: "${API_BASE_URL}",
       uatMode: true,
@@ -215,7 +217,10 @@ else
       customerMealPlansEnabled: ${CMP_JS}
     }
   );
-  console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
+  if (existing.customerMealPlansEnabled !== undefined) {
+    window.__WARMPAWZ_RUNTIME_CONFIG__.customerMealPlansEnabled = existing.customerMealPlansEnabled;
+  }
+  console.log('🔧 Runtime config loaded (DEV):', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
 EOF
 fi

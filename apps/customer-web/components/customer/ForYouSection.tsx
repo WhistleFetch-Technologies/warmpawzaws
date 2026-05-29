@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { RefreshCw, Star, Sparkles, Gift, ChevronRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { readHomeSessionCache, writeHomeSessionCache } from '@/lib/home-session-cache';
+import { scheduleIdleWork } from '@/lib/schedule-idle';
 
 interface PreviousProvider {
   id: string;
@@ -32,60 +33,116 @@ const SERVICE_TYPES: { key: string; label: string; screen: string }[] = [
   { key: 'boarding', label: 'Boarding', screen: 'boarding' },
 ];
 
+interface CachedForYou {
+  recommendedServices?: any[];
+  previousProviders?: PreviousProvider[];
+}
+
 export function ForYouSection({ phone, hotDeals = [], banners = [], onNavigate }: ForYouSectionProps) {
-  const [previousProviders, setPreviousProviders] = useState<PreviousProvider[]>([]);
-  const [recommendedServices, setRecommendedServices] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = readHomeSessionCache<CachedForYou>(phone, 'for_you') ?? {};
+  const [previousProviders, setPreviousProviders] = useState<PreviousProvider[]>(
+    () => cached.previousProviders ?? []
+  );
+  const [recommendedServices, setRecommendedServices] = useState<any[]>(
+    () => cached.recommendedServices ?? []
+  );
+  const [loading, setLoading] = useState(
+    () => !(cached.previousProviders?.length || cached.recommendedServices?.length)
+  );
   const ecommerceEnabled = isCustomerEcommerceEnabled();
   const visibleHotDeals = ecommerceEnabled ? hotDeals : [];
 
-  // Phase 4: Service recommendations (when API exists - hide on 404/fail)
   useEffect(() => {
-    const loadRecommendations = async () => {
-      if (!phone) return;
-      try {
-        const res = await apiClient.get<any>(`/customer/${phone}/recommended-services`).catch(() => null);
-        if (res?.services && Array.isArray(res.services) && res.services.length > 0) {
-          setRecommendedServices(res.services.slice(0, 3));
+    if (!phone) {
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const hadCache = Boolean(
+      cached.previousProviders?.length || cached.recommendedServices?.length
+    );
+
+    const cancelIdle = scheduleIdleWork(() => {
+      if (cancelled) return;
+
+      const loadRecommendations = async () => {
+        try {
+          const res = await apiClient
+            .get<any>(`/customer/${phone}/recommended-services`)
+            .catch(() => null);
+          if (res?.services && Array.isArray(res.services) && res.services.length > 0) {
+            const next = res.services.slice(0, 3);
+            if (!cancelled) {
+              setRecommendedServices(next);
+              writeHomeSessionCache(phone, 'for_you', {
+                ...readHomeSessionCache<CachedForYou>(phone, 'for_you'),
+                recommendedServices: next,
+              });
+            }
+          }
+        } catch {
+          /* API may not exist yet */
         }
-      } catch { /* API may not exist yet */ }
-    };
-    loadRecommendations();
-  }, [phone]);
+      };
 
-  useEffect(() => {
-    const load = async () => {
-      if (!phone) { setLoading(false); return; }
-      setLoading(true);
-      try {
-        const results: PreviousProvider[] = [];
-        await Promise.all(
-          SERVICE_TYPES.map(async ({ key, label, screen: screenName }) => {
-            try {
-              const res = await apiClient.get<any>(`/customer/${phone}/previous-providers?serviceType=${key}`);
-              if (res?.provider) {
-                results.push({
-                  id: res.provider.id,
-                  name: res.provider.businessName || res.provider.name,
-                  photo: res.provider.photo,
-                  rating: res.provider.rating,
-                  lastVisit: res.provider.lastVisit,
-                  serviceType: key,
-                  serviceLabel: label,
-                  screen: screenName,
-                });
+      const loadPrevious = async () => {
+        if (!hadCache) setLoading(true);
+        try {
+          const results: PreviousProvider[] = [];
+          await Promise.all(
+            SERVICE_TYPES.map(async ({ key, label, screen: screenName }) => {
+              try {
+                const res = await apiClient.get<any>(
+                  `/customer/${phone}/previous-providers?serviceType=${key}`
+                );
+                if (res?.provider) {
+                  results.push({
+                    id: res.provider.id,
+                    name: res.provider.businessName || res.provider.name,
+                    photo: res.provider.photo,
+                    rating: res.provider.rating,
+                    lastVisit: res.provider.lastVisit,
+                    serviceType: key,
+                    serviceLabel: label,
+                    screen: screenName,
+                  });
+                }
+              } catch {
+                /* ignore */
               }
-            } catch { /* ignore */ }
-          })
-        );
-        setPreviousProviders(results.slice(0, 3));
-      } catch { /* ignore */ }
-      finally { setLoading(false); }
+            })
+          );
+          const next = results.slice(0, 3);
+          if (!cancelled) {
+            setPreviousProviders(next);
+            writeHomeSessionCache(phone, 'for_you', {
+              ...readHomeSessionCache<CachedForYou>(phone, 'for_you'),
+              previousProviders: next,
+            });
+          }
+        } catch {
+          /* ignore */
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      };
+
+      void loadRecommendations();
+      void loadPrevious();
+    });
+
+    return () => {
+      cancelled = true;
+      cancelIdle();
     };
-    load();
   }, [phone]);
 
-  const hasContent = previousProviders.length > 0 || visibleHotDeals.length > 0 || banners.length > 0 || recommendedServices.length > 0;
+  const hasContent =
+    previousProviders.length > 0 ||
+    visibleHotDeals.length > 0 ||
+    banners.length > 0 ||
+    recommendedServices.length > 0;
   if (!hasContent && !loading) return null;
 
   return (
@@ -95,7 +152,6 @@ export function ForYouSection({ phone, hotDeals = [], banners = [], onNavigate }
         <h2 className="text-gray-900 text-sm font-semibold">For you</h2>
       </div>
       <div className="space-y-3">
-        {/* Featured / Banners (Phase 3) */}
         {banners.length > 0 && (
           <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
             {banners.slice(0, 3).map((banner: any, idx: number) => (
@@ -131,7 +187,6 @@ export function ForYouSection({ phone, hotDeals = [], banners = [], onNavigate }
           </div>
         )}
 
-        {/* Book again */}
         {loading ? (
           <div className="h-16 bg-gray-100 rounded-xl animate-pulse" />
         ) : previousProviders.length > 0 ? (
@@ -169,7 +224,6 @@ export function ForYouSection({ phone, hotDeals = [], banners = [], onNavigate }
           </div>
         ) : null}
 
-        {/* Phase 4: Recommended for you (when API returns data) */}
         {recommendedServices.length > 0 && (
           <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
             {recommendedServices.map((s: any, idx: number) => (
@@ -189,7 +243,6 @@ export function ForYouSection({ phone, hotDeals = [], banners = [], onNavigate }
           </div>
         )}
 
-        {/* Deals */}
         {visibleHotDeals.length > 0 && (
           <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1">
             {visibleHotDeals.slice(0, 2).map((deal: any, idx: number) => (

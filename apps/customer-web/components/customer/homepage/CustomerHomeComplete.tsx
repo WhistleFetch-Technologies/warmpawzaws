@@ -36,7 +36,7 @@ import { useCustomerCategories } from '@/hooks/useCustomerCategories';
 import type { TrackingStatus } from '../VendorOnTheWayPopup';
 import { CustomerHomeCompleteProps, Pet, UserData } from './constants/interface';
 import { defaultBanners, defaultGroomingServices, defaultVetServices, quickServices, serviceNavigationMap, serviceScreenMap } from './constants';
-import { adoptionOptions, petFoodSpotlightBrands, serviceBaseOnpincode } from './constants/helpers';
+import { adoptionOptions, petFoodSpotlightBrands } from './constants/helpers';
 import { useActiveVideoCall } from '@/hooks/useActiveTeleTracking';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
@@ -54,19 +54,35 @@ import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '
 import { toast } from 'sonner';
 import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
-
-function customerHomeIconForShopCategory(name: string) {
-  const n = name.toLowerCase();
-  if (n.includes('food')) return <Bone className="w-5 h-5 text-orange-500" />;
-  if (n.includes('toy')) return <Dog className="w-5 h-5 text-blue-500" />;
-  if (n.includes('cloth')) return <Shirt className="w-5 h-5 text-teal-500" />;
-  if (n.includes('accessor')) return <Watch className="w-5 h-5 text-pink-500" />;
-  if (n.includes('medic')) return <Pill className="w-5 h-5 text-red-500" />;
-  if (n.includes('groom')) return <Scissors className="w-5 h-5 text-purple-500" />;
-  if (n.includes('bed')) return <Bed className="w-5 h-5 text-indigo-500" />;
-  if (n.includes('bowl')) return <UtensilsCrossed className="w-5 h-5 text-green-500" />;
-  return <ShoppingBag className="w-5 h-5 text-[#FF8C42]" />;
-}
+import { isNewHomeUiEnabled } from '@/lib/customer-new-home-ui-flag';
+import { CustomerHomePageContent, CustomerHomePageHeader } from '../home/CustomerHomePage';
+import { MoreServicesSection } from '../home/sections/MoreServicesSection';
+import {
+  hydrateInitialUserData,
+  readCachedPetsFromStorage,
+  readCachedProfileName,
+} from '../home/hooks/useHomePageData';
+import { HOME_CONTENT_SHELL_CLASS } from '../home/shared/HomeContentShell';
+import { buildHomeTopCarouselBanners } from '../home/utils/banner-utils';
+import { customerHomeIconForShopCategory } from '../home/utils/shop-category-icons';
+import type { QuickServiceTile } from '../home/types';
+import { resolveCustomerLocation } from '@/lib/customer-location';
+import type { CustomerLocation } from '@/lib/customer-location';
+import {
+  readHomeSessionCache,
+  writeHomeSessionCache,
+  rehydrateLaunchTilesFromCache,
+  serializeLaunchTiles,
+  type CachedHomeDynamicContent,
+  type CachedHomeServices,
+} from '@/lib/home-session-cache';
+import { scheduleIdleWork } from '@/lib/schedule-idle';
+import {
+  ensureCustomerProfileAndPets,
+  getHomeBootstrapReady,
+  refreshHomeDynamicContent,
+  scheduleHomeDeferredWork,
+} from '@/lib/customer-home-bootstrap';
 
 // ============================================================================
 // PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
@@ -228,16 +244,15 @@ export function CustomerHomeComplete({
   hideHeaderFooter = false // ✅ NEW: Default to showing header/footer
 }: CustomerHomeCompleteProps) {
   const router = useRouter();
-  const [userData, setUserData] = useState<UserData>({
-    name: 'User',
-    phone: '',
-    pets: []
+  const [userData, setUserData] = useState<UserData>(() => hydrateInitialUserData(phone));
+  const [selectedPet, setSelectedPet] = useState<Pet | null>(() => {
+    const pets = readCachedPetsFromStorage();
+    return pets[0] ?? null;
   });
-  const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [petsLoading, setPetsLoading] = useState(() => readCachedPetsFromStorage().length === 0);
   const [currentView, setCurrentView] = useState<'home' | 'profile' | 'pet-details' | 'add-pet'>('home');
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
-  const [userProfilePhoto, setUserProfilePhoto] = useState<string>('');
+  const [userProfilePhoto, setUserProfilePhoto] = useState<string>(() => readCachedProfileName(phone).photo || '');
   const [currentBanner, setCurrentBanner] = useState(0);
   const [currentMiddleBanner, setCurrentMiddleBanner] = useState(0);
   const heroBannerTouchStartX = useRef<number | null>(null);
@@ -247,15 +262,34 @@ export function CustomerHomeComplete({
   const [newPetData, setNewPetData] = useState({ name: '', type: 'Dog', breed: '', age: '', gender: 'male' });
   const [savingPet, setSavingPet] = useState(false);
   const [dashboardConfig, setDashboardConfig] = useState<any>(null);
-  const [filteredQuickServices, setFilteredQuickServices] = useState<any[]>([]);
+  const [filteredQuickServices, setFilteredQuickServices] = useState<any[]>(() =>
+    rehydrateLaunchTilesFromCache(
+      readHomeSessionCache<{ tiles: ReturnType<typeof serializeLaunchTiles> }>(phone, 'launch_tiles')?.tiles
+    )
+  );
   /** After a successful geography launch-config fetch, the grid uses `filteredQuickServices` even when empty (all hidden). Before that, show the full catalog. */
-  const [serviceLaunchTilesResolved, setServiceLaunchTilesResolved] = useState(false);
+  const [serviceLaunchTilesResolved, setServiceLaunchTilesResolved] = useState(() => {
+    const cached = readHomeSessionCache<{ tiles: unknown[] }>(phone, 'launch_tiles');
+    return (cached?.tiles?.length ?? 0) > 0;
+  });
 
   // Dynamic service data from API (replacing hardcoded mock data)
-  const [groomingServices, setGroomingServices] = useState<any[]>([]);
-  const [vetServicesData, setVetServicesData] = useState<any[]>([]);
-  const [hotDeals, setHotDeals] = useState<any[]>([]);
-  const [servicesLoading, setServicesLoading] = useState(true);
+  const cachedHomeServices = readHomeSessionCache<CachedHomeServices>(phone, 'services');
+  const [groomingServices, setGroomingServices] = useState<any[]>(
+    () => cachedHomeServices?.groomingServices ?? []
+  );
+  const [vetServicesData, setVetServicesData] = useState<any[]>(
+    () => cachedHomeServices?.vetServicesData ?? []
+  );
+  const [hotDeals, setHotDeals] = useState<any[]>(() => cachedHomeServices?.hotDeals ?? []);
+  const [servicesLoading, setServicesLoading] = useState(() => {
+    if (!cachedHomeServices) return true;
+    return !(
+      (cachedHomeServices.groomingServices?.length ?? 0) > 0 ||
+      (cachedHomeServices.vetServicesData?.length ?? 0) > 0 ||
+      (cachedHomeServices.hotDeals?.length ?? 0) > 0
+    );
+  });
   /** Live min price across vendors offering tele consultation (for the home Tele Consult tile). */
   const [teleMinPrice, setTeleMinPrice] = useState<number | null>(null);
   /** Live min price across vendors offering at-home vet visits (for the home Vet at Home tile). */
@@ -345,37 +379,42 @@ export function CustomerHomeComplete({
    */
   useEffect(() => {
     let cancelled = false;
-    const fetchMinPrice = async (style: 'tele' | 'at_home' | 'at_center'): Promise<number | null> => {
-      try {
-        const res = await apiClient.get<any>(
-          `/customer/services/by-style?style=${style}&category=vet`
-        );
-        const providers = res?.providers || res?.vendors || [];
-        const prices: number[] = [];
-        for (const p of providers) {
-          for (const s of (p?.services || [])) {
-            const n = Number(s?.price ?? s?.custom_price);
-            if (Number.isFinite(n) && n > 0) prices.push(n);
+    const cancelIdle = scheduleIdleWork(() => {
+      const fetchMinPrice = async (style: 'tele' | 'at_home' | 'at_center'): Promise<number | null> => {
+        try {
+          const res = await apiClient.get<any>(
+            `/customer/services/by-style?style=${style}&category=vet`
+          );
+          const providers = res?.providers || res?.vendors || [];
+          const prices: number[] = [];
+          for (const p of providers) {
+            for (const s of (p?.services || [])) {
+              const n = Number(s?.price ?? s?.custom_price);
+              if (Number.isFinite(n) && n > 0) prices.push(n);
+            }
           }
+          return prices.length > 0 ? Math.min(...prices) : null;
+        } catch (e) {
+          console.warn(`[CustomerHomeComplete] vet ${style} min price fetch failed`, e);
+          return null;
         }
-        return prices.length > 0 ? Math.min(...prices) : null;
-      } catch (e) {
-        console.warn(`[CustomerHomeComplete] vet ${style} min price fetch failed`, e);
-        return null;
-      }
+      };
+      void (async () => {
+        const [tele, atHome, atCenter] = await Promise.all([
+          fetchMinPrice('tele'),
+          fetchMinPrice('at_home'),
+          fetchMinPrice('at_center'),
+        ]);
+        if (cancelled) return;
+        if (tele != null) setTeleMinPrice(tele);
+        if (atHome != null) setVetHomeMinPrice(atHome);
+        if (atCenter != null) setClinicMinPrice(atCenter);
+      })();
+    });
+    return () => {
+      cancelled = true;
+      cancelIdle();
     };
-    (async () => {
-      const [tele, atHome, atCenter] = await Promise.all([
-        fetchMinPrice('tele'),
-        fetchMinPrice('at_home'),
-        fetchMinPrice('at_center'),
-      ]);
-      if (cancelled) return;
-      if (tele != null) setTeleMinPrice(tele);
-      if (atHome != null) setVetHomeMinPrice(atHome);
-      if (atCenter != null) setClinicMinPrice(atCenter);
-    })();
-    return () => { cancelled = true; };
   }, []);
 
   const persistAiFabOffset = useCallback(
@@ -482,44 +521,65 @@ export function CustomerHomeComplete({
   const [activeOrderTracking, setActiveOrderTracking] = useState<any | null>(null);
 
   // Dynamic content from CMS
-  const [dynamicBanners, setDynamicBanners] = useState<any[]>([]);
-  const [dynamicMiddleBanners, setDynamicMiddleBanners] = useState<any[]>([]);
-  const [dynamicLowerBanners, setDynamicLowerBanners] = useState<any[]>([]);
-  const [dynamicArticles, setDynamicArticles] = useState<any[]>([]);
-  const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>([]);
-  const [adoptionStats, setAdoptionStats] = useState({ adoptablePets: 50, rehomingListings: 20 });
+  const cachedHomeDynamic = readHomeSessionCache<CachedHomeDynamicContent>(phone, 'dynamic_content');
+  const [dynamicBanners, setDynamicBanners] = useState<any[]>(
+    () => cachedHomeDynamic?.dynamicBanners ?? []
+  );
+  const [dynamicMiddleBanners, setDynamicMiddleBanners] = useState<any[]>(
+    () => cachedHomeDynamic?.dynamicMiddleBanners ?? []
+  );
+  const [dynamicLowerBanners, setDynamicLowerBanners] = useState<any[]>(
+    () => cachedHomeDynamic?.dynamicLowerBanners ?? []
+  );
+  const [dynamicArticles, setDynamicArticles] = useState<any[]>(
+    () => cachedHomeDynamic?.dynamicArticles ?? []
+  );
+  const [dynamicAnnouncements, setDynamicAnnouncements] = useState<any[]>(
+    () => cachedHomeDynamic?.dynamicAnnouncements ?? []
+  );
+  const [adoptionStats, setAdoptionStats] = useState(() => {
+    const cached = cachedHomeDynamic?.adoptionStats;
+    return {
+      adoptablePets: cached?.adoptablePets ?? 50,
+      rehomingListings: cached?.rehomingListings ?? 20,
+    };
+  });
   const [ecommerceShopCategories, setEcommerceShopCategories] = useState<Array<{ id: string; name: string }>>(
     [],
   );
   // Evaluated lazily so runtime-config.js (which runs before hydration) is already applied.
   const [customerCommerceEnabled] = useState<boolean>(() => isCustomerEcommerceEnabled());
+  const [newHomeUi] = useState<boolean>(() => isNewHomeUiEnabled());
 
   useEffect(() => {
     if (!customerCommerceEnabled) return;
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>('/ecommerce/categories');
-        const raw = res?.categories;
-        if (cancelled || !Array.isArray(raw)) return;
-        const mapped = raw
-          .map((c) => {
-            const id = String(
-              c.id ?? c.category_id ?? c.uuid ?? '',
-            ).trim();
-            const name = String(
-              c.name ?? c.title ?? c.display_name ?? 'Category',
-            ).trim();
-            return { id, name };
-          })
-          .filter((c) => c.id);
-        if (!cancelled) setEcommerceShopCategories(mapped);
-      } catch {
-        if (!cancelled) setEcommerceShopCategories([]);
-      }
-    })();
+    const cancelIdle = scheduleIdleWork(() => {
+      void (async () => {
+        try {
+          const res = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>('/ecommerce/categories');
+          const raw = res?.categories;
+          if (cancelled || !Array.isArray(raw)) return;
+          const mapped = raw
+            .map((c) => {
+              const id = String(
+                c.id ?? c.category_id ?? c.uuid ?? '',
+              ).trim();
+              const name = String(
+                c.name ?? c.title ?? c.display_name ?? 'Category',
+              ).trim();
+              return { id, name };
+            })
+            .filter((c) => c.id);
+          if (!cancelled) setEcommerceShopCategories(mapped);
+        } catch {
+          if (!cancelled) setEcommerceShopCategories([]);
+        }
+      })();
+    });
     return () => {
       cancelled = true;
+      cancelIdle();
     };
   }, [customerCommerceEnabled]);
 
@@ -549,6 +609,71 @@ export function CustomerHomeComplete({
       onNavigate?.(d, data);
     },
     [onNavigate, router]
+  );
+
+  const handleSearchSubmit = useCallback(
+    (searchQuery: string) => {
+      if (searchQuery?.trim()) {
+        router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      }
+    },
+    [router]
+  );
+
+  const handleSearchResultSelect = useCallback(
+    (result: Parameters<NonNullable<React.ComponentProps<typeof EnhancedSearchBar>['onResultSelect']>>[0]) => {
+      if (result.type === 'symptom') {
+        const d = result.data || {};
+        handleNavigation('services_by_problem', {
+          problemId: d.specializationId || result.id,
+          problemTitle: d.name || 'Consult',
+          roleId: d.roleId || 'vet_solo',
+          category: d.categoryId,
+          problem: {
+            allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(d.allowedServiceStyles, {
+              roleId: d.roleId || 'vet_solo',
+              specializationId: d.specializationId || result.id,
+              categoryHint: d.categoryId,
+            }),
+            name: d.name,
+            roleId: d.roleId,
+            category: d.categoryId,
+          },
+        });
+        return;
+      }
+      if (result.type === 'staff' || result.type === 'vendor' || result.type === 'center') {
+        const vendorId = String(result.id || '').trim();
+        if (vendorId) {
+          router.push(`/search?vendorId=${encodeURIComponent(vendorId)}`);
+        } else {
+          const serviceType = result.data?.serviceType || result.data?.services?.[0] || 'vet';
+          handleNavigation(serviceType);
+        }
+        return;
+      }
+      if (result.type === 'service') {
+        const sid = String(result.id || '').trim();
+        if (sid) {
+          router.push(`/booking/${encodeURIComponent(sid)}`);
+        }
+        return;
+      }
+      if (result.type === 'product') {
+        if (!isCustomerEcommerceEnabled()) {
+          toast.info('Shop is coming soon.');
+          return;
+        }
+        handleNavigation('shop');
+        return;
+      }
+      const category = result.category || result.data?.serviceType || result.data?.category || '';
+      if (category) {
+        const targetScreen = serviceNavigationMap[category.toLowerCase()] || 'services';
+        handleNavigation(targetScreen);
+      }
+    },
+    [handleNavigation, router]
   );
 
   const handleBannerClick = useCallback(
@@ -748,50 +873,14 @@ export function CustomerHomeComplete({
 
   sourceQuickServices = deduplicatedServices;
 
-  useEffect(() => {
-    loadUserData();
-    loadServicesFromAPI();
-    loadDynamicContent();
-  }, [phone, refreshKey]); // Add refreshKey to dependencies
-
-  const resolveCustomerLocation = async (): Promise<{ city: string; state: string }> => {
-    let city = '';
-    let state = '';
-    try {
-      const addressesResponse = (await apiClient
-        .get(`/customer/addresses?phone=${encodeURIComponent(phone)}`)
-        .catch(() => null)) as any;
-      const addresses = addressesResponse?.addresses || [];
-      const defaultAddress = addresses.find((a: any) => a.isDefault) || addresses[0];
-      if (defaultAddress) {
-        city = (defaultAddress.city || '').trim();
-        state = (defaultAddress.state || '').trim();
-      }
-    } catch {
-      // Keep legacy fallback behavior
-    }
-
-    if (!city || !state) {
-      try {
-        const profileResponse = await apiClient
-          .get(`/customer/profile?phone=${encodeURIComponent(phone)}`)
-          .catch(() => null);
-        const profile = profileResponse as any;
-        const profileLocation = serviceBaseOnpincode(profile, profile?.pincode || '');
-        if (!city && profileLocation.city) city = String(profileLocation.city).trim();
-        if (!state && profileLocation.state) state = String(profileLocation.state).trim();
-      } catch {
-        // Keep legacy fallback behavior
-      }
-    }
-
-    return { city, state };
+  const persistLaunchTilesCache = (tiles: any[]) => {
+    writeHomeSessionCache(phone, 'launch_tiles', { tiles: serializeLaunchTiles(tiles) });
   };
 
   // Load dynamic content (banners, articles, announcements)
-  const loadDynamicContent = async () => {
+  const loadDynamicContent = async (location: CustomerLocation) => {
     try {
-      const { city: customerCity, state: customerState } = await resolveCustomerLocation();
+      const { city: customerCity, state: customerState } = location;
       const bannerQuery = new URLSearchParams({ limit: '20' });
       if (customerState) bannerQuery.append('state', customerState);
       if (customerCity) bannerQuery.append('city', customerCity);
@@ -829,6 +918,13 @@ export function CustomerHomeComplete({
         }) as any[];
       };
 
+      let nextTopBanners: any[] | undefined;
+      let nextMiddleBanners: any[] | undefined;
+      let nextLowerBanners: any[] | undefined;
+      let nextArticles: any[] | undefined;
+      let nextAnnouncements: any[] | undefined;
+      let nextAdoptionStats: { adoptablePets: number; rehomingListings: number } | undefined;
+
       // Handle banners (support alternate response shapes; dedupe by id)
       if (bannersResp.status === 'fulfilled') {
         const v = bannersResp.value as Record<string, unknown> | null | undefined;
@@ -838,7 +934,8 @@ export function CustomerHomeComplete({
             (v!.data as { banners: unknown[] }).banners) ||
           [];
         if (rawList.length > 0) {
-          setDynamicBanners(dedupeBannerList(rawList));
+          nextTopBanners = dedupeBannerList(rawList);
+          setDynamicBanners(nextTopBanners);
         }
       } else if (bannersResp.status === 'rejected') {
         const error = bannersResp.reason;
@@ -855,7 +952,9 @@ export function CustomerHomeComplete({
           (Array.isArray((v?.data as Record<string, unknown>)?.banners) &&
             (v!.data as { banners: unknown[] }).banners) ||
           [];
-        setDynamicMiddleBanners(rawList.length > 0 ? dedupeBannerList(rawList) : []);
+        const middleList = rawList.length > 0 ? dedupeBannerList(rawList) : [];
+        nextMiddleBanners = middleList;
+        setDynamicMiddleBanners(middleList);
       } else if (middleBannersResp.status === 'rejected') {
         const error = middleBannersResp.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
@@ -870,7 +969,9 @@ export function CustomerHomeComplete({
           (Array.isArray((v?.data as Record<string, unknown>)?.banners) &&
             (v!.data as { banners: unknown[] }).banners) ||
           [];
-        setDynamicLowerBanners(rawList.length > 0 ? dedupeBannerList(rawList) : []);
+        const lowerList = rawList.length > 0 ? dedupeBannerList(rawList) : [];
+        nextLowerBanners = lowerList;
+        setDynamicLowerBanners(lowerList);
       } else if (lowerBannersResp.status === 'rejected') {
         const error = lowerBannersResp.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
@@ -880,7 +981,8 @@ export function CustomerHomeComplete({
 
       // Handle articles
       if (articlesResp.status === 'fulfilled' && articlesResp.value?.articles?.length > 0) {
-        setDynamicArticles(articlesResp.value.articles);
+        nextArticles = articlesResp.value.articles;
+        setDynamicArticles(nextArticles);
       } else if (articlesResp.status === 'rejected') {
         const error = articlesResp.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
@@ -890,7 +992,8 @@ export function CustomerHomeComplete({
 
       // Handle announcements
       if (announcementsResp.status === 'fulfilled' && announcementsResp.value?.announcements?.length > 0) {
-        setDynamicAnnouncements(announcementsResp.value.announcements);
+        nextAnnouncements = announcementsResp.value.announcements;
+        setDynamicAnnouncements(nextAnnouncements);
       } else if (announcementsResp.status === 'rejected') {
         const error = announcementsResp.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
@@ -904,10 +1007,11 @@ export function CustomerHomeComplete({
         setAdoptionStats((prev) => {
           const ap = Number(s.adoptablePets);
           const rh = Number(s.rehomingListings);
-          return {
+          nextAdoptionStats = {
             adoptablePets: Number.isFinite(ap) ? ap : prev.adoptablePets,
             rehomingListings: Number.isFinite(rh) ? rh : prev.rehomingListings,
           };
+          return nextAdoptionStats;
         });
       } else if (adoptionResp.status === 'rejected') {
         const error = adoptionResp.reason;
@@ -915,6 +1019,18 @@ export function CustomerHomeComplete({
           console.warn('Failed to load adoption stats:', error.message);
         }
       }
+
+      const previousDynamic =
+        readHomeSessionCache<CachedHomeDynamicContent>(phone, 'dynamic_content') ?? {};
+      writeHomeSessionCache(phone, 'dynamic_content', {
+        ...previousDynamic,
+        ...(nextTopBanners?.length ? { dynamicBanners: nextTopBanners } : {}),
+        ...(nextMiddleBanners ? { dynamicMiddleBanners: nextMiddleBanners } : {}),
+        ...(nextLowerBanners ? { dynamicLowerBanners: nextLowerBanners } : {}),
+        ...(nextArticles?.length ? { dynamicArticles: nextArticles } : {}),
+        ...(nextAnnouncements?.length ? { dynamicAnnouncements: nextAnnouncements } : {}),
+        ...(nextAdoptionStats ? { adoptionStats: nextAdoptionStats } : {}),
+      });
 
     } catch (error: any) {
       // Only log if it's not a CORS error
@@ -927,8 +1043,9 @@ export function CustomerHomeComplete({
 
   // Load real services from API
   const loadServicesFromAPI = async () => {
+    const hadCachedServices = Boolean(readHomeSessionCache<CachedHomeServices>(phone, 'services'));
     try {
-      setServicesLoading(true);
+      if (!hadCachedServices) setServicesLoading(true);
 
       let locationParams = '';
       if (typeof window !== 'undefined') {
@@ -958,6 +1075,10 @@ export function CustomerHomeComplete({
         productRequest,
       ]);
 
+      let nextGrooming: any[] | undefined;
+      let nextVet: any[] | undefined;
+      let nextHotDeals: any[] | undefined;
+
       // Handle grooming services
       if (groomingResult.status === 'fulfilled') {
         const groomingResp = groomingResult.value;
@@ -973,7 +1094,10 @@ export function CustomerHomeComplete({
             description: s.description || 'Professional grooming service',
             vendorId: s.vendorId
           }));
-          if (mappedGrooming.length > 0) setGroomingServices(mappedGrooming);
+          if (mappedGrooming.length > 0) {
+            nextGrooming = mappedGrooming;
+            setGroomingServices(mappedGrooming);
+          }
         }
       } else if (groomingResult.status === 'rejected') {
         const error = groomingResult.reason;
@@ -996,7 +1120,10 @@ export function CustomerHomeComplete({
             type: s.serviceStyle === 'at_home' ? 'visit' : s.serviceStyle === 'tele' ? 'video' : 'clinic',
             vendorId: s.vendorId
           }));
-          if (mappedVet.length > 0) setVetServicesData(mappedVet);
+          if (mappedVet.length > 0) {
+            nextVet = mappedVet;
+            setVetServicesData(mappedVet);
+          }
         }
       } else if (vetResult.status === 'rejected') {
         const error = vetResult.reason;
@@ -1017,30 +1144,49 @@ export function CustomerHomeComplete({
             const mappedDeals = featuredProducts.slice(0, 3).map((p: any) => {
               const rc = Number(p.reviewCount ?? p.review_count ?? 0) || 0;
               const rt = p.rating != null && p.rating !== '' ? Number(p.rating) : NaN;
+              const salePrice = Number(p.salePrice ?? p.price);
+              const priceValue = Number.isFinite(salePrice) && salePrice > 0 ? salePrice : 999;
+              const images = p.images as string[] | undefined;
               return {
                 id: p.id,
                 title: p.name || 'Pet Products',
-                price: `₹${p.salePrice || p.price || 999}`,
+                price: `₹${priceValue}`,
+                priceValue,
                 originalPrice: p.originalPrice ? `₹${p.originalPrice}` : null,
                 discount: p.discountPercent ? `${p.discountPercent}% OFF` : null,
                 iconType: 'product',
                 rating: rc > 0 && Number.isFinite(rt) && rt > 0 ? rt : undefined,
                 reviewCount: rc,
+                image: Array.isArray(images) && images[0] ? String(images[0]) : undefined,
               };
             });
+            nextHotDeals = mappedDeals;
             setHotDeals(mappedDeals);
           } else {
+            nextHotDeals = [];
             setHotDeals([]);
           }
         } else {
+          nextHotDeals = [];
           setHotDeals([]);
         }
       } else if (productsResult.status === 'rejected') {
+        nextHotDeals = [];
         setHotDeals([]);
         const error = productsResult.reason;
         if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
           console.warn('Failed to load products:', error.message);
         }
+      }
+
+      if (nextGrooming || nextVet || nextHotDeals) {
+        const previousServices = readHomeSessionCache<CachedHomeServices>(phone, 'services') ?? {};
+        writeHomeSessionCache(phone, 'services', {
+          ...previousServices,
+          ...(nextGrooming?.length ? { groomingServices: nextGrooming } : {}),
+          ...(nextVet?.length ? { vetServicesData: nextVet } : {}),
+          ...(nextHotDeals ? { hotDeals: nextHotDeals } : {}),
+        });
       }
     } catch (error: any) {
       if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
@@ -1052,281 +1198,241 @@ export function CustomerHomeComplete({
   };
 
   // Load service launch config - controls service visibility based on GEOGRAPHY
-  // Services can be: hidden, coming_soon, beta, or launched per state/city
-  // Until the customer endpoint succeeds, the grid shows the full catalog; after success,
-  // `filteredQuickServices` is authoritative (may be empty when nothing is launched).
-  // Get customer's location from default address (most accurate) or profile fallback
-  useEffect(() => {
-    const loadServiceLaunchConfig = async () => {
-      try {
+  const runServiceLaunchConfig = async (location: CustomerLocation, resetTiles: boolean) => {
+    try {
+      if (resetTiles) {
         setServiceLaunchTilesResolved(false);
+      }
 
-        let customerCity = '';
-        let customerState = '';
+      const customerCity = location.city;
+      const customerState = location.state;
 
-        // ✅ PRIORITY 1: Fetch default address for accurate location detection
-        // Default address is the most reliable source for customer's current location
-        try {
-          const addressesResponse = (await apiClient
-            .get(`/customer/addresses?phone=${encodeURIComponent(phone)}`)
-            .catch(() => null)) as any;
-          
-          const addresses = addressesResponse?.addresses || [];
-          
-          // Use default address first, then fall back to first address
-          const defaultAddress = addresses.find((a: any) => a.isDefault) || addresses[0];
-          
-          if (defaultAddress) {
-            customerCity = defaultAddress.city || '';
-            customerState = defaultAddress.state || '';
-            
-            console.log('[ServiceLaunchConfig] Using default address location:', {
-              city: customerCity,
-              state: customerState,
-              addressId: defaultAddress.id,
-            });
-          }
-        } catch (error) {
-          console.warn('[ServiceLaunchConfig] Could not fetch addresses for location detection:', error);
+      const params = new URLSearchParams();
+      if (customerState) params.append('state', customerState);
+      if (customerCity) params.append('city', customerCity);
+
+      const configResponse = await apiClient.get(`/config/service-launch/customer?${params.toString()}`).catch(() => null);
+
+      const applyLaunchTiles = (tiles: any[]) => {
+        setFilteredQuickServices(tiles);
+        setServiceLaunchTilesResolved(true);
+        persistLaunchTilesCache(tiles);
+      };
+
+      if (configResponse && (configResponse as any).success) {
+        const { services, buttons } = configResponse as any;
+
+        if (buttons) {
+          setDashboardConfig({ buttons });
         }
 
-        // ✅ PRIORITY 2: Fall back to profile data if no address found
-        if (!customerCity || !customerState) {
-          try {
-            const profileResponse = await apiClient
-              .get(`/customer/profile?phone=${encodeURIComponent(phone)}`)
-              .catch(() => null);
-            
-            const profile = profileResponse as any;
-            const profileLocation = serviceBaseOnpincode(profile, profile?.pincode || '');
-            
-            if (profileLocation.city) customerCity = profileLocation.city;
-            if (profileLocation.state) customerState = profileLocation.state;
-            
-            console.log('[ServiceLaunchConfig] Using profile location fallback:', {
-              city: customerCity,
-              state: customerState,
+        const visibleLaunch = (services?.visible || []) as any[];
+        const comingSoonLaunch = (services?.comingSoon || []) as any[];
+
+        if (services && (visibleLaunch.length > 0 || comingSoonLaunch.length > 0)) {
+          const allTilePool = [...sourceQuickServices, ...quickServices];
+          const seenScreens = new Set<string>();
+          const resultTiles: any[] = [];
+
+          const findMatchingTileForLaunchId = (svcIdRaw: string) => {
+            const svcId = (svcIdRaw || '').toLowerCase();
+            const targetScreen = mapLaunchServiceIdToCustomerHomeScreen(svcId).toLowerCase();
+            return allTilePool.find((tile: any) => {
+              const catId = (tile.categoryId || '').toLowerCase();
+              const tileScreen = (tile.screen || '').toLowerCase();
+              const catalogScreen = mapCatalogCategoryIdToCustomerHomeScreen(
+                tile.categoryId || ''
+              ).toLowerCase();
+              const screenAsCatalog = mapCatalogCategoryIdToCustomerHomeScreen(
+                tile.screen || ''
+              ).toLowerCase();
+              const launchFromCat = mapLaunchServiceIdToCustomerHomeScreen(catId).toLowerCase();
+              return (
+                catId === svcId ||
+                tileScreen === svcId ||
+                catalogScreen === targetScreen ||
+                screenAsCatalog === targetScreen ||
+                launchFromCat === targetScreen ||
+                tileScreen === targetScreen
+              );
             });
-          } catch (error) {
-            console.warn('[ServiceLaunchConfig] Could not fetch profile for location detection:', error);
-          }
-        }
+          };
 
-        // Fetch service launch config based on customer's location
-        const params = new URLSearchParams();
-        if (customerState) params.append('state', customerState);
-        if (customerCity) params.append('city', customerCity);
+          const appendFromLaunchList = (list: any[], isComingSoon: boolean) => {
+            for (const entry of list) {
+              const svcId = (entry.serviceId || '').toLowerCase();
+              const matchingTile = findMatchingTileForLaunchId(svcId);
+              if (matchingTile && !seenScreens.has(matchingTile.screen)) {
+                seenScreens.add(matchingTile.screen);
+                resultTiles.push({
+                  ...matchingTile,
+                  isComingSoon,
+                });
+              }
+            }
+          };
 
-        console.log('[ServiceLaunchConfig] Fetching config with location:', {
-          state: customerState || '(none)',
-          city: customerCity || '(none)',
-          params: params.toString(),
-        });
+          appendFromLaunchList(visibleLaunch, false);
+          appendFromLaunchList(comingSoonLaunch, true);
+          applyLaunchTiles(resultTiles);
+        } else {
+          const blockedCategoryIds = new Set<string>();
+          const comingSoonCategoryIds = new Set<string>();
+          const blockedServiceIds = new Set<string>();
+          const comingSoonServiceIds = new Set<string>();
 
-        const configResponse = await apiClient.get(`/config/service-launch/customer?${params.toString()}`).catch(() => null);
-
-        if (configResponse && (configResponse as any).success) {
-          const { services, buttons } = configResponse as any;
-
-          // Store config for reference (using buttons for backward compatibility)
-          if (buttons) {
-            setDashboardConfig({ buttons });
-          }
-
-
-          const visibleLaunch = (services?.visible || []) as any[];
-          const comingSoonLaunch = (services?.comingSoon || []) as any[];
-
-          if (services && (visibleLaunch.length > 0 || comingSoonLaunch.length > 0)) {
-            // PRIMARY PATH: Build tiles from geography launch lists (visible + coming soon).
-            // Match each serviceId to catalog tiles first, then static quickServices fallback.
-            const allTilePool = [...sourceQuickServices, ...quickServices];
-            const seenScreens = new Set<string>();
-            const resultTiles: any[] = [];
-
-            const findMatchingTileForLaunchId = (svcIdRaw: string) => {
-              const svcId = (svcIdRaw || '').toLowerCase();
-              const targetScreen = mapLaunchServiceIdToCustomerHomeScreen(svcId).toLowerCase();
-              return allTilePool.find((tile: any) => {
-                const catId = (tile.categoryId || '').toLowerCase();
-                const tileScreen = (tile.screen || '').toLowerCase();
-                const catalogScreen = mapCatalogCategoryIdToCustomerHomeScreen(
-                  tile.categoryId || ''
-                ).toLowerCase();
-                const screenAsCatalog = mapCatalogCategoryIdToCustomerHomeScreen(
-                  tile.screen || ''
-                ).toLowerCase();
-                const launchFromCat = mapLaunchServiceIdToCustomerHomeScreen(catId).toLowerCase();
-                return (
-                  catId === svcId ||
-                  tileScreen === svcId ||
-                  catalogScreen === targetScreen ||
-                  screenAsCatalog === targetScreen ||
-                  launchFromCat === targetScreen ||
-                  tileScreen === targetScreen
-                );
-              });
-            };
-
-            const appendFromLaunchList = (list: any[], isComingSoon: boolean) => {
-              for (const entry of list) {
-                const svcId = (entry.serviceId || '').toLowerCase();
-                const matchingTile = findMatchingTileForLaunchId(svcId);
-                if (matchingTile && !seenScreens.has(matchingTile.screen)) {
-                  seenScreens.add(matchingTile.screen);
-                  resultTiles.push({
-                    ...matchingTile,
-                    isComingSoon,
-                  });
+          if (services) {
+            (services.hidden || []).forEach((svc: any) => {
+              const svcId = (svc.serviceId || '').toLowerCase();
+              blockedCategoryIds.add(svcId);
+              for (const [key, screens] of Object.entries(serviceScreenMap)) {
+                if (svcId.includes(key) || key.includes(svcId)) {
+                  screens.forEach((screen) => blockedServiceIds.add(screen));
                 }
               }
-            };
+            });
+            (services.comingSoon || []).forEach((svc: any) => {
+              const svcId = (svc.serviceId || '').toLowerCase();
+              comingSoonCategoryIds.add(svcId);
+              for (const [key, screens] of Object.entries(serviceScreenMap)) {
+                if (svcId.includes(key) || key.includes(svcId)) {
+                  screens.forEach((screen) => comingSoonServiceIds.add(screen));
+                }
+              }
+            });
+          }
 
-            appendFromLaunchList(visibleLaunch, false);
-            appendFromLaunchList(comingSoonLaunch, true);
+          if (buttons && Array.isArray(buttons)) {
+            buttons.forEach((btn: any) => {
+              const btnId = (btn.id || '').toLowerCase();
+              if (btn.enabled === false) {
+                blockedCategoryIds.add(btnId);
+                for (const [key, screens] of Object.entries(serviceScreenMap)) {
+                  if (btnId.includes(key) || key.includes(btnId)) {
+                    screens.forEach((screen) => blockedServiceIds.add(screen));
+                  }
+                }
+              } else if (btn.launchPhase === 'coming_soon') {
+                comingSoonCategoryIds.add(btnId);
+                for (const [key, screens] of Object.entries(serviceScreenMap)) {
+                  if (btnId.includes(key) || key.includes(btnId)) {
+                    screens.forEach((screen) => comingSoonServiceIds.add(screen));
+                  }
+                }
+              }
+            });
+          }
 
-            console.log(
-              '[ServiceFilter] launch tiles resolved:',
-              resultTiles.map((t: any) => ({ screen: t.screen, comingSoon: !!t.isComingSoon }))
-            );
-            setFilteredQuickServices(resultTiles);
-            setServiceLaunchTilesResolved(true);
+          if (
+            blockedCategoryIds.size > 0 ||
+            comingSoonCategoryIds.size > 0 ||
+            blockedServiceIds.size > 0 ||
+            comingSoonServiceIds.size > 0
+          ) {
+            const filtered = sourceQuickServices.filter((service: any) => {
+              const catId = (service.categoryId || '').toLowerCase();
+              const screen = (service.screen || '').toLowerCase();
+              return (
+                !blockedCategoryIds.has(catId) &&
+                !blockedCategoryIds.has(screen) &&
+                !blockedServiceIds.has(screen)
+              );
+            });
+            const withComingSoon = filtered.map((service: any) => ({
+              ...service,
+              isComingSoon:
+                comingSoonCategoryIds.has((service.categoryId || '').toLowerCase()) ||
+                comingSoonServiceIds.has(service.screen),
+            }));
+            applyLaunchTiles(withComingSoon);
           } else {
-            // FALLBACK PATH: No visible list — use hidden list as block list (backward compat)
-            const blockedCategoryIds = new Set<string>();
-            const comingSoonCategoryIds = new Set<string>();
-            const blockedServiceIds = new Set<string>();
-            const comingSoonServiceIds = new Set<string>();
-
-            if (services) {
-              (services.hidden || []).forEach((svc: any) => {
-                const svcId = (svc.serviceId || '').toLowerCase();
-                blockedCategoryIds.add(svcId);
-                for (const [key, screens] of Object.entries(serviceScreenMap)) {
-                  if (svcId.includes(key) || key.includes(svcId)) {
-                    screens.forEach(screen => blockedServiceIds.add(screen));
-                  }
-                }
-              });
-              (services.comingSoon || []).forEach((svc: any) => {
-                const svcId = (svc.serviceId || '').toLowerCase();
-                comingSoonCategoryIds.add(svcId);
-                for (const [key, screens] of Object.entries(serviceScreenMap)) {
-                  if (svcId.includes(key) || key.includes(svcId)) {
-                    screens.forEach(screen => comingSoonServiceIds.add(screen));
-                  }
-                }
-              });
-            }
-
-            if (buttons && Array.isArray(buttons)) {
-              buttons.forEach((btn: any) => {
-                const btnId = (btn.id || '').toLowerCase();
-                if (btn.enabled === false) {
-                  blockedCategoryIds.add(btnId);
-                  for (const [key, screens] of Object.entries(serviceScreenMap)) {
-                    if (btnId.includes(key) || key.includes(btnId)) {
-                      screens.forEach(screen => blockedServiceIds.add(screen));
-                    }
-                  }
-                } else if (btn.launchPhase === 'coming_soon') {
-                  comingSoonCategoryIds.add(btnId);
-                  for (const [key, screens] of Object.entries(serviceScreenMap)) {
-                    if (btnId.includes(key) || key.includes(btnId)) {
-                      screens.forEach(screen => comingSoonServiceIds.add(screen));
-                    }
-                  }
-                }
-              });
-            }
-
-            if (blockedCategoryIds.size > 0 || comingSoonCategoryIds.size > 0 || blockedServiceIds.size > 0 || comingSoonServiceIds.size > 0) {
-              const filtered = sourceQuickServices.filter((service: any) => {
-                const catId = (service.categoryId || '').toLowerCase();
-                const screen = (service.screen || '').toLowerCase();
-                return !blockedCategoryIds.has(catId) && !blockedCategoryIds.has(screen) && !blockedServiceIds.has(screen);
-              });
-              const withComingSoon = filtered.map((service: any) => ({
-                ...service,
-                isComingSoon: comingSoonCategoryIds.has((service.categoryId || '').toLowerCase()) || comingSoonServiceIds.has(service.screen),
-              }));
-              setFilteredQuickServices(withComingSoon);
-              setServiceLaunchTilesResolved(true);
-            } else {
-              setFilteredQuickServices(sourceQuickServices);
-              setServiceLaunchTilesResolved(true);
-            }
+            applyLaunchTiles(sourceQuickServices);
           }
         }
-
-        // Fallback: Try legacy role-based config if new endpoint fails
-        // This ensures backward compatibility during migration
-        if (!configResponse || !(configResponse as any).success) {
-          console.log('New service launch config not available, falling back to legacy config');
-          // Legacy config loading removed - new geography-based config is primary
-          setFilteredQuickServices(sourceQuickServices);
-          setServiceLaunchTilesResolved(true);
-        }
-      } catch (error) {
-        console.error('Error loading service launch config:', error);
-        setFilteredQuickServices(sourceQuickServices);
-        setServiceLaunchTilesResolved(true);
       }
-    };
 
-    if (phone) {
-      loadServiceLaunchConfig();
-    } else {
-      // No phone means not logged in, show all services (use dynamic list when available)
+      if (!configResponse || !(configResponse as any).success) {
+        applyLaunchTiles(sourceQuickServices);
+      }
+    } catch (error) {
+      console.error('Error loading service launch config:', error);
       setFilteredQuickServices(sourceQuickServices);
       setServiceLaunchTilesResolved(true);
+      persistLaunchTilesCache(sourceQuickServices);
     }
+  };
+
+  useEffect(() => {
+    if (!phone) {
+      setFilteredQuickServices(sourceQuickServices);
+      setServiceLaunchTilesResolved(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    const bootstrapHome = async () => {
+      const { profile: cachedProfile, pets: cachedPets, refreshPromise } =
+        ensureCustomerProfileAndPets(phone, { force: refreshKey > 0 });
+      const locationPromise = resolveCustomerLocation(phone);
+      const resetLaunchTiles = refreshKey > 0;
+
+      const applyProfilePets = (result: {
+        profile: Record<string, unknown> | null;
+        pets: Pet[];
+      }) => {
+        if (cancelled) return;
+        const profile = result.profile;
+        if (profile) {
+          setUserData((prev) => ({
+            ...prev,
+            name: String(profile.firstName || profile.name || 'User'),
+            phone,
+            journeyType: String(profile.journeyType || ''),
+          }));
+          setUserProfilePhoto(
+            String(profile.photo || profile.profile_photo_url || profile.profilePhoto || '')
+          );
+        }
+        if (result.pets.length > 0) {
+          setUserData((prev) => ({ ...prev, pets: result.pets }));
+          setSelectedPet((prev) => prev ?? result.pets[0]);
+        }
+        setPetsLoading(false);
+      };
+
+      applyProfilePets({ profile: cachedProfile, pets: cachedPets });
+
+      await Promise.allSettled([
+        refreshPromise.then(applyProfilePets),
+        loadServicesFromAPI(),
+        (async () => {
+          const location = await locationPromise;
+          if (cancelled) return;
+          const dynamic = await refreshHomeDynamicContent(phone, location);
+          if (cancelled) return;
+          if (dynamic.dynamicBanners?.length) setDynamicBanners(dynamic.dynamicBanners);
+          if (dynamic.dynamicMiddleBanners?.length) setDynamicMiddleBanners(dynamic.dynamicMiddleBanners);
+          if (dynamic.dynamicLowerBanners?.length) setDynamicLowerBanners(dynamic.dynamicLowerBanners);
+          if (dynamic.dynamicArticles?.length) setDynamicArticles(dynamic.dynamicArticles);
+          if (dynamic.dynamicAnnouncements?.length) setDynamicAnnouncements(dynamic.dynamicAnnouncements);
+          if (dynamic.adoptionStats) setAdoptionStats(dynamic.adoptionStats);
+          await runServiceLaunchConfig(location, resetLaunchTiles);
+        })(),
+      ]);
+    };
+
+    void bootstrapHome();
+    return () => {
+      cancelled = true;
+    };
   }, [phone, refreshKey, quickServiceTiles.length]);
 
   /** Map API + defaults for hero; dedupe defaults by CTA vertical; icons from CTA / metadata */
-  const homeCarouselBanners = useMemo(() => {
-    if (dynamicBanners.length === 0) {
-      return defaultBanners;
-    }
-
-    const fromApi = dynamicBanners.map((b: any) => {
-      const rawCta = String(b.ctaLink ?? b.cta_link ?? '').trim();
-      const screenFromSlash =
-        rawCta.startsWith('/') && !isVendorBannerCta(rawCta) ? customerPathToScreen(rawCta) : null;
-      const ctaLink = screenFromSlash ?? rawCta;
-      const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
-      const comingSoon = explicitComingSoonFalse ? false : Boolean(b.comingSoon || b.coming_soon);
-      return {
-        id: b.id,
-        title: b.title,
-        subtitle: b.subtitle,
-        gradientFrom: b.gradientFrom || '#FF8C42',
-        gradientTo: b.gradientTo || '#FF6B35',
-        Icon: iconForCustomerHomeApiBanner(b),
-        ctaText: b.ctaText || b.cta_text || 'Learn More',
-        ctaLink,
-        navTarget: b.navTarget ?? null,
-        metadata: b.metadata ?? null,
-        comingSoon,
-      };
-    });
-
-    const coveredTargets = new Set(
-      fromApi.map((b) => normalizeCustomerBannerTarget(b.ctaLink)).filter(Boolean)
-    );
-    const coveredTitles = new Set(
-      fromApi.map((b) => String(b.title || '').toLowerCase().trim()).filter(Boolean)
-    );
-
-    const defaultsNotInApi = defaultBanners.filter((d) => {
-      const key = normalizeCustomerBannerTarget(d.ctaLink);
-      if (key && coveredTargets.has(key)) return false;
-      if (coveredTitles.has(String(d.title || '').toLowerCase().trim())) return false;
-      return true;
-    });
-
-    return [...fromApi, ...defaultsNotInApi].slice(0, 20);
-  }, [dynamicBanners]);
+  const homeCarouselBanners = useMemo(
+    () => buildHomeTopCarouselBanners(dynamicBanners),
+    [dynamicBanners]
+  );
 
   /** Featured Services wide slot — home_middle only; not merged into hero or ForYouSection */
   const featuredMiddleCarouselBanners = useMemo(() => {
@@ -1412,30 +1518,87 @@ export function CustomerHomeComplete({
     return () => window.clearInterval(id);
   }, [middleBannerCount]);
 
-  // Load active bookings with tracking for "Attention" section
+  // Load active bookings with tracking for "Attention" section (deferred — not needed for first paint)
   useEffect(() => {
-    if (phone) {
-      // ✅ Set customerId early so incoming-call poll uses UUID (backend matches recipient_id to UUID)
-      apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`).then((r) => {
-        if (r?.customer?.id) setCustomerId(r.customer.id);
-      }).catch(() => { });
+    if (!phone) return;
+
+    let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let incomingCallInterval: ReturnType<typeof setInterval> | undefined;
+
+    const runPollingTick = () => {
+      if (cancelled || document.hidden) return;
       loadActiveBookings();
-      checkPendingReviews(); // ✅ Check for pending reviews on load
-      checkUpcomingCalls(); // ✅ FIX GAP-6.2: Check for upcoming calls
-      checkActiveOrderTracking(); // ✅ FIX GAP-8.4: Check for active orders
-      checkIncomingCalls(); // ✅ WhatsApp-style: Check for incoming video call
-      const interval = setInterval(() => {
-        loadActiveBookings();
-        checkUpcomingCalls();
-        checkActiveOrderTracking();
-        checkIncomingCalls(); // Incoming call notification (Accept/Reject)
-      }, 15000); // Poll every 15s so 5-min-away calls show quickly
-      const incomingCallInterval = setInterval(checkIncomingCalls, 5000); // Poll every 5s for incoming call (like vendor)
-      return () => {
+      checkPendingReviews();
+      checkUpcomingCalls();
+      checkActiveOrderTracking();
+      checkIncomingCalls();
+    };
+
+    const runIncomingCallTick = () => {
+      if (cancelled || document.hidden) return;
+      checkIncomingCalls();
+    };
+
+    const startPolling = () => {
+      if (interval) return;
+      interval = setInterval(runPollingTick, 15000);
+      incomingCallInterval = setInterval(runIncomingCallTick, 5000);
+    };
+
+    const stopPolling = () => {
+      if (interval) {
         clearInterval(interval);
+        interval = undefined;
+      }
+      if (incomingCallInterval) {
         clearInterval(incomingCallInterval);
-      };
-    }
+        incomingCallInterval = undefined;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        runPollingTick();
+        startPolling();
+      }
+    };
+
+    let cancelDeferred: (() => void) | undefined;
+
+    void getHomeBootstrapReady().then(() => {
+      if (cancelled) return;
+      cancelDeferred = scheduleHomeDeferredWork({
+        loadBookings: () => {
+          if (cancelled) return;
+          apiClient
+            .get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`)
+            .then((r) => {
+              if (r?.customer?.id) setCustomerId(r.customer.id);
+            })
+            .catch(() => {});
+          loadActiveBookings();
+          checkPendingReviews();
+          checkUpcomingCalls();
+          checkActiveOrderTracking();
+          checkIncomingCalls();
+        },
+      });
+      if (!document.hidden) {
+        runPollingTick();
+        startPolling();
+      }
+      document.addEventListener('visibilitychange', onVisibilityChange);
+    });
+
+    return () => {
+      cancelled = true;
+      cancelDeferred?.();
+      stopPolling();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [phone, refreshKey]);
 
   useEffect(() => {
@@ -1445,7 +1608,10 @@ export function CustomerHomeComplete({
       return;
     }
     let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | undefined;
+
     const fetchUnread = async () => {
+      if (document.hidden) return;
       try {
         const data = await apiClient.get<{ notifications?: { is_read?: boolean; read?: boolean }[] }>(
           `/customer/notifications?phone=${encodeURIComponent(clean)}&limit=50`
@@ -1458,11 +1624,44 @@ export function CustomerHomeComplete({
         if (!cancelled) setNotificationUnreadCount(0);
       }
     };
-    void fetchUnread();
-    const interval = setInterval(fetchUnread, 90_000);
+
+    const startInterval = () => {
+      if (interval) return;
+      interval = setInterval(fetchUnread, 90_000);
+    };
+
+    const stopInterval = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = undefined;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stopInterval();
+      } else {
+        void fetchUnread();
+        startInterval();
+      }
+    };
+
+    let cancelDeferred: (() => void) | undefined;
+
+    void getHomeBootstrapReady().then(() => {
+      if (cancelled) return;
+      cancelDeferred = scheduleHomeDeferredWork({ loadNotifications: () => void fetchUnread() });
+      if (!document.hidden) {
+        startInterval();
+      }
+      document.addEventListener('visibilitychange', onVisibilityChange);
+    });
+
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      cancelDeferred?.();
+      stopInterval();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [phone, refreshKey, notificationInboxVersion]);
 
@@ -1484,10 +1683,13 @@ export function CustomerHomeComplete({
         if (!cancelled) setCombinedMessageUnreadCount(0);
       }
     };
-    void fetchUnread();
+    const cancelIdle = scheduleIdleWork(() => {
+      void fetchUnread();
+    });
     const interval = setInterval(fetchUnread, 90_000);
     return () => {
       cancelled = true;
+      cancelIdle();
       clearInterval(interval);
     };
   }, [phone, refreshKey, customerId, messagesInboxVersion]);
@@ -1748,114 +1950,36 @@ export function CustomerHomeComplete({
   };
 
   const loadUserData = async () => {
+    const hadCachedPets = readCachedPetsFromStorage().length > 0;
+    if (!hadCachedPets) setPetsLoading(true);
     try {
-      setLoading(true);
-
-      // Load profile and pets in parallel using phone-based endpoints with better error handling
-      const [profileResult, petsResult] = await Promise.allSettled([
-        apiClient.get(`/customer/profile?phone=${encodeURIComponent(phone)}`),
-        apiClient.get(`/customer/pets/${encodeURIComponent(phone)}`)
-      ]);
-
-      // Handle profile response
-      if (profileResult.status === 'fulfilled') {
-        const profileResp = profileResult.value as any;
-        if (profileResp && (profileResp.success || profileResp.profile)) {
-          const profile = profileResp.profile || profileResp;
-          setUserData(prev => ({
-            ...prev,
-            name: profile.firstName || profile.name || 'User',
-            phone: phone,
-            journeyType: profile.journeyType || ''
-          }));
-          setUserProfilePhoto(profile.photo || profile.profile_photo_url || '');
-
-          // Profile already includes pets if available
-          if (profile.pets && Array.isArray(profile.pets) && profile.pets.length > 0) {
-            setUserData(prev => ({
-              ...prev,
-              pets: profile.pets
-            }));
-            if (!selectedPet) {
-              setSelectedPet(profile.pets[0]);
-            }
-          }
-        }
-      } else if (profileResult.status === 'rejected') {
-        const error = profileResult.reason;
-        // Only log non-CORS errors to reduce console noise
-        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-          console.warn('Failed to load profile:', error.message);
-        }
-        // Try to use cached data if available
-        const cachedProfile = localStorage.getItem('customerData');
-        if (cachedProfile) {
-          try {
-            const profile = JSON.parse(cachedProfile);
-            setUserData(prev => ({
-              ...prev,
-              name: profile.firstName || profile.name || 'User',
-              phone: phone,
-            }));
-          } catch (e) {
-            // Ignore parse errors
-          }
-        }
+      const { refreshPromise } = ensureCustomerProfileAndPets(phone);
+      const result = await refreshPromise;
+      const profile = result.profile;
+      if (profile) {
+        setUserData((prev) => ({
+          ...prev,
+          name: String(profile.firstName || profile.name || 'User'),
+          phone,
+          journeyType: String(profile.journeyType || ''),
+        }));
+        setUserProfilePhoto(String(profile.photo || profile.profile_photo_url || ''));
+      } else {
+        const cachedProfile = readCachedProfileName(phone);
+        setUserData((prev) => ({ ...prev, name: cachedProfile.name, phone }));
+        if (cachedProfile.photo) setUserProfilePhoto(cachedProfile.photo);
       }
-
-      // Handle pets response
-      if (petsResult.status === 'fulfilled') {
-        const petsResp = petsResult.value as any;
-        if (petsResp && (petsResp.success || petsResp.pets)) {
-          // ✅ Robust response parsing
-          let pets: Pet[] = [];
-          if (Array.isArray(petsResp)) {
-            pets = petsResp;
-          } else if (Array.isArray(petsResp.pets)) {
-            pets = petsResp.pets;
-          } else if (petsResp.pets?.pets && Array.isArray(petsResp.pets.pets)) {
-            pets = petsResp.pets.pets;
-          } else if (petsResp.success && Array.isArray(petsResp.data)) {
-            pets = petsResp.data;
-          }
-
-          if (pets.length > 0) {
-            setUserData(prev => ({
-              ...prev,
-              pets: pets
-            }));
-            if (!selectedPet) {
-              setSelectedPet(pets[0]);
-            }
-          }
-        }
-      } else if (petsResult.status === 'rejected') {
-        const error = petsResult.reason;
-        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-          console.warn('Failed to load pets:', error.message);
-        }
-        // Try to use cached pets if available
-        const cachedPets = localStorage.getItem('customerPets');
-        if (cachedPets) {
-          try {
-            const pets = JSON.parse(cachedPets);
-            if (Array.isArray(pets) && pets.length > 0) {
-              setUserData(prev => ({
-                ...prev,
-                pets: pets
-              }));
-            }
-          } catch (e) {
-            // Ignore parse errors
-          }
-        }
+      if (result.pets.length > 0) {
+        setUserData((prev) => ({ ...prev, pets: result.pets }));
+        setSelectedPet((prev) => prev ?? result.pets[0]);
       }
-    } catch (error: any) {
-      if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-        console.error('Error loading user data:', error);
+    } catch (error: unknown) {
+      const err = error as { code?: string; message?: string };
+      if (err?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+        console.error('Error loading user data:', err.message);
       }
     } finally {
-      setLoading(false);
+      setPetsLoading(false);
     }
   };
 
@@ -1898,17 +2022,6 @@ export function CustomerHomeComplete({
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center w-full max-w-customer mx-auto">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
   const banners = homeCarouselBanners;
 
 
@@ -1924,6 +2037,8 @@ export function CustomerHomeComplete({
     title: a.title,
     category: a.category || 'Tips',
     readTime: a.readTime || '5 min',
+    excerpt: a.excerpt,
+    featured: a.featured,
     Icon: a.category === 'Nutrition' ? UtensilsCrossed
       : a.category === 'Insurance' ? Shield
         : a.category === 'Health' ? Heart
@@ -1942,7 +2057,25 @@ export function CustomerHomeComplete({
   return (
     <div className={containerClassName}>
       {/* Header Section - Compact Professional Design - Only show if not using standardized layout */}
-      {!hideHeaderFooter && (
+      {!hideHeaderFooter && newHomeUi ? (
+        <CustomerHomePageHeader
+          userName={userData.name}
+          userProfilePhoto={userProfilePhoto}
+          phone={phone}
+          onProfileClick={onProfileClick}
+          onRefresh={onRefresh}
+          onNavigate={handleNavigation}
+          onOpenNotifications={() => setNotificationModalOpen(true)}
+          notificationUnreadCount={notificationUnreadCount}
+          combinedMessageUnreadCount={combinedMessageUnreadCount}
+          pets={userData.pets}
+          selectedPet={selectedPet}
+          onSelectPet={setSelectedPet}
+          onPetClick={onPetClick}
+          onAddPet={handleAddPet}
+          petsLoading={petsLoading}
+        />
+      ) : !hideHeaderFooter ? (
         <div className="bg-gradient-to-br from-[#FF8C42] via-[#FF7A35] to-[#FF6B35] cw-header-safe-top cw-header-safe-x pb-3 sm:pb-4">
           {/* Top Row - User Info & Actions */}
           <div className="flex items-center justify-between mb-3 gap-2">
@@ -2026,7 +2159,12 @@ export function CustomerHomeComplete({
           </div>
 
           {/* Pet Selector - Compact horizontal layout */}
-          {userData.pets.length > 0 ? (
+          {petsLoading && userData.pets.length === 0 ? (
+            <div className="flex items-center gap-2 py-2">
+              <div className="w-5 h-5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+              <span className="text-white/80 text-xs">Loading pets...</span>
+            </div>
+          ) : userData.pets.length > 0 ? (
             <div className="flex items-center gap-3">
               <span className="text-white/90 text-[11px] font-semibold tracking-wider uppercase shrink-0">Your Pets</span>
               <div className="flex min-w-0 gap-2.5 overflow-x-auto scrollbar-hide flex-1 py-1 -my-1 px-2">
@@ -2100,14 +2238,20 @@ export function CustomerHomeComplete({
             </button>
           )}
         </div>
-      )}
+      ) : null}
 
       {/* Main Scrollable Content */}
       <div
-        className={`bg-white ${hideHeaderFooter ? 'pt-4' : 'rounded-t-[24px] -mt-3 pt-4'} ${hideHeaderFooter ? 'pb-4' : 'pb-6'}`}
+        className={
+          hideHeaderFooter
+            ? 'bg-white pt-4 pb-4'
+            : newHomeUi
+              ? `${HOME_CONTENT_SHELL_CLASS} pb-6`
+              : 'bg-white rounded-t-[24px] -mt-3 pt-4 pb-6'
+        }
       >
-        {/* ✅ Attention Section - Active Bookings with Tracking */}
-        {activeBookings.length > 0 && (
+        {/* ✅ Attention Section - Active Bookings with Tracking (legacy layout only) */}
+        {!newHomeUi && activeBookings.length > 0 && (
           <div className="px-6 mb-4">
             <div className="bg-gradient-to-r from-orange-50 to-red-50 border-2 border-orange-200 rounded-2xl p-4 mb-4">
               <div className="flex items-center gap-3 mb-3">
@@ -2148,75 +2292,70 @@ export function CustomerHomeComplete({
           </div>
         )}
 
-        {/* Universal search bar - top of landing */}
+        {newHomeUi ? (
+          <CustomerHomePageContent
+            customerId={customerId || undefined}
+            onSearch={handleSearchSubmit}
+            onSearchResultSelect={handleSearchResultSelect}
+            services={
+              (serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices) as QuickServiceTile[]
+            }
+            serviceLabelOverride={SERVICE_LABEL_OVERRIDE}
+            onNavigate={handleNavigation}
+            homeCarouselBanners={homeCarouselBanners}
+            activeBookings={activeBookings}
+            onViewBooking={onViewBooking}
+            phone={phone}
+            hotDeals={hotDeals}
+            ecommerceShopCategories={ecommerceShopCategories}
+            customerCommerceEnabled={customerCommerceEnabled}
+            featuredLowerBanners={featuredLowerBanners}
+            whatsNewAnnouncements={whatsNewAnnouncements}
+            onWhatsNewSeeAll={() => handleNavigation('whats-new')}
+            onWhatsNewRowPress={(a) => {
+              if (a.announcementType === 'emergency') return;
+              if (a.id === 'ai' || (a.announcementType === 'feature' && !a.ctaLink?.trim())) {
+                setShowAIChat(true);
+                return;
+              }
+              navigateWhatsNewFromFullPage(router, a, 'row');
+            }}
+            onWhatsNewSosPress={(a) => {
+              if (a.comingSoon && a.announcementType === 'emergency') return;
+              handleNavigation(a.ctaLink?.trim() || 'ambulance');
+            }}
+            adoptionStats={adoptionStats}
+            petCareArticles={articles}
+            onPetCareArticlesSeeAll={() => handleNavigation('articles')}
+            onPetCareArticleClick={(article) => {
+              if (article.slug) {
+                router.push(`/articles?slug=${encodeURIComponent(article.slug)}`);
+              } else if (article.url) {
+                window.open(article.url, '_blank');
+              } else {
+                handleNavigation('article-detail', {
+                  articleId: article.id,
+                  article: { id: article.id, slug: article.slug },
+                });
+              }
+            }}
+          />
+        ) : (
+        <>
+        {/* Universal search bar - legacy layout */}
         <div className="px-4 mb-3">
           <EnhancedSearchBar
             placeholder="Search services, products, vets, groomers..."
             customerId={customerId || undefined}
-            onSearch={(searchQuery) => {
-              if (searchQuery?.trim()) {
-                router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-              }
-            }}
-            onResultSelect={(result) => {
-              console.log('Search result selected:', result);
-              if (result.type === 'symptom') {
-                // Symptom search: drive to problem_grid_flow with specialization so user picks service style then books
-                const d = result.data || {};
-                handleNavigation('services_by_problem', {
-                  problemId: d.specializationId || result.id,
-                  problemTitle: d.name || 'Consult',
-                  roleId: d.roleId || 'vet_solo',
-                  category: d.categoryId,
-                  problem: {
-                    allowedServiceStyles: sanitizeCustomerAllowedServiceStyles(d.allowedServiceStyles, {
-                      roleId: d.roleId || 'vet_solo',
-                      specializationId: d.specializationId || result.id,
-                      categoryHint: d.categoryId,
-                    }),
-                    name: d.name,
-                    roleId: d.roleId,
-                    category: d.categoryId,
-                  },
-                });
-                return;
-              }
-              // Vendor / staff / center: must run before any `result.category` branch (vendors carry category too).
-              if (result.type === 'staff' || result.type === 'vendor' || result.type === 'center') {
-                const vendorId = String(result.id || '').trim();
-                if (vendorId) {
-                  router.push(`/search?vendorId=${encodeURIComponent(vendorId)}`);
-                } else {
-                  const serviceType = result.data?.serviceType || result.data?.services?.[0] || 'vet';
-                  handleNavigation(serviceType);
-                }
-                return;
-              }
-              // Bookable listing: API search uses vendor_services.id — same id GET /services/:id and BookingFlow expect.
-              if (result.type === 'service') {
-                const sid = String(result.id || '').trim();
-                if (sid) {
-                  router.push(`/booking/${encodeURIComponent(sid)}`);
-                }
-                return;
-              }
-              if (result.type === 'product') {
-                if (!isCustomerEcommerceEnabled()) {
-                  toast.info('Shop is coming soon.');
-                  return;
-                }
-                handleNavigation('shop');
-                return;
-              }
-              const category = result.category || result.data?.serviceType || result.data?.category || '';
-              if (category) {
-                const targetScreen = serviceNavigationMap[category.toLowerCase()] || 'services';
-                handleNavigation(targetScreen);
-              }
-            }}
+            onSearch={handleSearchSubmit}
+            onResultSelect={handleSearchResultSelect}
           />
         </div>
+        </>
+        )}
 
+        {!newHomeUi ? (
+        <>
         {/* What's your pet needs? - directly below search (clean landing) */}
         <div className="mb-4 w-full overflow-hidden">
           <div className="px-4 flex items-center justify-between mb-2">
@@ -2347,8 +2486,11 @@ export function CustomerHomeComplete({
             </div>
           </div>
         </div>
+        </>
+        ) : null}
 
-        {/* Shop — gated by isCustomerEcommerceEnabled() until prod launch */}
+        {/* Shop — gated until customerEcommerceEnabled / NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED */}
+        {!newHomeUi ? (
         <div className="mb-4">
           <div className="flex items-center gap-3 px-4 mb-2">
             <div className="flex items-center gap-2">
@@ -2440,8 +2582,9 @@ export function CustomerHomeComplete({
             </div>
           )}
         </div>
+        ) : null}
 
-        {/* Quick Services Grid - Compact */}
+        {!newHomeUi ? (
         <div className="px-4 mb-4">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-black text-sm font-semibold">All Services</h2>
@@ -2512,8 +2655,10 @@ export function CustomerHomeComplete({
             })}
           </div>
         </div>
+        ) : null}
 
         {/* Spotlight: Grooming Services */}
+        {!newHomeUi ? (
         <div className="mb-6">
           <div className="px-6 mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -2577,7 +2722,10 @@ export function CustomerHomeComplete({
             })}
           </div>
         </div>
+        ) : null}
 
+        {!newHomeUi ? (
+        <>
         {/* Vet Services */}
         <div className="mb-6">
           <div className="px-6 mb-4 flex items-center justify-between">
@@ -2639,7 +2787,10 @@ export function CustomerHomeComplete({
             </button>
           </div>
         </div>
+        </>
+        ) : null}
 
+        {!newHomeUi ? (
         <div className="mb-6">
           <div className="px-6 mb-4">
             <h2 className="text-black font-semibold">Special Offers</h2>
@@ -2648,8 +2799,10 @@ export function CustomerHomeComplete({
             <PromotionBanner service="all" maxPromotions={3} onNavigate={handleNavigation} />
           </div>
         </div>
+        ) : null}
 
         {/* Featured Services Mix - Square Boxes */}
+        {!newHomeUi ? (
         <div className="mb-6">
           <div className="px-6 mb-4">
             <h2 className="text-black font-semibold mb-1">Featured Services</h2>
@@ -2862,8 +3015,10 @@ export function CustomerHomeComplete({
             </button>
           </div>
         </div>
+        ) : null}
 
-        {/* What's New Section */}
+        {/* What's New Section — legacy layout only (new home uses CustomerHomePageContent) */}
+        {!newHomeUi ? (
         <div className="mb-6">
           <div className="px-6 mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -2898,8 +3053,10 @@ export function CustomerHomeComplete({
             />
           </div>
         </div>
+        ) : null}
 
         {/* Discover more: For you & Trending - lower on page so landing stays clean */}
+        {!newHomeUi ? (
         <div className="mb-6 mx-4 p-4 rounded-2xl bg-gray-50/80 border border-gray-100">
           <h2 className="text-gray-500 text-xs font-medium uppercase tracking-wider mb-4">Discover more</h2>
           <ForYouSection
@@ -2931,7 +3088,10 @@ export function CustomerHomeComplete({
             />
           </div>
         </div>
+        ) : null}
 
+        {!newHomeUi ? (
+        <>
         {/* Adoption — full section coming soon (not launched) */}
         <div className="mb-6" aria-label="Adoption — coming soon">
           <div className="px-6 mb-4">
@@ -3056,62 +3216,11 @@ export function CustomerHomeComplete({
           </div>
         )}
 
-        {/* Other Services Highlight */}
-        <div className="px-6 mb-6">
-          <h2 className="text-black font-semibold mb-4">More Services</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div
-              className="relative bg-gradient-to-br from-rose-50/90 to-pink-50/90 rounded-2xl p-4 border border-rose-100/80 text-left opacity-[0.88] pointer-events-none select-none w-full grayscale-[0.12]"
-              aria-label="Peer to Peer — coming soon"
-            >
-              <span className="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full">
-                Soon
-              </span>
-              <Users className="w-8 h-8 text-rose-600/80 mb-2" />
-              <h3 className="text-sm font-semibold text-gray-800 mb-1">Peer to Peer</h3>
-              <p className="text-xs text-gray-600 mb-3">Find perfect match for your pet</p>
-              <span className="text-xs text-amber-600 font-semibold">Coming soon</span>
-            </div>
-            <div
-              className="relative bg-gradient-to-br from-cyan-50/90 to-blue-50/90 rounded-2xl p-4 border border-cyan-100/80 text-left opacity-[0.88] pointer-events-none select-none w-full grayscale-[0.15]"
-              aria-label="Pet Insurance — coming soon"
-            >
-              <span className="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full">
-                Soon
-              </span>
-              <Shield className="w-8 h-8 text-cyan-600/80 mb-2" />
-              <h3 className="text-sm font-semibold text-gray-800 mb-1">Pet Insurance</h3>
-              <p className="text-xs text-gray-600 mb-3">Protect your furry friend</p>
-              <span className="text-xs text-amber-600 font-semibold">Coming soon</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => handleNavigation('walker')}
-              className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-4 border border-green-100 text-left hover:shadow-md transition-shadow w-full"
-            >
-              <Dog className="w-8 h-8 text-green-600 mb-2" />
-              <h3 className="text-sm font-semibold text-gray-800 mb-1">Dog Walkers</h3>
-              <p className="text-xs text-gray-600 mb-3">Trusted & verified walkers</p>
-              <span className="text-xs text-green-600 font-medium inline-flex items-center gap-1">
-                Book Now <ChevronRight className="w-3 h-3" />
-              </span>
-            </button>
-            <div
-              className="relative bg-gradient-to-br from-amber-50/90 to-yellow-50/90 rounded-2xl p-4 border border-amber-100/80 text-left opacity-[0.88] pointer-events-none select-none w-full grayscale-[0.1]"
-              aria-label="Pet Cafes — coming soon"
-            >
-              <span className="absolute top-3 right-3 text-[10px] font-bold uppercase tracking-wide bg-amber-500 text-white px-2 py-0.5 rounded-full">
-                Soon
-              </span>
-              <Coffee className="w-8 h-8 text-amber-600/80 mb-2" />
-              <h3 className="text-sm font-semibold text-gray-800 mb-1">Pet Cafes</h3>
-              <p className="text-xs text-gray-600 mb-3">Pet-friendly dining spots</p>
-              <span className="text-xs text-amber-600 font-semibold">Coming soon</span>
-            </div>
-          </div>
-        </div>
+        <MoreServicesSection onNavigate={handleNavigation} />
+        </>
+        ) : null}
 
-        {featuredLowerBanners.length > 0 ? (
+        {!newHomeUi && featuredLowerBanners.length > 0 ? (
           <div className="px-6 mb-6 space-y-4">
             {featuredLowerBanners.map((banner, index) => {
               const slotComingSoon = Boolean((banner as { comingSoon?: boolean }).comingSoon);
@@ -3161,7 +3270,7 @@ export function CustomerHomeComplete({
               );
             })}
           </div>
-        ) : (
+        ) : !newHomeUi ? (
           <>
             {/* Training Services */}
             <div className="px-6 mb-6">
@@ -3232,9 +3341,10 @@ export function CustomerHomeComplete({
               </div>
             </div>
           </>
-        )}
+        ) : null}
 
-        {/* Bottom CTA */}
+        {/* Bottom CTA — legacy layout only */}
+        {!newHomeUi ? (
         <div className="px-6">
           <div className="bg-gradient-to-r from-orange-100 to-pink-100 rounded-3xl p-6 border-2 border-[#FF8C42] text-center">
             <h2 className="text-black font-bold text-lg mb-2">Need Help? 🤝</h2>
@@ -3261,6 +3371,7 @@ export function CustomerHomeComplete({
             </div>
           </div>
         </div>
+        ) : null}
       </div>
 
       {/* AI Assistant Floating Action Button (draggable; tap opens chat) */}

@@ -1,6 +1,8 @@
 /**
  * Removes `.next` before `next dev` so startup skips Next's recursive-delete walk.
  * That walk is slow and brittle on Windows + OneDrive (reparse points / locks).
+ *
+ * For faster restarts during local dev, use `npm run dev:cached` instead — it skips this wipe.
  */
 const fs = require('fs');
 const path = require('path');

@@ -38,6 +38,13 @@ const LEGACY_DEV_API_GATEWAY_SUBDOMAIN = 'iixwc3fzfl';
 /** One in-flight list request per endpoint (React Strict Mode double-mounts effects in dev → duplicate fetches). */
 const customerArticlesListInflight = new Map<string, Promise<unknown>>();
 
+/** Concurrent identical GET requests share one Promise (key includes query string). */
+const globalGetInflight = new Map<string, Promise<unknown>>();
+
+function globalGetInflightKey(endpoint: string): string {
+  return `GET:${endpoint}`;
+}
+
 /** On localhost, use same-origin `/api/customer/articles` so Next can map upstream 502/503 → 200 + empty list. */
 function customerArticlesListFetchPath(endpoint: string): string {
   if (typeof window === 'undefined') return endpoint;
@@ -716,8 +723,25 @@ export class ApiClient {
   
   private offlineQueue?: import('./error-handling').OfflineQueue;
 
-  async get<T>(endpoint: string, retryConfig?: Partial<import('./error-handling').RetryConfig>): Promise<T> {
-    return this.request<T>(endpoint, { method: 'GET' }, retryConfig);
+  async get<T>(
+    endpoint: string,
+    retryConfig?: Partial<import('./error-handling').RetryConfig>,
+    customTimeoutMs?: number
+  ): Promise<T> {
+    const key = globalGetInflightKey(endpoint);
+    const existing = globalGetInflight.get(key);
+    if (existing) {
+      return existing as Promise<T>;
+    }
+
+    const p = this.request<T>(endpoint, { method: 'GET' }, retryConfig, customTimeoutMs).finally(
+      () => {
+        globalGetInflight.delete(key);
+      }
+    );
+
+    globalGetInflight.set(key, p);
+    return p;
   }
 
   /**

@@ -339,8 +339,8 @@ export async function teardownPushNotifications(
   if (typeof window === 'undefined') return;
   const deviceId = localStorage.getItem(PUSH_DEVICE_ID_KEY);
   localStorage.removeItem(PUSH_TOKEN_CACHE_KEY);
-  const apiBaseUrl =
-    ((window as any).__WARMPAWZ_RUNTIME_CONFIG__?.apiBaseUrl ?? '').replace(/\/+$/, '');
+  const { getApiBaseUrl } = await import('./api-client');
+  const apiBaseUrl = getApiBaseUrl().replace(/\/+$/, '');
   try {
     await fetch(`${apiBaseUrl}/push/unregister-device`, {
       method: 'DELETE',
