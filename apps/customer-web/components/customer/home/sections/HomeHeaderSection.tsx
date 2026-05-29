@@ -1,7 +1,7 @@
 'use client';
 
 import React, { memo, useEffect, useState } from 'react';
-import { Bell, Heart, MapPin, MessageSquare, RefreshCw } from 'lucide-react';
+import { Bell, Heart, MapPin, MessageSquare } from 'lucide-react';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { resolveCustomerLocation } from '@/lib/customer-location';
 import { WalletIcon } from '../../WalletIcon';
@@ -13,7 +13,6 @@ export interface HomeHeaderSectionProps {
   userProfilePhoto?: string;
   phone: string;
   onProfileClick?: () => void;
-  onRefresh?: () => void;
   onNavigate: HomeNavigateFn;
   onOpenNotifications: () => void;
   notificationUnreadCount: number;
@@ -25,7 +24,6 @@ function HomeHeaderSectionComponent({
   userProfilePhoto,
   phone,
   onProfileClick,
-  onRefresh,
   onNavigate,
   onOpenNotifications,
   notificationUnreadCount,
@@ -106,12 +104,6 @@ function HomeHeaderSectionComponent({
             onClick={() => onNavigate('wallet')}
             size="sm"
             showBalance={true}
-          />
-          <IconBadgeButton
-            icon={RefreshCw}
-            onClick={onRefresh}
-            ariaLabel="Refresh home"
-            title="Refresh"
           />
           <IconBadgeButton
             icon={MessageSquare}

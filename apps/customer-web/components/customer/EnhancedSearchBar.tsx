@@ -37,6 +37,8 @@ interface EnhancedSearchBarProps {
   placeholder?: string;
   customerId?: string;
   className?: string;
+  /** Home/mobile compact layout — sizing only. */
+  compact?: boolean;
 }
 
 export function EnhancedSearchBar({ 
@@ -44,7 +46,8 @@ export function EnhancedSearchBar({
   onResultSelect,
   placeholder = "Search for services, vets, trainers...",
   customerId,
-  className = '' 
+  className = '',
+  compact = false,
 }: EnhancedSearchBarProps) {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -451,7 +454,11 @@ export function EnhancedSearchBar({
     <div ref={wrapperRef} className={`relative ${className}`}>
       <form onSubmit={handleSubmit} className="flex gap-2 items-center">
         <div className="relative flex-1">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <Search
+            className={`absolute top-1/2 -translate-y-1/2 text-gray-400 ${
+              compact ? 'left-3 h-4 w-4' : 'left-4 h-5 w-5'
+            }`}
+          />
           <input
             type="text"
             value={query}
@@ -462,7 +469,11 @@ export function EnhancedSearchBar({
               setIsOpen(hasContent);
             }}
             placeholder={placeholder}
-            className="w-full pl-12 pr-12 py-3 bg-white border border-gray-200 rounded-full shadow-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+            className={`w-full bg-white border border-gray-200 rounded-full shadow-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
+              compact
+                ? 'h-12 py-0 pl-10 pr-10 text-sm'
+                : 'py-3 pl-12 pr-12'
+            }`}
           />
           {query && (
             <button
@@ -472,15 +483,19 @@ export function EnhancedSearchBar({
                 setResults([]);
                 setIsOpen(false);
               }}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+              className={`absolute top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors ${
+                compact ? 'right-3' : 'right-4'
+              }`}
             >
-              <X className="w-5 h-5" />
+              <X className={compact ? 'h-4 w-4' : 'h-5 w-5'} />
             </button>
           )}
         </div>
         <button
           type="submit"
-          className="shrink-0 px-5 py-3 bg-orange-500 text-white font-medium rounded-full hover:bg-orange-600 transition-colors shadow-sm"
+          className={`shrink-0 bg-orange-500 text-white font-medium rounded-full hover:bg-orange-600 transition-colors shadow-sm ${
+            compact ? 'h-12 px-4 text-sm' : 'px-5 py-3'
+          }`}
         >
           Search
         </button>

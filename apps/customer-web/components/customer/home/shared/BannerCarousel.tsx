@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { DEFAULT_HOME_HERO_IMAGE_URL } from '../constants/category-card-images';
+import { resolveBannerObjectPosition } from '../constants/banner-image-position';
 import { useBannerCarousel } from '../hooks/useBannerCarousel';
 import type { HomeCarouselBanner } from '../types';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
@@ -26,14 +27,25 @@ function resolveBannerImageUrl(banner: HomeCarouselBanner): string {
   return '';
 }
 
-function BannerHeroImage({ src, alt }: { src: string; alt: string }) {
+function BannerHeroImage({
+  src,
+  alt,
+  objectPosition,
+}: {
+  src: string;
+  alt: string;
+  objectPosition: string;
+}) {
+  const imageStyle = { objectPosition };
+
   if (src.startsWith('/') && !src.includes('amazonaws.com')) {
     return (
       <Image
         src={src}
         alt={alt}
         fill
-        className="object-cover object-center"
+        className="object-cover"
+        style={imageStyle}
         unoptimized
       />
     );
@@ -43,13 +55,19 @@ function BannerHeroImage({ src, alt }: { src: string; alt: string }) {
       <PresignableImage
         src={src}
         alt={alt}
-        className="absolute inset-0 h-full w-full object-cover object-center"
+        className="absolute inset-0 h-full w-full object-cover"
+        style={imageStyle}
       />
     );
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={alt} className="absolute inset-0 h-full w-full object-cover object-center" />
+    <img
+      src={src}
+      alt={alt}
+      className="absolute inset-0 h-full w-full object-cover"
+      style={imageStyle}
+    />
   );
 }
 
@@ -58,7 +76,7 @@ function BannerCarouselComponent({
   onNavigate,
   trackingSource = 'home_carousel',
   className = '',
-  heightClassName = 'h-44',
+  heightClassName = 'h-[8.8rem]',
 }: BannerCarouselProps) {
   const { currentIndex, setCurrentIndex, touchHandlers } = useBannerCarousel(banners.length);
 
@@ -94,7 +112,11 @@ function BannerCarouselComponent({
             >
               {hasHeroImage ? (
                 <>
-                  <BannerHeroImage src={imageUrl} alt={banner.title} />
+                  <BannerHeroImage
+                    src={imageUrl}
+                    alt={banner.title}
+                    objectPosition={resolveBannerObjectPosition(banner)}
+                  />
                   <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/45 to-black/20" />
                 </>
               ) : null}

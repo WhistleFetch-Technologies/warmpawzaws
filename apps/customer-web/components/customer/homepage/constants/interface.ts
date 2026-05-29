@@ -22,7 +22,6 @@ export interface UserData {
 export interface CustomerHomeCompleteProps {
     phone: string;
     refreshKey?: number;
-    onRefresh?: () => void;
     onNavigate?: (screen: string, data?: any) => void;
     onProfileClick?: () => void;
     onSidebarOpen?: () => void;
