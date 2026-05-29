@@ -51,6 +51,7 @@ export function useCustomerAccountSidebarHost(): CustomerAccountSidebarHost {
       }
       setSidebarOpen(false);
       if (screen === 'home') router.push('/');
+      else if (screen === 'shop') router.push('/shop');
       else if (screen === 'cart') router.push('/cart');
       else if (screen === 'my-bookings') router.push('/bookings');
     },
