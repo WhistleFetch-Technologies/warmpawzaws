@@ -40,7 +40,13 @@ import { resolvePackWeightGramsFromPlanRow } from '../utils/meal-pack-weight';
 import { mergeMealPlanCatalogForApi } from '../utils/meal-product-persistence';
 import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr, resolveMealPurchaseSubtotalInr } from '../utils/meal-order-pricing';
 import { generateMealOrderNumber } from '../utils/meal-order-number';
-import { ensureMealPlanMirrorForProductCheckout, normalizeProductRowToMealPlanShape, resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
+import { processMealOrderVendorCancelOriginalRefund } from '../utils/payments/meal-order-original-refund';
+import {
+  dedupeMealPlanCatalogRows,
+  ensureMealPlanMirrorForProductCheckout,
+  normalizeProductRowToMealPlanShape,
+  resolveMealPlanOrProductById,
+} from '../utils/meal-plan-resolve';
 import {
   assertVendorAcceptingMealOrders,
   enrichMealPlanRowsWithKitchenAvailability,
@@ -508,11 +514,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         if (shaped) fromProducts.push(shaped);
       }
 
-      const merged = [...fromMealPlans, ...fromProducts].sort((a: any, b: any) => {
-        const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return tb - ta;
-      });
+      const merged = dedupeMealPlanCatalogRows(
+        fromMealPlans as Record<string, unknown>[],
+        fromProducts,
+      );
 
       let mealPlans = await Promise.all(
         merged.map(async (mp: any) => {
@@ -1795,6 +1800,28 @@ export function registerMealPlanEndpoints(app: Hono) {
       }
 
       await update('meal_orders', { id: orderId }, updateData);
+
+      let refundInfo: Record<string, unknown> | null = null;
+      if (status === 'cancelled') {
+        try {
+          const refund = await processMealOrderVendorCancelOriginalRefund(
+            orderId,
+            notes || 'Vendor cancelled meal order',
+            'vendor',
+          );
+          refundInfo = {
+            amount: refund.totalAmount,
+            method: 'original',
+            status: refund.status,
+            message: refund.message,
+            refundId: refund.refundId,
+            razorpayRefundId: refund.razorpayRefundId,
+          };
+        } catch (refundErr: unknown) {
+          const msg = refundErr instanceof Error ? refundErr.message : 'Refund failed';
+          console.error('[meal/orders/update-status] original refund failed:', msg, { orderId });
+        }
+      }
 
       // If delivered, create settlement
       if (status === 'delivered') {

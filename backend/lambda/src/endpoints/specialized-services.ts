@@ -48,7 +48,10 @@ import {
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
 import { getMealOrderVendorLookupIds } from '../utils/meal-order-vendor-lookup';
 import { fetchVendorMealOrdersForVendorIds } from '../utils/fetch-vendor-meal-orders';
-import { processSubscriptionVendorParentBookingFullRefund } from '../utils/meal-subscription-parent-booking-refund';
+import {
+  processMealOrderVendorCancelOriginalRefund,
+  processMealSubscriptionParentVendorCancelOriginalRefund,
+} from '../utils/payments/meal-order-original-refund';
 import {
   mealProductParsedToDietaryJson,
   type MealProductDietaryInput,
@@ -2806,7 +2809,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
 
       const orderRowRes = await query(
-        `SELECT mo.id, mo.vendor_id, mo.status AS order_status, mo.subscription_id,
+        `SELECT mo.id, mo.vendor_id, mo.customer_id, mo.status AS order_status, mo.subscription_id,
+                mo.payment_status, mo.total_amount::text AS total_amount,
+                mo.razorpay_payment_id, mo.razorpay_order_id, mo.order_type,
                 mo.scheduled_delivery_date, mo.purchase_snapshot, mo.logistics_type
            FROM meal_orders mo
           WHERE mo.id = $1 AND mo.vendor_id::text = ANY($2::text[])
@@ -2841,18 +2846,24 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           );
         }
 
-        const refund = await processSubscriptionVendorParentBookingFullRefund(
+        const refund = await processMealSubscriptionParentVendorCancelOriginalRefund(
           String(orderRow.subscription_id),
           'Vendor cancelled subscription booking from nutrition queue',
         );
         const msgLow = String(refund.message || '').toLowerCase();
-        if (!refund.refunded && !msgLow.includes('already processed')) {
+        if (
+          refund.status === 'failed' ||
+          (!refund.alreadyProcessed &&
+            refund.status === 'skipped' &&
+            !msgLow.includes('already processed') &&
+            !msgLow.includes('not paid'))
+        ) {
           return c.json({ success: false, error: refund.message || 'Refund failed' }, 422);
         }
         return c.json({
           success: true,
           message:
-            refund.refunded && refund.message
+            refund.totalAmount > 0 && refund.message
               ? refund.message
               : 'Subscription cancelled; refund processed per platform policy (platform fee may be retained).',
           refund,
@@ -3074,9 +3085,53 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         }
       }
 
+      let refundInfo: Record<string, unknown> | null = null;
+      if (actualStatus === 'cancelled' && !subscriptionParentEarly) {
+        try {
+          const refund = await processMealOrderVendorCancelOriginalRefund(
+            orderId,
+            'Vendor cancelled meal order from nutrition queue',
+            'vendor',
+          );
+          refundInfo = {
+            amount: refund.totalAmount,
+            method: 'original',
+            status: refund.status,
+            message: refund.message,
+            refundId: refund.refundId,
+            razorpayRefundId: refund.razorpayRefundId,
+            walletCredited: refund.walletCredited,
+          };
+          if (refund.status === 'failed') {
+            return c.json(
+              {
+                success: false,
+                error:
+                  refund.message ||
+                  'Order cancelled but refund to original payment method failed. Please contact support.',
+                refund: refundInfo,
+              },
+              422,
+            );
+          }
+        } catch (refundErr: unknown) {
+          const msg = refundErr instanceof Error ? refundErr.message : 'Refund failed';
+          console.error('[meal-order-status] original-method refund failed:', msg, { orderId });
+          return c.json(
+            {
+              success: false,
+              error:
+                'Order cancelled but refund to original payment method failed. Please contact support with the order ID.',
+            },
+            422,
+          );
+        }
+      }
+
       return c.json({
         success: true,
         message: 'Order status updated',
+        ...(refundInfo ? { refund: refundInfo } : {}),
         ...(dispatch ? { dispatch } : {}),
       });
     } catch (error: any) {
