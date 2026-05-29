@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api-client';
 import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
 import { CustomerBookingMessagesModalProvider } from './messaging/CustomerBookingMessagesModalProvider';
 import { scheduleIdleWork } from '@/lib/schedule-idle';
+import { resetHomeBootstrapForPhone } from '@/lib/customer-home-bootstrap';
 
 interface CustomerSession {
   phone: string;
@@ -89,6 +90,7 @@ export function CustomerApp({
         localStorage.removeItem('cognitoRefreshToken');
         localStorage.removeItem('cognitoTokenExpiry');
         localStorage.removeItem('cognitoUserInfo');
+        resetHomeBootstrapForPhone(null);
         window.location.href = '/auth';
       }
     }

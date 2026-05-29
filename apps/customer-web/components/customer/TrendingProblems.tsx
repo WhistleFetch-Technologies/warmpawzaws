@@ -1,19 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { TrendingUp, ChevronRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { apiClient } from '@/lib/api-client';
+import { useTrendingProblems, type TrendingProblem } from '@/components/customer/home/hooks/useTrendingProblems';
 
-export interface TrendingProblem {
-  problemId: string;
-  title: string;
-  description: string;
-  searchCount: number;
-  trend: 'up' | 'down' | 'stable';
-  /** API field name; value is role_id (e.g. veterinarian, groomer). */
-  category?: string;
-}
+export type { TrendingProblem };
 
 interface TrendingProblemsProps {
   onProblemSelect: (problem: TrendingProblem) => void;
@@ -21,70 +13,17 @@ interface TrendingProblemsProps {
   className?: string;
 }
 
-export function TrendingProblems({ 
-  onProblemSelect, 
+export function TrendingProblems({
+  onProblemSelect,
   limit = 5,
-  className = '' 
+  className = '',
 }: TrendingProblemsProps) {
-  const [trending, setTrending] = useState<TrendingProblem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { items: trending, loading } = useTrendingProblems(limit);
 
-  useEffect(() => {
-    fetchTrendingProblems();
-  }, []);
-
-  const fetchTrendingProblems = async () => {
-    setLoading(true);
-    try {
-      // AWS Serverless compatible - use apiClient
-      const data = await apiClient.get<{ trending?: TrendingProblem[]; data?: { trending?: TrendingProblem[] } }>('/customer/problems/trending');
-      const rawTrending = data.data?.trending || data.trending || [];
-      
-      // Filter out any items without valid titles (safety check)
-      const validTrending = rawTrending.filter((item: any) => 
-        item && 
-        typeof item === 'object' && 
-        item.title && 
-        typeof item.title === 'string' && 
-        item.title.trim() !== ''
-      );
-      
-      // ✅ FIX: Deduplicate by problemId, or by title if problemId is missing
-      const seenIds = new Set<string>();
-      const seenTitles = new Set<string>();
-      const deduplicatedTrending = validTrending.filter((item: any) => {
-        // First try to deduplicate by problemId
-        if (item.problemId && typeof item.problemId === 'string') {
-          if (seenIds.has(item.problemId)) {
-            return false; // Duplicate problemId
-          }
-          seenIds.add(item.problemId);
-          return true;
-        }
-        // Fallback to title-based deduplication
-        const titleKey = (item.title || '').toLowerCase().trim();
-        if (seenTitles.has(titleKey)) {
-          return false; // Duplicate title
-        }
-        seenTitles.add(titleKey);
-        return true;
-      });
-      
-      setTrending(deduplicatedTrending);
-    } catch (error) {
-      console.error('Error fetching trending problems:', error);
-      setTrending([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Don't render anything while loading - avoids flash of skeleton on fast loads
   if (loading) {
     return null;
   }
 
-  // Don't render if no valid trending items
   if (!trending || trending.length === 0) {
     return null;
   }
@@ -106,16 +45,16 @@ export function TrendingProblems({
             onClick={() => onProblemSelect(problem)}
             className="w-full flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl hover:shadow-md hover:border-orange-300 transition-all group"
           >
-            {/* Rank */}
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${
-              index === 0 
-                ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white'
-                : 'bg-gray-100 text-gray-600'
-            }`}>
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${
+                index === 0
+                  ? 'bg-gradient-to-r from-orange-500 to-pink-500 text-white'
+                  : 'bg-gray-100 text-gray-600'
+              }`}
+            >
               {index + 1}
             </div>
 
-            {/* Problem Info */}
             <div className="flex-1 text-left min-w-0">
               <h4 className="text-sm text-gray-900 mb-1 line-clamp-1">
                 {String(problem.title || '')}
@@ -131,15 +70,18 @@ export function TrendingProblems({
               </div>
             </div>
 
-            {/* Trend Indicator */}
-            <div className={`flex items-center gap-1 text-xs ${
-              problem.trend === 'up' ? 'text-green-600' : 
-              problem.trend === 'down' ? 'text-red-600' : 
-              'text-gray-400'
-            }`}>
-              <TrendingUp className={`w-4 h-4 ${
-                problem.trend === 'down' ? 'rotate-180' : ''
-              }`} />
+            <div
+              className={`flex items-center gap-1 text-xs ${
+                problem.trend === 'up'
+                  ? 'text-green-600'
+                  : problem.trend === 'down'
+                    ? 'text-red-600'
+                    : 'text-gray-400'
+              }`}
+            >
+              <TrendingUp
+                className={`w-4 h-4 ${problem.trend === 'down' ? 'rotate-180' : ''}`}
+              />
             </div>
 
             <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-orange-500 group-hover:translate-x-1 transition-all" />

@@ -5,7 +5,6 @@ import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useCustomerShellAnalytics } from '@/hooks/useCustomerShellAnalytics';
 import { setClientShellScreenForErrors } from '@/lib/client-error-reporting';
 import dynamic from 'next/dynamic';
-import { CustomerHomeComplete as CustomerHome } from '../homepage/CustomerHomeComplete';
 import { UserAccountSidebar } from '../UserAccountSidebar';
 import { NotAvailable } from '../NotAvailable';
 import { CustomerScreenWrapper } from '../CustomerScreenWrapper';
@@ -19,14 +18,13 @@ import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { normalizeBoardingServiceSlug } from '@/lib/boarding-service-types';
 import type { VendorProfileFromProblemContext } from '../ProblemGridFlowRouter';
 import { apiClient } from '@/lib/api-client';
+import { readCachedPetsFromStorage, readCachedProfileName } from '../home/hooks/useHomePageData';
 import {
-  HOME_CRITICAL_GET_RETRY,
-  HOME_CRITICAL_TIMEOUT_MS,
-  readCachedPetsFromStorage,
-  readCachedProfileName,
-  persistPetsToLocalStorage,
-  parsePetsFromApiResponse,
-} from '../home/hooks/useHomePageData';
+  ensureCustomerProfileAndPets,
+  getHomeBootstrapReady,
+  readCachedCustomerPets,
+  readCachedCustomerProfile,
+} from '@/lib/customer-home-bootstrap';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
@@ -58,6 +56,12 @@ const LoadingSpinner = () => (
   <div className="flex min-h-[200px] items-center justify-center">
     <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-orange-500" />
   </div>
+);
+
+const CustomerHome = dynamic(
+  () =>
+    import('../homepage/CustomerHomeComplete').then((m) => ({ default: m.CustomerHomeComplete })),
+  { loading: LoadingSpinner, ssr: false }
 );
 
 const CustomerPetDetails = dynamic(() => import('../CustomerPetDetails').then((m) => ({ default: m.CustomerPetDetails })), { loading: LoadingSpinner });
@@ -559,63 +563,51 @@ export function CustomerHomeWrapper({
     return () => window.removeEventListener('orderMedicineFromPrescription', handleOrderMedicineFromPrescription as EventListener);
   }, []);
 
-  // Header profile/pets: hydrate from cache immediately, refresh in background (CustomerHomeComplete owns home pets UI).
+  // Header profile/pets: cache only on home (CustomerHomeComplete bootstrap owns the network refresh).
   useEffect(() => {
     if (!phone) return;
 
-    const cachedPets = readCachedPetsFromStorage();
-    if (cachedPets.length > 0) {
-      setPets(cachedPets);
-      setSelectedPet((prev) => prev ?? cachedPets[0]);
-    }
-    const cachedProfile = readCachedProfileName(phone);
-    setUserName(cachedProfile.name);
-    if (cachedProfile.photo) setUserProfilePhoto(cachedProfile.photo);
-
-    const loadUserProfile = async () => {
-      try {
-        const [profileResult, petsResult] = await Promise.allSettled([
-          apiClient.get(
-            `/customer/profile?phone=${encodeURIComponent(phone)}`,
-            HOME_CRITICAL_GET_RETRY,
-            HOME_CRITICAL_TIMEOUT_MS
-          ),
-          apiClient.get(
-            `/customer/pets/${encodeURIComponent(phone)}`,
-            HOME_CRITICAL_GET_RETRY,
-            HOME_CRITICAL_TIMEOUT_MS
-          ),
-        ]);
-
-        if (profileResult.status === 'fulfilled') {
-          const profileResponse = profileResult.value as any;
-          if (profileResponse?.profile || profileResponse) {
-            const profile = profileResponse.profile || profileResponse;
-            setUserName(profile.name || profile.fullName || profile.full_name || profile.firstName || 'User');
-            setUserProfilePhoto(
-              profile.profilePhoto ||
-                profile.profile_photo_url ||
-                profile.profile_image_url ||
-                profile.photo
-            );
-          }
-        }
-
-        if (petsResult.status === 'fulfilled') {
-          const pets = parsePetsFromApiResponse(petsResult.value);
-          if (pets.length > 0) {
-            setPets(pets);
-            setSelectedPet((prev) => prev ?? pets[0]);
-            persistPetsToLocalStorage(pets);
-          }
-        }
-      } catch (error) {
-        console.error('[CustomerHomeWrapper] Error loading user profile:', error);
+    const rehydrateFromCache = () => {
+      const cachedPets = readCachedCustomerPets();
+      if (cachedPets.length > 0) {
+        setPets(cachedPets);
+        setSelectedPet((prev: typeof cachedPets[0] | null) => prev ?? cachedPets[0]);
+      }
+      const profile = readCachedCustomerProfile();
+      if (profile) {
+        setUserName(
+          String(
+            profile.name ||
+              profile.fullName ||
+              profile.full_name ||
+              profile.firstName ||
+              readCachedProfileName(phone).name
+          )
+        );
+        const photo = String(
+          profile.profilePhoto ||
+            profile.profile_photo_url ||
+            profile.profile_image_url ||
+            profile.photo ||
+            ''
+        );
+        if (photo) setUserProfilePhoto(photo);
+      } else {
+        const cachedProfile = readCachedProfileName(phone);
+        setUserName(cachedProfile.name);
+        if (cachedProfile.photo) setUserProfilePhoto(cachedProfile.photo);
       }
     };
 
-    void loadUserProfile();
-  }, [phone]);
+    rehydrateFromCache();
+
+    if (currentScreen === 'home') {
+      void getHomeBootstrapReady().then(rehydrateFromCache);
+      return;
+    }
+
+    void ensureCustomerProfileAndPets(phone).refreshPromise.then(rehydrateFromCache);
+  }, [phone, currentScreen]);
 
   const syncTeleConsultUrl = useCallback(
     (includeServiceTele: boolean) => {

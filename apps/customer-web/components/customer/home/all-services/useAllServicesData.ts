@@ -13,7 +13,7 @@ import { serviceBaseOnpincode } from '../../homepage/constants/helpers';
 import { quickServices, serviceScreenMap } from '../../homepage/constants';
 import type { QuickServiceTile } from '../types';
 
-export type PetTypeFilter = 'all' | 'dogs' | 'cats' | 'birds' | 'other';
+export type PetTypeFilter = 'all' | 'dogs' | 'cats';
 
 /** Large-card services — "Services for You" (2-col). */
 export const PRIMARY_SERVICE_SCREENS = new Set([
@@ -28,14 +28,6 @@ export const PRIMARY_SERVICE_SCREENS = new Set([
 ]);
 
 const DOG_ONLY_SCREENS = new Set(['walker']);
-
-const BIRDS_EXCLUDED_SCREENS = new Set([
-  'walker',
-  'grooming',
-  'training',
-  'behaviorist',
-  'mating-dating-hub',
-]);
 
 export const SERVICE_LABEL_OVERRIDE: Record<string, string> = {
   emergency: 'Emergency Care',
@@ -102,13 +94,9 @@ function descriptionForService(service: QuickServiceTile): string {
 }
 
 function serviceMatchesPetFilter(service: QuickServiceTile, filter: PetTypeFilter): boolean {
-  if (filter === 'all') return true;
+  if (filter === 'all' || filter === 'dogs') return true;
   const screen = String(service.screen || service.categoryId || '').toLowerCase();
-  if (filter === 'dogs') return true;
-  if (filter === 'cats') return !DOG_ONLY_SCREENS.has(screen);
-  if (filter === 'birds') return !BIRDS_EXCLUDED_SCREENS.has(screen);
-  if (filter === 'other') return !DOG_ONLY_SCREENS.has(screen);
-  return true;
+  return !DOG_ONLY_SCREENS.has(screen);
 }
 
 function buildSourceQuickServices(quickServiceTiles: QuickServiceTile[]): QuickServiceTile[] {

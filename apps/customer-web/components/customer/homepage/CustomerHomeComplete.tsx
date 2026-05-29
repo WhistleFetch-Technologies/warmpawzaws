@@ -56,13 +56,9 @@ import { isNewHomeUiEnabled } from '@/lib/customer-new-home-ui-flag';
 import { CustomerHomePageContent, CustomerHomePageHeader } from '../home/CustomerHomePage';
 import { MoreServicesSection } from '../home/sections/MoreServicesSection';
 import {
-  HOME_CRITICAL_GET_RETRY,
-  HOME_CRITICAL_TIMEOUT_MS,
   hydrateInitialUserData,
   readCachedPetsFromStorage,
   readCachedProfileName,
-  persistPetsToLocalStorage,
-  parsePetsFromApiResponse,
 } from '../home/hooks/useHomePageData';
 import { HOME_CONTENT_SHELL_CLASS } from '../home/shared/HomeContentShell';
 import { buildHomeTopCarouselBanners } from '../home/utils/banner-utils';
@@ -79,6 +75,12 @@ import {
   type CachedHomeServices,
 } from '@/lib/home-session-cache';
 import { scheduleIdleWork } from '@/lib/schedule-idle';
+import {
+  ensureCustomerProfileAndPets,
+  getHomeBootstrapReady,
+  refreshHomeDynamicContent,
+  scheduleHomeDeferredWork,
+} from '@/lib/customer-home-bootstrap';
 
 // ============================================================================
 // PERFORMANCE OPTIMIZATION: Lazy load conditionally rendered widgets
@@ -1343,19 +1345,52 @@ export function CustomerHomeComplete({
     let cancelled = false;
 
     const bootstrapHome = async () => {
+      const { profile: cachedProfile, pets: cachedPets, refreshPromise } =
+        ensureCustomerProfileAndPets(phone, { force: refreshKey > 0 });
       const locationPromise = resolveCustomerLocation(phone);
       const resetLaunchTiles = refreshKey > 0;
 
+      const applyProfilePets = (result: {
+        profile: Record<string, unknown> | null;
+        pets: Pet[];
+      }) => {
+        if (cancelled) return;
+        const profile = result.profile;
+        if (profile) {
+          setUserData((prev) => ({
+            ...prev,
+            name: String(profile.firstName || profile.name || 'User'),
+            phone,
+            journeyType: String(profile.journeyType || ''),
+          }));
+          setUserProfilePhoto(
+            String(profile.photo || profile.profile_photo_url || profile.profilePhoto || '')
+          );
+        }
+        if (result.pets.length > 0) {
+          setUserData((prev) => ({ ...prev, pets: result.pets }));
+          setSelectedPet((prev) => prev ?? result.pets[0]);
+        }
+        setPetsLoading(false);
+      };
+
+      applyProfilePets({ profile: cachedProfile, pets: cachedPets });
+
       await Promise.allSettled([
-        loadUserData(),
+        refreshPromise.then(applyProfilePets),
         loadServicesFromAPI(),
         (async () => {
           const location = await locationPromise;
           if (cancelled) return;
-          await Promise.allSettled([
-            loadDynamicContent(location),
-            runServiceLaunchConfig(location, resetLaunchTiles),
-          ]);
+          const dynamic = await refreshHomeDynamicContent(phone, location);
+          if (cancelled) return;
+          if (dynamic.dynamicBanners?.length) setDynamicBanners(dynamic.dynamicBanners);
+          if (dynamic.dynamicMiddleBanners?.length) setDynamicMiddleBanners(dynamic.dynamicMiddleBanners);
+          if (dynamic.dynamicLowerBanners?.length) setDynamicLowerBanners(dynamic.dynamicLowerBanners);
+          if (dynamic.dynamicArticles?.length) setDynamicArticles(dynamic.dynamicArticles);
+          if (dynamic.dynamicAnnouncements?.length) setDynamicAnnouncements(dynamic.dynamicAnnouncements);
+          if (dynamic.adoptionStats) setAdoptionStats(dynamic.adoptionStats);
+          await runServiceLaunchConfig(location, resetLaunchTiles);
         })(),
       ]);
     };
@@ -1455,35 +1490,81 @@ export function CustomerHomeComplete({
     if (!phone) return;
 
     let cancelled = false;
-    const cancelIdle = scheduleIdleWork(() => {
-      if (cancelled) return;
-      apiClient.get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`).then((r) => {
-        if (r?.customer?.id) setCustomerId(r.customer.id);
-      }).catch(() => { });
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let incomingCallInterval: ReturnType<typeof setInterval> | undefined;
+
+    const runPollingTick = () => {
+      if (cancelled || document.hidden) return;
       loadActiveBookings();
       checkPendingReviews();
       checkUpcomingCalls();
       checkActiveOrderTracking();
       checkIncomingCalls();
-    });
+    };
 
-    const interval = setInterval(() => {
-      if (cancelled) return;
-      loadActiveBookings();
-      checkUpcomingCalls();
-      checkActiveOrderTracking();
+    const runIncomingCallTick = () => {
+      if (cancelled || document.hidden) return;
       checkIncomingCalls();
-    }, 15000);
-    const incomingCallInterval = setInterval(() => {
+    };
+
+    const startPolling = () => {
+      if (interval) return;
+      interval = setInterval(runPollingTick, 15000);
+      incomingCallInterval = setInterval(runIncomingCallTick, 5000);
+    };
+
+    const stopPolling = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = undefined;
+      }
+      if (incomingCallInterval) {
+        clearInterval(incomingCallInterval);
+        incomingCallInterval = undefined;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        runPollingTick();
+        startPolling();
+      }
+    };
+
+    let cancelDeferred: (() => void) | undefined;
+
+    void getHomeBootstrapReady().then(() => {
       if (cancelled) return;
-      checkIncomingCalls();
-    }, 5000);
+      cancelDeferred = scheduleHomeDeferredWork({
+        loadBookings: () => {
+          if (cancelled) return;
+          apiClient
+            .get<any>(`/customer/by-phone?phone=${encodeURIComponent(phone)}`)
+            .then((r) => {
+              if (r?.customer?.id) setCustomerId(r.customer.id);
+            })
+            .catch(() => {});
+          loadActiveBookings();
+          checkPendingReviews();
+          checkUpcomingCalls();
+          checkActiveOrderTracking();
+          checkIncomingCalls();
+        },
+      });
+      if (!document.hidden) {
+        runPollingTick();
+        startPolling();
+      }
+      document.addEventListener('visibilitychange', onVisibilityChange);
+    });
 
     return () => {
       cancelled = true;
-      cancelIdle();
-      clearInterval(interval);
-      clearInterval(incomingCallInterval);
+      cancelDeferred?.();
+      stopPolling();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [phone, refreshKey]);
 
@@ -1494,7 +1575,10 @@ export function CustomerHomeComplete({
       return;
     }
     let cancelled = false;
+    let interval: ReturnType<typeof setInterval> | undefined;
+
     const fetchUnread = async () => {
+      if (document.hidden) return;
       try {
         const data = await apiClient.get<{ notifications?: { is_read?: boolean; read?: boolean }[] }>(
           `/customer/notifications?phone=${encodeURIComponent(clean)}&limit=50`
@@ -1507,14 +1591,44 @@ export function CustomerHomeComplete({
         if (!cancelled) setNotificationUnreadCount(0);
       }
     };
-    const cancelIdle = scheduleIdleWork(() => {
-      void fetchUnread();
+
+    const startInterval = () => {
+      if (interval) return;
+      interval = setInterval(fetchUnread, 90_000);
+    };
+
+    const stopInterval = () => {
+      if (interval) {
+        clearInterval(interval);
+        interval = undefined;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        stopInterval();
+      } else {
+        void fetchUnread();
+        startInterval();
+      }
+    };
+
+    let cancelDeferred: (() => void) | undefined;
+
+    void getHomeBootstrapReady().then(() => {
+      if (cancelled) return;
+      cancelDeferred = scheduleHomeDeferredWork({ loadNotifications: () => void fetchUnread() });
+      if (!document.hidden) {
+        startInterval();
+      }
+      document.addEventListener('visibilitychange', onVisibilityChange);
     });
-    const interval = setInterval(fetchUnread, 90_000);
+
     return () => {
       cancelled = true;
-      cancelIdle();
-      clearInterval(interval);
+      cancelDeferred?.();
+      stopInterval();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [phone, refreshKey, notificationInboxVersion]);
 
@@ -1806,73 +1920,30 @@ export function CustomerHomeComplete({
     const hadCachedPets = readCachedPetsFromStorage().length > 0;
     if (!hadCachedPets) setPetsLoading(true);
     try {
-      const [profileResult, petsResult] = await Promise.allSettled([
-        apiClient.get(
-          `/customer/profile?phone=${encodeURIComponent(phone)}`,
-          HOME_CRITICAL_GET_RETRY,
-          HOME_CRITICAL_TIMEOUT_MS
-        ),
-        apiClient.get(
-          `/customer/pets/${encodeURIComponent(phone)}`,
-          HOME_CRITICAL_GET_RETRY,
-          HOME_CRITICAL_TIMEOUT_MS
-        ),
-      ]);
-
-      if (profileResult.status === 'fulfilled') {
-        const profileResp = profileResult.value as any;
-        if (profileResp && (profileResp.success || profileResp.profile)) {
-          const profile = profileResp.profile || profileResp;
-          setUserData(prev => ({
-            ...prev,
-            name: profile.firstName || profile.name || 'User',
-            phone: phone,
-            journeyType: profile.journeyType || ''
-          }));
-          setUserProfilePhoto(profile.photo || profile.profile_photo_url || '');
-
-          if (profile.pets && Array.isArray(profile.pets) && profile.pets.length > 0) {
-            setUserData(prev => ({
-              ...prev,
-              pets: profile.pets
-            }));
-            setSelectedPet(prev => prev ?? profile.pets[0]);
-            persistPetsToLocalStorage(profile.pets);
-          }
-        }
-      } else if (profileResult.status === 'rejected') {
-        const error = profileResult.reason;
-        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-          console.warn('Failed to load profile:', error.message);
-        }
-        const cachedProfile = readCachedProfileName(phone);
-        setUserData(prev => ({
+      const { refreshPromise } = ensureCustomerProfileAndPets(phone);
+      const result = await refreshPromise;
+      const profile = result.profile;
+      if (profile) {
+        setUserData((prev) => ({
           ...prev,
-          name: cachedProfile.name,
-          phone: phone,
+          name: String(profile.firstName || profile.name || 'User'),
+          phone,
+          journeyType: String(profile.journeyType || ''),
         }));
+        setUserProfilePhoto(String(profile.photo || profile.profile_photo_url || ''));
+      } else {
+        const cachedProfile = readCachedProfileName(phone);
+        setUserData((prev) => ({ ...prev, name: cachedProfile.name, phone }));
         if (cachedProfile.photo) setUserProfilePhoto(cachedProfile.photo);
       }
-
-      if (petsResult.status === 'fulfilled') {
-        const pets = parsePetsFromApiResponse(petsResult.value);
-        if (pets.length > 0) {
-          setUserData(prev => ({
-            ...prev,
-            pets: pets
-          }));
-          setSelectedPet(prev => prev ?? pets[0]);
-          persistPetsToLocalStorage(pets);
-        }
-      } else if (petsResult.status === 'rejected') {
-        const error = petsResult.reason;
-        if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-          console.warn('Failed to load pets:', error.message);
-        }
+      if (result.pets.length > 0) {
+        setUserData((prev) => ({ ...prev, pets: result.pets }));
+        setSelectedPet((prev) => prev ?? result.pets[0]);
       }
-    } catch (error: any) {
-      if (error?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-        console.error('Error loading user data:', error);
+    } catch (error: unknown) {
+      const err = error as { code?: string; message?: string };
+      if (err?.code !== 'CORS_ERROR' && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+        console.error('Error loading user data:', err.message);
       }
     } finally {
       setPetsLoading(false);

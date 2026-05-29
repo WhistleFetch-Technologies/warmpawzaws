@@ -109,11 +109,13 @@ function AdoptionSectionComponent({
 
             <div className="mb-1.5 flex flex-wrap items-center gap-2">
               <div
-                className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#FF4D6D] to-[#FF6B8A] shadow-[0_4px_14px_rgba(255,77,109,0.35)]"
+                className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-visible rounded-full bg-gradient-to-br from-[#FF4D6D] to-[#FF6B8A] shadow-[0_4px_14px_rgba(255,77,109,0.35)]"
                 aria-hidden
               >
                 <Heart className="h-4 w-4 fill-white/20 text-white" strokeWidth={2.25} />
-                <PawPrint className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-white/90" strokeWidth={2.5} />
+                <span className="absolute bottom-0 right-0 flex h-3.5 w-3.5 translate-x-[18%] translate-y-[18%] items-center justify-center rounded-full bg-white shadow-[0_1px_3px_rgba(255,77,109,0.35)] ring-[1.5px] ring-[#FF6B8A]">
+                  <PawPrint className="h-2 w-2 text-[#FF4D6D]" strokeWidth={2.75} />
+                </span>
               </div>
               <h2 className="text-base font-bold tracking-tight text-gray-900">Adoption</h2>
               <span className="adopt-soon-pulse relative shrink-0 overflow-hidden rounded-full bg-gradient-to-r from-[#FF8C00] to-[#FF6B35] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-[0_2px_8px_rgba(255,140,0,0.4)]">

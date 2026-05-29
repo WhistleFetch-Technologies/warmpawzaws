@@ -31,7 +31,7 @@ function PopularServicesSectionComponent({
         </div>
         <button
           type="button"
-          onClick={() => onNavigate('grooming')}
+          onClick={() => onNavigate('/services/all')}
           className="flex items-center gap-1 text-xs font-medium text-[#FF8C42]"
         >
           View all <ChevronRight className="h-4 w-4" />
@@ -101,5 +101,5 @@ function PopularServicesSectionComponent({
   );
 }
 
-/** Category spotlight cards — navigation matches legacy grooming "View all" routes. */
+/** Category spotlight cards — header "View all" opens the full services catalog. */
 export const PopularServicesSection = memo(PopularServicesSectionComponent);

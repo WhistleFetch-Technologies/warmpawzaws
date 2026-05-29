@@ -3,9 +3,8 @@
 import React, { memo, useEffect, useState } from 'react';
 import { Bell, Heart, MapPin, MessageSquare, RefreshCw } from 'lucide-react';
 import { PresignableImage } from '@/components/shared/PresignableImage';
-import { apiClient } from '@/lib/api-client';
+import { resolveCustomerLocation } from '@/lib/customer-location';
 import { WalletIcon } from '../../WalletIcon';
-import { serviceBaseOnpincode } from '../../homepage/constants/helpers';
 import { IconBadgeButton } from '../shared/IconBadgeButton';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
@@ -41,41 +40,14 @@ function HomeHeaderSectionComponent({
       return;
     }
     let cancelled = false;
-    (async () => {
-      let city = '';
-      let state = '';
-      try {
-        const addressesResponse = (await apiClient
-          .get(`/customer/addresses?phone=${encodeURIComponent(phone)}`)
-          .catch(() => null)) as { addresses?: Array<{ city?: string; state?: string; isDefault?: boolean }> } | null;
-        const addresses = addressesResponse?.addresses || [];
-        const defaultAddress = addresses.find((a) => a.isDefault) || addresses[0];
-        if (defaultAddress) {
-          city = (defaultAddress.city || '').trim();
-          state = (defaultAddress.state || '').trim();
-        }
-      } catch {
-        /* profile fallback below */
-      }
-      if (!city || !state) {
-        try {
-          const profileResponse = await apiClient
-            .get(`/customer/profile?phone=${encodeURIComponent(phone)}`)
-            .catch(() => null);
-          const profile = profileResponse as Record<string, unknown> | null;
-          const profileLocation = serviceBaseOnpincode(profile, (profile?.pincode as string) || '');
-          if (!city && profileLocation.city) city = String(profileLocation.city).trim();
-          if (!state && profileLocation.state) state = String(profileLocation.state).trim();
-        } catch {
-          /* keep empty */
-        }
-      }
+    void resolveCustomerLocation(phone).then((loc) => {
       if (cancelled) return;
+      const { city, state } = loc;
       if (city && state) setLocationLabel(`${city}, ${state}`);
       else if (city) setLocationLabel(city);
       else if (state) setLocationLabel(state);
       else setLocationLabel('Set your location');
-    })();
+    });
     return () => {
       cancelled = true;
     };

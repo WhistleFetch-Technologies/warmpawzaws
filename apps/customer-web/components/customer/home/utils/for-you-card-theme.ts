@@ -30,8 +30,8 @@ export interface ForYouCardTheme {
 
 const VET_THEME: ForYouCardTheme = {
   overlayIcon: Heart,
-  overlayIconClass: 'text-red-500',
-  overlayBgClass: 'bg-white',
+  overlayIconClass: 'text-white',
+  overlayBgClass: 'bg-red-500',
   backgroundIcon: Stethoscope,
   backgroundIconClass: 'text-red-200',
   badges: [
@@ -43,8 +43,8 @@ const VET_THEME: ForYouCardTheme = {
 
 const GROOMING_THEME: ForYouCardTheme = {
   overlayIcon: Scissors,
-  overlayIconClass: 'text-violet-500',
-  overlayBgClass: 'bg-white',
+  overlayIconClass: 'text-white',
+  overlayBgClass: 'bg-violet-500',
   backgroundIcon: Scissors,
   backgroundIconClass: 'text-violet-200',
   badges: [
@@ -56,8 +56,8 @@ const GROOMING_THEME: ForYouCardTheme = {
 
 const WALKER_THEME: ForYouCardTheme = {
   overlayIcon: PawPrint,
-  overlayIconClass: 'text-emerald-500',
-  overlayBgClass: 'bg-white',
+  overlayIconClass: 'text-white',
+  overlayBgClass: 'bg-emerald-500',
   backgroundIcon: PawPrint,
   backgroundIconClass: 'text-emerald-200',
   badges: [

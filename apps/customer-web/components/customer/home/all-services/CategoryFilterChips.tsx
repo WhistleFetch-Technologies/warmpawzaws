@@ -1,14 +1,13 @@
 'use client';
 
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Cat, Dog, PawPrint, type LucideIcon } from 'lucide-react';
 import type { PetTypeFilter } from './useAllServicesData';
 
-const PET_FILTERS: { id: PetTypeFilter; label: string; emoji: string }[] = [
-  { id: 'all', label: 'All', emoji: '🐾' },
-  { id: 'dogs', label: 'Dogs', emoji: '🐕' },
-  { id: 'cats', label: 'Cats', emoji: '🐈' },
-  { id: 'birds', label: 'Birds', emoji: '🦜' },
-  { id: 'other', label: 'Other', emoji: '🐰' },
+const PET_FILTERS: { id: PetTypeFilter; label: string; Icon: LucideIcon }[] = [
+  { id: 'all', label: 'All', Icon: PawPrint },
+  { id: 'dogs', label: 'Dogs', Icon: Dog },
+  { id: 'cats', label: 'Cats', Icon: Cat },
 ];
 
 export interface CategoryFilterChipsProps {
@@ -64,7 +63,7 @@ function CategoryFilterChipsComponent({
             opacity: indicator.width > 0 ? 1 : 0,
           }}
         />
-        {PET_FILTERS.map(({ id, label, emoji }) => {
+        {PET_FILTERS.map(({ id, label, Icon }) => {
           const active = selected === id;
           return (
             <button
@@ -83,9 +82,11 @@ function CategoryFilterChipsComponent({
                   : 'bg-gray-50 text-gray-600 ring-1 ring-gray-100 hover:bg-gray-100 active:opacity-90'
               }`}
             >
-              <span className="text-base leading-none" aria-hidden>
-                {emoji}
-              </span>
+              <Icon
+                className="h-4 w-4 shrink-0"
+                strokeWidth={2.25}
+                aria-hidden
+              />
               {label}
             </button>
           );

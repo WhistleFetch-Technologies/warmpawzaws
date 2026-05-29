@@ -39,6 +39,18 @@ function writeCachedLocation(phone: string, location: CustomerLocation): void {
   }
 }
 
+function readCachedProfileForLocation(): Record<string, unknown> | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('customerData');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Single shared location resolver per phone (dedupes parallel home fetches). */
 export async function resolveCustomerLocation(phone: string): Promise<CustomerLocation> {
   const key = cacheKey(phone);
@@ -64,16 +76,16 @@ export async function resolveCustomerLocation(phone: string): Promise<CustomerLo
     }
 
     if (!city || !state) {
-      try {
-        const profileResponse = await apiClient
-          .get(`/customer/profile?phone=${encodeURIComponent(phone)}`)
-          .catch(() => null);
-        const profile = profileResponse as Record<string, unknown> | null;
-        const profileLocation = serviceBaseOnpincode(profile, (profile?.pincode as string) || '');
+      const { getHomeBootstrapReady } = await import('@/lib/customer-home-bootstrap');
+      await getHomeBootstrapReady().catch(() => undefined);
+      const cachedProfile = readCachedProfileForLocation();
+      if (cachedProfile) {
+        const profileLocation = serviceBaseOnpincode(
+          cachedProfile,
+          (cachedProfile.pincode as string) || ''
+        );
         if (!city && profileLocation.city) city = String(profileLocation.city).trim();
         if (!state && profileLocation.state) state = String(profileLocation.state).trim();
-      } catch {
-        /* keep fallback */
       }
     }
 

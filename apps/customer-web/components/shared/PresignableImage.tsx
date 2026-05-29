@@ -44,10 +44,6 @@ export function PresignableImage({ src, alt, className, onUnavailable }: Props) 
       markUnavailable();
       return;
     }
-    if (url.includes('X-Amz-Algorithm=') || url.includes('X-Amz-Credential=')) {
-      markUnavailable();
-      return;
-    }
 
     setTriedRefresh(true);
     try {
