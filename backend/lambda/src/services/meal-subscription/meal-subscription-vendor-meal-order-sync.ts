@@ -7,6 +7,7 @@ import {
   asScheduleJson,
   deliveriesPerBillingCycle,
 } from '../../utils/meal-subscription-schedule-utils';
+import { generateMealOrderNumber } from '../../utils/meal-order-number';
 
 function parseAddr(raw: unknown): Record<string, unknown> {
   if (raw == null) return {};
@@ -233,6 +234,7 @@ export async function upsertVendorMealOrderForCanonicalDelivery(
 
   if (has.has('purchase_type')) row.purchase_type = purchaseType;
   if (has.has('purchase_snapshot')) row.purchase_snapshot = JSON.stringify(purchaseSnap);
+  if (has.has('order_number')) row.order_number = generateMealOrderNumber();
 
   const keys = Object.keys(row).filter((k) => has.has(k));
   if (!keys.includes('customer_id') || !keys.includes('vendor_id')) return;

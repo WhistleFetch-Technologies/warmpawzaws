@@ -40,12 +40,31 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 function parseTimeHm(raw: string): { hours: number; minutes: number } | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(String(raw || '').trim());
+  const m = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(String(raw || '').trim());
   if (!m) return null;
   const hours = Number(m[1]);
   const minutes = Number(m[2]);
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
   return { hours, minutes };
+}
+
+function formatTimeHm(hours: number, minutes: number): string {
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function parseDietaryJson(planRow: Record<string, unknown>): Record<string, unknown> {
+  const raw = planRow.dietary_requirements;
+  if (raw == null) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      const o = JSON.parse(raw) as unknown;
+      return typeof o === 'object' && o != null && !Array.isArray(o) ? (o as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
 }
 
 function localDateKey(d: Date, timeZone: string): string {
@@ -89,20 +108,26 @@ export function extractMealPlanTiming(planRow: Record<string, unknown>): {
   leadTimeHours: number | null;
   orderCutoffTime: string | null;
 } {
+  const diet = parseDietaryJson(planRow);
   const leadRaw =
     planRow.lead_time_hours != null
       ? Number(planRow.lead_time_hours)
       : planRow.leadTimeHours != null
         ? Number(planRow.leadTimeHours)
-        : null;
+        : diet.leadTimeHours != null
+          ? Number(diet.leadTimeHours)
+          : null;
   const leadTimeHours =
     leadRaw != null && Number.isFinite(leadRaw) ? clampLeadTimeHours(leadRaw) : null;
   const cutoffRaw =
     (typeof planRow.order_cutoff_time === 'string' && planRow.order_cutoff_time) ||
     (typeof planRow.orderCutoffTime === 'string' && planRow.orderCutoffTime) ||
+    (typeof diet.orderCutoffTime === 'string' && diet.orderCutoffTime) ||
     null;
-  const orderCutoffTime =
-    cutoffRaw && parseTimeHm(cutoffRaw) ? String(cutoffRaw).trim() : null;
+  const parsedCutoff = cutoffRaw ? parseTimeHm(cutoffRaw) : null;
+  const orderCutoffTime = parsedCutoff
+    ? formatTimeHm(parsedCutoff.hours, parsedCutoff.minutes)
+    : null;
   return { leadTimeHours, orderCutoffTime };
 }
 
