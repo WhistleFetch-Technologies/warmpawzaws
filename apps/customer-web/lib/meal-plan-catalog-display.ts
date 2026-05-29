@@ -4,6 +4,7 @@
  */
 
 import { ALLERGEN_LABEL, MEAL_CATEGORY_LABEL } from '@/lib/meal-product-display';
+import { formatPackWeightLabel, resolvePackWeightGrams } from '@/lib/meal-pack-weight';
 import {
   customerBenefitBullets,
   customerPricingLine,
@@ -115,6 +116,17 @@ export function getMealPlanCatalogDisplay(plan: Record<string, unknown> | null |
     if (Number.isFinite(n) && n > 0) shelfLifeDays = n;
   }
 
+  const packWeightGrams = resolvePackWeightGrams(plan ?? undefined, {
+    ...d,
+    packWeightGrams: plan?.pack_weight_grams ?? d.packWeightGrams,
+    mealsPerDelivery: plan?.meals_per_delivery ?? d.mealsPerDelivery,
+    deliveryDays: plan?.delivery_days ?? d.deliveryDays,
+    deliveryFrequency: plan?.delivery_frequency ?? d.deliveryFrequency,
+    purchaseType: plan?.purchase_type ?? d.purchaseType,
+    mealsPerDay: plan?.purchase_type === 'WEEKLY_PLAN' ? undefined : (plan?.meals_per_day ?? d.mealsPerDay),
+  });
+  const packWeightLabel = formatPackWeightLabel(packWeightGrams);
+
   return {
     mealCategories,
     petTypes,
@@ -124,6 +136,8 @@ export function getMealPlanCatalogDisplay(plan: Record<string, unknown> | null |
     preparationLabel,
     deliveryLabel,
     shelfLifeDays,
+    packWeightGrams,
+    packWeightLabel,
     purchaseType,
     customerPurchaseHeadline: customerPurchaseHeadline(purchaseType),
     customerPricingLine: customerPricingLine(plan ?? {}, d),

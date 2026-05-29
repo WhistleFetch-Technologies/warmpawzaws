@@ -3,8 +3,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { formatMealOrderDeliverySchedule } from '@/lib/format-meal-order-schedule';
 import { toast } from 'sonner';
 import { MealProductFormModal } from '@/components/vendor/nutrition/MealProductFormModal';
+import { formatPackWeightLabel, resolvePackWeightGramsFromMetadata } from '@/lib/meal-pack-weight';
 import { MealKitchenAvailabilityCard } from '@/components/vendor/nutrition/MealKitchenAvailabilityCard';
 import { useVendorWebSocket } from '@/hooks/useVendorWebSocket';
 import {
@@ -694,8 +696,8 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
           <div className="flex items-center justify-between mb-4">
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-500">
               <span className="flex items-center gap-1">{Icons.phone} {order.customer_phone || 'N/A'}</span>
-              <span className="flex items-center gap-1" title="Scheduled delivery date (subscription sessions use this day)">
-                {Icons.clock} Delivery: {formatOrderCalendarDate(order)}
+              <span className="flex items-center gap-1" title="Scheduled delivery date and time">
+                {Icons.clock} Delivery: {formatMealOrderDeliverySchedule(order as Record<string, unknown>)}
               </span>
             </div>
             <div className="text-right">
@@ -1059,6 +1061,9 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 {products.map((product) => {
                   const metadata = product.metadata ? (typeof product.metadata === 'string' ? JSON.parse(product.metadata) : product.metadata) : {};
                   const mealImg = (metadata as { mealImageUrl?: string }).mealImageUrl;
+                  const packWeightLabel = formatPackWeightLabel(
+                    resolvePackWeightGramsFromMetadata(metadata as Record<string, unknown>),
+                  );
                   return (
                     <div key={product.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
                       <div className="h-32 bg-gradient-to-br from-emerald-100 to-green-100 flex items-center justify-center overflow-hidden">
@@ -1072,9 +1077,14 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                         )}
                       </div>
                       <div className="p-4">
-                        <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-start justify-between mb-2 gap-2">
                           <h3 className="font-semibold text-slate-800">{product.name}</h3>
-                          <span className="text-lg font-bold text-emerald-600">₹{product.price}</span>
+                          <div className="text-right shrink-0">
+                            <span className="text-lg font-bold text-emerald-600">₹{product.price}</span>
+                            {packWeightLabel ? (
+                              <p className="text-xs font-medium text-slate-500 mt-0.5">{packWeightLabel}</p>
+                            ) : null}
+                          </div>
                         </div>
                         <p className="text-sm text-slate-500 mb-3 line-clamp-2">{product.description}</p>
 

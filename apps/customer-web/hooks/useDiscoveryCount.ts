@@ -63,6 +63,7 @@ export function useDiscoveryCount(params: UseDiscoveryCountParams) {
     enabled: enabled !== false && Boolean(serviceStyle?.trim?.()),
     staleTime: 60_000,
     retry: 2,
+    placeholderData: 0,
     queryFn: async (): Promise<number> => {
       const { latitude, longitude } = await resolveCustomerDiscoveryCoords(effectivePhone);
       const qp = new URLSearchParams();

@@ -88,9 +88,20 @@ else
 fi
 RESOLVED_API_BASE_URL="${RESOLVED_API_BASE_URL%/}"
 
-# Meal plans browse + meal order tracking (off on prod until launch).
+# Customer marketplace toggle (shop / cart / wishlist / shop orders / checkout).
+# Hard-off everywhere until launch — both dev and prod default to disabled so the
+# customer-facing app shows "Coming Soon" surfaces. Opt in for an internal beta by
+# exporting CUSTOMER_ECOMMERCE_ENABLED=true before running the deploy script.
+CEE_RAW="${CUSTOMER_ECOMMERCE_ENABLED:-false}"
+if [ "$CEE_RAW" = "true" ] || [ "$CEE_RAW" = "1" ]; then
+  CEE_JS="true"
+else
+  CEE_JS="false"
+fi
+
+# Meal plans browse + meal order tracking (on by default; set CUSTOMER_MEAL_PLANS_ENABLED=false to disable).
 if [ "$PROD" = true ]; then
-  CMP_RAW="${CUSTOMER_MEAL_PLANS_ENABLED:-false}"
+  CMP_RAW="${CUSTOMER_MEAL_PLANS_ENABLED:-true}"
 else
   CMP_RAW="${CUSTOMER_MEAL_PLANS_ENABLED:-true}"
 fi
@@ -116,6 +127,7 @@ else
     BUILD_ENV=(
       "NEXT_PUBLIC_ENVIRONMENT=production"
       "NEXT_PUBLIC_API_BASE_URL=${RESOLVED_API_BASE_URL}"
+      "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
       "NEXT_PUBLIC_FIREBASE_VAPID_KEY=BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw"
       "NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=${CMP_JS}"
     )
@@ -123,6 +135,7 @@ else
     BUILD_ENV=(
       "NEXT_PUBLIC_ENVIRONMENT=development"
       "NEXT_PUBLIC_API_BASE_URL=${RESOLVED_API_BASE_URL}"
+      "NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED=${CEE_JS}"
       "NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=${CMP_JS}"
       "NEXT_PUBLIC_FIREBASE_VAPID_KEY=BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw"
     )
@@ -174,6 +187,7 @@ if [ "$PROD" = true ]; then
       firebaseMessagingSenderId: "771876271254",
       firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
       firebaseMeasurementId:     "G-PYF54Y34BP",
+      customerEcommerceEnabled: ${CEE_JS},
       customerMealPlansEnabled: ${CMP_JS}
     }
   );
@@ -182,10 +196,12 @@ if [ "$PROD" = true ]; then
 EOF
 else
   cat > "apps/${APP_NAME}/dist/runtime-config.js" <<EOF
-// Runtime Configuration for Warmpawz ${APP_NAME}
+// Runtime Configuration for Warmpawz ${APP_NAME} (DEV)
 (function() {
+  'use strict';
+  var existing = window.__WARMPAWZ_RUNTIME_CONFIG__ || {};
   window.__WARMPAWZ_RUNTIME_CONFIG__ = Object.assign(
-    window.__WARMPAWZ_RUNTIME_CONFIG__ || {},
+    existing,
     {
       apiBaseUrl: "${API_BASE_URL}",
       uatMode: true,
@@ -197,10 +213,14 @@ else
       firebaseMessagingSenderId: "771876271254",
       firebaseAppId:             "1:771876271254:web:3191a5c001b269f2f1beb7",
       firebaseMeasurementId:     "G-PYF54Y34BP",
+      customerEcommerceEnabled: ${CEE_JS},
       customerMealPlansEnabled: ${CMP_JS}
     }
   );
-  console.log('🔧 Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
+  if (existing.customerMealPlansEnabled !== undefined) {
+    window.__WARMPAWZ_RUNTIME_CONFIG__.customerMealPlansEnabled = existing.customerMealPlansEnabled;
+  }
+  console.log('🔧 Runtime config loaded (DEV):', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
 EOF
 fi

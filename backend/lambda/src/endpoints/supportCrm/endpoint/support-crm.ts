@@ -24,6 +24,13 @@ import { generateSupportTicketNumber } from '../../../utils/support-ticket-numbe
 import { isValidUUID } from '../../../types/entities';
 import { invokeBedrock } from '../../../utils/bedrock-client';
 import { buildSupportTicketsListQuery } from '../build-support-tickets-list-query';
+import {
+  validateBookingTicketLink,
+  buildBookingSnapshot,
+  buildPaymentSnapshot,
+  enrichSupportTicket,
+  mapTicketForCrmList,
+} from '../support-ticket-helpers';
 
 export function registerSupportCrmEndpoints(app: Hono) {
   /**
@@ -65,20 +72,58 @@ export function registerSupportCrmEndpoints(app: Hono) {
           ? metaAttachments
           : [];
 
+      let resolvedBookingId: string | null = bookingId || null;
+      let resolvedCustomerId: string | null = customerId || null;
+      let resolvedVendorId: string | null = null;
+      let resolvedCategory = category || null;
+      let ticketType: 'general' | 'booking' = 'general';
+      let bookingSnapshot = null;
+      let paymentSnapshot = null;
+
+      if (resolvedBookingId) {
+        try {
+          const linked = await validateBookingTicketLink(resolvedBookingId, resolvedCustomerId);
+          resolvedCustomerId = linked.resolvedCustomerId;
+          resolvedVendorId = linked.vendorId;
+        } catch (linkErr: any) {
+          return c.json({ error: linkErr.message || 'Invalid booking link' }, 400);
+        }
+        ticketType = 'booking';
+        if (!resolvedCategory || resolvedCategory === 'general') {
+          resolvedCategory = 'billing';
+        }
+        try {
+          bookingSnapshot = await buildBookingSnapshot(resolvedBookingId);
+          paymentSnapshot = await buildPaymentSnapshot(resolvedBookingId);
+        } catch (snapErr) {
+          console.warn('[support/tickets] booking snapshot failed (ticket will still be created):', snapErr);
+        }
+      } else {
+        ticketType = 'general';
+        if (!resolvedCategory) resolvedCategory = 'general';
+      }
+
       // Create support ticket
       const ticket = await insert('support_tickets', {
         ticket_number: generateSupportTicketNumber(),
-        customer_id: customerId || null,
+        customer_id: resolvedCustomerId || null,
         customer_phone: customerPhone || null,
+        vendor_id: resolvedVendorId || null,
         subject,
         message,
         source,
         priority,
-        category: category || null,
-        booking_id: bookingId || null,
+        category: resolvedCategory,
+        booking_id: resolvedBookingId,
         order_id: orderId || null,
         status: 'open',
-        metadata: { ...metaRest, attachments: attachmentList },
+        metadata: {
+          ...metaRest,
+          attachments: attachmentList,
+          ticket_type: ticketType,
+          ...(bookingSnapshot ? { booking_snapshot: bookingSnapshot } : {}),
+          ...(paymentSnapshot ? { payment_snapshot: paymentSnapshot } : {}),
+        },
         created_at: new Date().toISOString(),
       });
 
@@ -244,9 +289,20 @@ export function registerSupportCrmEndpoints(app: Hono) {
         }
       }
 
+      const enrichment = await enrichSupportTicket(ticket);
+
       return c.json({
         success: true,
-        ticket,
+        ticket: {
+          ...ticket,
+          ticket_type: enrichment.ticketType,
+          ticketType: enrichment.ticketType,
+        },
+        ticketType: enrichment.ticketType,
+        bookingContext: enrichment.bookingContext,
+        paymentContext: enrichment.paymentContext,
+        isRefundable: enrichment.isRefundable,
+        refundBlockReason: enrichment.refundBlockReason,
         responses: responses.rows || [],
         aiConversation,
       });
@@ -442,7 +498,8 @@ export function registerSupportCrmEndpoints(app: Hono) {
     try {
       const status = c.req.query('status');
       const priority = c.req.query('priority');
-      const limit = parseInt(c.req.query('limit') || '50', 10);
+      const ticketType = c.req.query('ticketType');
+      const limit = parseInt(c.req.query('limit') || '100', 10);
       const offset = parseInt(c.req.query('offset') || '0', 10);
 
       let queryStr = `
@@ -474,27 +531,28 @@ export function registerSupportCrmEndpoints(app: Hono) {
         paramIndex++;
       }
 
+      if (ticketType === 'booking') {
+        queryStr += ` AND t.booking_id IS NOT NULL`;
+      } else if (ticketType === 'general') {
+        queryStr += ` AND t.booking_id IS NULL`;
+      }
+
       queryStr += ` ORDER BY t.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
       params.push(limit, offset);
 
       const tickets = await query(queryStr, params);
 
-      const safeTickets = (tickets.rows || []).map((t: any) => ({
-        id: String(t.id || ''),
-        customerId: t.customer_id ? String(t.customer_id) : '',
-        subject: String(t.subject || ''),
-        // Use message as primary content, fallback to description
-        description: String(t.message || t.description || ''),
-        status: String(t.status || 'open'),
-        priority: String(t.priority || 'medium'),
-        source: String(t.source || 'customer'),
-        createdAt: String(t.created_at || ''),
-        assignedTo: t.assigned_agent_id ? String(t.assigned_agent_id) : undefined,
-        assignedAgent: t.assigned_agent_name || undefined,
-        category: t.category || undefined,
-        customerName: t.customer_name || '',
-        customerEmail: t.customer_email || '',
-      }));
+      const safeTickets = await Promise.all(
+        (tickets.rows || []).map(async (t: any) => {
+          try {
+            const enrichment = await enrichSupportTicket(t);
+            return mapTicketForCrmList(t, enrichment);
+          } catch (err) {
+            console.warn('[CRM] ticket enrichment failed:', t?.id, err);
+            return mapTicketForCrmList(t);
+          }
+        })
+      );
 
       return c.json({
         success: true,
@@ -503,7 +561,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
     } catch (error: any) {
       console.error('Error fetching CRM tickets:', error);
-      return c.json({ success: true, tickets: [], count: 0 });
+      return c.json({ success: false, error: error.message || 'Failed to fetch tickets', tickets: [], count: 0 }, 500);
     }
   });
 
@@ -649,68 +707,148 @@ export function registerSupportCrmEndpoints(app: Hono) {
           break;
         case 'refund':
         case 'partial_refund':
-          // Process actual refund through Razorpay if booking has payment
+          {
           const ticket = tickets[0];
-          let refundResult = null;
-          
-          if (ticket.booking_id) {
+          let refundResult: Record<string, unknown> | null = null;
+          let refundProcessed = false;
+
+          if (!ticket.booking_id) {
+            refundResult = {
+              status: 'failed',
+              message: 'This is a general ticket with no booking linked. Attach a booking before processing a refund.',
+            };
+          } else if (!ticket.customer_id) {
+            refundResult = {
+              status: 'failed',
+              message: 'Ticket is missing customer_id required for refunds.',
+            };
+          } else {
             try {
-              // Get payment for this booking
               const payments = await query(
-                `SELECT * FROM payments WHERE booking_id = $1 AND status = 'captured' ORDER BY created_at DESC LIMIT 1`,
+                `SELECT id, amount::text, payment_status FROM payments
+                 WHERE booking_id = $1::uuid
+                   AND payment_status IN ('completed', 'partially_refunded')
+                 ORDER BY created_at DESC LIMIT 1`,
                 [ticket.booking_id]
               );
               
               if (payments.rows.length > 0) {
                 const payment = payments.rows[0];
-                const refundAmount = actionData.amount || payment.amount;
-                
-                // Create refund record
-                const refundRecord = await insert('refunds', {
-                  payment_id: payment.id,
-                  booking_id: ticket.booking_id,
-                  customer_id: ticket.customer_id,
-                  vendor_id: ticket.vendor_id,
-                  refund_amount: refundAmount,
-                  refund_reason: actionData.reason || 'Support ticket refund',
-                  refund_status: 'pending',
-                  support_ticket_id: ticketId,
-                  requested_at: new Date().toISOString(),
+                const paymentAmount = parseFloat(String(payment.amount ?? '0')) || 0;
+                const refundAmount = actionData.amount != null
+                  ? parseFloat(String(actionData.amount))
+                  : paymentAmount;
+
+                if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+                  throw new Error('Invalid refund amount');
+                }
+
+                const paymentSnapshot = await buildPaymentSnapshot(String(ticket.booking_id));
+                if (paymentSnapshot && refundAmount > paymentSnapshot.refundableBalance + 0.01) {
+                  throw new Error(
+                    `Refund amount exceeds refundable balance (₹${paymentSnapshot.refundableBalance.toFixed(2)})`
+                  );
+                }
+
+                const { processBookingOriginalPaymentRefund } = await import(
+                  '../../../utils/payments/booking-original-refund'
+                );
+                const processed = await processBookingOriginalPaymentRefund({
+                  bookingId: String(ticket.booking_id),
+                  customerId: String(ticket.customer_id),
+                  vendorId: ticket.vendor_id ? String(ticket.vendor_id) : null,
+                  refundAmount,
+                  reason: actionData.reason || `Support ticket refund (${action})`,
+                  initiatedBy: 'support',
+                  supportTicketId: ticketId,
                 });
-                
-                // Update ticket with refund info
-                updateData.refund_id = refundRecord[0]?.id;
-                updateData.refund_amount = refundAmount;
-                updateData.refund_status = 'pending';
-                
+
+                const ticketRefundStatus =
+                  processed.status === 'failed' ? 'failed' : 'processing';
+                updateData.refund_id = processed.refundId;
+                updateData.refund_amount = processed.totalAmount;
+                updateData.refund_status = ticketRefundStatus;
+
                 refundResult = {
-                  refundId: refundRecord[0]?.id,
-                  amount: refundAmount,
-                  status: 'pending',
-                  message: 'Refund request created. Will be processed within 5-7 business days.',
+                  refundId: processed.refundId,
+                  amount: processed.totalAmount,
+                  status: processed.status,
+                  razorpayRefundId: processed.razorpayRefundId,
+                  walletCredited: processed.walletCredited,
+                  message: processed.message,
                 };
+                refundProcessed = processed.status !== 'failed';
                 
-                console.log(`✅ [CRM] Refund created for ticket ${ticketId}: ₹${refundAmount}`);
+                console.log(`✅ [CRM] Refund processed for ticket ${ticketId}: ₹${processed.totalAmount}`);
               } else {
-                // No payment found - just log the request
-                console.log(`⚠️ [CRM] No captured payment found for booking ${ticket.booking_id}`);
+                console.log(`⚠️ [CRM] No completed payment found for booking ${ticket.booking_id}`);
+                refundResult = {
+                  status: 'failed',
+                  message: 'No completed payment found for this booking',
+                };
               }
             } catch (refundError: any) {
               console.error('Error processing refund:', refundError);
-              // Continue with metadata logging even if refund creation fails
+              refundResult = {
+                status: 'failed',
+                message: refundError.message || 'Refund processing failed',
+              };
             }
           }
-          
-          // Always update metadata for audit trail
+
           updateData.metadata = {
             ...(ticket.metadata || {}),
+            ticket_type: 'booking',
             refund_requested: true,
-            refund_amount: actionData.amount,
+            refund_amount: actionData.amount ?? refundResult?.amount,
             refund_reason: actionData.reason,
             refund_type: action === 'partial_refund' ? 'partial' : 'full',
             refund_requested_at: new Date().toISOString(),
+            refund_id: refundResult?.refundId ?? updateData.refund_id ?? null,
+            refund_status: updateData.refund_status ?? refundResult?.status ?? null,
             refund_result: refundResult,
           };
+
+          const updatedRefund = await update('support_tickets', { id: ticketId }, updateData);
+
+          return c.json({
+            success: refundProcessed,
+            refundProcessed,
+            ticket: updatedRefund[0],
+            refundResult,
+            message: refundProcessed
+              ? `Refund initiated for ticket ${action}`
+              : (refundResult?.message as string) || 'Refund could not be processed',
+          });
+          }
+        case 'attach_booking':
+          {
+          const ticket = tickets[0];
+          const attachBookingId = actionData.bookingId || actionData.booking_id;
+          if (!attachBookingId) {
+            return c.json({ error: 'bookingId is required to attach a booking' }, 400);
+          }
+          const linked = await validateBookingTicketLink(
+            String(attachBookingId),
+            ticket.customer_id ? String(ticket.customer_id) : actionData.customerId
+          );
+          const bookingSnapshot = await buildBookingSnapshot(String(attachBookingId));
+          const paymentSnapshot = await buildPaymentSnapshot(String(attachBookingId));
+          updateData.booking_id = attachBookingId;
+          updateData.customer_id = linked.resolvedCustomerId;
+          updateData.vendor_id = linked.vendorId;
+          updateData.metadata = {
+            ...(ticket.metadata || {}),
+            ticket_type: 'booking',
+            booking_snapshot: bookingSnapshot,
+            payment_snapshot: paymentSnapshot,
+            attached_at: new Date().toISOString(),
+            attached_by: 'admin',
+          };
+          if (!ticket.category || ticket.category === 'general') {
+            updateData.category = 'billing';
+          }
+          }
           break;
         default:
           return c.json({ error: `Unknown action: ${action}` }, 400);
@@ -1019,7 +1157,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
         priority: 'medium',
         category: 'service',
         status: 'open',
-        metadata: { ...crmContext, attachments: [] },
+        metadata: { ...crmContext, attachments: [], ticket_type: 'booking' },
         created_at: new Date().toISOString(),
       });
 

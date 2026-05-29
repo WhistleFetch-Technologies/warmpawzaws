@@ -14,7 +14,8 @@ export const defaultBanners = [
         gradientTo: "#2E7D32",
         Icon: Stethoscope,
         ctaText: "Book Now",
-        ctaLink: "vet"
+        ctaLink: "vet",
+        imageUrl: '/images/home/dog-peep.png',
     },
 ];
 

@@ -10,15 +10,18 @@
  * ============================================================================
  */
 
-import {
-  DefaultMeetingSession,
-  MeetingSessionConfiguration,
-  AudioVideoFacade,
-  DefaultDeviceController,
-  Logger,
-  LogLevel,
-  ConsoleLogger as ChimeConsoleLogger,
-} from 'amazon-chime-sdk-js';
+import type { AudioVideoFacade, DefaultMeetingSession, Logger, LogLevel } from 'amazon-chime-sdk-js';
+
+type ChimeSdkModule = typeof import('amazon-chime-sdk-js');
+
+let chimeSdkModulePromise: Promise<ChimeSdkModule> | null = null;
+
+async function getChimeSdkModule(): Promise<ChimeSdkModule> {
+  if (!chimeSdkModulePromise) {
+    chimeSdkModulePromise = import('amazon-chime-sdk-js');
+  }
+  return chimeSdkModulePromise;
+}
 
 // Full meeting info with MediaPlacement (required by Chime SDK)
 export interface ChimeMeetingInfo {
@@ -62,17 +65,17 @@ export interface ChimeMeetingResponse {
   };
 }
 
-// Simple logger implementation
+// Simple logger implementation (LogLevel values resolved when Chime SDK loads)
 class CustomConsoleLogger implements Logger {
-  private logLevel: LogLevel = LogLevel.INFO;
+  private logLevel = 2;
 
   info(msg: string): void {
-    if (this.logLevel <= LogLevel.INFO) {
-      console.log(`[Chime] ${msg}`);
+    if (this.logLevel <= 2) {
+      if (process.env.NODE_ENV === 'development') console.log(`[Chime] ${msg}`);
     }
   }
   warn(msg: string): void {
-    if (this.logLevel <= LogLevel.WARN) {
+    if (this.logLevel <= 3) {
       console.warn(`[Chime] ${msg}`);
     }
   }
@@ -80,7 +83,7 @@ class CustomConsoleLogger implements Logger {
     console.error(`[Chime] ${msg}`);
   }
   debug(debugFunction: () => string): void {
-    if (this.logLevel <= LogLevel.DEBUG && process.env.NODE_ENV === 'development') {
+    if (this.logLevel <= 1 && process.env.NODE_ENV === 'development') {
       console.debug(`[Chime] ${debugFunction()}`);
     }
   }
@@ -119,6 +122,9 @@ export class ChimeSDKManager {
    */
   async initializeWithResponse(response: ChimeMeetingResponse): Promise<void> {
     try {
+      const SDK = await getChimeSdkModule();
+      logger.setLogLevel(SDK.LogLevel.INFO);
+
       if (!response.meeting || !response.attendee) {
         throw new ChimeSDKError('Invalid meeting response: missing meeting or attendee data', 'INVALID_RESPONSE', false);
       }
@@ -128,7 +134,7 @@ export class ChimeSDKManager {
       }
 
       // Create configuration with PROPER structure including MediaPlacement
-      const configuration = new MeetingSessionConfiguration(
+      const configuration = new SDK.MeetingSessionConfiguration(
         {
           MeetingId: response.meeting.MeetingId,
           MediaPlacement: response.meeting.MediaPlacement,
@@ -140,9 +146,9 @@ export class ChimeSDKManager {
         }
       );
 
-      const deviceController = new DefaultDeviceController(logger);
+      const deviceController = new SDK.DefaultDeviceController(logger);
 
-      this.meetingSession = new DefaultMeetingSession(
+      this.meetingSession = new SDK.DefaultMeetingSession(
         configuration,
         logger,
         deviceController
@@ -153,7 +159,9 @@ export class ChimeSDKManager {
       // Set up event observers
       this.setupEventObservers();
 
-      console.log('✅ Chime SDK initialized successfully with full meeting data');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Chime SDK initialized successfully with full meeting data');
+      }
     } catch (error: any) {
       console.error('Error initializing Chime SDK:', error);
       if (error instanceof ChimeSDKError) {
@@ -447,13 +455,15 @@ export class ChimeSDKManager {
  * Utility function to load the Chime SDK dynamically
  * This is useful for code splitting and reducing initial bundle size
  */
-export async function loadChimeSDK(): Promise<typeof import('amazon-chime-sdk-js')> {
+export async function loadChimeSDK(): Promise<ChimeSdkModule> {
   try {
-    const ChimeSDK = await import('amazon-chime-sdk-js');
+    const ChimeSDK = await getChimeSdkModule();
     if (!ChimeSDK || !ChimeSDK.DefaultMeetingSession) {
       throw new Error('Chime SDK failed to load properly');
     }
-    console.log('✅ AWS Chime SDK loaded from npm package');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('✅ AWS Chime SDK loaded from npm package');
+    }
     return ChimeSDK;
   } catch (error: any) {
     console.error('Error loading Chime SDK:', error);

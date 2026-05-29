@@ -71,7 +71,6 @@ import {
   scheduleEmptyStateMessage,
   VENDOR_SCHEDULE_PAGE_SIZE,
   type VendorSchedulePeriod,
-  type VendorScheduleView,
 } from '@/lib/vendor-schedule-bookings';
 
 export type UserType = 'vendor' | 'staff' | 'solo' | 'solo_vendor';
@@ -137,7 +136,6 @@ export function UniversalAppointmentManagement({
 }: UniversalAppointmentManagementProps) {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [schedulePeriod, setSchedulePeriod] = useState<VendorSchedulePeriod>('today');
-  const [activeView, setActiveView] = useState<VendorScheduleView>('consultations');
   const [bookingsPageIndex, setBookingsPageIndex] = useState(0);
   const [bookingsTotal, setBookingsTotal] = useState(0);
   const [bookingsHasMore, setBookingsHasMore] = useState(false);
@@ -259,11 +257,11 @@ export function UniversalAppointmentManagement({
 
   useEffect(() => {
     setBookingsPageIndex(0);
-  }, [selectedDate, schedulePeriod, activeView]);
+  }, [selectedDate, schedulePeriod]);
 
   useEffect(() => {
     loadBookings();
-  }, [selectedDate, schedulePeriod, activeView, bookingsPageIndex, userId, userType]);
+  }, [selectedDate, schedulePeriod, bookingsPageIndex, userId, userType]);
 
   useEffect(() => {
     if (activeTab !== 'earnings') return;
@@ -307,7 +305,6 @@ export function UniversalAppointmentManagement({
         const queryParams = buildVendorScheduleBookingsQuery({
           schedulePeriod,
           anchorDate: selectedDate,
-          activeView,
           pageIndex: bookingsPageIndex,
           pageSize: VENDOR_SCHEDULE_PAGE_SIZE,
           statusFilter: 'all',
@@ -832,32 +829,6 @@ export function UniversalAppointmentManagement({
         {/* BOOKINGS TAB CONTENT */}
         {activeTab === 'bookings' && (
           <>
-            {/* View Toggle */}
-            <div className="p-4 bg-white border-b border-gray-100">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setActiveView('consultations')}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    activeView === 'consultations'
-                      ? 'bg-gray-900 text-white'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  All Consultations
-                </button>
-                <button
-                  onClick={() => setActiveView('locations')}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    activeView === 'locations'
-                      ? 'bg-gray-900 text-white'
-                      : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  All Locations
-                </button>
-              </div>
-            </div>
-
             {/* Stats */}
             <div className="p-4 bg-white border-b border-gray-100">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">Overview</h3>

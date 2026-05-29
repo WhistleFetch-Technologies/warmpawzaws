@@ -193,13 +193,22 @@ async function run() {
     console.log('Seeding banners...');
     try {
     const banners = [
-      ['main', 'Free Health Checkup', 'Book Vet Appointment Today', 'Book Now', '/vet', 1, { gradient_from: '#4CAF50', gradient_to: '#2E7D32', icon: '🩺' }],
+      [
+        'main',
+        'Free Health Checkup',
+        'Book Vet Appointment Today',
+        'Book Now',
+        '/vet',
+        1,
+        '/images/home/hero-pet.webp',
+        { gradient_from: '#4CAF50', gradient_to: '#2E7D32', icon: '🩺' },
+      ],
     ];
-    for (const [type, title, subtitle, cta_text, cta_link, display_order, metadata] of banners) {
+    for (const [type, title, subtitle, cta_text, cta_link, display_order, image_url, metadata] of banners) {
       await pool.query(`
-        INSERT INTO banners (type, title, subtitle, cta_text, cta_link, display_order, metadata, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, true)
-      `, [type, title, subtitle, cta_text, cta_link, display_order, JSON.stringify(metadata || {})]).catch(e => { if (!e.message.includes('unique') && !e.message.includes('duplicate')) throw e; });
+        INSERT INTO banners (type, title, subtitle, cta_text, cta_link, display_order, image_url, metadata, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, true)
+      `, [type, title, subtitle, cta_text, cta_link, display_order, image_url, JSON.stringify(metadata || {})]).catch(e => { if (!e.message.includes('unique') && !e.message.includes('duplicate')) throw e; });
     }
     console.log('  OK');
     } catch (e) {

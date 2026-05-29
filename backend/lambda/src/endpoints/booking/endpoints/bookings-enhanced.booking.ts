@@ -35,7 +35,10 @@ import { validateServiceAvailability } from '../../../utils/service-availability
 import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../../../utils/entity-extractor';
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
-import { previewCustomerCancellationRefund } from '../../../lib/services/cancellation-policy-service';
+import {
+  previewCustomerCancellationRefundByMethod,
+  normalizeCustomerCancellationRefundMethod,
+} from '../../../lib/services/cancellation-policy-service';
 import { computeHoursUntilBookingStart } from '../../../lib/utils/booking-start-wall-time';
 import { hasCustomerPaidCapture } from '../../../lib/services/refundable-base';
 import { creditCustomerWalletForBookingRefund } from '../../../utils/credit-customer-wallet';
@@ -49,6 +52,7 @@ import {
 import { sqlPackagePurchaseHasBookableSlot } from '../../../utils/package-session-eligibility';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
 import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
+import { sendVendorAppointmentScheduledSms } from '../../../lib/vendor-appointment-sms';
 import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import {
@@ -1813,6 +1817,14 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
             is_read: false,
             created_at: new Date(),
           });
+          void sendVendorAppointmentScheduledSms({
+            vendorId: booking.vendor_id,
+            bookingId: booking.id,
+            bookingDate: booking.booking_date,
+            bookingTime: booking.booking_time,
+          }).catch((smsErr) => {
+            console.warn('[BOOKING-CREATE] vendor appointment SMS failed:', smsErr?.message || smsErr);
+          });
         } catch (notifErr) {
           console.warn('Failed to create vendor notification for new booking:', notifErr);
         }
@@ -2997,12 +3009,14 @@ class UpdateBookingStatusHandlerEnhanced extends BaseHandlerEnhanced {
 class GetRefundPreviewHandler extends BaseHandlerEnhanced {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const body = this.parseBody(context.event);
-    const { bookingId } = body;
+    const { bookingId, refundMethod: refundMethodRaw } = body;
     const requestId = context.requestId;
 
     if (!bookingId) {
       return this.error('bookingId is required', 400, 'VALIDATION_ERROR', undefined, requestId);
     }
+
+    const refundMethod = normalizeCustomerCancellationRefundMethod(refundMethodRaw);
 
     try {
       // Get booking details
@@ -3012,7 +3026,7 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
       }
 
       const booking = bookings[0];
-      const preview = await previewCustomerCancellationRefund({
+      const bookingForPolicy = {
         id: bookingId,
         vendor_id: booking.vendor_id,
         service_id: booking.service_id,
@@ -3024,24 +3038,34 @@ class GetRefundPreviewHandler extends BaseHandlerEnhanced {
         vendor_timezone: (booking as any).vendor_timezone ?? null,
         total_amount: booking.total_amount,
         discount_amount: booking.discount_amount,
-      });
+      };
+      const preview = await previewCustomerCancellationRefundByMethod(bookingForPolicy, refundMethod);
 
       const platformFeeNonRefundable = Math.round(preview.platformFeeNonRefundable * 100) / 100;
+      const refundAmountRounded = Math.round(preview.refundAmount * 100) / 100;
+      const message =
+        refundMethod === 'wallet'
+          ? refundAmountRounded > 0
+            ? `₹${refundAmountRounded} will be credited to your Warmpawz wallet (100% refund; cancellation policy does not apply)`
+            : 'No refund amount available for wallet credit'
+          : refundAmountRounded > 0
+            ? `₹${refundAmountRounded} will be refunded per cancellation policy (${Math.round(preview.refundPercentage)}%)`
+            : 'No refund available per cancellation policy';
+
       return this.success({
+        refundMethod,
         refund: {
           eligible: preview.refundPercentage > 0 || preview.refundAmount > 0,
-          refundAmount: Math.round(preview.refundAmount * 100) / 100,
+          refundAmount: refundAmountRounded,
           refundPercentage: Math.round(preview.refundPercentage),
           cancellationFee: Math.round(preview.cancellationFee * 100) / 100,
           source: preview.source,
           policyApplied: preview.policyApplied,
           refundableCustomerPaidBase: Math.round(preview.refundableCustomerPaidBase * 100) / 100,
           platformFeeNonRefundable,
-          platformFeeApplies: platformFeeNonRefundable > 0,
+          platformFeeApplies: refundMethod === 'original' && platformFeeNonRefundable > 0,
           hoursUntilBooking: Math.round((preview.hoursUntilBooking ?? 0) * 100) / 100,
-          message: preview.refundAmount > 0
-            ? `₹${Math.round(preview.refundAmount * 100) / 100} will be refunded to your original payment method`
-            : 'No refund available for this booking',
+          message,
         },
       }, requestId);
     } catch (error: unknown) {
@@ -3296,19 +3320,22 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       let refundInfo = null;
       if (bookingPaidForRefund) {
         try {
-          const preview = await previewCustomerCancellationRefund({
-            id: bookingId,
-            vendor_id: currentBooking.vendor_id,
-            service_id: currentBooking.service_id,
-            service_type: currentBooking.service_type,
-            booking_datetime: currentBooking.booking_datetime || null,
-            scheduled_at: currentBooking.scheduled_at || null,
-            booking_date: currentBooking.booking_date,
-            booking_time: currentBooking.booking_time,
-            vendor_timezone: (currentBooking as any).vendor_timezone ?? null,
-            total_amount: currentBooking.total_amount,
-            discount_amount: currentBooking.discount_amount,
-          });
+          const preview = await previewCustomerCancellationRefundByMethod(
+            {
+              id: bookingId,
+              vendor_id: currentBooking.vendor_id,
+              service_id: currentBooking.service_id,
+              service_type: currentBooking.service_type,
+              booking_datetime: currentBooking.booking_datetime || null,
+              scheduled_at: currentBooking.scheduled_at || null,
+              booking_date: currentBooking.booking_date,
+              booking_time: currentBooking.booking_time,
+              vendor_timezone: (currentBooking as any).vendor_timezone ?? null,
+              total_amount: currentBooking.total_amount,
+              discount_amount: currentBooking.discount_amount,
+            },
+            refundMethod
+          );
           const refundAmount = Math.round(preview.refundAmount * 100) / 100;
           const refundPercentage = preview.refundPercentage;
           
@@ -3351,52 +3378,42 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
                   'Cancellation succeeded but wallet refund could not run (missing customer on booking). Please contact support with your booking ID.',
               };
             } else if (refundMethod === 'original') {
-              const payments = await query(
-                `SELECT id FROM payments
-                 WHERE booking_id = $1::uuid
-                   AND payment_status IN ('completed', 'partially_refunded')
-                 ORDER BY CASE WHEN payment_status = 'completed' THEN 0 ELSE 1 END
-                 LIMIT 1`,
-                [bookingId]
-              );
-              if (payments.rows.length > 0) {
-                const paymentId = payments.rows[0].id;
-                const refundRequests = await query(
-                  `INSERT INTO refunds (
-                    payment_id,
-                    booking_id,
-                    customer_id,
-                    vendor_id,
-                    refund_amount,
-                    refund_reason,
-                    refund_status,
-                    refund_method,
-                    requested_at
-                  ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', 'original', NOW())
-                  RETURNING *`,
-                  [
-                    paymentId,
-                    bookingId,
-                    customerIdForRefund ?? currentBooking.customer_id,
-                    currentBooking.vendor_id || null,
-                    refundAmount,
-                    `Booking cancellation: ${reason} (${refundPercentage}% refund)`,
-                  ]
-                ).catch(() => ({ rows: [] }));
-
+              try {
+                const { processBookingOriginalPaymentRefund } = await import(
+                  '../../../utils/payments/booking-original-refund'
+                );
+                const originalResult = await processBookingOriginalPaymentRefund({
+                  bookingId,
+                  customerId: String(customerIdForRefund),
+                  vendorId: currentBooking.vendor_id ? String(currentBooking.vendor_id) : null,
+                  refundAmount,
+                  refundPercentage,
+                  reason: `Booking cancellation: ${reason} (${refundPercentage}% refund)`,
+                  initiatedBy: 'customer',
+                  label: 'booking',
+                });
                 refundInfo = {
-                  refundId: refundRequests.rows[0]?.id,
+                  refundId: originalResult.refundId,
+                  amount: originalResult.totalAmount,
+                  percentage: refundPercentage,
+                  method: 'original',
+                  status: originalResult.status === 'completed' ? 'completed' : 'processing',
+                  message: originalResult.message,
+                  razorpayRefundId: originalResult.razorpayRefundId,
+                  walletCredited: originalResult.walletCredited,
+                };
+              } catch (originalErr: unknown) {
+                const msg =
+                  originalErr instanceof Error ? originalErr.message : 'Original payment refund failed';
+                console.error('[CancelBooking] Original-method refund failed:', msg, { bookingId });
+                refundInfo = {
                   amount: refundAmount,
                   percentage: refundPercentage,
                   method: 'original',
-                  status: 'pending',
-                  message: `Refund of ₹${refundAmount.toFixed(2)} will be processed to original payment method in 3-7 business days`,
+                  status: 'failed',
+                  message:
+                    'Cancellation succeeded but refund to original payment method failed. Please contact support with your booking ID.',
                 };
-              } else {
-                console.warn(
-                  '[CancelBooking] Original-method refund skipped: no completed payment for booking',
-                  bookingId
-                );
               }
             }
           } else {

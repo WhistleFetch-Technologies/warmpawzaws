@@ -45,7 +45,22 @@ export function filterMealOrdersByTimeframe(
 }
 
 export function mapMealOrderToScheduleItem(order: Record<string, unknown>): ScheduleItem {
-  const timeRaw = order.delivery_time ?? order.deliveryTime;
+  let slotStart: string | null = null;
+  const slotRaw = order.scheduled_delivery_slot;
+  if (typeof slotRaw === 'string' && slotRaw.trim()) {
+    try {
+      const parsed = JSON.parse(slotRaw) as { start?: string };
+      if (typeof parsed?.start === 'string' && parsed.start.trim()) {
+        slotStart = parsed.start.trim();
+      }
+    } catch {
+      /* ignore */
+    }
+  } else if (slotRaw && typeof slotRaw === 'object' && !Array.isArray(slotRaw)) {
+    const s = (slotRaw as { start?: string }).start;
+    if (typeof s === 'string' && s.trim()) slotStart = s.trim();
+  }
+  const timeRaw = slotStart ?? order.delivery_time ?? order.deliveryTime;
   const time =
     typeof timeRaw === 'string' && timeRaw.trim()
       ? formatBookingTime(timeRaw)

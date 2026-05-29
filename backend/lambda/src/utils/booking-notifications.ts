@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { insert, query, select } from '../database/rds-connection';
 import { triggerBookingNotification } from '../endpoints/sms-notifications';
+import { sendVendorAppointmentScheduledSms } from '../lib/vendor-appointment-sms';
 
 type BookingNotificationResult = {
   notified: boolean;
@@ -78,6 +79,16 @@ export async function notifyBookingCreated(bookingId: string, requestId?: string
     service,
   }).catch((smsErr) => {
     console.warn('[SMS] Booking confirmation SMS failed:', smsErr?.message || smsErr);
+  });
+
+  void sendVendorAppointmentScheduledSms({
+    vendorId: booking.vendor_id,
+    bookingId: booking.id,
+    bookingDate: booking.booking_date,
+    bookingTime: booking.booking_time,
+    vendor,
+  }).catch((smsErr) => {
+    console.warn('[SMS] Vendor appointment SMS failed:', smsErr?.message || smsErr);
   });
 
   try {

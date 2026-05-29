@@ -5,6 +5,8 @@ import { bootstrapPushNotifications, teardownPushNotifications } from '@/lib/pus
 import { apiClient } from '@/lib/api-client';
 import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
 import { CustomerBookingMessagesModalProvider } from './messaging/CustomerBookingMessagesModalProvider';
+import { scheduleIdleWork } from '@/lib/schedule-idle';
+import { resetHomeBootstrapForPhone } from '@/lib/customer-home-bootstrap';
 
 interface CustomerSession {
   phone: string;
@@ -45,26 +47,28 @@ export function CustomerApp({
   initialBannerNavigation,
 }: CustomerAppProps) {
   const [session, setSession] = useState<CustomerSession>(initialSession);
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     setSession(initialSession);
-    setIsLoading(false);
   }, [initialSession]);
 
   useEffect(() => {
-    if (isLoading) return;
     const userId =
       session.customerId ||
       (typeof window !== 'undefined' ? (localStorage.getItem('customerId') ?? '') : '');
     if (!userId) return;
-    bootstrapPushNotifications({
-      userId,
-      userType: 'customer',
-      vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
-      apiClient,
-    });
-  }, [isLoading, session.customerId]);
+    let cancelled = false;
+    const runBootstrap = () => {
+      if (cancelled) return;
+      bootstrapPushNotifications({
+        userId,
+        userType: 'customer',
+        vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+        apiClient,
+      });
+    };
+    return scheduleIdleWork(runBootstrap);
+  }, [session.customerId]);
 
   const handleLogoutNavigate = async (screen: string) => {
     if (screen === 'logout') {
@@ -91,21 +95,11 @@ export function CustomerApp({
         localStorage.removeItem('cognitoRefreshToken');
         localStorage.removeItem('cognitoTokenExpiry');
         localStorage.removeItem('cognitoUserInfo');
+        resetHomeBootstrapForPhone(null);
         window.location.href = '/auth';
       }
     }
   };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-white w-full max-w-customer mx-auto flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading your profile...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <CustomerBookingMessagesModalProvider phone={session.phone}>

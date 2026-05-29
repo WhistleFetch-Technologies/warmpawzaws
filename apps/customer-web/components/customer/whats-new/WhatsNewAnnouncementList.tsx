@@ -1,7 +1,8 @@
 'use client';
 
-import { Phone, Star, BookOpen, Bot, ChevronRight } from 'lucide-react';
-import type { WhatsNewAnnouncement } from '@/lib/whats-new-announcements';
+import { ChevronRight } from 'lucide-react';
+import { getWhatsNewIconImage, type WhatsNewAnnouncement } from '@/lib/whats-new-announcements';
+import { WhatsNewCardBackground } from './WhatsNewCardBackground';
 
 interface WhatsNewAnnouncementListProps {
   announcements: WhatsNewAnnouncement[];
@@ -39,17 +40,6 @@ export function WhatsNewAnnouncementList({
             : isArticles
               ? 'from-teal-50 to-cyan-50 border-teal-100'
               : 'from-orange-50 to-pink-50 border-orange-100';
-        const iconGradient = emergencySoon
-          ? 'from-amber-400 to-orange-500'
-          : premiumSoon
-            ? 'from-purple-400/90 to-indigo-500/90'
-            : isEmergency
-          ? 'from-red-500 to-orange-500'
-          : isPremium
-            ? 'from-purple-500 to-indigo-500'
-            : isArticles
-              ? 'from-teal-500 to-cyan-600'
-              : 'from-[#FF8C42] to-[#FF6B35]';
         const badgeColor =
           announcement.badgeColor === 'red'
             ? 'bg-red-500'
@@ -62,7 +52,7 @@ export function WhatsNewAnnouncementList({
                   : announcement.badgeColor === 'teal'
                     ? 'bg-teal-600'
                     : 'bg-green-500';
-        const IconComponent = isEmergency ? Phone : isPremium ? Star : isArticles ? BookOpen : Bot;
+        const iconImage = getWhatsNewIconImage(announcement);
 
         const hubPremium = interactionMode === 'hub' && announcement.announcementType === 'premium';
         const hubFeature = interactionMode === 'hub' && (announcement.announcementType === 'feature' || announcement.id === 'ai');
@@ -77,7 +67,7 @@ export function WhatsNewAnnouncementList({
             key={announcement.id}
             role={rowClickable ? 'button' : undefined}
             tabIndex={rowClickable ? 0 : undefined}
-            className={`bg-gradient-to-r ${bgGradient} rounded-2xl p-4 border flex items-center gap-4 ${
+            className={`group relative overflow-hidden bg-gradient-to-r ${bgGradient} rounded-2xl p-4 border flex items-center gap-4 ${
               rowClickable ? 'cursor-pointer' : ''
             }`}
             onClick={() => {
@@ -90,18 +80,23 @@ export function WhatsNewAnnouncementList({
               }
             }}
           >
+            <WhatsNewCardBackground announcement={announcement} />
             <div
-              className={`w-16 h-16 bg-gradient-to-br ${iconGradient} rounded-2xl flex items-center justify-center text-white flex-shrink-0 shadow-lg ${
+              className={`relative z-[1] flex h-16 w-16 flex-shrink-0 items-center justify-center transition-transform duration-300 ease-out group-hover:scale-110 ${
                 isEmergency && !emergencySoon ? 'animate-pulse' : ''
               }`}
             >
-              {announcement.icon ? (
-                <span className="text-2xl">{announcement.icon}</span>
-              ) : (
-                <IconComponent className="w-8 h-8" />
-              )}
+              {iconImage ? (
+                <img
+                  src={iconImage}
+                  alt=""
+                  className="h-full w-full object-contain transition-transform duration-300 ease-out"
+                />
+              ) : announcement.icon ? (
+                <span className="text-2xl transition-transform duration-300 ease-out">{announcement.icon}</span>
+              ) : null}
             </div>
-            <div className="flex-1 min-w-0">
+            <div className="relative z-[1] flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <span
                   className={`text-xs ${badgeColor} text-white px-2 py-0.5 rounded-full font-medium ${
@@ -119,7 +114,7 @@ export function WhatsNewAnnouncementList({
                 <button
                   type="button"
                   disabled
-                  className="bg-slate-400 text-white px-4 py-2 rounded-full text-xs font-bold shadow shrink-0 cursor-not-allowed opacity-90"
+                  className="relative z-[1] bg-slate-400 text-white px-4 py-2 rounded-full text-xs font-bold shadow shrink-0 cursor-not-allowed opacity-90"
                 >
                   {announcement.ctaText}
                 </button>
@@ -130,7 +125,7 @@ export function WhatsNewAnnouncementList({
                     e.stopPropagation();
                     onSosPress?.(announcement);
                   }}
-                  className="bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-700 transition-colors animate-pulse shrink-0"
+                  className="relative z-[1] bg-red-600 text-white px-4 py-2 rounded-full text-xs font-bold shadow-lg hover:bg-red-700 transition-colors animate-pulse shrink-0"
                 >
                   {announcement.ctaText}
                 </button>
@@ -139,12 +134,12 @@ export function WhatsNewAnnouncementList({
               <button
                 type="button"
                 disabled
-                className="bg-slate-400 text-white px-4 py-2 rounded-full text-xs font-bold shadow shrink-0 cursor-not-allowed opacity-90"
+                className="relative z-[1] bg-slate-400 text-white px-4 py-2 rounded-full text-xs font-bold shadow shrink-0 cursor-not-allowed opacity-90"
               >
                 {announcement.ctaText}
               </button>
             ) : (
-              <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+              <ChevronRight className="relative z-[1] w-5 h-5 text-gray-400 flex-shrink-0" />
             )}
           </div>
         );

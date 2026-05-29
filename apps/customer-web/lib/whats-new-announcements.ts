@@ -17,6 +17,31 @@ export type WhatsNewAnnouncement = {
   comingSoon?: boolean;
 };
 
+const WHATS_NEW_IMAGE_DIR = "/images/home/what's new image";
+
+export const WHATS_NEW_ICON_IMAGES = {
+  assistant: `${WHATS_NEW_IMAGE_DIR}/assistant.png`,
+  track: `${WHATS_NEW_IMAGE_DIR}/track.png`,
+  plus: `${WHATS_NEW_IMAGE_DIR}/plus.png`,
+  tips: `${WHATS_NEW_IMAGE_DIR}/tips.png`,
+} as const;
+
+export function getWhatsNewIconImage(announcement: WhatsNewAnnouncement): string | undefined {
+  if (announcement.announcementType === 'emergency' || announcement.id === 'sos') {
+    return WHATS_NEW_ICON_IMAGES.track;
+  }
+  if (announcement.announcementType === 'premium' || announcement.id === 'premium') {
+    return WHATS_NEW_ICON_IMAGES.plus;
+  }
+  if (announcement.announcementType === 'articles' || announcement.id === 'customer-articles') {
+    return WHATS_NEW_ICON_IMAGES.tips;
+  }
+  if (announcement.announcementType === 'feature' || announcement.id === 'ai') {
+    return WHATS_NEW_ICON_IMAGES.assistant;
+  }
+  return undefined;
+}
+
 const customerArticlesRow: WhatsNewAnnouncement = {
   id: 'customer-articles',
   title: 'Pet care articles',
@@ -34,7 +59,6 @@ const fallbackWhatsNew: WhatsNewAnnouncement[] = [
     subtitle: 'Get instant answers about pet care',
     badgeText: 'NEW',
     badgeColor: 'green',
-    icon: '🤖',
     announcementType: 'feature',
   },
   {
@@ -43,7 +67,6 @@ const fallbackWhatsNew: WhatsNewAnnouncement[] = [
     subtitle: 'Coming soon — instant location-based dispatch when we launch',
     badgeText: 'SOON',
     badgeColor: 'amber',
-    icon: '📞',
     ctaText: 'COMING SOON',
     announcementType: 'emergency',
     comingSoon: true,
@@ -54,7 +77,6 @@ const fallbackWhatsNew: WhatsNewAnnouncement[] = [
     subtitle: 'Coming soon — unlimited services at best prices when we launch',
     badgeText: 'SOON',
     badgeColor: 'amber',
-    icon: '⭐',
     ctaText: 'COMING SOON',
     announcementType: 'premium',
     comingSoon: true,

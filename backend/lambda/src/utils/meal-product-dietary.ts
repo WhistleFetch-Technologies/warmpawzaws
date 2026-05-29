@@ -111,6 +111,7 @@ export type MealProductDietaryInput = {
   allergens: string[];
   preparationType: string;
   packSize?: string;
+  packWeightGrams: number;
 };
 
 /** Builds persisted JSON for meal_plans.dietary_requirements / products.metadata. */
@@ -123,9 +124,14 @@ export function mealProductParsedToDietaryJson(
   const mirrorDelivery = legacyDeliveryTypeMirror(pt);
   const mealsPerDeliveryNum = resolveMealsPerDeliveryNumeric(parsed);
 
-  let mealsPerDayColumn = mealsPerDayColumnFromPreset(parsed.mealsPerDayPreset as MealsPerDayPreset);
-  if (pt === 'WEEKLY_PLAN') {
-    mealsPerDayColumn = mealsPerDeliveryNum;
+  let mealsPerDayJson: number | undefined;
+  if (pt === 'MONTHLY_PLAN') {
+    mealsPerDayJson = mealsPerDayColumnFromPreset(parsed.mealsPerDayPreset as MealsPerDayPreset);
+  } else if (pt === 'ONE_TIME') {
+    const preset = parsed.mealsPerDayPreset as MealsPerDayPreset;
+    if (preset !== 'CUSTOM') {
+      mealsPerDayJson = mealsPerDayColumnFromPreset(preset);
+    }
   }
 
   const subscriptionConfig = compactSubscriptionConfig({
@@ -173,7 +179,8 @@ export function mealProductParsedToDietaryJson(
     mealsPerDayCustom: parsed.mealsPerDayPreset === 'CUSTOM' ? parsed.mealsPerDayCustom : undefined,
     allergens: parsed.allergens,
     preparationType: parsed.preparationType,
-    mealsPerDay: mealsPerDayColumn,
+    ...(mealsPerDayJson != null ? { mealsPerDay: mealsPerDayJson } : {}),
+    packWeightGrams: parsed.packWeightGrams,
   };
   if (opts.mealImageUrl) base.mealImageUrl = opts.mealImageUrl;
   if (parsed.packSize) base.packSize = parsed.packSize;

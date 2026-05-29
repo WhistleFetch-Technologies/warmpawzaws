@@ -5,6 +5,8 @@ import { Star, MapPin, Clock, ChevronRight, ArrowLeft, Filter, Building2 } from 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
+import { readHomeSessionCache, writeHomeSessionCache } from '@/lib/home-session-cache';
+import { scheduleIdleWork } from '@/lib/schedule-idle';
 import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import {
   groupByProblemRowsByVendor,
@@ -40,7 +42,8 @@ interface ServicesByProblemProps {
 
 function rowToService(row: ByProblemServiceRow): Service {
   const price = typeof row.price === 'number' ? row.price : parseFloat(String(row.price || 0)) || 0;
-  const dist = row.distance != null && row.distance !== '' ? Number(row.distance) : undefined;
+  const dist =
+    row.distance != null && Number.isFinite(row.distance) ? row.distance : undefined;
   return {
     serviceId: String(row.serviceId || row.service_id || ''),
     name: String(row.serviceName || row.name || 'Service'),
@@ -64,8 +67,11 @@ export function ServicesByProblem({
   onServiceSelect,
   className = '',
 }: ServicesByProblemProps) {
-  const [flatRows, setFlatRows] = useState<ByProblemServiceRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `by_problem_${problemId}`;
+  const cachedRows =
+    readHomeSessionCache<{ rows?: ByProblemServiceRow[] }>('global', cacheKey)?.rows ?? [];
+  const [flatRows, setFlatRows] = useState<ByProblemServiceRow[]>(cachedRows);
+  const [loading, setLoading] = useState(cachedRows.length === 0);
   const [sortBy, setSortBy] = useState<'relevance' | 'price' | 'rating' | 'distance'>('relevance');
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [view, setView] = useState<'vendors' | 'services'>('vendors');
@@ -77,8 +83,44 @@ export function ServicesByProblem({
   }, []);
 
   useEffect(() => {
-    fetchServices();
-  }, [problemId, userLocation]);
+    let cancelled = false;
+    const hadCache = cachedRows.length > 0;
+
+    const cancelIdle = scheduleIdleWork(() => {
+      if (cancelled) return;
+      void (async () => {
+        if (!hadCache) setLoading(true);
+        try {
+          const params = new URLSearchParams({ problemId });
+          if (userLocation) {
+            params.append('lat', userLocation.lat.toString());
+            params.append('lng', userLocation.lng.toString());
+          }
+
+          const data = await apiClient.get<{
+            services?: ByProblemServiceRow[];
+            data?: { services?: ByProblemServiceRow[] };
+          }>(`/customer/services/by-problem?${params.toString()}`);
+          const rows = data.data?.services || data.services || [];
+          const next = Array.isArray(rows) ? rows : [];
+          if (cancelled) return;
+          setFlatRows(next);
+          setView('vendors');
+          setSelectedVendor(null);
+          writeHomeSessionCache('global', cacheKey, { rows: next });
+        } catch (error) {
+          console.error('Error fetching services:', error);
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+    });
+
+    return () => {
+      cancelled = true;
+      cancelIdle();
+    };
+  }, [problemId, userLocation, cacheKey]);
 
   const fetchServices = async () => {
     setLoading(true);
@@ -89,13 +131,16 @@ export function ServicesByProblem({
         params.append('lng', userLocation.lng.toString());
       }
 
-      const data = await apiClient.get<{ services?: ByProblemServiceRow[]; data?: { services?: ByProblemServiceRow[] } }>(
-        `/customer/services/by-problem?${params.toString()}`
-      );
+      const data = await apiClient.get<{
+        services?: ByProblemServiceRow[];
+        data?: { services?: ByProblemServiceRow[] };
+      }>(`/customer/services/by-problem?${params.toString()}`);
       const rows = data.data?.services || data.services || [];
-      setFlatRows(Array.isArray(rows) ? rows : []);
+      const next = Array.isArray(rows) ? rows : [];
+      setFlatRows(next);
       setView('vendors');
       setSelectedVendor(null);
+      writeHomeSessionCache('global', cacheKey, { rows: next });
     } catch (error) {
       console.error('Error fetching services:', error);
     } finally {
@@ -243,7 +288,7 @@ export function ServicesByProblem({
                           vendorId: vendor.vendorId,
                           id: vendor.vendorId,
                           rating: vendor.rating,
-                          vendorRating: vendor.vendorRating ?? vendor.rating,
+                          vendorRating: vendor.rating,
                           review_count: vendor.reviewCount,
                           vendorReviewCount: vendor.reviewCount,
                         }}

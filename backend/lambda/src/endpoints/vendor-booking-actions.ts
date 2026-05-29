@@ -21,7 +21,7 @@ import { isValidUUID } from '../types/entities';
 import { geocodeAddress } from '../lib/utils/geocode';
 import { resolveVendorId } from '../utils/vendor-resolve';
 import { bookingUsesDedicatedEndSessionOtp, ensureDedicatedEndSessionOtp } from '../lib/booking-dedicated-end-otp';
-import { getVendorCommissionRate, isCanonicalPackageParentBooking } from '../utils/vendor-commission-rate';
+import { isCanonicalPackageParentBooking } from '../utils/vendor-commission-rate';
 import {
   completeTeleConsultation,
   loadLatestSessionForBooking,
@@ -289,52 +289,11 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
         console.warn(`[COMPLETE-BOOKING] GPS session close (non-fatal):`, gpsErr?.message);
       }
 
-      // ✅ CRITICAL FIX: Create vendor_earnings record regardless of payment status (handles COD/pending)
-      // Skip canonical package parent rows — package money accrues per child session in package-session-sync.
-      if (!isCanonicalPackageParentBooking(booking)) {
-        try {
-          const commissionRate = await getVendorCommissionRate(booking.vendor_id);
-          const totalAmount = parseFloat(booking.total_amount || '0');
-          const commissionAmount = Math.round((totalAmount * commissionRate / 100) * 100) / 100;
-          const vendorAmount = Math.round((totalAmount - commissionAmount) * 100) / 100;
-
-          // Check if vendor_earnings record already exists for this booking
-          const existingEarnings = await query(
-            `SELECT id FROM vendor_earnings WHERE booking_id = $1`,
-            [bookingId]
-          ).catch(() => ({ rows: [] }));
-
-          const existingRows = (existingEarnings as any).rows || [];
-
-          if (existingRows.length === 0 && vendorAmount > 0) {
-            // Create vendor_earnings record
-            await insert('vendor_earnings', {
-              vendor_id: booking.vendor_id,
-              booking_id: bookingId,
-              amount: vendorAmount,
-              commission_amount: commissionAmount,
-              total_amount: totalAmount,
-              commission_rate: commissionRate,
-              status: 'pending',
-              realized_at: new Date().toISOString(),
-            });
-
-            console.log(`✅ [EARNINGS] Created vendor_earnings for booking ${bookingId}: vendor gets ₹${vendorAmount} (commission: ₹${commissionAmount})`);
-
-            // Update vendor's total earnings and pending payout (non-critical)
-            await query(
-              `UPDATE vendors 
-             SET pending_payout = COALESCE(pending_payout, 0) + $1,
-                 total_earnings = COALESCE(total_earnings, 0) + $1,
-                 updated_at = NOW()
-             WHERE id = $2`,
-              [vendorAmount, booking.vendor_id]
-            ).catch((err: any) => console.warn('[EARNINGS] vendor totals update:', err?.message));
-          }
-        } catch (error: any) {
-          console.error('❌ [EARNINGS] Failed to create earnings after booking completion:', error);
-          // Don't fail booking completion if earnings creation fails
-        }
+      const refreshedRows = await select('bookings', { id: bookingId });
+      const refreshedBooking = (refreshedRows[0] || { ...booking, status: 'completed', completed_at: new Date().toISOString() }) as Record<string, unknown>;
+      if (!isCanonicalPackageParentBooking(refreshedBooking)) {
+        const { ensureVendorEarningsForCompletedBooking } = await import('../utils/vendor-earnings-on-completion');
+        await ensureVendorEarningsForCompletedBooking(refreshedBooking, bookingId, '[COMPLETE-BOOKING]');
       }
 
       return c.json({

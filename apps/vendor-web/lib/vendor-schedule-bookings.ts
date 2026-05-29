@@ -6,12 +6,10 @@
 export const VENDOR_SCHEDULE_PAGE_SIZE = 20;
 
 export type VendorSchedulePeriod = 'today' | 'week' | 'month';
-export type VendorScheduleView = 'consultations' | 'locations';
 
 export function buildVendorScheduleBookingsQuery(params: {
   schedulePeriod: VendorSchedulePeriod;
   anchorDate: string;
-  activeView: VendorScheduleView;
   pageIndex: number;
   pageSize?: number;
   /** Booking status filter (API `filter` query param — not schedule period). */
@@ -22,7 +20,6 @@ export function buildVendorScheduleBookingsQuery(params: {
   return {
     period: params.schedulePeriod,
     anchorDate: params.anchorDate,
-    view: params.activeView,
     limit: String(pageSize),
     offset: String(offset),
     filter: params.statusFilter ?? 'all',

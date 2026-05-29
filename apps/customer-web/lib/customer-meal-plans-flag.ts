@@ -4,7 +4,7 @@
  * Toggle:
  *   • Locally — NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=true|false in .env.local
  *   • Deployed — same build env, or runtime-config `customerMealPlansEnabled`
- *   • Default — off on production hosts/builds, on elsewhere (dev UAT)
+ *   • Default — on unless NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=false or runtime override
  */
 
 type RuntimeConfig = {

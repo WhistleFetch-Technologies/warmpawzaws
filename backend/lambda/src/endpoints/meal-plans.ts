@@ -30,14 +30,14 @@ import {
 } from '../utils/customer-delivery-fee-quote';
 import { fetchCustomerDeliveryFeePolicy } from '../utils/customer-delivery-fee-policy';
 import {
-  clampLeadTimeHoursForPlatform,
+  clampLeadTimeHours,
   evaluateMealBookingForPlan,
-  fetchPlatformMealBookingPolicy,
-  isMealBookingPolicyRolloutEnabled,
-  resolveEffectiveLeadTimeHours,
-  resolveSameDayAllowed,
+  requireMealPlanTiming,
+  resolveSameDayAllowedForPlan,
 } from '../utils/meal-booking-policy';
-import type { MealPurchaseType } from '@warmpawz/shared-types';
+import { parseOrderCutoffHm } from '../utils/meal-product-timing';
+import { resolvePackWeightGramsFromPlanRow } from '../utils/meal-pack-weight';
+import { mergeMealPlanCatalogForApi } from '../utils/meal-product-persistence';
 import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr, resolveMealPurchaseSubtotalInr } from '../utils/meal-order-pricing';
 import { ensureMealPlanMirrorForProductCheckout, normalizeProductRowToMealPlanShape, resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
 import {
@@ -73,35 +73,11 @@ import {
   isPidgeMealLogistics,
   vendorBlockedMealStatusForPidge,
 } from '../utils/meal-order-vendor-delivery-guard';
-
-/** Never relax meal lead-time rules in production (even if BYPASS_24H_MEAL_VALIDATION is set). */
-function isMealOrderProductionEnvironment(): boolean {
-  const env = String(process.env.ENVIRONMENT || '').toLowerCase();
-  const stage = String(process.env.STAGE || '').toLowerCase();
-  return (
-    process.env.NODE_ENV === 'production' ||
-    env === 'prod' ||
-    env === 'production' ||
-    stage === 'prod' ||
-    stage === 'production'
-  );
-}
-
-/**
- * Dev/UAT: set BYPASS_24H_MEAL_VALIDATION=true on the API Lambda to skip `lead_time_hours` checks
- * for POST /meal/orders/create. No effect in production.
- */
-function bypassMealLeadTimeValidationForDev(): boolean {
-  if (isMealOrderProductionEnvironment()) return false;
-  const v = String(process.env.BYPASS_24H_MEAL_VALIDATION || '')
-    .toLowerCase()
-    .trim();
-  return v === 'true' || v === '1' || v === 'yes';
-}
+import { fireVendorMealOrderScheduledSms } from '../lib/vendor-appointment-sms';
 
 async function mealBookingPolicyPreviewExtras(
   plan: Record<string, unknown>,
-  purchaseType: string,
+  _purchaseType: string,
   query: {
     scheduledDeliveryDate?: string;
     deliveryTime?: string;
@@ -109,54 +85,41 @@ async function mealBookingPolicyPreviewExtras(
     planId?: string;
   },
 ): Promise<Record<string, unknown>> {
-  const platform = await fetchPlatformMealBookingPolicy();
-  const pt = String(purchaseType || 'ONE_OFF').toUpperCase() as MealPurchaseType;
-  const planOverrides = {
-    leadTimeHours:
-      plan.lead_time_hours != null ? Number(plan.lead_time_hours) : null,
-    orderCutoffTime:
-      typeof plan.order_cutoff_time === 'string' ? plan.order_cutoff_time : null,
-  };
-  const { hours: effectiveLeadTimeHours } = resolveEffectiveLeadTimeHours(
-    platform,
-    planOverrides,
-    pt,
-  );
+  const timing = requireMealPlanTiming(plan);
   const now = new Date();
+  const effectiveLeadTimeHours = timing.ok ? timing.leadTimeHours : 24;
+  const orderCutoffTime = timing.ok ? timing.orderCutoffTime : '';
   const earliestDeliveryAt = new Date(
     now.getTime() + effectiveLeadTimeHours * 3600000,
   ).toISOString();
-  const sameDayAllowed = resolveSameDayAllowed(
-    platform,
-    effectiveLeadTimeHours,
-    planOverrides.leadTimeHours,
-  );
+  const sameDayAllowed = timing.ok
+    ? resolveSameDayAllowedForPlan(timing.leadTimeHours)
+    : false;
   const extras: Record<string, unknown> = {
     leadTimeHours: effectiveLeadTimeHours,
+    orderCutoffTime,
     bookingPolicy: {
-      rolloutEnabled: isMealBookingPolicyRolloutEnabled(),
       effectiveLeadTimeHours,
       earliestDeliveryAt,
       sameDayAllowed,
-      orderCutoffTime: planOverrides.orderCutoffTime || platform.orderCutoff.time,
-      bounds: platform.leadTime,
-      sameDay: platform.sameDay,
+      orderCutoffTime,
+      bounds: { minHours: 0, maxHours: 72 },
     },
   };
+  if (!timing.ok) {
+    extras.deliveryAllowed = false;
+    extras.deliveryPolicyMessage = timing.error;
+    return extras;
+  }
   const dateRaw = query.scheduledDeliveryDate;
-  if (dateRaw && isMealBookingPolicyRolloutEnabled()) {
-    let requestedDeliveryAt = dateRaw;
-    const t = query.deliveryTime?.trim();
-    if (t && /^\d{1,2}:\d{2}/.test(t)) {
-      requestedDeliveryAt = `${dateRaw}T${t.length === 5 ? `${t}:00` : t}`;
-    } else {
-      requestedDeliveryAt = `${dateRaw}T12:00:00`;
-    }
-    const evaluation = await evaluateMealBookingForPlan(
+  const timeRaw = query.deliveryTime?.trim();
+  if (dateRaw && timeRaw && /^\d{1,2}:\d{2}/.test(timeRaw)) {
+    const requestedDeliveryAt = `${dateRaw}T${timeRaw.length === 5 ? `${timeRaw}:00` : timeRaw}`;
+    const evaluation = evaluateMealBookingForPlan(
       {
         vendorId: query.vendorId || String(plan.vendor_id || ''),
         mealPlanId: query.planId || String(plan.id || ''),
-        purchaseType: pt,
+        purchaseType: 'ONE_OFF',
         requestedDeliveryAt,
       },
       plan,
@@ -166,6 +129,10 @@ async function mealBookingPolicyPreviewExtras(
     if (!evaluation.allowed && evaluation.message) {
       extras.deliveryPolicyMessage = evaluation.message;
     }
+  } else if (dateRaw) {
+    extras.deliveryAllowed = undefined;
+    extras.deliveryPolicyMessage =
+      'Select a delivery time to check availability for this date.';
   }
   return extras;
 }
@@ -360,11 +327,14 @@ export function registerMealPlanEndpoints(app: Hono) {
         return c.json({ error: prepParsed.message }, 400);
       }
 
-      const platformMealPolicy = await fetchPlatformMealBookingPolicy();
-      const resolvedLeadHours =
-        leadTimeHours != null && leadTimeHours !== ''
-          ? clampLeadTimeHoursForPlatform(Number(leadTimeHours), platformMealPolicy)
-          : platformMealPolicy.leadTime.defaultHours;
+      if (leadTimeHours == null || leadTimeHours === '' || !Number.isFinite(Number(leadTimeHours))) {
+        return c.json({ error: 'leadTimeHours is required (0–72)' }, 400);
+      }
+      const cutoffHm = parseOrderCutoffHm(orderCutoffTime);
+      if (!cutoffHm) {
+        return c.json({ error: 'orderCutoffTime is required (HH:mm, e.g. 18:00)' }, 400);
+      }
+      const resolvedLeadHours = clampLeadTimeHours(Number(leadTimeHours));
 
       // Create meal plan
       const result = await insert('meal_plans', {
@@ -388,7 +358,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         storage_instructions: storageInstructions,
         serving_instructions: servingInstructions,
         available_days: availableDays || ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'],
-        order_cutoff_time: orderCutoffTime || '18:00',
+        order_cutoff_time: cutoffHm,
         delivery_slots: JSON.stringify(deliverySlots || []),
         lead_time_hours: resolvedLeadHours,
         is_active: true,
@@ -398,7 +368,6 @@ export function registerMealPlanEndpoints(app: Hono) {
         success: true,
         mealPlan: result[0],
         message: 'Meal plan created successfully',
-        bookingPolicyBounds: platformMealPolicy.leadTime,
       });
     } catch (error: any) {
       console.error('Error creating meal plan:', error);
@@ -451,11 +420,18 @@ export function registerMealPlanEndpoints(app: Hono) {
       }
 
       if (updateData.lead_time_hours !== undefined) {
-        const platformMealPolicy = await fetchPlatformMealBookingPolicy();
-        updateData.lead_time_hours = clampLeadTimeHoursForPlatform(
-          Number(updateData.lead_time_hours),
-          platformMealPolicy,
-        );
+        const h = Number(updateData.lead_time_hours);
+        if (!Number.isFinite(h)) {
+          return c.json({ error: 'leadTimeHours must be a number (0–72)' }, 400);
+        }
+        updateData.lead_time_hours = clampLeadTimeHours(h);
+      }
+      if (updateData.order_cutoff_time !== undefined) {
+        const cutoff = parseOrderCutoffHm(updateData.order_cutoff_time);
+        if (!cutoff) {
+          return c.json({ error: 'orderCutoffTime must be HH:mm (e.g. 18:00)' }, 400);
+        }
+        updateData.order_cutoff_time = cutoff;
       }
 
       await update('meal_plans', { id: planId }, updateData);
@@ -1306,74 +1282,44 @@ export function registerMealPlanEndpoints(app: Hono) {
               recommendedPlanLengthWeeks: dietFull.recommendedPlanLengthWeeks,
             };
 
-      // Lead time / same-day policy (platform + plan)
-      if (isMealBookingPolicyRolloutEnabled()) {
-        let requestedDeliveryAt = scheduledDeliveryDate;
-        if (scheduledDeliverySlot?.start) {
-          const [hours, minutes] = scheduledDeliverySlot.start.split(':').map(Number);
-          const d = new Date(scheduledDeliveryDate);
-          d.setHours(hours || 0, minutes || 0, 0, 0);
-          requestedDeliveryAt = d.toISOString();
-        } else if (typeof scheduledDeliveryDate === 'string' && !scheduledDeliveryDate.includes('T')) {
-          requestedDeliveryAt = `${scheduledDeliveryDate}T12:00:00`;
-        }
-        const evaluation = await evaluateMealBookingForPlan(
-          {
-            vendorId: String(plan.vendor_id || vendorId || ''),
-            mealPlanId: String(plan.id || mealPlanId || ''),
-            purchaseType: 'ONE_OFF',
-            requestedDeliveryAt: String(requestedDeliveryAt),
-          },
-          plan as Record<string, unknown>,
+      // Lead time / order cutoff (vendor-defined on meal_plans only)
+      if (!scheduledDeliverySlot?.start) {
+        return c.json(
+          { error: 'Delivery time is required', code: 'DELIVERY_TIME_REQUIRED' },
+          400,
         );
-        if (!evaluation.allowed) {
-          return c.json(
-            {
-              error:
-                evaluation.message ||
-                `Order must be placed at least ${evaluation.effectiveLeadTimeHours} hours in advance`,
-              code: evaluation.blockCode || 'LEAD_TIME_VIOLATION',
-              details: {
-                requiredLeadTimeHours: evaluation.effectiveLeadTimeHours,
-                earliestDeliveryAt: evaluation.earliestDeliveryAt,
-                sameDayAllowed: evaluation.sameDayAllowed,
-              },
+      }
+      const datePart =
+        typeof scheduledDeliveryDate === 'string'
+          ? scheduledDeliveryDate.split('T')[0]
+          : String(scheduledDeliveryDate);
+      const slotStart = String(scheduledDeliverySlot.start).trim();
+      const requestedDeliveryAt = `${datePart}T${slotStart.length === 5 ? `${slotStart}:00` : slotStart}`;
+      const evaluation = evaluateMealBookingForPlan(
+        {
+          vendorId: String(plan.vendor_id || vendorId || ''),
+          mealPlanId: String(plan.id || mealPlanId || ''),
+          purchaseType: 'ONE_OFF',
+          requestedDeliveryAt,
+        },
+        plan as Record<string, unknown>,
+      );
+      if (!evaluation.allowed) {
+        return c.json(
+          {
+            error:
+              evaluation.message ||
+              `Order must be placed at least ${evaluation.effectiveLeadTimeHours} hours in advance`,
+            code: evaluation.blockCode || 'LEAD_TIME_VIOLATION',
+            details: {
+              requiredLeadTimeHours: evaluation.effectiveLeadTimeHours,
+              earliestDeliveryAt: evaluation.earliestDeliveryAt,
+              sameDayAllowed: evaluation.sameDayAllowed,
+              orderCutoffTime: evaluation.effectiveOrderCutoffTime,
             },
-            400,
-          );
-        }
-      } else {
-        const leadTimeHours =
-          plan.lead_time_hours != null ? Number(plan.lead_time_hours as number | string) : 0;
-        const skipLeadTimeForDev = bypassMealLeadTimeValidationForDev();
-        if (!skipLeadTimeForDev && leadTimeHours > 0) {
-          let deliveryDateTime: Date;
-          if (scheduledDeliverySlot && scheduledDeliverySlot.start) {
-            const [hours, minutes] = scheduledDeliverySlot.start.split(':').map(Number);
-            deliveryDateTime = new Date(scheduledDeliveryDate);
-            deliveryDateTime.setHours(hours || 0, minutes || 0, 0, 0);
-          } else {
-            deliveryDateTime = new Date(scheduledDeliveryDate);
-            deliveryDateTime.setHours(0, 0, 0, 0);
-          }
-          const leadTimeMs = leadTimeHours * 60 * 60 * 1000;
-          const timeUntilDelivery = deliveryDateTime.getTime() - Date.now();
-          if (timeUntilDelivery < leadTimeMs) {
-            return c.json(
-              {
-                error: `Order must be placed at least ${leadTimeHours} hours in advance`,
-                code: 'LEAD_TIME_VIOLATION',
-                details: {
-                  deliveryDateTime: deliveryDateTime.toISOString(),
-                  currentTime: new Date().toISOString(),
-                  hoursUntilDelivery: (timeUntilDelivery / (60 * 60 * 1000)).toFixed(2),
-                  requiredLeadTimeHours: leadTimeHours,
-                },
-              },
-              400,
-            );
-          }
-        }
+          },
+          400,
+        );
       }
 
       // Calculate totals (meal_plans may only have legacy `price` if `price_per_meal` was never set)
@@ -1465,8 +1411,16 @@ export function registerMealPlanEndpoints(app: Hono) {
       );
       const totalAmount = Math.round((totalAmountBeforeGst + mealGstOrder.totalGstAmount) * 100) / 100;
 
+      const catalogSnap = mergeMealPlanCatalogForApi(plan as Record<string, unknown>, plan.dietary_requirements);
+      const packWeightGrams = resolvePackWeightGramsFromPlanRow(plan as Record<string, unknown>);
+
       const purchase_snapshot = {
         purchaseType: expectedPurchaseType,
+        packWeightGrams: packWeightGrams ?? undefined,
+        mealsPerDelivery: catalogSnap.mealsPerDelivery,
+        deliveryDays: catalogSnap.deliveryDays,
+        deliveryFrequency: catalogSnap.deliveryFrequency,
+        mealsPerDay: catalogSnap.mealsPerDay,
         subscriptionConfig: subscriptionConfigSnap,
         deliveryAddress: {
           ...normalizedAddress,
@@ -1552,7 +1506,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         confirmed_at: new Date().toISOString(),
       });
 
-      // TODO: Send notification to vendor
+      const orders = await select('meal_orders', { id: orderId });
+      if (orders[0]) {
+        fireVendorMealOrderScheduledSms(orders[0] as Record<string, unknown>);
+      }
 
       return c.json({
         success: true,
