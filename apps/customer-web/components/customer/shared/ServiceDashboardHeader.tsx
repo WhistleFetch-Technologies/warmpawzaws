@@ -1,7 +1,12 @@
 'use client';
 
 import { ArrowLeft, ChevronLeft, LucideIcon, CheckCircle2, X } from 'lucide-react';
-import { Fragment, ReactNode, useId } from 'react';
+import { Fragment, ReactNode, useId, useSyncExternalStore } from 'react';
+import {
+  isCapacitorNativePlatform,
+  resolveServiceHeaderTopPad,
+  shouldPaintBrowserStatusBarFill,
+} from '@/lib/service-header-safe-area';
 
 export interface StatCard {
   value: string;
@@ -151,23 +156,18 @@ export function ServiceDashboardHeader({
   const IconComponent = ServiceIcon as LucideIcon;
   const isLucideIcon = typeof IconComponent === 'function' || (IconComponent && 'render' in IconComponent);
 
+  const isCapacitorNative = useSyncExternalStore(
+    () => () => {},
+    isCapacitorNativePlatform,
+    () => false,
+  );
+  const paintStatusBarFill = !compact && shouldPaintBrowserStatusBarFill(isCapacitorNative);
+
   /**
-   * Top padding inside the orange header.
-   *
-   * IMPORTANT: applied via inline `style={{ paddingTop }}`, NOT a Tailwind
-   * arbitrary-value class. On Capacitor Android, Tailwind JIT classes for
-   * complex arbitrary values (with nested commas in `max(... , calc(...))`)
-   * have been observed to be missed by the JIT scanner or to lose to a
-   * cached CSS bundle in the WebView, leaving the back button under the
-   * status bar / camera punch-hole. An inline style sidesteps both issues:
-   * the paddingTop value is baked directly into the rendered HTML, so it
-   * cannot be cache-stripped and does not depend on Tailwind generating a
-   * matching class. Non-compact headers use env-only top pad (home / service hubs).
-   * `compact` is used on payment / Razorpay flows — keep legacy min padding unchanged.
+   * Top padding inside the orange header (inline style — reliable in Capacitor WebView).
+   * `compact` payment summary path is unchanged. Hub screens get a browser min inset.
    */
-  const topPadStyle: React.CSSProperties = compact
-    ? { paddingTop: 'max(56px, calc(env(safe-area-inset-top, 0px) + 8px))' }
-    : { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' };
+  const topPadStyle = resolveServiceHeaderTopPad(compact, isCapacitorNative);
   const innerBottom = compact ? 'pb-3 md:pb-4' : 'pb-4 md:pb-6';
   const titleRowMb = compact ? 'mb-2 md:mb-3' : 'mb-3 md:mb-4';
   const iconBox = compact ? 'h-11 w-11' : 'h-14 w-14';
@@ -212,6 +212,15 @@ export function ServiceDashboardHeader({
     <div
       className={`relative z-10 isolate w-full ${fullWidth ? 'max-w-none' : 'mx-auto max-w-customer'} ${className}`.trim()}
     >
+      {paintStatusBarFill && (
+        <div
+          className="pointer-events-none fixed inset-x-0 top-0 z-[18] bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+          style={{
+            height: 'max(48px, env(safe-area-inset-top, 0px))',
+          }}
+          aria-hidden
+        />
+      )}
       {/*
         Downward curve: bottom edge of the orange is a U-shaped dip (center projects down into the
         next section) — not border-radius on bottom corners, which looks “inward” / wrong direction.
