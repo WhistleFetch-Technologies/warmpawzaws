@@ -1,17 +1,32 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
-import * as LucideIcons from 'lucide-react';
-import { Scissors, Building2, Home as HomeIcon, Star, MapPin, Sparkles, ChevronRight, RefreshCw, Plus } from 'lucide-react';
+import Image from 'next/image';
+import {
+  Scissors,
+  Home as HomeIcon,
+  Star,
+  MapPin,
+  ChevronRight,
+  RefreshCw,
+  Shield,
+  Leaf,
+  Users,
+  Bath,
+  Hand,
+  Brush,
+  Dog,
+  Sparkles,
+  ArrowRight,
+  Heart,
+  type LucideIcon,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
 import { toast } from 'sonner';
-import { GROOMING_NEEDS } from './ProblemGridSection';
-import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
-import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
@@ -24,16 +39,62 @@ import {
   findBoardingListVendorByProfileKey,
 } from '@/lib/boarding-vendor-discovery-map';
 import type { BoardingServiceSlug } from '@/lib/boarding-service-types';
-import { problemIconTextColorToBgClass } from '@/lib/problem-grid-icon-bg';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 
-function DynamicProblemIcon({ iconName, iconColor }: { iconName?: string; iconColor?: string }) {
-  if (!iconName || !(LucideIcons as any)[iconName]) {
-    return <Scissors className="w-6 h-6 text-gray-500" />;
-  }
-  const Icon = (LucideIcons as any)[iconName];
-  return <Icon className={`w-6 h-6 ${iconColor || 'text-gray-600'}`} />;
+const GROOMING_IMG = '/images/home/Grooming';
+
+const GROOMING_BANNER = {
+  tag: 'LIMITED TIME OFFER',
+  title: 'Premium Grooming',
+  subtitle: 'Happier pets, healthier lives',
+  offer: 'Up to 30% OFF',
+  offerDetail: 'on full grooming for all pets',
+  image: `${GROOMING_IMG}/banner-img.webp`,
+  cta: 'Book Now',
+};
+
+const GROOMING_FEATURES = [
+  { icon: Shield, label: 'Certified Groomers', sub: 'Trained & verified', color: 'text-orange-500', bg: 'bg-orange-50' },
+  { icon: Leaf, label: 'Safe & Premium Products', sub: 'Vet approved', color: 'text-green-600', bg: 'bg-green-50' },
+  { icon: HomeIcon, label: 'Doorstep Service', sub: 'At home grooming', color: 'text-purple-600', bg: 'bg-purple-50' },
+  { icon: MapPin, label: 'Live Tracking', sub: 'Track groomer in real-time', color: 'text-blue-600', bg: 'bg-blue-50' },
+] as const;
+
+const GROOMING_NEED_CARDS: {
+  id: string;
+  name: string;
+  image: string;
+  Icon: LucideIcon;
+  iconColor: string;
+  iconBg: string;
+}[] = [
+  { id: 'hair_trim', name: 'Hair Trimming', image: `${GROOMING_IMG}/hair-trim.webp`, Icon: Scissors, iconColor: 'text-blue-600', iconBg: 'bg-blue-100' },
+  { id: 'bath_only', name: 'Bath & Brush', image: `${GROOMING_IMG}/bathnbrush.webp`, Icon: Bath, iconColor: 'text-blue-600', iconBg: 'bg-blue-100' },
+  { id: 'full_grooming', name: 'Full Grooming', image: `${GROOMING_IMG}/fullbodygroom.webp`, Icon: Scissors, iconColor: 'text-orange-600', iconBg: 'bg-orange-100' },
+  { id: 'nail_care', name: 'Nail Trimming', image: `${GROOMING_IMG}/nailtrim.webp`, Icon: Hand, iconColor: 'text-purple-600', iconBg: 'bg-purple-100' },
+  { id: 'haircut_styling', name: 'Haircut & Styling', image: `${GROOMING_IMG}/haircut.webp`, Icon: Brush, iconColor: 'text-pink-600', iconBg: 'bg-pink-100' },
+  { id: 'deshedding', name: 'De-shedding', image: `${GROOMING_IMG}/de-shedding.webp`, Icon: Dog, iconColor: 'text-amber-600', iconBg: 'bg-amber-100' },
+  { id: 'spa_treatment', name: 'Spa & Wellness', image: `${GROOMING_IMG}/spa.webp`, Icon: Sparkles, iconColor: 'text-rose-600', iconBg: 'bg-rose-100' },
+];
+
+const GROOMING_HEADER_ICON =
+  'fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none';
+
+function GroomingHeaderBackground() {
+  return (
+    <>
+      <Scissors className={`absolute -right-2 top-6 h-20 w-20 rotate-[18deg] ${GROOMING_HEADER_ICON} sm:h-24 sm:w-24`} strokeWidth={1} />
+      <Sparkles className={`absolute right-[28%] top-2 h-9 w-9 -rotate-12 ${GROOMING_HEADER_ICON}`} strokeWidth={1} />
+      <Brush className={`absolute left-[42%] top-14 h-14 w-14 rotate-45 ${GROOMING_HEADER_ICON} sm:h-16 sm:w-16`} strokeWidth={1} />
+      <Bath className={`absolute -left-1 bottom-2 h-16 w-16 -rotate-6 ${GROOMING_HEADER_ICON} sm:h-[4.5rem] sm:w-[4.5rem]`} strokeWidth={1} />
+      <Hand className={`absolute right-12 bottom-4 h-11 w-11 -rotate-[20deg] ${GROOMING_HEADER_ICON} sm:right-16 sm:h-12 sm:w-12`} strokeWidth={1} />
+      <Dog className={`absolute left-8 top-3 h-12 w-12 rotate-6 ${GROOMING_HEADER_ICON} sm:left-12 sm:h-14 sm:w-14`} strokeWidth={1} />
+      <Heart className={`absolute right-[18%] bottom-1 h-10 w-10 rotate-12 ${GROOMING_HEADER_ICON}`} strokeWidth={1} />
+      <Sparkles className={`absolute left-[22%] bottom-8 h-7 w-7 rotate-[30deg] ${GROOMING_HEADER_ICON}`} strokeWidth={1} />
+      <Scissors className={`absolute left-[55%] top-1 h-8 w-8 -rotate-[35deg] ${GROOMING_HEADER_ICON}`} strokeWidth={1} />
+    </>
+  );
 }
 
 interface GroomingServiceRouterProps {
@@ -42,8 +103,6 @@ interface GroomingServiceRouterProps {
   onViewBooking?: (bookingId: string) => void;
   onNavigate?: (screen: string, data?: any) => void;
 }
-
-const GROOMING_ROLE_IDS = ['groomer', 'groomer_solo', 'groomer_center', 'pet_groomer'];
 
 const HUB_SLUG: BoardingServiceSlug = 'all';
 
@@ -91,38 +150,10 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   }, [groomingCenterLoading, groomingCenterFetching, groomingCenterError, groomingCenterCount]);
 
   const [previousGroomer, setPreviousGroomer] = useState<any>(null);
-  const [groomingNeeds, setGroomingNeeds] = useState<any[]>([]);
 
   useEffect(() => {
     loadPreviousGroomer();
-    loadGroomingNeeds();
   }, [phone]);
-
-  const loadGroomingNeeds = async () => {
-    try {
-      for (const roleId of GROOMING_ROLE_IDS) {
-        const res = await apiClient.get<{ success?: boolean; problems?: any[] }>(`/public/problem-grid/${roleId}`);
-        if (res?.success && Array.isArray(res.problems) && res.problems.length > 0) {
-          const withViewAll = [
-            ...res.problems.map((p: any) => {
-              const iconColor = p.iconColor ?? p.icon_color;
-              return {
-                id: p.id || p.problemId,
-                name: p.displayName || p.name,
-                icon: <DynamicProblemIcon iconName={p.iconName} iconColor={iconColor} />,
-                iconBg: problemIconTextColorToBgClass(iconColor),
-              };
-            }),
-            { id: 'view_all', name: 'View All', icon: <Plus className="w-6 h-6 text-orange-600" /> },
-          ];
-          setGroomingNeeds(withViewAll);
-          return;
-        }
-      }
-    } catch (_) {
-      // Keep groomingNeeds empty so we use GROOMING_NEEDS fallback
-    }
-  };
 
   const handleBookPlan = useCallback(
     (v: BoardingListVendor, plan: BoardingPlanRow) => {
@@ -237,22 +268,24 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
       {
         id: 'grooming_center',
         name: 'Grooming Centre',
-        description: 'Visit our salons',
-        icon: Building2,
-        color: 'text-orange-600',
-        bg: 'bg-orange-50',
-        badge: groomingCenterBadgeText,
+        description: 'Visit our premium salons',
+        image: `${GROOMING_IMG}/grooming-center.webp`,
+        badge: groomingCenterBadgeText.toUpperCase(),
+        badgeClass: 'bg-white/90 text-slate-700',
+        trustedBy: 'Trusted by 2K+ pet parents',
+        arrowClass: 'bg-orange-500 hover:bg-orange-600',
       },
-    {
-      id: 'grooming_home',
-      name: 'At Home Grooming',
-      description: 'Groomer comes to you',
-      icon: HomeIcon,
-      color: 'text-green-600',
-      bg: 'bg-green-50',
-      badge: 'Track Live'
-    }
-  ],
+      {
+        id: 'grooming_home',
+        name: 'At Home Grooming',
+        description: 'Groomer comes to you',
+        image: `${GROOMING_IMG}/home-grooming.webp`,
+        badge: 'MOST POPULAR',
+        badgeClass: 'bg-green-500 text-white',
+        trustedBy: 'Trusted by 5K+ pet parents',
+        arrowClass: 'bg-green-500 hover:bg-green-600',
+      },
+    ],
     [groomingCenterBadgeText]
   );
 
@@ -267,26 +300,180 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}
+    <div className="min-h-screen bg-[#FFF8F4]">
       <ServiceDashboardHeader
         fullWidth
         serviceName="Grooming Services"
-        serviceSubtitle="Premium pet grooming"
+        serviceSubtitle="Premium care for your furry friend"
         serviceIcon={Scissors}
         iconColor="text-white"
         stats={dashboardStats}
         onBack={onBack}
         showBackButton={true}
-        headerColor="bg-[#FF8C42]"
-        sheetToneClass="bg-white"
+        headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+        sheetToneClass="bg-[#FFF8F4]"
+        headerBackground={<GroomingHeaderBackground />}
       />
 
-      {/* Main Content */}
-      <div className="mx-auto w-full max-w-customer -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 sm:rounded-t-[2rem]">
-        <div className="space-y-8">
-          
-          {/* YOUR GROOMER Section - As per Master Plan */}
+      <div className="mx-auto w-full max-w-customer -mt-4 rounded-t-[1.75rem] bg-[#FFF8F4] px-4 pt-5 sm:rounded-t-[2rem]">
+        <div className="space-y-6">
+
+          {/* Hero banner */}
+          <div className="relative overflow-hidden rounded-2xl border border-orange-100/60 bg-gradient-to-br from-white via-orange-50/30 to-white shadow-sm">
+            {/* Faded background icons — light tones only */}
+            <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+              <Scissors className="absolute -right-1 top-2 h-14 w-14 rotate-12 text-orange-200/40 sm:h-16 sm:w-16" strokeWidth={1.25} />
+              <Sparkles className="absolute left-3 top-10 h-9 w-9 -rotate-12 text-amber-200/50 sm:left-5 sm:h-10 sm:w-10" strokeWidth={1.25} />
+              <Brush className="absolute bottom-6 left-16 h-11 w-11 rotate-[24deg] text-orange-100/80 sm:h-12 sm:w-12" strokeWidth={1.25} />
+              <Bath className="absolute bottom-3 right-16 h-10 w-10 -rotate-6 text-orange-200/35 sm:right-20 sm:h-11 sm:w-11" strokeWidth={1.25} />
+              <Heart className="absolute right-[38%] top-1/2 h-8 w-8 -translate-y-1/2 rotate-6 fill-none text-rose-100/70" strokeWidth={1.25} />
+            </div>
+
+            <div className="relative z-10 flex min-h-[148px]">
+              <div className="flex flex-1 flex-col justify-center gap-2 p-4 sm:p-5">
+                <span className="inline-flex w-fit items-center rounded-full bg-orange-100 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-orange-600">
+                  {GROOMING_BANNER.tag}
+                </span>
+                <h2 className="text-lg font-bold leading-tight text-slate-900 sm:text-xl">
+                  {GROOMING_BANNER.title}
+                </h2>
+                <p className="flex items-center gap-1 text-xs text-slate-600 sm:text-sm">
+                  {GROOMING_BANNER.subtitle}
+                  <Heart className="h-3 w-3 fill-orange-400 text-orange-400" />
+                </p>
+                <div className="rounded-xl border border-orange-100 bg-orange-50/80 px-3 py-2">
+                  <p className="text-sm font-bold text-orange-600">{GROOMING_BANNER.offer}</p>
+                  <p className="text-[10px] text-slate-600">{GROOMING_BANNER.offerDetail}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate?.('grooming_center')}
+                  className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-full bg-[#FF8C42] px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#FF7A35]"
+                >
+                  {GROOMING_BANNER.cta}
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <div className="relative flex w-[38%] shrink-0 items-center justify-center px-2 py-3 sm:w-[40%] sm:px-3">
+                <div className="grooming-banner-img-float relative aspect-[4/5] w-[88%] max-w-[130px] sm:max-w-[145px]">
+                  <Image
+                    src={GROOMING_BANNER.image}
+                    alt="Premium pet grooming"
+                    fill
+                    className="object-contain object-center drop-shadow-sm"
+                    sizes="145px"
+                    priority
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <style jsx global>{`
+            @keyframes grooming-banner-float {
+              0%,
+              100% {
+                transform: translateY(0) scale(1);
+              }
+              50% {
+                transform: translateY(-6px) scale(1.02);
+              }
+            }
+            .grooming-banner-img-float {
+              animation: grooming-banner-float 3.8s ease-in-out infinite;
+              will-change: transform;
+            }
+            @media (prefers-reduced-motion: reduce) {
+              .grooming-banner-img-float {
+                animation: none;
+              }
+            }
+          `}</style>
+
+          {/* Features row */}
+          <div className="grid grid-cols-4 gap-2">
+            {GROOMING_FEATURES.map((feature) => (
+              <div key={feature.label} className="flex flex-col items-center gap-1.5 text-center">
+                <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${feature.bg}`}>
+                  <feature.icon className={`h-5 w-5 ${feature.color}`} />
+                </div>
+                <p className="text-[9px] font-semibold leading-tight text-slate-800 sm:text-[10px]">{feature.label}</p>
+                <p className="text-[8px] leading-tight text-slate-500 sm:text-[9px]">{feature.sub}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* What does your pet need? */}
+          <div>
+            <h2 className="mb-3 text-lg font-bold text-slate-900">What does your pet need?</h2>
+            <div className="grid grid-cols-4 gap-2.5 sm:gap-3">
+              {GROOMING_NEED_CARDS.map((need) => (
+                <button
+                  key={need.id}
+                  type="button"
+                  onClick={() => onNavigate?.('problem_selected', { problemId: need.id, problemTitle: need.name })}
+                  className="group flex flex-col items-center gap-1.5 text-left"
+                >
+                  <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm transition-all group-hover:border-orange-200 group-hover:shadow-md">
+                    <Image
+                      src={need.image}
+                      alt={need.name}
+                      fill
+                      className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
+                      sizes="(max-width: 640px) 22vw, 100px"
+                    />
+                    <div className={`absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-lg ${need.iconBg} shadow-sm`}>
+                      <need.Icon className={`h-3.5 w-3.5 ${need.iconColor}`} />
+                    </div>
+                  </div>
+                  <span className="w-full text-center text-[9px] font-medium leading-tight text-slate-700 sm:text-[10px]">
+                    {need.name}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Choose Service Type */}
+          <div>
+            <h2 className="mb-3 text-lg font-bold text-slate-900">Choose Service Type</h2>
+            <div className="grid grid-cols-2 gap-3">
+              {serviceTypes.map((service) => (
+                <button
+                  key={service.id}
+                  type="button"
+                  onClick={() => onNavigate?.(service.id)}
+                  className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
+                >
+                  <div className="relative h-28 w-full sm:h-32">
+                    <Image
+                      src={service.image}
+                      alt={service.name}
+                      fill
+                      className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
+                      sizes="(max-width: 640px) 45vw, 200px"
+                    />
+                    <span className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide ${service.badgeClass}`}>
+                      {service.badge}
+                    </span>
+                  </div>
+                  <div className="relative p-3 pb-10">
+                    <h3 className="text-sm font-bold text-slate-900">{service.name}</h3>
+                    <p className="mt-0.5 text-[11px] text-slate-500">{service.description}</p>
+                    <div className="mt-2 flex items-center gap-1 text-[10px] text-slate-500">
+                      <Users className="h-3 w-3 text-orange-400" />
+                      <span>{service.trustedBy}</span>
+                    </div>
+                    <div className={`absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full text-white shadow-md transition-transform group-hover:scale-110 ${service.arrowClass}`}>
+                      <ArrowRight className="h-4 w-4" />
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* YOUR GROOMER — kept below hub sections */}
           {previousGroomer && (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -337,128 +524,6 @@ export function GroomingServiceRouter({ phone, onBack, onViewBooking, onNavigate
               </Card>
             </div>
           )}
-
-          {/* PHASE 1.2: Vendor spotlights + promotion banners (from Admin Marketing) */}
-          <div className="space-y-3">
-            <FeaturedVendorSpotlights service="grooming" onNavigate={onNavigate} className="mb-1" />
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-orange-500" />
-              <h2 className="text-lg font-bold text-slate-900">Spotlight Offers</h2>
-            </div>
-          </div>
-
-          {/* Grooming Needs Grid */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-900">What does your pet need?</h2>
-              <button 
-                onClick={() => {
-                  console.log('🔵 [Grooming] View All problem grid clicked');
-                  onNavigate?.('problem_grid');
-                }}
-                className="text-sm text-orange-600 font-medium hover:text-orange-700"
-              >
-                View All
-              </button>
-            </div>
-
-            <div className="grid grid-cols-4 gap-3" style={{ position: 'relative', zIndex: 1 }}>
-              {(groomingNeeds.length > 0 ? groomingNeeds : GROOMING_NEEDS).map((need) => {
-                const isViewAll = need.id === 'view_all';
-                const hasAdminTint = Boolean((need as { iconBg?: string }).iconBg) && !isViewAll;
-                return (
-                  <button
-                    key={need.id}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      console.log('🔵 [Grooming] Problem grid clicked:', need.id, isViewAll);
-                      if (isViewAll) {
-                        console.log('🔵 [Grooming] Navigating to problem_grid');
-                        onNavigate?.('problem_grid');
-                      } else {
-                        console.log('🔵 [Grooming] Navigating to problem_selected:', need.id);
-                        onNavigate?.('problem_selected', { problemId: need.id, problemTitle: need.name });
-                      }
-                    }}
-                    className="group flex flex-col items-center gap-2 cursor-pointer"
-                    style={{ 
-                      pointerEvents: 'auto', 
-                      zIndex: 1,
-                      position: 'relative'
-                    }}
-                  >
-                    <div className={`
-                      w-full aspect-square rounded-2xl flex items-center justify-center text-2xl shadow-sm transition-all duration-200
-                      ${isViewAll 
-                        ? 'bg-orange-50 border border-orange-100 text-orange-600' 
-                        : 'bg-white border border-slate-100 text-slate-700 group-hover:border-orange-200 group-hover:shadow-md group-hover:-translate-y-0.5'
-                      }
-                    `}>
-                      {typeof need.icon === 'string' ? (
-                        <span className="text-2xl">{need.icon}</span>
-                      ) : hasAdminTint ? (
-                        <div
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 ${(need as { iconBg?: string }).iconBg} group-hover:opacity-90`}
-                        >
-                          {need.icon}
-                        </div>
-                      ) : (
-                        <div className="text-slate-600 group-hover:text-orange-600">
-                          {need.icon}
-                        </div>
-                      )}
-                    </div>
-                    <span className={`text-[10px] font-medium text-center leading-tight line-clamp-2 ${isViewAll ? 'text-orange-600' : 'text-slate-600'}`}>
-                      {need.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Service Types */}
-          <div>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Choose Service Type</h2>
-            <div className="grid grid-cols-2 gap-3" style={{ position: 'relative', zIndex: 1 }}>
-              {serviceTypes.map((service) => (
-              <button
-                key={service.id}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  console.log('🔵 [Grooming] Service style clicked:', service.id);
-                  onNavigate?.(service.id);
-                }}
-                className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden cursor-pointer"
-                style={{ 
-                  pointerEvents: 'auto', 
-                  zIndex: 1,
-                  position: 'relative'
-                }}
-              >
-                  <div className={`w-10 h-10 rounded-xl ${service.bg} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
-                    <service.icon className={`w-5 h-5 ${service.color}`} />
-                  </div>
-                  <h3 className="font-semibold text-slate-900 text-sm mb-0.5">{service.name}</h3>
-                  <div onClick={(e) => e.stopPropagation()} className="relative z-20">
-                    <ServiceDescriptionInline
-                      description={service.description}
-                      title={service.name}
-                      className="m-0 text-xs leading-snug text-slate-500"
-                      linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-orange-600 hover:underline"
-                    />
-                  </div>
-                  {service.badge && (
-                    <span className="absolute top-3 right-3 px-2 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-bold rounded-full uppercase tracking-wide">
-                      {service.badge}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
 
           {/* Top Groomers — same expandable cards as View All (grooming_center) */}
           <div>

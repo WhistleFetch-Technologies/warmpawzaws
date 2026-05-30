@@ -2,31 +2,34 @@
 export interface CategoryCardTheme {
   iconColor: string;
   tintColor: string;
+  /** Slightly richer tint on hover — optional, derived when omitted. */
+  tintColorHover?: string;
 }
 
 const DEFAULT_THEME: CategoryCardTheme = {
   iconColor: '#6B7280',
-  tintColor: 'rgba(107, 114, 128, 0.07)',
+  tintColor: '#F3F4F6',
+  tintColorHover: '#E5E7EB',
 };
 
 /** Per-category themes aligned with the home mockup. */
 export const HOME_SERVICE_CARD_THEMES: Record<string, CategoryCardTheme> = {
-  grooming: { iconColor: '#FF7843', tintColor: 'rgba(255, 120, 67, 0.08)' },
-  vet: { iconColor: '#3B82F6', tintColor: 'rgba(59, 130, 246, 0.08)' },
-  veterinary: { iconColor: '#3B82F6', tintColor: 'rgba(59, 130, 246, 0.08)' },
-  boarding: { iconColor: '#8B5CF6', tintColor: 'rgba(139, 92, 246, 0.08)' },
-  walker: { iconColor: '#22C55E', tintColor: 'rgba(34, 197, 94, 0.08)' },
-  walking: { iconColor: '#22C55E', tintColor: 'rgba(34, 197, 94, 0.08)' },
-  training: { iconColor: '#3B82F6', tintColor: 'rgba(59, 130, 246, 0.08)' },
-  nutritionist: { iconColor: '#FF7843', tintColor: 'rgba(255, 120, 67, 0.08)' },
-  nutrition: { iconColor: '#FF7843', tintColor: 'rgba(255, 120, 67, 0.08)' },
-  wellness: { iconColor: '#FF7843', tintColor: 'rgba(255, 120, 67, 0.08)' },
-  'pet-sitter': { iconColor: '#EC4899', tintColor: 'rgba(236, 72, 153, 0.08)' },
-  pet_sitter: { iconColor: '#EC4899', tintColor: 'rgba(236, 72, 153, 0.08)' },
-  sitting: { iconColor: '#EC4899', tintColor: 'rgba(236, 72, 153, 0.08)' },
-  pharmacy: { iconColor: '#EF4444', tintColor: 'rgba(239, 68, 68, 0.08)' },
-  shop: { iconColor: '#EC4899', tintColor: 'rgba(236, 72, 153, 0.08)' },
-  'lab-diagnostics': { iconColor: '#14B8A6', tintColor: 'rgba(20, 184, 166, 0.08)' },
+  grooming: { iconColor: '#FF7843', tintColor: '#FFF4ED', tintColorHover: '#FFE8D9' },
+  vet: { iconColor: '#3B82F6', tintColor: '#EFF6FF', tintColorHover: '#DBEAFE' },
+  veterinary: { iconColor: '#3B82F6', tintColor: '#EFF6FF', tintColorHover: '#DBEAFE' },
+  boarding: { iconColor: '#8B5CF6', tintColor: '#F5F3FF', tintColorHover: '#EDE9FE' },
+  walker: { iconColor: '#22C55E', tintColor: '#ECFDF5', tintColorHover: '#D1FAE5' },
+  walking: { iconColor: '#22C55E', tintColor: '#ECFDF5', tintColorHover: '#D1FAE5' },
+  training: { iconColor: '#3B82F6', tintColor: '#EFF6FF', tintColorHover: '#DBEAFE' },
+  nutritionist: { iconColor: '#FF7843', tintColor: '#FFF7ED', tintColorHover: '#FFEDD5' },
+  nutrition: { iconColor: '#FF7843', tintColor: '#FFF7ED', tintColorHover: '#FFEDD5' },
+  wellness: { iconColor: '#FF7843', tintColor: '#FFF7ED', tintColorHover: '#FFEDD5' },
+  'pet-sitter': { iconColor: '#EC4899', tintColor: '#FDF2F8', tintColorHover: '#FCE7F3' },
+  pet_sitter: { iconColor: '#EC4899', tintColor: '#FDF2F8', tintColorHover: '#FCE7F3' },
+  sitting: { iconColor: '#EC4899', tintColor: '#FDF2F8', tintColorHover: '#FCE7F3' },
+  pharmacy: { iconColor: '#EF4444', tintColor: '#FEF2F2', tintColorHover: '#FEE2E2' },
+  shop: { iconColor: '#EC4899', tintColor: '#FDF2F8', tintColorHover: '#FCE7F3' },
+  'lab-diagnostics': { iconColor: '#14B8A6', tintColor: '#F0FDFA', tintColorHover: '#CCFBF1' },
 };
 
 const TAILWIND_TEXT_HEX: Record<string, string> = {
@@ -52,7 +55,11 @@ function themeFromTailwindColor(colorClass: string): CategoryCardTheme | null {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
-  return { iconColor: hex, tintColor: `rgba(${r}, ${g}, ${b}, 0.08)` };
+  return {
+    iconColor: hex,
+    tintColor: `rgba(${r}, ${g}, ${b}, 0.1)`,
+    tintColorHover: `rgba(${r}, ${g}, ${b}, 0.16)`,
+  };
 }
 
 export function getCategoryCardTheme(screenOrCategory: string | undefined, colorClass?: string): CategoryCardTheme {
