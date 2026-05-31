@@ -53,6 +53,12 @@ import {
   processMealSubscriptionParentVendorCancelOriginalRefund,
 } from '../utils/payments/meal-order-original-refund';
 import {
+  mealKitchenNotifyStageForStatus,
+  notifyMealDeliveryStage,
+  notifyMealOrderCancelledByVendor,
+  notifyVendorMealDispatchFailed,
+} from '../utils/meal-delivery-notifications';
+import {
   mealProductParsedToDietaryJson,
   type MealProductDietaryInput,
 } from '../utils/meal-product-dietary';
@@ -2908,6 +2914,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         vendor_id: orderRow.vendor_id,
         status: orderRow.order_status,
       };
+      const previousMealStatus = String(orderRow.order_status || '').trim();
       console.log(`[meal-order-status] Order found: vendor_id=${order.vendor_id}, current_status=${order.status}`);
       
       // ✅ Use the order's actual vendor_id for the update (not the URL vendorId)
@@ -3002,6 +3009,10 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       if (actualStatus === 'preparing' && isMealDispatchStrict()) {
         dispatchStrictResult = await dispatchMealLogistics(orderId);
         if (!dispatchStrictResult.ok) {
+          void notifyVendorMealDispatchFailed(
+            orderId,
+            dispatchStrictResult.error || 'Dispatch failed',
+          ).catch(() => undefined);
           return c.json(
             {
               success: false,
@@ -3073,6 +3084,12 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             ReturnType<typeof dispatchMealLogistics>
           >;
         });
+        if (dispatch && !dispatch.ok) {
+          void notifyVendorMealDispatchFailed(
+            orderId,
+            dispatch.error || 'Dispatch failed',
+          ).catch(() => undefined);
+        }
       }
 
       // Idempotent vendor settlement on delivered (parity with the meal-plans.ts
@@ -3114,6 +3131,12 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               422,
             );
           }
+          void notifyMealOrderCancelledByVendor(
+            orderId,
+            'Vendor cancelled meal order from nutrition queue',
+          ).catch((e) =>
+            console.warn('[meal-order-status] cancel notify failed:', (e as Error)?.message || e),
+          );
         } catch (refundErr: unknown) {
           const msg = refundErr instanceof Error ? refundErr.message : 'Refund failed';
           console.error('[meal-order-status] original-method refund failed:', msg, { orderId });
@@ -3125,6 +3148,34 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
             },
             422,
           );
+        }
+      }
+
+      const kitchenStage = mealKitchenNotifyStageForStatus(actualStatus);
+      const customerIdForNotify = orderRow.customer_id ? String(orderRow.customer_id) : '';
+      if (kitchenStage && customerIdForNotify && previousMealStatus !== actualStatus) {
+        try {
+          const vendorRows = await select('vendors', { id: orderRow.vendor_id }).catch(() => []);
+          const vendorName =
+            (vendorRows[0] as { business_name?: string })?.business_name ||
+            (vendor as { business_name?: string | null })?.business_name ||
+            'Your kitchen';
+          const numRes = await query(
+            `SELECT order_number FROM meal_orders WHERE id = $1 LIMIT 1`,
+            [orderId],
+          );
+          const orderNumber = String((numRes.rows?.[0] as { order_number?: string })?.order_number || '');
+          void notifyMealDeliveryStage({
+            customerId: customerIdForNotify,
+            orderId,
+            eventType: kitchenStage,
+            vendorName,
+            orderNumber,
+          }).catch((e) =>
+            console.warn('[meal-order-status] kitchen notify failed:', (e as Error)?.message || e),
+          );
+        } catch (notifyErr) {
+          console.warn('[meal-order-status] kitchen notify setup failed:', notifyErr);
         }
       }
 

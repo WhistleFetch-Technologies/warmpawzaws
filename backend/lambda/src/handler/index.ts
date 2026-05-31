@@ -141,6 +141,7 @@ import { registerPharmacyInventoryEndpoints } from '../endpoints/pharmacy-invent
 import { registerDeliveryPartnerAutomationEndpoints } from '../endpoints/delivery-partner-automation';
 import { registerMealPlanEndpoints } from '../endpoints/meal-plans';
 import { registerMealCanonicalSubscriptionEndpoints } from '../endpoints/meal-canonical-subscriptions';
+import { registerMealDeliveryNotificationEndpoints } from '../endpoints/meal-delivery-notifications';
 import { registerMealSubscriptionVendorOperationalEndpoints } from '../endpoints/meal-subscription-vendor-endpoints';
 import { registerNutritionOrderEndpoints } from '../endpoints/nutrition-orders';
 import { registerVendorBankAccountEndpoints } from '../endpoints/vendor/endpoints/vendor-bank-accounts';
@@ -648,6 +649,7 @@ registerAdditionalPharmacyEndpoints(app); // ✅ FIX: Register additional pharma
 registerPharmacyInventoryEndpoints(app);
 registerDeliveryPartnerAutomationEndpoints(app);
 registerMealCanonicalSubscriptionEndpoints(app);
+registerMealDeliveryNotificationEndpoints(app);
 registerMealSubscriptionVendorOperationalEndpoints(app);
 registerMealPlanEndpoints(app);
 registerNutritionOrderEndpoints(app); // ✅ FIX GAP-9.3 & 9.4: Nutrition order tracking

@@ -7,6 +7,7 @@ import com.warmpawz.delivery.entity.ShipmentTrackingEvent;
 import com.warmpawz.delivery.repository.DeliveryTrackingRepository;
 import com.warmpawz.delivery.repository.ShipmentRepository;
 import com.warmpawz.delivery.repository.ShipmentTrackingEventRepository;
+import com.warmpawz.delivery.service.MealDeliveryNotificationService;
 import com.warmpawz.delivery.service.OrderStatusJdbcService;
 import com.warmpawz.delivery.service.PidgePartialDeliverySupport;
 import com.warmpawz.delivery.service.DeliveryLocationHistoryWriter;
@@ -49,7 +50,7 @@ public class PidgeWebhookProcessingService {
 		PIDGE_FULFILLMENT_STATUS_MAP.put("PICKED_UP", "picked_up");
 		PIDGE_FULFILLMENT_STATUS_MAP.put("IN_TRANSIT", "in_transit");
 		PIDGE_FULFILLMENT_STATUS_MAP.put("OUT_FOR_DELIVERY", "out_for_delivery");
-		PIDGE_FULFILLMENT_STATUS_MAP.put("REACHED_DELIVERY", "out_for_delivery");
+		PIDGE_FULFILLMENT_STATUS_MAP.put("REACHED_DELIVERY", "nearby");
 		PIDGE_FULFILLMENT_STATUS_MAP.put("DELIVERED", "delivered");
 		PIDGE_FULFILLMENT_STATUS_MAP.put("DISPOSED", "delivered");
 		PIDGE_FULFILLMENT_STATUS_MAP.put("UNDELIVERED", "out_for_delivery");
@@ -79,6 +80,7 @@ public class PidgeWebhookProcessingService {
 	private final PidgeTicketWebhookProcessingService pidgeTicketWebhookProcessingService;
 	private final PidgePartialDeliveryWebhookService pidgePartialDeliveryWebhookService;
 	private final DeliveryLocationHistoryWriter deliveryLocationHistoryWriter;
+	private final MealDeliveryNotificationService mealDeliveryNotificationService;
 
 	/** Pidge Communications Module — Rider Active Task webhook (batch rider + order_details). */
 	static boolean isRiderTaskPayload(JsonNode payload) {
@@ -240,6 +242,14 @@ public class PidgeWebhookProcessingService {
 				normalized,
 				hyperlocalOrderId,
 				trackingDowngradeBlocked || orderStatus == null ? "skipped" : orderStatus);
+
+		if (dt.getMealOrderId() != null || dt.getSubscriptionDeliveryId() != null) {
+			try {
+				mealDeliveryNotificationService.notifyMealRiderStageIfApplicable(dt, normalized, pidgeId);
+			} catch (Exception e) {
+				log.warn("[PIDGE WEBHOOK] meal delivery notify failed: {}", e.getMessage());
+			}
+		}
 
 		return Map.of(
 				"success", true,
@@ -434,6 +444,7 @@ public class PidgeWebhookProcessingService {
 		return switch (normalized) {
 			case "delivered" -> "delivered";
 			case "picked_up" -> "picked_up";
+			case "nearby" -> "nearby";
 			case "cancelled" -> "failed";
 			case "in_transit", "out_for_delivery", "unknown" -> "on_the_way";
 			default -> "heading_to_pickup";
@@ -445,7 +456,7 @@ public class PidgeWebhookProcessingService {
 			case "delivered" -> "delivered";
 			case "picked_up" -> "picked_up";
 			case "cancelled" -> "cancelled";
-			case "in_transit", "out_for_delivery", "unknown" -> "on_the_way";
+			case "nearby", "in_transit", "out_for_delivery", "unknown" -> "on_the_way";
 			case "awb_generated", "pickup_scheduled", "pending" -> "ready_for_pickup";
 			default -> null;
 		};
