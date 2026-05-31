@@ -10,6 +10,7 @@ import { websocketService } from '../../lib/services/websocket-service';
 import { presignMealPlanRowDisplayFields } from '../../utils/s3-media-presign';
 import { debitCustomerWalletForMealSubscriptionInTransaction } from '../../utils/wallet-operations';
 import { processMealSubscriptionSessionVendorCancelOriginalRefund } from '../../utils/payments/meal-order-original-refund';
+import { notifyMealSubscriptionLifecycle } from '../../utils/meal-delivery-notifications';
 
 export type MealSubscriptionLifecycleFilter =
   | 'all'
@@ -834,6 +835,9 @@ export async function vendorUpdateMealSubscriptionDeliveryStatus(options: {
           deliveryId: options.deliveryId,
         });
       },
+    );
+    void notifyMealSubscriptionLifecycle(subId, 'cancelled', reason).catch((e) =>
+      console.warn('[meal-ops] vendor session cancel notify failed:', e),
     );
   }
 

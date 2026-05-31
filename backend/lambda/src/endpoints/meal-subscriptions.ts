@@ -19,6 +19,11 @@ import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update, withTransaction } from '../database/rds-connection';
 import { fireVendorAppointmentScheduledSms, fireVendorMealOrderScheduledSms } from '../lib/vendor-appointment-sms';
+import {
+  notifyMealSubscriptionLifecycle,
+  notifyVendorMealSubscriptionDue,
+  notifyMealEvent,
+} from '../utils/meal-delivery-notifications';
 
 // ============================================================================
 // TYPES
@@ -433,21 +438,13 @@ class ManageSubscriptionHandler extends BaseHandler {
 
       await update('meal_subscriptions', { id: subscriptionId }, updates);
 
-      // Notify vendor
-      await insert('notifications', {
-        user_id: subscription.vendor_id,
-        user_type: 'vendor',
-        type: 'subscription_update',
-        title: `Subscription ${action.charAt(0).toUpperCase() + action.slice(1)}d`,
-        message: `A customer has ${action}d their meal subscription`,
-        data: JSON.stringify({
-          subscription_id: subscriptionId,
-          action,
-          reason,
-        }),
-        is_read: false,
-        created_at: new Date(),
-      });
+      const lifecycleAction =
+        action === 'pause' ? 'paused' : action === 'resume' ? 'resumed' : 'cancelled';
+      void notifyMealSubscriptionLifecycle(
+        subscriptionId,
+        lifecycleAction,
+        reason,
+      ).catch((e) => console.warn('[meal-subscriptions/manage] notify failed:', e));
 
       return this.success({
         success: true,
@@ -521,37 +518,26 @@ class ProcessSubscriptionRenewalsHandler extends BaseHandler {
             updated_at: new Date(),
           });
 
-          // Notify customer
-          await insert('notifications', {
-            user_id: sub.customer_id,
-            user_type: 'customer',
-            type: 'meal_delivery_scheduled',
-            title: '🍽️ Meal Delivery Scheduled',
-            message: `Your ${sub.meal_plan_name} is scheduled for delivery today.`,
-            data: JSON.stringify({
-              subscription_id: sub.id,
-              meal_plan: sub.meal_plan_name,
-            }),
-            is_read: false,
-            created_at: new Date(),
-          });
+          // Notify customer + vendor (push + in-app)
+          void notifyMealEvent({
+            recipientId: String(sub.customer_id),
+            recipientType: 'customer',
+            eventType: 'meal_subscription_delivery_due',
+            relatedId: String(sub.id),
+            dedupeScopeId: `${sub.id}:${nextDate}`,
+            subscriptionId: String(sub.id),
+            vendorName: String(sub.vendor_name || 'Your kitchen'),
+            mealPlanName: String(sub.meal_plan_name || 'Meal plan'),
+          }).catch((e) => console.warn('[meal-subscriptions/cron] customer due notify failed:', e));
 
-          // Notify vendor
-          await insert('notifications', {
-            user_id: sub.vendor_id,
-            user_type: 'vendor',
-            type: 'meal_order_received',
-            title: '🍽️ New Meal Order',
-            message: `${sub.meal_plan_name} x${sub.quantity} for ${sub.customer_name}`,
-            data: JSON.stringify({
-              subscription_id: sub.id,
-              customer_name: sub.customer_name,
-              quantity: sub.quantity,
-            }),
-            is_read: false,
-            requires_action: true,
-            created_at: new Date(),
-          });
+          void notifyVendorMealSubscriptionDue({
+            vendorId: String(sub.vendor_id),
+            subscriptionId: String(sub.id),
+            customerName: String(sub.customer_name || 'Customer'),
+            mealPlanName: String(sub.meal_plan_name || 'Meal plan'),
+            deliveryDate: nextDate,
+            orderId: mealOrder?.id != null ? String(mealOrder.id) : undefined,
+          }).catch((e) => console.warn('[meal-subscriptions/cron] vendor due notify failed:', e));
 
           if (mealOrder) {
             fireVendorMealOrderScheduledSms({

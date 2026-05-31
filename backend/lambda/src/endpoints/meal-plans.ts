@@ -42,6 +42,12 @@ import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr, resolveMealPurchaseSu
 import { generateMealOrderNumber } from '../utils/meal-order-number';
 import { processMealOrderVendorCancelOriginalRefund } from '../utils/payments/meal-order-original-refund';
 import {
+  notifyMealOrderPaid,
+  notifyMealOrderCancelledByVendor,
+  notifyMealSubscriptionLifecycle,
+  notifyVendorMealSubscriptionActive,
+} from '../utils/meal-delivery-notifications';
+import {
   dedupeMealPlanCatalogRows,
   ensureMealPlanMirrorForProductCheckout,
   normalizeProductRowToMealPlanShape,
@@ -1516,6 +1522,9 @@ export function registerMealPlanEndpoints(app: Hono) {
       const orders = await select('meal_orders', { id: orderId });
       if (orders[0]) {
         fireVendorMealOrderScheduledSms(orders[0] as Record<string, unknown>);
+        void notifyMealOrderPaid(orderId).catch((e) =>
+          console.warn('[meal/confirm-payment] notify failed:', e),
+        );
       }
 
       return c.json({
@@ -1821,6 +1830,10 @@ export function registerMealPlanEndpoints(app: Hono) {
           const msg = refundErr instanceof Error ? refundErr.message : 'Refund failed';
           console.error('[meal/orders/update-status] original refund failed:', msg, { orderId });
         }
+        void notifyMealOrderCancelledByVendor(
+          orderId,
+          notes || 'Vendor cancelled meal order',
+        ).catch((e) => console.warn('[meal/orders/update-status] cancel notify failed:', e));
       }
 
       // If delivered, create settlement
@@ -1951,6 +1964,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         pause_until: pauseUntil,
       });
 
+      void notifyMealSubscriptionLifecycle(subscriptionId, 'paused').catch((e) =>
+        console.warn('[meal/subscriptions/pause] notify failed:', e),
+      );
+
       return c.json({
         success: true,
         message: `Subscription paused until ${pauseUntil}`,
@@ -1973,6 +1990,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         status: 'active',
         pause_until: null,
       });
+
+      void notifyMealSubscriptionLifecycle(subscriptionId, 'resumed').catch((e) =>
+        console.warn('[meal/subscriptions/resume] notify failed:', e),
+      );
 
       return c.json({
         success: true,
@@ -1998,6 +2019,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         cancelled_at: new Date().toISOString(),
         cancellation_reason: reason,
       });
+
+      void notifyMealSubscriptionLifecycle(subscriptionId, 'cancelled', reason).catch((e) =>
+        console.warn('[meal/subscriptions/cancel] notify failed:', e),
+      );
 
       // TODO: Cancel Razorpay subscription
 

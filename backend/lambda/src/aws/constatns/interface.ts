@@ -57,10 +57,33 @@ export type NotificationEventType =
     | 'pharmacy_order_delivered'
     // Meal Delivery Events
     | 'meal_order_received'
+    | 'meal_order_confirmed'
     | 'meal_order_preparing'
+    | 'meal_order_ready'
     | 'meal_order_eta_updated'
+    | 'meal_rider_assigned'
     | 'meal_order_pickup'
+    | 'meal_rider_on_the_way'
+    | 'meal_rider_nearby'
     | 'meal_order_delivered'
+    | 'meal_order_cancelled'
+    | 'meal_subscription_paused'
+    | 'meal_subscription_resumed'
+    | 'meal_subscription_cancelled'
+    | 'meal_subscription_delivery_due'
+    // Vendor meal events
+    | 'vendor_meal_order_received'
+    | 'vendor_meal_order_cancelled'
+    | 'vendor_meal_rider_assigned'
+    | 'vendor_meal_rider_picked_up'
+    | 'vendor_meal_order_delivered'
+    | 'vendor_meal_delivery_failed'
+    | 'vendor_meal_dispatch_failed'
+    | 'vendor_meal_subscription_due'
+    | 'vendor_meal_subscription_paused'
+    | 'vendor_meal_subscription_resumed'
+    | 'vendor_meal_subscription_cancelled'
+    | 'vendor_meal_subscription_active'
     // Rating/Review Events
     | 'rating_request'
     | 'review_received'
@@ -202,21 +225,121 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationEventType, {
         title: '🍽️ Meal Order Received',
         body: 'Your meal order has been received by {vendorName}.',
     },
+    meal_order_confirmed: {
+        title: '✅ Order Confirmed',
+        body: '{vendorName} confirmed your meal order #{orderNumber}.',
+    },
     meal_order_preparing: {
         title: '👨‍🍳 Meal Being Prepared',
-        body: 'Your fresh meal is being prepared. ETA: {eta} minutes.',
+        body: '{vendorName} is preparing your pet\'s fresh meal.',
+    },
+    meal_order_ready: {
+        title: '📦 Ready for Pickup',
+        body: 'Your order from {vendorName} is ready — a rider will pick it up soon.',
     },
     meal_order_eta_updated: {
         title: '⏱️ Meal ETA Updated',
         body: 'Your meal preparation ETA is now {preparationEtaMinutes} minutes.',
     },
+    meal_rider_assigned: {
+        title: '🛵 Delivery Partner Assigned',
+        body: 'A rider is on the way to pick up your order from {vendorName}.',
+        sound: 'high_priority',
+    },
     meal_order_pickup: {
-        title: '🚴 Pickup In Progress',
-        body: 'Delivery partner is picking up your meal from {vendorName}.',
+        title: '🚴 Order Picked Up',
+        body: 'Your meal was picked up and is heading your way.',
+        sound: 'high_priority',
+    },
+    meal_rider_on_the_way: {
+        title: '🚗 On The Way',
+        body: 'Your meal from {vendorName} is out for delivery.',
+        sound: 'high_priority',
+    },
+    meal_rider_nearby: {
+        title: '📍 Arriving Soon',
+        body: 'Your meal delivery is nearby — please be ready to receive it.',
+        sound: 'urgent',
     },
     meal_order_delivered: {
         title: '🎉 Meal Delivered!',
         body: 'Enjoy your pet\'s fresh meal! Rate your experience.',
+    },
+    meal_order_cancelled: {
+        title: '❌ Meal Order Cancelled',
+        body: '{vendorName} cancelled order #{orderNumber}. {reason}',
+    },
+    meal_subscription_paused: {
+        title: '⏸️ Subscription Paused',
+        body: 'Your meal plan with {vendorName} is paused. Deliveries will resume when you unpause.',
+    },
+    meal_subscription_resumed: {
+        title: '▶️ Subscription Resumed',
+        body: 'Your meal plan with {vendorName} is active again. Upcoming deliveries are scheduled.',
+    },
+    meal_subscription_cancelled: {
+        title: 'Subscription Cancelled',
+        body: 'Your meal subscription with {vendorName} has been cancelled.',
+    },
+    meal_subscription_delivery_due: {
+        title: '🍽️ Delivery Today',
+        body: 'Your {mealPlanName} from {vendorName} is scheduled for delivery today.',
+    },
+
+    vendor_meal_order_received: {
+        title: '🍽️ New Meal Order!',
+        body: '{customerName} placed order #{orderNumber}. Start preparing when ready.',
+        sound: 'urgent',
+    },
+    vendor_meal_order_cancelled: {
+        title: '❌ Order Cancelled',
+        body: '{customerName} cancelled meal order #{orderNumber}.',
+        sound: 'high_priority',
+    },
+    vendor_meal_rider_assigned: {
+        title: '🛵 Rider Assigned',
+        body: 'A delivery partner is heading to pick up order #{orderNumber}.',
+    },
+    vendor_meal_rider_picked_up: {
+        title: '📦 Order Picked Up',
+        body: 'Order #{orderNumber} was picked up and is out for delivery.',
+    },
+    vendor_meal_order_delivered: {
+        title: '✅ Order Delivered',
+        body: 'Order #{orderNumber} was delivered successfully.',
+    },
+    vendor_meal_delivery_failed: {
+        title: '⚠️ Delivery Issue',
+        body: 'Delivery failed or was interrupted for order #{orderNumber}. Check the order details.',
+        sound: 'high_priority',
+    },
+    vendor_meal_dispatch_failed: {
+        title: '⚠️ Dispatch Failed',
+        body: 'Could not assign a rider for order #{orderNumber}. {reason}',
+        sound: 'urgent',
+    },
+    vendor_meal_subscription_due: {
+        title: '📅 Meal Delivery Today',
+        body: '{customerName} — {mealPlanName} delivery scheduled for today.',
+        sound: 'high_priority',
+    },
+    vendor_meal_subscription_paused: {
+        title: '⏸️ Subscription Paused',
+        body: '{customerName} paused their meal subscription ({mealPlanName}).',
+    },
+    vendor_meal_subscription_resumed: {
+        title: '▶️ Subscription Resumed',
+        body: '{customerName} resumed their meal subscription ({mealPlanName}).',
+    },
+    vendor_meal_subscription_cancelled: {
+        title: 'Subscription Cancelled',
+        body: '{customerName} cancelled their meal subscription ({mealPlanName}).',
+        sound: 'high_priority',
+    },
+    vendor_meal_subscription_active: {
+        title: '🎉 New Meal Subscription',
+        body: '{customerName} subscribed to {mealPlanName}.',
+        sound: 'urgent',
     },
 
     // Rating/Review Events
