@@ -164,6 +164,7 @@ reports/
 test-data/
 misc/
 docs/
+!docs/**/*.md
 
 # =============================================================================
 # BUILD BACKUP DIRECTORIES
