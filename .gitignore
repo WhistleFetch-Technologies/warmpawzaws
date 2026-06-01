@@ -163,8 +163,8 @@ wi/
 reports/
 test-data/
 misc/
-docs/
-!docs/**/*.md
+docs/*
+!docs/*.md
 
 # =============================================================================
 # BUILD BACKUP DIRECTORIES
