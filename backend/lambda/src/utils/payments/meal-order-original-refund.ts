@@ -6,6 +6,7 @@
 import { query, withTransaction } from '../../database/rds-connection';
 import { getRazorpayClient } from './razorpay-client';
 import type { OriginalPaymentRefundResult, RefundInitiator } from './booking-original-refund';
+import { mealOrderWalletDebitFromRow, resolveMealOrderWalletPaidInr, isLikelyRazorpayPaymentCaptureId } from '../meal-order-wallet';
 
 export type { OriginalPaymentRefundResult };
 
@@ -229,9 +230,21 @@ async function executeMealOriginalPaymentRefund(params: {
   if (!customerId || refundAmount <= 0.009) {
     throw new Error('Invalid meal original-payment refund parameters');
   }
-  if (!razorpayPaymentId || razorpayPaymentId === 'wallet') {
-    if (walletPaid > 0.009) {
-      const credited = await creditMealWalletRefund(customerId, mealOrderId || transactionId, refundAmount, reason);
+
+  const gatewayPaymentId = String(razorpayPaymentId || '').trim();
+  const hasGatewayCapture = isLikelyRazorpayPaymentCaptureId(gatewayPaymentId);
+  const walletOnly =
+    gatewayPaymentId === 'wallet' || (!hasGatewayCapture && refundAmount > 0.009);
+
+  if (!gatewayPaymentId || walletOnly) {
+    if (walletPaid > 0.009 || gatewayPaymentId === 'wallet' || walletOnly) {
+      const creditAmount = round2(refundAmount);
+      const credited = await creditMealWalletRefund(
+        customerId,
+        mealOrderId || transactionId,
+        creditAmount,
+        reason,
+      );
       if (onSuccess) await onSuccess();
       return {
         walletCredited: credited,
@@ -248,6 +261,10 @@ async function executeMealOriginalPaymentRefund(params: {
       status: 'skipped',
       message: 'No paid gateway capture found for meal refund',
     };
+  }
+
+  if (!hasGatewayCapture) {
+    throw new Error('Meal payment record missing valid Razorpay payment id');
   }
 
   const payment = await ensureMealGatewayPaymentRecord({
@@ -394,7 +411,8 @@ export async function processMealOrderVendorCancelOriginalRefund(
 ): Promise<OriginalPaymentRefundResult> {
   const res = await query(
     `SELECT id, customer_id, vendor_id, total_amount::text, payment_status,
-            razorpay_payment_id, razorpay_order_id, subscription_id, order_type
+            razorpay_payment_id, razorpay_order_id, subscription_id, order_type,
+            purchase_snapshot
      FROM meal_orders WHERE id = $1::uuid LIMIT 1`,
     [mealOrderId],
   );
@@ -409,6 +427,7 @@ export async function processMealOrderVendorCancelOriginalRefund(
         razorpay_order_id?: string;
         subscription_id?: string;
         order_type?: string;
+        purchase_snapshot?: unknown;
       }
     | undefined;
 
@@ -423,6 +442,21 @@ export async function processMealOrderVendorCancelOriginalRefund(
     };
   }
 
+  const snap = parsePricingSnapshot(order.purchase_snapshot);
+  const subscriptionRole = String(snap.subscriptionVendorBookingRole || '').toLowerCase();
+  if (order.subscription_id && subscriptionRole === 'session') {
+    const deliveryId = String(snap.canonicalDeliveryId || '').trim();
+    const sessionNumber = Math.max(1, Number(snap.sessionNumber) || 1);
+    if (deliveryId) {
+      return processMealSubscriptionSessionVendorCancelOriginalRefund(
+        String(order.subscription_id),
+        deliveryId,
+        sessionNumber,
+        reason,
+      );
+    }
+  }
+
   const refundAmount = round2(parseFloat(order.total_amount) || 0);
   if (refundAmount <= 0.009) {
     return {
@@ -434,12 +468,33 @@ export async function processMealOrderVendorCancelOriginalRefund(
     };
   }
 
+  let walletPaid = await resolveMealOrderWalletPaidInr(
+    mealOrderId,
+    String(order.customer_id),
+    order.purchase_snapshot,
+  );
+  if (walletPaid <= 0.009) {
+    walletPaid = mealOrderWalletDebitFromRow({ purchase_snapshot: order.purchase_snapshot });
+  }
+  const gatewayId = String(order.razorpay_payment_id || '').trim();
+  if (walletPaid <= 0.009 && gatewayId === 'wallet') {
+    walletPaid = refundAmount;
+  }
+  if (
+    walletPaid <= 0.009 &&
+    !isLikelyRazorpayPaymentCaptureId(gatewayId) &&
+    gatewayId !== 'wallet'
+  ) {
+    // Paid order with no gateway capture id — treat as wallet-settled (ledger/snapshot gap).
+    walletPaid = refundAmount;
+  }
+
   return executeMealOriginalPaymentRefund({
     transactionId: `meal_order:${mealOrderId}`,
     customerId: String(order.customer_id),
     vendorId: order.vendor_id ? String(order.vendor_id) : null,
     totalPaid: refundAmount,
-    walletPaid: 0,
+    walletPaid,
     refundAmount,
     razorpayOrderId: order.razorpay_order_id,
     razorpayPaymentId: order.razorpay_payment_id,

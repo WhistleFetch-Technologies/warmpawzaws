@@ -1045,11 +1045,45 @@ export async function buildPackageSessionsResponse(packagePurchaseId: string) {
   };
 }
 
+function phoneLast10FromPackageSessionsRequest(c: Context): string | null {
+  const q = String(c.req.query('phone') || c.req.query('customerPhone') || '').trim();
+  const h = String(c.req.header('x-customer-phone') || c.req.header('X-Customer-Phone') || '').trim();
+  const raw = q || h;
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, '').slice(-10);
+  return digits.length >= 10 ? digits : null;
+}
+
+/** Package owner check by phone (Capacitor / Cognito sub mismatch must not block OTP). */
+async function packageCustomerOwnsByPhoneLast10(
+  phoneLast10: string,
+  packageCustomerId: string
+): Promise<boolean> {
+  const r = await query(
+    `SELECT 1
+     FROM customers c
+     WHERE c.id = $1::uuid
+       AND RIGHT(REGEXP_REPLACE(COALESCE(c.phone, ''), '[^0-9]', '', 'g'), 10) = $2
+     LIMIT 1`,
+    [packageCustomerId, phoneLast10]
+  ).catch(() => ({ rows: [] as unknown[] }));
+  return (r.rows?.length ?? 0) > 0;
+}
+
 async function packageSessionsAuthForRequest(
   c: Context,
   pkg: { customer_id?: string; vendor_id?: string }
 ): Promise<'customer' | 'vendor' | 'anonymous' | 'forbidden'> {
   const authRaw = c.req.header('Authorization') || c.req.header('authorization') || '';
+  const packageCustomerId =
+    pkg.customer_id != null ? String(pkg.customer_id).trim().toLowerCase() : '';
+  const phoneLast10 = phoneLast10FromPackageSessionsRequest(c);
+
+  if (packageCustomerId && phoneLast10) {
+    const ownsByPhone = await packageCustomerOwnsByPhoneLast10(phoneLast10, packageCustomerId);
+    if (ownsByPhone) return 'customer';
+  }
+
   if (!authRaw.trim()) return 'anonymous';
 
   const headers: Record<string, string | undefined> = {
@@ -1065,15 +1099,16 @@ async function packageSessionsAuthForRequest(
 
   const custOk =
     custId &&
-    pkg.customer_id != null &&
-    String(custId).toLowerCase() === String(pkg.customer_id).toLowerCase();
+    packageCustomerId &&
+    String(custId).toLowerCase() === packageCustomerId;
   const vendOk =
     vendId &&
     pkg.vendor_id != null &&
     String(vendId).toLowerCase() === String(pkg.vendor_id).toLowerCase();
   if (custOk) return 'customer';
   if (vendOk) return 'vendor';
-  return 'forbidden';
+  // Auth present but no ownership match: still return session rows (OTP stripped), not 403.
+  return 'anonymous';
 }
 
 export function registerPackageBookingEndpoints(app: Hono) {
@@ -2344,7 +2379,9 @@ export function registerPackageBookingEndpoints(app: Hono) {
   /**
    * GET /packages/:packagePurchaseId/sessions
    * Get all sessions for a package purchase.
-   * When Authorization is sent, customer or vendor must own the row; unauthenticated calls remain allowed for backward compatibility.
+   * Customer OTPs are included when JWT customer matches the purchase or ?phone= / X-Customer-Phone
+   * matches the package owner's phone (Capacitor/iOS Cognito sub may differ from customers.id).
+   * Unauthenticated calls remain allowed (sessions without OTP).
    */
   app.get("/packages/:packagePurchaseId/sessions", async (c) => {
     try {
@@ -2357,9 +2394,6 @@ export function registerPackageBookingEndpoints(app: Hono) {
 
       const pkg = body.package as { customer_id?: string; vendor_id?: string };
       const authz = await packageSessionsAuthForRequest(c, pkg);
-      if (authz === 'forbidden') {
-        return c.json({ success: false, error: 'Forbidden' }, 403);
-      }
       if (authz !== 'customer') {
         stripPackageSessionOtpsFromBody(body);
       }

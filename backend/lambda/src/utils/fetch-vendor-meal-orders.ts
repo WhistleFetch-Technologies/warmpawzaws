@@ -49,6 +49,7 @@ export async function fetchVendorMealOrdersForVendorIds(
 
   sql += `
     )
+    AND LOWER(COALESCE(mo.payment_status, '')) IN ('paid', 'completed')
   `;
 
   if (options?.status) {

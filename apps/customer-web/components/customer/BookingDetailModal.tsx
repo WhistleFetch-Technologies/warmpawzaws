@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Calendar, Clock, MapPin, Copy, Check, User, Phone, Package, Info, FileText, MessageCircle, Video, PhoneCall, CalendarPlus, Download, Share2, Star, Navigation, Upload, Key, Eye, EyeOff, HelpCircle } from 'lucide-react';
 import { navigateToBookingSupport } from '@/lib/support-contact';
@@ -17,6 +17,13 @@ import { FollowUpBookingModal } from './FollowUpBookingModal';
 import { RateServiceModal } from './RateServiceModal';
 import { PaymentSourcesDisplay } from './payment/PaymentSourcesDisplay';
 import { normalizePaymentSources } from '@/lib/payment-display-utils';
+import {
+  formatPaymentHoldCountdown,
+  isBookingAwaitingPayment,
+  isPaymentHoldActive,
+  isPaymentHoldExpired,
+  usePaymentHoldCountdown,
+} from '@/lib/payment-hold-ui';
 
 interface BookingDetailModalProps {
   bookingId: string;
@@ -132,6 +139,51 @@ function showPrescriptionAndMedicalRecords(
   return false;
 }
 
+function BookingDetailPaymentHoldBanner({
+  expiresAt,
+  onPayNow,
+  onExpired,
+}: {
+  expiresAt: string | null | undefined;
+  onPayNow: () => void;
+  onExpired?: () => void;
+}) {
+  const secondsRemaining = usePaymentHoldCountdown(expiresAt);
+  const active = secondsRemaining > 0;
+  const prevActiveRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    if (prevActiveRef.current === true && !active) {
+      onExpired?.();
+    }
+    prevActiveRef.current = active;
+  }, [active, onExpired]);
+
+  return (
+    <div
+      className={`rounded-2xl border p-4 ${active ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}
+    >
+      {active ? (
+        <>
+          <p className="text-sm font-medium text-amber-900">
+            Complete payment in {formatPaymentHoldCountdown(secondsRemaining)}
+          </p>
+          <p className="text-xs text-amber-800 mt-1">Your slot is held until the timer ends.</p>
+          <button
+            type="button"
+            onClick={onPayNow}
+            className="mt-3 w-full rounded-xl bg-[#FF8C42] py-3 text-sm font-semibold text-white hover:bg-orange-600"
+          >
+            Pay now
+          </button>
+        </>
+      ) : (
+        <p className="text-sm text-gray-600">Payment window expired. This booking was cancelled.</p>
+      )}
+    </div>
+  );
+}
+
 interface Prescription {
   id: string;
   bookingId: string;
@@ -211,7 +263,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
     ).trim();
     if (!pid) return;
     onClose();
-    router.push('/my-packages');
+    router.push(`/packages/${encodeURIComponent(pid)}`);
   };
 
   // ✅ FIX: Listen for prescription view events from chat
@@ -384,6 +436,11 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
         isPackageSession: rawBooking.isPackageSession ?? rawBooking.is_package_session,
         packageSessionNumber: rawBooking.packageSessionNumber ?? rawBooking.package_session_number,
         packageTotalSessions: rawBooking.packageTotalSessions ?? rawBooking.pkg_total_sessions,
+        paymentHoldExpiresAt:
+          rawBooking.payment_hold_expires_at ||
+          rawBooking.paymentHoldExpiresAt ||
+          null,
+        paymentStatus: rawBooking.payment_status || rawBooking.paymentStatus,
       };
       console.log('✅ [BOOKING-DETAIL] Transformed booking:', bookingData);
       setBooking(bookingData);
@@ -508,7 +565,16 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string, bookingLike?: Record<string, any>) => {
+    if (
+      bookingLike &&
+      isPaymentHoldExpired({
+        status: bookingLike.status,
+        paymentHoldExpiresAt: bookingLike.paymentHoldExpiresAt,
+      })
+    ) {
+      return 'bg-red-100 text-red-700 border-red-200';
+    }
     switch (status) {
       case 'confirmed':
         return 'bg-blue-100 text-blue-700 border-blue-200';
@@ -528,15 +594,67 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
 
   /** Map raw DB status to a short customer-facing label; handle payment vs status lag. */
   const getBookingStatusDisplayLabel = (raw: Record<string, any>): string => {
+    if (
+      isPaymentHoldExpired({
+        status: raw?.status,
+        paymentHoldExpiresAt: raw?.paymentHoldExpiresAt,
+      })
+    ) {
+      return 'Cancelled';
+    }
     const st = String(raw?.status || '');
     const ps = String(raw?.payment_status || raw?.paymentStatus || '').toLowerCase();
     if ((ps === 'paid' || ps === 'completed') && (st === 'pending_payment' || st === 'pending')) {
       return 'Confirmed';
     }
     if (st === 'pending_payment') return 'Payment pending';
+    if (st === 'cancelled') return 'Cancelled';
     if (st === 'in_progress') return 'In progress';
     if (!st) return 'Unknown';
     return st.charAt(0).toUpperCase() + st.slice(1).replace(/_/g, ' ');
+  };
+
+  const handleResumePayment = async () => {
+    if (!booking || !onNavigate) {
+      toast.error('Unable to open payment from here.');
+      return;
+    }
+    const effectivePhone =
+      phone ||
+      (typeof window !== 'undefined'
+        ? localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone') || ''
+        : '');
+    try {
+      const res = (await apiClient.get(
+        `/customer/bookings/${booking.id}/payment-resume?phone=${encodeURIComponent(effectivePhone)}`,
+      )) as { success?: boolean; resume?: Record<string, unknown>; error?: string };
+      if (!res?.success || !res.resume) {
+        toast.error(res?.error || 'Payment window expired');
+        void loadBookingDetails();
+        return;
+      }
+      const r = res.resume;
+      onClose();
+      onNavigate('payment', {
+        bookingId: r.bookingId,
+        vendorId: r.vendorId,
+        vendorName: r.vendorName,
+        serviceId: r.serviceId,
+        serviceName: r.serviceName,
+        serviceType: r.serviceStyle || r.serviceType,
+        serviceStyle: r.serviceStyle || r.serviceType,
+        bookingDate: r.bookingDate,
+        bookingTime: r.bookingTime,
+        petId: r.petId,
+        totalAmount: r.amount,
+        price: r.amount,
+        flowType: 'payment-resume',
+        returnScreen: 'my-bookings',
+      });
+    } catch (err: unknown) {
+      console.error('[BookingDetailModal] payment resume failed:', err);
+      toast.error('Could not resume payment. Please try again.');
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -603,13 +721,23 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
           >
             {/* Status Badge */}
             <div className="flex items-center justify-between">
-              <span className={`px-4 py-2 rounded-full font-semibold border ${getStatusColor(booking.status)}`}>
+              <span className={`px-4 py-2 rounded-full font-semibold border ${getStatusColor(booking.status, booking)}`}>
                 {getBookingStatusDisplayLabel(booking)}
               </span>
               <span className="text-sm text-gray-600">
                 Booking #{booking.id.slice(0, 8)}
               </span>
             </div>
+
+            {isBookingAwaitingPayment(booking) &&
+            booking.paymentStatus !== 'paid' &&
+            (isPaymentHoldActive(booking) || isPaymentHoldExpired(booking)) ? (
+              <BookingDetailPaymentHoldBanner
+                expiresAt={booking.paymentHoldExpiresAt}
+                onPayNow={() => void handleResumePayment()}
+                onExpired={() => void loadBookingDetails()}
+              />
+            ) : null}
 
             {/* Start OTP Section - Show for confirmed bookings that require start OTP */}
             {booking.requiresStartOTP && booking.startOTP && booking.status === 'confirmed' && (

@@ -454,6 +454,22 @@ export class ApiClient {
       }
     }
 
+    // Package session OTP: Cognito sub may not match package_purchases.customer_id on Capacitor/iOS.
+    const isPackageSessionsPath =
+      typeof window !== 'undefined' &&
+      /\/packages\/[^/?#]+\/sessions(?:\?|$|\/)/.test(path);
+    if (isPackageSessionsPath) {
+      const hasPhone = path.includes('phone=') || path.includes('customerPhone=');
+      if (!hasPhone) {
+        const phone = localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone');
+        const digits = phone ? phone.replace(/\D/g, '').slice(-10) : '';
+        if (digits.length >= 10) {
+          const separator = path.includes('?') ? '&' : '?';
+          path = `${path}${separator}phone=${encodeURIComponent(digits)}`;
+        }
+      }
+    }
+
     // Same-origin proxy for articles only (static export cannot ship App Router BFF routes).
     // /chat/* always uses API base URL (ensure API Gateway CORS allows localhost in dev).
     const url =
@@ -483,7 +499,7 @@ export class ApiClient {
     }
 
     // Chat list + booking threads: server reads X-Customer-Phone when present (redundant with query).
-    if (typeof window !== 'undefined' && path.startsWith('/chat/')) {
+    if (typeof window !== 'undefined' && (path.startsWith('/chat/') || isPackageSessionsPath)) {
       const ph = localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone');
       if (ph) {
         const d = ph.replace(/\D/g, '');
