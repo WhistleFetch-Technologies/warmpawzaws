@@ -112,6 +112,8 @@ export function customerPathToScreen(path: string): string | null {
   const segments = pathOnly.replace(/^\/+/, '').split('/').filter(Boolean);
   if (segments.length !== 1) return null;
   const key = norm(segments[0]);
+  // App Router marketplace lives at `/shop`, not the home-shell SPA screen.
+  if (key === 'shop') return null;
   return SLUG_TO_SCREEN[key] ?? null;
 }
 

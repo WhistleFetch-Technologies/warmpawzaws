@@ -2,6 +2,7 @@ import type { AppRouterInstance } from 'next/navigation';
 import {
   rememberHelpBackFromCurrentUrl,
   rememberPromotionsBackFromCurrentUrl,
+  rememberShopBackFromCurrentUrl,
 } from '@/lib/go-back-or-replace';
 
 /** Route account-menu actions from standalone Next.js pages (search, my-packages, etc.). */
@@ -11,6 +12,7 @@ export function navigateFromStandaloneAccountMenu(router: AppRouterInstance, pat
     return;
   }
   if (path === 'shop') {
+    rememberShopBackFromCurrentUrl();
     router.push('/shop');
     return;
   }
@@ -19,7 +21,7 @@ export function navigateFromStandaloneAccountMenu(router: AppRouterInstance, pat
     return;
   }
   if (path === 'account/addresses' || path === 'addresses') {
-    router.push('/settings');
+    router.push('/profile');
     return;
   }
   if (path === 'wallet' || path === 'account/wallet') {
@@ -50,10 +52,6 @@ export function navigateFromStandaloneAccountMenu(router: AppRouterInstance, pat
   if (path === 'promotions' || path === 'offers') {
     rememberPromotionsBackFromCurrentUrl();
     router.push('/promotions');
-    return;
-  }
-  if (path === 'account/settings') {
-    router.push('/settings');
     return;
   }
   router.push(`/${path.replace(/^\//, '')}`);

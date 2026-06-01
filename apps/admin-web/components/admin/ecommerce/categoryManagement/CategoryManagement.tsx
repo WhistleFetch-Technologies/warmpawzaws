@@ -19,17 +19,19 @@ import {
   ArrowDown,
   Eye,
   EyeOff,
+  Package,
   X,
 } from 'lucide-react';
 import { Button, Badge } from '@warmpawz/ui';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, isUatMode } from '@/lib/api-client';
+import {
+  mapApiCategoryToForm,
+  mapFormCategoriesToPutBody,
+  type EcommerceCategoryForm,
+} from '@/lib/ecommerce-category-admin';
 import { toast, Toaster } from 'sonner';
 
-interface Category {
-  id: string;
-  name: string;
-  slug: string;
-  description?: string;
+interface Category extends EcommerceCategoryForm {
   icon?: string;
   color?: string;
   parentId?: string;
@@ -68,93 +70,78 @@ export function CategoryManagement() {
     loadCategories();
   }, []);
 
-  const getDefaultCategories = (): Category[] => [
-    {
-      id: 'food',
-      name: 'Pet Food',
-      slug: 'food',
-      description: 'Nutritious food for all pets',
-      icon: '🍖',
-      color: 'bg-orange-100 text-orange-700',
-      order: 1,
-      enabled: true,
-      featured: true,
-      metadata: {
-        commissionRate: 12,
-        gstRate: 5,
-        allowReturns: true,
-        returnWindow: 7,
-        shippingCategory: 'standard',
-      },
-      stats: { productCount: 0, totalSales: 0, totalRevenue: 0 },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: 'toys',
-      name: 'Toys & Entertainment',
-      slug: 'toys',
-      description: 'Fun toys for active pets',
-      icon: '🎾',
-      color: 'bg-blue-100 text-blue-700',
-      order: 2,
-      enabled: true,
-      featured: true,
-      metadata: {
-        commissionRate: 15,
-        gstRate: 18,
-        allowReturns: true,
-        returnWindow: 14,
-        shippingCategory: 'standard',
-      },
-      stats: { productCount: 0, totalSales: 0, totalRevenue: 0 },
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ];
-
   const loadCategories = async () => {
     try {
       setLoading(true);
       const data = await apiClient.get<any>('/admin/ecommerce/categories');
       const rawCategories = (data as any).data?.categories || (data as any).categories || [];
-      
-      // Map API response to component format (is_active -> enabled, display_order -> order)
-      const mappedCategories = rawCategories.map((cat: any) => {
-        const enabled = cat.is_active !== undefined ? Boolean(cat.is_active) : (cat.enabled !== undefined ? Boolean(cat.enabled) : true);
-        return {
-          ...cat,
-          enabled: enabled,
-          is_active: cat.is_active, // Keep original for compatibility
-          order: cat.display_order !== undefined ? cat.display_order : (cat.order !== undefined ? cat.order : 0),
-          parentId: cat.parent_category_id || cat.parentId || null,
-          slug: cat.slug || cat.name?.toLowerCase().replace(/\s+/g, '-') || '',
-        };
-      });
-      
-      console.log('[Categories] Loaded', mappedCategories.length, 'categories. Sample:', {
-        name: mappedCategories[0]?.name,
-        enabled: mappedCategories[0]?.enabled,
-        is_active: mappedCategories[0]?.is_active
-      });
-      
-      setCategories(mappedCategories.length > 0 ? mappedCategories : getDefaultCategories());
+      const mappedCategories = rawCategories.map((cat: Record<string, unknown>) =>
+        mapApiCategoryToForm(cat)
+      ) as Category[];
+      setCategories(mappedCategories);
     } catch (error) {
       console.error('Error loading categories:', error);
-      setCategories(getDefaultCategories());
+      toast.error('Failed to load categories');
+      setCategories([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const persistCategories = async (list: Category[]) => {
+    const payload = mapFormCategoriesToPutBody(list);
+    const res = await apiClient.put<any>('/admin/ecommerce/categories', payload);
+    const saved =
+      (res as any)?.categories || (res as any)?.data?.categories || [];
+    if (Array.isArray(saved) && saved.length > 0) {
+      setCategories(saved.map((cat: Record<string, unknown>) => mapApiCategoryToForm(cat)) as Category[]);
+    } else {
+      await loadCategories();
+    }
+  };
+
+  const handleToggleEnabled = async (categoryId: string) => {
+    const category = categories.find((c) => c.id === categoryId);
+    if (!category) return;
+
+    const previous = categories;
+    const nextEnabled = !category.enabled;
+    const nextList = categories.map((c) =>
+      c.id === categoryId ? { ...c, enabled: nextEnabled } : c
+    );
+
+    setCategories(nextList);
+    try {
+      setSaving(true);
+      await persistCategories(nextList);
+      toast.success(
+        nextEnabled ? `"${category.name}" enabled` : `"${category.name}" disabled`
+      );
+    } catch (error: unknown) {
+      setCategories(previous);
+      console.error('Error toggling category:', error);
+      const msg =
+        error instanceof Error
+          ? error.message
+          : (error as { error?: string })?.error || 'Failed to update category';
+      toast.error(msg);
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleSave = async () => {
     try {
       setSaving(true);
-      await apiClient.put('/admin/ecommerce/categories', { categories });
+      await persistCategories(categories);
       toast.success('Categories updated successfully');
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error updating categories:', error);
-      toast.error('Error updating categories');
+      const msg =
+        error instanceof Error
+          ? error.message
+          : (error as { error?: string })?.error || 'Error updating categories';
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -183,22 +170,27 @@ export function CategoryManagement() {
     setShowModal(true);
   };
 
-  const saveCategory = (category: Category) => {
+  const saveCategory = async (category: Category) => {
     const existing = categories.find((c) => c.id === category.id);
-    if (existing) {
-      setCategories(
-        categories.map((c) =>
-          c.id === category.id ? { ...category, updatedAt: new Date().toISOString() } : c
-        )
-      );
-    } else {
-      setCategories([...categories, category]);
+    const nextList = existing
+      ? categories.map((c) => (c.id === category.id ? { ...category } : c))
+      : [...categories, category];
+
+    try {
+      setSaving(true);
+      await persistCategories(nextList);
+      toast.success('Category saved');
+      setShowModal(false);
+      setEditingCategory(null);
+    } catch (error: unknown) {
+      console.error('Error saving category:', error);
+      toast.error('Failed to save category');
+    } finally {
+      setSaving(false);
     }
-    setShowModal(false);
-    setEditingCategory(null);
   };
 
-  const deleteCategory = (categoryId: string) => {
+  const deleteCategory = async (categoryId: string) => {
     const category = categories.find((c) => c.id === categoryId);
     const hasChildren = categories.some((c) => c.parentId === categoryId);
 
@@ -207,9 +199,26 @@ export function CategoryManagement() {
       return;
     }
 
-    if (confirm(`Are you sure you want to delete "${category?.name}"?`)) {
-      setCategories(categories.filter((c) => c.id !== categoryId));
-      toast.success('Category deleted');
+    if (!confirm(`Disable "${category?.name}"? Products keep their category link.`)) {
+      return;
+    }
+
+    const previous = categories;
+    const nextList = categories.map((c) =>
+      c.id === categoryId ? { ...c, enabled: false } : c
+    );
+    setCategories(nextList);
+
+    try {
+      setSaving(true);
+      await persistCategories(nextList);
+      toast.success(`"${category?.name}" disabled`);
+    } catch (error: unknown) {
+      setCategories(previous);
+      console.error('Error disabling category:', error);
+      toast.error('Failed to disable category');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -450,11 +459,7 @@ export function CategoryManagement() {
                   }}
                   onDelete={() => deleteCategory(category.id)}
                   onToggleEnabled={() => {
-                    setCategories(
-                      categories.map((c) =>
-                        c.id === category.id ? { ...c, enabled: !c.enabled } : c
-                      )
-                    );
+                    void handleToggleEnabled(category.id);
                   }}
                   onToggleFeatured={() => {
                     setCategories(
@@ -480,11 +485,7 @@ export function CategoryManagement() {
               }}
               onDelete={() => deleteCategory(category.id)}
               onToggleEnabled={() => {
-                setCategories(
-                  categories.map((c) =>
-                    c.id === category.id ? { ...c, enabled: !c.enabled } : c
-                  )
-                );
+                void handleToggleEnabled(category.id);
               }}
             />
           ))}
@@ -532,7 +533,7 @@ function CategoryTreeItem({
           )}
 
           <div className="flex items-center gap-3 flex-1">
-            <div className="text-3xl">{category.icon || '📁'}</div>
+            <CategoryThumbnail category={category} size="sm" />
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <h4 className="font-semibold text-gray-900">{category.name}</h4>
@@ -599,7 +600,7 @@ function CategoryGridItem({ category, onEdit, onDelete, onToggleEnabled }: any) 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 hover:shadow-lg transition-shadow">
       <div className="flex items-start justify-between mb-3">
-        <div className="text-4xl">{category.icon || '📁'}</div>
+        <CategoryThumbnail category={category} size="md" />
         <div className="flex items-center gap-1">
           <Button onClick={onEdit} variant="ghost" size="sm">
             <Edit2 className="w-4 h-4" />
@@ -646,10 +647,145 @@ function CategoryGridItem({ category, onEdit, onDelete, onToggleEnabled }: any) 
   );
 }
 
+function CategoryThumbnail({
+  category,
+  size,
+}: {
+  category: { imageUrl?: string; icon?: string; name?: string };
+  size: 'sm' | 'md';
+}) {
+  const dim = size === 'md' ? 'w-16 h-16' : 'w-10 h-10';
+  if (category.imageUrl) {
+    return (
+      <img
+        src={category.imageUrl}
+        alt={category.name || 'Category'}
+        className={`${dim} rounded-xl object-cover bg-stone-100 border border-gray-200`}
+      />
+    );
+  }
+  return (
+    <div
+      className={`${dim} rounded-xl bg-stone-100 border border-gray-200 flex items-center justify-center text-2xl`}
+    >
+      {category.icon || '📁'}
+    </div>
+  );
+}
+
+function ShopCategoryTilePreview({
+  name,
+  imageUrl,
+  active = false,
+}: {
+  name: string;
+  imageUrl?: string;
+  active?: boolean;
+}) {
+  return (
+    <div
+      className={`flex flex-col items-center rounded-2xl bg-stone-50 p-2 ${
+        active ? 'ring-2 ring-[#FF8C42] shadow-sm' : 'ring-1 ring-stone-100 opacity-60'
+      }`}
+    >
+      <div className="relative w-full aspect-square rounded-xl bg-white overflow-hidden flex items-center justify-center mb-1.5">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={name}
+            className="w-full h-full object-contain p-1"
+          />
+        ) : (
+          <Package className="w-8 h-8 text-stone-300" aria-hidden />
+        )}
+      </div>
+      <span
+        className={`text-[10px] font-bold text-center leading-tight line-clamp-2 w-full px-0.5 ${
+          active ? 'text-[#FF8C42]' : 'text-slate-800'
+        }`}
+      >
+        {name.trim() || 'Category name'}
+      </span>
+    </div>
+  );
+}
+
+function ShopCategoryGridPreview({
+  name,
+  imageUrl,
+}: {
+  name: string;
+  imageUrl?: string;
+}) {
+  const placeholders = ['Food', 'Toys', 'Grooming'];
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-stone-50/80 p-4">
+      <p className="text-xs font-medium text-gray-500 mb-1">Preview</p>
+      <p className="text-[11px] text-gray-400 mb-3">Customer shop → Shop by category</p>
+      <div className="rounded-2xl bg-white p-3 shadow-sm border border-stone-100 max-w-[280px] mx-auto">
+        <h3 className="text-sm font-bold text-slate-900 mb-3">Shop by category</h3>
+        <div className="grid grid-cols-4 gap-2">
+          <ShopCategoryTilePreview name={name} imageUrl={imageUrl} active />
+          {placeholders.map((label) => (
+            <ShopCategoryTilePreview key={label} name={label} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** API upload (Lambda → S3). Avoids browser PUT to S3 / bucket CORS on localhost. */
+async function uploadCategoryImage(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Please upload an image file');
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('Image must be under 5MB');
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('folder', 'ecommerce/categories');
+  formData.append('userType', 'category');
+  formData.append('userId', 'admin');
+
+  const baseUrl = apiClient.getBaseUrl();
+  const token = typeof window !== 'undefined' ? localStorage.getItem('adminAuthToken') : null;
+
+  const response = await fetch(`${baseUrl}/storage/upload-media`, {
+    method: 'POST',
+    body: formData,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(isUatMode() ? { 'X-UAT-Mode': 'true' } : {}),
+    },
+  });
+
+  if (!response.ok) {
+    const err = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(err.error || `Upload failed (${response.status})`);
+  }
+
+  const data = (await response.json()) as { url?: string; publicUrl?: string };
+  const imageUrl = data.url || data.publicUrl;
+  if (!imageUrl) {
+    throw new Error('Upload succeeded but no image URL returned');
+  }
+  return imageUrl;
+}
+
 // Category Editor Modal Component
 function CategoryEditorModal({ category, onSave, onClose }: any) {
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [editedCategory, setEditedCategory] = useState<Category>(() => ({
     ...category,
+    imageUrl:
+      category.imageUrl ||
+      (typeof category.icon === 'string' && category.icon.startsWith('http')
+        ? category.icon
+        : undefined),
     metadata: category.metadata || {
       commissionRate: 0,
       gstRate: 0,
@@ -662,17 +798,19 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
           <h3 className="text-xl font-bold text-gray-900">
-            {category.id.startsWith('cat_') ? 'Edit' : 'New'} Category
+            {String(category.id).startsWith('cat_') ? 'New' : 'Edit'} Category
           </h3>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-6">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6">
+            <div className="space-y-6 min-w-0">
           {/* Basic Info */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -712,31 +850,43 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Icon (Emoji)</label>
-              <input
-                type="text"
-                value={editedCategory.icon || ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditedCategory({ ...editedCategory, icon: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                placeholder="🐶"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Color Class</label>
-              <input
-                type="text"
-                value={editedCategory.color || ''}
-                onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                  setEditedCategory({
-                    ...editedCategory,
-                    color: e.target.value,
-                  })
-                }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#FF8C42]"
-                placeholder="bg-blue-100 text-blue-700"
-              />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Category image</label>
+            <div className="flex items-start gap-4">
+              <CategoryThumbnail category={editedCategory} size="md" />
+              <div className="flex-1 space-y-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={uploadingImage}
+                  onChange={async (e: React.ChangeEvent<HTMLInputElement>) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      setUploadingImage(true);
+                      const url = await uploadCategoryImage(file);
+                      setEditedCategory({ ...editedCategory, imageUrl: url });
+                      toast.success('Image uploaded');
+                    } catch (err: unknown) {
+                      toast.error(err instanceof Error ? err.message : 'Upload failed');
+                    } finally {
+                      setUploadingImage(false);
+                      e.target.value = '';
+                    }
+                  }}
+                  className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-orange-50 file:text-[#FF8C42] file:font-semibold"
+                />
+                {editedCategory.imageUrl && (
+                  <button
+                    type="button"
+                    className="text-xs text-red-600 hover:underline"
+                    onClick={() => setEditedCategory({ ...editedCategory, imageUrl: undefined })}
+                  >
+                    Remove image
+                  </button>
+                )}
+                <p className="text-xs text-gray-500">PNG or JPG, max 5MB. Shown on customer shop category grid.</p>
+              </div>
             </div>
           </div>
 
@@ -844,6 +994,15 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
                 />
                 <label className="text-sm">Allow Returns</label>
               </div>
+            </div>
+          </div>
+            </div>
+
+            <div className="lg:sticky lg:top-6 lg:self-start">
+              <ShopCategoryGridPreview
+                name={editedCategory.name}
+                imageUrl={editedCategory.imageUrl}
+              />
             </div>
           </div>
         </div>

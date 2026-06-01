@@ -542,8 +542,8 @@ export function UserAccountSidebar({
     loadBookings();
     try {
       const v = sessionStorage.getItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
-      if (v === 'bookings') {
-        setActiveView('bookings');
+      if (v === 'bookings' || v === 'addresses') {
+        setActiveView(v);
         sessionStorage.removeItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
       }
     } catch {
@@ -1108,7 +1108,7 @@ export function UserAccountSidebar({
     { icon: Award, label: 'Rewards & Points', color: 'from-amber-100 to-amber-200 text-amber-600', action: 'rewards-loyalty', isExternal: true },
     { icon: Users, label: 'Refer & Earn', color: 'from-cyan-100 to-cyan-200 text-cyan-600', action: 'referral-system', isExternal: true },
     { icon: Calendar, label: 'My Appointments', color: 'from-purple-100 to-purple-200 text-purple-600', action: 'appointments', isExternal: true },
-    { icon: MapPin, label: 'Address Book', color: 'from-green-100 to-green-200 text-green-600', action: 'addresses', isExternal: true },
+    { icon: MapPin, label: 'Address Book', color: 'from-green-100 to-green-200 text-green-600', view: 'addresses' as const },
     { icon: Package, label: 'My Bookings', color: 'from-teal-100 to-teal-200 text-teal-600', view: 'bookings' as const, badge: activeBookings.length },
     {
       icon: ShoppingCart,
