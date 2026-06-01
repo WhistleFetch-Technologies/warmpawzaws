@@ -29,7 +29,8 @@ import { useRouter } from 'next/navigation';
 import { BookingDetailModal } from './BookingDetailModal';
 import { RateServiceModal } from './RateServiceModal';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
-import { UtensilsCrossed } from 'lucide-react';
+import { BookingsHeaderBackground } from './booking/BookingsHeaderBackground';
+import { UtensilsCrossed, CheckCircle2 } from 'lucide-react';
 
 /** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
 export const PHARMACY_ORDERS_ENABLED = false;
@@ -519,9 +520,28 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
 
   // ✅ FIX: Include all active statuses in "Upcoming" count
   const dashboardStats = [
-    { value: String(bookings.length), label: 'Total' },
-    { value: String(bookings.filter(b => ['pending', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(b.status)).length), label: 'Upcoming' },
-    { value: String(bookings.filter(b => b.status === 'completed' || b.status === 'cancelled').length), label: 'Completed' }
+    {
+      value: String(bookings.length),
+      label: 'Total',
+      accent: 'orange' as const,
+      icon: <Calendar className="h-4 w-4" strokeWidth={2.25} aria-hidden />,
+    },
+    {
+      value: String(
+        bookings.filter((b) =>
+          ['pending', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(b.status)
+        ).length
+      ),
+      label: 'Upcoming',
+      accent: 'purple' as const,
+      icon: <Clock className="h-4 w-4" strokeWidth={2.25} aria-hidden />,
+    },
+    {
+      value: String(bookings.filter((b) => b.status === 'completed' || b.status === 'cancelled').length),
+      label: 'Completed',
+      accent: 'green' as const,
+      icon: <CheckCircle2 className="h-4 w-4" strokeWidth={2.25} aria-hidden />,
+    },
   ];
 
   return (
@@ -534,7 +554,8 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
         stats={dashboardStats}
         onBack={onBack}
         showBackButton={true}
-        headerColor="bg-[#FF8C42]"
+        headerVariant="premium"
+        headerBackground={<BookingsHeaderBackground />}
         bottomEdge="sheet"
         sheetToneClass="bg-gray-50"
       />
@@ -558,14 +579,7 @@ export function MyBookings({ phone, onBack, initialBookingId, onReorderMedicine,
             }`}
           >
             <UtensilsCrossed className={`w-5 h-5 shrink-0 ${!mealPlanOrdersEnabled ? 'text-emerald-600/55' : ''}`} />
-            <span className="inline-flex items-center justify-center gap-2 flex-wrap">
-              Meal Plan Orders & Tracking
-              {!mealPlanOrdersEnabled && (
-                <span className="rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white shadow-sm">
-                  Soon
-                </span>
-              )}
-            </span>
+            <span>Meal Plan Orders & Tracking</span>
           </button>
           <p
             className={`text-xs mt-1.5 text-center ${

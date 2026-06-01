@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { UserAccountSidebar } from '@/components/customer/UserAccountSidebar';
 import { navigateFromStandaloneAccountMenu } from '@/lib/customer-account-sidebar-nav';
+import { ProfileMenuOpenProvider } from '@/lib/profile-menu-open-context';
 
 export { navigateFromStandaloneAccountMenu } from '@/lib/customer-account-sidebar-nav';
 
@@ -11,6 +12,7 @@ export type CustomerAccountSidebarHost = {
   phone: string | null;
   openAccountMenu: () => void;
   accountSidebar: ReactNode;
+  isAccountMenuOpen: boolean;
   /** BottomNavigation: profile opens account menu; other tabs route by screen id. */
   handleTabbedBottomNav: (screen: string) => void;
 };
@@ -94,6 +96,28 @@ export function useCustomerAccountSidebarHost(): CustomerAccountSidebarHost {
     phone,
     openAccountMenu,
     accountSidebar,
+    isAccountMenuOpen: sidebarOpen,
     handleTabbedBottomNav,
   };
+}
+
+/** Wrap standalone pages that render BottomNavigation + account sidebar overlay. */
+export function CustomerAccountSidebarShell({
+  children,
+  sidebarOpen,
+  bottomNav,
+  accountSidebar,
+}: {
+  children: ReactNode;
+  sidebarOpen: boolean;
+  bottomNav: ReactNode;
+  accountSidebar: ReactNode;
+}) {
+  return (
+    <ProfileMenuOpenProvider value={sidebarOpen}>
+      {children}
+      {bottomNav}
+      {accountSidebar}
+    </ProfileMenuOpenProvider>
+  );
 }

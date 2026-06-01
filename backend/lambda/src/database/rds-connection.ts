@@ -581,6 +581,10 @@ export async function insert(
     'multiplier_conditions',     // loyalty_action_rules.multiplier_conditions
     'metadata_resolvers',        // action_sources.metadata_resolvers
     'purchase_snapshot',         // meal_orders — selected purchase / subscription snapshot
+    'medical_history',           // pets.medical_history JSONB
+    'vaccination_records',       // pets.vaccination_records JSONB
+    'dietary_restrictions',      // pets.dietary_restrictions JSONB
+    'insurance_info',            // pets.insurance_info JSONB
   ]);
   
   // Also check for columns ending with common JSONB suffixes
@@ -592,7 +596,9 @@ export async function insert(
            key.endsWith('_data') ||
            key.endsWith('_settings') ||
            key.endsWith('_details') ||
-           key.endsWith('_resolvers');
+           key.endsWith('_resolvers') ||
+           key.endsWith('_history') ||
+           key.endsWith('_records');
   };
   
   // ✅ FIX: Build placeholders with ::jsonb cast for JSONB columns
@@ -684,6 +690,10 @@ export async function update(
     'conditions',      // loyalty_action_rules.conditions
     'multiplier_conditions',
     'metadata_resolvers', // action_sources.metadata_resolvers
+    'medical_history',     // pets.medical_history JSONB
+    'vaccination_records', // pets.vaccination_records JSONB
+    'dietary_restrictions', // pets.dietary_restrictions JSONB
+    'insurance_info',        // pets.insurance_info JSONB
   ]);
   
   // Also check for columns ending with common JSONB suffixes
@@ -695,7 +705,9 @@ export async function update(
            key.endsWith('_data') ||
            key.endsWith('_settings') ||
            key.endsWith('_details') ||
-           key.endsWith('_resolvers');
+           key.endsWith('_resolvers') ||
+           key.endsWith('_history') ||
+           key.endsWith('_records');
   };
 
   // Build SET clause

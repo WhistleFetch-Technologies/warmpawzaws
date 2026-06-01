@@ -35,6 +35,7 @@ import {
   NUTRITION_HEADER_BANNER,
   NUTRITION_SERVICE_CARDS,
 } from './constants/nutrition-hub-assets';
+import { NutritionServiceCardBackground } from './NutritionServiceCardBackground';
 
 const NUTRITION_HEADER_ICON =
   'fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none';
@@ -241,6 +242,7 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
                       comingSoon ? 'cursor-not-allowed opacity-90' : 'hover:shadow-md'
                     }`}
                   >
+                    <NutritionServiceCardBackground serviceId={service.id} />
                     {comingSoon ? (
                       <span className="absolute right-2 top-2 z-[3] rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
                         Coming soon
