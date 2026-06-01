@@ -1,7 +1,6 @@
 "use client";
 
-import { Home, ShoppingCart, Calendar, User } from 'lucide-react';
-import { useCart } from '@/context/CartContext';
+import { Home, ShoppingBag, Calendar, User } from 'lucide-react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 
 interface BottomNavigationProps {
@@ -11,7 +10,6 @@ interface BottomNavigationProps {
 }
 
 export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: BottomNavigationProps) {
-  const { itemCount } = useCart();
   const commerceEnabled = isCustomerEcommerceEnabled();
 
   const isActive = (screen: string) => {
@@ -20,8 +18,8 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
     if (screen === 'home') {
       return currentScreen === 'home';
     }
-    if (screen === 'cart') {
-      return currentScreen === 'cart' || currentScreen === 'checkout';
+    if (screen === 'shop') {
+      return currentScreen === 'shop';
     }
     if (screen === 'bookings') {
       return currentScreen === 'my-bookings' || currentScreen === 'appointments';
@@ -59,32 +57,25 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
           </span>
         </button>
 
-        {/* Cart Tab */}
+        {/* Shop Tab */}
         {commerceEnabled ? (
           <button
             type="button"
-            onClick={() => handleNavClick('cart')}
-            className="relative flex flex-col items-center gap-1"
+            onClick={() => handleNavClick('shop')}
+            className="flex flex-col items-center gap-1"
           >
-            <div className="relative">
-              <ShoppingCart className={`w-6 h-6 ${isActive('cart') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-              {itemCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  {itemCount}
-                </span>
-              )}
-            </div>
-            <span className={`text-xs ${isActive('cart') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
-              Cart
+            <ShoppingBag className={`w-6 h-6 ${isActive('shop') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+            <span className={`text-xs ${isActive('shop') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
+              Shop
             </span>
           </button>
         ) : (
           <button
             type="button"
             disabled
-            className="relative flex flex-col items-center gap-1 opacity-40 cursor-not-allowed"
+            className="flex flex-col items-center gap-1 opacity-40 cursor-not-allowed"
           >
-            <ShoppingCart className="w-6 h-6 text-gray-400" />
+            <ShoppingBag className="w-6 h-6 text-gray-400" />
             <span className="text-xs text-gray-400">Soon</span>
           </button>
         )}

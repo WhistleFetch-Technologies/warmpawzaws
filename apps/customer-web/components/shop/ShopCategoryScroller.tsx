@@ -58,7 +58,7 @@ export function ShopCategoryScroller({
   const useApiCategories = categories.length > 0;
 
   return (
-    <div className="mt-1 w-full min-w-0 overflow-x-auto overflow-y-visible py-px [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+    <div className="mt-3 w-full min-w-0 overflow-x-auto overflow-y-visible py-px [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
       <div className="flex gap-4 w-max pr-4">
         <CategoryChip
           label="All"

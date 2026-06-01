@@ -7,6 +7,9 @@ import { WishlistProductHeartButton } from '@/components/customer/WishlistProduc
 import type { ShopProduct } from './shop-types';
 import { getProductDiscountPercent } from './map-shop-product';
 
+const PRODUCT_CARD_SHADOW =
+  'shadow-[0_2px_6px_rgba(15,23,42,0.22),0_8px_24px_rgba(15,23,42,0.14)]';
+
 interface ShopProductCardProps {
   product: ShopProduct;
   variant: 'deal' | 'grid';
@@ -37,7 +40,7 @@ export function ShopProductCard({ product, variant, onAddToCart, inCart }: ShopP
   if (variant === 'deal') {
     return (
       <div
-        className={`relative shrink-0 w-[9.5rem] bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-sm cursor-pointer active:scale-[0.98] transition-transform ${
+        className={`relative shrink-0 w-[9.5rem] bg-white rounded-2xl border border-slate-100 overflow-hidden ${PRODUCT_CARD_SHADOW} cursor-pointer active:scale-[0.98] transition-transform ${
           outOfStock ? 'opacity-90' : ''
         }`}
         onClick={handleCardClick}
@@ -100,7 +103,7 @@ export function ShopProductCard({ product, variant, onAddToCart, inCart }: ShopP
 
   return (
     <div
-      className={`bg-white rounded-2xl border border-slate-100/90 overflow-hidden shadow-[0_2px_12px_rgba(0,0,0,0.06)] active:scale-[0.98] transition-transform duration-150 cursor-pointer min-w-0 w-full max-w-full flex flex-col h-full min-h-0 ${
+      className={`bg-white rounded-2xl border border-slate-100/90 overflow-hidden ${PRODUCT_CARD_SHADOW} active:scale-[0.98] transition-transform duration-150 cursor-pointer min-w-0 w-full max-w-full flex flex-col h-full min-h-0 ${
         outOfStock ? 'opacity-90' : ''
       }`}
       onClick={handleCardClick}

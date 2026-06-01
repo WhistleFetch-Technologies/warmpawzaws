@@ -1,0 +1,96 @@
+/**
+ * Ecommerce category row shaping + S3 image URL handling for admin/storefront APIs.
+ */
+
+import { presignS3GetUrlIfApplicable, stripS3PresignQueryFromUrl } from './s3-media-presign';
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isEcommerceCategoryUuid(id: unknown): boolean {
+  return typeof id === 'string' && UUID_RE.test(id.trim());
+}
+
+export function normalizeCategoryImageUrlForStorage(url: unknown): string | null {
+  const trimmed = String(url ?? '').trim();
+  if (!trimmed) return null;
+  return stripS3PresignQueryFromUrl(trimmed);
+}
+
+export type EcommerceCategoryPublicRow = {
+  id: string;
+  name: string;
+  description: string;
+  display_order: number;
+  is_active: boolean;
+  image_url: string | null;
+  created_at?: string;
+};
+
+export async function mapCategoryRowForPublic(
+  row: Record<string, unknown>,
+  opts?: { includeInactive?: boolean }
+): Promise<EcommerceCategoryPublicRow> {
+  const rawImage = row.image_url ?? row.imageUrl;
+  let imageUrl: string | null = null;
+  if (rawImage != null && String(rawImage).trim()) {
+    const stored = String(rawImage).trim();
+    imageUrl = (await presignS3GetUrlIfApplicable(stored)) ?? stored;
+  }
+
+  const isActive = row.is_active !== false && row.is_active !== 'false';
+
+  return {
+    id: String(row.id ?? ''),
+    name: String(row.name ?? '').trim(),
+    description: String(row.description ?? '').trim(),
+    display_order: parseInt(String(row.display_order ?? row.displayOrder ?? 0), 10) || 0,
+    is_active: opts?.includeInactive ? isActive : true,
+    image_url: imageUrl,
+    created_at: row.created_at != null ? String(row.created_at) : undefined,
+  };
+}
+
+export async function mapCategoryRowsForPublic(
+  rows: Record<string, unknown>[],
+  opts?: { includeInactive?: boolean }
+): Promise<EcommerceCategoryPublicRow[]> {
+  return Promise.all(rows.map((r) => mapCategoryRowForPublic(r, opts)));
+}
+
+/** Normalize admin bulk-save payload field names onto DB columns. */
+export function parseAdminCategoryPayloadItem(item: Record<string, unknown>): {
+  id: string | null;
+  name: string;
+  description: string | null;
+  display_order: number;
+  is_active: boolean;
+  image_url: string | null;
+} {
+  const name = String(item.name ?? '').trim();
+  const rawId = item.id != null ? String(item.id).trim() : '';
+  const id = isEcommerceCategoryUuid(rawId) ? rawId : null;
+
+  const enabled =
+    item.enabled !== undefined
+      ? item.enabled !== false && item.enabled !== 'false'
+      : item.is_active !== false && item.is_active !== 'false';
+
+  const orderRaw = item.order ?? item.display_order ?? item.displayOrder ?? 0;
+  const display_order = parseInt(String(orderRaw), 10) || 0;
+
+  const rawImage = item.image_url ?? item.imageUrl ?? item.icon;
+  const image_url = normalizeCategoryImageUrlForStorage(rawImage);
+
+  return {
+    id,
+    name,
+    description:
+      item.description != null && String(item.description).trim()
+        ? String(item.description).trim()
+        : null,
+    display_order,
+    is_active: enabled,
+    image_url,
+  };
+}

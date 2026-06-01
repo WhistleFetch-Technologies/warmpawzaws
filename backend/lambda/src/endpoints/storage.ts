@@ -20,6 +20,7 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
+import { createPresignedCategoryStyleUploadUrls } from '../utils/s3-presign-upload';
 
 const s3Client = new S3Client({ region: process.env.AWS_REGION || 'ap-south-1' });
 // Use consistent S3_UPLOADS_BUCKET env var (set by CDK lambda-stack)
@@ -553,32 +554,18 @@ export function registerStorageEndpoints(app: Hono) {
       const folderPath = folder ? `${folder}/` : '';
       const fileKey = `${folderPath}${timestamp}_${random}.${fileExt}`;
 
-      // Generate presigned URL for PUT operation (upload)
-      const signedUrl = await getSignedUrl(
-        s3Client,
-        new PutObjectCommand({
-          Bucket: BUCKET_NAME,
-          Key: fileKey,
-          ContentType: fileType,
-        }),
-        { expiresIn: 300 } // 5 minutes for upload
-      );
-
-      // Generate presigned URL for GET operation (download/view)
-      const viewUrl = await getSignedUrl(
-        s3Client,
-        new GetObjectCommand({
-          Bucket: BUCKET_NAME,
-          Key: fileKey,
-        }),
-        { expiresIn: 604800 } // 7 days for viewing
-      );
+      const urls = await createPresignedCategoryStyleUploadUrls({
+        bucket: BUCKET_NAME,
+        key: fileKey,
+        contentType: fileType,
+      });
 
       return c.json({
         success: true,
-        uploadUrl: signedUrl,
-        fileUrl: viewUrl,
-        fileKey: fileKey,
+        uploadUrl: urls.uploadUrl,
+        fileUrl: urls.fileUrl,
+        publicUrl: urls.publicUrl,
+        fileKey: urls.fileKey,
       });
     } catch (error: any) {
       console.error('❌ Error generating presigned upload URL:', error);
@@ -606,32 +593,18 @@ export function registerStorageEndpoints(app: Hono) {
       const folderPath = folder ? `${folder}/` : '';
       const fileKey = `${folderPath}${timestamp}_${random}.${fileExt}`;
 
-      // Generate presigned URL for PUT operation (upload)
-      const signedUrl = await getSignedUrl(
-        s3Client,
-        new PutObjectCommand({
-          Bucket: BUCKET_NAME,
-          Key: fileKey,
-          ContentType: fileType,
-        }),
-        { expiresIn: 300 } // 5 minutes for upload
-      );
-
-      // Generate presigned URL for GET operation (download/view)
-      const viewUrl = await getSignedUrl(
-        s3Client,
-        new GetObjectCommand({
-          Bucket: BUCKET_NAME,
-          Key: fileKey,
-        }),
-        { expiresIn: 604800 } // 7 days for viewing
-      );
+      const urls = await createPresignedCategoryStyleUploadUrls({
+        bucket: BUCKET_NAME,
+        key: fileKey,
+        contentType: fileType,
+      });
 
       return c.json({
         success: true,
-        uploadUrl: signedUrl,
-        fileUrl: viewUrl,
-        fileKey: fileKey,
+        uploadUrl: urls.uploadUrl,
+        fileUrl: urls.fileUrl,
+        publicUrl: urls.publicUrl,
+        fileKey: urls.fileKey,
       });
     } catch (error: any) {
       console.error('❌ Error generating presigned upload URL:', error);

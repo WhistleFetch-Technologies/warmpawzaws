@@ -227,7 +227,7 @@ export function PetSittingVendorListView({
         onTabChange={(tab) => {
           if (tab === "home") router.push("/");
           else if (tab === "bookings") router.push("/bookings");
-          else if (tab === "cart") router.push("/cart");
+          else if (tab === "shop") router.push("/shop");
           else if (tab === "profile") router.push("/profile");
         }}
         maxWidth="max-w-customer"

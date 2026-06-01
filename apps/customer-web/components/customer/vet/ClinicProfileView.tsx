@@ -412,7 +412,7 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         onTabChange={(tab) => {
           if (tab === 'home') onBack();
           else if (tab === 'bookings') onNavigate('my-bookings');
-          else if (tab === 'cart') onNavigate('cart');
+          else if (tab === 'shop') onNavigate('shop');
           else if (tab === 'profile') onNavigate('profile');
         }}
         maxWidth="max-w-customer"

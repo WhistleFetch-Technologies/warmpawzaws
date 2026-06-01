@@ -1194,6 +1194,9 @@ export function CustomerHomeWrapper({
     else if (screen === 'profile') {
       setCurrentScreen('customer-profile');
     }
+    else if (screen === 'shop') {
+      goToShopFromParent();
+    }
     else if (screen === 'purchase-package') {
       setPreviousScreen(screenToReturnAfterLeavingPackagePurchase());
       const vid = String(data?.vendorId ?? data?.doctorId ?? '').trim();
@@ -1441,11 +1444,6 @@ export function CustomerHomeWrapper({
     } else if (path === 'promotions' || path === 'offers') {
       rememberPromotionsBackSpaScreen(currentScreen);
       router.push('/promotions');
-    } else if (path === 'account/settings') {
-      // Navigate to settings page
-      if (typeof window !== 'undefined') {
-        window.location.href = '/settings';
-      }
     }
   };
 
@@ -1479,20 +1477,8 @@ export function CustomerHomeWrapper({
       setSelectedProblem(null);
       setCurrentServiceType(null);
       setProblemGridSpecialization(undefined);
-    } else if (screen === 'cart') {
-      if (!isCustomerEcommerceEnabled()) {
-        toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
-        return;
-      }
-      setUserSidebarOpen(false);
-      setPetSitterOriginScreen(null);
-      setPetSitterFacilityOptionId(null);
-      setSpaBoardingVendorsSlug(null);
-      setBoardingVendorsReturnScreen(null);
-      if (pathname === '/') {
-        rememberShopBackToSpaScreen(currentScreen);
-      }
-      router.push('/cart');
+    } else if (screen === 'shop') {
+      goToShopFromParent();
     } else if (screen === 'my-bookings') {
       setUserSidebarOpen(false);
       setPetSitterOriginScreen(null);
@@ -2318,6 +2304,8 @@ export function CustomerHomeWrapper({
         clinic: data?.clinic,
       });
       setCurrentScreen('vet-booking');
+    } else {
+      handleVetNavigate(screen, data);
     }
   }} />;
   if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen(vetServiceData?.clinicProfileBackScreen ?? 'vet-clinic-list')} onNavigate={(screen, data) => {
@@ -2343,6 +2331,8 @@ export function CustomerHomeWrapper({
         clinic: data?.clinic,
       });
       setCurrentScreen('vet-booking');
+    } else {
+      handleVetNavigate(screen, data);
     }
   }} />;
   if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;

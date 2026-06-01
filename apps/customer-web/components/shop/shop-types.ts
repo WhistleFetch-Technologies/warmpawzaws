@@ -18,8 +18,10 @@ export interface ShopProduct {
 export interface ShopCategory {
   id: string;
   name: string;
-  icon: string;
-  product_count: number;
+  icon?: string;
+  image_url?: string;
+  product_count?: number;
+  display_order?: number;
 }
 
 export interface ShopCartItem {

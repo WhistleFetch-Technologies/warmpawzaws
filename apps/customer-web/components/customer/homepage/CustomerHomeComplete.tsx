@@ -64,7 +64,8 @@ import {
 } from '../home/hooks/useHomePageData';
 import { HOME_CONTENT_SHELL_CLASS } from '../home/shared/HomeContentShell';
 import { buildHomeTopCarouselBanners } from '../home/utils/banner-utils';
-import { customerHomeIconForShopCategory } from '../home/utils/shop-category-icons';
+import { ShopCategoryGrid } from '@/components/shop/ShopCategoryGrid';
+import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
 import type { QuickServiceTile } from '../home/types';
 import { resolveCustomerLocation } from '@/lib/customer-location';
 import type { CustomerLocation } from '@/lib/customer-location';
@@ -549,9 +550,9 @@ export function CustomerHomeComplete({
       rehomingListings: cached?.rehomingListings ?? 20,
     };
   });
-  const [ecommerceShopCategories, setEcommerceShopCategories] = useState<Array<{ id: string; name: string }>>(
-    [],
-  );
+  const [ecommerceShopCategories, setEcommerceShopCategories] = useState<
+    Array<{ id: string; name: string; image_url?: string; display_order?: number }>
+  >([]);
   // Evaluated lazily so runtime-config.js (which runs before hydration) is already applied.
   const [customerCommerceEnabled] = useState<boolean>(() => isCustomerEcommerceEnabled());
   const [newHomeUi] = useState<boolean>(() => isNewHomeUiEnabled());
@@ -565,17 +566,9 @@ export function CustomerHomeComplete({
           const res = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>('/ecommerce/categories');
           const raw = res?.categories;
           if (cancelled || !Array.isArray(raw)) return;
-          const mapped = raw
-            .map((c) => {
-              const id = String(
-                c.id ?? c.category_id ?? c.uuid ?? '',
-              ).trim();
-              const name = String(
-                c.name ?? c.title ?? c.display_name ?? 'Category',
-              ).trim();
-              return { id, name };
-            })
-            .filter((c) => c.id);
+          const mapped = mapApiCategoriesToShop(
+            raw.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
+          );
           if (!cancelled) setEcommerceShopCategories(mapped);
         } catch {
           if (!cancelled) setEcommerceShopCategories([]);
@@ -2556,24 +2549,11 @@ export function CustomerHomeComplete({
               ))}
             </div>
           ) : (
-            <div className="flex gap-3 overflow-x-auto px-4 py-1 scrollbar-hide">
-              {ecommerceShopCategories.map((category) => (
-                <button
-                  key={category.id}
-                  type="button"
-                  className="flex-shrink-0 flex flex-col items-center gap-1 min-w-[4.5rem] active:opacity-90"
-                  onClick={() => handleNavigation('shop', { category: category.id })}
-                  aria-label={`Browse ${category.name}`}
-                >
-                  <div className="w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm">
-                    {customerHomeIconForShopCategory(category.name)}
-                  </div>
-                  <span className="text-[10px] text-gray-700 text-center font-medium leading-tight line-clamp-2">
-                    {category.name}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <ShopCategoryGrid
+              embedded
+              categories={ecommerceShopCategories}
+              onSelectCategory={(id) => handleNavigation('shop', { category: id })}
+            />
           )}
         </div>
         ) : null}

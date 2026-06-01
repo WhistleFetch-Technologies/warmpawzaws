@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { BottomNavigation } from '@/components/customer/bottomNavigation/BottomNavigation';
@@ -10,26 +10,68 @@ import { ShopCategoryScroller } from '@/components/shop/ShopCategoryScroller';
 import { ShopCheckoutModal } from '@/components/shop/ShopCheckoutModal';
 import { ShopDeliveryBar } from '@/components/shop/ShopDeliveryBar';
 import { ShopHeroCarousel } from '@/components/shop/ShopHeroCarousel';
+import { CustomerPlacementBanners } from '@/components/customer/shared/CustomerPlacementBanners';
 import { ShopPageHeader } from '@/components/shop/ShopPageHeader';
 import { ShopSearchBar } from '@/components/shop/ShopSearchBar';
 import { ShopSortFilterSheets } from '@/components/shop/ShopSortFilterSheets';
 import { ShopTopDealsSection } from '@/components/shop/ShopTopDealsSection';
 import { ShopTrustRow } from '@/components/shop/ShopTrustRow';
+import { DeliveryAddressPickerSheet } from '@/components/customer/ecommerce/DeliveryAddressPickerSheet';
+import { AddAddressModal } from '@/components/customer/shared/AddAddressModal';
 import { mapApiProductsList, sortShopProducts } from '@/components/shop/map-shop-product';
 import type { ShopCartItem, ShopCategory, ShopCoupon, ShopProduct } from '@/components/shop/shop-types';
 import { apiClient } from '@/lib/api-client';
+import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { handleShopPageBack } from '@/lib/go-back-or-replace';
 import { emitWarmpawzCartUpdated, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
+import {
+  loadCustomerDeliveryAddresses,
+  pickDefaultDeliveryAddress,
+  type DeliveryAddress,
+} from '@/lib/ecommerce/load-customer-addresses';
+import { formatDeliveryAddressLine } from '@/lib/ecommerce/delivery-address-display';
+import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
 
 /** Full-viewport column — same width token as home + BottomNavigation (no grey outer frame). */
 const SHOP_PAGE_SHELL =
   'relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-customer mx-auto flex-col overflow-hidden bg-white';
 
+const SHOP_DELIVERY_ADDRESS_ID_KEY = 'warmpawz_shop_delivery_address_id';
+
+function deliveryAddressToLabel(addr: DeliveryAddress): string {
+  const area = (addr.addressLine1 || addr.street || '').trim();
+  const city = (addr.city || '').trim();
+  const short =
+    area && city ? `${area}, ${city}` : formatDeliveryAddressLine(addr);
+  return `Deliver to: ${short}`;
+}
+
+function deliveryAddressToShopAddress(addr: DeliveryAddress, phone: string) {
+  return {
+    name: addr.fullName || addr.name || '',
+    phone: addr.phone || phone,
+    line1: addr.addressLine1 || addr.street || '',
+    line2: addr.addressLine2 || '',
+    city: addr.city || '',
+    state: addr.state || '',
+    pincode: addr.pincode || '',
+  };
+}
+
 function scrollToCatalog() {
   document.getElementById('shop-all-products')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function clearShopCategoryFromUrl() {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has('category')) return;
+  url.searchParams.delete('category');
+  const next = url.pathname + (url.search ? url.search : '');
+  window.history.replaceState({}, '', next);
 }
 
 export default function ShopPage() {
@@ -59,6 +101,11 @@ export default function ShopPage() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerId, setCustomerId] = useState<string | undefined>(undefined);
   const [deliveryLabel, setDeliveryLabel] = useState('Deliver to: Add delivery address');
+  const [savedAddresses, setSavedAddresses] = useState<DeliveryAddress[]>([]);
+  const [selectedDeliveryAddress, setSelectedDeliveryAddress] = useState<DeliveryAddress | null>(null);
+  const [showAddressPicker, setShowAddressPicker] = useState(false);
+  const [addressPickerLoading, setAddressPickerLoading] = useState(false);
+  const [showAddAddressModal, setShowAddAddressModal] = useState(false);
 
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<ShopCoupon | null>(null);
@@ -92,51 +139,92 @@ export default function ShopPage() {
     setCustomerId(getResolvedCustomerId() || undefined);
   }, []);
 
-  const loadDeliveryAddress = useCallback(async (phone: string) => {
-    if (!phone) {
-      setDeliveryLabel('Deliver to: Add delivery address');
-      return;
-    }
-    try {
-      const res = (await apiClient
-        .get(`/customer/addresses?phone=${encodeURIComponent(phone)}`)
-        .catch(() => null)) as { addresses?: Array<Record<string, unknown>> } | null;
-      const addresses = res?.addresses || [];
-      const defaultAddress =
-        addresses.find((a) => a.isDefault === true) || addresses[0];
-      if (defaultAddress) {
-        const area = String(
-          defaultAddress.area || defaultAddress.locality || defaultAddress.addressLine1 || ''
-        ).trim();
-        const city = String(defaultAddress.city || '').trim();
-        const label =
-          area && city ? `${area}, ${city}` : city || area || 'Your address';
-        setDeliveryLabel(`Deliver to: ${label}`);
+  const selectedDeliveryAddressRef = useRef<DeliveryAddress | null>(null);
+
+  const applySelectedDeliveryAddress = useCallback(
+    (addr: DeliveryAddress, phone: string) => {
+      selectedDeliveryAddressRef.current = addr;
+      setSelectedDeliveryAddress(addr);
+      setDeliveryLabel(deliveryAddressToLabel(addr));
+      setAddress(deliveryAddressToShopAddress(addr, phone));
+      if (typeof window !== 'undefined' && addr.id) {
+        localStorage.setItem(SHOP_DELIVERY_ADDRESS_ID_KEY, addr.id);
+      }
+    },
+    []
+  );
+
+  const refreshDeliveryAddresses = useCallback(
+    async (phone: string, opts?: { preserveSelection?: boolean }) => {
+      const list = await loadCustomerDeliveryAddresses(phone);
+      setSavedAddresses(list);
+
+      if (opts?.preserveSelection && selectedDeliveryAddressRef.current?.id) {
+        const match = list.find((a) => a.id === selectedDeliveryAddressRef.current?.id);
+        if (match) {
+          applySelectedDeliveryAddress(match, phone);
+          return list;
+        }
+      }
+
+      let next = pickDefaultDeliveryAddress(list);
+      if (typeof window !== 'undefined') {
+        const savedId = localStorage.getItem(SHOP_DELIVERY_ADDRESS_ID_KEY);
+        if (savedId) {
+          const match = list.find((a) => a.id === savedId);
+          if (match) next = match;
+        }
+      }
+
+      if (next) {
+        applySelectedDeliveryAddress(next, phone);
       } else {
+        selectedDeliveryAddressRef.current = null;
+        setSelectedDeliveryAddress(null);
         setDeliveryLabel('Deliver to: Add delivery address');
       }
-    } catch {
-      setDeliveryLabel('Deliver to: Add delivery address');
-    }
-  }, []);
+
+      return list;
+    },
+    [applySelectedDeliveryAddress]
+  );
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
+      const categoriesRes = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>(
+        '/ecommerce/categories'
+      );
+      const rawCategories = categoriesRes?.categories;
+      const mappedCategories = mapApiCategoriesToShop(
+        Array.isArray(rawCategories)
+          ? rawCategories.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
+          : []
+      );
+      setCategories(mappedCategories);
+
+      let effectiveCategory = selectedCategory;
+      if (
+        effectiveCategory &&
+        !mappedCategories.some((c) => c.id === effectiveCategory)
+      ) {
+        effectiveCategory = '';
+        setSelectedCategory('');
+        clearShopCategoryFromUrl();
+      }
+
       const params = new URLSearchParams();
-      if (selectedCategory) params.append('category', selectedCategory);
+      if (effectiveCategory) params.append('category', effectiveCategory);
       if (sortBy) params.append('sort', sortBy);
 
-      const [productsRes, categoriesRes] = await Promise.all([
-        apiClient.get<{ products?: unknown[] }>(`/ecommerce/products?${params.toString()}`),
-        apiClient.get<{ categories?: ShopCategory[] }>('/ecommerce/categories'),
-      ]);
+      const productsRes = await apiClient.get<{ products?: unknown[] }>(
+        `/ecommerce/products?${params.toString()}`
+      );
 
       const rawList = productsRes?.products || [];
       setProducts(mapApiProductsList(rawList));
-      setCategories(categoriesRes?.categories || []);
     } catch (err: unknown) {
       console.error('Error loading shop:', err);
       setError(err instanceof Error ? err.message : 'Failed to load shop');
@@ -188,8 +276,52 @@ export default function ShopPage() {
   }, [loadFeaturedDeals]);
 
   useEffect(() => {
-    if (customerPhone) loadDeliveryAddress(customerPhone);
-  }, [customerPhone, loadDeliveryAddress]);
+    if (!customerPhone) {
+      setDeliveryLabel('Deliver to: Add delivery address');
+      return;
+    }
+    refreshDeliveryAddresses(customerPhone).catch(() => {
+      setDeliveryLabel('Deliver to: Add delivery address');
+    });
+  }, [customerPhone, refreshDeliveryAddresses]);
+
+  const openAddressPicker = async () => {
+    if (!customerPhone) {
+      router.push('/auth');
+      return;
+    }
+    setShowAddressPicker(true);
+    setAddressPickerLoading(true);
+    try {
+      await refreshDeliveryAddresses(customerPhone, { preserveSelection: true });
+    } catch {
+      setSavedAddresses([]);
+    } finally {
+      setAddressPickerLoading(false);
+    }
+  };
+
+  const handleAddressSelect = (addr: DeliveryAddress) => {
+    applySelectedDeliveryAddress(addr, customerPhone);
+  };
+
+  const handleAddAddressSuccess = async (newAddress: DeliveryAddress) => {
+    setShowAddAddressModal(false);
+    const list = await refreshDeliveryAddresses(customerPhone, { preserveSelection: false });
+    const match =
+      list.find((a) => a.id && newAddress?.id && a.id === newAddress.id) ??
+      pickDefaultDeliveryAddress(list);
+    if (match) applySelectedDeliveryAddress(match, customerPhone);
+  };
+
+  const handleManageAddresses = () => {
+    try {
+      sessionStorage.setItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY, 'addresses');
+    } catch {
+      /* ignore */
+    }
+    openAccountMenu();
+  };
 
   const saveCart = (newCart: ShopCartItem[]) => {
     setCart(newCart);
@@ -332,7 +464,7 @@ export default function ShopPage() {
     <>
       <div className={SHOP_PAGE_SHELL}>
         <header className="sticky top-0 z-40 shrink-0 bg-white/95 backdrop-blur-lg border-b border-slate-100">
-          <div className="px-4 pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-2">
+          <div className="px-4 pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-1">
             <ShopPageHeader
               onBack={() => handleShopPageBack(router)}
               cartItemCount={cartItemCount}
@@ -354,9 +486,14 @@ export default function ShopPage() {
         <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain pb-[var(--customer-tabbed-nav-offset)] [-webkit-overflow-scrolling:touch]">
           <ShopDeliveryBar
             deliveryLabel={deliveryLabel}
-            onAddressClick={() => router.push('/settings')}
+            onAddressClick={openAddressPicker}
           />
-          <ShopHeroCarousel />
+          <CustomerPlacementBanners
+            placement="shop"
+            className="px-4 mt-3 mb-1"
+            shellClassName="h-36"
+            fallback={<ShopHeroCarousel embedded />}
+          />
           <ShopTrustRow />
           <ShopTopDealsSection
             products={featuredProducts}
@@ -442,6 +579,29 @@ export default function ShopPage() {
         onShowPaymentPage={setShowPaymentPage}
         onPlaceOrder={handleCheckout}
         onPaymentSuccess={handlePaymentSuccess}
+      />
+
+      <DeliveryAddressPickerSheet
+        open={showAddressPicker}
+        onClose={() => setShowAddressPicker(false)}
+        addresses={savedAddresses}
+        selectedAddress={selectedDeliveryAddress}
+        onSelect={handleAddressSelect}
+        onAddNew={() => {
+          setShowAddressPicker(false);
+          setShowAddAddressModal(true);
+        }}
+        onManageAddresses={handleManageAddresses}
+        loading={addressPickerLoading}
+        phone={customerPhone}
+      />
+
+      <AddAddressModal
+        phone={customerPhone}
+        isOpen={showAddAddressModal}
+        onClose={() => setShowAddAddressModal(false)}
+        onSuccess={handleAddAddressSuccess}
+        customerName={selectedDeliveryAddress?.fullName || selectedDeliveryAddress?.name || ''}
       />
     </>
   );

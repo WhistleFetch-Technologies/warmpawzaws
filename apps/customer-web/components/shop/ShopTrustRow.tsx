@@ -11,7 +11,7 @@ const TRUST_ITEMS = [
 
 export function ShopTrustRow() {
   return (
-    <div className="mx-4 mt-4 grid grid-cols-4 gap-1 rounded-2xl border border-slate-100 bg-white px-2 py-3 shadow-sm">
+    <div className="mx-4 mt-4 grid grid-cols-4 gap-1 rounded-2xl border border-slate-100 bg-white px-2 py-3 shadow-[0_1px_4px_rgba(15,23,42,0.10),0_4px_14px_rgba(15,23,42,0.07)]">
       {TRUST_ITEMS.map(({ Icon, label, sub }) => (
         <div key={label} className="flex flex-col items-center text-center gap-1 px-0.5">
           <div className="w-8 h-8 rounded-full bg-orange-50 flex items-center justify-center">

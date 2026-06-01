@@ -39,7 +39,7 @@ export interface BoardingVendorProfileViewProps {
   onBack: () => void;
   onNavigate: (screen: string, data?: Record<string, unknown>) => void;
   /** Bottom nav highlight in the customer app shell (avoid implying user is on Bookings). */
-  footerActiveTab?: 'home' | 'cart' | 'bookings' | 'profile';
+  footerActiveTab?: 'home' | 'shop' | 'bookings' | 'profile';
 }
 
 interface MappedBoardingService {
@@ -528,7 +528,7 @@ export function BoardingVendorProfileView({
         onTabChange={(tab) => {
           if (tab === 'home') router.push('/');
           else if (tab === 'bookings') router.push('/bookings');
-          else if (tab === 'cart') router.push('/cart');
+          else if (tab === 'shop') router.push('/shop');
           else if (tab === 'profile') router.push('/profile');
         }}
         maxWidth="max-w-customer"

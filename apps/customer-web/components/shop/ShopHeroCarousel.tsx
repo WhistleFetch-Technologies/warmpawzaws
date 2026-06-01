@@ -35,13 +35,13 @@ function scrollToSection(id: string) {
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-export function ShopHeroCarousel() {
+export function ShopHeroCarousel({ embedded = false }: { embedded?: boolean }) {
   const [current, setCurrent] = useState(0);
   const touchStartX = useRef<number | null>(null);
   const count = STATIC_SLIDES.length;
 
   return (
-    <div className="px-4 mt-3 mb-1">
+    <div className={embedded ? '' : 'px-4 mt-3 mb-1'}>
       <div
         className="relative h-36 rounded-2xl overflow-hidden shadow-md"
         onTouchStart={(e) => {

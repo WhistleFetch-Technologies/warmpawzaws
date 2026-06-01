@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown, MapPin, Zap } from 'lucide-react';
+import { ChevronDown, MapPin } from 'lucide-react';
 
 interface ShopDeliveryBarProps {
   deliveryLabel: string;
@@ -9,7 +9,7 @@ interface ShopDeliveryBarProps {
 
 export function ShopDeliveryBar({ deliveryLabel, onAddressClick }: ShopDeliveryBarProps) {
   return (
-    <div className="mx-4 mt-3 mb-1 flex items-center justify-between gap-2 rounded-xl bg-orange-50/90 px-3 py-2.5 border border-orange-100/80">
+    <div className="mx-4 mt-1 mb-1 flex items-center gap-2 rounded-xl bg-orange-50/90 px-3 py-2.5 border border-orange-100/80">
       <button
         type="button"
         onClick={onAddressClick}
@@ -19,10 +19,6 @@ export function ShopDeliveryBar({ deliveryLabel, onAddressClick }: ShopDeliveryB
         <span className="text-xs font-medium text-slate-800 truncate">{deliveryLabel}</span>
         <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
       </button>
-      <div className="flex items-center gap-1 shrink-0 pl-2 border-l border-orange-100">
-        <Zap className="w-3.5 h-3.5 text-[#FF8C42]" />
-        <span className="text-[10px] font-semibold text-[#FF8C42] whitespace-nowrap">Express Delivery</span>
-      </div>
     </div>
   );
 }
