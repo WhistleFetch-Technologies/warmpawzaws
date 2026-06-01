@@ -1962,7 +1962,25 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         return tb - ta;
       });
 
-      return c.json({ success: true, products: list, total: list.length });
+      // Nutrition SKUs may exist in both `products` and `meal_plans` (same id) — show once, prefer meal_plans row.
+      const deduped = (() => {
+        const byId = new Map<string, (typeof list)[number]>();
+        for (const item of list) {
+          const id = String(item?.id ?? '').trim();
+          if (!id) continue;
+          const existing = byId.get(id);
+          if (!existing || item._source === 'meal_plans') {
+            byId.set(id, item);
+          }
+        }
+        return Array.from(byId.values()).sort((a, b) => {
+          const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return tb - ta;
+        });
+      })();
+
+      return c.json({ success: true, products: deduped, total: deduped.length });
     } catch (error: any) {
       console.error('Error fetching meal products:', error);
       return c.json({ success: true, products: [], total: 0 });

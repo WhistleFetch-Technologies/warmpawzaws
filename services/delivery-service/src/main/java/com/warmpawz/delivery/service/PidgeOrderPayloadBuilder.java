@@ -61,7 +61,7 @@ public class PidgeOrderPayloadBuilder {
 
 		ArrayNode packagesFromItems = packagesFromProducts(products);
 		if (packagesFromItems.isEmpty()) {
-			packagesFromItems = defaultPackages();
+			packagesFromItems = defaultPackages(input);
 		}
 
 		coerceAddressForPidge((ObjectNode) senderDetail.get("address"));
@@ -287,9 +287,7 @@ public class PidgeOrderPayloadBuilder {
 			if (it.has("price")) price = it.get("price").asDouble(0);
 			else if (it.has("selling_price")) price = it.get("selling_price").asDouble(0);
 			else if (it.has("unit_price")) price = it.get("unit_price").asDouble(0);
-			double deadWeight =
-					it.has("dead_weight") ? it.get("dead_weight").asDouble(100)
-							: (it.has("weight_g") ? it.get("weight_g").asDouble(100) : 100);
+			double deadWeight = resolveItemWeightGrams(it);
 			ObjectNode p = objectMapper.createObjectNode();
 			p.put("name", text(it, "name", "product_name") != null ? text(it, "name", "product_name") : "Item");
 			String sku = text(it, "sku", "product_id");
@@ -332,12 +330,39 @@ public class PidgeOrderPayloadBuilder {
 		return packs;
 	}
 
-	private ArrayNode defaultPackages() {
+	private double resolveItemWeightGrams(JsonNode it) {
+		if (it == null || it.isNull()) {
+			return 100;
+		}
+		String[] keys = { "dead_weight", "weight_g", "packWeightGrams", "pack_weight_grams", "weightGrams" };
+		for (String k : keys) {
+			if (it.has(k) && it.get(k).isNumber()) {
+				double v = it.get(k).asDouble();
+				if (v > 0) {
+					return v;
+				}
+			}
+		}
+		JsonNode dim = it.path("dimension");
+		if (dim.isObject() && dim.has("dead_weight") && dim.get("dead_weight").isNumber()) {
+			double v = dim.get("dead_weight").asDouble();
+			if (v > 0) {
+				return v;
+			}
+		}
+		return 100;
+	}
+
+	private ArrayNode defaultPackages(JsonNode input) {
+		double fallback = number(input, "packageWeightGrams", "totalWeightGrams", "weight_g", "pack_weight_grams");
+		if (fallback <= 0) {
+			fallback = 500;
+		}
 		ObjectNode pkg = objectMapper.createObjectNode();
 		pkg.put("label", "Order");
 		pkg.put("quantity", 1);
 		pkg.put("dead_weight", 0);
-		pkg.put("volumetric_weight", 500);
+		pkg.put("volumetric_weight", Math.max(1, Math.round(fallback)));
 		pkg.put("length", 2);
 		pkg.put("breadth", 2);
 		pkg.put("height", 2);

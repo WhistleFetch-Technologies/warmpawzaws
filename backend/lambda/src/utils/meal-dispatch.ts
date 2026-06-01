@@ -152,7 +152,10 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
       `SELECT mo.id, mo.order_number, mo.vendor_id, mo.customer_id, mo.total_amount,
               mo.delivery_address, mo.customer_lat, mo.customer_lng, mo.scheduled_delivery_date,
               mo.meal_plan_id, mo.prep_minutes, mo.prep_started_at, mo.expected_ready_at,
-              mp.prep_time_minutes AS plan_prep_minutes, mp.name AS plan_name, mp.price_per_meal AS plan_price,
+              mo.quantity, mo.purchase_snapshot,
+              mp.prep_time_minutes AS plan_prep_minutes,
+              COALESCE(mp.plan_name, mp.name) AS plan_name,
+              mp.price_per_meal AS plan_price,
               mp.pack_weight_grams AS plan_pack_weight_grams,
               mp.dietary_requirements AS plan_dietary_requirements,
               v.business_name AS vendor_name, v.phone AS vendor_phone, v.email AS vendor_email,
@@ -234,10 +237,25 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
     const billAmount = pickNumber(row.total_amount) ?? 0;
     const planName = pickString((row as Record<string, unknown>).plan_name) || 'Meal Order';
     const planPrice = pickNumber((row as Record<string, unknown>).plan_price) ?? billAmount;
-    const packWeightGrams = resolvePackWeightGramsFromPlanRow({
+    const orderQty = Math.max(1, Math.floor(pickNumber((row as Record<string, unknown>).quantity) ?? 1));
+    let packWeightGrams = resolvePackWeightGramsFromPlanRow({
       pack_weight_grams: (row as Record<string, unknown>).plan_pack_weight_grams,
       dietary_requirements: (row as Record<string, unknown>).plan_dietary_requirements,
     });
+    if (packWeightGrams == null) {
+      const snapRaw = (row as Record<string, unknown>).purchase_snapshot;
+      let snap: Record<string, unknown> | null = null;
+      if (typeof snapRaw === 'string' && snapRaw.trim()) {
+        snap = safeJsonParse<Record<string, unknown>>(snapRaw);
+      } else if (typeof snapRaw === 'object' && snapRaw != null && !Array.isArray(snapRaw)) {
+        snap = snapRaw as Record<string, unknown>;
+      }
+      const fromSnap = snap?.packWeightGrams ?? snap?.pack_weight_grams;
+      if (fromSnap != null && fromSnap !== '') {
+        const n = typeof fromSnap === 'number' ? fromSnap : parseInt(String(fromSnap), 10);
+        if (Number.isFinite(n) && n >= 1 && n <= 50_000) packWeightGrams = n;
+      }
+    }
     if (packWeightGrams == null) {
       console.warn(`[meal-dispatch] missing packWeightGrams mealOrderId=${mealOrderId} mealPlanId=${row.meal_plan_id}`);
       return {
@@ -246,6 +264,8 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
           'Cannot schedule delivery: this meal product has no pack weight (grams). Edit the meal product and set pack weight, then try again.',
       };
     }
+
+    const lineWeightGrams = Math.max(1, Math.round(packWeightGrams * orderQty));
 
     const vendorEmail = pickString((row as Record<string, unknown>).vendor_email);
     const customerEmail = pickString((row as Record<string, unknown>).customer_email);
@@ -307,10 +327,14 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
           name: planName,
           sku: String((row as Record<string, unknown>).meal_plan_id ?? ''),
           price: planPrice,
-          quantity: 1,
-          weight_g: packWeightGrams,
+          quantity: orderQty,
+          weight_g: lineWeightGrams,
+          dead_weight: lineWeightGrams,
+          packWeightGrams: lineWeightGrams,
         },
       ],
+      packageWeightGrams: lineWeightGrams,
+      totalWeightGrams: lineWeightGrams,
       billAmount,
       codAmount: 0,
       notes: [],

@@ -155,7 +155,7 @@ interface UniversalPaymentPageProps {
    * tele-instant: payment-first, then create booking via instant-after-payment (no queue)
    * tele-queue-accepted: queue-first flow; booking already exists with pending_payment; just collect payment and confirm
    */
-  flowType?: 'tele-scheduled' | 'tele-instant' | 'tele-queue-accepted';
+  flowType?: 'tele-scheduled' | 'tele-instant' | 'tele-queue-accepted' | 'payment-resume' | 'home-visit';
   initialPromotionId?: string;
   initialPromotionIntent?: {
     promotionId?: string;
@@ -1275,6 +1275,9 @@ export function UniversalPaymentPage({
           if (type === 'meal_subscription' && Number.isFinite(bal) && bal > 0.009) {
             setUseWallet(true);
           }
+          if (type === 'meal_one_time' && Number.isFinite(bal) && bal > 0.009) {
+            setUseWallet(true);
+          }
         }
       } catch (e) {
         console.log('No wallet found');
@@ -1687,27 +1690,10 @@ export function UniversalPaymentPage({
 
     try {
       if (type === 'meal_one_time' && mealOneTimeDraft) {
-        await loadRazorpayScript();
         const d = mealOneTimeDraft;
         const cid = d.customerId || customerId;
-        let amountInRupeesForGateway = finalAmount;
-        if (!(amountInRupeesForGateway > 0.009)) {
-          toast.error('Nothing to pay');
-          setProcessing(false);
-          return;
-        }
-        const rz = await apiClient.post<any>('/meal/orders/create-razorpay-order', {
-          amountInRupees: amountInRupeesForGateway,
-          notes: {
-            customerId: cid,
-            mealPlanId: d.mealPlanId,
-            vendorId: d.vendorId,
-            kind: 'meal_one_time',
-          },
-        });
-        if (!rz?.razorpayOrderId) {
-          throw new Error(rz?.error || 'Failed to create payment order');
-        }
+        const idempotent = `mealow-${d.mealPlanId}-${Date.now().toString(36)}`;
+
         const createRes = await apiClient.post<any>('/meal/orders/create', {
           customerId: cid,
           customerPhone: cid ? undefined : d.customerPhone || customerPhone,
@@ -1720,55 +1706,100 @@ export function UniversalPaymentPage({
           scheduledDeliveryDate: d.scheduledDeliveryDate,
           scheduledDeliverySlot: d.scheduledDeliverySlot,
           logisticsType: d.logisticsType || 'warmpawz',
-          razorpayOrderId: rz.razorpayOrderId,
         });
         const order = createRes?.order || createRes;
         const orderId = order?.id as string | undefined;
         if (!orderId) throw new Error('Order created but ID missing');
-        const keyId = rz.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY;
-        if (!keyId) {
-          toast.error('Payment gateway not configured');
-          setProcessing(false);
+
+        let amountInRupeesForGateway = finalAmount;
+        if (useWallet && walletAmount > 0.009 && cid) {
+          const wd = await apiClient.post<any>(`/meal/orders/${orderId}/wallet-debit`, {
+            customerId: cid,
+            amountInRupees: Math.round(walletAmount * 100) / 100,
+            idempotencyKey: idempotent,
+          });
+          if (!wd?.success) {
+            throw new Error(wd?.error || 'Wallet debit failed');
+          }
+          const rem = Number(wd.remainderInRupees);
+          if (Number.isFinite(rem)) {
+            amountInRupeesForGateway = Math.max(0, Math.round(rem * 100) / 100);
+          }
+        }
+
+        if (amountInRupeesForGateway > 0.009) {
+          await loadRazorpayScript();
+          const rz = await apiClient.post<any>('/meal/orders/create-razorpay-order', {
+            amountInRupees: amountInRupeesForGateway,
+            notes: {
+              customerId: cid,
+              mealPlanId: d.mealPlanId,
+              vendorId: d.vendorId,
+              kind: 'meal_one_time',
+              mealOrderId: orderId,
+            },
+          });
+          if (!rz?.razorpayOrderId) {
+            throw new Error(rz?.error || 'Failed to create payment order');
+          }
+          const attach = await apiClient.post<any>(`/meal/orders/${orderId}/checkout-order`, {
+            customerId: cid,
+            razorpayOrderId: rz.razorpayOrderId,
+          });
+          if (!attach?.success) {
+            throw new Error(attach?.error || 'Could not link checkout order');
+          }
+          const keyId = rz.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY;
+          if (!keyId) {
+            toast.error('Payment gateway not configured');
+            setProcessing(false);
+            return;
+          }
+          const checkoutEmailArg =
+            (customerEmail && customerEmail.trim()) || RAZORPAY_PREFILL_EMAIL_FALLBACK;
+          const options = buildSanitizedStandardRazorpayCheckoutOptions({
+            key: keyId,
+            amountPaise: Math.max(1, Math.round(Number(rz.amount))),
+            currency: rz.currency || 'INR',
+            name: 'Warmpawz',
+            description: `Meal plan: ${serviceName || 'Order'}`,
+            order_id: rz.razorpayOrderId,
+            customerPhone: d.customerPhone || customerPhone,
+            customerEmail: checkoutEmailArg,
+            includeInstrumentBlocks: true,
+            handler: async (response: any) => {
+              try {
+                await apiClient.post(`/meal/orders/${orderId}/confirm-payment`, {
+                  customerId: cid,
+                  razorpayPaymentId: response.razorpay_payment_id,
+                  razorpaySignature: response.razorpay_signature,
+                });
+                toast.success('Order confirmed!');
+                onSuccess(orderId);
+              } catch (err: any) {
+                toast.error(err?.message || 'Payment confirmation failed');
+              } finally {
+                setProcessing(false);
+              }
+            },
+            theme: { color: '#FF8C42' },
+            modal: {
+              ondismiss: () => setProcessing(false),
+            },
+          });
+          const razorpay = new (window as any).Razorpay(options);
+          razorpay.open();
           return;
         }
-        const checkoutEmailArg =
-          (customerEmail && customerEmail.trim()) || RAZORPAY_PREFILL_EMAIL_FALLBACK;
-        const options = buildSanitizedStandardRazorpayCheckoutOptions({
-          key: keyId,
-          amountPaise: Math.max(1, Math.round(Number(rz.amount))),
-          currency: rz.currency || 'INR',
-          name: 'Warmpawz',
-          description: `Meal plan: ${serviceName || 'Order'}`,
-          order_id: rz.razorpayOrderId,
-          customerPhone: d.customerPhone || customerPhone,
-          customerEmail: checkoutEmailArg,
-          includeInstrumentBlocks: true,
-          handler: async (response: any) => {
-            try {
-              await apiClient.post(`/meal/orders/${orderId}/confirm-payment`, {
-                razorpayPaymentId: response.razorpay_payment_id,
-                razorpaySignature: response.razorpay_signature,
-              });
-              toast.success('Order confirmed!');
-              onSuccess(orderId);
-            } catch (err: any) {
-              toast.error(err?.message || 'Payment confirmation failed');
-            } finally {
-              setProcessing(false);
-            }
-          },
-          theme: { color: '#FF8C42' },
-          modal: {
-            ondismiss: () => setProcessing(false),
-          },
-        });
-        const razorpay = new (window as any).Razorpay(options);
-        razorpay.open();
+
+        await apiClient.post(`/meal/orders/${orderId}/confirm-payment`, { customerId: cid });
+        toast.success('Order paid from wallet!');
+        onSuccess(orderId);
+        setProcessing(false);
         return;
       }
 
       if (type === 'meal_subscription' && mealSubscriptionId && customerId) {
-        await loadRazorpayScript();
         const idempotent = `mealw-${mealSubscriptionId}-${Date.now().toString(36)}`;
         let amountInRupeesForGateway = finalAmount;
         if (useWallet && walletAmount > 0.009) {
@@ -1786,6 +1817,7 @@ export function UniversalPaymentPage({
           }
         }
         if (amountInRupeesForGateway > 0.009) {
+          await loadRazorpayScript();
           const rz = await apiClient.post<any>('/meal/orders/create-razorpay-order', {
             amountInRupees: amountInRupeesForGateway,
             notes: {
@@ -1873,6 +1905,8 @@ export function UniversalPaymentPage({
         // Queue-accepted flow: booking already exists with pending_payment status
         // Use the existing bookingId - skip booking creation, go straight to payment
         console.log('[PAYMENT] Queue-accepted flow: using existing bookingId:', currentBookingId);
+      } else if (type === 'booking' && flowType === 'payment-resume' && currentBookingId) {
+        console.log('[PAYMENT] Payment resume: using existing bookingId:', currentBookingId);
       } else if (type === 'booking' && !currentBookingId) {
         // Validate required fields
         if (!customerId) {
@@ -3028,75 +3062,7 @@ export function UniversalPaymentPage({
         const bid = bookingIdForSlotReleaseOnDismiss;
         if (!bid || razorpayGatewaySuccessHandled || razorpayPaymentFailed) return;
 
-        const cid = typeof customerId === 'string' && customerId.trim() ? customerId.trim() : '';
-        const phoneDigits = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
-        const qs = new URLSearchParams();
-        if (cid) qs.set('customerId', cid);
-        if (phoneDigits.length >= 10) qs.set('phone', phoneDigits);
-        const qstr = qs.toString() ? `?${qs.toString()}` : '';
-
-        const pickBooking = (detail: any) =>
-          detail?.data?.booking ?? detail?.booking ?? null;
-
-        let st: string | undefined;
-        let paymentStRaw: string | undefined;
-        try {
-          const detail = (await apiClient.get(`/bookings/${bid}${qstr}`)) as any;
-          const b = pickBooking(detail);
-          st =
-            b?.status ??
-            detail?.data?.status ??
-            detail?.status;
-          paymentStRaw =
-            b?.payment_status ??
-            b?.paymentStatus ??
-            detail?.data?.booking?.payment_status;
-        } catch {
-          try {
-            const detail2 = (await apiClient.get(`/customer/bookings/${bid}${qstr}`)) as any;
-            const b2 = pickBooking(detail2);
-            st =
-              b2?.status ??
-              detail2?.data?.status ??
-              detail2?.status;
-            paymentStRaw =
-              b2?.payment_status ??
-              b2?.paymentStatus ??
-              detail2?.data?.booking?.payment_status;
-          } catch {
-            /* GET optional â€” still attempt cancel when status unknown */
-          }
-        }
-
-        const pst = String(paymentStRaw ?? '').toLowerCase();
-        const paidLike = pst === 'paid' || pst === 'completed';
-
-        // Backend often creates pre-payment rows as status=confirmed + payment_status=pending (slot held).
-        // Old logic only cancelled pending/pending_payment â€” confirmed+unpaid was skipped, so slots never released.
-        const terminalNoCancel = st && ['cancelled', 'completed', 'no_show', 'in_progress'].includes(st);
-        const paidConfirmed = st === 'confirmed' && paidLike;
-        const skipCancel = terminalNoCancel || paidConfirmed;
-
-        if (!skipCancel) {
-          try {
-            await apiClient.post(`/bookings/${bid}/cancel`, {
-              reason: 'Payment abandoned',
-              cancellationReason: 'Payment abandoned',
-              ...(cid ? { customerId: cid } : {}),
-              ...(phoneDigits.length >= 10 ? { phone: phoneDigits } : {}),
-            });
-            toast.info('Payment cancelled. Your time slot has been released.');
-          } catch (e: any) {
-            console.warn('[PAYMENT] Release slot (cancel booking) failed:', e);
-            const msg =
-              e?.response?.error?.message ??
-              e?.responseData?.error?.message ??
-              e?.message ??
-              'Could not release the slot. Try refreshing the page or pick another time.';
-            toast.error(typeof msg === 'string' ? msg : 'Could not release the slot. Please try again.');
-          }
-        }
-
+        toast.info('Payment not completed. Complete payment from My Bookings within 5 minutes to keep your slot.');
         try {
           onPaymentAbandoned?.();
         } catch (cbErr) {

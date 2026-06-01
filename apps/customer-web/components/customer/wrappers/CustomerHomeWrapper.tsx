@@ -3787,6 +3787,10 @@ export function CustomerHomeWrapper({
               setVideoCallData({ bookingId: payload.bookingId, meetingId: payload.meetingId });
               setPreviousScreen('my-bookings');
               setCurrentScreen('video-call');
+            } else if (screen === 'payment' && data) {
+              setPreviousScreen('my-bookings');
+              setPaymentData({ ...(data as Record<string, unknown>), returnScreen: 'my-bookings' });
+              setCurrentScreen('payment');
             } else if (screen === 'gps-tracking' || screen === 'tracking') {
               setTrackingBookingId(data?.bookingId ?? null);
               setPreviousScreen('my-bookings');

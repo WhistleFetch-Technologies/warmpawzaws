@@ -30,6 +30,12 @@ import { BookingDetailModal } from '../BookingDetailModal';
 import { RateServiceModal } from '../RateServiceModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { UtensilsCrossed } from 'lucide-react';
+import {
+  formatPaymentHoldCountdown,
+  isBookingAwaitingPayment,
+  isPaymentHoldActive,
+  usePaymentHoldCountdown,
+} from '@/lib/payment-hold-ui';
 /** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
 export const PHARMACY_ORDERS_ENABLED = false;
 
@@ -74,7 +80,7 @@ interface Booking {
   bookingTime: string;
   duration: number;
   price: number;
-  status: 'pending' | 'confirmed' | 'in_progress' | 'arrived' | 'completed' | 'cancelled';
+  status: 'pending' | 'pending_payment' | 'confirmed' | 'in_progress' | 'arrived' | 'completed' | 'cancelled';
   completionOTP?: string;
   isPackage: boolean;
   packagePurchaseId?: string;
@@ -98,6 +104,7 @@ interface Booking {
   otpCode?: string;
   otpVerified?: boolean;
   paymentStatus?: string;
+  paymentHoldExpiresAt?: string | null;
   paymentSources?: PaymentSource[];
   /** When the booking was marked completed (for tele: aligns with video call end when backend sends it). */
   completedAt?: string;
@@ -127,8 +134,44 @@ interface MyBookingsProps {
   onReorderMedicine?: (medications: any[]) => void;
   onNavigate?: (
     screen: string,
-    data?: { bookingId?: string; packagePurchaseId?: string; meetingId?: string }
+    data?: Record<string, unknown>
   ) => void;
+}
+
+function PendingPaymentHoldBanner({
+  expiresAt,
+  onPayNow,
+}: {
+  expiresAt: string | null | undefined;
+  onPayNow: (e: React.MouseEvent) => void;
+}) {
+  const secondsRemaining = usePaymentHoldCountdown(expiresAt);
+  const active = secondsRemaining > 0;
+
+  return (
+    <div
+      className={`mt-3 rounded-lg border p-3 ${active ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {active ? (
+        <>
+          <p className="text-sm font-medium text-amber-900">
+            Complete payment in {formatPaymentHoldCountdown(secondsRemaining)}
+          </p>
+          <p className="text-xs text-amber-800 mt-0.5">Your slot is held until the timer ends.</p>
+          <button
+            type="button"
+            onClick={onPayNow}
+            className="mt-2 w-full rounded-lg bg-[#FF8C42] py-2 text-sm font-semibold text-white hover:bg-orange-600"
+          >
+            Pay now
+          </button>
+        </>
+      ) : (
+        <p className="text-sm text-gray-600">Payment window expired. This booking was cancelled.</p>
+      )}
+    </div>
+  );
 }
 
 export function MyBookings({
@@ -420,6 +463,8 @@ export function MyBookings({
           otpCode: b.otp_code || b.otpCode,
           otpVerified: b.otp_verified || b.otpVerified,
           paymentStatus: b.payment_status || b.paymentStatus,
+          paymentHoldExpiresAt:
+            b.payment_hold_expires_at || b.paymentHoldExpiresAt || null,
           paymentSources: derivePaymentSourcesFromBooking(b),
           completedAt:
             b.completed_at ||
@@ -560,18 +605,56 @@ export function MyBookings({
     setShowRescheduleModal(bookingId);
   };
 
+  const handleResumePayment = async (booking: Booking, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onNavigate) {
+      toast.error('Unable to open payment from here. Try booking again.');
+      return;
+    }
+    try {
+      const res = (await apiClient.get(
+        `/customer/bookings/${booking.bookingId}/payment-resume?phone=${encodeURIComponent(effectivePhone)}`
+      )) as { success?: boolean; resume?: Record<string, unknown>; error?: string };
+      if (!res?.success || !res.resume) {
+        toast.error(res?.error || 'Payment window expired');
+        loadBookings();
+        return;
+      }
+      const r = res.resume;
+      onNavigate('payment', {
+        bookingId: r.bookingId,
+        vendorId: r.vendorId,
+        vendorName: r.vendorName,
+        serviceId: r.serviceId,
+        serviceName: r.serviceName,
+        serviceType: r.serviceStyle || r.serviceType,
+        serviceStyle: r.serviceStyle || r.serviceType,
+        bookingDate: r.bookingDate,
+        bookingTime: r.bookingTime,
+        petId: r.petId,
+        totalAmount: r.amount,
+        price: r.amount,
+        flowType: 'payment-resume',
+        returnScreen: 'my-bookings',
+      });
+    } catch (err: unknown) {
+      console.error('[MyBookings] payment resume failed:', err);
+      toast.error('Could not resume payment. Please try again.');
+    }
+  };
+
   // ✅ Check if booking can be cancelled/rescheduled
   const canCancelOrReschedule = (booking: Booking): boolean => {
-    // Can only cancel/reschedule pending or confirmed bookings
-    return ['pending', 'confirmed'].includes(booking.status);
+    return ['pending', 'pending_payment', 'confirmed'].includes(booking.status);
   };
 
   // ✅ FIX: Ensure pending, confirmed, in_progress, arrived, scheduled all show in "Upcoming"
   const filteredBookings = bookings.filter(booking => {
     if (activeFilter === 'all') return true;
     if (activeFilter === 'upcoming') {
-      // Include all active booking statuses
-      return ['pending', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(booking.status);
+      return ['pending', 'pending_payment', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(
+        booking.status
+      );
     }
     if (activeFilter === 'completed') {
       return booking.status === 'completed' || booking.status === 'cancelled';
@@ -583,6 +666,8 @@ export function MyBookings({
     switch (status) {
       case 'pending':
         return 'bg-yellow-100 text-yellow-800';
+      case 'pending_payment':
+        return 'bg-amber-100 text-amber-900';
       case 'confirmed':
         return 'bg-blue-100 text-blue-800';
       case 'in_progress':
@@ -597,6 +682,7 @@ export function MyBookings({
   };
 
   const getStatusText = (status: string) => {
+    if (status === 'pending_payment') return 'Pending payment';
     return status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
   };
 
@@ -616,7 +702,7 @@ export function MyBookings({
   // ✅ FIX: Include all active statuses in "Upcoming" count
   const dashboardStats = [
     { value: String(bookings.length), label: 'Total' },
-    { value: String(bookings.filter(b => ['pending', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(b.status)).length), label: 'Upcoming' },
+    { value: String(bookings.filter(b => ['pending', 'pending_payment', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(b.status)).length), label: 'Upcoming' },
     { value: String(bookings.filter(b => b.status === 'completed' || b.status === 'cancelled').length), label: 'Completed' }
   ];
 
@@ -828,6 +914,15 @@ export function MyBookings({
                     <span>{getServiceStyleDisplayLabel(booking.serviceStyle, booking.serviceType, booking.serviceName)}</span>
                   </div>
                 </div>
+
+                {isBookingAwaitingPayment(booking) &&
+                isPaymentHoldActive(booking) &&
+                booking.paymentStatus !== 'paid' ? (
+                  <PendingPaymentHoldBanner
+                    expiresAt={booking.paymentHoldExpiresAt}
+                    onPayNow={(e) => handleResumePayment(booking, e)}
+                  />
+                ) : null}
 
                 {/* ✅ ENHANCED: Quick Action Buttons (Directions for at_center, Tracker for at_home, Call, Review) */}
                 {/* ✅ Directions button for at_center only - NEVER for at_home, tele, or video */}

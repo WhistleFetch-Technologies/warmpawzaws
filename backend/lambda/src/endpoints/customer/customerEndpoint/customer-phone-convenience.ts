@@ -24,6 +24,7 @@
  */
 
 import { Hono } from 'hono';
+import { randomUUID } from 'crypto';
 import { select, query, insert } from '../../../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
@@ -42,6 +43,7 @@ import {
   SQL_PACKAGE_PURCHASE_JOIN,
   SQL_PACKAGE_PURCHASE_SELECT,
 } from '../../../utils/customer-booking-package-fields';
+import { expirePaymentHolds } from '../../../utils/payment-hold';
 import {
   seedFinitePackagesMissingSessionsForScope,
   type SqlClient,
@@ -436,6 +438,10 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
       if (!customerId) {
         return c.json({ error: 'Customer not found' }, 404);
       }
+
+      await expirePaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
+        console.warn('[customer/bookings] payment hold sweep failed:', e?.message || e)
+      );
 
       // Build query (join package_purchases for same packageDetails / isPackage as customer/:id/bookings)
       // Children of a package purchase (`is_package_session = true`) are surfaced in
