@@ -1,18 +1,19 @@
 "use client";
 
 import { useState, useEffect, useMemo, type MouseEvent } from 'react';
-import { Video, Building2, Home as HomeIcon, Stethoscope, Star, Sparkles, ChevronRight, FlaskConical, Pill, TrendingUp, AlertCircle, Activity, RefreshCw } from 'lucide-react';
+import Image from 'next/image';
+import { Stethoscope, Star, ChevronRight, FlaskConical, TrendingUp, AlertCircle, Home as HomeIcon, Video, PawPrint, RefreshCw, Heart, Pill, Syringe, Dog, Cat, Activity, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { ProblemGridSection, VET_PROBLEMS } from './ProblemGridSection';
+import { VET_PROBLEMS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
-import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { VetProblemGrid } from './vet/VetProblemGrid';
+import { VetServiceCardBackground } from './vet/VetServiceCardBackground';
+import { VET_HEADER_BANNER, VET_SERVICE_CARDS } from './vet/constants/vet-hub-assets';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
-import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { StandardizedFooter } from './shared/StandardizedFooter';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
@@ -44,6 +45,49 @@ interface VetServiceRouterProps {
  * Vet services require a pet to be selected before booking
  */
 const HUB_SLUG: BoardingServiceSlug = 'all';
+
+const VET_HEADER_ICON =
+  'fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none [&>line]:fill-none';
+
+function VetHeaderBackground() {
+  return (
+    <>
+      {/* Far left */}
+      <Syringe className={`absolute -left-0.5 top-2 h-7 w-7 rotate-[32deg] ${VET_HEADER_ICON} sm:h-8 sm:w-8`} strokeWidth={1} />
+      <PawPrint className={`absolute left-0 bottom-5 h-8 w-8 -rotate-[18deg] ${VET_HEADER_ICON}`} strokeWidth={1} />
+      <Activity className={`absolute left-1 top-[3.5rem] h-6 w-6 rotate-12 ${VET_HEADER_ICON}`} strokeWidth={1} />
+
+      {/* Left band */}
+      <Heart className={`absolute left-[6%] top-11 h-9 w-9 rotate-6 ${VET_HEADER_ICON} sm:left-[8%] sm:h-10 sm:w-10`} strokeWidth={1} />
+      <Video className={`absolute left-[14%] top-1 h-7 w-7 rotate-[22deg] ${VET_HEADER_ICON}`} strokeWidth={1} />
+      <Pill className={`absolute left-[10%] bottom-2 h-8 w-8 -rotate-[24deg] ${VET_HEADER_ICON}`} strokeWidth={1} />
+
+      {/* Center */}
+      <Stethoscope className={`absolute left-[32%] top-0 h-14 w-14 -rotate-12 ${VET_HEADER_ICON} sm:left-[34%] sm:h-16 sm:w-16`} strokeWidth={1} />
+      <Dog className={`absolute left-[26%] top-14 h-10 w-10 -rotate-6 ${VET_HEADER_ICON} sm:h-11 sm:w-11`} strokeWidth={1} />
+      <Cat className={`absolute left-[44%] top-7 h-8 w-8 rotate-12 ${VET_HEADER_ICON} sm:h-9 sm:w-9`} strokeWidth={1} />
+      <FlaskConical className={`absolute left-[40%] bottom-0 h-11 w-11 rotate-[15deg] ${VET_HEADER_ICON} sm:h-12 sm:w-12`} strokeWidth={1} />
+      <PawPrint className={`absolute left-[36%] bottom-6 h-7 w-7 rotate-[-30deg] ${VET_HEADER_ICON}`} strokeWidth={1} />
+
+      {/* Center-right */}
+      <Building2 className={`absolute right-[36%] top-3 h-9 w-9 -rotate-[8deg] ${VET_HEADER_ICON} sm:h-10 sm:w-10`} strokeWidth={1} />
+      <HomeIcon className={`absolute right-[40%] bottom-5 h-8 w-8 rotate-6 ${VET_HEADER_ICON}`} strokeWidth={1} />
+      <Heart className={`absolute right-[32%] top-12 h-7 w-7 rotate-[14deg] ${VET_HEADER_ICON}`} strokeWidth={1} />
+
+      {/* Right band — wraps around the pet banner */}
+      <Stethoscope className={`absolute right-[22%] bottom-1 h-10 w-10 rotate-[20deg] ${VET_HEADER_ICON} sm:h-11 sm:w-11`} strokeWidth={1} />
+      <Syringe className={`absolute right-[14%] top-2 h-8 w-8 -rotate-[28deg] ${VET_HEADER_ICON}`} strokeWidth={1} />
+      <Pill className={`absolute right-[10%] top-11 h-7 w-7 rotate-[16deg] ${VET_HEADER_ICON}`} strokeWidth={1} />
+      <Dog className={`absolute right-[6%] bottom-8 h-8 w-8 -rotate-6 ${VET_HEADER_ICON}`} strokeWidth={1} />
+      <Cat className={`absolute right-[18%] bottom-3 h-7 w-7 rotate-10 ${VET_HEADER_ICON}`} strokeWidth={1} />
+
+      {/* Far right */}
+      <FlaskConical className={`absolute -right-0.5 top-4 h-8 w-8 rotate-[12deg] ${VET_HEADER_ICON} sm:h-9 sm:w-9`} strokeWidth={1} />
+      <Activity className={`absolute right-0 bottom-3 h-7 w-7 -rotate-[14deg] ${VET_HEADER_ICON}`} strokeWidth={1} />
+      <PawPrint className={`absolute right-1 top-[3.25rem] h-6 w-6 rotate-[24deg] ${VET_HEADER_ICON}`} strokeWidth={1} />
+    </>
+  );
+}
 
 export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetServiceRouterProps) {
   const vetProblems = useProblemGridByRole('vet');
@@ -194,79 +238,30 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
   };
 
   const serviceTypes = useMemo(() => {
-    const allServiceTypes = [
-      {
-        id: 'tele',
-        name: 'Tele Consultation',
-        description: 'Video call with vets',
-        icon: Video,
-        color: '#FF8C42',
-        bgColor: 'bg-orange-50',
-        badge: '24/7 Available'
-      },
-      {
-        id: 'clinic',
-        name: 'Clinic Visit',
-        description: 'Book appointment',
-        icon: Building2,
-        color: '#7FD47F',
-        bgColor: 'bg-green-50',
-        badge: vetClinicBadgeText,
-      },
-      {
-        id: 'home',
-        name: 'Home Visit',
-        description: 'Vet comes to you',
-        icon: HomeIcon,
-        color: '#FF8C42',
-        bgColor: 'bg-orange-50',
-        badge: 'Track Live'
-      },
-      {
-        id: 'lab',
-        name: 'Lab Tests',
-        description: 'Sample collection',
-        icon: FlaskConical,
-        color: '#9F7FFF',
-        bgColor: 'bg-purple-50',
-        badge: 'Digital Reports'
-      },
-      {
-        id: 'medicine',
-        name: 'Medicine',
-        description: 'Order medicines',
-        icon: Pill,
-        color: '#FF6B9F',
-        bgColor: 'bg-pink-50',
-        badge: 'Fast Delivery',
-        comingSoon: true,
-      },
-      {
-        id: 'physiotherapy',
-        name: 'Physiotherapy',
-        description: 'Rehabilitation & follow-up',
-        icon: Activity,
-        color: '#0D9488',
-        bgColor: 'bg-teal-50',
-        badge: 'Follow-up care',
-        comingSoon: true,
-      }
-    ];
+    const allServiceTypes = VET_SERVICE_CARDS.map((service) =>
+      service.id === 'clinic' ? { ...service, badge: vetClinicBadgeText } : service,
+    );
 
     if (!allowedServiceStyles || allowedServiceStyles.length === 0) {
       return allServiceTypes;
     }
 
-    return allServiceTypes.filter(service => {
+    return allServiceTypes.filter((service) => {
       const styleMap = serviceTypeStyleMap[service.id] || [];
-      return styleMap.some(style => 
-        allowedServiceStyles.some(allowed => 
-          allowed.toLowerCase().includes(style.toLowerCase()) ||
-          style.toLowerCase().includes(allowed.toLowerCase())
-        )
+      return styleMap.some((style) =>
+        allowedServiceStyles.some(
+          (allowed) =>
+            allowed.toLowerCase().includes(style.toLowerCase()) ||
+            style.toLowerCase().includes(allowed.toLowerCase()),
+        ),
       );
     });
   }, [allowedServiceStyles, vetClinicBadgeText]);
+
+  const problemGridItems = useMemo(
+    () => (vetProblems.length > 0 ? vetProblems : VET_PROBLEMS),
+    [vetProblems],
+  );
 
   // ✅ FIX: Validate pet context before allowing navigation
   const handleNavigate = (screen: string, navData?: any) => {
@@ -461,16 +456,120 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
         showBackButton={true}
         headerColor="bg-[#FF8C42]"
         sheetToneClass="bg-gray-50"
+        headerBackground={<VetHeaderBackground />}
+        headerTrailingImage={VET_HEADER_BANNER}
+        headerTrailingImageAlt="Dog and cat"
       />
 
       {/* Main Content — negative margin pulls body under the sheet curve */}
       <div className="max-w-customer mx-auto -mt-4 px-4 pt-6 pb-24" style={{ position: 'relative', zIndex: 1 }}>
-        {/* Phase 0.1: Promotion Banner Component */}
-        <div className="mb-6 space-y-4">
-          <FeaturedVendorSpotlights service="vet" onNavigate={onNavigate} />
+        {/* Choose Service */}
+        <div className="mb-6">
+          <div className="mb-3 flex items-center gap-2">
+            <div className="rounded-lg bg-orange-50 p-1.5">
+              <PawPrint className="h-4 w-4 text-[#FF8C42]" />
+            </div>
+            <h2 className="text-lg font-bold text-slate-900">Choose Service</h2>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {serviceTypes.map((service) => {
+              const isComingSoon = !!service.comingSoon;
+
+              const handleServiceClick = () => {
+                try {
+                  if (service.id === 'clinic') {
+                    handleNavigate('vet-clinic-list');
+                  } else if (service.id === 'tele') {
+                    handleNavigate('vet-tele-consultation');
+                  } else if (service.id === 'home') {
+                    handleNavigate('vet-home-visit');
+                  } else if (service.id === 'medicine') {
+                    handleNavigate('pharmacy_store');
+                  } else if (service.id === 'lab') {
+                    handleNavigate('lab-diagnostics');
+                  } else if (service.id === 'physiotherapy') {
+                    handleNavigate('vet-services-by-style', {
+                      serviceStyle: 'at_center',
+                      serviceTypeName: 'Physiotherapy',
+                      category: 'vet',
+                    });
+                  } else {
+                    handleNavigate('vet-booking', { serviceType: service.id });
+                  }
+                } catch (error) {
+                  console.error('❌ [VetServiceRouter] Service click error:', error);
+                  toast.error('Failed to navigate. Please try again.');
+                }
+              };
+
+              const cardBody = (
+                <>
+                  <VetServiceCardBackground serviceId={service.id} />
+                  {isComingSoon && (
+                    <span className="absolute right-2 top-2 z-[2] rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+                      Coming soon
+                    </span>
+                  )}
+                  <div className="relative z-[1] flex min-h-[108px] flex-col p-3 pr-[42%]">
+                    <div
+                      className={`mb-2 flex h-10 w-10 items-center justify-center rounded-xl ${service.iconBg}`}
+                    >
+                      <service.Icon className={`h-5 w-5 ${service.iconColor}`} />
+                    </div>
+                    <h3 className="text-sm font-bold text-slate-900">{service.name}</h3>
+                    <p className="mt-0.5 text-[11px] leading-snug text-slate-500">{service.description}</p>
+                    {service.badge ? (
+                      <span className="mt-auto pt-2 text-[10px] font-semibold text-slate-600">
+                        {service.badge}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="pointer-events-none absolute bottom-0 right-0 z-[2] h-[78%] w-[48%]">
+                    <Image
+                      src={service.image}
+                      alt=""
+                      fill
+                      className="object-contain object-bottom-right"
+                      sizes="(max-width: 640px) 45vw, 180px"
+                    />
+                  </div>
+                </>
+              );
+
+              if (isComingSoon) {
+                return (
+                  <div
+                    key={service.id}
+                    className="relative overflow-hidden rounded-2xl border border-gray-100 bg-white text-left opacity-80 shadow-sm saturate-75"
+                    aria-label={`${service.name} — coming soon`}
+                  >
+                    {cardBody}
+                  </div>
+                );
+              }
+
+              return (
+                <button
+                  key={service.id}
+                  type="button"
+                  aria-label={service.name}
+                  className="relative overflow-hidden rounded-2xl border border-gray-100 bg-white text-left shadow-sm transition-all hover:shadow-md active:scale-[0.98]"
+                  onClick={handleServiceClick}
+                >
+                  {cardBody}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Phase 1: Book again with previous vet */}
+        <VetProblemGrid
+          problems={problemGridItems}
+          onNavigate={(screen, navData) => handleNavigate(screen, navData)}
+        />
+
+        {/* Book again with previous vet */}
         {previousVet && (
           <div className="mb-6 space-y-3">
             <div className="flex items-center gap-2">
@@ -508,227 +607,6 @@ export function VetServiceRouter({ phone, onBack, onNavigate, data }: VetService
             </Card>
           </div>
         )}
-        
-        {/* Legacy Spotlight Banners - Fallback if no promotions */}
-        {false && (
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="w-5 h-5 text-[#FF8C42]" />
-            <h2 className="text-lg font-semibold">Spotlight Offers</h2>
-          </div>
-          
-          <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide -mx-6 px-6">
-            {/* First Consultation Offer - WHITE BACKGROUND */}
-            <Card className="min-w-[280px] flex-shrink-0 bg-white border border-gray-100 p-5 shadow-sm">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <Badge className="bg-blue-100 text-blue-600 border-none mb-2">Limited Time</Badge>
-                  <div className="text-3xl font-bold text-blue-600 mb-1">50% OFF</div>
-                  <div className="text-gray-700 text-sm">First Tele Consultation</div>
-                </div>
-                <div className="p-3 bg-blue-50 rounded-xl">
-                  <Video className="w-6 h-6 text-blue-600" />
-                </div>
-              </div>
-              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                <div className="text-sm">
-                  <span className="line-through text-gray-400">₹599</span>
-                  <span className="ml-2 font-bold text-lg text-gray-900">₹299</span>
-                </div>
-                <Button 
-                  size="sm" 
-                  className="bg-blue-600 text-white hover:bg-blue-700 h-8"
-                  onClick={() => handleNavigate('vet-tele-consultation')}
-                >
-                  Book Now
-                </Button>
-              </div>
-            </Card>
-
-            {/* Free Lab Tests Offer - WHITE BACKGROUND */}
-            <Card className="min-w-[280px] flex-shrink-0 bg-white border border-gray-100 p-5 shadow-sm">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <Badge className="bg-purple-100 text-purple-600 border-none mb-2">New</Badge>
-                  <div className="text-3xl font-bold text-purple-600 mb-1">FREE</div>
-                  <div className="text-gray-700 text-sm">Home Sample Collection</div>
-                </div>
-                <div className="p-3 bg-purple-50 rounded-xl">
-                  <FlaskConical className="w-6 h-6 text-purple-600" />
-                </div>
-              </div>
-              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                <div className="text-sm text-gray-600">On orders above ₹999</div>
-                <Button 
-                  size="sm" 
-                  className="bg-purple-600 text-white hover:bg-purple-700 h-8"
-                  onClick={() => handleNavigate('vet-lab-tests')}
-                >
-                  Book Test
-                </Button>
-              </div>
-            </Card>
-          </div>
-        </div>
-        )}
-
-        {/* Service Types */}
-        <div className="mb-6">
-          <div className="flex items-center mb-3">
-            <h2 className="text-lg font-semibold">Choose Service</h2>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-3" style={{ position: 'relative', zIndex: 1 }}>
-            {serviceTypes.map((service) => {
-              const isComingSoon = !!(service as { comingSoon?: boolean }).comingSoon;
-
-              const handleServiceClick = () => {
-                console.log('🔵 [VetServiceRouter] Service clicked:', service.id);
-                
-                try {
-                  // Map service IDs to service styles
-                  const styleMap: Record<string, string> = {
-                    'tele': 'tele',
-                    'home': 'at_home', 
-                    'clinic': 'at_center',
-                    'lab': 'lab',
-                    'medicine': 'medicine'
-                  };
-                  const serviceStyle = styleMap[service.id] || service.id;
-                  
-                  // Navigate to dedicated flow for each service type
-                  if (service.id === 'clinic') {
-                    // Clinic: list of clinics → clinic profile → services → booking
-                    console.log('🔵 [VetServiceRouter] Navigating to vet-clinic-list');
-                    handleNavigate('vet-clinic-list');
-                  } else if (service.id === 'tele') {
-                    console.log('🔵 [VetServiceRouter] Navigating to vet-tele-consultation');
-                    handleNavigate('vet-tele-consultation');
-                  } else if (service.id === 'home') {
-                    // ✅ NEW: Home Visit with provider list → profile → booking
-                    console.log('🔵 [VetServiceRouter] Navigating to vet-home-visit');
-                    handleNavigate('vet-home-visit');
-                  } else if (service.id === 'medicine') {
-                    // ✅ FIX: Medicine should go to pharmacy store, not booking flow
-                    console.log('🔵 [VetServiceRouter] Navigating to pharmacy_store');
-                    handleNavigate('pharmacy_store');
-                  } else if (service.id === 'lab') {
-                    // Lab diagnostics flow
-                    console.log('🔵 [VetServiceRouter] Navigating to lab-diagnostics');
-                    handleNavigate('lab-diagnostics');
-                  } else if (service.id === 'physiotherapy') {
-                    // Phase 3: Physiotherapy & rehabilitation – list vets offering follow-up care
-                    handleNavigate('vet-services-by-style', {
-                      serviceStyle: 'at_center',
-                      serviceTypeName: 'Physiotherapy',
-                      category: 'vet',
-                    });
-                  } else {
-                    handleNavigate('vet-booking', { serviceType: service.id });
-                  }
-                } catch (error) {
-                  console.error('❌ [VetServiceRouter] Service click error:', error);
-                  toast.error('Failed to navigate. Please try again.');
-                }
-              };
-
-              const cardInner = (
-                <>
-                  {isComingSoon && (
-                    <span className="absolute top-2 right-2 z-[1] text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
-                      Coming soon
-                    </span>
-                  )}
-                  <div className="flex flex-col h-full">
-                    <div
-                      className={`w-12 h-12 ${service.bgColor} rounded-xl flex items-center justify-center mb-3`}
-                    >
-                      <service.icon className="w-6 h-6" style={{ color: service.color }} />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold mb-1">{service.name}</h3>
-                      {service.description?.trim() ? (
-                        <div onClick={(e) => !isComingSoon && e.stopPropagation()} className="mb-2">
-                          <ServiceDescriptionInline
-                            description={service.description}
-                            title={service.name}
-                            className="m-0 text-xs leading-snug text-gray-500"
-                            linkClassName={
-                              isComingSoon
-                                ? 'inline align-baseline text-[10px] font-semibold text-gray-400 cursor-default'
-                                : 'inline cursor-pointer align-baseline text-[10px] font-semibold text-[#FF8C42] hover:underline'
-                            }
-                          />
-                        </div>
-                      ) : null}
-                    </div>
-                    {service.badge && (
-                      <Badge variant="secondary" className="text-xs w-fit">
-                        {service.badge}
-                      </Badge>
-                    )}
-                  </div>
-                </>
-              );
-
-              if (isComingSoon) {
-                return (
-                  <div
-                    key={service.id}
-                    className="p-4 border border-gray-100 bg-white shadow-sm rounded-xl relative text-left w-full transition-all cursor-default opacity-80 saturate-75 pointer-events-none select-none"
-                    aria-label={`${service.name} — coming soon`}
-                    style={{ zIndex: 10, position: 'relative' }}
-                  >
-                    {cardInner}
-                  </div>
-                );
-              }
-
-              return (
-              <button
-                key={service.id}
-                type="button"
-                aria-label={service.name}
-                className="p-4 cursor-pointer hover:shadow-md transition-all border border-gray-100 bg-white shadow-sm rounded-xl relative active:scale-95 text-left w-full"
-                onClick={(e) => {
-                  console.log('🔵 [VetServiceRouter] Card onClick triggered for:', service.id);
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleServiceClick();
-                }}
-                onKeyDown={(e: React.KeyboardEvent<HTMLButtonElement>) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    console.log('🔵 [VetServiceRouter] Keyboard navigation for:', service.id);
-                    handleServiceClick();
-                  }
-                }}
-                style={{ 
-                  pointerEvents: 'auto', 
-                  userSelect: 'none',
-                  zIndex: 10,
-                  position: 'relative'
-                }}
-              >
-                {cardInner}
-              </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Health Problems Grid - Dynamic from specialization_master, fallback to VET_PROBLEMS */}
-        <ProblemGridSection
-          roleId="veterinarian"
-          roleName="Veterinarian"
-          title="Consult by Problem"
-          icon={Stethoscope}
-          problems={vetProblems.length > 0 ? vetProblems : VET_PROBLEMS}
-          onNavigate={(screen, data) => {
-            console.log('🔵 [Vet] Problem grid navigation:', screen, data);
-            handleNavigate(screen, data);
-          }}
-        />
 
         {/* Featured Vets — same expandable pattern as vet-all-doctors */}
         <div className="mb-6">

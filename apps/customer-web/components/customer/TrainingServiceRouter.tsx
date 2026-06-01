@@ -1,17 +1,37 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, type MouseEvent } from 'react';
-import { GraduationCap, Building2, Home as HomeIcon, Star, ChevronRight, Heart, Trophy, Package, TrendingUp, CheckCircle, Clock, RefreshCw } from 'lucide-react';
+import Image from 'next/image';
+import {
+  GraduationCap,
+  Building2,
+  Home as HomeIcon,
+  Star,
+  ChevronRight,
+  Trophy,
+  Package,
+  TrendingUp,
+  CheckCircle,
+  Clock,
+  RefreshCw,
+  PawPrint,
+  ArrowRight,
+  Award,
+  BookOpen,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
-import { TRAINING_GOALS } from './ProblemGridSection';
 import { useProblemGridByRole } from './useProblemGridByRole';
 import { FeaturedVendorSpotlights } from './shared/FeaturedVendorSpotlights';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
+import { TrainingGoalGrid } from './training/TrainingGoalGrid';
+import {
+  TRAINING_HEADER_BANNER,
+  TRAINING_TYPE_CARDS,
+} from './training/constants/training-hub-assets';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
-import { ServiceDescriptionInline } from './shared/ServiceDescriptionInline';
 import { BoardingVendorExpandableCard } from './boarding/BoardingVendorExpandableCard';
 import { useHubVendorDiscovery } from '@/hooks/useHubVendorDiscovery';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
@@ -46,6 +66,26 @@ interface PetSkillProgress {
 }
 
 const HUB_SLUG: BoardingServiceSlug = 'all';
+
+const TRAINING_HEADER_ICON =
+  'fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none';
+
+function TrainingHeaderBackground() {
+  return (
+    <>
+      <GraduationCap className={`absolute -left-0.5 top-3 h-8 w-8 rotate-[18deg] ${TRAINING_HEADER_ICON} sm:h-9 sm:w-9`} strokeWidth={1} />
+      <Award className={`absolute left-[8%] top-12 h-7 w-7 -rotate-12 ${TRAINING_HEADER_ICON}`} strokeWidth={1} />
+      <BookOpen className={`absolute left-[18%] top-2 h-6 w-6 rotate-[24deg] ${TRAINING_HEADER_ICON}`} strokeWidth={1} />
+      <PawPrint className={`absolute left-[32%] bottom-4 h-9 w-9 rotate-6 ${TRAINING_HEADER_ICON} sm:h-10 sm:w-10`} strokeWidth={1} />
+      <GraduationCap className={`absolute left-[42%] top-1 h-12 w-12 -rotate-[8deg] ${TRAINING_HEADER_ICON} sm:h-14 sm:w-14`} strokeWidth={1} />
+      <Building2 className={`absolute right-[38%] top-8 h-8 w-8 rotate-12 ${TRAINING_HEADER_ICON}`} strokeWidth={1} />
+      <HomeIcon className={`absolute right-[28%] bottom-2 h-9 w-9 -rotate-6 ${TRAINING_HEADER_ICON}`} strokeWidth={1} />
+      <Award className={`absolute right-[14%] top-3 h-7 w-7 -rotate-[20deg] ${TRAINING_HEADER_ICON}`} strokeWidth={1} />
+      <BookOpen className={`absolute right-[6%] bottom-6 h-8 w-8 rotate-[14deg] ${TRAINING_HEADER_ICON}`} strokeWidth={1} />
+      <PawPrint className={`absolute -right-0.5 top-10 h-7 w-7 rotate-[32deg] ${TRAINING_HEADER_ICON}`} strokeWidth={1} />
+    </>
+  );
+}
 
 export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate }: TrainingServiceRouterProps) {
   const trainingGoals = useProblemGridByRole('trainer');
@@ -164,27 +204,16 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
   );
 
   const serviceTypes = useMemo(
-    () => [
-      {
-        id: 'training_center',
-        name: 'Training Centre',
-        description: 'Visit our facilities',
-        icon: Building2,
-        color: 'text-orange-600',
-        bg: 'bg-orange-50',
-        badge: trainingCenterBadgeText,
-      },
-    {
-      id: 'training_home',
-      name: 'At Home Training',
-      description: 'Trainer comes to you',
-      icon: HomeIcon,
-      color: 'text-slate-600',
-      bg: 'bg-slate-50',
-      badge: 'Personalized'
-    }
-  ],
-    [trainingCenterBadgeText]
+    () =>
+      TRAINING_TYPE_CARDS.map((card) =>
+        card.id === 'training_center'
+          ? {
+              ...card,
+              badge: trainingCenterBadgeText.toUpperCase(),
+            }
+          : { ...card, badge: card.badge ?? 'PERSONALIZED' },
+      ),
+    [trainingCenterBadgeText],
   );
 
   const dashboardStats = EMPTY_SERVICE_HEADER_STATS;
@@ -209,8 +238,14 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
         stats={dashboardStats}
         onBack={onBack}
         showBackButton={true}
-        headerColor="bg-[#FF8C42]"
+        headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
         sheetToneClass="bg-white"
+        headerBackground={<TrainingHeaderBackground />}
+        headerTrailingImage={TRAINING_HEADER_BANNER}
+        headerTrailingImageAlt="Dog and cat"
+        clipHeaderTrailingImage
+        headerTrailingImageClassName="pointer-events-none absolute bottom-0 right-0 top-[2.75rem] z-[5] flex w-[80%] max-w-[460px] items-end justify-end sm:top-12"
+        headerTrailingImageImgClassName="block h-full w-auto max-w-full origin-bottom-right scale-[1.5] object-contain object-right object-bottom drop-shadow-lg"
       />
 
       {/* Main Content */}
@@ -378,113 +413,60 @@ export function TrainingServiceRouter({ phone, onBack, onViewBooking, onNavigate
             <FeaturedVendorSpotlights service="training" onNavigate={onNavigate} />
           </div>
 
-          {/* Service Types */}
+          {/* Choose Training Type */}
           <div>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Choose Training Type</h2>
-            <div className="grid grid-cols-2 gap-3" style={{ position: 'relative', zIndex: 1 }}>
+            <div className="mb-3 flex items-center gap-2">
+              <div className="rounded-lg bg-orange-50 p-1.5">
+                <PawPrint className="h-4 w-4 text-[#FF8C42]" />
+              </div>
+              <h2 className="text-lg font-bold text-slate-900">Choose Training Type</h2>
+              <PawPrint className="h-3.5 w-3.5 text-[#FF8C42]" aria-hidden />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               {serviceTypes.map((service) => (
                 <button
                   key={service.id}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    console.log('🔵 [Training] Service style clicked:', service.id);
-                    onNavigate?.(service.id);
-                  }}
-                  className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all text-left group relative overflow-hidden cursor-pointer"
-                  style={{ 
-                    pointerEvents: 'auto', 
-                    zIndex: 1,
-                    position: 'relative'
-                  }}
+                  type="button"
+                  onClick={() => onNavigate?.(service.id)}
+                  className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white text-left shadow-sm transition-all hover:shadow-md"
                 >
-                  <div className={`w-10 h-10 rounded-xl ${service.bg} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
-                    <service.icon className={`w-5 h-5 ${service.color}`} />
-                  </div>
-                  <h3 className="font-semibold text-slate-900 text-sm mb-0.5">{service.name}</h3>
-                  <div onClick={(e) => e.stopPropagation()} className="relative z-20">
-                    <ServiceDescriptionInline
-                      description={service.description}
-                      title={service.name}
-                      className="m-0 text-xs leading-snug text-slate-500"
-                      linkClassName="inline cursor-pointer align-baseline text-[10px] font-semibold text-orange-600 hover:underline"
+                  <div className="relative h-28 w-full sm:h-32">
+                    <Image
+                      src={service.image}
+                      alt={service.name}
+                      fill
+                      className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-105"
+                      sizes="(max-width: 640px) 45vw, 200px"
                     />
-                  </div>
-                  {service.badge && (
-                    <span className="absolute top-3 right-3 px-2 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-bold rounded-full uppercase tracking-wide">
+                    <span
+                      className={`absolute right-2 top-2 rounded-full px-2 py-0.5 text-[8px] font-bold uppercase tracking-wide ${service.badgeClass}`}
+                    >
                       {service.badge}
                     </span>
-                  )}
+                    <div
+                      className={`absolute bottom-2 left-2 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white shadow-md ${service.iconBg}`}
+                    >
+                      <service.Icon className={`h-4 w-4 ${service.iconColor}`} />
+                    </div>
+                  </div>
+                  <div className="relative p-3 pb-10">
+                    <h3 className="text-sm font-bold text-slate-900">{service.name}</h3>
+                    <p className="mt-0.5 text-[11px] text-slate-500">{service.description}</p>
+                    <div
+                      className={`absolute bottom-3 right-3 flex h-8 w-8 items-center justify-center rounded-full text-white shadow-md transition-transform group-hover:scale-110 ${service.arrowClass}`}
+                    >
+                      <ArrowRight className="h-4 w-4" />
+                    </div>
+                  </div>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Training Goals Grid - Unified Style */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-slate-900">What's your goal?</h2>
-              <button 
-                onClick={() => onNavigate?.('problem_grid')}
-                className="text-sm text-orange-600 font-medium hover:text-orange-700"
-              >
-                View All
-              </button>
-            </div>
-
-            <div className="grid grid-cols-4 gap-3" style={{ position: 'relative', zIndex: 1 }}>
-              {(trainingGoals.length > 0 ? trainingGoals : TRAINING_GOALS).map((goal) => {
-                const isViewAll = goal.id === 'view_all';
-                const hasAdminTint = Boolean((goal as { iconBg?: string }).iconBg) && !isViewAll;
-                return (
-                  <button
-                    key={goal.id}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      console.log('🔵 [Training] Goal clicked:', goal.id);
-                      if (isViewAll) {
-                        onNavigate?.('problem_grid');
-                      } else {
-                        onNavigate?.('problem_selected', { problemId: goal.id });
-                      }
-                    }}
-                    className="group flex flex-col items-center gap-2 cursor-pointer"
-                    style={{ 
-                      pointerEvents: 'auto', 
-                      zIndex: 1,
-                      position: 'relative'
-                    }}
-                  >
-                    <div className={`
-                      w-full aspect-square rounded-2xl flex items-center justify-center text-2xl shadow-sm transition-all duration-200
-                      ${isViewAll 
-                        ? 'bg-orange-50 border border-orange-100 text-orange-600' 
-                        : 'bg-white border border-slate-100 text-slate-700 group-hover:border-orange-200 group-hover:shadow-md group-hover:-translate-y-0.5'
-                      }
-                    `}>
-                      {typeof goal.icon === 'string' ? (
-                        <span className="text-2xl">{goal.icon}</span>
-                      ) : hasAdminTint ? (
-                        <div
-                          className={`w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110 ${(goal as { iconBg?: string }).iconBg} group-hover:opacity-90`}
-                        >
-                          {goal.icon}
-                        </div>
-                      ) : (
-                        <div className="text-slate-600 group-hover:text-orange-600">
-                          {goal.icon}
-                        </div>
-                      )}
-                    </div>
-                    <span className={`text-[10px] font-medium text-center leading-tight line-clamp-2 ${isViewAll ? 'text-orange-600' : 'text-slate-600'}`}>
-                      {goal.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <TrainingGoalGrid
+            problems={trainingGoals}
+            onNavigate={(screen, navData) => onNavigate?.(screen, navData)}
+          />
 
           {/* Top Trainers — expandable cards aligned with training_center list */}
           <div>

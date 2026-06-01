@@ -48,14 +48,14 @@ function ServiceCategoryRowComponent({
   );
 
   return (
-    <div className={`mb-4 w-full overflow-hidden ${className}`}>
+    <div className={`mb-4 w-full min-w-0 ${className}`}>
       <SectionHeader
         title="What's your pet need today?"
         actionLabel="View all"
         onAction={() => onNavigate('/services/all')}
         className="mb-2.5 [&_h2]:text-[15px] [&_h2]:font-bold"
       />
-      <HorizontalScrollRow className="py-0.5" gapClassName="gap-2.5">
+      <HorizontalScrollRow className="pb-0.5 pt-2" gapClassName="gap-2.5">
         {services.map((service, index) => {
           const key = ((service.categoryId || service.screen || '') as string).toLowerCase();
           const displayLabel = displayLabelForService(service, serviceLabelOverride);
@@ -88,7 +88,7 @@ function ServiceCategoryRowComponent({
             <button
               type="button"
               key={service.screen || index}
-              className={`flex-shrink-0 active:scale-[0.98] active:opacity-90 ${
+              className={`group flex-shrink-0 rounded-2xl transition-[transform,opacity,filter] duration-300 ease-out hover:scale-[1.02] active:scale-[0.98] active:opacity-90 ${
                 isComingSoonTile ? 'cursor-default' : ''
               }`}
               aria-label={
@@ -106,7 +106,9 @@ function ServiceCategoryRowComponent({
                 label={displayLabel}
                 showSoonBadge={isComingSoonTile}
                 className={
-                  isComingSoonTile ? 'opacity-75 saturate-75' : 'transition-transform hover:scale-[1.02]'
+                  isComingSoonTile
+                    ? 'opacity-75 saturate-75'
+                    : 'shadow-[0_2px_10px_rgba(15,23,42,0.06)] transition-[box-shadow,transform] duration-300 ease-out group-hover:shadow-[0_10px_24px_rgba(15,23,42,0.12)]'
                 }
               />
             </button>

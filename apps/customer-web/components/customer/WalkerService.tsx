@@ -1,7 +1,28 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo, type MouseEvent } from 'react';
-import { Dog, Star, MapPin, Clock, Search, Navigation, Radio, Eye, Play, Package, Footprints, Plus, RefreshCw, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, type MouseEvent } from 'react';
+import Image from 'next/image';
+import {
+  Dog,
+  Star,
+  MapPin,
+  Search,
+  Navigation,
+  Radio,
+  Eye,
+  Play,
+  Package,
+  Footprints,
+  RefreshCw,
+  ChevronRight,
+  Shield,
+  Heart,
+  PawPrint,
+  Check,
+  Mountain,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
@@ -15,8 +36,6 @@ import { apiClient } from '@/lib/api-client';
 import { formatRatingNumberOrDash } from '@/lib/rating-display';
 import { pickWalkerVendorId } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
-import { WALKING_NEEDS } from './ProblemGridSection';
-import { useProblemGridByRole } from './useProblemGridByRole';
 import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import {
   fetchWalkerVendorCatalogMerged,
@@ -30,7 +49,100 @@ import {
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { resolveCustomerDiscoveryCoords } from '@/lib/customer-discovery-coords';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
-import { formatExactCentreCount, formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+
+const WALKING_IMG = '/images/home/Walking';
+
+const WALKING_HEADER_TRAILING = `${WALKING_IMG}/ChatGPT_Image_May_30__2026__01_19_16_PM-removebg-preview.png`;
+
+const WALKING_BANNER_ILLUSTRATION = `${WALKING_IMG}/${encodeURIComponent('ChatGPT Image May 30, 2026, 01_15_12 PM.png')}`;
+
+const WALKING_HEADER_PILLS = [
+  { icon: Shield, label: 'Verified Walkers' },
+  { icon: MapPin, label: 'GPS Tracked' },
+  { icon: Heart, label: 'Happy Pets' },
+] as const;
+
+const WALKING_BANNER_CHECKS = ['Safe Walks', 'Trusted Walkers', 'Real-time Updates'] as const;
+
+const WALKING_NEED_CARDS: {
+  id: string;
+  name: string;
+  subtitle: string;
+  image: string;
+  /** CSS object-position — tuned per photo aspect ratio */
+  imagePosition: string;
+  Icon: LucideIcon;
+  iconColor: string;
+  iconBg: string;
+}[] = [
+  {
+    id: 'daily_walk',
+    name: 'Daily Walking',
+    subtitle: 'Regular exercise',
+    image: `${WALKING_IMG}/daily-walk.jpg`,
+    imagePosition: '50% 50%',
+    Icon: Footprints,
+    iconColor: 'text-green-600',
+    iconBg: 'bg-green-100',
+  },
+  {
+    id: 'puppy_walk',
+    name: 'Puppy Walks',
+    subtitle: 'Extra care & fun',
+    image: `${WALKING_IMG}/puppy-walk.jpg`,
+    imagePosition: '50% 38%',
+    Icon: Dog,
+    iconColor: 'text-blue-600',
+    iconBg: 'bg-blue-100',
+  },
+  {
+    id: 'multiple_dogs',
+    name: 'Group Walks',
+    subtitle: 'Social & active',
+    image: `${WALKING_IMG}/group-walk.jpg`,
+    imagePosition: '50% 54%',
+    Icon: Users,
+    iconColor: 'text-purple-600',
+    iconBg: 'bg-purple-100',
+  },
+  {
+    id: 'senior_walk',
+    name: 'Senior Dog Walks',
+    subtitle: 'Gentle & safe',
+    image: `${WALKING_IMG}/adult-walk.jpg`,
+    imagePosition: '50% 52%',
+    Icon: PawPrint,
+    iconColor: 'text-amber-600',
+    iconBg: 'bg-amber-100',
+  },
+  {
+    id: 'long_walk',
+    name: 'Adventure Walks',
+    subtitle: 'Parks & trails',
+    image: `${WALKING_IMG}/adventure-walk.jpg`,
+    imagePosition: '50% 46%',
+    Icon: Mountain,
+    iconColor: 'text-emerald-600',
+    iconBg: 'bg-emerald-100',
+  },
+];
+
+const WALKING_HEADER_ICON =
+  'fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none';
+
+function WalkerHeaderBackground() {
+  return (
+    <>
+      <PawPrint className={`absolute -left-1 top-4 h-16 w-16 rotate-12 ${WALKING_HEADER_ICON} sm:h-20 sm:w-20`} strokeWidth={1} />
+      <PawPrint className={`absolute right-[22%] top-2 h-10 w-10 -rotate-12 ${WALKING_HEADER_ICON}`} strokeWidth={1} />
+      <Footprints className={`absolute left-[38%] top-1 h-12 w-12 rotate-[25deg] ${WALKING_HEADER_ICON}`} strokeWidth={1} />
+      <PawPrint className={`absolute right-2 bottom-6 h-14 w-14 rotate-[18deg] ${WALKING_HEADER_ICON} sm:h-16 sm:w-16`} strokeWidth={1} />
+      <Footprints className={`absolute left-6 bottom-2 h-9 w-9 -rotate-[30deg] ${WALKING_HEADER_ICON}`} strokeWidth={1} />
+      <PawPrint className={`absolute right-[42%] top-14 h-8 w-8 rotate-6 ${WALKING_HEADER_ICON}`} strokeWidth={1} />
+      <Dog className={`absolute left-[18%] top-10 h-11 w-11 -rotate-6 ${WALKING_HEADER_ICON}`} strokeWidth={1} />
+    </>
+  );
+}
 
 export interface WalkerPendingWalkSession {
   serviceId: string;
@@ -162,7 +274,6 @@ function WalkerListCardHero({ walker }: { walker: Record<string, unknown> }) {
 }
 
 export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }: WalkerServiceProps) {
-  const walkingNeeds = useProblemGridByRole('walker');
   const [loading, setLoading] = useState(true);
   const [walkers, setWalkers] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -588,8 +699,8 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame */}
       <ServiceDashboardHeader
+        fullWidth
         serviceName="Dog Walking"
         serviceSubtitle="Professional pet walking services"
         serviceIcon={Dog}
@@ -597,18 +708,35 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
         stats={dashboardStats}
         onBack={onBack}
         showBackButton={true}
-        headerColor="bg-[#FF8C42]"
+        headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+        sheetToneClass="bg-gray-50"
+        headerBackground={<WalkerHeaderBackground />}
+        headerTrailingImage={WALKING_HEADER_TRAILING}
+        headerTrailingImageAlt="Walker with golden retriever"
+        headerTrailingImageClassName="pointer-events-none absolute bottom-2 right-0 top-0 z-[5] flex min-h-0 w-[56%] max-w-[240px] items-start justify-end sm:bottom-3 sm:max-w-[260px]"
+        headerTrailingImageImgClassName="max-h-full w-auto max-w-full object-contain object-top drop-shadow-lg"
       />
-      
-      {/* Search: maps to GET /customer/vendors/search?query=… + explicit Search / Enter */}
-      <div className="max-w-md mx-auto px-4 pt-4 pb-4 bg-white">
-        <div className="flex gap-2 items-stretch">
-          <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+
+      <div className="mx-auto w-full max-w-customer -mt-4 rounded-t-[1.75rem] bg-gray-50 px-4 pt-4 pb-2 sm:rounded-t-[2rem]">
+        <div className="mb-4 flex flex-wrap gap-2">
+          {WALKING_HEADER_PILLS.map((pill) => (
+            <span
+              key={pill.label}
+              className="inline-flex items-center gap-1.5 rounded-full border border-orange-100 bg-white px-3 py-1.5 text-[11px] font-semibold text-slate-700 shadow-sm"
+            >
+              <pill.icon className="h-3.5 w-3.5 text-[#FF8C42]" aria-hidden />
+              {pill.label}
+            </span>
+          ))}
+        </div>
+
+        <div className="flex items-stretch gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
             <input
               type="search"
               enterKeyHint="search"
-              placeholder="Search walkers..."
+              placeholder="Search walkers, locations..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
@@ -617,13 +745,13 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
                   void loadWalkers();
                 }
               }}
-              className="w-full pl-10 pr-3 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+              className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-3 text-gray-900 placeholder-gray-500 focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500"
               aria-label="Search walkers by name or area"
             />
           </div>
           <Button
             type="button"
-            className="shrink-0 px-4 bg-[#FF8C42] hover:bg-[#FF7A2E] text-white rounded-xl font-semibold"
+            className="shrink-0 rounded-xl bg-[#FF8C42] px-4 font-semibold text-white hover:bg-[#FF7A2E]"
             onClick={() => void loadWalkers()}
           >
             Search
@@ -631,7 +759,99 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
         </div>
       </div>
 
-      <div className="max-w-md mx-auto p-4 space-y-6">
+      <div className="mx-auto max-w-customer space-y-6 p-4">
+        {/* Professional Pet Walking banner — full illustration on right, cream + gradient on left */}
+        <div className="relative min-h-[172px] overflow-hidden rounded-2xl border border-orange-100/80 bg-[#FFF9F0] shadow-sm sm:min-h-[180px]">
+          <div className="absolute inset-y-0 right-0 z-0 w-[54%] bg-gradient-to-br from-orange-50/90 via-amber-50/70 to-orange-100/40 sm:w-[50%]">
+            <Image
+              src={WALKING_BANNER_ILLUSTRATION}
+              alt=""
+              fill
+              className="object-contain object-bottom object-right px-1 pb-0 pt-2 sm:px-2"
+              sizes="(max-width: 640px) 50vw, 240px"
+              priority
+              aria-hidden
+            />
+          </div>
+          <div
+            className="pointer-events-none absolute inset-0 z-[1]"
+            style={{
+              background:
+                'linear-gradient(90deg, #FFF9F0 0%, #FFF9F0 34%, rgba(255, 249, 240, 0.97) 42%, rgba(255, 251, 246, 0.72) 52%, rgba(255, 245, 235, 0.25) 64%, transparent 78%)',
+            }}
+            aria-hidden
+          />
+          <div className="relative z-10 flex min-h-[172px] items-center sm:min-h-[180px]">
+            <div className="flex max-w-[58%] flex-col justify-center gap-2 p-4 sm:max-w-[54%] sm:p-5">
+              <h2 className="text-lg font-bold leading-tight text-slate-900 sm:text-xl">
+                Professional Pet Walking
+              </h2>
+              <p className="text-xs text-slate-600 sm:text-sm">Exercise, companionship & care</p>
+              <ul className="mt-1 space-y-1">
+                {WALKING_BANNER_CHECKS.map((item) => (
+                  <li
+                    key={item}
+                    className="flex items-center gap-2 text-[11px] font-medium text-slate-700 sm:text-xs"
+                  >
+                    <Check className="h-3.5 w-3.5 shrink-0 text-[#FF8C42]" aria-hidden />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* Walk by Need */}
+        <div>
+          <div className="mb-3 flex items-center gap-2">
+            <div className="rounded-lg bg-orange-50 p-1.5">
+              <PawPrint className="h-4 w-4 text-[#FF8C42]" />
+            </div>
+            <h2 className="text-lg font-bold text-slate-900">Walk by Need</h2>
+          </div>
+          <div className="grid grid-cols-3 items-stretch gap-2 sm:gap-2.5">
+            {WALKING_NEED_CARDS.map((need) => (
+              <button
+                key={need.id}
+                type="button"
+                onClick={() =>
+                  onNavigate?.('problem_selected', { problemId: need.id, problemTitle: need.name })
+                }
+                className="group flex h-full min-w-0 flex-col text-left"
+              >
+                <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-slate-100 bg-slate-100 shadow-sm transition-all group-hover:border-orange-200 group-hover:shadow-md">
+                  <Image
+                    src={need.image}
+                    alt={need.name}
+                    fill
+                    className="object-cover transition-transform duration-300 ease-in-out group-hover:scale-[1.03]"
+                    style={{ objectPosition: need.imagePosition }}
+                    sizes="(max-width: 640px) 26vw, 100px"
+                  />
+                  <div
+                    className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent"
+                    aria-hidden
+                  />
+                  <div
+                    className={`absolute left-1.5 top-1.5 z-[1] flex h-7 w-7 items-center justify-center rounded-lg border border-white/60 ${need.iconBg} shadow-sm`}
+                  >
+                    <need.Icon className={`h-4 w-4 ${need.iconColor}`} aria-hidden />
+                  </div>
+                </div>
+                <div className="mt-1 flex min-h-[2.25rem] flex-col items-center justify-start gap-px px-0.5 text-center">
+                  <p className="w-full text-[9px] font-semibold leading-tight text-slate-800 sm:text-[10px]">
+                    {need.name}
+                  </p>
+                  <p className="w-full text-[8px] leading-tight text-slate-500 sm:text-[9px]">
+                    {need.subtitle}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Phase 1: Book again with previous walker */}
         {previousWalker && (
           <div className="space-y-3">
@@ -747,95 +967,6 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
             </div>
           </Card>
         )}
-
-        {/* Hero Banner */}
-        <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200 p-6">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <h2 className="text-xl font-bold text-gray-900 mb-2">Professional Pet Walking</h2>
-              <p className="text-gray-700 mb-4">Exercise, companionship & care</p>
-            </div>
-            <div className="flex-shrink-0 w-14 h-14 bg-orange-100 rounded-xl flex items-center justify-center">
-              <Dog className="w-8 h-8 text-orange-600" />
-            </div>
-          </div>
-        </Card>
-
-        {/* Problem Grid - Walk by Need */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-orange-50 rounded-lg">
-                <Footprints className="w-4 h-4 text-orange-500" />
-              </div>
-              <h2 className="text-lg font-semibold text-slate-900">Walk by Need</h2>
-            </div>
-            <button 
-              onClick={() => onNavigate?.('problem_grid')}
-              className="text-sm text-orange-500 font-medium hover:text-orange-600 transition-colors"
-            >
-              View All
-            </button>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            {(walkingNeeds.length > 0 ? walkingNeeds : WALKING_NEEDS).map((need) => {
-              const isViewAll = need.id === 'view_all';
-              const hasAdminTint = Boolean((need as { iconBg?: string }).iconBg) && !isViewAll;
-              return (
-                <button
-                  key={need.id}
-                  onClick={() => {
-                    if (isViewAll) {
-                      onNavigate?.('problem_grid');
-                    } else {
-                      onNavigate?.('problem_selected', { problemId: need.id, problemTitle: need.name });
-                    }
-                  }}
-                  className="group relative flex flex-col items-center"
-                >
-                  <div className={`
-                    w-full aspect-square rounded-2xl border transition-all duration-200 flex flex-col items-center justify-center gap-2 p-2
-                    ${isViewAll 
-                      ? 'bg-orange-50 border-orange-100 text-orange-600 hover:bg-orange-100' 
-                      : 'bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:shadow-md hover:-translate-y-0.5'
-                    }
-                  `}>
-                    <div
-                      className={`
-                      w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110
-                      ${
-                        isViewAll
-                          ? 'bg-white/50'
-                          : hasAdminTint
-                            ? `${(need as { iconBg?: string }).iconBg} group-hover:opacity-90`
-                            : 'bg-slate-50 group-hover:bg-orange-50'
-                      }
-                    `}
-                    >
-                      {typeof need.icon === 'string' ? (
-                        <span className="text-xl">{need.icon}</span>
-                      ) : (
-                        <div
-                          className={
-                            hasAdminTint ? '' : 'text-slate-600 group-hover:text-orange-500'
-                          }
-                        >
-                          {need.icon}
-                        </div>
-                      )}
-                    </div>
-                    <p className={`
-                      text-[10px] font-medium text-center leading-tight line-clamp-2
-                      ${isViewAll ? 'text-orange-600' : 'text-slate-600 group-hover:text-orange-600'}
-                    `}>
-                      {need.name}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
 
         {pendingWalkSession && (
           <Card className="p-4 mb-4 border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50">
