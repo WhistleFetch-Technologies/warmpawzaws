@@ -5,11 +5,17 @@ import { Providers } from './providers';
 export const metadata: Metadata = {
   title: 'Warmpawz - Pet Care Services',
   description: 'Find and book pet care services near you',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Warmpawz',
+  },
 };
 
 /** Lets env(safe-area-inset-*) apply under notch / home indicator in PWA / standalone WebViews. */
 export const viewport: Viewport = {
   viewportFit: 'cover',
+  themeColor: '#FF8C42',
 };
 
 /** Must stay in sync with `lib/api-client.ts` `getApiGatewayUrl()` — analytics + REST use the same gateways. */

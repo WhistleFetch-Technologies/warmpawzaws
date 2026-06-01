@@ -224,3 +224,18 @@ export function mealRiderDeliveryMessage(logisticsStatus: string | null | undefi
   if (segs.includes('at_pickup')) return 'Rider at pickup';
   return null;
 }
+
+/** Compact footer "Track order" bar — rider phase only (not kitchen preparing/ready). */
+export function shouldShowMealRiderFooterBar(logisticsStatus: string | null | undefined): boolean {
+  const segs = splitMealStatusSegments(logisticsStatus);
+  const active = new Set([
+    'heading_to_pickup',
+    'at_pickup',
+    'picked_up',
+    'on_the_way',
+    'nearby',
+    'out_for_delivery',
+    'ofd',
+  ]);
+  return segs.some((s) => active.has(s));
+}

@@ -3,10 +3,10 @@
 import { 
   Scissors, Bath, Brush, Hand, Dog, Sparkles, Plus,
   GraduationCap, Home, PawPrint, AlertTriangle, Trophy, Dog as DogLeash,
-  Footprints, Bone, Mountain,
+  Footprints, Bone, Mountain, Brain,
   Frown, Volume2, Bomb, Ghost, Shield,
   Hotel, Sun, Star, Pill, Syringe,
-  Stethoscope, Heart, Activity, FileText, Eye, Siren, Package
+  Stethoscope, Heart, Activity, FileText, Eye, Siren, Package, FlaskConical
 } from 'lucide-react';
 
 import {
@@ -259,19 +259,19 @@ export const BOARDING_NEEDS = [
  * Priority: Lower number = shown first (daily use → specialty)
  */
 export const VET_PROBLEMS = [
-  // Daily/Preventive Care (shown first)
-  { id: 'medicine', name: 'General', icon: <Package className="w-6 h-6 text-purple-500" />, priority: 1 },
-  { id: 'vaccination', name: 'Vaccination', icon: <Pill className="w-6 h-6 text-blue-500" />, priority: 2 },
-  // Common Health Issues
+  { id: 'lab_diagnostics', name: 'Lab & Diagnostics', icon: <FlaskConical className="w-6 h-6 text-blue-500" />, priority: 1 },
+  { id: 'palliative', name: 'Palliative & End-of-Life Care', icon: <Sun className="w-6 h-6 text-pink-500" />, priority: 2 },
+  { id: 'reproductive', name: 'Reproductive & Breeding', icon: <Stethoscope className="w-6 h-6 text-pink-500" />, priority: 3 },
+  { id: 'medicine', name: 'General', icon: <Package className="w-6 h-6 text-purple-500" />, priority: 4 },
+  { id: 'vaccination', name: 'Vaccination', icon: <Pill className="w-6 h-6 text-blue-500" />, priority: 5 },
   { id: 'dermatology', name: 'Skin Care', icon: <Activity className="w-6 h-6 text-green-500" />, priority: 21 },
   { id: 'dentistry', name: 'Dental', icon: <FileText className="w-6 h-6 text-blue-500" />, priority: 22 },
   { id: 'ophthalmology', name: 'Eye Care', icon: <Eye className="w-6 h-6 text-cyan-500" />, priority: 23 },
-  // Specialty Care
   { id: 'cardiology', name: 'Heart Care', icon: <Heart className="w-6 h-6 text-red-500" />, priority: 41 },
-  // Rare/Emergency (shown last - rarely needed)
   { id: 'surgery', name: 'Surgery', icon: <Stethoscope className="w-6 h-6 text-teal-500" />, priority: 61 },
   { id: 'emergency', name: 'Emergency', icon: <Siren className="w-6 h-6 text-red-500" />, priority: 62, comingSoon: true },
-  { id: 'view_all', name: '20+ more', icon: <Plus className="w-6 h-6" />, priority: 999 }
+  { id: 'orthopedics', name: 'Bone & Joint', icon: <Bone className="w-6 h-6 text-amber-500" />, priority: 63 },
+  { id: 'neurology', name: 'Neurology', icon: <Brain className="w-6 h-6 text-purple-500" />, priority: 64 },
 ];
 
 /**

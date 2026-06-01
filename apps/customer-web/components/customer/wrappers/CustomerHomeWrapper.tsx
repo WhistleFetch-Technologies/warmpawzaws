@@ -1796,7 +1796,6 @@ export function CustomerHomeWrapper({
         <CustomerHome 
           phone={phone}
           refreshKey={refreshKey}
-          onRefresh={() => setRefreshKey((key) => key + 1)}
           onNavigate={(screen, data) => {
             // ✅ Handle order-tracking: meal vs ecommerce/pharmacy (Phase 5)
             if (screen === 'order-tracking') {

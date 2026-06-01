@@ -1,7 +1,20 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Apple, UtensilsCrossed, Calendar, Heart, Sparkles, ChevronRight, AlertCircle, Plus, Video, Zap } from 'lucide-react';
+import Image from 'next/image';
+import {
+  Apple,
+  UtensilsCrossed,
+  Calendar,
+  Heart,
+  ChevronRight,
+  AlertCircle,
+  Dog,
+  Cat,
+  PawPrint,
+  Scale,
+  Pill,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
@@ -11,13 +24,37 @@ import { toast } from 'sonner';
 import { useProblemGridByRole } from '../useProblemGridByRole';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
-import { NUTRITIONIST_NEEDS } from '../ProblemGridSection';
-import { serviceTypes } from './constants';
 import { NutritionistServicesLandingProps } from './constants/interface';
 import {
   NutritionVendorDetailsCard,
   nutritionVendorFromDiscoveryRow,
 } from './NutritionVendorDetailsCard';
+import { NutritionTeleConsultBanner } from './NutritionTeleConsultBanner';
+import { NutritionNeedGrid } from './NutritionNeedGrid';
+import {
+  NUTRITION_HEADER_BANNER,
+  NUTRITION_SERVICE_CARDS,
+} from './constants/nutrition-hub-assets';
+
+const NUTRITION_HEADER_ICON =
+  'fill-none stroke-current [&>path]:fill-none [&>circle]:fill-none [&>rect]:fill-none [&>polygon]:fill-none';
+
+function NutritionHeaderBackground() {
+  return (
+    <>
+      <Apple className={`absolute -left-0.5 top-3 h-8 w-8 rotate-[18deg] ${NUTRITION_HEADER_ICON} sm:h-9 sm:w-9`} strokeWidth={1} />
+      <UtensilsCrossed className={`absolute left-[8%] top-12 h-7 w-7 -rotate-12 ${NUTRITION_HEADER_ICON}`} strokeWidth={1} />
+      <Heart className={`absolute left-[18%] top-2 h-6 w-6 rotate-[24deg] ${NUTRITION_HEADER_ICON}`} strokeWidth={1} />
+      <PawPrint className={`absolute left-[32%] bottom-4 h-9 w-9 rotate-6 ${NUTRITION_HEADER_ICON} sm:h-10 sm:w-10`} strokeWidth={1} />
+      <Scale className={`absolute left-[42%] top-1 h-12 w-12 -rotate-[8deg] ${NUTRITION_HEADER_ICON} sm:h-14 sm:w-14`} strokeWidth={1} />
+      <Dog className={`absolute right-[38%] top-8 h-8 w-8 rotate-12 ${NUTRITION_HEADER_ICON}`} strokeWidth={1} />
+      <Cat className={`absolute right-[28%] bottom-2 h-9 w-9 -rotate-6 ${NUTRITION_HEADER_ICON}`} strokeWidth={1} />
+      <Pill className={`absolute right-[14%] top-3 h-7 w-7 -rotate-[20deg] ${NUTRITION_HEADER_ICON}`} strokeWidth={1} />
+      <Calendar className={`absolute right-[6%] bottom-6 h-8 w-8 rotate-[14deg] ${NUTRITION_HEADER_ICON}`} strokeWidth={1} />
+      <Apple className={`absolute -right-0.5 top-10 h-7 w-7 rotate-[32deg] ${NUTRITION_HEADER_ICON}`} strokeWidth={1} />
+    </>
+  );
+}
 
 
 
@@ -157,8 +194,8 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
   //---------------------------main render----------------------------------//
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      {/* ✅ FIX: Use ServiceDashboardHeader to match vet service UI frame */}
       <ServiceDashboardHeader
+        fullWidth
         serviceName="Pet Nutrition"
         serviceSubtitle="Expert nutrition consultation"
         serviceIcon={Apple}
@@ -167,146 +204,76 @@ export function NutritionistServicesLanding({ phone, onBack, onNavigate }: Nutri
         onBack={onBack}
         showBackButton={true}
         headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+        sheetToneClass="bg-white"
+        headerBackground={<NutritionHeaderBackground />}
+        headerTrailingImage={NUTRITION_HEADER_BANNER}
+        headerTrailingImageAlt="Dog and cat"
+        clipHeaderTrailingImage
+        headerTrailingImageClassName="pointer-events-none absolute bottom-0 right-0 top-[2.75rem] z-[5] flex w-[72%] max-w-[420px] items-end justify-end sm:top-12"
+        headerTrailingImageImgClassName="block h-full w-auto max-w-full origin-bottom-right scale-[1.35] object-contain object-right object-bottom drop-shadow-lg"
       />
 
-      {/* Main Content - White Card with Top Radius */}
-      <div className="bg-white max-w-md mx-auto px-6 pt-8 min-h-[calc(100vh-180px)]">
+      <div className="mx-auto w-full max-w-customer -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 sm:rounded-t-[2rem] min-h-[calc(100vh-180px)]">
         <div className="space-y-8">
 
-          {/* Problem Grid - Consult by Need */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-orange-50 rounded-lg">
-                  <Apple className="w-4 h-4 text-[#FF8C42]" />
-                </div>
-                <h2 className="text-lg font-semibold text-slate-900">Consult by Need</h2>
-              </div>
-              <button
-                onClick={() => onNavigate?.('problem_grid')}
-                className="text-sm text-[#FF8C42] font-medium hover:text-[#FF7029] transition-colors"
-              >
-                View All
-              </button>
-            </div>
-            <div className="grid grid-cols-4 gap-3">
-              {(nutritionistNeeds.length > 0 ? nutritionistNeeds : NUTRITIONIST_NEEDS).map((need) => {
-                const isViewAll = need.id === 'view_all';
-                const hasAdminTint = Boolean((need as { iconBg?: string }).iconBg) && !isViewAll;
-                return (
-                  <button
-                    key={need.id}
-                    onClick={() => {
-                      if (isViewAll) {
-                        onNavigate?.('problem_grid');
-                      } else {
-                        onNavigate?.('problem_selected', { problemId: need.id, problemTitle: need.name });
-                      }
-                    }}
-                    className="group relative flex flex-col items-center"
-                  >
-                    <div className={`
-                      w-full aspect-square rounded-2xl border transition-all duration-200 flex flex-col items-center justify-center gap-2 p-2
-                      ${isViewAll
-                        ? 'bg-orange-50 border-orange-100 text-orange-700 hover:bg-orange-100'
-                        : 'bg-white border-slate-100 text-slate-600 hover:border-orange-200 hover:shadow-md hover:-translate-y-0.5'
-                      }
-                    `}>
-                      <div
-                        className={`
-                        w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110
-                        ${
-                          isViewAll
-                            ? 'bg-white/50'
-                            : hasAdminTint
-                              ? `${(need as { iconBg?: string }).iconBg} group-hover:opacity-90`
-                              : 'bg-slate-50 group-hover:bg-orange-50'
-                        }
-                      `}
-                      >
-                        {typeof need.icon === 'string' ? (
-                          <span className="text-xl">{need.icon}</span>
-                        ) : (
-                          <div
-                            className={
-                              hasAdminTint ? '' : 'text-slate-600 group-hover:text-orange-600'
-                            }
-                          >
-                            {need.icon}
-                          </div>
-                        )}
-                      </div>
-                      <p className={`
-                        text-[10px] font-medium text-center leading-tight line-clamp-2
-                        ${isViewAll ? 'text-orange-700' : 'text-slate-600 group-hover:text-orange-700'}
-                      `}>
-                        {need.name}
-                      </p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <NutritionNeedGrid
+            problems={nutritionistNeeds}
+            onNavigate={(screen, navData) => onNavigate?.(screen, navData)}
+          />
 
-          {/* ✅ NEW: Tele Consultation CTA */}
-          <div>
-            <button
-              onClick={() => onNavigate?.('nutritionist-tele')}
-              className="w-full p-4 rounded-2xl text-left transition-all border-2 border-green-200 hover:border-green-400 hover:shadow-lg bg-gradient-to-r from-green-50 to-emerald-50"
-            >
-              <div className="flex items-start gap-4">
-                <div className="w-12 h-12 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
-                  <Video className="w-6 h-6 text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <h3 className="font-semibold text-base text-gray-900">Video Consultation</h3>
-                    <span className="px-2 py-0.5 bg-green-500 text-white text-xs rounded-full font-medium flex items-center gap-1">
-                      <Zap className="w-3 h-3" /> Instant Available
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-600 leading-snug">
-                    Connect with pet nutritionists via video call. From ₹300
-                  </p>
-                </div>
-                <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0 mt-1" />
-              </div>
-            </button>
-          </div>
+          <NutritionTeleConsultBanner onClick={() => onNavigate?.('nutritionist-tele')} />
 
-          {/* Service Types */}
+          {/* Our Services */}
           <div>
-            <h2 className="text-lg font-bold text-slate-900 mb-4">Our Services</h2>
+            <h2 className="mb-4 text-lg font-bold text-slate-900">Our Services</h2>
             <div className="grid grid-cols-2 gap-3">
-              {serviceTypes.map((service, idx) => {
-                const isMealPlansTile = service.label === 'Meal Plans';
-                const comingSoon = isMealPlansTile && !mealPlansLive;
+              {NUTRITION_SERVICE_CARDS.map((service) => {
+                const isMealPlans = service.id === 'meal_plans';
+                const comingSoon = isMealPlans && !mealPlansLive;
                 return (
                   <button
-                    key={idx}
+                    key={service.id}
                     type="button"
                     onClick={() => handleBookNow({ serviceType: service.label })}
                     disabled={comingSoon}
                     aria-label={comingSoon ? `${service.label} — coming soon` : service.label}
-                    className={`bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-left group relative overflow-hidden ${
-                      comingSoon
-                        ? 'opacity-80 cursor-not-allowed'
-                        : 'hover:shadow-md transition-all'
+                    className={`group relative overflow-hidden rounded-2xl border text-left shadow-sm transition-all ${service.borderClass} ${service.cardBg} ${
+                      comingSoon ? 'cursor-not-allowed opacity-90' : 'hover:shadow-md'
                     }`}
                   >
                     {comingSoon ? (
-                      <span className="absolute top-2 right-2 rounded-md bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
-                        Soon
+                      <span className="absolute right-2 top-2 z-[3] rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+                        Coming soon
                       </span>
                     ) : null}
-                    <div className={`w-10 h-10 rounded-xl ${service.color.split(' ')[0]} flex items-center justify-center mb-3 ${comingSoon ? '' : 'group-hover:scale-110 transition-transform'}`}>
-                      <service.icon className={`w-5 h-5 ${service.color.split(' ')[1]}`} />
+                    <div className="relative z-[1] flex min-h-[132px] flex-col p-3 pr-[42%]">
+                      <div
+                        className={`mb-2 flex h-10 w-10 items-center justify-center rounded-xl ${service.iconBg}`}
+                      >
+                        <service.Icon className={`h-5 w-5 ${service.iconColor}`} />
+                      </div>
+                      <h3 className="text-sm font-bold text-slate-900">{service.label}</h3>
+                      <p className="mt-0.5 text-[11px] leading-snug text-slate-500">
+                        {service.description}
+                      </p>
+                      {!comingSoon ? (
+                        <span
+                          className={`mt-auto inline-flex items-center gap-0.5 pt-2 text-[11px] font-semibold ${service.ctaClass} group-hover:gap-1`}
+                        >
+                          Book Now
+                          <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+                        </span>
+                      ) : null}
                     </div>
-                    <h3 className="font-semibold text-slate-900 text-sm mb-0.5">{service.label}</h3>
-                    <p className="text-xs text-slate-500">
-                      {comingSoon ? 'Coming soon' : service.desc}
-                    </p>
+                    <div className="pointer-events-none absolute bottom-0 right-0 z-[2] h-[72%] w-[48%]">
+                      <Image
+                        src={service.image}
+                        alt=""
+                        fill
+                        className="object-contain object-bottom-right"
+                        sizes="(max-width: 640px) 45vw, 180px"
+                      />
+                    </div>
                   </button>
                 );
               })}

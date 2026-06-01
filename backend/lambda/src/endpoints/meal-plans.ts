@@ -39,7 +39,20 @@ import { parseOrderCutoffHm } from '../utils/meal-product-timing';
 import { resolvePackWeightGramsFromPlanRow } from '../utils/meal-pack-weight';
 import { mergeMealPlanCatalogForApi } from '../utils/meal-product-persistence';
 import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr, resolveMealPurchaseSubtotalInr } from '../utils/meal-order-pricing';
-import { ensureMealPlanMirrorForProductCheckout, normalizeProductRowToMealPlanShape, resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
+import { generateMealOrderNumber } from '../utils/meal-order-number';
+import { processMealOrderVendorCancelOriginalRefund } from '../utils/payments/meal-order-original-refund';
+import {
+  notifyMealOrderPaid,
+  notifyMealOrderCancelledByVendor,
+  notifyMealSubscriptionLifecycle,
+  notifyVendorMealSubscriptionActive,
+} from '../utils/meal-delivery-notifications';
+import {
+  dedupeMealPlanCatalogRows,
+  ensureMealPlanMirrorForProductCheckout,
+  normalizeProductRowToMealPlanShape,
+  resolveMealPlanOrProductById,
+} from '../utils/meal-plan-resolve';
 import {
   assertVendorAcceptingMealOrders,
   enrichMealPlanRowsWithKitchenAvailability,
@@ -507,11 +520,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         if (shaped) fromProducts.push(shaped);
       }
 
-      const merged = [...fromMealPlans, ...fromProducts].sort((a: any, b: any) => {
-        const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return tb - ta;
-      });
+      const merged = dedupeMealPlanCatalogRows(
+        fromMealPlans as Record<string, unknown>[],
+        fromProducts,
+      );
 
       let mealPlans = await Promise.all(
         merged.map(async (mp: any) => {
@@ -1464,6 +1476,7 @@ export function registerMealPlanEndpoints(app: Hono) {
       };
       if (moCols.has('purchase_type')) mealOrderRow.purchase_type = expectedPurchaseType;
       if (moCols.has('purchase_snapshot')) mealOrderRow.purchase_snapshot = purchase_snapshot;
+      if (moCols.has('order_number')) mealOrderRow.order_number = generateMealOrderNumber();
       // Snapshot meal_plans.prep_time_minutes so the vendor "Start Preparing" status update can
       // align Pidge promised_prep_time with the catalog declared prep time without a join.
       if (moCols.has('prep_minutes')) {
@@ -1509,6 +1522,9 @@ export function registerMealPlanEndpoints(app: Hono) {
       const orders = await select('meal_orders', { id: orderId });
       if (orders[0]) {
         fireVendorMealOrderScheduledSms(orders[0] as Record<string, unknown>);
+        void notifyMealOrderPaid(orderId).catch((e) =>
+          console.warn('[meal/confirm-payment] notify failed:', e),
+        );
       }
 
       return c.json({
@@ -1794,6 +1810,32 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       await update('meal_orders', { id: orderId }, updateData);
 
+      let refundInfo: Record<string, unknown> | null = null;
+      if (status === 'cancelled') {
+        try {
+          const refund = await processMealOrderVendorCancelOriginalRefund(
+            orderId,
+            notes || 'Vendor cancelled meal order',
+            'vendor',
+          );
+          refundInfo = {
+            amount: refund.totalAmount,
+            method: 'original',
+            status: refund.status,
+            message: refund.message,
+            refundId: refund.refundId,
+            razorpayRefundId: refund.razorpayRefundId,
+          };
+        } catch (refundErr: unknown) {
+          const msg = refundErr instanceof Error ? refundErr.message : 'Refund failed';
+          console.error('[meal/orders/update-status] original refund failed:', msg, { orderId });
+        }
+        void notifyMealOrderCancelledByVendor(
+          orderId,
+          notes || 'Vendor cancelled meal order',
+        ).catch((e) => console.warn('[meal/orders/update-status] cancel notify failed:', e));
+      }
+
       // If delivered, create settlement
       if (status === 'delivered') {
         await ensureMealOrderSettlementOnDelivered(orderId);
@@ -1922,6 +1964,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         pause_until: pauseUntil,
       });
 
+      void notifyMealSubscriptionLifecycle(subscriptionId, 'paused').catch((e) =>
+        console.warn('[meal/subscriptions/pause] notify failed:', e),
+      );
+
       return c.json({
         success: true,
         message: `Subscription paused until ${pauseUntil}`,
@@ -1944,6 +1990,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         status: 'active',
         pause_until: null,
       });
+
+      void notifyMealSubscriptionLifecycle(subscriptionId, 'resumed').catch((e) =>
+        console.warn('[meal/subscriptions/resume] notify failed:', e),
+      );
 
       return c.json({
         success: true,
@@ -1969,6 +2019,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         cancelled_at: new Date().toISOString(),
         cancellation_reason: reason,
       });
+
+      void notifyMealSubscriptionLifecycle(subscriptionId, 'cancelled', reason).catch((e) =>
+        console.warn('[meal/subscriptions/cancel] notify failed:', e),
+      );
 
       // TODO: Cancel Razorpay subscription
 

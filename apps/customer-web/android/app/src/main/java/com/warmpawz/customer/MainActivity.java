@@ -41,55 +41,86 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
 
   private static final int STATUS_BAR_COLOR = 0xFFFF8C42; // brand orange
+  private boolean webViewInsetsInstalled;
 
   @Override
   public void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+    applyBrandSystemBars();
+    installWebViewTopInsets();
+  }
 
-    // Edge-to-edge layout: status bar paints over the WebView (so we get
-    // brand orange under the clock / battery), but we measure the inset
-    // and pad the WebView container so its content starts BELOW the
-    // status bar / camera punch-hole.
+  @Override
+  public void onResume() {
+    super.onResume();
+    // Razorpay / payment sheets and some OEM skins reset the status bar after onCreate.
+    applyBrandSystemBars();
+  }
+
+  @Override
+  public void onWindowFocusChanged(boolean hasFocus) {
+    super.onWindowFocusChanged(hasFocus);
+    if (hasFocus) {
+      applyBrandSystemBars();
+    }
+  }
+
+  /**
+   * Brand orange under the clock/battery. Theme styles.xml sets this too; we re-apply at
+   * runtime because Capacitor splash → postSplashScreenTheme and payment WebViews can reset it.
+   */
+  private void applyBrandSystemBars() {
     WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
     getWindow().setStatusBarColor(STATUS_BAR_COLOR);
+    getWindow().setNavigationBarColor(STATUS_BAR_COLOR);
 
     final View decor = getWindow().getDecorView();
     if (decor != null) {
-      // Light status-bar icons (dark icons on light bg). Brand orange is
-      // bright enough that dark icons read better than white ones.
+      // Light status-bar icons (dark icons on bright orange).
       new WindowInsetsControllerCompat(getWindow(), decor)
           .setAppearanceLightStatusBars(true);
     }
 
-    // Use the activity content view (R.id.content) — its child is the layout
-    // that hosts the Capacitor WebView. Padding the content view propagates
-    // to the WebView whether Capacitor wraps it in a CoordinatorLayout or
-    // a plain FrameLayout in the version we are on.
+    // Padding band above the WebView must not show default black window background.
     final View content = findViewById(android.R.id.content);
     if (content != null) {
-      androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(content, (v, insets) -> {
-        int topInset = insets.getInsets(
-            WindowInsetsCompat.Type.systemBars()
-                | WindowInsetsCompat.Type.displayCutout()
-        ).top;
-        if (v instanceof ViewGroup) {
-          ViewGroup vg = (ViewGroup) v;
-          for (int i = 0; i < vg.getChildCount(); i++) {
-            View child = vg.getChildAt(i);
-            child.setPadding(
-                child.getPaddingLeft(), topInset,
-                child.getPaddingRight(), child.getPaddingBottom()
-            );
-          }
-        } else {
-          v.setPadding(v.getPaddingLeft(), topInset, v.getPaddingRight(), v.getPaddingBottom());
-        }
-        // Consume insets so descendants don't try to apply them again
-        // (otherwise the WebView itself would also pad and we'd double the gap).
-        return WindowInsetsCompat.CONSUMED;
-      });
-      androidx.core.view.ViewCompat.requestApplyInsets(content);
+      content.setBackgroundColor(STATUS_BAR_COLOR);
     }
+  }
+
+  /**
+   * Push WebView below status bar / punch-hole; consume insets so CSS env(safe-area-inset-top)
+   * stays 0 and we do not double-pad with ServiceDashboardHeader.
+   */
+  private void installWebViewTopInsets() {
+    if (webViewInsetsInstalled) {
+      return;
+    }
+    final View content = findViewById(android.R.id.content);
+    if (content == null) {
+      return;
+    }
+    webViewInsetsInstalled = true;
+    androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(content, (v, insets) -> {
+      int topInset = insets.getInsets(
+          WindowInsetsCompat.Type.systemBars()
+              | WindowInsetsCompat.Type.displayCutout()
+      ).top;
+      if (v instanceof ViewGroup) {
+        ViewGroup vg = (ViewGroup) v;
+        for (int i = 0; i < vg.getChildCount(); i++) {
+          View child = vg.getChildAt(i);
+          child.setPadding(
+              child.getPaddingLeft(), topInset,
+              child.getPaddingRight(), child.getPaddingBottom()
+          );
+        }
+      } else {
+        v.setPadding(v.getPaddingLeft(), topInset, v.getPaddingRight(), v.getPaddingBottom());
+      }
+      return WindowInsetsCompat.CONSUMED;
+    });
+    androidx.core.view.ViewCompat.requestApplyInsets(content);
   }
 
   @Override

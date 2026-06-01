@@ -1,7 +1,13 @@
 'use client';
 
 import { ArrowLeft, ChevronLeft, LucideIcon, CheckCircle2, X } from 'lucide-react';
-import { Fragment, ReactNode, useId } from 'react';
+import { Fragment, ReactNode, useId, useSyncExternalStore } from 'react';
+import {
+  isCapacitorNativePlatform,
+  isNarrowMobileViewport,
+  resolveServiceHeaderTopPad,
+  subscribeToNarrowMobileViewport,
+} from '@/lib/service-header-safe-area';
 
 export interface StatCard {
   value: string;
@@ -65,6 +71,17 @@ export interface ServiceDashboardHeaderProps {
    * Tighter safe-area + padding and smaller stat row (e.g. full-screen payment) so the header does not dominate the viewport.
    */
   compact?: boolean;
+  /** Optional faded decorative layer behind header content (e.g. service-themed icons). */
+  headerBackground?: ReactNode;
+  /** Optional hero image anchored to the bottom-right of the orange header (e.g. vet banner). */
+  headerTrailingImage?: string;
+  headerTrailingImageAlt?: string;
+  /** Override the absolute wrapper around {@link headerTrailingImage}. */
+  headerTrailingImageClassName?: string;
+  /** Override the `<img>` element (use max-h-full + w-auto for tall portraits). */
+  headerTrailingImageImgClassName?: string;
+  /** Clip trailing hero to the header bounds (avoids stray page scrollbars). */
+  clipHeaderTrailingImage?: boolean;
 }
 
 /**
@@ -143,6 +160,12 @@ export function ServiceDashboardHeader({
   bottomEdge = 'sheet',
   sheetToneClass = 'bg-gray-50',
   compact = false,
+  headerBackground,
+  headerTrailingImage,
+  headerTrailingImageAlt = '',
+  headerTrailingImageClassName,
+  headerTrailingImageImgClassName,
+  clipHeaderTrailingImage = false,
 }: ServiceDashboardHeaderProps) {
   const waveGradId = useId().replace(/:/g, '');
   const waveUsesGradient = Boolean(
@@ -151,23 +174,22 @@ export function ServiceDashboardHeader({
   const IconComponent = ServiceIcon as LucideIcon;
   const isLucideIcon = typeof IconComponent === 'function' || (IconComponent && 'render' in IconComponent);
 
+  const isCapacitorNative = useSyncExternalStore(
+    () => () => {},
+    isCapacitorNativePlatform,
+    () => false,
+  );
+  const isNarrowMobile = useSyncExternalStore(
+    subscribeToNarrowMobileViewport,
+    isNarrowMobileViewport,
+    () => true,
+  );
+
   /**
-   * Top padding inside the orange header.
-   *
-   * IMPORTANT: applied via inline `style={{ paddingTop }}`, NOT a Tailwind
-   * arbitrary-value class. On Capacitor Android, Tailwind JIT classes for
-   * complex arbitrary values (with nested commas in `max(... , calc(...))`)
-   * have been observed to be missed by the JIT scanner or to lose to a
-   * cached CSS bundle in the WebView, leaving the back button under the
-   * status bar / camera punch-hole. An inline style sidesteps both issues:
-   * the paddingTop value is baked directly into the rendered HTML, so it
-   * cannot be cache-stripped and does not depend on Tailwind generating a
-   * matching class. Non-compact headers use env-only top pad (home / service hubs).
-   * `compact` is used on payment / Razorpay flows — keep legacy min padding unchanged.
+   * Top padding inside the orange header (inline style — reliable in Capacitor WebView).
+   * `compact` payment summary path is unchanged. Hub screens get a browser min inset on phones only.
    */
-  const topPadStyle: React.CSSProperties = compact
-    ? { paddingTop: 'max(56px, calc(env(safe-area-inset-top, 0px) + 8px))' }
-    : { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' };
+  const topPadStyle = resolveServiceHeaderTopPad(compact, isCapacitorNative, isNarrowMobile);
   const innerBottom = compact ? 'pb-3 md:pb-4' : 'pb-4 md:pb-6';
   const titleRowMb = compact ? 'mb-2 md:mb-3' : 'mb-3 md:mb-4';
   const iconBox = compact ? 'h-11 w-11' : 'h-14 w-14';
@@ -217,10 +239,38 @@ export function ServiceDashboardHeader({
         next section) — not border-radius on bottom corners, which looks “inward” / wrong direction.
       */}
       <div
-        className={`relative z-20 ${headerGradient || headerColor} text-white pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] pb-0`}
+        className={`relative z-20 ${headerTrailingImage && !clipHeaderTrailingImage ? 'overflow-x-hidden overflow-y-visible' : 'overflow-hidden'} ${headerGradient || headerColor} text-white pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] pb-0`}
         style={topPadStyle}
       >
-        <div className={innerShellClass}>
+        {headerBackground ? (
+          <div
+            className="pointer-events-none absolute inset-0 z-0 overflow-hidden [&_svg]:stroke-current [&_svg_*]:fill-none"
+            style={{ color: 'rgba(255, 255, 255, 0.13)' }}
+            aria-hidden
+          >
+            {headerBackground}
+          </div>
+        ) : null}
+        {headerTrailingImage ? (
+          <div
+            className={
+              headerTrailingImageClassName ??
+              'pointer-events-none absolute bottom-2 right-0 top-[3.25rem] z-[5] flex min-h-0 w-[44%] max-w-[178px] items-end justify-end pr-2 sm:bottom-2.5 sm:top-14 sm:max-w-[195px] sm:pr-3'
+            }
+            aria-hidden
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={headerTrailingImage}
+              alt={headerTrailingImageAlt}
+              className={
+                headerTrailingImageImgClassName ??
+                'h-auto max-h-full w-auto max-w-full object-contain object-bottom drop-shadow-md'
+              }
+            />
+          </div>
+        ) : null}
+        <div className={`relative z-10 ${innerShellClass}`}>
         {/* Profile-style header: X = home, Back = previous */}
         {onCloseToHome ? (
           <>
@@ -290,7 +340,7 @@ export function ServiceDashboardHeader({
               )}
             </div>
 
-            <div className="min-w-0 flex-1 py-0.5">
+            <div className={`min-w-0 flex-1 py-0.5 ${headerTrailingImage ? 'max-w-[52%] pr-1 sm:max-w-[54%]' : ''}`}>
               <h1
                 className={`mb-1 font-bold text-white ${compact ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}
               >

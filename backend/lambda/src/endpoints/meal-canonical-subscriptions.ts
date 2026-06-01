@@ -16,6 +16,10 @@ import { assertVendorAcceptingMealOrders } from '../utils/meal-kitchen-availabil
 import { resolveMealPlanOrProductById } from '../utils/meal-plan-resolve';
 import { fireVendorMealSubscriptionScheduledSms } from '../lib/vendor-appointment-sms';
 import {
+  notifyMealSubscriptionLifecycle,
+  notifyVendorMealSubscriptionActive,
+} from '../utils/meal-delivery-notifications';
+import {
   activateCanonicalSubscriptionAfterPayment,
   applyWalletDebitToPendingMealSubscription,
   enrichSubscriptionRowsWithPresignedMealImages,
@@ -299,6 +303,9 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Subscription not found' }, 404);
       }
       fireVendorMealSubscriptionScheduledSms(String(sub.id || id), String(sub.vendor_id || ''));
+      void notifyVendorMealSubscriptionActive(String(sub.id || id)).catch((e) =>
+        console.warn('[meal/subscriptions/confirm-payment] notify failed:', e),
+      );
       return c.json({ success: true, subscription: sub });
     } catch (e: unknown) {
       const err = e as { message?: string; statusCode?: number };
@@ -320,6 +327,9 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
       }
       const sub = await pauseCanonicalSubscription(id, customerId);
       if (!sub) return c.json({ success: false, error: 'Subscription not found' }, 404);
+      void notifyMealSubscriptionLifecycle(id, 'paused').catch((e) =>
+        console.warn('[meal/subscriptions/pause] notify failed:', e),
+      );
       return c.json({ success: true, subscription: sub });
     } catch (e: unknown) {
       const err = e as { message?: string; statusCode?: number };
@@ -341,6 +351,9 @@ export function registerMealCanonicalSubscriptionEndpoints(app: Hono) {
       }
       const sub = await resumeCanonicalSubscription(id, customerId);
       if (!sub) return c.json({ success: false, error: 'Subscription not found' }, 404);
+      void notifyMealSubscriptionLifecycle(id, 'resumed').catch((e) =>
+        console.warn('[meal/subscriptions/resume] notify failed:', e),
+      );
       return c.json({ success: true, subscription: sub });
     } catch (e: unknown) {
       const err = e as { message?: string; statusCode?: number };

@@ -36,7 +36,12 @@ import { getDiscoveryRules } from '../../../lib/rule-engine';
 import {
   resolveCustomerMealPlanOrderDisplayTotals,
 } from '../../../utils/meal-order-pricing';
-import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '../../../utils/meal-delivery-effective-state';
+import {
+  resolveEffectiveMealDeliveryState,
+  isTerminalMealDeliveryState,
+  shouldShowMealRiderFooterBar,
+  mealRiderDeliveryMessage,
+} from '../../../utils/meal-delivery-effective-state';
 import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../services/meal-subscription/meal-subscription-operations-service';
 
 // ============================================================================
@@ -492,7 +497,6 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
                 ) AS meal_plan_name,
                 mp.plan_name AS mp_plan_name,
                 mp.price_per_meal AS mp_price_per_meal,
-                mp.price AS mp_legacy_price,
                 v.business_name AS vendor_name,
                 p.name AS pet_name
          FROM meal_orders mo
@@ -515,7 +519,6 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       for (const o of (mealResult as any).rows || []) {
         const planForPricing = {
           price_per_meal: o.mp_price_per_meal,
-          price: o.mp_legacy_price,
         };
         const { subtotal, total } = resolveCustomerMealPlanOrderDisplayTotals(o, planForPricing);
         allOrders.push({
@@ -1689,6 +1692,81 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
    * Get active meal orders for customer
    * Fixes GAP-8.4: Live Tracking Widget
    */
+  const MEAL_ACTIVE_ORDERS_SQL = `SELECT 
+          mo.id,
+          mo.order_number,
+          mo.status AS meal_order_status,
+          mo.created_at,
+          mo.delivery_address,
+          mo.delivery_latitude,
+          mo.delivery_longitude,
+          mo.estimated_delivery_time,
+          mo.logistics_partner_id,
+          v.business_name as vendor_name,
+          v.profile_photo as vendor_photo,
+          dt_latest.delivery_tracking_status,
+          dt_latest.delivery_tracking_id,
+          dt_latest.rider_name,
+          dt_latest.rider_phone,
+          dt_latest.pidge_order_id
+        FROM meal_orders mo
+        LEFT JOIN vendors v ON mo.vendor_id = v.id
+        LEFT JOIN LATERAL (
+          SELECT 
+            dt.status AS delivery_tracking_status,
+            dt.id AS delivery_tracking_id,
+            dt.delivery_person_name AS rider_name,
+            dt.delivery_person_phone AS rider_phone,
+            COALESCE(dt.external_task_id, dt.metadata->>'pidge_order_id') AS pidge_order_id
+          FROM delivery_tracking dt
+          WHERE dt.meal_order_id = mo.id
+          ORDER BY dt.updated_at DESC NULLS LAST, dt.created_at DESC
+          LIMIT 1
+        ) dt_latest ON TRUE
+        WHERE mo.customer_id = $1
+          AND mo.status NOT IN ('delivered', 'cancelled', 'refunded')
+        ORDER BY mo.created_at DESC
+        LIMIT 25`;
+
+  function mapMealActiveOrderRow(order: any) {
+    let deliveryAddress = order.delivery_address;
+    try {
+      if (typeof order.delivery_address === 'string') {
+        deliveryAddress = JSON.parse(order.delivery_address);
+      }
+    } catch (_) {
+      deliveryAddress = order.delivery_address;
+    }
+    const moStatus = order.meal_order_status ?? order.status;
+    const dtStatus = order.delivery_tracking_status ?? null;
+    const effective = resolveEffectiveMealDeliveryState(moStatus, dtStatus);
+    if (isTerminalMealDeliveryState(effective)) {
+      return null;
+    }
+    const showRiderBar = shouldShowMealRiderFooterBar(dtStatus);
+    const riderMessage = mealRiderDeliveryMessage(dtStatus);
+    return {
+      id: order.id,
+      orderId: order.id,
+      orderNumber: order.order_number,
+      orderType: 'meal',
+      status: effective,
+      trackingStatus: effective,
+      logisticsStatus: dtStatus,
+      vendorName: order.vendor_name,
+      vendorPhoto: order.vendor_photo,
+      deliveryAddress,
+      estimatedDeliveryTime: order.estimated_delivery_time,
+      createdAt: order.created_at,
+      deliveryTrackingId: order.delivery_tracking_id,
+      pidgeOrderId: order.pidge_order_id,
+      riderName: order.rider_name,
+      riderPhone: order.rider_phone,
+      showRiderBar,
+      riderMessage,
+    };
+  }
+
   app.get('/customer/:phone/orders/meals/active', async (c) => {
     try {
       const phone = c.req.param('phone');
@@ -1709,70 +1787,14 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
 
       let ordersResult: any;
       try {
-        ordersResult = await query(
-          `SELECT 
-          mo.id,
-          mo.order_number,
-          mo.status AS meal_order_status,
-          mo.created_at,
-          mo.delivery_address,
-          mo.delivery_latitude,
-          mo.delivery_longitude,
-          mo.estimated_delivery_time,
-          mo.logistics_partner_id,
-          v.business_name as vendor_name,
-          v.profile_photo as vendor_photo,
-          dt_latest.delivery_tracking_status
-        FROM meal_orders mo
-        LEFT JOIN vendors v ON mo.vendor_id = v.id
-        LEFT JOIN LATERAL (
-          SELECT dt.status AS delivery_tracking_status
-          FROM delivery_tracking dt
-          WHERE dt.meal_order_id = mo.id
-          ORDER BY dt.updated_at DESC NULLS LAST, dt.created_at DESC
-          LIMIT 1
-        ) dt_latest ON TRUE
-        WHERE mo.customer_id = $1
-          AND mo.status NOT IN ('delivered', 'cancelled', 'refunded')
-        ORDER BY mo.created_at DESC
-        LIMIT 25`,
-          [customer.id],
-        );
+        ordersResult = await query(MEAL_ACTIVE_ORDERS_SQL, [customer.id]);
       } catch (error: any) {
         console.warn('[meals/active] Error fetching orders (returning empty):', error?.message);
         return c.json({ success: true, orders: [] }, 200);
       }
 
       const orders = ((ordersResult as any)?.rows || [])
-        .map((order: any) => {
-        let deliveryAddress = order.delivery_address;
-        try {
-          if (typeof order.delivery_address === 'string') {
-            deliveryAddress = JSON.parse(order.delivery_address);
-          }
-        } catch (_) {
-          deliveryAddress = order.delivery_address;
-        }
-        const moStatus = order.meal_order_status ?? order.status;
-        const dtStatus = order.delivery_tracking_status ?? null;
-        const effective = resolveEffectiveMealDeliveryState(moStatus, dtStatus);
-        if (isTerminalMealDeliveryState(effective)) {
-          return null;
-        }
-        return {
-          id: order.id,
-          orderId: order.id,
-          orderNumber: order.order_number,
-          orderType: 'meal',
-          status: effective,
-          trackingStatus: effective,
-          vendorName: order.vendor_name,
-          vendorPhoto: order.vendor_photo,
-          deliveryAddress,
-          estimatedDeliveryTime: order.estimated_delivery_time,
-          createdAt: order.created_at,
-        };
-      })
+        .map(mapMealActiveOrderRow)
         .filter(Boolean);
 
       return c.json({
@@ -1782,6 +1804,50 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
     } catch (error: any) {
       console.error('[meals/active] Error fetching active meal orders:', error);
       return c.json({ success: true, orders: [] }, 200);
+    }
+  });
+
+  /**
+   * GET /customer/:phone/orders/meals/rider-active
+   * Single meal order in rider delivery phase for footer "Track order" bar.
+   */
+  app.get('/customer/:phone/orders/meals/rider-active', async (c) => {
+    try {
+      const phone = c.req.param('phone');
+      const normalizedPhone = phone.replace(/\D/g, '');
+
+      let customers: any[];
+      try {
+        customers = await select('customers', { phone: normalizedPhone });
+      } catch (error: any) {
+        console.error('[meals/rider-active] Error fetching customer:', error);
+        return c.json({ success: true, order: null }, 200);
+      }
+      if (customers.length === 0) {
+        return c.json({ success: true, order: null });
+      }
+
+      const customer = customers[0];
+      let ordersResult: any;
+      try {
+        ordersResult = await query(MEAL_ACTIVE_ORDERS_SQL, [customer.id]);
+      } catch (error: any) {
+        console.warn('[meals/rider-active] Error fetching orders:', error?.message);
+        return c.json({ success: true, order: null }, 200);
+      }
+
+      const riderOrder = ((ordersResult as any)?.rows || [])
+        .map(mapMealActiveOrderRow)
+        .filter(Boolean)
+        .find((o: { showRiderBar?: boolean }) => o.showRiderBar === true);
+
+      return c.json({
+        success: true,
+        order: riderOrder ?? null,
+      });
+    } catch (error: any) {
+      console.error('[meals/rider-active] Error:', error);
+      return c.json({ success: true, order: null }, 200);
     }
   });
 

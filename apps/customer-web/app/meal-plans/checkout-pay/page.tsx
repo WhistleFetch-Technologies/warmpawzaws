@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { UniversalPaymentPage } from '@/components/customer/payment/UniversalPaymentPage';
 import { fetchCheckoutEmailForPrefill } from '@/lib/razorpay/build-standard-checkout-options';
 import type { MealSubscriptionSummaryLine } from '@/components/customer/payment/MealSubscriptionPaymentSummary';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { goBackOrHome, navigateAfterMealOrderPlaced } from '@/lib/go-back-or-replace';
 import { Button } from '@/components/ui/button';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
@@ -175,7 +175,7 @@ function MealOneTimePayInner() {
         } catch {
           /* ignore */
         }
-        router.replace('/');
+        navigateAfterMealOrderPlaced(router, phone);
       }}
     />
   );

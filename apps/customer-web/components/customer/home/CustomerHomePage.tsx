@@ -44,7 +44,6 @@ export interface CustomerHomePageHeaderProps {
   userProfilePhoto?: string;
   phone: string;
   onProfileClick?: () => void;
-  onRefresh?: () => void;
   onNavigate: HomeNavigateFn;
   onOpenNotifications: () => void;
   notificationUnreadCount: number;
@@ -87,7 +86,6 @@ function CustomerHomePageHeaderComponent({
   userProfilePhoto,
   phone,
   onProfileClick,
-  onRefresh,
   onNavigate,
   onOpenNotifications,
   notificationUnreadCount,
@@ -106,7 +104,6 @@ function CustomerHomePageHeaderComponent({
         userProfilePhoto={userProfilePhoto}
         phone={phone}
         onProfileClick={onProfileClick}
-        onRefresh={onRefresh}
         onNavigate={onNavigate}
         onOpenNotifications={onOpenNotifications}
         notificationUnreadCount={notificationUnreadCount}
@@ -163,13 +160,13 @@ function CustomerHomePageContentComponent({
       <HeroBannerSection banners={homeCarouselBanners} onNavigate={onNavigate} />
       <TrustFeatureBar onNavigate={onNavigate} />
       <ActiveBookingsSection activeBookings={activeBookings} onViewBooking={onViewBooking} />
-      <PopularServicesSection phone={phone} onNavigate={onNavigate} />
       <ShopProductsSection
         hotDeals={hotDeals}
         categories={ecommerceShopCategories}
         ecommerceEnabled={customerCommerceEnabled}
         onNavigate={onNavigate}
       />
+      <PopularServicesSection phone={phone} onNavigate={onNavigate} />
       <OffersForYouSection lowerBanners={featuredLowerBanners} onNavigate={onNavigate} />
       <HelpWaysSection
         services={services}

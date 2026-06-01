@@ -10,7 +10,7 @@ import {
   Scissors, Stethoscope, Home as HomeIcon, ShoppingBag, Users,
   GraduationCap, Coffee, Shield, Sparkles,
   Phone, Video, Building2, Bone, BookOpen, Wheat, Bot, Menu, Settings, Palmtree, Pill,
-  Navigation, AlertCircle, FlaskConical, MessageSquare, RefreshCw,
+  Navigation, AlertCircle, FlaskConical, MessageSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -138,6 +138,11 @@ const OrderTrackingWidget = dynamic(
   { ssr: false }
 );
 
+const MealRiderTrackingBar = dynamic(
+  () => import('../MealRiderTrackingBar').then(mod => ({ default: mod.MealRiderTrackingBar })),
+  { ssr: false }
+);
+
 // Tele call notification - WhatsApp-like incoming call UI
 const TeleCallNotification = dynamic(
   () => import('../TeleCallNotification').then(mod => ({ default: mod.TeleCallNotification })),
@@ -240,7 +245,6 @@ export function CustomerHomeComplete({
   onOpenMenu,
   onOpenCategoryMapper,
   refreshKey = 0,
-  onRefresh,
   hideHeaderFooter = false // ✅ NEW: Default to showing header/footer
 }: CustomerHomeCompleteProps) {
   const router = useRouter();
@@ -517,8 +521,9 @@ export function CustomerHomeComplete({
     vendorPhoto?: string;
   } | null>(null);
 
-  // ✅ FIX GAP-8.4: Active order tracking state
+  // ✅ FIX GAP-8.4: Active order tracking state (pharmacy full widget; meals use rider bar)
   const [activeOrderTracking, setActiveOrderTracking] = useState<any | null>(null);
+  const [mealRiderActive, setMealRiderActive] = useState<any | null>(null);
 
   // Dynamic content from CMS
   const cachedHomeDynamic = readHomeSessionCache<CachedHomeDynamicContent>(phone, 'dynamic_content');
@@ -1866,7 +1871,6 @@ export function CustomerHomeComplete({
   // Call pharmacy and meals APIs separately so a failing meals/active (e.g. 404/HTML) does not break the screen
   const checkActiveOrderTracking = async () => {
     let pharmacyOrders: any[] = [];
-    let mealOrders: any[] = [];
     try {
       const pharmacyResponse = await apiClient.get<any>(
         `/customer/${phone}/orders/pharmacy/active`
@@ -1876,26 +1880,21 @@ export function CustomerHomeComplete({
       console.warn('Pharmacy active orders check failed (non-fatal):', (e as Error)?.message);
     }
     try {
-      const mealResponse = await apiClient.get<any>(
-        `/customer/${phone}/orders/meals/active`
+      const riderResponse = await apiClient.get<any>(
+        `/customer/${phone}/orders/meals/rider-active`
       );
-      mealOrders = Array.isArray(mealResponse?.orders) ? mealResponse.orders : [];
-    } catch (e) {
-      console.warn('Meals active orders check failed (non-fatal):', (e as Error)?.message);
-    }
-    const activeOrders = [
-      ...pharmacyOrders,
-      ...mealOrders,
-    ].filter((order: any) => {
-      if (!order) return false;
-      const ot = order.orderType ?? order.order_type;
-      if (ot === 'meal') {
-        const eff = resolveEffectiveMealDeliveryState(
-          order.status,
-          order.trackingStatus ?? order.tracking_status,
-        );
-        return !isTerminalMealDeliveryState(eff);
+      const riderOrder = riderResponse?.order ?? null;
+      if (riderOrder?.showRiderBar) {
+        setMealRiderActive(riderOrder);
+      } else {
+        setMealRiderActive(null);
       }
+    } catch (e) {
+      console.warn('Meals rider-active check failed (non-fatal):', (e as Error)?.message);
+      setMealRiderActive(null);
+    }
+    const activeOrders = pharmacyOrders.filter((order: any) => {
+      if (!order) return false;
       return (
         order.status !== 'delivered' &&
         order.status !== 'cancelled' &&
@@ -2068,7 +2067,6 @@ export function CustomerHomeComplete({
           userProfilePhoto={userProfilePhoto}
           phone={phone}
           onProfileClick={onProfileClick}
-          onRefresh={onRefresh}
           onNavigate={handleNavigation}
           onOpenNotifications={() => setNotificationModalOpen(true)}
           notificationUnreadCount={notificationUnreadCount}
@@ -2117,15 +2115,6 @@ export function CustomerHomeComplete({
                 size="sm"
                 showBalance={true}
               />
-              <button
-                type="button"
-                onClick={onRefresh}
-                className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
-                aria-label="Refresh home"
-                title="Refresh"
-              >
-                <RefreshCw className="w-[18px] h-[18px] text-white" strokeWidth={2} />
-              </button>
               <button
                 type="button"
                 onClick={() => handleNavigation('booking-messages')}
@@ -3657,8 +3646,22 @@ export function CustomerHomeComplete({
         />
       )}
 
-      {/* ✅ FIX GAP-8.4: Live Tracking Widget (Zomato-like) on Customer Home Screen */}
-      {activeOrderTracking && (
+      {/* Meal rider footer bar — rider phase only, above tab navigation */}
+      {mealRiderActive && (
+        <MealRiderTrackingBar
+          order={mealRiderActive}
+          onTrack={() => {
+            const orderId = mealRiderActive.orderId || mealRiderActive.id;
+            handleNavigation('order-tracking', { orderId, orderType: 'meal' });
+            if (!onNavigate) {
+              window.location.href = `/track/${orderId}`;
+            }
+          }}
+        />
+      )}
+
+      {/* Pharmacy live tracking widget (meals use MealRiderTrackingBar instead) */}
+      {activeOrderTracking && (activeOrderTracking.orderType || 'pharmacy') !== 'meal' && (
         <OrderTrackingWidget
           orderId={activeOrderTracking.id || activeOrderTracking.orderId}
           orderType={activeOrderTracking.orderType || 'pharmacy'}

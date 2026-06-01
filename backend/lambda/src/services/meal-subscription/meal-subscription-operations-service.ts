@@ -9,7 +9,8 @@ import { ensureRollingSessions, type SubscriptionRowForGeneration } from './meal
 import { websocketService } from '../../lib/services/websocket-service';
 import { presignMealPlanRowDisplayFields } from '../../utils/s3-media-presign';
 import { debitCustomerWalletForMealSubscriptionInTransaction } from '../../utils/wallet-operations';
-import { processMealSessionVendorCancelRefund } from '../../utils/meal-subscription-refund';
+import { processMealSubscriptionSessionVendorCancelOriginalRefund } from '../../utils/payments/meal-order-original-refund';
+import { notifyMealSubscriptionLifecycle } from '../../utils/meal-delivery-notifications';
 
 export type MealSubscriptionLifecycleFilter =
   | 'all'
@@ -826,10 +827,18 @@ export async function vendorUpdateMealSubscriptionDeliveryStatus(options: {
     const subId = String(own.subscription.id || '');
     const sessionNum = Number((own.delivery as Record<string, unknown>).session_number ?? 1);
     const reason = options.cancelReason || 'Vendor cancelled the Meal Plan session';
-    processMealSessionVendorCancelRefund(subId, options.deliveryId, sessionNum, reason).catch((err: unknown) => {
-      const e = err as { message?: string };
-      console.error('[meal-ops] Refund failed after vendor cancel', e.message, { subId, deliveryId: options.deliveryId });
-    });
+    processMealSubscriptionSessionVendorCancelOriginalRefund(subId, options.deliveryId, sessionNum, reason).catch(
+      (err: unknown) => {
+        const e = err as { message?: string };
+        console.error('[meal-ops] Refund failed after vendor cancel', e.message, {
+          subId,
+          deliveryId: options.deliveryId,
+        });
+      },
+    );
+    void notifyMealSubscriptionLifecycle(subId, 'cancelled', reason).catch((e) =>
+      console.warn('[meal-ops] vendor session cancel notify failed:', e),
+    );
   }
 
   return row;
