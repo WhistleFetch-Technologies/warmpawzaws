@@ -74,6 +74,8 @@ interface UniversalPaymentPageProps {
 
   /** One-time meal checkout: create order + Razorpay after universal pay (same UX as subscription pay). */
   mealOneTimeDraft?: {
+    /** When set, skip POST /meal/orders/create and pay an existing pending order. */
+    existingOrderId?: string;
     mealPlanId: string;
     customerId?: string;
     customerPhone: string;
@@ -1694,22 +1696,25 @@ export function UniversalPaymentPage({
         const cid = d.customerId || customerId;
         const idempotent = `mealow-${d.mealPlanId}-${Date.now().toString(36)}`;
 
-        const createRes = await apiClient.post<any>('/meal/orders/create', {
-          customerId: cid,
-          customerPhone: cid ? undefined : d.customerPhone || customerPhone,
-          mealPlanId: d.mealPlanId,
-          petId: d.petId,
-          quantity: d.quantity,
-          purchaseType: 'ONE_TIME',
-          specialInstructions: d.specialInstructions,
-          deliveryAddress: d.deliveryAddress,
-          scheduledDeliveryDate: d.scheduledDeliveryDate,
-          scheduledDeliverySlot: d.scheduledDeliverySlot,
-          logisticsType: d.logisticsType || 'warmpawz',
-        });
-        const order = createRes?.order || createRes;
-        const orderId = order?.id as string | undefined;
-        if (!orderId) throw new Error('Order created but ID missing');
+        let orderId = d.existingOrderId?.trim() || '';
+        if (!orderId) {
+          const createRes = await apiClient.post<any>('/meal/orders/create', {
+            customerId: cid,
+            customerPhone: cid ? undefined : d.customerPhone || customerPhone,
+            mealPlanId: d.mealPlanId,
+            petId: d.petId,
+            quantity: d.quantity,
+            purchaseType: 'ONE_TIME',
+            specialInstructions: d.specialInstructions,
+            deliveryAddress: d.deliveryAddress,
+            scheduledDeliveryDate: d.scheduledDeliveryDate,
+            scheduledDeliverySlot: d.scheduledDeliverySlot,
+            logisticsType: d.logisticsType || 'warmpawz',
+          });
+          const order = createRes?.order || createRes;
+          orderId = String(order?.id || '');
+          if (!orderId) throw new Error('Order created but ID missing');
+        }
 
         let amountInRupeesForGateway = finalAmount;
         if (useWallet && walletAmount > 0.009 && cid) {

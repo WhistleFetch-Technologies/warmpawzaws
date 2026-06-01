@@ -3149,6 +3149,21 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               422,
             );
           }
+          if (
+            refund.status === 'skipped' &&
+            refund.totalAmount <= 0.009 &&
+            String(orderRow.payment_status || '') === 'paid'
+          ) {
+            return c.json(
+              {
+                success: false,
+                error:
+                  'Order cancelled but refund could not be processed. Please contact support with the order ID.',
+                refund: refundInfo,
+              },
+              422,
+            );
+          }
           void notifyMealOrderCancelledByVendor(
             orderId,
             'Vendor cancelled meal order from nutrition queue',

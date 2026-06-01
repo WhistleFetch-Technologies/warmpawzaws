@@ -1391,9 +1391,19 @@ export function registerCustomerPhoneConvenienceEndpoints(app: Hono) {
         FROM package_purchases pp
         LEFT JOIN vendors v ON pp.vendor_id = v.id
         WHERE pp.customer_id = $1
-        AND pp.status = 'active'
-        AND (pp.expires_at IS NULL OR pp.expires_at > NOW())
-        AND (${sqlPackagePurchaseActiveForListing('pp')})
+        AND pp.status NOT IN ('cancelled')
+        AND (
+          pp.expires_at IS NULL
+          OR pp.expires_at > NOW() - INTERVAL '180 days'
+        )
+        AND (
+          ${sqlPackagePurchaseActiveForListing('pp')}
+          OR EXISTS (
+            SELECT 1 FROM package_scheduled_sessions pss_hist
+            WHERE pss_hist.package_purchase_id = pp.id
+          )
+          OR (COALESCE(pp.unlimited_usage, false) = false AND COALESCE(pp.remaining_sessions, pp.total_sessions) < COALESCE(pp.total_sessions, 1))
+        )
       `;
 
       const params: any[] = [customerId];

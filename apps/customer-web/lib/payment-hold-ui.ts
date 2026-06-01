@@ -53,3 +53,12 @@ export function isPaymentHoldActive(
   if (!booking.paymentHoldExpiresAt) return true;
   return new Date(booking.paymentHoldExpiresAt).getTime() > Date.now();
 }
+
+/** Unpaid booking whose 5-minute hold window has elapsed (awaiting backend sweep). */
+export function isPaymentHoldExpired(
+  booking: { status?: string; paymentHoldExpiresAt?: string | null }
+): boolean {
+  if (!isBookingAwaitingPayment(booking)) return false;
+  if (!booking.paymentHoldExpiresAt) return false;
+  return new Date(booking.paymentHoldExpiresAt).getTime() <= Date.now();
+}

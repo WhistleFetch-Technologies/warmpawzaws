@@ -537,6 +537,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           subtotal,
           total_amount: total,
           status: o.status,
+          payment_status: o.payment_status,
           delivery_address: o.delivery_address,
           scheduled_delivery_date: o.scheduled_delivery_date,
           scheduled_delivery_slot: o.scheduled_delivery_slot,

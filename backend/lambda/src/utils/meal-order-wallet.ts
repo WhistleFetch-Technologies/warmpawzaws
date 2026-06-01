@@ -164,3 +164,45 @@ export async function applyWalletDebitToPendingMealOrder(
 export function mealOrderWalletDebitFromRow(row: { purchase_snapshot?: unknown }): number {
   return parseWalletDebitFromSnapshot(row.purchase_snapshot);
 }
+
+/** Resolve wallet INR applied to a meal order (snapshot first, then wallet ledger). */
+export async function resolveMealOrderWalletPaidInr(
+  mealOrderId: string,
+  customerId: string,
+  purchaseSnapshot?: unknown,
+): Promise<number> {
+  const fromSnap = parseWalletDebitFromSnapshot(purchaseSnapshot);
+  if (fromSnap > 0.009) return fromSnap;
+
+  const oid = String(mealOrderId || '').trim();
+  const cid = String(customerId || '').trim();
+  if (!oid) return 0;
+
+  try {
+    const refRes = await query(
+      `SELECT COALESCE(SUM(ABS(wt.amount)), 0)::text AS total
+       FROM wallet_transactions wt
+       WHERE wt.transaction_type = 'debit'
+         AND (
+           (wt.reference_type = 'meal_order' AND wt.reference_id = $1)
+           OR wt.description ILIKE '%' || $1 || '%'
+         )
+         AND (
+           $2::uuid IS NULL
+           OR wt.customer_id = $2::uuid
+           OR wt.wallet_id IN (SELECT id FROM customer_wallets WHERE customer_id = $2::uuid)
+         )`,
+      [oid, cid || null],
+    );
+    const fromLedger = parseFloat(String((refRes as any).rows?.[0]?.total ?? '0')) || 0;
+    if (fromLedger > 0.009) return Math.round(fromLedger * 100) / 100;
+  } catch {
+    /* ignore */
+  }
+  return 0;
+}
+
+export function isLikelyRazorpayPaymentCaptureId(id: unknown): boolean {
+  const s = String(id ?? '').trim();
+  return s.startsWith('pay_');
+}

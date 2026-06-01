@@ -41,6 +41,7 @@ import {
   expirePaymentHolds,
   buildBookingPaymentResumeContext,
 } from '../../../utils/payment-hold';
+import { resolveCustomerIdFromPhone } from '../../../utils/customer-coordinates';
 import {
   previewCustomerCancellationRefundByMethod,
   normalizeCustomerCancellationRefundMethod,
@@ -4419,15 +4420,19 @@ export function registerBookingOTPEndpoint(app: Hono) {
 
       if (phone) {
         const digits = String(phone).replace(/\D/g, '').slice(-10);
-        if (digits.length >= 10) {
-          const cr = await query(
-            `SELECT id FROM customers
-             WHERE RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '[^0-9]', '', 'g'), 10) = $1
+        if (digits.length >= 10 && ctx.customerId) {
+          const resolvedCustomerId = await resolveCustomerIdFromPhone(phone);
+          const ownerPhoneMatch = await query(
+            `SELECT 1
+             FROM customers c
+             WHERE c.id = $1::uuid
+               AND RIGHT(REGEXP_REPLACE(COALESCE(c.phone, ''), '[^0-9]', '', 'g'), 10) = $2
              LIMIT 1`,
-            [digits]
+            [ctx.customerId, digits]
           );
-          const requestCustomerId = cr.rows[0]?.id ? String(cr.rows[0].id) : '';
-          if (requestCustomerId && ctx.customerId && requestCustomerId !== ctx.customerId) {
+          const authorized =
+            resolvedCustomerId === ctx.customerId || ownerPhoneMatch.rows.length > 0;
+          if (!authorized) {
             return c.json({ success: false, error: 'Unauthorized' }, 403);
           }
         }

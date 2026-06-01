@@ -163,11 +163,21 @@ export async function buildBookingPaymentResumeContext(
   const { rows } = await query(
     `SELECT b.*,
             v.business_name AS vendor_name,
-            COALESCE(b.service_name, s.name, vs.service_name) AS resolved_service_name
+            COALESCE(s.name, sc.service_name, vs_row.vs_service_name) AS resolved_service_name
      FROM bookings b
      LEFT JOIN vendors v ON v.id = b.vendor_id
-     LEFT JOIN services s ON s.id = b.service_id
-     LEFT JOIN vendor_services vs ON vs.id = b.service_id
+     LEFT JOIN services s ON b.service_id = s.id
+     LEFT JOIN service_catalog sc ON b.service_id = sc.id
+     LEFT JOIN LATERAL (
+       SELECT vs.service_name AS vs_service_name
+       FROM vendor_services vs
+       WHERE vs.vendor_id = b.vendor_id
+         AND (vs.service_id = b.service_id OR vs.id = b.service_id)
+       ORDER BY
+         CASE WHEN vs.service_id = b.service_id THEN 0 WHEN vs.id = b.service_id THEN 1 ELSE 2 END,
+         vs.updated_at DESC NULLS LAST
+       LIMIT 1
+     ) vs_row ON true
      WHERE b.id = $1::uuid
      LIMIT 1`,
     [bookingId]

@@ -14,6 +14,7 @@ import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansCo
 const STORAGE_KEY = 'meal_one_time_pay_draft_v1';
 
 export type MealOneTimePayDraft = {
+  existingOrderId?: string;
   mealPlanId: string;
   customerId?: string;
   customerPhone: string;

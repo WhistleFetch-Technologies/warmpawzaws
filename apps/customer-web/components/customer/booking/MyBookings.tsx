@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   ChevronLeft, Clock, MapPin, Calendar, Check, X, Copy,
@@ -34,6 +34,7 @@ import {
   formatPaymentHoldCountdown,
   isBookingAwaitingPayment,
   isPaymentHoldActive,
+  isPaymentHoldExpired,
   usePaymentHoldCountdown,
 } from '@/lib/payment-hold-ui';
 /** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
@@ -141,12 +142,22 @@ interface MyBookingsProps {
 function PendingPaymentHoldBanner({
   expiresAt,
   onPayNow,
+  onExpired,
 }: {
   expiresAt: string | null | undefined;
   onPayNow: (e: React.MouseEvent) => void;
+  onExpired?: () => void;
 }) {
   const secondsRemaining = usePaymentHoldCountdown(expiresAt);
   const active = secondsRemaining > 0;
+  const prevActiveRef = useRef<boolean | null>(null);
+
+  useEffect(() => {
+    if (prevActiveRef.current === true && !active) {
+      onExpired?.();
+    }
+    prevActiveRef.current = active;
+  }, [active, onExpired]);
 
   return (
     <div
@@ -296,14 +307,18 @@ export function MyBookings({
     }
   }, [reviewBookingIdFromUrl, bookings]);
 
-  const loadBookings = async () => {
+  const loadBookings = async (options?: { silent?: boolean }) => {
     try {
-      setLoading(true);
+      if (!options?.silent) {
+        setLoading(true);
+      }
       if (!phone) {
         if (!effectivePhone) {
           console.warn('[MyBookings] No phone available; skipping bookings fetch');
           setBookings([]);
-          setLoading(false);
+          if (!options?.silent) {
+            setLoading(false);
+          }
           return;
         }
       }
@@ -491,9 +506,15 @@ export function MyBookings({
       console.error('Error loading bookings:', error);
       setBookings([]);
     } finally {
-      setLoading(false);
+      if (!options?.silent) {
+        setLoading(false);
+      }
     }
   };
+
+  const refreshAfterHoldExpired = useCallback(() => {
+    void loadBookings({ silent: true });
+  }, [effectivePhone, phone]);
 
   const copyOTP = (otp: string, id: string) => {
     copyTextToClipboard(otp);
@@ -645,19 +666,36 @@ export function MyBookings({
 
   // ✅ Check if booking can be cancelled/rescheduled
   const canCancelOrReschedule = (booking: Booking): boolean => {
+    if (isPaymentHoldExpired(booking) || booking.status === 'cancelled') return false;
     return ['pending', 'pending_payment', 'confirmed'].includes(booking.status);
+  };
+
+  const getBookingStatusColor = (booking: Booking): string => {
+    if (isPaymentHoldExpired(booking)) return 'bg-red-100 text-red-800';
+    return getStatusColor(booking.status);
+  };
+
+  const getBookingStatusText = (booking: Booking): string => {
+    if (isPaymentHoldExpired(booking)) return 'Cancelled';
+    return getStatusText(booking.status);
   };
 
   // ✅ FIX: Ensure pending, confirmed, in_progress, arrived, scheduled all show in "Upcoming"
   const filteredBookings = bookings.filter(booking => {
     if (activeFilter === 'all') return true;
     if (activeFilter === 'upcoming') {
-      return ['pending', 'pending_payment', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(
-        booking.status
+      return (
+        ['pending', 'pending_payment', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(
+          booking.status
+        ) && !isPaymentHoldExpired(booking)
       );
     }
     if (activeFilter === 'completed') {
-      return booking.status === 'completed' || booking.status === 'cancelled';
+      return (
+        booking.status === 'completed' ||
+        booking.status === 'cancelled' ||
+        isPaymentHoldExpired(booking)
+      );
     }
     return true;
   });
@@ -702,8 +740,25 @@ export function MyBookings({
   // ✅ FIX: Include all active statuses in "Upcoming" count
   const dashboardStats = [
     { value: String(bookings.length), label: 'Total' },
-    { value: String(bookings.filter(b => ['pending', 'pending_payment', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(b.status)).length), label: 'Upcoming' },
-    { value: String(bookings.filter(b => b.status === 'completed' || b.status === 'cancelled').length), label: 'Completed' }
+    {
+      value: String(
+        bookings.filter(
+          (b) =>
+            ['pending', 'pending_payment', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(
+              b.status
+            ) && !isPaymentHoldExpired(b)
+        ).length
+      ),
+      label: 'Upcoming',
+    },
+    {
+      value: String(
+        bookings.filter(
+          (b) => b.status === 'completed' || b.status === 'cancelled' || isPaymentHoldExpired(b)
+        ).length
+      ),
+      label: 'Completed',
+    },
   ];
 
   return (
@@ -877,8 +932,8 @@ export function MyBookings({
                     )}
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(booking.status)}`}>
-                      {getStatusText(booking.status)}
+                    <span className={`text-xs px-2 py-1 rounded-full ${getBookingStatusColor(booking)}`}>
+                      {getBookingStatusText(booking)}
                     </span>
                     {booking.paymentStatus === 'paid' && (
                       <>
@@ -916,11 +971,12 @@ export function MyBookings({
                 </div>
 
                 {isBookingAwaitingPayment(booking) &&
-                isPaymentHoldActive(booking) &&
-                booking.paymentStatus !== 'paid' ? (
+                booking.paymentStatus !== 'paid' &&
+                (isPaymentHoldActive(booking) || isPaymentHoldExpired(booking)) ? (
                   <PendingPaymentHoldBanner
                     expiresAt={booking.paymentHoldExpiresAt}
                     onPayNow={(e) => handleResumePayment(booking, e)}
+                    onExpired={refreshAfterHoldExpired}
                   />
                 ) : null}
 
