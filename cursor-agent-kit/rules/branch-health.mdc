@@ -1,0 +1,149 @@
+---
+description: Git branch health — personal dev branch, feature branches, sync with develop, PR discipline
+alwaysApply: true
+---
+
+# Git Branch Health
+
+Rules for keeping branches clean, in sync, and safe. Applies to all developers (e.g. `dev-abhi`, `dev-raj`).
+
+---
+
+## Branch roles
+
+| Branch | Owner | Purpose |
+|--------|-------|---------|
+| `develop` | Team | Shared integration; CI deploys to **dev** on merge |
+| `dev-<name>` | Individual | Personal integration branch (e.g. `dev-abhi`); kept in sync with `develop` |
+| `feature/<name>-<task>` | Individual | All feature/fix work happens here |
+| `prod` | Release | Production deploy only; do not push casually |
+
+```
+develop  ─────────────────────────────────────────►  (team integration)
+    ▲
+    │  periodic sync (pull develop → dev-<name>)
+    │
+dev-abhi  ─── base for daily work
+    │
+    └── feature/abhi-shop-banners  ──PR──►  develop
+```
+
+---
+
+## Daily workflow
+
+### Start of day
+
+```bash
+git fetch origin
+git checkout dev-<your-name>
+git pull origin dev-<your-name>
+git merge origin/develop          # or: git rebase origin/develop
+git push origin dev-<your-name>   # only if merge/rebase created commits on dev-<name>
+```
+
+### Start a task
+
+```bash
+git checkout dev-<your-name>
+git pull origin dev-<your-name>
+git checkout -b feature/<your-name>-<short-task>
+```
+
+Examples: `feature/abhi-shop-banners`, `feature/abhi-refund-columns`
+
+### During work
+
+- Commit on the **feature branch**, not on `dev-<name>` or `develop`.
+- Pull/rebase from `develop` or `dev-<name>` often to avoid large conflicts:
+
+```bash
+git fetch origin
+git rebase origin/develop         # preferred before opening PR
+# resolve conflicts, then:
+git push -u origin feature/<your-name>-<task>
+```
+
+### Finish a task
+
+1. Ensure builds pass locally.
+2. Push feature branch.
+3. Open PR: **`feature/<your-name>-<task>` → `develop`** (not to `dev-<name>`).
+4. After merge, delete the feature branch (local + remote).
+5. Sync personal branch:
+
+```bash
+git checkout dev-<your-name>
+git pull origin develop
+git push origin dev-<your-name>
+```
+
+---
+
+## Health checks (agent must follow)
+
+### Before opening a PR
+
+- [ ] Feature branch is based on recent `develop` (rebased or merged today).
+- [ ] No unrelated files in the diff (no `.next/`, `node_modules/`, `.env`).
+- [ ] Migration files listed in PR if schema changed.
+- [ ] PR targets **`develop`**, not another personal branch.
+
+### Before pushing
+
+- [ ] On the correct branch (`git branch --show-current`).
+- [ ] Not pushing directly to `develop`, `main`, or `prod` without explicit team approval.
+- [ ] User asked to commit/push (agent does not push proactively).
+
+### Weekly (or before large tasks)
+
+- [ ] `dev-<name>` merged/rebased from `origin/develop`.
+- [ ] Stale feature branches deleted after merge.
+
+---
+
+## Forbidden actions
+
+| Never | Why |
+|-------|-----|
+| `git push --force` to `develop`, `main`, `prod` | Destroys shared history |
+| `git push --force` to another person's `dev-*` branch | Breaks their work |
+| Long-lived commits only on `dev-<name>` without a feature branch | Hard to review and revert |
+| PR from `dev-<name>` → `develop` with many unrelated changes | Bypasses feature-level review |
+| Merge `develop` into `prod` without approval | Triggers production deploy |
+
+Force-push to **your own** `feature/*` branch is OK only after rebase and only if the branch is yours alone.
+
+---
+
+## Syncing `dev-<name>` with `develop`
+
+When `develop` has moved ahead (after teammates merge PRs):
+
+```bash
+git checkout dev-<your-name>
+git fetch origin
+git merge origin/develop
+# resolve conflicts if any
+git push origin dev-<your-name>
+```
+
+Then update open feature branches:
+
+```bash
+git checkout feature/<your-name>-<task>
+git rebase origin/develop
+git push --force-with-lease origin feature/<your-name>-<task>
+```
+
+Use `--force-with-lease`, not bare `--force`, when updating a rebased feature branch.
+
+---
+
+## Cursor agent summary
+
+1. Default branch for new work: `feature/<name>-<task>` off `dev-<name>` or `develop`.
+2. PR target is always **`develop`** unless user says otherwise.
+3. Keep `dev-<name>` synced with `develop`; do not treat it as a substitute for `develop`.
+4. Never force-push shared branches.
+5. After user merges a PR, remind them to sync `dev-<name>` from `develop` and delete the feature branch.
