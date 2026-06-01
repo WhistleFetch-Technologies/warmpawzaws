@@ -31,6 +31,7 @@ const RULES: AdminRouteGateRule[] = [
   { pathPrefix: '/analytics', permission: 'admin.analytics' },
   { pathPrefix: '/enterprise', permission: 'admin.governance' },
   { pathPrefix: '/ecommerce', permission: 'admin.ecommerce' },
+  { pathPrefix: '/notification-engine', permission: 'admin.notifications.view' },
   { pathPrefix: '/marketing', permission: 'admin.integrations' },
   { pathPrefix: '/loyalty', permission: 'admin.integrations' },
   { pathPrefix: '/banners', permission: 'admin.integrations' },

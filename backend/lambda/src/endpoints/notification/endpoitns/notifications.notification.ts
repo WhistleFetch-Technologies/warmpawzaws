@@ -27,37 +27,12 @@ import {
   normalizeCustomerNotificationSettings,
   persistCustomerNotificationSettings,
 } from '../../../utils/customer-notification-settings';
-
-async function markNotificationsOpenedByIds(notificationIds: string[]): Promise<void> {
-  if (notificationIds.length === 0) return;
-
-  await query(
-    `UPDATE notifications
-     SET is_read = true,
-         read_at = COALESCE(read_at, NOW()),
-         delivery_status = CASE
-           WHEN delivery_status NOT IN ('opened', 'failed', 'expired') THEN 'opened'::notification_delivery_status
-           ELSE delivery_status
-         END,
-         opened_at = CASE
-           WHEN delivery_status NOT IN ('opened', 'failed', 'expired') THEN NOW()
-           ELSE opened_at
-         END
-     WHERE id = ANY($1::uuid[])`,
-    [notificationIds]
-  );
-
-  await query(
-    `UPDATE notification_delivery_log
-     SET status = 'opened'::notification_delivery_status,
-         opened_at = NOW(),
-         updated_at = NOW()
-     WHERE notification_id = ANY($1::uuid[])
-       AND channel = 'in_app'
-       AND status NOT IN ('opened', 'failed', 'expired')`,
-    [notificationIds]
-  );
-}
+import {
+  ensureDeliveryLogEntries,
+  finalizeInAppDelivery,
+  markNotificationsOpenedByIds,
+  resolveChannelsFromRequest,
+} from '../../../utils/notification-delivery';
 
 async function markAllNotificationsOpenedForRecipient(recipientId: string, recipientType: string): Promise<void> {
   const result = await query(
@@ -208,6 +183,13 @@ export function registerNotificationEndpoints(app: Hono) {
         return c.json({ error: 'userId, userType, notificationType, title, and message are required' }, 400);
       }
 
+      const channelConfig = {
+        email: false,
+        sms: sendSms || false,
+        inApp: true,
+        push: sendPush || false,
+      };
+
       // Create notification in database
       const notification = await insert('notifications', {
         recipient_id: userId, // Schema uses recipient_id, not user_id
@@ -215,14 +197,21 @@ export function registerNotificationEndpoints(app: Hono) {
         notification_type: notificationType,
         title: title,
         message: message,
-        channels: {
-          email: sendSms || false, // Note: sendSms param name is misleading, should be sendEmail
-          sms: sendSms || false,
-          inApp: true,
-          push: sendPush || false,
-        },
+        channels: channelConfig,
         is_read: false,
+        delivery_status: 'created',
       });
+
+      const notificationId = notification[0]?.id as string | undefined;
+      if (notificationId) {
+        const deliveryChannels = await resolveChannelsFromRequest(channelConfig);
+        await ensureDeliveryLogEntries(notificationId, deliveryChannels, {
+          title,
+          body: message,
+          type: notificationType,
+        });
+        await finalizeInAppDelivery(notificationId);
+      }
 
       // Send SMS if requested
       if (sendSms) {
