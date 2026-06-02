@@ -5,6 +5,16 @@
 export const PROFILE_ADDRESS_FORMAT_PLACEHOLDER =
   'e.g. Area, Locality, City, State, Country';
 
+/**
+ * Strip trailing Indian pincodes (6-digit number) from a location segment.
+ * Google Maps formats some address components as "Karnataka 560001" — the
+ * pincode gets included in the state/administrative_area component. We remove
+ * it so the clean state name ("Karnataka") can be used for service lookups.
+ */
+function stripTrailingPincode(segment: string): string {
+  return segment.replace(/\s*\d{6}\s*$/, '').trim();
+}
+
 /** Best-effort city/state from trailing comma-separated segments (for API columns). */
 export function inferCityStateFromCommaAddress(full: string): { city?: string; state?: string } {
   const parts = full
@@ -13,8 +23,8 @@ export function inferCityStateFromCommaAddress(full: string): { city?: string; s
     .filter(Boolean);
   if (parts.length >= 3) {
     return {
-      city: parts[parts.length - 3],
-      state: parts[parts.length - 2],
+      city: stripTrailingPincode(parts[parts.length - 3]),
+      state: stripTrailingPincode(parts[parts.length - 2]),
     };
   }
   return {};

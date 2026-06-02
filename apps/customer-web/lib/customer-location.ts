@@ -12,6 +12,17 @@ function cacheKey(phone: string): string {
   return (phone || '').replace(/\D/g, '') || 'guest';
 }
 
+/**
+ * Strip trailing Indian pincodes (6-digit number) from a state or city name.
+ * Addresses from Google Maps sometimes arrive as "Karnataka 560001" — the
+ * pincode gets appended to the state component. This causes the service-launch
+ * config API's exact state-name lookup to fail, hiding all services.
+ * e.g. "Karnataka 560001" → "Karnataka", "Maharashtra" → "Maharashtra"
+ */
+function cleanStateName(value: string): string {
+  return value.replace(/\s*\d{6}\s*$/, '').trim();
+}
+
 function readCachedLocation(phone: string): CustomerLocation | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -68,8 +79,8 @@ export async function resolveCustomerLocation(phone: string): Promise<CustomerLo
       const addresses = addressesResponse?.addresses || [];
       const defaultAddress = addresses.find((a) => a.isDefault) || addresses[0];
       if (defaultAddress) {
-        city = (defaultAddress.city || '').trim();
-        state = (defaultAddress.state || '').trim();
+        city = cleanStateName((defaultAddress.city || '').trim());
+        state = cleanStateName((defaultAddress.state || '').trim());
       }
     } catch {
       /* keep fallback */
@@ -84,8 +95,8 @@ export async function resolveCustomerLocation(phone: string): Promise<CustomerLo
           cachedProfile,
           (cachedProfile.pincode as string) || ''
         );
-        if (!city && profileLocation.city) city = String(profileLocation.city).trim();
-        if (!state && profileLocation.state) state = String(profileLocation.state).trim();
+        if (!city && profileLocation.city) city = cleanStateName(String(profileLocation.city).trim());
+        if (!state && profileLocation.state) state = cleanStateName(String(profileLocation.state).trim());
       }
     }
 
@@ -110,4 +121,18 @@ export async function resolveCustomerLocation(phone: string): Promise<CustomerLo
 /** Instant location from session cache (same session refresh). */
 export function readCachedCustomerLocation(phone: string): CustomerLocation | null {
   return readCachedLocation(phone);
+}
+
+/**
+ * Invalidate the location session cache for a phone number.
+ * Must be called after the customer updates their address so the next home
+ * page load re-fetches the correct city/state from the addresses API.
+ */
+export function invalidateCustomerLocationCache(phone: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.removeItem(`warmpawz_customer_location_${cacheKey(phone)}`);
+  } catch {
+    /* ignore */
+  }
 }
