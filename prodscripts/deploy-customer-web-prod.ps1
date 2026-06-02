@@ -69,6 +69,9 @@ if ($DeployOnly -and (Test-Path "dist")) {
     Start-Sleep -Seconds 2
 
     # Build with retry on failure
+    $env:NEXT_PUBLIC_ENVIRONMENT = "production"
+    $env:NEXT_PUBLIC_API_BASE_URL = $API_BASE_URL
+    $env:NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED = "true"
     try {
         npm run build
     } catch {
@@ -98,7 +101,8 @@ $runtimeConfig = "// Runtime Configuration for Warmpawz $APP_NAME (PRODUCTION)`n
 "  window.__WARMPAWZ_RUNTIME_CONFIG__ = {`n" +
 "    apiBaseUrl: `"$API_BASE_URL`",`n" +
 "    uatMode: false,`n" +
-"    environment: `"production`"`n" +
+"    environment: `"production`",`n" +
+"    customerMealPlansEnabled: true`n" +
 "  };`n" +
 "  console.log('Runtime config loaded (PROD):', window.__WARMPAWZ_RUNTIME_CONFIG__);`n" +
 "})();`n"
@@ -109,7 +113,7 @@ Write-Host "runtime-config.js injected (apiBaseUrl -> API Gateway)" -ForegroundC
 
 # Step 1.6: Replace inline runtime-config in HTML files
 Write-Host "Replacing inline runtime-config in HTML files..." -ForegroundColor Blue
-$INLINE_CONFIG = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$API_BASE_URL', uatMode: false, environment: 'production' };"
+$INLINE_CONFIG = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$API_BASE_URL', uatMode: false, environment: 'production', customerMealPlansEnabled: true };"
 Get-ChildItem -Path "apps\$APP_NAME\dist" -Filter "*.html" -Recurse | ForEach-Object {
     $content = Get-Content $_.FullName -Raw
     if ($content -match 'runtime-config-inline') {

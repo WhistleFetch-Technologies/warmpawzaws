@@ -38,6 +38,7 @@ import {
 } from '../../../utils/admin-fee-settings-db';
 import { computePolicyDeliveryFeeForOrder } from '../../../utils/customer-delivery-fee-quote';
 import { customerServicesForCatalogCategorySlug } from '../../../utils/catalog-category-customer-service-map';
+import { normalizeCategoryImageUrlForStorage } from '../../../utils/ecommerce-category-display';
 import { canManageRbacAdmin } from '../../../utils/admin-rbac-permissions';
 import { decodeTokenUnsafe } from '../../../utils/jwt-verification';
 import {
@@ -2130,12 +2131,30 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               COALESCE(description::text, '') as description,
               COALESCE(display_order::integer, 0) as display_order,
               COALESCE(is_active::boolean, true) as is_active,
+              image_url::text as image_url,
               COALESCE(created_at::text, '') as created_at
             FROM ecommerce_categories
             WHERE is_active = true OR is_active IS NULL
             ORDER BY display_order ASC NULLS LAST, name ASC
             LIMIT 1000
-          `);
+          `).catch(async (err: { message?: string; code?: string }) => {
+            if (err.message?.includes('image_url') || err.code === '42703') {
+              return query(`
+                SELECT 
+                  id::text as id,
+                  name::text as name,
+                  COALESCE(description::text, '') as description,
+                  COALESCE(display_order::integer, 0) as display_order,
+                  COALESCE(is_active::boolean, true) as is_active,
+                  COALESCE(created_at::text, '') as created_at
+                FROM ecommerce_categories
+                WHERE is_active = true OR is_active IS NULL
+                ORDER BY display_order ASC NULLS LAST, name ASC
+                LIMIT 1000
+              `);
+            }
+            throw err;
+          });
 
           // Auto-seed default ecommerce categories if table is empty
           if (categories.rows.length === 0) {
@@ -2174,12 +2193,30 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
                 COALESCE(description::text, '') as description,
                 COALESCE(display_order::integer, 0) as display_order,
                 COALESCE(is_active::boolean, true) as is_active,
+                image_url::text as image_url,
                 COALESCE(created_at::text, '') as created_at
               FROM ecommerce_categories
               WHERE is_active = true OR is_active IS NULL
               ORDER BY display_order ASC NULLS LAST, name ASC
               LIMIT 1000
-            `);
+            `).catch(async (err: { message?: string; code?: string }) => {
+              if (err.message?.includes('image_url') || err.code === '42703') {
+                return query(`
+                  SELECT 
+                    id::text as id,
+                    name::text as name,
+                    COALESCE(description::text, '') as description,
+                    COALESCE(display_order::integer, 0) as display_order,
+                    COALESCE(is_active::boolean, true) as is_active,
+                    COALESCE(created_at::text, '') as created_at
+                  FROM ecommerce_categories
+                  WHERE is_active = true OR is_active IS NULL
+                  ORDER BY display_order ASC NULLS LAST, name ASC
+                  LIMIT 1000
+                `);
+              }
+              throw err;
+            });
           }
         } else {
           // For service_categories, use full query with category_id
@@ -2245,7 +2282,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         }
 
         // For ecommerce_categories, return base fields only
-        return base;
+        return {
+          ...base,
+          image_url: cat.image_url != null ? String(cat.image_url) : '',
+        };
       });
 
       return c.json({
@@ -2367,14 +2407,31 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
 
       // Handle ecommerce_categories vs service_categories
       if (categoryType === 'ecommerce') {
-        // For ecommerce_categories, use UUID id (no category_id field)
-        const newCategory = await insert('ecommerce_categories', {
+        const imageUrl = normalizeCategoryImageUrlForStorage(
+          (body as { imageUrl?: string; image_url?: string }).imageUrl ??
+            (body as { image_url?: string }).image_url
+        );
+        const insertRow: Record<string, unknown> = {
           name,
           description: description || '',
           display_order: nextOrder,
           is_active: status !== 'inactive',
           created_at: new Date().toISOString(),
-        });
+        };
+        if (imageUrl) insertRow.image_url = imageUrl;
+
+        let newCategory;
+        try {
+          newCategory = await insert('ecommerce_categories', insertRow);
+        } catch (insertErr: unknown) {
+          const err = insertErr as { message?: string; code?: string };
+          if (err.message?.includes('image_url') || err.code === '42703') {
+            const { image_url: _i, ...withoutImage } = insertRow;
+            newCategory = await insert('ecommerce_categories', withoutImage);
+          } else {
+            throw insertErr;
+          }
+        }
 
         return c.json({
           success: true,
@@ -2493,6 +2550,42 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const id = c.req.param('id');
       const body = await c.req.json().catch(() => ({}));
+      const categoryType =
+        c.req.query('type') || (body as { type?: string }).type || 'service';
+
+      if (categoryType === 'ecommerce') {
+        const updateData: Record<string, unknown> = {};
+        if (body.name !== undefined) updateData.name = body.name;
+        if (body.description !== undefined) updateData.description = body.description;
+        if (body.status !== undefined) updateData.is_active = body.status !== 'inactive';
+        if (body.display_order !== undefined) {
+          updateData.display_order = parseInt(String(body.display_order), 10);
+        }
+        if (body.imageUrl !== undefined || body.image_url !== undefined) {
+          updateData.image_url = normalizeCategoryImageUrlForStorage(
+            body.imageUrl ?? body.image_url
+          );
+        }
+
+        let updated;
+        try {
+          updated = await update('ecommerce_categories', { id }, updateData);
+        } catch (updateErr: unknown) {
+          const err = updateErr as { message?: string; code?: string };
+          if (err.message?.includes('image_url') || err.code === '42703') {
+            const { image_url: _i, ...withoutImage } = updateData;
+            updated = await update('ecommerce_categories', { id }, withoutImage);
+          } else {
+            throw updateErr;
+          }
+        }
+
+        return c.json({
+          success: true,
+          message: 'E-commerce category updated successfully',
+          category: updated?.[0],
+        });
+      }
 
       const updateData: any = {
         updated_at: new Date().toISOString(),

@@ -59,14 +59,22 @@ import {
 	BANNER_SELECT_EMPTY,
 	buildBannerCtaLink,
 	buildBannerMetadata,
+	buildShopBannerTarget,
+	buildShopBannerCtaLink,
+	mergeShopBannerIntoMetadata,
 	parseBannerTargetFromAdminRow,
+	parseShopBannerTargetFromAdminRow,
+	formatShopProductOptionLabel,
 	normalizeBannerServiceStyle,
 	validateBannerSaveTarget,
 	isCheckoutBannerPosition,
+	isShopBannerPosition,
 	type BannerDestinationCategory,
 	type BannerDestinationServiceStyle,
 	type BannerDestinationVendor,
+	type ShopBannerTargetLevel,
 } from "@/lib/banner-admin";
+import { ShopBannerDestinationFields } from "@/components/admin/marketing/ShopBannerDestinationFields";
 import { toast, Toaster } from "sonner";
 import {
 	CouponManagement,
@@ -95,6 +103,7 @@ export default function MarketingPromotionsTab() {
 		subtitle: "",
 		image_url: "",
 		cta_text: "Shop Now",
+		cta_link: "",
 		position: "home_top",
 		is_active: true,
 		start_date: new Date().toISOString().split("T")[0],
@@ -115,6 +124,10 @@ export default function MarketingPromotionsTab() {
 	const [bannerDestinationServiceStyles, setBannerDestinationServiceStyles] = useState<BannerDestinationServiceStyle[]>([]);
 	const [bannerDestinationVendors, setBannerDestinationVendors] = useState<BannerDestinationVendor[]>([]);
 	const [bannerDestinationLoading, setBannerDestinationLoading] = useState(false);
+	const [bannerShopTargetMode, setBannerShopTargetMode] = useState<ShopBannerTargetLevel>("informational");
+	const [bannerShopProductId, setBannerShopProductId] = useState("");
+	const [bannerShopProductName, setBannerShopProductName] = useState("");
+	const [bannerShopProductSku, setBannerShopProductSku] = useState("");
 	
 	// Articles State
 	const [articles, setArticles] = useState<any[]>([]);
@@ -772,6 +785,7 @@ export default function MarketingPromotionsTab() {
 
 	const handleSaveBanner = async () => {
 		const isCheckout = isCheckoutBannerPosition(bannerForm.position);
+		const isShop = isShopBannerPosition(bannerForm.position);
 
 		const validation = validateBannerSaveTarget({
 			position: bannerForm.position,
@@ -779,6 +793,8 @@ export default function MarketingPromotionsTab() {
 			targetMode: bannerCtaTargetMode,
 			serviceStyle: bannerCtaServiceStyle,
 			vendorId: bannerCtaVendorId,
+			shopTargetMode: bannerShopTargetMode,
+			shopProductId: bannerShopProductId,
 		});
 		if (!validation.ok) {
 			toast.error(validation.message);
@@ -809,10 +825,10 @@ export default function MarketingPromotionsTab() {
 		if (bannerCtaTargetMode === "service_type") targetLevel = "service_type";
 		if (bannerCtaTargetMode === "vendor") targetLevel = "vendor";
 
-		const metadata = buildBannerMetadata({
+		let metadata = buildBannerMetadata({
 			gradientFrom: bannerForm.gradient_from,
 			gradientTo: bannerForm.gradient_to,
-			bannerTarget: isCheckout
+			bannerTarget: isCheckout || isShop
 				? null
 				: {
 						categoryId: bannerCtaPersona,
@@ -826,11 +842,25 @@ export default function MarketingPromotionsTab() {
 						persona: customerScreen,
 					},
 		});
-		const ctaLink = isCheckout
+
+		let ctaLink = isCheckout
 			? ""
-			: bannerCtaTargetMode === "vendor" && vendorName
-				? buildBannerCtaLink(customerScreen, vendorName)
-				: String(editingBanner?.linkUrl || editingBanner?.cta_link || "").trim();
+			: isShop
+				? ""
+				: bannerCtaTargetMode === "vendor" && vendorName
+					? buildBannerCtaLink(customerScreen, vendorName)
+					: String(editingBanner?.linkUrl || editingBanner?.cta_link || "").trim();
+
+		if (isShop) {
+			const shopTarget = buildShopBannerTarget({
+				targetMode: bannerShopTargetMode,
+				productId: bannerShopProductId,
+				productName: bannerShopProductName || undefined,
+				productSku: bannerShopProductSku || undefined,
+			});
+			metadata = mergeShopBannerIntoMetadata(metadata, shopTarget);
+			ctaLink = buildShopBannerCtaLink(shopTarget);
+		}
 
 		try {
 			if (editingBanner) {
@@ -895,11 +925,16 @@ export default function MarketingPromotionsTab() {
 		setBannerCtaTargetMode("none");
 		setBannerDestinationServiceStyles([]);
 		setBannerDestinationVendors([]);
+		setBannerShopTargetMode("informational");
+		setBannerShopProductId("");
+		setBannerShopProductName("");
+		setBannerShopProductSku("");
 		setBannerForm({
 			title: "",
 			subtitle: "",
 			image_url: "",
 			cta_text: "Shop Now",
+			cta_link: "",
 			position: "home_top",
 			is_active: true,
 			start_date: new Date().toISOString().split("T")[0],
@@ -1030,13 +1065,35 @@ export default function MarketingPromotionsTab() {
 			setBannerCtaServiceStyle("");
 		}
 
+		const position = (banner.position as string) || adminBannerPositionFromRow(banner);
+		const shopTarget = parseShopBannerTargetFromAdminRow(banner as Record<string, unknown>);
+		if (isShopBannerPosition(position)) {
+			if (shopTarget?.targetLevel === "product" && shopTarget.productId) {
+				setBannerShopTargetMode("product");
+				setBannerShopProductId(shopTarget.productId);
+				setBannerShopProductName(shopTarget.productName || "");
+				setBannerShopProductSku(shopTarget.productSku || "");
+			} else {
+				setBannerShopTargetMode("informational");
+				setBannerShopProductId("");
+				setBannerShopProductName("");
+				setBannerShopProductSku("");
+			}
+		} else {
+			setBannerShopTargetMode("informational");
+			setBannerShopProductId("");
+			setBannerShopProductName("");
+			setBannerShopProductSku("");
+		}
+
 		setEditingBanner(banner);
 		setBannerForm({
 			title: banner.title || "",
 			subtitle: banner.subtitle || banner.description || "",
 			image_url: banner.image_url || banner.imageUrl || "",
 			cta_text: banner.cta_text || banner.ctaText || "Book Now",
-			position: (banner.position as string) || adminBannerPositionFromRow(banner),
+			cta_link: banner.cta_link || banner.ctaLink || banner.linkUrl || "",
+			position,
 			is_active: banner.is_active !== false,
 			start_date: banner.start_date ? new Date(banner.start_date).toISOString().split("T")[0] : "",
 			end_date: banner.end_date ? new Date(banner.end_date).toISOString().split("T")[0] : "",
@@ -1951,7 +2008,7 @@ export default function MarketingPromotionsTab() {
 									<div>
 										<h3 className="text-lg font-medium">Banners by placement</h3>
 										<p className="text-sm text-gray-500">
-											Home hero and middle, Find All Services (category), and shop checkout each use their own placement
+											Home hero and middle, Find All Services (category), shop main, and shop checkout each use their own placement
 										</p>
 									</div>
 									<Button
@@ -2520,7 +2577,7 @@ export default function MarketingPromotionsTab() {
 							{editingBanner ? "Edit Banner" : "Create New Banner"}
 						</DialogTitle>
 						<DialogDescription>
-							Choose where the banner appears: home hero, home middle, home lower, Find All Services (category), or shop checkout.
+							Choose where the banner appears: home hero, home middle, home lower, Find All Services (category), shop main, or shop checkout.
 						</DialogDescription>
 					</DialogHeader>
 
@@ -2606,6 +2663,33 @@ export default function MarketingPromotionsTab() {
 								<p className="text-sm text-gray-600">
 									Checkout banners are informational only — no destination or redirect is configured.
 								</p>
+							) : isShopBannerPosition(bannerForm.position) ? (
+								<ShopBannerDestinationFields
+									targetMode={bannerShopTargetMode}
+									onTargetModeChange={(mode) => {
+										setBannerShopTargetMode(mode);
+										if (mode === "informational") {
+											setBannerShopProductId("");
+											setBannerShopProductName("");
+											setBannerShopProductSku("");
+										}
+									}}
+									productId={bannerShopProductId}
+									onProductIdChange={setBannerShopProductId}
+									onProductSelect={(product) => {
+										setBannerShopProductName(product?.name || "");
+										setBannerShopProductSku(product?.sku || "");
+									}}
+									selectedProductLabel={
+										bannerShopProductName
+											? formatShopProductOptionLabel({
+													name: bannerShopProductName,
+													price: 0,
+													sku: bannerShopProductSku,
+												})
+											: undefined
+									}
+								/>
 							) : (
 								<>
 							<div>
@@ -2746,11 +2830,17 @@ export default function MarketingPromotionsTab() {
 									value={bannerForm.position}
 									onValueChange={(v: string) => {
 										setBannerForm({ ...bannerForm, position: v });
-										if (isCheckoutBannerPosition(v)) {
+										if (isCheckoutBannerPosition(v) || isShopBannerPosition(v)) {
 											setBannerCtaPersona("");
 											setBannerCtaServiceStyle("");
 											setBannerCtaVendorId("");
 											setBannerCtaTargetMode("none");
+										}
+										if (isShopBannerPosition(v)) {
+											setBannerShopTargetMode("informational");
+											setBannerShopProductId("");
+											setBannerShopProductName("");
+											setBannerShopProductSku("");
 										}
 									}}
 								>
@@ -2762,11 +2852,12 @@ export default function MarketingPromotionsTab() {
 										<SelectItem value="home_middle">Home Middle</SelectItem>
 										<SelectItem value="home_lower">Home Lower</SelectItem>
 										<SelectItem value="category">Category Page</SelectItem>
+										<SelectItem value="shop">Shop Main Page</SelectItem>
 										<SelectItem value="checkout">Checkout Page</SelectItem>
 									</SelectContent>
 								</Select>
 								<p className="text-xs text-gray-500 mt-1.5">
-									Home top, middle, and lower: customer home only. Category: Find All Services. Checkout: shop checkout.
+									Home top, middle, and lower: customer home only. Category: Find All Services. Shop main: Pet Products listing. Checkout: shop checkout.
 								</p>
 							</div>
 							<div>

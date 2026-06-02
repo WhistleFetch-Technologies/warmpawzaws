@@ -23,6 +23,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { listVendorServicesForBannerPicker } from '../../../utils/banner-cta-resolver';
 import { getBannerDestinationOptions } from '../../../utils/banner-destination-options';
+import { listShopBannerDestinationProducts } from '../../../utils/banner-shop-destination-options';
 
 // ============================================================================
 // CAPABILITY REFRESH SYSTEM
@@ -390,6 +391,7 @@ const ALLOWED_BANNER_DB_TYPES = new Set([
   'home_middle',
   'home_lower',
   'checkout',
+  'shop',
 ]);
 
 function pickBannerStringField(value: unknown): string | undefined {
@@ -802,6 +804,27 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
           categories: [],
           serviceStyles: [],
           vendors: [],
+        },
+        500
+      );
+    }
+  });
+
+  /** Shop main banner product picker (storefront-visible products only). */
+  app.get('/admin/banners/shop-destination-options', async (c) => {
+    try {
+      const search = c.req.query('search') || undefined;
+      const limit = c.req.query('limit') || undefined;
+      const products = await listShopBannerDestinationProducts({ search, limit });
+      return c.json({ success: true, products, total: products.length });
+    } catch (error: any) {
+      console.error('Error loading shop banner destination options:', error);
+      return c.json(
+        {
+          success: false,
+          error: error.message || 'Failed to load shop destination options',
+          products: [],
+          total: 0,
         },
         500
       );

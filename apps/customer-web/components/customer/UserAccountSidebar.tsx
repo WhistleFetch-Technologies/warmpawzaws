@@ -552,8 +552,8 @@ export function UserAccountSidebar({
     loadBookings();
     try {
       const v = sessionStorage.getItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
-      if (v === 'bookings') {
-        setActiveView('bookings');
+      if (v === 'bookings' || v === 'addresses') {
+        setActiveView(v);
         sessionStorage.removeItem(WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY);
       }
     } catch {

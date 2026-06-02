@@ -42,11 +42,21 @@ import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr, resolveMealPurchaseSu
 import { generateMealOrderNumber } from '../utils/meal-order-number';
 import { processMealOrderVendorCancelOriginalRefund } from '../utils/payments/meal-order-original-refund';
 import {
+  notifyMealOrderPaid,
+  notifyMealOrderCancelledByVendor,
+  notifyMealSubscriptionLifecycle,
+  notifyVendorMealSubscriptionActive,
+} from '../utils/meal-delivery-notifications';
+import {
   dedupeMealPlanCatalogRows,
   ensureMealPlanMirrorForProductCheckout,
   normalizeProductRowToMealPlanShape,
   resolveMealPlanOrProductById,
 } from '../utils/meal-plan-resolve';
+import {
+  applyWalletDebitToPendingMealOrder,
+  mealOrderWalletDebitFromRow,
+} from '../utils/meal-order-wallet';
 import {
   assertVendorAcceptingMealOrders,
   enrichMealPlanRowsWithKitchenAvailability,
@@ -463,6 +473,29 @@ export function registerMealPlanEndpoints(app: Hono) {
       const vendorId = await resolveVendorId(paramVendorId);
       const activeOnly = c.req.query('activeOnly') === 'true';
 
+      const vendorStatus = await query(
+        `SELECT COALESCE(is_online, true) AS is_online, is_active, status
+         FROM vendors WHERE id = $1 LIMIT 1`,
+        [vendorId],
+      ).catch(() => ({ rows: [] as Array<Record<string, unknown>> }));
+      const vrow = vendorStatus.rows?.[0];
+      if (!vrow) {
+        return c.json({ success: true, mealPlans: [], total: 0 });
+      }
+      const isOnline =
+        vrow.is_online !== false &&
+        vrow.is_online !== 'f' &&
+        vrow.is_online !== 'false' &&
+        vrow.is_online !== 0 &&
+        vrow.is_online !== '0';
+      if (
+        !isOnline ||
+        vrow.is_active === false ||
+        String(vrow.status || '') !== 'approved'
+      ) {
+        return c.json({ success: true, mealPlans: [], total: 0, vendorOffline: true });
+      }
+
       let queryText = `
         SELECT * FROM meal_plans 
         WHERE vendor_id = $1
@@ -623,6 +656,7 @@ export function registerMealPlanEndpoints(app: Hono) {
         WHERE mp.is_active = true
         AND v.is_active = true
         AND v.status = 'approved'
+        AND COALESCE(v.is_online, true) = true
       `;
       const params: any[] = [];
       let paramCount = 0;
@@ -1496,26 +1530,114 @@ export function registerMealPlanEndpoints(app: Hono) {
   });
 
   /**
+   * POST /meal/orders/:orderId/checkout-order
+   * Attach Razorpay order id after wallet split (one-time meal checkout).
+   */
+  app.post("/meal/orders/:orderId/checkout-order", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body = await c.req.json().catch(() => ({}));
+      const customerId = String(body.customerId || '').trim();
+      const razorpayOrderId = String(body.razorpayOrderId || '').trim();
+      if (!customerId || !razorpayOrderId) {
+        return c.json({ success: false, error: 'customerId and razorpayOrderId are required' }, 400);
+      }
+      const orders = await select('meal_orders', { id: orderId });
+      if (!orders.length || String(orders[0].customer_id || '') !== customerId) {
+        return c.json({ success: false, error: 'Order not found' }, 404);
+      }
+      if (String(orders[0].payment_status || '') === 'paid') {
+        return c.json({ success: false, error: 'Order is already paid' }, 400);
+      }
+      await update('meal_orders', { id: orderId }, { razorpay_order_id: razorpayOrderId });
+      return c.json({ success: true });
+    } catch (error: any) {
+      return c.json({ success: false, error: error.message || 'Could not link checkout order' }, 500);
+    }
+  });
+
+  /**
+   * POST /meal/orders/:orderId/wallet-debit
+   * Apply Warmpawz wallet toward a pending one-time meal order (idempotent per idempotencyKey).
+   */
+  app.post("/meal/orders/:orderId/wallet-debit", async (c) => {
+    try {
+      const { orderId } = c.req.param();
+      const body = await c.req.json().catch(() => ({}));
+      const customerId = String(body.customerId || '').trim();
+      const amountInRupees = Number(body.amountInRupees);
+      const idempotencyKey = String(body.idempotencyKey || '').trim();
+      if (!customerId) {
+        return c.json({ success: false, error: 'customerId is required' }, 400);
+      }
+      const result = await applyWalletDebitToPendingMealOrder(
+        orderId,
+        customerId,
+        amountInRupees,
+        idempotencyKey,
+      );
+      if (!result.success) {
+        return c.json({ success: false, error: result.error || 'Wallet debit failed' }, 400);
+      }
+      return c.json({ success: true, ...result });
+    } catch (error: any) {
+      console.error('Error debiting wallet for meal order:', error);
+      return c.json({ success: false, error: error.message || 'Wallet debit failed' }, 500);
+    }
+  });
+
+  /**
    * POST /meal/orders/:orderId/confirm-payment
    * Confirm payment and notify vendor
    */
   app.post("/meal/orders/:orderId/confirm-payment", async (c) => {
     try {
       const { orderId } = c.req.param();
-      const { razorpayPaymentId, razorpaySignature } = await c.req.json();
+      const body = await c.req.json().catch(() => ({}));
+      const { razorpayPaymentId, razorpaySignature, customerId } = body;
 
-      // TODO: Verify Razorpay signature
+      const orders = await select('meal_orders', { id: orderId });
+      if (orders.length === 0) {
+        return c.json({ error: 'Order not found' }, 404);
+      }
+      const order = orders[0] as Record<string, unknown>;
+      if (customerId && String(order.customer_id || '') !== String(customerId)) {
+        return c.json({ error: 'Order not found' }, 404);
+      }
+      if (String(order.payment_status || '') === 'paid') {
+        return c.json({ success: true, message: 'Payment already confirmed.' });
+      }
+
+      const walletApplied = mealOrderWalletDebitFromRow(order);
+      const totalDue = parseFloat(String(order.total_amount ?? '0')) || 0;
+      const remainder = Math.max(0, Math.round((totalDue - walletApplied) * 100) / 100);
+      const paymentId =
+        razorpayPaymentId != null && String(razorpayPaymentId).trim()
+          ? String(razorpayPaymentId).trim()
+          : undefined;
+
+      if (remainder > 0.009 && !paymentId) {
+        return c.json(
+          { error: 'Razorpay payment is required for the remaining balance', remainderInRupees: remainder },
+          400,
+        );
+      }
+
+      // TODO: Verify Razorpay signature when paymentId is present
       
       await update('meal_orders', { id: orderId }, {
         payment_status: 'paid',
-        razorpay_payment_id: razorpayPaymentId,
+        razorpay_payment_id: paymentId || (walletApplied > 0.009 ? 'wallet' : null),
         status: 'confirmed',
         confirmed_at: new Date().toISOString(),
       });
 
-      const orders = await select('meal_orders', { id: orderId });
-      if (orders[0]) {
-        fireVendorMealOrderScheduledSms(orders[0] as Record<string, unknown>);
+      const updated = await select('meal_orders', { id: orderId });
+      if (updated[0]) {
+        fireVendorMealOrderScheduledSms(updated[0] as Record<string, unknown>);
+        void notifyMealOrderPaid(orderId).catch((e) =>
+          console.warn('[meal/confirm-payment] notify failed:', e),
+        );
       }
 
       return c.json({
@@ -1821,6 +1943,10 @@ export function registerMealPlanEndpoints(app: Hono) {
           const msg = refundErr instanceof Error ? refundErr.message : 'Refund failed';
           console.error('[meal/orders/update-status] original refund failed:', msg, { orderId });
         }
+        void notifyMealOrderCancelledByVendor(
+          orderId,
+          notes || 'Vendor cancelled meal order',
+        ).catch((e) => console.warn('[meal/orders/update-status] cancel notify failed:', e));
       }
 
       // If delivered, create settlement
@@ -1951,6 +2077,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         pause_until: pauseUntil,
       });
 
+      void notifyMealSubscriptionLifecycle(subscriptionId, 'paused').catch((e) =>
+        console.warn('[meal/subscriptions/pause] notify failed:', e),
+      );
+
       return c.json({
         success: true,
         message: `Subscription paused until ${pauseUntil}`,
@@ -1973,6 +2103,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         status: 'active',
         pause_until: null,
       });
+
+      void notifyMealSubscriptionLifecycle(subscriptionId, 'resumed').catch((e) =>
+        console.warn('[meal/subscriptions/resume] notify failed:', e),
+      );
 
       return c.json({
         success: true,
@@ -1998,6 +2132,10 @@ export function registerMealPlanEndpoints(app: Hono) {
         cancelled_at: new Date().toISOString(),
         cancellation_reason: reason,
       });
+
+      void notifyMealSubscriptionLifecycle(subscriptionId, 'cancelled', reason).catch((e) =>
+        console.warn('[meal/subscriptions/cancel] notify failed:', e),
+      );
 
       // TODO: Cancel Razorpay subscription
 

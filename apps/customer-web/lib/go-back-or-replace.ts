@@ -402,3 +402,24 @@ export function handleSubscriptionsPageBack(router: RouterWithPush): void {
   }
   router.push('/orders/meal-plans');
 }
+
+/** Standalone meal-plan orders list (same screen as shell `meal-plan-orders`). */
+export function mealPlanOrdersPath(phone?: string): string {
+  const normalized = String(phone || '').trim();
+  return normalized
+    ? `/orders/meal-plans?phone=${encodeURIComponent(normalized)}`
+    : '/orders/meal-plans';
+}
+
+/** After one-time meal checkout payment succeeds — land on Meal Plan Orders. */
+export function navigateAfterMealOrderPlaced(
+  router: RouterWithPush & { replace?: (path: string) => void },
+  phone?: string,
+): void {
+  const path = mealPlanOrdersPath(phone);
+  if (typeof router.replace === 'function') {
+    router.replace(path);
+  } else {
+    router.push(path);
+  }
+}

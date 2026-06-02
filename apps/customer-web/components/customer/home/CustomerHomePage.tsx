@@ -68,7 +68,7 @@ export interface CustomerHomePageContentProps {
   onViewBooking?: (bookingId: string) => void;
   phone?: string;
   hotDeals: ShopHotDeal[];
-  ecommerceShopCategories: Array<{ id: string; name: string }>;
+  ecommerceShopCategories: Array<{ id: string; name: string; image_url?: string; display_order?: number }>;
   customerCommerceEnabled: boolean;
   featuredLowerBanners: FeaturedLowerBanner[];
   whatsNewAnnouncements: WhatsNewAnnouncement[];

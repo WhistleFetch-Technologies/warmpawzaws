@@ -1,0 +1,404 @@
+---
+description: Team development bible — local UI, RDS migrations, git/PR workflow, dev/prod deploy guardrails
+alwaysApply: true
+---
+
+# Warmpawz Team Development Bible
+
+This rule is the **authoritative guide** for Cursor agents helping team members work on personal feature branches. Follow it unless the user explicitly overrides a specific step.
+
+**Related rules:** `branch-health.mdc` (personal dev branch + feature branches), `deployment.mdc` (deploy scripts), `git-cli.mdc` (git CLI).
+
+---
+
+## 1. Repository layout (what lives where)
+
+| Area | Path | Purpose |
+|------|------|---------|
+| Admin UI | `apps/admin-web/` | Internal admin portal |
+| Vendor UI | `apps/vendor-web/` | Vendor/seller portal |
+| Customer UI | `apps/customer-web/` | Customer-facing web app |
+| Backend API | `backend/lambda/` | Hono API on AWS Lambda |
+| DB migrations | `db/migrations/` | Numbered, idempotent SQL files |
+| Deploy scripts | `scripts/deploy-*.sh` | **Only** approved deploy path (no CDK) |
+| Migration runners | `scripts/run-migration-rds-node.js` | Run one migration against AWS RDS |
+| Prod reference | `prodscripts/PRODUCTION_CONFIG.md` | Prod S3, CloudFront, API URLs |
+
+**Region:** `ap-south-1` for all AWS resources.
+
+---
+
+## 2. Branch & git workflow
+
+See **`branch-health.mdc`** for full personal-branch discipline (`dev-<name>` → `feature/*` → PR to `develop`).
+
+### Branch naming
+
+Work from your personal integration branch (e.g. `dev-abhi`), kept in sync with `develop`:
+
+```bash
+git fetch origin
+git checkout dev-<your-name>
+git pull origin dev-<your-name>
+git merge origin/develop
+git checkout -b feature/<your-name>-<short-description>
+# Examples: feature/abhi-shop-banners, feature/abhi-refund-columns
+```
+
+### Daily sync
+
+```bash
+git fetch origin
+git rebase origin/develop   # or merge if team prefers — resolve conflicts on your branch
+```
+
+### Commits
+
+- **Only commit when the user explicitly asks.** Never commit proactively.
+- **Never commit:** `.env`, `.env.local`, credentials, `.next/`, `node_modules/`, build artifacts, secrets.
+- Write focused commits: one logical change per commit when possible.
+- **Never** `git push --force` to `develop`, `main`, or `prod`.
+- **Never** amend a pushed commit unless the user explicitly requests it and the commit has not been shared.
+
+### Pull request flow
+
+```
+personal feature branch  →  PR to develop  →  review & approval  →  merge
+```
+
+1. Push your branch: `git push -u origin feature/<name>-<desc>`
+2. Open PR **base: `develop`**, compare: your branch (use `gh pr create` when asked).
+3. PR must include:
+   - Summary of UI/API/DB changes
+   - Migration file names (if any) and whether they were tested on dev RDS
+   - Test plan checklist
+4. **Do not merge** unless the user or reviewer explicitly approves.
+5. Merging to `develop` triggers **CI deploy to dev** (`.github/workflows/dev.yml`).
+6. Production is promoted separately: `develop` → `prod` branch (see §6). Agents must **not** push to `prod` unless explicitly instructed by a senior team member.
+
+---
+
+## 3. Local UI development
+
+### Prerequisites (one-time)
+
+```bash
+# From repo root — install per-app deps as needed
+cd apps/customer-web && npm ci    # or admin-web / vendor-web
+cd backend/lambda && npm ci       # only if working on API locally
+```
+
+Ensure **AWS CLI** is configured (`aws sts get-caller-identity`) when pointing at dev RDS or deploying.
+
+### Option A — UI against **dev API** (most common)
+
+Hot reload; no local backend required. Uses UAT OTP `123456` when `NEXT_PUBLIC_UAT_MODE=true`.
+
+```bash
+# From repo root (Windows cmd-style env vars shown; use export on bash/WSL)
+npm run dev:customer    # http://localhost:3001
+npm run dev:vendor      # http://localhost:3002
+npm run dev:admin       # http://localhost:3000 (approx — check terminal output)
+```
+
+Dev API: `https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com`
+
+### Option B — UI against **local backend**
+
+Terminal 1 — API:
+
+```bash
+cd backend/lambda
+cp .env.local.example .env.local   # if present; otherwise create .env.local
+# Set UAT_MODE=true, DB_* if using local Postgres or dev RDS read-only
+npm run start:local                # default http://localhost:3000
+```
+
+Terminal 2 — frontend:
+
+```bash
+npm run local:customer   # or local:vendor / local:admin
+```
+
+### Option C — UI against **prod API** (read-only investigation only)
+
+```bash
+npm run prod:customer    # or prod:vendor / prod:admin
+```
+
+**Guardrail:** Use prod API locally only for debugging. **Never** test writes, migrations, or destructive actions against prod from local.
+
+### UI change discipline
+
+- Match existing patterns in the app you edit (components, hooks, Tailwind, API client).
+- Keep diffs minimal — no drive-by refactors.
+- After UI changes, confirm the page loads and the changed flow works in the browser.
+- Do not add markdown docs unless the user asks.
+
+---
+
+## 4. Database: migrations & queries
+
+### Golden rules for migrations
+
+1. **Every schema change = new file** in `db/migrations/`.
+2. **File naming:** `{NNN}_{snake_case_description}.sql` — use the next free number (check latest in `db/migrations/`, currently 1020+ range).
+3. **Idempotent only:** `CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, conditional `DO $$ ... $$` blocks.
+4. **Additive only:** no `DROP TABLE`, `DROP COLUMN`, `TRUNCATE`, or unqualified `DELETE`.
+5. **Commit the migration file to the feature branch** before applying to shared environments.
+6. **Apply order:** local/dev validation → merge via PR → dev CI → prod (after approval).
+
+### Creating a migration
+
+```sql
+-- db/migrations/1024_add_widget_status_column.sql
+ALTER TABLE widgets
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+
+CREATE INDEX IF NOT EXISTS idx_widgets_status ON widgets (status);
+```
+
+### Running a migration on AWS RDS
+
+**Preferred script** (dev or prod via `ENVIRONMENT`):
+
+```bash
+# Dev (default cluster: warmpawz-dev-cluster)
+ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1024_add_widget_status_column.sql
+
+# Prod — ONLY when user explicitly requests prod migration
+ENVIRONMENT=prod node scripts/run-migration-rds-node.js 1024_add_widget_status_column.sql
+```
+
+Requirements: AWS CLI configured, IAM access to Secrets Manager + RDS, network path to cluster (prod uses RDS Proxy).
+
+**Alternative (all pending migrations):**
+
+```bash
+ENVIRONMENT=dev node scripts/run-all-migrations-rds.js
+```
+
+**Never** run ad-hoc SQL against prod without a committed migration file and explicit user approval.
+
+### Read-only queries (investigation)
+
+**Preferred:** small Node script in `scripts/` using Secrets Manager + `pg`, following `scripts/list-groomer-trainer-vendors-direct.js`.
+
+**SQL file + psql** (when you have connection details):
+
+```bash
+export DATABASE_URL="postgresql://user:pass@host:5432/warmpawz"
+psql "$DATABASE_URL" -f scripts/your-query.sql
+```
+
+**Guardrails for queries:**
+
+- `SELECT` only unless the user explicitly requests a controlled write on dev.
+- Never paste prod credentials into code or commits.
+- Prefer parameterized queries in scripts; no string-concatenated user input in SQL.
+
+### Migration status check
+
+```bash
+cd db && npm ci && npm run migrate:status
+# Requires DATABASE_URL or ENVIRONMENT-based connection
+```
+
+---
+
+## 5. Deploy from local → **dev**
+
+Use **only** scripts in `scripts/`. **Do not use CDK** or manual S3 uploads.
+
+On **Windows**, run bash scripts via **Git Bash** or **WSL**.
+
+### Pre-deploy checklist (dev)
+
+- [ ] Changes committed on feature branch (or user explicitly wants deploy from dirty tree — warn them)
+- [ ] For API changes: `cd backend/lambda && npm run build` succeeds locally
+- [ ] For UI changes: `npm run build` in the target app succeeds
+- [ ] New migrations applied on dev RDS if backend depends on schema changes
+- [ ] User confirmed which components to deploy (backend only vs one UI vs all)
+
+### Backend (Lambda) → dev
+
+```bash
+./scripts/deploy-lambda-direct.sh
+# Default function: warmpawz-dev-api-handler on https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com
+```
+
+### Frontend → dev
+
+```bash
+./scripts/deploy-admin-web.sh
+./scripts/deploy-vendor-web.sh
+./scripts/deploy-customer-web.sh
+```
+
+Each script builds, injects dev runtime config, uploads to dev S3, and invalidates CloudFront.
+
+### Typical dev deploy combos
+
+```bash
+# Backend + one UI
+./scripts/deploy-lambda-direct.sh && ./scripts/deploy-customer-web.sh
+
+# UI only (no API changes)
+./scripts/deploy-admin-web.sh
+```
+
+### After dev deploy
+
+- Hit the dev CloudFront URL or local `npm run dev:*` against dev API to smoke-test.
+- Check CloudWatch logs for Lambda errors if API behavior changed.
+
+---
+
+## 6. Deploy from local → **prod**
+
+**STOP.** Production deploys are high-risk. The agent must:
+
+1. **Not** deploy to prod unless the user **explicitly** requests it in the current message.
+2. Warn that prod affects real users and requires review.
+3. Confirm migrations were already applied/tested on dev.
+4. Use prod flags — scripts prompt for typing `yes` (do not bypass unless user provides `--yes` intentionally).
+
+### Prod endpoints (reference)
+
+| Component | Value |
+|-----------|-------|
+| API | `https://mss9sa4y01.execute-api.ap-south-1.amazonaws.com` |
+| Admin CF | `https://dbr09zyoq9akb.cloudfront.net` |
+| Customer CF | `https://dg69gqp2frh39.cloudfront.net` |
+| Vendor CF | `https://d1y5ywletev82x.cloudfront.net` |
+
+Full details: `prodscripts/PRODUCTION_CONFIG.md`.
+
+### Backend → prod
+
+```bash
+LAMBDA_FUNCTION_NAME=warmpawz-prod-api-handler ./scripts/deploy-lambda-direct.sh
+```
+
+### Frontend → prod
+
+```bash
+./scripts/deploy-admin-web.sh --prod
+./scripts/deploy-vendor-web.sh --prod
+./scripts/deploy-customer-web.sh --prod
+# Non-interactive (CI only): add --yes when user explicitly wants to skip prompt
+```
+
+### Prod migration
+
+```bash
+ENVIRONMENT=prod node scripts/run-migration-rds-node.js <migration_file>.sql
+```
+
+### Official CI prod path
+
+Preferred long-term path: merge `develop` → `prod` branch; GitHub Actions (`.github/workflows/prod.yml`) runs with environment approval. Local prod deploy is for **hotfixes** when CI path is blocked — still requires explicit user authorization.
+
+### Prod deploy order (safe)
+
+```
+1. Migration on prod RDS (if needed, idempotent file already merged)
+2. Backend Lambda
+3. Frontends (admin / vendor / customer as needed)
+4. Smoke test prod URLs
+5. Monitor CloudWatch / error rates
+```
+
+---
+
+## 7. Safety guardrails (non-negotiable)
+
+### Git & PR
+
+| Do | Don't |
+|----|-------|
+| Work on `feature/*` branches | Push directly to `develop`, `main`, or `prod` |
+| PR to `develop` after review | Merge your own PR without approval |
+| Commit only when asked | Commit secrets, `.env`, `.next/`, `node_modules/` |
+| Pull/rebase from `develop` often | Force-push shared branches |
+
+### Database
+
+| Do | Don't |
+|----|-------|
+| New numbered migration files | Edit old migration files already on dev/prod |
+| Idempotent, additive SQL | `DROP`, `TRUNCATE`, bulk `DELETE` |
+| Test on dev first | Run experimental SQL on prod |
+| Commit migration before RDS apply | Run uncommitted schema changes on shared RDS |
+
+### Deployment
+
+| Do | Don't |
+|----|-------|
+| Use `scripts/deploy-*.sh` | Use CDK, manual console edits, or random S3 uploads |
+| Default to dev deploy | Deploy prod without explicit user request |
+| Build before deploy | Deploy with known broken build |
+| Match backend/UI deploy order (API before UI if contract changed) | Deploy UI that calls unreleased API endpoints |
+
+### Code changes
+
+| Do | Don't |
+|----|-------|
+| Minimal, focused diffs | Drive-by refactors, unrelated formatting |
+| Follow existing app conventions | Introduce new frameworks without approval |
+| Run linter on edited files | Disable hooks (`--no-verify`) unless user asks |
+| Add tests when behavior is non-trivial | Add tests that only assert mocks |
+
+### Secrets & credentials
+
+- Never print, commit, or log AWS keys, DB passwords, JWT secrets, or Razorpay keys.
+- UAT on dev: OTP `123456`; `UAT_MODE=true` on dev Lambda (see `deployment.mdc`).
+- Do not store prod credentials in `.env.local`.
+
+### When uncertain
+
+- **Ask** before: prod deploy, prod migration, force push, deleting files, schema-breaking changes.
+- **Prefer** dev API + feature branch PR over local prod access.
+- **Stop** if a command fails twice — diagnose; do not retry destructive operations blindly.
+
+---
+
+## 8. Quick reference commands
+
+```bash
+# ── Git ──
+git checkout -b feature/<name>-<task>
+git push -u origin HEAD
+gh pr create --base develop --title "..." --body "..."
+
+# ── Local UI (dev API) ──
+npm run dev:customer | dev:vendor | dev:admin
+
+# ── Local full stack ──
+cd backend/lambda && npm run start:local
+npm run local:customer
+
+# ── Migration (dev) ──
+ENVIRONMENT=dev node scripts/run-migration-rds-node.js <file>.sql
+
+# ── Deploy dev ──
+./scripts/deploy-lambda-direct.sh
+./scripts/deploy-customer-web.sh
+
+# ── Deploy prod (explicit user request only) ──
+LAMBDA_FUNCTION_NAME=warmpawz-prod-api-handler ./scripts/deploy-lambda-direct.sh
+./scripts/deploy-customer-web.sh --prod
+ENVIRONMENT=prod node scripts/run-migration-rds-node.js <file>.sql
+```
+
+---
+
+## 9. Agent behavior summary
+
+1. **Default environment is dev.** Treat prod as read-only unless explicitly authorized.
+2. **Default git target is personal branch → PR to develop.** Never skip review.
+3. **Schema changes always go through migration files** in `db/migrations/`.
+4. **Deploy only via `scripts/`** — see `deployment.mdc`.
+5. **Commit and push only when the user asks.**
+6. **Implement the smallest correct change**; verify builds and smoke-test when feasible.
+7. When the user says "deploy", ask **which app** (admin/vendor/customer/backend) and **which env** (dev/prod) if not specified.

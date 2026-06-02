@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS ecommerce_categories (
     parent_category_id UUID,
     display_order INTEGER DEFAULT 0,
     is_active BOOLEAN DEFAULT true,
+    image_url TEXT,
     created_at TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (id)
 );
@@ -50,3 +51,4 @@ COMMENT ON COLUMN ecommerce_categories.name IS 'Category name (unique)';
 COMMENT ON COLUMN ecommerce_categories.description IS 'Category description';
 COMMENT ON COLUMN ecommerce_categories.parent_category_id IS 'Reference to parent category (for hierarchical categories)';
 COMMENT ON COLUMN ecommerce_categories.display_order IS 'Display order for sorting';
+COMMENT ON COLUMN ecommerce_categories.image_url IS 'S3 or public URL for category tile image (admin-managed)';

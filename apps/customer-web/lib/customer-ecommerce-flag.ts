@@ -25,7 +25,6 @@ export const CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE = 'Shop is coming soon.';
 
 /** SPA screens owned by the marketplace (CustomerHomeWrapper). */
 export const CUSTOMER_ECOMMERCE_SPA_SCREENS = new Set([
-  'shop',
   'cart',
   'checkout',
   'order_success',

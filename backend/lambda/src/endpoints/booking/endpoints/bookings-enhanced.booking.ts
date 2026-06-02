@@ -36,6 +36,13 @@ import { normalizeDbRow, buildBookingResponse, parseSelectedServices } from '../
 import { normalizeBooking, isValidUUID } from '../../../types/entities';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 import {
+  SQL_BOOKING_BLOCKS_SLOT,
+  paymentHoldExpiresAt,
+  expirePaymentHolds,
+  buildBookingPaymentResumeContext,
+} from '../../../utils/payment-hold';
+import { resolveCustomerIdFromPhone } from '../../../utils/customer-coordinates';
+import {
   previewCustomerCancellationRefundByMethod,
   normalizeCustomerCancellationRefundMethod,
 } from '../../../lib/services/cancellation-policy-service';
@@ -791,7 +798,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
              AND booking_time = $4
              AND staff_id = $5
              AND created_at > NOW() - INTERVAL '5 minutes'
-             AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
+             AND ${SQL_BOOKING_BLOCKS_SLOT}
              ORDER BY created_at DESC
              LIMIT 1`
           : `SELECT id, status, created_at FROM bookings 
@@ -801,7 +808,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
              AND booking_time = $4
              AND staff_id IS NULL
              AND created_at > NOW() - INTERVAL '5 minutes'
-             AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
+             AND ${SQL_BOOKING_BLOCKS_SLOT}
              ORDER BY created_at DESC
              LIMIT 1`;
         
@@ -862,14 +869,14 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
              WHERE vendor_id = $1 
              AND booking_date = $2 
              AND staff_id = $3
-             AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
+             AND ${SQL_BOOKING_BLOCKS_SLOT}
              FOR UPDATE`
           : `SELECT id, booking_time, COALESCE(duration_minutes, total_duration_minutes, 30) as duration_minutes
              FROM bookings 
              WHERE vendor_id = $1 
              AND booking_date = $2 
              AND staff_id IS NULL
-             AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
+             AND ${SQL_BOOKING_BLOCKS_SLOT}
              FOR UPDATE`;
 
         const overlapParams = staffId
@@ -1457,6 +1464,12 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
           bookingData.package_session_number = packageSessionNumberToUse;
         }
 
+        if (bookingRowStatus === 'pending_payment') {
+          const holdStarted = new Date();
+          bookingData.payment_checkout_started_at = holdStarted;
+          bookingData.payment_hold_expires_at = paymentHoldExpiresAt(holdStarted);
+        }
+
         if (staffId) {
           bookingData.staff_id = staffId;
           
@@ -1961,7 +1974,7 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
              AND booking_date = $3 
              AND booking_time = $4
              AND created_at > NOW() - INTERVAL '5 minutes'
-             AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
+             AND ${SQL_BOOKING_BLOCKS_SLOT}
              LIMIT 1`,
             [customerId, vendorId, bookingDate, bookingTime]
           );
@@ -3141,7 +3154,8 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
       // Unpaid checkout abandoned: remove the draft booking so it never appears as "cancelled" in My bookings.
       const reasonStr = String(reason ?? '').trim();
       const isPaymentAbandonReason = /^payment abandoned$/i.test(reasonStr);
-      let suppressVendorFacingCancelSignals = false;
+      const isPaymentWindowExpiredReason = /^payment[_\s-]?window[_\s-]?expired$/i.test(reasonStr);
+      let suppressVendorFacingCancelSignals = isPaymentWindowExpiredReason;
 
       if (isPaymentAbandonReason) {
         const queryParams = context.event.queryStringParameters || {};
@@ -3594,7 +3608,7 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
            AND booking_date = $2 
            AND booking_time = $3 
            AND id != $4
-           AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
+           AND ${SQL_BOOKING_BLOCKS_SLOT}
          LIMIT 1`,
         [currentBooking.vendor_id, newDate, newTime, bookingId]
       );
@@ -3617,7 +3631,7 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
            AND booking_date = $2 
            AND booking_time = $3 
            AND id != $4
-           AND status NOT IN ('cancelled', 'no_show', 'rescheduled')
+           AND ${SQL_BOOKING_BLOCKS_SLOT}
          LIMIT 1`,
         [currentBooking.vendor_id, oldDate, oldTime, bookingId]
       );
@@ -4356,6 +4370,78 @@ export function registerBookingOTPEndpoint(app: Hono) {
     } catch (error: unknown) {
       const err = error as any;
       console.error('Error verifying booking OTP:', error);
+      return c.json({ success: false, error: err?.message || 'Internal server error' }, 500);
+    }
+  });
+
+  /**
+   * POST /bookings/process-payment-hold-expiry
+   * Sweeps expired pending_payment bookings (EventBridge / manual trigger).
+   */
+  app.post('/bookings/process-payment-hold-expiry', async (c) => {
+    try {
+      const results = await expirePaymentHolds({ limit: 200, requestId: randomUUID() });
+      return c.json({ success: true, ...results });
+    } catch (error: unknown) {
+      const err = error as any;
+      console.error('[payment-hold] expiry sweep failed:', error);
+      return c.json({ success: false, error: err?.message || 'Internal server error' }, 500);
+    }
+  });
+
+  /**
+   * GET /customer/bookings/:bookingId/payment-resume
+   * Returns checkout context to resume Razorpay for an unpaid booking within the hold window.
+   */
+  app.get('/customer/bookings/:bookingId/payment-resume', async (c) => {
+    try {
+      const bookingId = c.req.param('bookingId');
+      const phone = c.req.query('phone');
+
+      if (!bookingId) {
+        return c.json({ success: false, error: 'bookingId is required' }, 400);
+      }
+
+      const ctx = await buildBookingPaymentResumeContext(bookingId);
+      if (!ctx) {
+        return c.json({ success: false, error: 'Booking is not awaiting payment', canResume: false }, 404);
+      }
+
+      if (!ctx.canResume) {
+        await expirePaymentHolds({ limit: 5, requestId: randomUUID() });
+        return c.json({
+          success: false,
+          error: 'Payment window expired',
+          canResume: false,
+          paymentHoldExpiresAt: ctx.paymentHoldExpiresAt,
+          secondsRemaining: 0,
+        }, 410);
+      }
+
+      if (phone) {
+        const digits = String(phone).replace(/\D/g, '').slice(-10);
+        if (digits.length >= 10 && ctx.customerId) {
+          const resolvedCustomerId = await resolveCustomerIdFromPhone(phone);
+          const ownerPhoneMatch = await query(
+            `SELECT 1
+             FROM customers c
+             WHERE c.id = $1::uuid
+               AND RIGHT(REGEXP_REPLACE(COALESCE(c.phone, ''), '[^0-9]', '', 'g'), 10) = $2
+             LIMIT 1`,
+            [ctx.customerId, digits]
+          );
+          const authorized =
+            resolvedCustomerId === ctx.customerId || ownerPhoneMatch.rows.length > 0;
+          if (!authorized) {
+            return c.json({ success: false, error: 'Unauthorized' }, 403);
+          }
+        }
+      }
+
+      return c.json({ success: true, resume: ctx });
+    } catch (error: unknown) {
+      const err = error as any;
+      console.error('[payment-hold] payment-resume failed:', error);
       return c.json({ success: false, error: err?.message || 'Internal server error' }, 500);
     }
   });

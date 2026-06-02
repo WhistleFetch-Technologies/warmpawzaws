@@ -46,6 +46,7 @@ export interface MealPlanOrder {
   quantity: number;
   total_amount: number;
   status: string;
+  payment_status?: string;
   delivery_date: string;
   delivery_time: string;
   delivery_address: string;
@@ -89,6 +90,16 @@ function resolveMealOrderImageUrl(o: Record<string, unknown>): string | undefine
       typeof raw === 'string' ? raw : sanitized ?? null,
     ) ?? sanitized
   );
+}
+
+function isMealOrderUnpaid(order: MealPlanOrder): boolean {
+  const ps = String(order.payment_status || '').toLowerCase();
+  return ps !== 'paid' && ps !== 'completed';
+}
+
+function displayMealOrderStatus(order: MealPlanOrder): string {
+  if (isMealOrderUnpaid(order)) return 'payment pending';
+  return order.status.replace('_', ' ');
 }
 
 function formatDeliveryTime(slot: unknown): string {
@@ -171,6 +182,7 @@ function MealPlanOrdersPanelLive({
           meal_plan_image_url: resolveMealOrderImageUrl(o),
           pet_name: (o.pet_name as string) || undefined,
           quantity: o.quantity != null ? Number(o.quantity) : undefined,
+          payment_status: o.payment_status != null ? String(o.payment_status) : undefined,
           delivery_date: o.delivery_date || o.scheduled_delivery_date || o.created_at,
           delivery_time:
             (o.delivery_time as string) || formatDeliveryTime(o.scheduled_delivery_slot) || '',
@@ -217,7 +229,8 @@ function MealPlanOrdersPanelLive({
     );
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string, unpaid?: boolean) => {
+    if (unpaid) return 'bg-amber-100 text-amber-900';
     switch (status.toLowerCase()) {
       case 'pending':
         return 'bg-yellow-100 text-yellow-800';
@@ -250,6 +263,75 @@ function MealPlanOrdersPanelLive({
         return <Home className="w-4 h-4" />;
       default:
         return <Clock className="w-4 h-4" />;
+    }
+  };
+
+  const handlePayNow = async (order: MealPlanOrder, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const customerPhone =
+        fixedCustomerPhone?.trim() ||
+        searchParams?.get('phone')?.trim() ||
+        localStorage.getItem('customerPhone') ||
+        '';
+      const res = (await apiClient.get(`/meal/orders/${order.id}`)) as {
+        order?: Record<string, unknown>;
+      };
+      const o = res?.order;
+      if (!o) {
+        toast.error('Could not load order');
+        return;
+      }
+      const ps = String(o.payment_status || '').toLowerCase();
+      if (ps === 'paid' || ps === 'completed') {
+        toast.info('This order is already paid');
+        void loadOrders();
+        return;
+      }
+      const snapRaw = o.purchase_snapshot;
+      const snap =
+        typeof snapRaw === 'string'
+          ? (JSON.parse(snapRaw) as Record<string, unknown>)
+          : ((snapRaw as Record<string, unknown>) || {});
+      const pricing = (snap.checkoutPricing as Record<string, unknown>) || {};
+      const gst = (pricing.gst as Record<string, unknown>) || {};
+      const deliveryAddress =
+        typeof o.delivery_address === 'string'
+          ? (JSON.parse(o.delivery_address) as Record<string, unknown>)
+          : ((o.delivery_address as Record<string, unknown>) || {});
+      const deliverySlot =
+        typeof o.scheduled_delivery_slot === 'string'
+          ? (JSON.parse(o.scheduled_delivery_slot) as { start: string; end: string })
+          : ((o.scheduled_delivery_slot as { start?: string; end?: string }) || { start: '', end: '' });
+      const draft = {
+        existingOrderId: order.id,
+        mealPlanId: String(o.meal_plan_id || order.meal_plan_id),
+        customerId: o.customer_id ? String(o.customer_id) : undefined,
+        customerPhone,
+        vendorId: String(o.vendor_id || ''),
+        quantity: Number(o.quantity || order.quantity || 1),
+        petId: o.pet_id ? String(o.pet_id) : order.pet_id,
+        deliveryAddress,
+        scheduledDeliveryDate: String(o.scheduled_delivery_date || order.delivery_date || '').slice(0, 10),
+        scheduledDeliverySlot: {
+          start: deliverySlot.start || '',
+          end: deliverySlot.end || '',
+        },
+        logisticsType: String(o.logistics_type || 'warmpawz'),
+        foodSubtotalInr: Number(pricing.subtotal ?? o.subtotal ?? 0),
+        foodGstPct: Number((gst as { foodGstPct?: number }).foodGstPct ?? 0),
+        deliveryGstPct: Number((gst as { deliveryGstPct?: number }).deliveryGstPct ?? 0),
+        deliveryFeeInr: Number(pricing.deliveryFee ?? o.delivery_fee ?? 0),
+        platformFeeInr: Number(pricing.platformFee ?? 0),
+        convenienceFeeInr: Number(pricing.convenienceFee ?? 0),
+      };
+      sessionStorage.setItem('meal_one_time_pay_draft_v1', JSON.stringify(draft));
+      router.push(
+        `/meal-plans/checkout-pay?mealPlanName=${encodeURIComponent(order.meal_plan_name || 'Meal plan')}`,
+      );
+    } catch (err) {
+      console.error('[MealPlanOrders] pay now failed:', err);
+      toast.error('Could not open payment. Try again.');
     }
   };
 
@@ -364,10 +446,10 @@ function MealPlanOrdersPanelLive({
                         {order.meal_plan_name || 'Meal Plan'}
                       </h3>
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(order.status)}`}
+                        className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(order.status, isMealOrderUnpaid(order))}`}
                       >
                         {getStatusIcon(order.status)}
-                        {order.status.replace('_', ' ').toUpperCase()}
+                        {displayMealOrderStatus(order).toUpperCase()}
                       </span>
                     </div>
 
@@ -419,6 +501,12 @@ function MealPlanOrdersPanelLive({
                     <p className="text-sm text-gray-500 mt-1">Qty: {order.quantity ?? '—'}</p>
                   </div>
                 </div>
+
+                {isMealOrderUnpaid(order) ? (
+                  <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    Payment not completed. Pay now to confirm this order with the kitchen.
+                  </div>
+                ) : null}
 
                 {isOutForDelivery(order.status) && order.delivery_otp && !order.otp_verified && (
                   <div className="mt-4 p-4 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border-2 border-orange-200">
@@ -535,12 +623,21 @@ function MealPlanOrdersPanelLive({
                         Reschedule in subscription
                       </Link>
                     ) : null}
-                    <button
-                      onClick={(e) => handleTrackClick(order.id, e)}
-                      className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
-                    >
-                      Track Order
-                    </button>
+                    {isMealOrderUnpaid(order) ? (
+                      <button
+                        onClick={(e) => handlePayNow(order, e)}
+                        className="px-4 py-2 bg-[#FF8C42] text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
+                      >
+                        Pay now
+                      </button>
+                    ) : (
+                      <button
+                        onClick={(e) => handleTrackClick(order.id, e)}
+                        className="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm font-semibold hover:bg-orange-600"
+                      >
+                        Track Order
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

@@ -94,12 +94,16 @@ export function MyPackagesTrackingPanel({
   variant?: 'default' | 'fullPage';
 }) {
   const router = useRouter();
-  const [selectedFilter, setSelectedFilter] = useState<'active' | 'sessions-left' | 'expiring'>('active');
+  const [selectedFilter, setSelectedFilter] = useState<'active' | 'sessions-left' | 'expiring'>('expiring');
   const [expandedPackageId, setExpandedPackageId] = useState<string | null>(null);
   const [messagingVendorId, setMessagingVendorId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
-  const activeCount = rows.filter((r) => !['expired', 'exhausted', 'cancelled'].includes(r.status)).length;
+  const activeCount = rows.filter(
+    (r) =>
+      !['expired', 'cancelled'].includes(r.status) &&
+      (r.remainingSessions === Number.MAX_SAFE_INTEGER || r.remainingSessions > 0)
+  ).length;
   const sessionsLeft = rows.reduce((acc, r) => {
     if (r.remainingSessions === Number.MAX_SAFE_INTEGER) return acc;
     return acc + Math.max(0, Number(r.remainingSessions) || 0);
@@ -109,7 +113,11 @@ export function MyPackagesTrackingPanel({
   const visibleRows = useMemo(() => {
     const arr = [...rows];
     if (selectedFilter === 'active') {
-      return arr.filter((r) => !['expired', 'exhausted', 'cancelled', 'completed'].includes(r.status));
+      return arr.filter(
+        (r) =>
+          !['expired', 'cancelled'].includes(r.status) &&
+          (r.remainingSessions === Number.MAX_SAFE_INTEGER || r.remainingSessions > 0)
+      );
     }
     if (selectedFilter === 'sessions-left') {
       return arr
@@ -129,7 +137,7 @@ export function MyPackagesTrackingPanel({
   const statTiles: Array<{ key: 'active' | 'sessions-left' | 'expiring'; v: string; l: string }> = [
     { key: 'active', v: String(activeCount), l: 'Active' },
     { key: 'sessions-left', v: String(sessionsLeft), l: 'Sessions left' },
-    { key: 'expiring', v: String(expiringCount), l: 'Expiring' },
+    { key: 'expiring', v: String(rows.filter((r) => r.status !== 'cancelled').length), l: 'All packages' },
   ];
 
   const openMessages = async (row: MyPackageSummaryRow) => {
@@ -253,9 +261,11 @@ export function MyPackagesTrackingPanel({
                 {visibleRows.map((r) => {
                   const progress = computeProgressPct(r);
                   const remaining = r.remainingSessions === Number.MAX_SAFE_INTEGER ? 'Unlimited' : String(Math.max(0, r.remainingSessions));
-                  const isExpired = ['expired', 'cancelled', 'exhausted'].includes(r.status);
-                  const noSessionsLeft = r.remainingSessions !== Number.MAX_SAFE_INTEGER && r.remainingSessions <= 0;
-                  const disabled = isExpired || noSessionsLeft;
+                  const isExpired = r.status === 'expired';
+                  const isCancelled = r.status === 'cancelled';
+                  const noSessionsLeft =
+                    r.remainingSessions !== Number.MAX_SAFE_INTEGER && r.remainingSessions <= 0;
+                  const disabled = isCancelled;
                   const expanded = expandedPackageId === r.id;
                   return (
                     <article key={r.id} className="overflow-hidden rounded-xl border border-stone-200 bg-white">
@@ -267,10 +277,22 @@ export function MyPackagesTrackingPanel({
                           </div>
                           <span
                             className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                              isExpired ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                              isCancelled
+                                ? 'bg-red-100 text-red-700'
+                                : isExpired
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : noSessionsLeft || ['exhausted', 'completed'].includes(r.status)
+                                    ? 'bg-gray-100 text-gray-700'
+                                    : 'bg-green-100 text-green-700'
                             }`}
                           >
-                            {isExpired ? 'Expired' : noSessionsLeft ? 'Completed' : 'Active'}
+                            {isCancelled
+                              ? 'Cancelled'
+                              : isExpired
+                                ? 'Expired'
+                                : noSessionsLeft || ['exhausted', 'completed'].includes(r.status)
+                                  ? 'Completed'
+                                  : 'Active'}
                           </span>
                         </div>
                         <div className="mt-4">

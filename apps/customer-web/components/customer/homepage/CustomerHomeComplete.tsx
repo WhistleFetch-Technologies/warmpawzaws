@@ -64,7 +64,8 @@ import {
 } from '../home/hooks/useHomePageData';
 import { HOME_CONTENT_SHELL_CLASS } from '../home/shared/HomeContentShell';
 import { buildHomeTopCarouselBanners } from '../home/utils/banner-utils';
-import { customerHomeIconForShopCategory } from '../home/utils/shop-category-icons';
+import { ShopCategoryGrid } from '@/components/shop/ShopCategoryGrid';
+import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
 import type { QuickServiceTile } from '../home/types';
 import { resolveCustomerLocation } from '@/lib/customer-location';
 import type { CustomerLocation } from '@/lib/customer-location';
@@ -135,6 +136,11 @@ const ChatInterfaceFromNotification = dynamic(
 // Order tracking widget - only shown during active order tracking
 const OrderTrackingWidget = dynamic(
   () => import('../OrderTrackingWidget').then(mod => ({ default: mod.OrderTrackingWidget })),
+  { ssr: false }
+);
+
+const MealRiderTrackingBar = dynamic(
+  () => import('../MealRiderTrackingBar').then(mod => ({ default: mod.MealRiderTrackingBar })),
   { ssr: false }
 );
 
@@ -516,8 +522,9 @@ export function CustomerHomeComplete({
     vendorPhoto?: string;
   } | null>(null);
 
-  // ✅ FIX GAP-8.4: Active order tracking state
+  // ✅ FIX GAP-8.4: Active order tracking state (pharmacy full widget; meals use rider bar)
   const [activeOrderTracking, setActiveOrderTracking] = useState<any | null>(null);
+  const [mealRiderActive, setMealRiderActive] = useState<any | null>(null);
 
   // Dynamic content from CMS
   const cachedHomeDynamic = readHomeSessionCache<CachedHomeDynamicContent>(phone, 'dynamic_content');
@@ -543,9 +550,9 @@ export function CustomerHomeComplete({
       rehomingListings: cached?.rehomingListings ?? 20,
     };
   });
-  const [ecommerceShopCategories, setEcommerceShopCategories] = useState<Array<{ id: string; name: string }>>(
-    [],
-  );
+  const [ecommerceShopCategories, setEcommerceShopCategories] = useState<
+    Array<{ id: string; name: string; image_url?: string; display_order?: number }>
+  >([]);
   // Evaluated lazily so runtime-config.js (which runs before hydration) is already applied.
   const [customerCommerceEnabled] = useState<boolean>(() => isCustomerEcommerceEnabled());
   const [newHomeUi] = useState<boolean>(() => isNewHomeUiEnabled());
@@ -559,17 +566,9 @@ export function CustomerHomeComplete({
           const res = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>('/ecommerce/categories');
           const raw = res?.categories;
           if (cancelled || !Array.isArray(raw)) return;
-          const mapped = raw
-            .map((c) => {
-              const id = String(
-                c.id ?? c.category_id ?? c.uuid ?? '',
-              ).trim();
-              const name = String(
-                c.name ?? c.title ?? c.display_name ?? 'Category',
-              ).trim();
-              return { id, name };
-            })
-            .filter((c) => c.id);
+          const mapped = mapApiCategoriesToShop(
+            raw.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
+          );
           if (!cancelled) setEcommerceShopCategories(mapped);
         } catch {
           if (!cancelled) setEcommerceShopCategories([]);
@@ -597,6 +596,11 @@ export function CustomerHomeComplete({
         return;
       }
       if (d.startsWith('/')) {
+        const pathOnly = d.split('?')[0]?.split('#')[0] ?? d;
+        if (pathOnly === '/shop') {
+          onNavigate?.('shop', data);
+          return;
+        }
         const screenFromPath = customerPathToScreen(d);
         if (screenFromPath) {
           onNavigate?.(screenFromPath, data);
@@ -1860,7 +1864,6 @@ export function CustomerHomeComplete({
   // Call pharmacy and meals APIs separately so a failing meals/active (e.g. 404/HTML) does not break the screen
   const checkActiveOrderTracking = async () => {
     let pharmacyOrders: any[] = [];
-    let mealOrders: any[] = [];
     try {
       const pharmacyResponse = await apiClient.get<any>(
         `/customer/${phone}/orders/pharmacy/active`
@@ -1870,26 +1873,21 @@ export function CustomerHomeComplete({
       console.warn('Pharmacy active orders check failed (non-fatal):', (e as Error)?.message);
     }
     try {
-      const mealResponse = await apiClient.get<any>(
-        `/customer/${phone}/orders/meals/active`
+      const riderResponse = await apiClient.get<any>(
+        `/customer/${phone}/orders/meals/rider-active`
       );
-      mealOrders = Array.isArray(mealResponse?.orders) ? mealResponse.orders : [];
-    } catch (e) {
-      console.warn('Meals active orders check failed (non-fatal):', (e as Error)?.message);
-    }
-    const activeOrders = [
-      ...pharmacyOrders,
-      ...mealOrders,
-    ].filter((order: any) => {
-      if (!order) return false;
-      const ot = order.orderType ?? order.order_type;
-      if (ot === 'meal') {
-        const eff = resolveEffectiveMealDeliveryState(
-          order.status,
-          order.trackingStatus ?? order.tracking_status,
-        );
-        return !isTerminalMealDeliveryState(eff);
+      const riderOrder = riderResponse?.order ?? null;
+      if (riderOrder?.showRiderBar) {
+        setMealRiderActive(riderOrder);
+      } else {
+        setMealRiderActive(null);
       }
+    } catch (e) {
+      console.warn('Meals rider-active check failed (non-fatal):', (e as Error)?.message);
+      setMealRiderActive(null);
+    }
+    const activeOrders = pharmacyOrders.filter((order: any) => {
+      if (!order) return false;
       return (
         order.status !== 'delivered' &&
         order.status !== 'cancelled' &&
@@ -2551,24 +2549,11 @@ export function CustomerHomeComplete({
               ))}
             </div>
           ) : (
-            <div className="flex gap-3 overflow-x-auto px-4 py-1 scrollbar-hide">
-              {ecommerceShopCategories.map((category) => (
-                <button
-                  key={category.id}
-                  type="button"
-                  className="flex-shrink-0 flex flex-col items-center gap-1 min-w-[4.5rem] active:opacity-90"
-                  onClick={() => handleNavigation('shop', { category: category.id })}
-                  aria-label={`Browse ${category.name}`}
-                >
-                  <div className="w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm">
-                    {customerHomeIconForShopCategory(category.name)}
-                  </div>
-                  <span className="text-[10px] text-gray-700 text-center font-medium leading-tight line-clamp-2">
-                    {category.name}
-                  </span>
-                </button>
-              ))}
-            </div>
+            <ShopCategoryGrid
+              embedded
+              categories={ecommerceShopCategories}
+              onSelectCategory={(id) => handleNavigation('shop', { category: id })}
+            />
           )}
         </div>
         ) : null}
@@ -3641,8 +3626,22 @@ export function CustomerHomeComplete({
         />
       )}
 
-      {/* ✅ FIX GAP-8.4: Live Tracking Widget (Zomato-like) on Customer Home Screen */}
-      {activeOrderTracking && (
+      {/* Meal rider footer bar — rider phase only, above tab navigation */}
+      {mealRiderActive && (
+        <MealRiderTrackingBar
+          order={mealRiderActive}
+          onTrack={() => {
+            const orderId = mealRiderActive.orderId || mealRiderActive.id;
+            handleNavigation('order-tracking', { orderId, orderType: 'meal' });
+            if (!onNavigate) {
+              window.location.href = `/track/${orderId}`;
+            }
+          }}
+        />
+      )}
+
+      {/* Pharmacy live tracking widget (meals use MealRiderTrackingBar instead) */}
+      {activeOrderTracking && (activeOrderTracking.orderType || 'pharmacy') !== 'meal' && (
         <OrderTrackingWidget
           orderId={activeOrderTracking.id || activeOrderTracking.orderId}
           orderType={activeOrderTracking.orderType || 'pharmacy'}

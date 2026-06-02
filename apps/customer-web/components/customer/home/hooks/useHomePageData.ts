@@ -7,6 +7,7 @@ import { customerPathToScreen } from '@/lib/promotion-navigation';
 import { iconForCustomerHomeApiBanner } from '@/lib/customer-banner-icons';
 import { serviceBaseOnpincode } from '../../homepage/constants/helpers';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
 import { buildHomeTopCarouselBanners } from '../utils/banner-utils';
 import { extractProductImageUrl } from '../utils/product-image';
 import type { HomeCarouselBanner } from '../types';
@@ -212,7 +213,9 @@ export function useHomePageData({
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
   const [combinedMessageUnreadCount, setCombinedMessageUnreadCount] = useState(0);
 
-  const [ecommerceShopCategories, setEcommerceShopCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const [ecommerceShopCategories, setEcommerceShopCategories] = useState<
+    Array<{ id: string; name: string; image_url?: string; display_order?: number }>
+  >([]);
   const [customerCommerceEnabled] = useState<boolean>(() => isCustomerEcommerceEnabled());
 
   const loadUserData = useCallback(async () => {
@@ -524,12 +527,9 @@ export function useHomePageData({
         const res = await apiClient.get<{ categories?: Array<Record<string, unknown>> }>('/ecommerce/categories');
         const raw = res?.categories;
         if (cancelled || !Array.isArray(raw)) return;
-        const mapped = raw
-          .map((c) => ({
-            id: String(c.id ?? c.category_id ?? c.uuid ?? '').trim(),
-            name: String(c.name ?? c.title ?? c.display_name ?? 'Category').trim(),
-          }))
-          .filter((c) => c.id);
+        const mapped = mapApiCategoriesToShop(
+          raw.map((c) => (c && typeof c === 'object' ? c : {}) as Record<string, unknown>)
+        );
         if (!cancelled) setEcommerceShopCategories(mapped);
       } catch {
         if (!cancelled) setEcommerceShopCategories([]);
