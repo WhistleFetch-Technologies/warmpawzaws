@@ -47,6 +47,7 @@ import {
   mealRiderDeliveryMessage,
 } from '../../../utils/meal-delivery-effective-state';
 import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../services/meal-subscription/meal-subscription-operations-service';
+import { expireMealPaymentHolds } from '../../../utils/meal-payment-hold';
 
 // ============================================================================
 // CUSTOMER HANDLERS
@@ -489,6 +490,11 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       if (!customerId) {
         return c.json({ success: false, error: 'customerId is required' }, 400);
       }
+
+      await expireMealPaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
+        console.warn('[meal-plan-orders] payment hold sweep failed:', e?.message || e)
+      );
+
       const allOrders: any[] = [];
 
       // 1. From meal_orders (MealOrderCheckout flow)
@@ -542,6 +548,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           total_amount: total,
           status: o.status,
           payment_status: o.payment_status,
+          payment_hold_expires_at: o.payment_hold_expires_at ?? null,
+          paymentHoldExpiresAt: o.payment_hold_expires_at ?? null,
           delivery_address: o.delivery_address,
           scheduled_delivery_date: o.scheduled_delivery_date,
           scheduled_delivery_slot: o.scheduled_delivery_slot,

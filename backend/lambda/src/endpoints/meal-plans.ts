@@ -81,6 +81,7 @@ import {
 } from '../utils/meal-subscription-schedule-utils';
 import { computeMealSubscriptionCheckoutFees } from '../utils/meal-subscription-checkout-fees';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
+import { paymentHoldExpiresAt } from '../utils/meal-payment-hold';
 import {
   assertMealOrderHasPidgeForPickup,
   dispatchMealLogistics,
@@ -1479,6 +1480,7 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const moCols = await mealOrdersTableColumns();
       const orderVendorId = await resolveVendorId(String(plan.vendor_id ?? ''));
+      const holdStarted = new Date();
       const mealOrderRow: Record<string, unknown> = {
         customer_id: customerId,
         vendor_id: orderVendorId || plan.vendor_id,
@@ -1502,6 +1504,14 @@ export function registerMealPlanEndpoints(app: Hono) {
         logistics_cost: logisticsType === 'warmpawz' ? deliveryFee : 0,
         status: 'pending',
       };
+      if (totalAmount > 0) {
+        if (moCols.has('payment_checkout_started_at')) {
+          mealOrderRow.payment_checkout_started_at = holdStarted;
+        }
+        if (moCols.has('payment_hold_expires_at')) {
+          mealOrderRow.payment_hold_expires_at = paymentHoldExpiresAt(holdStarted);
+        }
+      }
       if (moCols.has('purchase_type')) mealOrderRow.purchase_type = expectedPurchaseType;
       if (moCols.has('purchase_snapshot')) mealOrderRow.purchase_snapshot = purchase_snapshot;
       if (moCols.has('order_number')) mealOrderRow.order_number = generateMealOrderNumber();
