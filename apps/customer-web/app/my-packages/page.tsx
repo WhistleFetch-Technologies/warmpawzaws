@@ -13,7 +13,7 @@ import {
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import { apiClient } from '@/lib/api-client';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
-import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
+import { useCustomerAccountSidebarHost, CustomerAccountSidebarShell } from '@/lib/customer-account-sidebar-host';
 
 /**
  * Viewport-bound column so `flex-1 min-h-0 overflow-y-auto` gets a real height and scrolls.
@@ -26,7 +26,7 @@ const SHELL_CLASS =
 
 function MyPackagesPageInner() {
   const router = useRouter();
-  const { accountSidebar, handleTabbedBottomNav, openAccountMenu } = useCustomerAccountSidebarHost();
+  const { accountSidebar, handleTabbedBottomNav, openAccountMenu, isAccountMenuOpen } = useCustomerAccountSidebarHost();
   const [phone, setPhone] = useState<string | null>(null);
   const [rows, setRows] = useState<MyPackageSummaryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,53 +74,66 @@ function MyPackagesPageInner() {
 
   if (!phone) {
     return (
-      <div className={PAGE_OUTER_CLASS}>
-        <div className={SHELL_CLASS}>
-          {header}
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto overscroll-y-contain px-6 pb-[var(--customer-tabbed-nav-offset)] text-center">
-            <p className="text-gray-600">Please login to view your packages</p>
-            <Link
-              href="/auth"
-              className="mt-4 inline-block rounded-full bg-orange-500 px-6 py-3 font-medium text-white"
-            >
-              Login
-            </Link>
-          </div>
+      <CustomerAccountSidebarShell
+        sidebarOpen={isAccountMenuOpen}
+        accountSidebar={accountSidebar}
+        bottomNav={
           <BottomNavigation
             currentScreen="my-packages"
             onNavigate={handleTabbedBottomNav}
             onProfileClick={openAccountMenu}
+            profileMenuOpen={isAccountMenuOpen}
           />
-          {accountSidebar}
+        }
+      >
+        <div className={PAGE_OUTER_CLASS}>
+          <div className={SHELL_CLASS}>
+            {header}
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto overscroll-y-contain px-6 pb-[var(--customer-tabbed-nav-offset)] text-center">
+              <p className="text-gray-600">Please login to view your packages</p>
+              <Link
+                href="/auth"
+                className="mt-4 inline-block rounded-full bg-orange-500 px-6 py-3 font-medium text-white"
+              >
+                Login
+              </Link>
+            </div>
+          </div>
         </div>
-      </div>
+      </CustomerAccountSidebarShell>
     );
   }
 
   return (
-    <div className={PAGE_OUTER_CLASS}>
-      <div className={SHELL_CLASS}>
-        {header}
-
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-[var(--customer-tabbed-nav-offset)]">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center px-6 py-20">
-              <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#FF8C42] border-t-transparent" />
-              <p className="mt-5 text-sm font-medium text-gray-600">Loading your packages…</p>
-            </div>
-          ) : (
-            <MyPackagesTrackingPanel rows={rows} customerPhone={phone} variant="fullPage" />
-          )}
-        </div>
-
+    <CustomerAccountSidebarShell
+      sidebarOpen={isAccountMenuOpen}
+      accountSidebar={accountSidebar}
+      bottomNav={
         <BottomNavigation
           currentScreen="my-packages"
           onNavigate={handleTabbedBottomNav}
           onProfileClick={openAccountMenu}
+          profileMenuOpen={isAccountMenuOpen}
         />
-        {accountSidebar}
+      }
+    >
+      <div className={PAGE_OUTER_CLASS}>
+        <div className={SHELL_CLASS}>
+          {header}
+
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-[var(--customer-tabbed-nav-offset)]">
+            {loading ? (
+              <div className="flex flex-col items-center justify-center px-6 py-20">
+                <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#FF8C42] border-t-transparent" />
+                <p className="mt-5 text-sm font-medium text-gray-600">Loading your packages…</p>
+              </div>
+            ) : (
+              <MyPackagesTrackingPanel rows={rows} customerPhone={phone} variant="fullPage" />
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </CustomerAccountSidebarShell>
   );
 }
 

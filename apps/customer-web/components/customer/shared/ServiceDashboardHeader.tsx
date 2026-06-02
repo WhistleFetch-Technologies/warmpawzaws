@@ -9,10 +9,14 @@ import {
   subscribeToNarrowMobileViewport,
 } from '@/lib/service-header-safe-area';
 
+export type StatAccentColor = 'orange' | 'purple' | 'green';
+
 export interface StatCard {
   value: string;
   label: string;
   icon?: ReactNode;
+  /** Premium header: colored icon chip + bottom indicator */
+  accent?: StatAccentColor;
 }
 
 export interface StepInfo {
@@ -82,6 +86,11 @@ export interface ServiceDashboardHeaderProps {
   headerTrailingImageImgClassName?: string;
   /** Clip trailing hero to the header bounds (avoids stray page scrollbars). */
   clipHeaderTrailingImage?: boolean;
+  /**
+   * `premium` — layered gradient, glass hero icon, white glass stat cards, smoother sheet curve.
+   * Scoped to screens that opt in (e.g. My Bookings); default layout unchanged.
+   */
+  headerVariant?: 'default' | 'premium';
 }
 
 /**
@@ -166,13 +175,40 @@ export function ServiceDashboardHeader({
   headerTrailingImageClassName,
   headerTrailingImageImgClassName,
   clipHeaderTrailingImage = false,
+  headerVariant = 'default',
 }: ServiceDashboardHeaderProps) {
+  const isPremium = headerVariant === 'premium';
   const waveGradId = useId().replace(/:/g, '');
   const waveUsesGradient = Boolean(
-    headerGradient || (typeof headerColor === 'string' && headerColor.includes('gradient'))
+    isPremium ||
+      headerGradient ||
+      (typeof headerColor === 'string' && headerColor.includes('gradient'))
   );
   const IconComponent = ServiceIcon as LucideIcon;
   const isLucideIcon = typeof IconComponent === 'function' || (IconComponent && 'render' in IconComponent);
+
+  const premiumHeaderSurface = isPremium ? '' : headerGradient || headerColor;
+
+  const statAccentStyles: Record<
+    StatAccentColor,
+    { chip: string; bar: string; iconWrap: string }
+  > = {
+    orange: {
+      chip: 'text-white',
+      bar: 'bg-[#FF7A3D]',
+      iconWrap: 'bg-gradient-to-br from-[#FF9257] to-[#FF7A3D] shadow-[0_3px_10px_rgba(255,122,61,0.35)]',
+    },
+    purple: {
+      chip: 'text-white',
+      bar: 'bg-violet-500',
+      iconWrap: 'bg-gradient-to-br from-violet-400 to-violet-600 shadow-[0_3px_10px_rgba(139,92,246,0.35)]',
+    },
+    green: {
+      chip: 'text-white',
+      bar: 'bg-emerald-500',
+      iconWrap: 'bg-gradient-to-br from-emerald-400 to-emerald-600 shadow-[0_3px_10px_rgba(16,185,129,0.35)]',
+    },
+  };
 
   const isCapacitorNative = useSyncExternalStore(
     () => () => {},
@@ -192,8 +228,19 @@ export function ServiceDashboardHeader({
   const topPadStyle = resolveServiceHeaderTopPad(compact, isCapacitorNative, isNarrowMobile);
   const innerBottom = compact ? 'pb-3 md:pb-4' : 'pb-4 md:pb-6';
   const titleRowMb = compact ? 'mb-2 md:mb-3' : 'mb-3 md:mb-4';
-  const iconBox = compact ? 'h-11 w-11' : 'h-14 w-14';
-  const iconInner = compact ? 'w-6 h-6' : 'w-7 h-7';
+  const iconBox = compact
+    ? 'h-11 w-11'
+    : isPremium
+      ? 'h-16 w-16 rounded-full'
+      : 'h-14 w-14';
+  const iconInner = compact ? 'w-6 h-6' : isPremium ? 'w-8 h-8' : 'w-7 h-7';
+  const premiumGlassBtn =
+    'border border-white/35 bg-white/[0.15] shadow-[0_4px_16px_rgba(0,0,0,0.12)] backdrop-blur-lg transition-all duration-200 hover:bg-white/22 active:scale-95';
+  const premiumTitleClass =
+    'mb-1.5 text-2xl font-extrabold tracking-[-0.5px] text-white [text-shadow:0_2px_12px_rgba(0,0,0,0.12)] sm:text-[1.65rem]';
+  const iconShellClass = isPremium
+    ? `${iconBox} flex-shrink-0 flex items-center justify-center rounded-full border-[2.5px] border-white/90 bg-white shadow-[0_8px_32px_rgba(0,0,0,0.14),0_0_28px_rgba(255,255,255,0.35)] ring-2 ring-white/20`
+    : `${iconBox} flex-shrink-0 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30 shadow-lg`;
   const hasStats = stats.length > 0;
   const statColClass =
     stats.length <= 1
@@ -203,20 +250,31 @@ export function ServiceDashboardHeader({
         : 'grid-cols-3';
   const statGrid = compact
     ? `mt-2 grid ${statColClass} gap-1 sm:gap-1.5`
-    : `mt-4 grid ${statColClass} gap-1.5 sm:gap-2`;
-  const statCard = compact
-    ? 'rounded-xl border border-white/30 bg-white/20 p-1.5 text-center backdrop-blur-md sm:p-2 w-full transition-opacity hover:bg-white/25 active:opacity-90'
-    : 'rounded-2xl border border-white/30 bg-white/20 p-2 text-center backdrop-blur-md sm:p-3 w-full transition-opacity hover:bg-white/25 active:opacity-90';
-  const statValue = compact
-    ? 'mb-0 flex items-center justify-center gap-1 text-base font-bold text-white sm:text-lg'
-    : 'mb-0.5 flex items-center justify-center gap-1 text-lg font-bold text-white sm:mb-1 sm:text-xl';
+    : isPremium
+      ? `relative z-20 mt-4 mb-5 grid ${statColClass} gap-2 sm:gap-2.5 sm:mb-6`
+      : `mt-4 grid ${statColClass} gap-1.5 sm:gap-2`;
+  const statCard = isPremium
+    ? 'relative overflow-hidden rounded-[1.25rem] border border-white/90 bg-white/[0.96] p-2.5 pb-3.5 text-center shadow-[0_14px_36px_rgba(0,0,0,0.14),0_6px_16px_rgba(0,0,0,0.08)] backdrop-blur-xl transition-shadow duration-200 hover:shadow-[0_18px_40px_rgba(0,0,0,0.16)] sm:p-3 sm:pb-4 w-full my-bookings-fade-in'
+    : compact
+      ? 'rounded-xl border border-white/30 bg-white/20 p-1.5 text-center backdrop-blur-md sm:p-2 w-full transition-opacity hover:bg-white/25 active:opacity-90'
+      : 'rounded-2xl border border-white/30 bg-white/20 p-2 text-center backdrop-blur-md sm:p-3 w-full transition-opacity hover:bg-white/25 active:opacity-90';
+  const statValue = isPremium
+    ? 'text-lg font-bold text-gray-900 tabular-nums sm:text-xl'
+    : compact
+      ? 'mb-0 flex items-center justify-center gap-1 text-base font-bold text-white sm:text-lg'
+      : 'mb-0.5 flex items-center justify-center gap-1 text-lg font-bold text-white sm:mb-1 sm:text-xl';
+  const statLabelClass = isPremium
+    ? 'text-[10px] font-medium text-gray-500 sm:text-xs'
+    : 'text-[10px] font-medium text-white/90 sm:text-xs';
 
-  /** Extra orange padding below stats before the sheet so the curve does not cut into stat chips. */
+  /** Extra orange padding below stats (overlap band for home-style white shell; gap via stat grid mb). */
   const innerShellClass =
-    bottomEdge === 'sheet' && hasStats
+    hasStats && (bottomEdge === 'sheet' || (isPremium && bottomEdge === 'flat'))
       ? compact
         ? 'pb-5 md:pb-6'
-        : 'pb-6 md:pb-8'
+        : isPremium && bottomEdge === 'flat'
+          ? 'pb-4 md:pb-5'
+          : 'pb-6 md:pb-8'
       : bottomEdge === 'sheet' && !hasStats
         ? compact
           ? 'pb-4 md:pb-5'
@@ -225,10 +283,14 @@ export function ServiceDashboardHeader({
 
   /** Tighter overlap when there are no stat chips so the sheet sits closer to the title block. */
   const sheetOverlapClass = !hasStats
-    ? '-mt-3'
+    ? isPremium
+      ? '-mt-4'
+      : '-mt-3'
     : compact
       ? '-mt-2'
-      : '-mt-4';
+      : isPremium
+        ? '-mt-6 sm:-mt-7'
+        : '-mt-4';
 
   return (
     <div
@@ -239,13 +301,37 @@ export function ServiceDashboardHeader({
         next section) — not border-radius on bottom corners, which looks “inward” / wrong direction.
       */}
       <div
-        className={`relative z-20 ${headerTrailingImage && !clipHeaderTrailingImage ? 'overflow-x-hidden overflow-y-visible' : 'overflow-hidden'} ${headerGradient || headerColor} text-white pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] pb-0`}
+        className={`relative z-20 ${headerTrailingImage && !clipHeaderTrailingImage ? 'overflow-x-hidden overflow-y-visible' : 'overflow-hidden'} ${isPremium ? '' : premiumHeaderSurface} text-white pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] sm:pl-[max(1.5rem,env(safe-area-inset-left,0px))] sm:pr-[max(1.5rem,env(safe-area-inset-right,0px))] pb-0`}
         style={topPadStyle}
       >
+        {isPremium ? (
+          <>
+            <div
+              className="pointer-events-none absolute inset-0 z-0"
+              style={{ background: 'linear-gradient(135deg, #FF6B1A 0%, #FF7F2A 35%, #FF8E42 70%, #FFA45D 100%)' }}
+              aria-hidden
+            />
+            {/* Top-left orange glow */}
+            <div
+              className="pointer-events-none absolute -left-12 -top-8 z-0 h-44 w-44 rounded-full bg-[#FF6B1A]/50 blur-3xl"
+              aria-hidden
+            />
+            {/* Center soft light glow */}
+            <div
+              className="pointer-events-none absolute left-1/2 top-[28%] z-0 h-52 w-64 -translate-x-1/2 rounded-full bg-white/35 blur-3xl"
+              aria-hidden
+            />
+            {/* Bottom-right warm glow */}
+            <div
+              className="pointer-events-none absolute -bottom-10 -right-10 z-0 h-40 w-40 rounded-full bg-[#FF4500]/40 blur-3xl"
+              aria-hidden
+            />
+          </>
+        ) : null}
         {headerBackground ? (
           <div
-            className="pointer-events-none absolute inset-0 z-0 overflow-hidden [&_svg]:stroke-current [&_svg_*]:fill-none"
-            style={{ color: 'rgba(255, 255, 255, 0.13)' }}
+            className="pointer-events-none absolute inset-0 z-[1] overflow-hidden [&_svg]:fill-none"
+            style={isPremium ? undefined : { color: 'rgba(255, 255, 255, 0.13)' }}
             aria-hidden
           >
             {headerBackground}
@@ -278,7 +364,7 @@ export function ServiceDashboardHeader({
               <button
                 type="button"
                 onClick={onCloseToHome}
-                className="relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30 pointer-events-auto"
+                className={`relative z-30 flex h-11 w-11 min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-full pointer-events-auto ${isPremium ? premiumGlassBtn : 'bg-white/20 backdrop-blur-sm transition-colors hover:bg-white/30'}`}
                 aria-label="Close to home"
               >
                 <X className="h-6 w-6 text-white" />
@@ -287,7 +373,7 @@ export function ServiceDashboardHeader({
                 <button
                   type="button"
                   onClick={onBack}
-                  className="relative z-30 flex min-h-[44px] shrink-0 items-center gap-2 px-2 text-white transition-opacity pointer-events-auto active:opacity-70"
+                  className={`relative z-30 flex min-h-[44px] shrink-0 items-center gap-1.5 px-3 py-2 text-white pointer-events-auto ${isPremium ? `rounded-full ${premiumGlassBtn}` : 'transition-opacity active:opacity-70'}`}
                   aria-label="Go back"
                 >
                   <ChevronLeft className="h-5 w-5" />
@@ -295,24 +381,30 @@ export function ServiceDashboardHeader({
                 </button>
               )}
             </div>
-            <div className={`flex items-start gap-3 ${compact ? 'mb-3' : 'mb-4'}`}>
-              <div
-                className={`${iconBox} flex-shrink-0 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center border border-white/30 shadow-lg`}
-              >
+            <div className={`flex items-start gap-3 ${compact ? 'mb-3' : isPremium ? 'mb-4 gap-4' : 'mb-4'}`}>
+              <div className={iconShellClass}>
                 {isLucideIcon ? (
-                  <IconComponent className={`${iconInner} ${iconColor}`} />
+                  <IconComponent
+                    className={`${iconInner} ${isPremium ? 'text-[#FF7A3D] drop-shadow-[0_0_12px_rgba(255,122,61,0.45)]' : iconColor}`}
+                  />
                 ) : (
-                  <div className={iconColor}>{ServiceIcon as ReactNode}</div>
+                  <div className={isPremium ? 'text-[#FF7A3D]' : iconColor}>{ServiceIcon as ReactNode}</div>
                 )}
               </div>
-              <div className="flex-1 min-w-0 pt-1">
-                <h1
-                  className={`font-bold text-white mb-1 ${compact ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}
-                >
+              <div className={`flex-1 min-w-0 ${isPremium ? 'pt-0.5' : 'pt-1'}`}>
+                <h1 className={isPremium ? premiumTitleClass : `mb-1 font-bold text-white ${compact ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}>
                   {serviceName}
                 </h1>
                 {serviceSubtitle && (
-                  <p className="text-white/90 text-xs leading-tight sm:text-sm">{serviceSubtitle}</p>
+                  <p
+                    className={
+                      isPremium
+                        ? 'text-sm leading-snug text-white/95 sm:text-[0.9rem]'
+                        : 'text-white/90 text-xs leading-tight sm:text-sm'
+                    }
+                  >
+                    {serviceSubtitle}
+                  </p>
                 )}
               </div>
             </div>
@@ -330,24 +422,30 @@ export function ServiceDashboardHeader({
               </button>
             )}
 
-            <div
-              className={`flex ${iconBox} flex-shrink-0 items-center justify-center rounded-2xl border border-white/30 bg-white/20 shadow-lg backdrop-blur-md`}
-            >
+            <div className={iconShellClass}>
               {isLucideIcon ? (
-                <IconComponent className={`${iconInner} ${iconColor}`} />
+                <IconComponent
+                  className={`${iconInner} ${isPremium ? 'text-[#FF7A3D] drop-shadow-[0_0_12px_rgba(255,122,61,0.45)]' : iconColor}`}
+                />
               ) : (
-                <div className={iconColor}>{ServiceIcon as ReactNode}</div>
+                <div className={isPremium ? 'text-[#FF7A3D]' : iconColor}>{ServiceIcon as ReactNode}</div>
               )}
             </div>
 
             <div className={`min-w-0 flex-1 py-0.5 ${headerTrailingImage ? 'max-w-[52%] pr-1 sm:max-w-[54%]' : ''}`}>
-              <h1
-                className={`mb-1 font-bold text-white ${compact ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}
-              >
+              <h1 className={isPremium ? premiumTitleClass : `mb-1 font-bold text-white ${compact ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}>
                 {serviceName}
               </h1>
               {serviceSubtitle && (
-                <p className="text-xs leading-tight text-white/90 sm:text-sm">{serviceSubtitle}</p>
+                <p
+                  className={
+                    isPremium
+                      ? 'text-sm leading-snug text-white/95 sm:text-[0.9rem]'
+                      : 'text-xs leading-tight text-white/90 sm:text-sm'
+                  }
+                >
+                  {serviceSubtitle}
+                </p>
               )}
             </div>
           </div>
@@ -357,13 +455,38 @@ export function ServiceDashboardHeader({
         {hasStats && (
           <div className={statGrid}>
             {stats.map((stat, index) => {
-              const inner = (
+              const accent = stat.accent ? statAccentStyles[stat.accent] : null;
+              const inner = isPremium ? (
+                <>
+                  {stat.icon && accent ? (
+                    <div
+                      className={`mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-full ${accent.iconWrap}`}
+                    >
+                      <span className={accent.chip}>{stat.icon}</span>
+                    </div>
+                  ) : stat.icon ? (
+                    <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-orange-50">
+                      <span className="text-[#FF7A3D]">{stat.icon}</span>
+                    </div>
+                  ) : null}
+                  <div className={statValue}>
+                    <span className="truncate tabular-nums">{stat.value}</span>
+                  </div>
+                  <div className={statLabelClass}>{stat.label}</div>
+                  {accent ? (
+                    <div
+                      className={`absolute bottom-2 left-1/2 h-1 w-10 -translate-x-1/2 rounded-full ${accent.bar}`}
+                      aria-hidden
+                    />
+                  ) : null}
+                </>
+              ) : (
                 <>
                   <div className={statValue}>
                     {stat.icon && <span className="text-white">{stat.icon}</span>}
                     <span className="truncate tabular-nums">{stat.value}</span>
                   </div>
-                  <div className="text-[10px] font-medium text-white/90 sm:text-xs">{stat.label}</div>
+                  <div className={statLabelClass}>{stat.label}</div>
                 </>
               );
               const cardClass = statCard;
@@ -478,7 +601,8 @@ export function ServiceDashboardHeader({
         )}
       </div>
 
-      {bottomEdge === 'sheet' && (
+      {/* Premium / flat headers: rectangular orange bottom; page uses Home-style rounded white shell overlap. */}
+      {bottomEdge === 'sheet' && !isPremium && (
         <div
           className={`pointer-events-none relative z-[21] ${sheetOverlapClass} w-full ${fullWidth ? '' : 'mx-auto max-w-customer'}`.trim()}
           aria-hidden

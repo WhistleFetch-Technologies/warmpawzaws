@@ -29,14 +29,18 @@ import { useRouter } from 'next/navigation';
 import { BookingDetailModal } from '../BookingDetailModal';
 import { RateServiceModal } from '../RateServiceModal';
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
-import { UtensilsCrossed } from 'lucide-react';
+import { BookingsHeaderBackground } from './BookingsHeaderBackground';
 import {
-  formatPaymentHoldCountdown,
-  isBookingAwaitingPayment,
-  isPaymentHoldActive,
-  isPaymentHoldExpired,
-  usePaymentHoldCountdown,
-} from '@/lib/payment-hold-ui';
+  MyBookingsTrackingRow,
+  MyBookingsFilterTabs,
+  MyBookingsEmptyState,
+  MyBookingsBookingCardShell,
+  MyBookingsMetaRow,
+  MyBookingsQuickAction,
+  MY_BOOKINGS_CONTENT_SHELL_CLASS,
+  type MyBookingsFilterId,
+} from './my-bookings-ui';
+import { UtensilsCrossed, CheckCircle2 } from 'lucide-react';
 /** Flip to `true` to restore navigation from My Bookings (one-line re-enable). */
 export const PHARMACY_ORDERS_ENABLED = false;
 
@@ -703,19 +707,17 @@ export function MyBookings({
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'pending_payment':
-        return 'bg-amber-100 text-amber-900';
+        return 'bg-gradient-to-r from-amber-50 to-orange-50 text-orange-800 border border-orange-100/80';
       case 'confirmed':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-gradient-to-r from-blue-50 to-sky-50 text-blue-800 border border-blue-100/80';
       case 'in_progress':
-        return 'bg-orange-100 text-orange-800';
+        return 'bg-gradient-to-r from-orange-50 to-amber-50 text-orange-800 border border-orange-100/80';
       case 'completed':
-        return 'bg-green-100 text-green-800';
+        return 'bg-gradient-to-r from-emerald-50 to-green-50 text-emerald-800 border border-emerald-100/80';
       case 'cancelled':
-        return 'bg-red-100 text-red-800';
+        return 'bg-gradient-to-r from-red-50 to-rose-50 text-red-800 border border-red-100/80';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-gray-50 text-gray-700 border border-gray-100';
     }
   };
 
@@ -739,30 +741,32 @@ export function MyBookings({
 
   // ✅ FIX: Include all active statuses in "Upcoming" count
   const dashboardStats = [
-    { value: String(bookings.length), label: 'Total' },
     {
-      value: String(
-        bookings.filter(
-          (b) =>
-            ['pending', 'pending_payment', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(
-              b.status
-            ) && !isPaymentHoldExpired(b)
-        ).length
-      ),
-      label: 'Upcoming',
+      value: String(bookings.length),
+      label: 'Total',
+      accent: 'orange' as const,
+      icon: <Calendar className="h-4 w-4" strokeWidth={2.25} aria-hidden />,
     },
     {
       value: String(
-        bookings.filter(
-          (b) => b.status === 'completed' || b.status === 'cancelled' || isPaymentHoldExpired(b)
+        bookings.filter((b) =>
+          ['pending', 'confirmed', 'in_progress', 'arrived', 'scheduled'].includes(b.status)
         ).length
       ),
+      label: 'Upcoming',
+      accent: 'purple' as const,
+      icon: <Clock className="h-4 w-4" strokeWidth={2.25} aria-hidden />,
+    },
+    {
+      value: String(bookings.filter((b) => b.status === 'completed' || b.status === 'cancelled').length),
       label: 'Completed',
+      accent: 'green' as const,
+      icon: <CheckCircle2 className="h-4 w-4" strokeWidth={2.25} aria-hidden />,
     },
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
+    <div className="min-h-screen w-full max-w-customer mx-auto bg-white">
       <ServiceDashboardHeader
         serviceName="My Bookings"
         serviceSubtitle="View and manage your appointments"
@@ -772,128 +776,68 @@ export function MyBookings({
         onBack={onBack}
         showBackButton={true}
         onCloseToHome={onCloseToHome}
-        headerColor="bg-[#FF8C42]"
-        bottomEdge="sheet"
-        sheetToneClass="bg-gray-50"
+        headerVariant="premium"
+        headerBackground={<BookingsHeaderBackground />}
+        bottomEdge="flat"
       />
 
-      <div className="max-w-customer mx-auto -mt-1">
-        {/* Meal Plan Orders — in shell: meal-plan-orders → OrderTrackingScreen; standalone: /orders/meal-plans */}
-        <div className="px-4 py-3 bg-white border-b border-gray-100">
-          <button
-            type="button"
-            disabled={!mealPlanOrdersEnabled}
-            onClick={navigateToMealPlanOrders}
-            aria-label={
-              mealPlanOrdersEnabled
-                ? 'Open meal plan orders and tracking'
-                : 'Meal plan orders and tracking — coming soon'
-            }
-            className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium border transition-colors ${
-              mealPlanOrdersEnabled
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
-                : 'bg-emerald-50/55 border-emerald-200/50 text-emerald-700/65 cursor-not-allowed hover:bg-emerald-50/55'
-            }`}
-          >
-            <UtensilsCrossed className={`w-5 h-5 shrink-0 ${!mealPlanOrdersEnabled ? 'text-emerald-600/55' : ''}`} />
-            <span className="inline-flex items-center justify-center gap-2 flex-wrap">
-              Meal Plan Orders & Tracking
-              {!mealPlanOrdersEnabled && (
-                <span className="rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white shadow-sm">
-                  Soon
-                </span>
-              )}
-            </span>
-          </button>
-          <p
-            className={`text-xs mt-1.5 text-center ${
-              mealPlanOrdersEnabled ? 'text-gray-500' : 'text-emerald-800/55'
-            }`}
-          >
-            {mealPlanOrdersEnabled
-              ? 'Track your meal plan deliveries and access order status'
-              : 'Coming soon — track meal plan deliveries and order status here.'}
-          </p>
-        </div>
-
-        {/* Pharmacy Orders; navigation gated by PHARMACY_ORDERS_ENABLED */}
-        <div className="px-4 py-3 bg-white border-b border-gray-100">
-          <button
-            type="button"
-            disabled={!PHARMACY_ORDERS_ENABLED}
-            onClick={navigateToPharmacyOrders}
-            aria-label={
-              PHARMACY_ORDERS_ENABLED
-                ? 'Open pharmacy orders and tracking'
-                : 'Pharmacy orders and tracking — coming soon'
-            }
-            className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-medium border transition-colors ${
-              PHARMACY_ORDERS_ENABLED
-                ? 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-                : 'bg-blue-50/55 border-blue-200/50 text-blue-700/65 cursor-not-allowed hover:bg-blue-50/55'
-            }`}
-          >
-            <Package className={`w-5 h-5 shrink-0 ${!PHARMACY_ORDERS_ENABLED ? 'text-blue-600/55' : ''}`} />
-            <span className="inline-flex items-center justify-center gap-2 flex-wrap">
-              Pharmacy Orders & Tracking
-              {!PHARMACY_ORDERS_ENABLED && (
-                <span className="rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white shadow-sm">
-                  Soon
-                </span>
-              )}
-            </span>
-          </button>
-          <p
-            className={`text-xs mt-1.5 text-center ${
-              PHARMACY_ORDERS_ENABLED ? 'text-gray-500' : 'text-blue-800/55'
-            }`}
-          >
-            {PHARMACY_ORDERS_ENABLED
-              ? 'Track your pharmacy orders and access order status'
-              : 'Coming soon — pharmacy order tracking will be available here.'}
-          </p>
-        </div>
-
-        {/* Filter Tabs */}
-        <div className="flex gap-2 px-4 py-3 bg-white border-b border-gray-100">
-          {[
-            { id: 'all', label: 'All' },
-            { id: 'upcoming', label: 'Upcoming' },
-            { id: 'completed', label: 'Completed' }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveFilter(tab.id as any)}
-              className={`flex-1 py-2 px-4 rounded-lg text-sm transition-colors ${activeFilter === tab.id
-                  ? 'bg-[#FF8C42] text-white'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Bookings List */}
       <div
-        className="mx-auto max-w-customer space-y-3 p-4"
+        className={`${MY_BOOKINGS_CONTENT_SHELL_CLASS} mx-auto max-w-customer space-y-4 px-4 pb-4 sm:px-5`}
         style={{ paddingBottom: 'max(1.25rem, var(--customer-tabbar-content-pad))' }}
       >
+        <MyBookingsTrackingRow
+          tone="emerald"
+          icon={UtensilsCrossed}
+          title="Meal Plan Orders & Tracking"
+          description={
+            mealPlanOrdersEnabled
+              ? 'Track your meal plan deliveries and access order status'
+              : 'Coming soon — track meal plan deliveries and order status here.'
+          }
+          disabled={!mealPlanOrdersEnabled}
+          onClick={navigateToMealPlanOrders}
+          ariaLabel={
+            mealPlanOrdersEnabled
+              ? 'Open meal plan orders and tracking'
+              : 'Meal plan orders and tracking — coming soon'
+          }
+        />
+
+        <MyBookingsTrackingRow
+          tone="blue"
+          icon={Package}
+          title="Pharmacy Orders & Tracking"
+          description={
+            PHARMACY_ORDERS_ENABLED
+              ? 'Track your pharmacy orders and access order status'
+              : 'Coming soon — pharmacy order tracking will be available here.'
+          }
+          disabled={!PHARMACY_ORDERS_ENABLED}
+          showSoonBadge={!PHARMACY_ORDERS_ENABLED}
+          onClick={navigateToPharmacyOrders}
+          ariaLabel={
+            PHARMACY_ORDERS_ENABLED
+              ? 'Open pharmacy orders and tracking'
+              : 'Pharmacy orders and tracking — coming soon'
+          }
+        />
+
+        <MyBookingsFilterTabs
+          activeFilter={activeFilter}
+          onFilterChange={(id) => setActiveFilter(id as MyBookingsFilterId)}
+        />
+
         {loading ? (
-          <div className="flex justify-center items-center py-20">
-            <RefreshCw className="w-8 h-8 text-[#FF8C42] animate-spin" />
+          <div className="flex flex-col items-center justify-center gap-3 py-20 my-bookings-fade-in">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-[0_4px_20px_rgba(15,23,42,0.08)]">
+              <RefreshCw className="h-7 w-7 animate-spin text-[#FF8C42]" aria-hidden />
+            </div>
+            <p className="text-sm font-medium text-gray-500">Loading your bookings…</p>
           </div>
         ) : filteredBookings.length === 0 ? (
-          <div className="text-center py-20">
-            <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500">No bookings found</p>
-            <p className="text-sm text-gray-400 mt-1">
-              {activeFilter === 'all' ? 'Book your first service to get started!' : `No ${activeFilter} bookings`}
-            </p>
-          </div>
+          <MyBookingsEmptyState activeFilter={activeFilter} />
         ) : (
-          filteredBookings.map((booking) => {
+          filteredBookings.map((booking, cardIndex) => {
             // ✅ DEBUG: Log serviceStyle/serviceType for home visit bookings
             const isAtHome = booking.serviceStyle === 'at_home' || booking.serviceType === 'at_home';
             if (booking.serviceName?.toLowerCase().includes('home visit') || isAtHome) {
@@ -908,14 +852,14 @@ export function MyBookings({
               });
             }
             return (
-              <div
+              <MyBookingsBookingCardShell
                 key={booking.bookingId}
+                animationDelayMs={Math.min(cardIndex * 45, 360)}
                 onClick={() => setSelectedBooking(booking)}
-                className="bg-white border border-gray-200 rounded-xl p-4 hover:border-[#FF8C42] cursor-pointer transition-colors"
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <h3 className="font-medium mb-1">{booking.serviceName}</h3>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-gray-900 mb-1 leading-snug">{booking.serviceName}</h3>
                     {/* ✅ FIX: Format vendor name like "Hospital" for clinics, "Salon" for grooming */}
                     <p className="text-sm text-gray-600 font-medium">
                       {booking.vendorName}
@@ -931,9 +875,9 @@ export function MyBookings({
                       </div>
                     )}
                   </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <span className={`text-xs px-2 py-1 rounded-full ${getBookingStatusColor(booking)}`}>
-                      {getBookingStatusText(booking)}
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${getStatusColor(booking.status)}`}>
+                      {getStatusText(booking.status)}
                     </span>
                     {booking.paymentStatus === 'paid' && (
                       <>
@@ -953,21 +897,17 @@ export function MyBookings({
                   </div>
                 </div>
 
-                <div className="space-y-2 text-sm text-gray-600">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    <span>
-                      {booking.status === 'completed' &&
-                      isTeleBookingRow(booking) &&
-                      booking.completedAt
-                        ? `${new Date(booking.bookingDate).toLocaleDateString()} · Completed ${new Date(booking.completedAt).toLocaleString()}`
-                        : `${new Date(booking.bookingDate).toLocaleDateString()} at ${booking.bookingTime}`}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    <span>{getServiceStyleDisplayLabel(booking.serviceStyle, booking.serviceType, booking.serviceName)}</span>
-                  </div>
+                <div className="space-y-2.5">
+                  <MyBookingsMetaRow icon={Calendar}>
+                    {booking.status === 'completed' &&
+                    isTeleBookingRow(booking) &&
+                    booking.completedAt
+                      ? `${new Date(booking.bookingDate).toLocaleDateString()} · Completed ${new Date(booking.completedAt).toLocaleString()}`
+                      : `${new Date(booking.bookingDate).toLocaleDateString()} at ${booking.bookingTime}`}
+                  </MyBookingsMetaRow>
+                  <MyBookingsMetaRow icon={MapPin}>
+                    {getServiceStyleDisplayLabel(booking.serviceStyle, booking.serviceType, booking.serviceName)}
+                  </MyBookingsMetaRow>
                 </div>
 
                 {isBookingAwaitingPayment(booking) &&
@@ -991,23 +931,23 @@ export function MyBookings({
                   const isAtCenter = (booking.serviceStyle === 'at_center' || booking.serviceType === 'at_center') && !isTeleOrVideo;
                   return !isAtHome && isAtCenter && !isTeleOrVideo && ['confirmed', 'pending', 'completed'].includes(booking.status);
                 })() && (
-                    <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
-                      <button
+                    <div className="mt-4 flex gap-2" onClick={(e) => e.stopPropagation()}>
+                      <MyBookingsQuickAction
+                        tone="blue"
+                        icon={Navigation}
+                        label="Directions"
                         onClick={(e) => {
                           e.stopPropagation();
-                          // Open Google Maps with vendor location
                           const address = encodeURIComponent(booking.vendorName);
                           window.open(`https://www.google.com/maps/search/?api=1&query=${address}`, '_blank');
                         }}
-                        className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-sm font-medium"
-                      >
-                        <Navigation className="w-4 h-4" />
-                        Directions
-                      </button>
-                      <button
+                      />
+                      <MyBookingsQuickAction
+                        tone="green"
+                        icon={Phone}
+                        label="Call"
                         onClick={(e) => {
                           e.stopPropagation();
-                          // Trigger call (on mobile) or show number
                           const vendorPhone = booking.vendorPhone || booking.vendorContact;
                           if (vendorPhone) {
                             window.location.href = `tel:${vendorPhone}`;
@@ -1015,28 +955,21 @@ export function MyBookings({
                             toast.info('Vendor contact not available');
                           }
                         }}
-                        className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 text-sm font-medium"
-                      >
-                        <Phone className="w-4 h-4" />
-                        Call
-                      </button>
-                      {/* ✅ NEW: Review button for completed bookings */}
+                      />
                       {booking.status === 'completed' && (
-                        <button
+                        <MyBookingsQuickAction
+                          tone="yellow"
+                          icon={Star}
+                          label="Review"
                           onClick={(e) => {
                             e.stopPropagation();
-                            // ✅ FIX: Open RateServiceModal directly instead of navigation
                             setShowReviewModal({
                               bookingId: booking.bookingId,
                               vendorId: booking.vendorId,
-                              serviceName: booking.serviceName
+                              serviceName: booking.serviceName,
                             });
                           }}
-                          className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-100 text-sm font-medium"
-                        >
-                          <Star className="w-4 h-4" />
-                          Review
-                        </button>
+                        />
                       )}
                     </div>
                   )}
@@ -1073,11 +1006,13 @@ export function MyBookings({
 
                   return shouldShowTracker;
                 })() && (
-                    <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
-                      <button
+                    <div className="mt-4 flex gap-2" onClick={(e) => e.stopPropagation()}>
+                      <MyBookingsQuickAction
+                        tone="blue"
+                        icon={Navigation}
+                        label="Tracker"
                         onClick={(e) => {
                           e.stopPropagation();
-                          // ✅ Navigate to tracking page via in-app navigation
                           console.log('[MyBookings] Navigating to tracking page:', {
                             bookingId: booking.bookingId,
                             serviceStyle: booking.serviceStyle,
@@ -1087,22 +1022,19 @@ export function MyBookings({
                           if (onNavigate) {
                             onNavigate('gps-tracking', { bookingId: booking.bookingId });
                           } else {
-                            // Fallback: direct navigation (requires CloudFront rewrite)
                             const trackingUrl = phone
                               ? `/tracking/${booking.bookingId}?phone=${encodeURIComponent(phone)}`
                               : `/tracking/${booking.bookingId}`;
                             router.push(trackingUrl);
                           }
                         }}
-                        className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 text-sm font-medium"
-                      >
-                        <Navigation className="w-4 h-4" />
-                        Tracker
-                      </button>
-                      <button
+                      />
+                      <MyBookingsQuickAction
+                        tone="green"
+                        icon={Phone}
+                        label="Call"
                         onClick={(e) => {
                           e.stopPropagation();
-                          // Trigger call (on mobile) or show number
                           const vendorPhone = booking.vendorPhone || booking.vendorContact;
                           if (vendorPhone) {
                             window.location.href = `tel:${vendorPhone}`;
@@ -1110,27 +1042,21 @@ export function MyBookings({
                             toast.info('Vendor contact not available');
                           }
                         }}
-                        className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 text-sm font-medium"
-                      >
-                        <Phone className="w-4 h-4" />
-                        Call
-                      </button>
-                      {/* ✅ NEW: Review button for completed bookings */}
+                      />
                       {booking.status === 'completed' && (
-                        <button
+                        <MyBookingsQuickAction
+                          tone="yellow"
+                          icon={Star}
+                          label="Review"
                           onClick={(e) => {
                             e.stopPropagation();
                             setShowReviewModal({
                               bookingId: booking.bookingId,
                               vendorId: booking.vendorId,
-                              serviceName: booking.serviceName
+                              serviceName: booking.serviceName,
                             });
                           }}
-                          className="flex-1 flex items-center justify-center gap-2 py-2 px-3 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-100 text-sm font-medium"
-                        >
-                          <Star className="w-4 h-4" />
-                          Review
-                        </button>
+                        />
                       )}
                     </div>
                   )}
@@ -1298,9 +1224,9 @@ export function MyBookings({
                   </div>
                 )}
 
-                <div className="mt-3 pt-3 border-t border-gray-200 flex items-center justify-between">
+                <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between gap-2">
                   <div>
-                    <span className="font-medium">{formatPriceWithSymbol(booking.price)}</span>
+                    <span className="text-base font-bold text-gray-900">{formatPriceWithSymbol(booking.price)}</span>
                     {booking.paymentStatus === 'paid' &&
                       booking.paymentSources &&
                       booking.paymentSources.length > 0 && (
@@ -1331,10 +1257,13 @@ export function MyBookings({
                   )}
 
                   {!canCancelOrReschedule(booking) && (
-                    <ChevronRight className="w-5 h-5 text-gray-400" />
+                    <span className="flex items-center gap-0.5 text-sm font-semibold text-[#FF8C42]">
+                      View
+                      <ChevronRight className="w-5 h-5" aria-hidden />
+                    </span>
                   )}
                 </div>
-              </div>
+              </MyBookingsBookingCardShell>
             );
           })
         )}

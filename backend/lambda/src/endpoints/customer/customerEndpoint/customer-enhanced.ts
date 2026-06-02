@@ -31,6 +31,10 @@ import {
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 import { presignS3GetUrlIfApplicable } from '../../../utils/s3-media-presign';
+import {
+  extractHealthRecordsForClient,
+  extractVaccinationsForClient,
+} from '../../../utils/pet-health-normalize';
 import { findCustomerByPhone } from '../../../utils/customer-phone-lookup';
 import { getDiscoveryRules } from '../../../lib/rule-engine';
 import {
@@ -808,8 +812,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
             photo: photoUrl,
             profile_photo_url: photoUrl,
             microchipId: pet.microchip_id,
-            healthRecords: pet.medical_history || {},
-            vaccinations: pet.vaccination_records || {},
+            healthRecords: extractHealthRecordsForClient(pet.medical_history),
+            vaccinations: extractVaccinationsForClient(pet),
             createdAt: pet.created_at,
           },
         });
@@ -843,8 +847,8 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
             image: photoUrl,
             profile_photo_url: photoUrl,
             microchipId: pet.microchip_id,
-            healthRecords: pet.medical_history || {},
-            vaccinations: pet.vaccination_records || {},
+            healthRecords: extractHealthRecordsForClient(pet.medical_history),
+            vaccinations: extractVaccinationsForClient(pet),
             createdAt: pet.created_at,
           };
         })

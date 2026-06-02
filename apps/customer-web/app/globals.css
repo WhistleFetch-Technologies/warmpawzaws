@@ -347,6 +347,86 @@ body {
   }
 }
 
+/* My Bookings — premium decorative motion (respects reduced motion) */
+@keyframes bookings-deco-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(3deg);
+  }
+}
+
+@keyframes bookings-deco-float-slow {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.02);
+  }
+}
+
+@keyframes my-bookings-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes my-bookings-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@layer utilities {
+  .bookings-deco-float {
+    animation: bookings-deco-float 7s ease-in-out infinite;
+  }
+
+  .bookings-deco-float-slow {
+    animation: bookings-deco-float-slow 9s ease-in-out infinite;
+  }
+
+  .profile-deco-float {
+    animation: bookings-deco-float 7s ease-in-out infinite;
+  }
+
+  .profile-deco-float-slow {
+    animation: bookings-deco-float-slow 9s ease-in-out infinite;
+  }
+
+  .my-bookings-fade-in {
+    animation: my-bookings-fade-in 0.45s ease-out both;
+  }
+
+  .my-bookings-card-enter {
+    animation: my-bookings-card-enter 0.4s ease-out both;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bookings-deco-float,
+    .bookings-deco-float-slow,
+    .profile-deco-float,
+    .profile-deco-float-slow,
+    .my-bookings-fade-in,
+    .my-bookings-card-enter {
+      animation: none;
+    }
+  }
+}
+
 [data-sonner-toaster] {
   --offset-top: calc(env(safe-area-inset-top, 0px) + 8px) !important;
   --offset-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px) !important;

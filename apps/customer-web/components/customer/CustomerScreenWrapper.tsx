@@ -2,6 +2,7 @@
 
 import { ReactNode } from 'react';
 import { BottomNavigation } from './bottomNavigation/BottomNavigation';
+import { ProfileMenuOpenProvider } from '@/lib/profile-menu-open-context';
 
 interface CustomerScreenWrapperProps {
   children: ReactNode;
@@ -19,8 +20,10 @@ export function CustomerScreenWrapper({
   onProfileClick,
   accountSidebar,
 }: CustomerScreenWrapperProps) {
+  const profileMenuOpen = Boolean(accountSidebar);
+
   return (
-    <>
+    <ProfileMenuOpenProvider value={profileMenuOpen}>
       {/* Match bottom nav width so tabbed screens stay a single mobile column on large viewports */}
       <div className="min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto pb-[var(--customer-tabbed-nav-offset)]">
         {children}
@@ -29,8 +32,9 @@ export function CustomerScreenWrapper({
         currentScreen={currentScreen}
         onNavigate={onNavigate}
         onProfileClick={onProfileClick}
+        profileMenuOpen={profileMenuOpen}
       />
       {accountSidebar}
-    </>
+    </ProfileMenuOpenProvider>
   );
 }

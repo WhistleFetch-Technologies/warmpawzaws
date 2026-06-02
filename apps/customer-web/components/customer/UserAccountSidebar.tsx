@@ -11,6 +11,8 @@ import {
   Trash2, Plus, Check, Wallet, ShoppingBag,
   Gift, Users, Award, Smartphone, Building2, MessageSquare, X
 } from 'lucide-react';
+import { ProfileAccountHero } from '@/components/customer/profile/ProfileAccountHero';
+import { ProfileMenuFloatingSheet } from '@/components/customer/profile/ProfileMenuFloatingSheet';
 // Uses apiClient with Cognito auth
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
@@ -47,6 +49,14 @@ interface UserProfile {
   city?: string;
   state?: string;
   photo?: string;
+  created_at?: string;
+}
+
+function formatMemberSinceLabel(createdAt?: string): string | undefined {
+  if (!createdAt) return undefined;
+  const d = new Date(createdAt);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
 }
 
 interface Booking {
@@ -601,6 +611,7 @@ export function UserAccountSidebar({
           city: ic ?? base.city,
           state: ist ?? base.state,
           photo: base.photo,
+          created_at: raw.created_at ?? raw.createdAt,
         };
         setProfile(next);
         setPhotoPreview(base.photo);
@@ -1092,83 +1103,202 @@ export function UserAccountSidebar({
     {
       icon: User,
       label: 'My Profile',
-      color: 'from-blue-100 to-blue-200 text-blue-600',
+      subtitle: 'View and manage your personal details',
+      iconBg: 'bg-blue-100',
+      iconColor: 'text-blue-600',
       action: 'profile' as const,
       isExternal: true,
     },
     {
       icon: Package2,
-      label: 'My packages',
-      color: 'from-orange-100 to-orange-200 text-orange-600',
+      label: 'My Packages',
+      subtitle: 'View purchased packages',
+      iconBg: 'bg-orange-100',
+      iconColor: 'text-orange-600',
       action: 'my-packages' as const,
       isExternal: true,
     },
-    { icon: ShoppingBag, label: 'My Orders', color: 'from-orange-100 to-orange-200 text-orange-600', action: 'orders', isExternal: true, comingSoon: !isCustomerEcommerceEnabled() },
-    { icon: Wallet, label: 'My Wallet', color: 'from-emerald-100 to-emerald-200 text-emerald-600', action: 'wallet', isExternal: true },
-    { icon: Award, label: 'Rewards & Points', color: 'from-amber-100 to-amber-200 text-amber-600', action: 'rewards-loyalty', isExternal: true },
-    { icon: Users, label: 'Refer & Earn', color: 'from-cyan-100 to-cyan-200 text-cyan-600', action: 'referral-system', isExternal: true },
-    { icon: Calendar, label: 'My Appointments', color: 'from-purple-100 to-purple-200 text-purple-600', action: 'appointments', isExternal: true },
-    { icon: MapPin, label: 'Address Book', color: 'from-green-100 to-green-200 text-green-600', view: 'addresses' as const },
-    { icon: Package, label: 'My Bookings', color: 'from-teal-100 to-teal-200 text-teal-600', view: 'bookings' as const, badge: activeBookings.length },
+    {
+      icon: ShoppingBag,
+      label: 'My Orders',
+      subtitle: 'View order history and tracking',
+      iconBg: 'bg-orange-100',
+      iconColor: 'text-orange-700',
+      action: 'orders' as const,
+      isExternal: true,
+      comingSoon: !isCustomerEcommerceEnabled(),
+    },
+    {
+      icon: Wallet,
+      label: 'My Wallet',
+      subtitle: 'Manage wallet and transactions',
+      iconBg: 'bg-green-100',
+      iconColor: 'text-green-600',
+      action: 'wallet' as const,
+      isExternal: true,
+    },
+    {
+      icon: Award,
+      label: 'Rewards & Points',
+      subtitle: 'View rewards and redeem points',
+      iconBg: 'bg-yellow-100',
+      iconColor: 'text-yellow-600',
+      action: 'rewards-loyalty' as const,
+      isExternal: true,
+    },
+    {
+      icon: Users,
+      label: 'Refer & Earn',
+      subtitle: 'Invite friends and earn rewards',
+      iconBg: 'bg-cyan-100',
+      iconColor: 'text-cyan-600',
+      action: 'referral-system' as const,
+      isExternal: true,
+    },
+    {
+      icon: Calendar,
+      label: 'My Appointments',
+      subtitle: 'View upcoming and past appointments',
+      iconBg: 'bg-purple-100',
+      iconColor: 'text-purple-600',
+      action: 'appointments' as const,
+      isExternal: true,
+    },
+    {
+      icon: MapPin,
+      label: 'Address Book',
+      subtitle: 'Manage saved addresses',
+      iconBg: 'bg-green-100',
+      iconColor: 'text-green-600',
+      action: 'addresses' as const,
+      isExternal: true,
+    },
+    {
+      icon: Package,
+      label: 'My Bookings',
+      subtitle: 'View all bookings',
+      iconBg: 'bg-teal-100',
+      iconColor: 'text-teal-600',
+      view: 'bookings' as const,
+      badge: activeBookings.length,
+    },
     {
       icon: ShoppingCart,
       label: 'My Cart',
-      color: 'from-pink-100 to-pink-200 text-pink-600',
+      subtitle: 'Review items before checkout',
+      iconBg: 'bg-pink-100',
+      iconColor: 'text-pink-600',
       view: 'cart' as const,
       badge: cartItems.length,
       comingSoon: !isCustomerEcommerceEnabled(),
     },
-    { icon: Heart, label: 'Saved Items', color: 'from-red-100 to-red-200 text-red-600', view: 'saved' as const, badge: savedItems.length, comingSoon: !isCustomerEcommerceEnabled() },
-    { icon: CreditCard, label: 'Payment Settings', color: 'from-yellow-100 to-yellow-200 text-yellow-600', view: 'payments' as const },
-    { icon: Bell, label: 'Notifications', color: 'from-indigo-100 to-indigo-200 text-indigo-600', view: 'notifications' as const },
-    { icon: HelpCircle, label: 'Help & Support', color: 'from-gray-100 to-gray-200 text-gray-600', view: 'help' as const },
+    {
+      icon: Heart,
+      label: 'Saved Items',
+      subtitle: 'Your wishlist and favorites',
+      iconBg: 'bg-pink-100',
+      iconColor: 'text-pink-600',
+      view: 'saved' as const,
+      badge: savedItems.length,
+      comingSoon: !isCustomerEcommerceEnabled(),
+    },
+    {
+      icon: CreditCard,
+      label: 'Payment Settings',
+      subtitle: 'Manage payment methods',
+      iconBg: 'bg-yellow-100',
+      iconColor: 'text-yellow-600',
+      view: 'payments' as const,
+    },
+    {
+      icon: Bell,
+      label: 'Notifications',
+      subtitle: 'Manage notification preferences',
+      iconBg: 'bg-purple-100',
+      iconColor: 'text-purple-600',
+      view: 'notifications' as const,
+    },
+    {
+      icon: HelpCircle,
+      label: 'Help & Support',
+      subtitle: 'Get help and contact support',
+      iconBg: 'bg-gray-100',
+      iconColor: 'text-gray-600',
+      view: 'help' as const,
+    },
   ];
+
+  const displayName = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ').trim() || 'Account';
+  const memberSinceLabel = formatMemberSinceLabel(profile?.created_at);
 
   return (
     <div 
-      className={`fixed inset-0 bg-gray-50 z-50 transition-transform duration-300 ${
+      className={`fixed inset-x-0 top-0 bottom-0 z-50 overflow-hidden bg-[#F5F5F5] transition-transform duration-300 ${
         isOpen ? 'translate-y-0' : 'translate-y-full'
       }`}
     >
-      {/* Full Screen Mobile Container */}
-      <div className="w-full max-w-customer mx-auto h-full bg-gray-50 flex flex-col">
-        <ServiceDashboardHeader
-          serviceName={
-            loading
-              ? 'Account'
-              : [profile?.firstName, profile?.lastName].filter(Boolean).join(' ').trim() || 'Account'
-          }
-          serviceSubtitle={loading ? undefined : phone}
-          serviceIcon={
-            <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white">
-              {loading ? (
-                <span className="h-8 w-8 animate-pulse rounded-full bg-white/40" aria-hidden />
-              ) : photoPreview ? (
-                <PresignableImage src={photoPreview} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <User className="h-6 w-6 text-[#FF8C42]" />
-              )}
-            </span>
-          }
-          iconColor="text-white"
-          stats={[]}
-          onCloseToHome={handleHeaderCloseToHome}
-          onBack={showProfileMenuBack ? handleSidebarBack : undefined}
-          showBackButton={showProfileMenuBack}
-          bottomEdge="sheet"
-          sheetToneClass="bg-gray-50"
-        />
+      <div className="mx-auto flex h-full w-full max-w-customer flex-col overflow-hidden">
+        {activeView === 'menu' ? (
+          <ProfileAccountHero
+            displayName={displayName}
+            phone={phone}
+            photoUrl={photoPreview || profile?.photo}
+            loading={loading}
+            memberSinceLabel={memberSinceLabel}
+            onCloseToHome={handleHeaderCloseToHome}
+            onSettings={() => setActiveView('notifications')}
+          />
+        ) : (
+          <ServiceDashboardHeader
+            serviceName={
+              loading
+                ? 'Account'
+                : displayName
+            }
+            serviceSubtitle={loading ? undefined : phone}
+            serviceIcon={
+              <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white">
+                {loading ? (
+                  <span className="h-8 w-8 animate-pulse rounded-full bg-white/40" aria-hidden />
+                ) : photoPreview ? (
+                  <PresignableImage src={photoPreview} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <User className="h-6 w-6 text-[#FF8C42]" />
+                )}
+              </span>
+            }
+            iconColor="text-white"
+            stats={[]}
+            onCloseToHome={handleHeaderCloseToHome}
+            onBack={showProfileMenuBack ? handleSidebarBack : undefined}
+            showBackButton={showProfileMenuBack}
+            bottomEdge="sheet"
+            sheetToneClass="bg-gray-50"
+          />
+        )}
 
-        {/* Scrollable Content Area - Fixed Height with Proper Overflow */}
+        {/* Single scroll container — fills remaining height; no footer placeholder */}
         <div 
           ref={scrollContainerRef}
-          className="-mt-1 flex-1 min-h-0 overflow-y-auto overscroll-contain relative pb-24" 
-          style={{ WebkitOverflowScrolling: 'touch' }}
+          className={`relative z-20 min-h-0 flex-1 overflow-y-auto overscroll-contain ${
+            activeView === 'menu'
+              ? '-mt-4 bg-[#F5F5F5] pb-[max(1rem,env(safe-area-inset-bottom))]'
+              : '-mt-1 pb-6'
+          }`}
+          style={{ height: '100%', WebkitOverflowScrolling: 'touch' }}
         >
           {activeView === 'menu' && (
-            <div className="p-5 space-y-3">
+            <ProfileMenuFloatingSheet>
+                <div className="space-y-2.5">
               {menuItems.map((item, index) => {
                 const isComingSoon = 'comingSoon' in item && item.comingSoon;
+                const showCountBadge =
+                  !isComingSoon &&
+                  item.badge !== undefined &&
+                  item.badge > 0 &&
+                  item.label === 'My Bookings';
+                const showComingSoonBadge =
+                  isComingSoon && (item.label === 'My Cart' || item.label === 'Saved Items');
                 return (
                 <button
                   key={index}
@@ -1191,7 +1321,6 @@ export function UserAccountSidebar({
                         onViewWallet();
                         handleClose();
                       } else if (item.action && onNavigate) {
-                        // Handle new navigation actions: rewards-loyalty, referral-system, orders, addresses
                         if (item.action === 'orders') {
                           onNavigate('account/orders');
                         } else if (item.action === 'addresses') {
@@ -1205,51 +1334,58 @@ export function UserAccountSidebar({
                       setActiveView(item.view);
                     }
                   }}
-                  className={`w-full flex items-center justify-between p-4 bg-white border border-gray-200 rounded-2xl transition-all shadow-sm text-left ${
-                    isComingSoon
-                      ? 'opacity-60 cursor-not-allowed'
-                      : 'active:scale-[0.98] active:bg-gray-50'
+                  className={`group flex h-[88px] w-full items-center justify-between gap-3 rounded-[20px] border border-[#F1F1F1] bg-white px-3.5 text-left shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition active:scale-[0.99] ${
+                    isComingSoon ? 'cursor-not-allowed opacity-70' : 'hover:border-[#E8E8E8]'
                   }`}
                 >
-                  <div className="flex items-center gap-4 min-w-0">
-                    <div className={`w-14 h-14 shrink-0 bg-gradient-to-br ${item.color} rounded-2xl flex items-center justify-center`}>
-                      <item.icon className="w-7 h-7" />
+                  <div className="flex min-w-0 flex-1 items-center gap-3.5">
+                    <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] ${item.iconBg}`}>
+                      <item.icon className={`h-6 w-6 ${item.iconColor}`} strokeWidth={2} />
                     </div>
-                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                      <span className="font-semibold text-gray-800 text-[15px]">{item.label}</span>
-                      {isComingSoon && (
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200/80 shrink-0">
-                          Coming Soon
-                        </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[15px] font-semibold leading-tight text-gray-900">{item.label}</span>
+                        {showComingSoonBadge && (
+                          <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-gray-500">
+                            COMING SOON
+                          </span>
+                        )}
+                      </div>
+                      {'subtitle' in item && item.subtitle && (
+                        <p className="mt-1 truncate text-xs leading-snug text-gray-500">{item.subtitle}</p>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    {item.badge !== undefined && item.badge > 0 && !isComingSoon && (
-                      <span className="min-w-[26px] h-[26px] px-2 bg-[#FF8C42] text-white rounded-full flex items-center justify-center text-xs font-bold">
+                  <div className="flex shrink-0 items-center gap-2">
+                    {showCountBadge && (
+                      <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#FF8C42] px-1.5 text-[10px] font-bold text-white">
                         {item.badge}
                       </span>
                     )}
-                    <ChevronRight className={`w-5 h-5 ${isComingSoon ? 'text-gray-300' : 'text-gray-400'}`} />
+                    <ChevronRight className={`h-4 w-4 ${isComingSoon ? 'text-gray-300' : 'text-gray-400'}`} />
                   </div>
                 </button>
               );
               })}
+                </div>
 
-              {/* Logout Button */}
+              {/* Logout */}
               <button 
                 onClick={handleLogout}
-                className="w-full flex items-center justify-between p-4 bg-white border-2 border-red-200 rounded-2xl active:scale-[0.98] active:bg-red-50 transition-all shadow-sm mt-6"
+                className="group mt-2.5 flex h-[88px] w-full items-center justify-between gap-3 rounded-[20px] border border-red-200 bg-red-50/60 px-3.5 text-left shadow-[0_1px_4px_rgba(0,0,0,0.04)] transition active:scale-[0.99]"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-red-100 to-red-200 rounded-2xl flex items-center justify-center">
-                    <LogOut className="w-7 h-7 text-red-600" />
+                <div className="flex items-center gap-3.5">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-red-100">
+                    <LogOut className="h-6 w-6 text-red-600" strokeWidth={2} />
                   </div>
-                  <span className="font-semibold text-red-600 text-[15px]">Logout</span>
+                  <div>
+                    <span className="text-[15px] font-semibold text-red-600">Logout</span>
+                    <p className="mt-1 text-xs text-red-400">Sign out of your account</p>
+                  </div>
                 </div>
-                <ChevronRight className="w-5 h-5 text-red-400" />
+                <ChevronRight className="h-4 w-4 text-red-300" />
               </button>
-            </div>
+              </ProfileMenuFloatingSheet>
           )}
 
           {/* Bookings View */}
