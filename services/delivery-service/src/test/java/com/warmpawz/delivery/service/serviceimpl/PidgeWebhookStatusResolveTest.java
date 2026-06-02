@@ -54,4 +54,58 @@ class PidgeWebhookStatusResolveTest {
 		assertEquals("delivered", r.normalized());
 		assertEquals("", r.compositeKey());
 	}
+
+	@Test
+	void parentPlaced_mapsToPending() {
+		var r = PidgeWebhookProcessingService.resolvePidgeStatus("", "placed", "");
+		assertEquals("pending", r.normalized());
+	}
+
+	@Test
+	void parentPLACED_mapsToPending() {
+		var r = PidgeWebhookProcessingService.resolvePidgeStatus("", "PLACED", "");
+		assertEquals("pending", r.normalized());
+	}
+
+	@Test
+	void parentManifested_mapsToPickupScheduled() {
+		var r = PidgeWebhookProcessingService.resolvePidgeStatus("", "manifested", "");
+		assertEquals("pickup_scheduled", r.normalized());
+	}
+
+	@Test
+	void parentMANIFESTED_mapsToPickupScheduled() {
+		var r = PidgeWebhookProcessingService.resolvePidgeStatus("", "MANIFESTED", "");
+		assertEquals("pickup_scheduled", r.normalized());
+	}
+
+	@Test
+	void fulfillmentPlaced_mapsToPending() {
+		var r = PidgeWebhookProcessingService.resolvePidgeStatus("placed", "", "");
+		assertEquals("pending", r.normalized());
+	}
+
+	@Test
+	void fulfillmentMANIFESTED_mapsToPickupScheduled() {
+		var r = PidgeWebhookProcessingService.resolvePidgeStatus("MANIFESTED", "", "");
+		assertEquals("pickup_scheduled", r.normalized());
+	}
+
+	@Test
+	void unknownParentStatus_mapsToUnknown() {
+		var r = PidgeWebhookProcessingService.resolvePidgeStatus("", "awaiting_allocation", "");
+		assertEquals("unknown", r.normalized());
+	}
+
+	@Test
+	void fulfillmentOutForPickup_still_mapsToPickupScheduled() {
+		var r = PidgeWebhookProcessingService.resolvePidgeStatus("OUT_FOR_PICKUP", "", "");
+		assertEquals("pickup_scheduled", r.normalized());
+	}
+
+	@Test
+	void parentManifested_doesNotOverrideDeliveredFulfillment() {
+		var r = PidgeWebhookProcessingService.resolvePidgeStatus("DELIVERED", "manifested", "");
+		assertEquals("delivered", r.normalized());
+	}
 }
