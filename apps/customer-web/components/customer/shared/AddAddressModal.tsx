@@ -2,10 +2,12 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { X, MapPin, Navigation, Loader2, Home, Briefcase, MoreHorizontal, Search, ChevronRight } from 'lucide-react';
+import { X, MapPin, Home, Briefcase, MoreHorizontal, Search, ChevronRight } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import { toast } from 'sonner';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { UseCurrentLocationButton } from '@/components/shared/UseCurrentLocationButton';
+import { geolocationResultToFormFields, type AddressFromGeolocationResult } from '@/lib/address-from-geolocation';
 
 // Note: Google Maps is now handled by EnhancedAddressAutocomplete component
 
@@ -45,7 +47,6 @@ export function AddAddressModal({
   customerName = ''
 }: AddAddressModalProps) {
   const [loading, setLoading] = useState(false);
-  const [detectingLocation, setDetectingLocation] = useState(false);
   
   const [formData, setFormData] = useState<AddressFormData>({
     label: 'Home',
@@ -95,114 +96,18 @@ export function AddAddressModal({
     }
   }, [isOpen, customerName, phone]);
 
-  // Note: Google Maps autocomplete is now handled by EnhancedAddressAutocomplete component
-
-  // Detect current location
-  const handleDetectLocation = async () => {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser');
-      return;
-    }
-
-    setDetectingLocation(true);
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-
-        // Reverse geocode using Google Maps Geocoding API
-        try {
-          // Get API key from backend
-          const keyResponse = await apiClient.get<{ apiKey: string }>('/config/google-maps-key');
-          const apiKey = keyResponse?.apiKey;
-          
-          if (apiKey) {
-            const geocodeResponse = await fetch(
-              `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
-            );
-            const geocodeData = await geocodeResponse.json();
-
-            if (geocodeData.results && geocodeData.results[0]) {
-              const result = geocodeData.results[0];
-              const updates: Partial<AddressFormData> = {
-                addressLine1: result.formatted_address,
-                latitude: latitude,
-                longitude: longitude,
-              };
-
-              // Extract address components
-              result.address_components?.forEach((component: any) => {
-                if (component.types.includes('postal_code')) {
-                  updates.pincode = component.long_name;
-                }
-                if (component.types.includes('locality')) {
-                  updates.city = component.long_name;
-                }
-                if (component.types.includes('administrative_area_level_1')) {
-                  updates.state = component.long_name;
-                }
-                if (component.types.includes('sublocality_level_1') || component.types.includes('sublocality')) {
-                  if (!updates.addressLine2) {
-                    updates.addressLine2 = component.long_name;
-                  }
-                }
-              });
-
-              setFormData(prev => ({ ...prev, ...updates }));
-              toast.success('Location detected!');
-            } else {
-              // Fallback: Just use coordinates
-              setFormData(prev => ({
-                ...prev,
-                latitude: latitude,
-                longitude: longitude,
-                addressLine1: 'Current Location',
-              }));
-              toast.info('Location detected. Please enter address details.');
-            }
-          } else {
-            // No API key - just save coordinates
-            setFormData(prev => ({
-              ...prev,
-              latitude: latitude,
-              longitude: longitude,
-              addressLine1: 'Current Location',
-            }));
-            toast.info('Location coordinates captured. Please enter address manually.');
-          }
-        } catch (error) {
-          console.error('Error reverse geocoding:', error);
-          // Fallback: Just use coordinates
-          setFormData(prev => ({
-            ...prev,
-            latitude: latitude,
-            longitude: longitude,
-            addressLine1: 'Current Location',
-          }));
-          toast.info('Location detected. Please enter address details.');
-        } finally {
-          setDetectingLocation(false);
-        }
-      },
-      (error) => {
-        setDetectingLocation(false);
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            toast.error('Please allow location access');
-            break;
-          case error.POSITION_UNAVAILABLE:
-            toast.error('Location information unavailable');
-            break;
-          case error.TIMEOUT:
-            toast.error('Location request timed out');
-            break;
-          default:
-            toast.error('Could not detect location');
-        }
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  };
+  const handleGeolocationSuccess = useCallback((result: AddressFromGeolocationResult) => {
+    setFormData((prev) => ({
+      ...prev,
+      ...geolocationResultToFormFields(result),
+      addressLine1: result.addressLine1 ?? prev.addressLine1,
+      addressLine2: result.addressLine2 ?? prev.addressLine2,
+      city: result.city ?? prev.city,
+      state: result.state ?? prev.state,
+      pincode: result.pincode ?? prev.pincode,
+      landmark: result.landmark ?? prev.landmark,
+    }));
+  }, []);
 
   // Validate form
   const validateForm = (): boolean => {
@@ -385,18 +290,10 @@ export function AddAddressModal({
             </div>
 
             {/* Detect Location Button */}
-            <button
-              onClick={handleDetectLocation}
-              disabled={detectingLocation}
-              className="w-full py-3 px-4 border-2 border-dashed border-[#FF8C42] rounded-xl text-[#FF8C42] font-medium flex items-center justify-center gap-2 hover:bg-orange-50 disabled:opacity-50 transition-all"
-            >
-              {detectingLocation ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Navigation className="w-5 h-5" />
-              )}
-              {detectingLocation ? 'Detecting...' : 'Detect My Location'}
-            </button>
+            <UseCurrentLocationButton
+              label="Detect My Location"
+              onSuccess={handleGeolocationSuccess}
+            />
 
             {/* Address Search with Google Maps Autocomplete */}
             <div>
