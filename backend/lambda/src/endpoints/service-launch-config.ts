@@ -839,13 +839,24 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
       const state = c.req.query('state') || '';
       const city = c.req.query('city') || '';
 
-      // Find state code from state name (case-insensitive)
+      // Find state code from state name (case-insensitive).
+      // Also handles malformed values like "Karnataka 560001" where a pincode was
+      // accidentally appended to the state name — we strip trailing digits before matching.
       let stateCode = '';
       if (state) {
-        const stateMatch = INDIAN_STATES.find(
-          s => s.name.toLowerCase() === state.toLowerCase() || 
-               s.code.toLowerCase() === state.toLowerCase()
-        );
+        const cleanedState = state.replace(/\s*\d{6}\s*$/, '').trim();
+        const stateMatch = INDIAN_STATES.find(s => {
+          const sNameLower = s.name.toLowerCase();
+          const sCodeLower = s.code.toLowerCase();
+          const queryLower = state.toLowerCase();
+          const cleanedLower = cleanedState.toLowerCase();
+          return (
+            queryLower === sNameLower ||
+            queryLower === sCodeLower ||
+            cleanedLower === sNameLower ||
+            cleanedLower === sCodeLower
+          );
+        });
         stateCode = stateMatch?.code || '';
       }
 

@@ -26,6 +26,7 @@ import {
 } from '@/lib/profile-address-format';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
+import { invalidateCustomerLocationCache } from '@/lib/customer-location';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 const CUSTOMER_SUPPORT_EMAIL = 'support@warmpawz.com';
 
@@ -753,6 +754,7 @@ export function UserAccountSidebar({
       }
 
       if (data && data.success) {
+        invalidateCustomerLocationCache(phone);
         alert(editingAddress ? '✅ Address updated!' : '✅ Address added!');
         await loadAddresses();
         setShowAddressForm(false);
@@ -2254,8 +2256,8 @@ function AddressForm({ address, onSave, onCancel }: {
     name: address?.name || '',
     phone: address?.phone || '',
     addressLine1: address?.addressLine1 || '',
-    city: address?.city || '',
-    state: address?.state || '',
+    city: (address?.city || '').replace(/\s*\d{6}\s*$/, '').trim(),
+    state: (address?.state || '').replace(/\s*\d{6}\s*$/, '').trim(),
     pincode: address?.pincode || '',
     houseNo: address?.houseNo || '',
     floor: address?.floor || '',

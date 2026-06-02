@@ -220,7 +220,7 @@ async function syncDefaultCustomerAddressFromProfile(
 
   const line1 = extractAddressLine1FromCustomerRow(customerRow);
   const city = String(customerRow?.city || '').trim();
-  const state = String(customerRow?.state || '').trim();
+  const state = String(customerRow?.state || '').replace(/\s*\d{6}\s*$/, '').trim();
 
   const pickRes = await query(
     `SELECT id FROM customer_addresses
@@ -952,7 +952,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         updateData.city = profileData.city;
       }
       if (profileData.state) {
-        updateData.state = profileData.state;
+        updateData.state = String(profileData.state).replace(/\s*\d{6}\s*$/, '').trim();
       }
       if (hasHouseNoField) {
         updateData.house_no = effectiveHousePost || null;
@@ -1166,7 +1166,7 @@ export function registerCustomerProfileEndpoints(app: Hono) {
         updateData.city = profileData.city;
       }
       if (profileData.state) {
-        updateData.state = profileData.state;
+        updateData.state = String(profileData.state).replace(/\s*\d{6}\s*$/, '').trim();
       }
       if (hasHouseKey) {
         updateData.house_no = effectiveHousePut || null;
