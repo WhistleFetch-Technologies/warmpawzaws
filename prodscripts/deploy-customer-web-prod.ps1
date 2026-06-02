@@ -68,7 +68,13 @@ if ($DeployOnly -and (Test-Path "dist")) {
     if (Test-Path "node_modules\.cache") { Remove-Item -Recurse -Force "node_modules\.cache" }
     Start-Sleep -Seconds 2
 
-    # Build with retry on failure
+    $env:NEXT_PUBLIC_ENVIRONMENT = 'production'
+    $env:NEXT_PUBLIC_API_BASE_URL = $API_BASE_URL
+    $env:NEXT_PUBLIC_FIREBASE_VAPID_KEY = 'BBYvLo7VKgqxQf5reB_dduYQlMYt8447__prjBMxQxfgROeLHYzLuHkKkA99FO2G0fzC4MlG2VbvVNSS-PnnYMw'
+    $env:NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED = 'false'
+    $env:NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED = 'true'
+
+    # Build with retry on failure (prod NEXT_PUBLIC_* baked into static export)
     try {
         npm run build
     } catch {

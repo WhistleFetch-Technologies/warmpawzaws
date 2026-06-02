@@ -14,6 +14,11 @@
 const PUSH_DEVICE_ID_KEY   = 'warmpawz_cust_push_device_id';
 const PUSH_TOKEN_CACHE_KEY = 'warmpawz_cust_push_token';
 const PUSH_REGISTERED_AT_KEY = 'warmpawz_cust_push_registered_at';
+/** Last user UUID successfully upserted to device_tokens (detect account switch). */
+const PUSH_REGISTERED_USER_KEY = 'warmpawz_cust_push_registered_user_id';
+
+/** Re-POST register-device periodically so token rotation and multi-device stay in sync. */
+const PUSH_RESYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /** Dedupe concurrent session-start registrations (Capacitor + resume + CustomerApp). */
 let registerInFlight: Promise<PushRegisterResult> | null = null;
@@ -81,6 +86,33 @@ function capacitorPlatform(): string {
   return ((window as any).Capacitor?.getPlatform?.() as string) ?? 'android';
 }
 
+function clearLocalPushRegistrationMarkers(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(PUSH_REGISTERED_AT_KEY);
+  localStorage.removeItem(PUSH_REGISTERED_USER_KEY);
+  lastBackendRegisterKey = '';
+}
+
+/**
+ * Whether this device should run FCM + POST /push/register-device for userId.
+ * False when the same user was synced recently (dedupe still applies on POST).
+ */
+export function needsPushRegistrationSync(userId: string): boolean {
+  if (typeof window === 'undefined' || !userId?.trim()) return false;
+  const registeredUser = localStorage.getItem(PUSH_REGISTERED_USER_KEY)?.trim();
+  if (registeredUser !== userId.trim()) return true;
+  if (!getCachedFcmToken()) return true;
+  const at = localStorage.getItem(PUSH_REGISTERED_AT_KEY);
+  if (!at) return true;
+  const age = Date.now() - new Date(at).getTime();
+  return !Number.isFinite(age) || age > PUSH_RESYNC_INTERVAL_MS;
+}
+
+function markPushRegisteredForUser(userId: string): void {
+  localStorage.setItem(PUSH_REGISTERED_AT_KEY, new Date().toISOString());
+  localStorage.setItem(PUSH_REGISTERED_USER_KEY, userId.trim());
+}
+
 async function postRegisterDeviceToBackend(
   opts: Pick<PushBootstrapOptions, 'userId' | 'userType' | 'apiClient'>,
   fcmToken: string,
@@ -92,19 +124,48 @@ async function postRegisterDeviceToBackend(
     return true;
   }
 
-  await opts.apiClient.post('/push/register-device', {
+  const { getApiBaseUrl } = await import('./api-client');
+  const apiBaseUrl = getApiBaseUrl().replace(/\/+$/, '');
+  const body = {
     userId: opts.userId,
     userType: opts.userType,
     fcmToken,
     deviceId,
     platform: capacitorPlatform(),
+  };
+
+  const res = await fetch(`${apiBaseUrl}/push/register-device`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    keepalive: true,
   });
+
+  const text = await res.text().catch(() => '');
+  let json: { success?: boolean; error?: string } = {};
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    json = {};
+  }
+
+  if (!res.ok || json.success === false) {
+    console.warn('[push-bootstrap] POST /push/register-device failed', {
+      source,
+      status: res.status,
+      error: json.error || text.slice(0, 200),
+      apiBaseUrl,
+    });
+    return false;
+  }
 
   lastBackendRegisterKey = dedupeKey;
   localStorage.setItem(PUSH_TOKEN_CACHE_KEY, fcmToken);
-  localStorage.setItem(PUSH_REGISTERED_AT_KEY, new Date().toISOString());
+  markPushRegisteredForUser(opts.userId);
   console.log('[push-bootstrap] POST /push/register-device ok', {
     source,
+    status: res.status,
+    apiBaseUrl,
     deviceId: deviceId.slice(0, 8) + '...',
     userId: opts.userId.slice(0, 8) + '...',
   });
@@ -119,6 +180,12 @@ export async function ensureCapacitorPushRegistrationPipeline(
   opts: PushBootstrapOptions
 ): Promise<void> {
   if (!isCapacitor()) return;
+  const prevUserId = capacitorRegistrationContext?.userId?.trim();
+  const nextUserId = opts.userId?.trim();
+  if (prevUserId && nextUserId && prevUserId !== nextUserId) {
+    clearLocalPushRegistrationMarkers();
+    console.log('[push-bootstrap] customer account changed — re-registering push for new user');
+  }
   capacitorRegistrationContext = {
     userId: opts.userId,
     userType: opts.userType,
@@ -127,6 +194,9 @@ export async function ensureCapacitorPushRegistrationPipeline(
 
   if (capacitorRegistrationPipeline) {
     await capacitorRegistrationPipeline.catch(() => undefined);
+    if (prevUserId && nextUserId && prevUserId !== nextUserId) {
+      await triggerCapacitorPushRegister('account-switch');
+    }
     return;
   }
 
@@ -151,8 +221,10 @@ export async function ensureCapacitorPushRegistrationPipeline(
         return;
       }
 
-      void postRegisterDeviceToBackend(ctx, value, 'registration-callback').catch((err) => {
-        console.warn('[push-bootstrap] register-device from callback failed:', err);
+      void postRegisterDeviceToBackend(ctx, value, 'registration-callback').then((ok) => {
+        if (!ok) {
+          console.warn('[push-bootstrap] register-device from callback did not persist — retry on next app open');
+        }
       });
     });
 
@@ -161,6 +233,7 @@ export async function ensureCapacitorPushRegistrationPipeline(
     });
 
     console.log('[push-bootstrap] persistent FCM registration listener attached');
+    await ensureAndroidNotificationChannel();
     await triggerCapacitorPushRegister('pipeline-init');
   })();
 
@@ -309,6 +382,28 @@ function permissionAllowsRegister(permission: PushPermissionReceive): boolean {
 let capacitorNativeRegisterInFlight: Promise<void> | null = null;
 
 /** Idempotent native register — safe to call from pipeline + bootstrap. */
+async function ensureAndroidNotificationChannel(): Promise<void> {
+  if (!isCapacitor() || capacitorPlatform() !== 'android') return;
+  try {
+    const mod = await importCapacitorPushModule();
+    const createChannel = (mod?.PushNotifications as { createChannel?: (ch: unknown) => Promise<void> })
+      ?.createChannel;
+    if (!createChannel) return;
+    await createChannel({
+      id: 'warmpawz_push',
+      name: 'Warmpawz notifications',
+      description: 'Booking and campaign alerts',
+      importance: 5,
+      visibility: 1,
+      sound: 'default',
+      vibration: true,
+    });
+    console.log('[push-bootstrap] Android notification channel warmpawz_push ready');
+  } catch (err) {
+    console.warn('[push-bootstrap] createChannel failed (non-fatal):', err);
+  }
+}
+
 async function triggerCapacitorPushRegister(reason: string): Promise<void> {
   if (!isCapacitor()) return;
   if (capacitorNativeRegisterInFlight) {
@@ -595,6 +690,11 @@ export async function bootstrapPushNotifications(
   registerInFlight = (async (): Promise<PushRegisterResult> => {
     try {
       const deviceId = getOrCreateDeviceId();
+      const cachedToken = getCachedFcmToken();
+      if (cachedToken && !needsPushRegistrationSync(opts.userId)) {
+        return { ok: true, deviceId };
+      }
+
       let fcmToken: string | null = null;
       let permission: PushPermissionReceive = 'unknown';
 
@@ -629,7 +729,10 @@ export async function bootstrapPushNotifications(
         };
       }
 
-      await postRegisterDeviceToBackend(opts, fcmToken, 'bootstrap');
+      const registered = await postRegisterDeviceToBackend(opts, fcmToken, 'bootstrap');
+      if (!registered) {
+        return { ok: false, reason: 'api_error', permission };
+      }
 
       if (!isCapacitor() && !isNativeWebView()) {
         await setupForegroundPushListener();
@@ -672,6 +775,7 @@ export async function teardownPushNotifications(
   if (typeof window === 'undefined') return;
   const deviceId = localStorage.getItem(PUSH_DEVICE_ID_KEY);
   localStorage.removeItem(PUSH_TOKEN_CACHE_KEY);
+  clearLocalPushRegistrationMarkers();
   const { getApiBaseUrl } = await import('./api-client');
   const apiBaseUrl = getApiBaseUrl().replace(/\/+$/, '');
   try {

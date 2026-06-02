@@ -10,6 +10,7 @@ import {
   type PushPermissionReceive,
 } from '@/lib/push-bootstrap';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId, isCustomerDatabaseUuid } from '@/lib/customer-id-storage';
 import {
   PlatformLegalPolicyDialog,
   type PlatformPolicyType,
@@ -121,11 +122,14 @@ export function CustomerSettings({ customerPhone, onBack, onNavigate }: Customer
     setSaving(true);
     setPushMessage(null);
     try {
-      const customerRes = await apiClient.get<any>(
-        `/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`
-      );
-      const userId = customerRes?.customer?.id || customerRes?.id;
+      let userId = getResolvedCustomerId();
       if (!userId) {
+        const customerRes = await apiClient.get<any>(
+          `/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`
+        );
+        userId = customerRes?.customer?.id || customerRes?.id;
+      }
+      if (!userId || !isCustomerDatabaseUuid(userId)) {
         setPushMessage('Could not resolve customer account. Please try again.');
         return;
       }

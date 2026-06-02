@@ -115,6 +115,7 @@ async function deliverToRecipient(
     let pushFailure = 0;
 
     if (wantsPush) {
+      // Tray push: every active registered device for this user (android/ios/web FCM).
       const tokensResult = await query(
         `SELECT fcm_token FROM device_tokens
          WHERE user_id = $1 AND user_type = $2 AND is_active = true AND fcm_token IS NOT NULL`,
@@ -264,4 +265,4 @@ export async function executeCampaignDelivery(
     errors: errors.slice(0, 10),
   };
 }
-
+

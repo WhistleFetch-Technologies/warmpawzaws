@@ -5,34 +5,47 @@ import { apiClient } from '@/lib/api-client';
 import {
   bootstrapPushNotifications,
   ensureCapacitorPushRegistrationPipeline,
+  needsPushRegistrationSync,
 } from '@/lib/push-bootstrap';
-import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import {
+  ensureResolvedCustomerIdForPush,
+  getResolvedCustomerId,
+  hasCustomerAppSession,
+} from '@/lib/customer-id-storage';
 
-function resolveCustomerSessionUserId(): string | null {
+async function resolveCustomerSessionUserId(): Promise<string | null> {
   if (typeof window === 'undefined') return null;
-  if (!localStorage.getItem('authToken')) return null;
-  return getResolvedCustomerId();
+  if (!hasCustomerAppSession()) return null;
+  const cached = getResolvedCustomerId();
+  if (cached) return cached;
+  return ensureResolvedCustomerIdForPush((phone) =>
+    apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(phone)}`)
+  );
 }
 
 const RETRY_DELAYS_MS = [2_000, 5_000, 10_000, 20_000];
 
 /**
  * Runs FCM + device registration at session start (mount, resume, tab visible).
- * Retries when customerId or FCM token are not ready yet (common on cold start).
+ * Every logged-in native device upserts device_tokens; retries until synced or max attempts.
  */
 export function PushSessionRegistrar() {
   useEffect(() => {
     let cancelled = false;
     let customerIdPollTimer: ReturnType<typeof setInterval> | undefined;
 
-    const registerSession = async (attempt = 0): Promise<void> => {
+    const registerSession = async (attempt = 0, force = false): Promise<void> => {
       if (cancelled) return;
 
-      const userId = resolveCustomerSessionUserId();
+      const userId = await resolveCustomerSessionUserId();
       if (!userId) {
-        if (attempt === 0 && localStorage.getItem('authToken')) {
+        if (attempt === 0 && hasCustomerAppSession()) {
           console.log('[push-bootstrap] waiting for customerId before push registration');
         }
+        return;
+      }
+
+      if (!force && !needsPushRegistrationSync(userId)) {
         return;
       }
 
@@ -48,25 +61,27 @@ export function PushSessionRegistrar() {
 
       if (cancelled) return;
 
-      const registeredAt = localStorage.getItem('warmpawz_cust_push_registered_at');
-      if (!result.ok && !registeredAt && attempt < RETRY_DELAYS_MS.length) {
+      const synced =
+        result.ok ||
+        (localStorage.getItem('warmpawz_cust_push_registered_user_id') === userId &&
+          !!localStorage.getItem('warmpawz_cust_push_registered_at'));
+      if (!synced && attempt < RETRY_DELAYS_MS.length) {
         window.setTimeout(() => {
-          void registerSession(attempt + 1);
+          void registerSession(attempt + 1, true);
         }, RETRY_DELAYS_MS[attempt]);
       }
     };
 
-    void registerSession();
+    void registerSession(0, true);
 
     customerIdPollTimer = window.setInterval(() => {
       if (cancelled) return;
-      if (!localStorage.getItem('authToken')) return;
-      if (localStorage.getItem('warmpawz_cust_push_registered_at')) return;
+      if (!hasCustomerAppSession()) return;
       void registerSession();
-    }, 3_000);
+    }, 5_000);
 
     const onVisible = () => {
-      if (document.visibilityState === 'visible') void registerSession();
+      if (document.visibilityState === 'visible') void registerSession(0, true);
     };
     document.addEventListener('visibilitychange', onVisible);
 
@@ -78,7 +93,7 @@ export function PushSessionRegistrar() {
         if (!cap?.isNativePlatform?.()) return;
         const { App } = await import(/* webpackIgnore: true */ '@capacitor/app');
         appListener = await App.addListener('appStateChange', ({ isActive }) => {
-          if (isActive) void registerSession();
+          if (isActive) void registerSession(0, true);
         });
       } catch {
         /* non-Capacitor */

@@ -1,8 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { bootstrapPushNotifications, teardownPushNotifications } from '@/lib/push-bootstrap';
+import {
+  bootstrapPushNotifications,
+  ensureCapacitorPushRegistrationPipeline,
+  teardownPushNotifications,
+} from '@/lib/push-bootstrap';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
 import { CustomerBookingMessagesModalProvider } from './messaging/CustomerBookingMessagesModalProvider';
 import { resetHomeBootstrapForPhone } from '@/lib/customer-home-bootstrap';
@@ -52,17 +57,18 @@ export function CustomerApp({
   }, [initialSession]);
 
   useEffect(() => {
-    const userId =
-      session.customerId ||
-      (typeof window !== 'undefined' ? (localStorage.getItem('customerId') ?? '') : '');
+    const userId = getResolvedCustomerId();
     if (!userId) return;
-    void bootstrapPushNotifications({
+    const pushOpts = {
       userId,
-      userType: 'customer',
+      userType: 'customer' as const,
       vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
       apiClient,
-    });
-  }, [session.customerId]);
+    };
+    void ensureCapacitorPushRegistrationPipeline(pushOpts).then(() =>
+      bootstrapPushNotifications(pushOpts)
+    );
+  }, [session.customerId, session.phone]);
 
   const handleLogoutNavigate = async (screen: string) => {
     if (screen === 'logout') {

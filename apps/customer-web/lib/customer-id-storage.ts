@@ -161,7 +161,7 @@ export function persistCustomerDatabaseId(source: unknown): string | null {
 /** Register FCM + device with API as soon as customer UUID is known (post-login). */
 function schedulePushRegistrationAfterLogin(customerId: string): void {
   if (typeof window === 'undefined') return;
-  if (!localStorage.getItem('authToken')) return;
+  if (!hasCustomerAppSession()) return;
   queueMicrotask(() => {
     void Promise.all([import('./push-bootstrap'), import('./api-client')]).then(
       ([{ bootstrapPushNotifications, ensureCapacitorPushRegistrationPipeline }, { apiClient }]) => {
@@ -183,6 +183,41 @@ function schedulePushRegistrationAfterLogin(customerId: string): void {
  * Resolve customer UUID from storage. Prefers validated UUIDs from `customerData` (unified profile)
  * over raw keys, so a stale non-UUID in `warmpawz_customer_id` cannot win.
  */
+/** True when user is logged in (Cognito, legacy authToken, or phone session). */
+export function hasCustomerAppSession(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (localStorage.getItem('authToken')?.trim()) return true;
+  if (localStorage.getItem('customerCognitoTokens')?.trim()) return true;
+  const phone = localStorage.getItem('customerPhone')?.trim();
+  return !!(phone && phone.replace(/\D/g, '').length >= 10);
+}
+
+/**
+ * Resolve customer UUID for push registration (by-phone when session exists but id keys are empty).
+ */
+export async function ensureResolvedCustomerIdForPush(
+  getByPhone: (phone: string) => Promise<{ customer?: { id?: string }; id?: string }>
+): Promise<string | null> {
+  const existing = getResolvedCustomerId();
+  if (existing) return existing;
+  if (!hasCustomerAppSession()) return null;
+
+  const phone = localStorage.getItem('customerPhone')?.trim();
+  if (!phone || phone.replace(/\D/g, '').length < 10) return null;
+
+  try {
+    const res = await getByPhone(phone);
+    const uuid = res?.customer?.id || res?.id;
+    if (uuid && isCustomerDatabaseUuid(String(uuid))) {
+      persistCustomerDatabaseId(String(uuid).trim());
+      return String(uuid).trim();
+    }
+  } catch (err) {
+    console.warn('[customer-id-storage] by-phone resolve for push failed:', err);
+  }
+  return null;
+}
+
 export function getResolvedCustomerId(): string | null {
   if (typeof window === 'undefined') return null;
 
