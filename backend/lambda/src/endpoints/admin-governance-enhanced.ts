@@ -388,6 +388,7 @@ const ALLOWED_BANNER_DB_TYPES = new Set([
   'home_middle',
   'home_lower',
   'checkout',
+  'shop',
 ]);
 
 function pickBannerStringField(value: unknown): string | undefined {

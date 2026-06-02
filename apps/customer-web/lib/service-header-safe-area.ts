@@ -9,15 +9,34 @@ export function isCapacitorNativePlatform(): boolean {
   return Boolean(cap?.isNativePlatform?.());
 }
 
+/** Matches Tailwind `max-sm` — phone-sized browser / PWA column. */
+export function subscribeToNarrowMobileViewport(onStoreChange: () => void): () => void {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+  const mq = window.matchMedia('(max-width: 640px)');
+  mq.addEventListener('change', onStoreChange);
+  return () => mq.removeEventListener('change', onStoreChange);
+}
+
+export function isNarrowMobileViewport(): boolean {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+  return window.matchMedia('(max-width: 640px)').matches;
+}
+
 /**
  * Top padding for {@link ServiceDashboardHeader}.
  * - `compact` (payment summary): unchanged — do not alter Razorpay-adjacent flows.
  * - Capacitor: WebView is already inset below the status bar in MainActivity.
  * - Mobile browser: min 48px + theme-color so flat Android phones clear the system status bar.
+ * - Desktop browser: normal safe-area padding only (no extra 48px strip).
  */
 export function resolveServiceHeaderTopPad(
   compact: boolean,
   isCapacitorNative = isCapacitorNativePlatform(),
+  isNarrowMobile = isNarrowMobileViewport(),
 ): CSSProperties {
   if (compact) {
     return { paddingTop: 'max(56px, calc(env(safe-area-inset-top, 0px) + 8px))' };
@@ -25,10 +44,8 @@ export function resolveServiceHeaderTopPad(
   if (isCapacitorNative) {
     return { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' };
   }
-  return { paddingTop: 'max(48px, calc(env(safe-area-inset-top, 0px) + 0.75rem))' };
-}
-
-/** Fixed orange strip behind the system status bar (mobile browser only). */
-export function shouldPaintBrowserStatusBarFill(isCapacitorNative = isCapacitorNativePlatform()): boolean {
-  return !isCapacitorNative;
+  if (isNarrowMobile) {
+    return { paddingTop: 'max(48px, calc(env(safe-area-inset-top, 0px) + 0.75rem))' };
+  }
+  return { paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' };
 }

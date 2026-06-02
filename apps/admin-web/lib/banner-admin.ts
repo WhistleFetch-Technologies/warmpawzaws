@@ -100,6 +100,24 @@ export type BannerTargetMetadata = {
   persona?: string;
 };
 
+export type ShopBannerTargetLevel = 'informational' | 'product';
+
+export type ShopBannerTargetMetadata = {
+  targetLevel: ShopBannerTargetLevel;
+  productId?: string;
+  productName?: string;
+  productSku?: string;
+};
+
+export type ShopBannerDestinationProduct = {
+  id: string;
+  name: string;
+  sku: string;
+  price: number;
+  status: string;
+  category: string;
+};
+
 export function buildBannerCtaLink(customerScreen: string, vendorName: string): string {
   const p = String(customerScreen ?? '').trim().toLowerCase().replace(/\s+/g, '_');
   const name = String(vendorName ?? '').trim();
@@ -129,6 +147,119 @@ export function buildBannerMetadata(opts: {
     };
   }
   return meta;
+}
+
+export function buildShopBannerTarget(opts: {
+  targetMode: ShopBannerTargetLevel;
+  productId?: string;
+  productName?: string;
+  productSku?: string;
+}): ShopBannerTargetMetadata {
+  if (opts.targetMode === 'product') {
+    return {
+      targetLevel: 'product',
+      productId: String(opts.productId ?? '').trim() || undefined,
+      productName: String(opts.productName ?? '').trim() || undefined,
+      productSku: String(opts.productSku ?? '').trim() || undefined,
+    };
+  }
+  return { targetLevel: 'informational' };
+}
+
+export function mergeShopBannerIntoMetadata(
+  baseMeta: Record<string, unknown>,
+  shopTarget: ShopBannerTargetMetadata | null
+): Record<string, unknown> {
+  if (!shopTarget) return baseMeta;
+  return {
+    ...baseMeta,
+    shopBannerTarget: {
+      targetLevel: shopTarget.targetLevel,
+      productId: shopTarget.productId ?? null,
+      productName: shopTarget.productName ?? null,
+      productSku: shopTarget.productSku ?? null,
+    },
+  };
+}
+
+const SHOP_PRODUCT_CTA_RE = /^\/shop\/([0-9a-f-]{36})$/i;
+
+export function parseShopProductIdFromCtaLink(ctaLink: unknown): string | null {
+  const raw = String(ctaLink ?? '').trim();
+  const match = raw.match(SHOP_PRODUCT_CTA_RE);
+  return match?.[1] ?? null;
+}
+
+export function parseShopBannerTargetFromAdminRow(row: Record<string, unknown>): ShopBannerTargetMetadata | null {
+  const meta =
+    row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+      ? (row.metadata as Record<string, unknown>)
+      : {};
+  const raw = meta.shopBannerTarget ?? meta.shop_banner_target;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const st = raw as Record<string, unknown>;
+    const levelRaw = String(st.targetLevel ?? st.target_level ?? '').trim().toLowerCase();
+    if (levelRaw === 'informational') {
+      return { targetLevel: 'informational' };
+    }
+    if (levelRaw === 'product') {
+      const productId = String(st.productId ?? st.product_id ?? '').trim();
+      return {
+        targetLevel: 'product',
+        productId: productId || undefined,
+        productName: String(st.productName ?? st.product_name ?? '').trim() || undefined,
+        productSku: String(st.productSku ?? st.product_sku ?? '').trim() || undefined,
+      };
+    }
+  }
+
+  const legacyProductId = parseShopProductIdFromCtaLink(row.cta_link ?? row.ctaLink ?? row.linkUrl);
+  if (legacyProductId) {
+    return { targetLevel: 'product', productId: legacyProductId };
+  }
+
+  return null;
+}
+
+export function buildShopBannerCtaLink(shopTarget: ShopBannerTargetMetadata | null): string {
+  if (shopTarget?.targetLevel === 'product' && shopTarget.productId) {
+    return `/shop/${shopTarget.productId}`;
+  }
+  return '';
+}
+
+export function formatShopProductOptionLabel(product: {
+  name: string;
+  price: number | string;
+  sku?: string | null;
+}): string {
+  const name = String(product.name ?? '').trim() || 'Product';
+  const price = Number(product.price ?? 0);
+  const sku = String(product.sku ?? '').trim();
+  const priceLabel = Number.isFinite(price) ? `₹${price.toLocaleString('en-IN')}` : '';
+  if (sku && priceLabel) return `${name} — ${priceLabel} (${sku})`;
+  if (priceLabel) return `${name} — ${priceLabel}`;
+  if (sku) return `${name} (${sku})`;
+  return name;
+}
+
+export function validateShopBannerSaveTarget(opts: {
+  targetMode: ShopBannerTargetLevel;
+  productId: string;
+}): { ok: true } | { ok: false; message: string } {
+  if (opts.targetMode === 'informational') {
+    return { ok: true };
+  }
+  if (!String(opts.productId ?? '').trim()) {
+    return { ok: false, message: 'Select a product for this shop banner.' };
+  }
+  return { ok: true };
+}
+
+export function isShopInformationalBannerTarget(
+  shopTarget: ShopBannerTargetMetadata | null | undefined
+): boolean {
+  return !shopTarget || shopTarget.targetLevel === 'informational';
 }
 
 export function parseBannerTargetFromAdminRow(row: Record<string, unknown>): BannerTargetMetadata | null {
@@ -242,9 +373,17 @@ export function validateBannerSaveTarget(opts: {
   targetMode: 'none' | 'service_type' | 'vendor';
   serviceStyle: string;
   vendorId: string;
+  shopTargetMode?: ShopBannerTargetLevel;
+  shopProductId?: string;
 }): { ok: true } | { ok: false; message: string } {
   if (opts.position === 'checkout') {
     return { ok: true };
+  }
+  if (opts.position === 'shop') {
+    return validateShopBannerSaveTarget({
+      targetMode: opts.shopTargetMode ?? 'informational',
+      productId: opts.shopProductId ?? '',
+    });
   }
   if (!opts.categoryId.trim()) {
     return { ok: false, message: 'Select a service category for this banner destination.' };
@@ -260,4 +399,8 @@ export function validateBannerSaveTarget(opts: {
 
 export function isCheckoutBannerPosition(position: string | undefined): boolean {
   return String(position ?? '').trim().toLowerCase() === 'checkout';
+}
+
+export function isShopBannerPosition(position: string | undefined): boolean {
+  return String(position ?? '').trim().toLowerCase() === 'shop';
 }

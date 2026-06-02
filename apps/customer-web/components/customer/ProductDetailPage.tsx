@@ -143,15 +143,20 @@ export function ProductDetailPage({
 
   const buildCartItemForContext = () => {
     if (!product) return null;
+    const vendorId = String(product.vendorId || product.vendor_id || '').trim() || undefined;
+    const categoryId =
+      String(product.category_id || product.categoryId || '').trim() || undefined;
     return {
       id: product.id || product.productId,
       name: product.name || product.product_name,
       price: parseFloat(product.price || product.unit_price || 0),
       quantity: quantity,
       image: product.image || product.image_url || product.primary_image,
-      vendorId: product.vendorId || product.vendor_id,
+      vendorId,
       vendorName: product.vendor?.name || product.vendor_name,
-      ...product
+      categoryId,
+      category: categoryId,
+      ...product,
     };
   };
 
@@ -196,6 +201,11 @@ export function ProductDetailPage({
     // Persist the selected quantity only (matches shop PDP). Avoid merge + addToCart:
     // merge wrote `warmpawz_cart` and emitted `cart-updated`; addToCart would add the
     // same quantity again on top of the reloaded line (doubling).
+    const vendorId = String(product.vendorId || product.vendor_id || '').trim();
+    const categoryId = String(
+      product.category_id || product.categoryId || ''
+    ).trim();
+
     const persisted = setLineQuantityInWarmpawzCartStorage({
       lineId,
       quantity,
@@ -206,7 +216,9 @@ export function ProductDetailPage({
         original_price,
         emoji: product.emoji,
         images,
+        ...(vendorId ? { vendor_id: vendorId } : {}),
         vendor_name: product.vendor?.name || product.vendor_name,
+        ...(categoryId ? { category_id: categoryId } : {}),
         stock: stockNum,
       },
     });

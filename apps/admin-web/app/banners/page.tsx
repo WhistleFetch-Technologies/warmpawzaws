@@ -15,8 +15,18 @@ import {
   formatAdminBannerLocationLabel,
   DEFAULT_HOME_HERO_BANNER_IMAGE_PATH,
   isHomeHeroBannerPosition,
+  isShopBannerPosition,
+  isCheckoutBannerPosition,
   resolveHomeHeroBannerImageUrl,
+  buildShopBannerTarget,
+  buildShopBannerCtaLink,
+  mergeShopBannerIntoMetadata,
+  parseShopBannerTargetFromAdminRow,
+  validateBannerSaveTarget,
+  formatShopProductOptionLabel,
+  type ShopBannerTargetLevel,
 } from '@/lib/banner-admin';
+import { ShopBannerDestinationFields } from '@/components/admin/marketing/ShopBannerDestinationFields';
 import { getCustomerWebBaseUrl } from '@/lib/api-client';
 
 // ============================================================================
@@ -33,7 +43,7 @@ interface Banner {
   cta_link?: string;
   /** DB column */
   type?: string;
-  position: 'home_top' | 'home_middle' | 'home_lower' | 'category' | 'checkout';
+  position: 'home_top' | 'home_middle' | 'home_lower' | 'category' | 'shop' | 'checkout';
   is_active: boolean;
   start_date?: string;
   end_date?: string;
@@ -62,6 +72,27 @@ interface BannerFormData {
   target_service_category: string;
   target_state: string;
   target_city: string;
+  shop_target_mode: ShopBannerTargetLevel;
+  shop_product_id: string;
+  shop_product_name: string;
+  shop_product_sku: string;
+}
+
+function buildShopBannerPayload(data: BannerFormData) {
+  const shopTarget = buildShopBannerTarget({
+    targetMode: data.shop_target_mode,
+    productId: data.shop_product_id,
+    productName: data.shop_product_name || undefined,
+    productSku: data.shop_product_sku || undefined,
+  });
+  const metadata = mergeShopBannerIntoMetadata(
+    { gradient_from: '#FF8C42', gradient_to: '#FF6B35' },
+    shopTarget
+  );
+  return {
+    linkUrl: buildShopBannerCtaLink(shopTarget),
+    metadata,
+  };
 }
 
 // ============================================================================
@@ -88,34 +119,42 @@ export default function BannersPage() {
   
   const { saving, deleting, error: crudError, success: crudSuccess, create, update, remove } = useCrud<Banner, BannerFormData, any>({
     endpoint: '/admin/banners',
-    transformCreate: (data) => ({
-      title: data.title,
-      description: data.subtitle,
-      imageUrl: data.image_url,
-      linkUrl: data.cta_link,
-      position: data.position,
-      priority: data.display_order,
-      startDate: data.start_date,
-      endDate: data.end_date || null,
-      isActive: data.is_active,
-      ctaText: data.cta_text,
-      targetState: normalizeLocationValue(data.target_state),
-      targetCity: normalizeLocationValue(data.target_city),
-    }),
-    transformUpdate: (data) => ({
-      title: data.title,
-      description: data.subtitle,
-      imageUrl: data.image_url,
-      linkUrl: data.cta_link,
-      position: data.position,
-      priority: data.display_order,
-      startDate: data.start_date,
-      endDate: data.end_date || null,
-      isActive: data.is_active,
-      ctaText: data.cta_text,
-      targetState: normalizeLocationValue(data.target_state),
-      targetCity: normalizeLocationValue(data.target_city),
-    }),
+    transformCreate: (data) => {
+      const shopPayload = isShopBannerPosition(data.position) ? buildShopBannerPayload(data) : null;
+      return {
+        title: data.title,
+        description: data.subtitle,
+        imageUrl: data.image_url,
+        linkUrl: shopPayload?.linkUrl ?? (isCheckoutBannerPosition(data.position) ? '' : data.cta_link),
+        position: data.position,
+        priority: data.display_order,
+        startDate: data.start_date,
+        endDate: data.end_date || null,
+        isActive: data.is_active,
+        ctaText: data.cta_text,
+        targetState: normalizeLocationValue(data.target_state),
+        targetCity: normalizeLocationValue(data.target_city),
+        ...(shopPayload ? { metadata: shopPayload.metadata } : {}),
+      };
+    },
+    transformUpdate: (data) => {
+      const shopPayload = isShopBannerPosition(data.position) ? buildShopBannerPayload(data) : null;
+      return {
+        title: data.title,
+        description: data.subtitle,
+        imageUrl: data.image_url,
+        linkUrl: shopPayload?.linkUrl ?? (isCheckoutBannerPosition(data.position) ? '' : data.cta_link),
+        position: data.position,
+        priority: data.display_order,
+        startDate: data.start_date,
+        endDate: data.end_date || null,
+        isActive: data.is_active,
+        ctaText: data.cta_text,
+        targetState: normalizeLocationValue(data.target_state),
+        targetCity: normalizeLocationValue(data.target_city),
+        ...(shopPayload ? { metadata: shopPayload.metadata } : {}),
+      };
+    },
     onSuccess: (message) => {
       notifications.setSuccess(message);
       refetch();
@@ -141,6 +180,10 @@ export default function BannersPage() {
       target_service_category: '',
       target_state: '',
       target_city: '',
+      shop_target_mode: 'informational',
+      shop_product_id: '',
+      shop_product_name: '',
+      shop_product_sku: '',
     },
     getDefaultFormData: () => ({
       title: '',
@@ -157,23 +200,36 @@ export default function BannersPage() {
       target_service_category: '',
       target_state: '',
       target_city: '',
+      shop_target_mode: 'informational',
+      shop_product_id: '',
+      shop_product_name: '',
+      shop_product_sku: '',
     }),
-    mapItemToFormData: (banner) => ({
-      title: banner.title,
-      subtitle: banner.subtitle || '',
-      image_url: banner.image_url || banner.imageUrl || '',
-      cta_text: banner.cta_text || '',
-      cta_link: banner.cta_link || '',
-      position: adminBannerPositionFromRow(banner) as BannerFormData['position'],
-      is_active: banner.is_active,
-      start_date: formatDateForInput(banner.start_date),
-      end_date: formatDateForInput(banner.end_date),
-      display_order: banner.display_order,
-      target_role_id: banner.target_role_id || '',
-      target_service_category: banner.target_service_category || '',
-      target_state: normalizeLocationValue((banner as any).target_state) || '',
-      target_city: normalizeLocationValue((banner as any).target_city) || '',
-    }),
+    mapItemToFormData: (banner) => {
+      const position = adminBannerPositionFromRow(banner) as BannerFormData['position'];
+      const shopTarget = parseShopBannerTargetFromAdminRow(banner as Record<string, unknown>);
+      return {
+        title: banner.title,
+        subtitle: banner.subtitle || '',
+        image_url: banner.image_url || banner.imageUrl || '',
+        cta_text: banner.cta_text || '',
+        cta_link: banner.cta_link || '',
+        position,
+        is_active: banner.is_active,
+        start_date: formatDateForInput(banner.start_date),
+        end_date: formatDateForInput(banner.end_date),
+        display_order: banner.display_order,
+        target_role_id: banner.target_role_id || '',
+        target_service_category: banner.target_service_category || '',
+        target_state: normalizeLocationValue((banner as any).target_state) || '',
+        target_city: normalizeLocationValue((banner as any).target_city) || '',
+        shop_target_mode:
+          shopTarget?.targetLevel === 'product' ? 'product' : 'informational',
+        shop_product_id: shopTarget?.productId || '',
+        shop_product_name: shopTarget?.productName || '',
+        shop_product_sku: shopTarget?.productSku || '',
+      };
+    },
   });
   const selectedTargetState = normalizeLocationValue(modal.formData.target_state);
   const { data: availableStates } = useApiData<{ value: string }>({
@@ -206,6 +262,20 @@ export default function BannersPage() {
     const validation = validateRequired(modal.formData, ['title', 'position']);
     if (!validation.isValid) {
       notifications.setError(Object.values(validation.errors)[0]);
+      return;
+    }
+
+    const shopValidation = validateBannerSaveTarget({
+      position: modal.formData.position,
+      categoryId: '',
+      targetMode: 'none',
+      serviceStyle: '',
+      vendorId: '',
+      shopTargetMode: modal.formData.shop_target_mode,
+      shopProductId: modal.formData.shop_product_id,
+    });
+    if (!shopValidation.ok) {
+      notifications.setError(shopValidation.message);
       return;
     }
 
@@ -259,6 +329,7 @@ export default function BannersPage() {
       home_middle: 'Home Middle',
       home_lower: 'Home Lower',
       category: 'Category (Find All Services)',
+      shop: 'Shop Main Page',
       checkout: 'Checkout',
     };
     return labels[position] || position;
@@ -318,6 +389,7 @@ export default function BannersPage() {
                       <SelectItem value="home_middle">Home Middle</SelectItem>
                       <SelectItem value="home_lower">Home Lower</SelectItem>
                       <SelectItem value="category">Category Page</SelectItem>
+                      <SelectItem value="shop">Shop Main Page</SelectItem>
                       <SelectItem value="checkout">Checkout Page</SelectItem>
                     </SelectContent>
                   </Select>
@@ -518,24 +590,70 @@ export default function BannersPage() {
                     placeholder="Shop Now"
                   />
                 </div>
-                <div>
-                  <Label htmlFor="cta_link">CTA Link</Label>
-                  <Input
-                    id="cta_link"
-                    type="url"
-                    value={modal.formData.cta_link}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData({ ...modal.formData, cta_link: e.target.value })}
-                    placeholder="https://..."
+                {!isShopBannerPosition(modal.formData.position) && !isCheckoutBannerPosition(modal.formData.position) ? (
+                  <div>
+                    <Label htmlFor="cta_link">CTA Link</Label>
+                    <Input
+                      id="cta_link"
+                      type="url"
+                      value={modal.formData.cta_link}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => modal.setFormData({ ...modal.formData, cta_link: e.target.value })}
+                      placeholder="https://..."
+                    />
+                  </div>
+                ) : null}
+              </div>
+
+              {isShopBannerPosition(modal.formData.position) ? (
+                <div className="rounded-lg border border-dashed border-gray-200 p-4 bg-gray-50/80">
+                  <ShopBannerDestinationFields
+                    targetMode={modal.formData.shop_target_mode}
+                    onTargetModeChange={(mode) =>
+                      modal.setFormData({
+                        ...modal.formData,
+                        shop_target_mode: mode,
+                        shop_product_id: mode === 'informational' ? '' : modal.formData.shop_product_id,
+                        shop_product_name: mode === 'informational' ? '' : modal.formData.shop_product_name,
+                        shop_product_sku: mode === 'informational' ? '' : modal.formData.shop_product_sku,
+                      })
+                    }
+                    productId={modal.formData.shop_product_id}
+                    onProductIdChange={(id) =>
+                      modal.setFormData({ ...modal.formData, shop_product_id: id })
+                    }
+                    onProductSelect={(product) =>
+                      modal.setFormData({
+                        ...modal.formData,
+                        shop_product_name: product?.name || '',
+                        shop_product_sku: product?.sku || '',
+                      })
+                    }
+                    selectedProductLabel={
+                      modal.formData.shop_product_name
+                        ? formatShopProductOptionLabel({
+                            name: modal.formData.shop_product_name,
+                            price: 0,
+                            sku: modal.formData.shop_product_sku,
+                          })
+                        : undefined
+                    }
                   />
                 </div>
-              </div>
+              ) : null}
 
               <div>
                 <Label htmlFor="position">Position *</Label>
                 <Select
                   value={modal.formData.position}
                   onValueChange={(value: BannerFormData['position']) => {
-                    const next: BannerFormData = { ...modal.formData, position: value };
+                    const next: BannerFormData = {
+                      ...modal.formData,
+                      position: value,
+                      shop_target_mode: value === 'shop' ? 'informational' : modal.formData.shop_target_mode,
+                      shop_product_id: value === 'shop' ? '' : modal.formData.shop_product_id,
+                      shop_product_name: value === 'shop' ? '' : modal.formData.shop_product_name,
+                      shop_product_sku: value === 'shop' ? '' : modal.formData.shop_product_sku,
+                    };
                     if (isHomeHeroBannerPosition(value) && !next.image_url.trim()) {
                       next.image_url = DEFAULT_HOME_HERO_BANNER_IMAGE_PATH;
                     }
@@ -550,6 +668,7 @@ export default function BannersPage() {
                     <SelectItem value="home_middle">Home Middle</SelectItem>
                     <SelectItem value="home_lower">Home Lower</SelectItem>
                     <SelectItem value="category">Category Page</SelectItem>
+                    <SelectItem value="shop">Shop Main Page</SelectItem>
                     <SelectItem value="checkout">Checkout Page</SelectItem>
                   </SelectContent>
                 </Select>

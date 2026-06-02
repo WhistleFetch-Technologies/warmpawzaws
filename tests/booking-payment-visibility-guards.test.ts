@@ -20,6 +20,7 @@ describe('booking/payment visibility guards', () => {
     expect(file).toContain('suppressVendorFacingCancelSignals');
     expect(file).toContain("!suppressVendorFacingCancelSignals");
     expect(file).toContain("if (currentBooking.vendor_id && !suppressVendorFacingCancelSignals)");
+    expect(file).toContain('isPaymentWindowExpiredReason');
   });
 
   test('vendor booking list routes consistently hide pending_payment rows', () => {

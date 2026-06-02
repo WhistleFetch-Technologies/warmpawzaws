@@ -32,7 +32,10 @@ import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-fl
 import {
   WARMPAWZ_HOME_RESUME_SCREENS,
   WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
+  consumeOpenAccountMenuAfterNav,
+  rememberMyPackagesBackFromAccountMenu,
   rememberPromotionsBackSpaScreen,
+  rememberShopBackToSpaScreen,
   clearWishlistOpenedFromShopMark,
 } from '@/lib/go-back-or-replace';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
@@ -124,7 +127,6 @@ const AmbulanceServicesLanding = dynamic(() => import('../AmbulanceServicesLandi
 const RelocationServicesLanding = dynamic(() => import('../RelocationServicesLanding').then((m) => ({ default: m.RelocationServicesLanding })), { loading: LoadingSpinner });
 const ResortServicesLanding = dynamic(() => import('../ResortServicesLanding').then((m) => ({ default: m.ResortServicesLanding })), { loading: LoadingSpinner });
 const PetHolidayServicesLanding = dynamic(() => import('../PetHolidayServicesLanding').then((m) => ({ default: m.PetHolidayServicesLanding })), { loading: LoadingSpinner });
-const ShopDashboard = dynamic(() => import('../ShopDashboard').then((m) => ({ default: m.ShopDashboard })), { loading: LoadingSpinner });
 const ProductDetailPage = dynamic(() => import('../ProductDetailPage').then((m) => ({ default: m.ProductDetailPage })), { loading: LoadingSpinner });
 const ShoppingCartView = dynamic(() => import('../ShoppingCartView').then((m) => ({ default: m.ShoppingCartView })), { loading: LoadingSpinner });
 const CheckoutView = dynamic(() => import('../CheckoutView').then((m) => ({ default: m.CheckoutView })), { loading: LoadingSpinner });
@@ -377,7 +379,6 @@ export function CustomerHomeWrapper({
    * Note: `cart` is intentionally excluded so Cart → Shop (e.g. Continue shopping) restores Cart on back.
    */
   const SHOP_SUBFLOW_SCREENS = new Set<ScreenType>([
-    'shop',
     'product_detail',
     'product_reviews',
     'vendor_profile',
@@ -438,9 +439,6 @@ export function CustomerHomeWrapper({
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
-  const [selectedShopCategory, setSelectedShopCategory] = useState<string | undefined>(undefined);
-  /** Screen to restore when leaving Shop via header back (SPA stack is not browser history). */
-  const [shopReturnScreen, setShopReturnScreen] = useState<ScreenType | null>(null);
   /** `vet` → Diagnostic Labs: header back should return here, not home (set only from `handleVetNavigate` lab path). */
   const [labDiagnosticsReturnScreen, setLabDiagnosticsReturnScreen] = useState<ScreenType | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | undefined>(undefined); // For generic bookings
@@ -545,11 +543,20 @@ export function CustomerHomeWrapper({
       }
       const next = raw as ScreenType;
       if (next === 'shop') {
-        setShopReturnScreen('home');
+        router.push('/shop');
+        return;
       }
       setCurrentScreen(next);
     }
   }, [pathname, openMessages]);
+
+  /** After My Packages Back with account-menu intent: reopen profile sidebar on home. */
+  useEffect(() => {
+    if (pathname !== '/') return;
+    if (consumeOpenAccountMenuAfterNav()) {
+      setUserSidebarOpen(true);
+    }
+  }, [pathname]);
 
   /** Clear embedded boarding profile only when leaving that context — not when opening `boarding-booking` from profile (back must restore profile). */
   useEffect(() => {
@@ -750,15 +757,13 @@ export function CustomerHomeWrapper({
       toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
       return;
     }
-    if (!SHOP_SUBFLOW_SCREENS.has(currentScreen)) {
-      setShopReturnScreen(currentScreen);
+    if (pathname === '/' && !SHOP_SUBFLOW_SCREENS.has(currentScreen)) {
+      rememberShopBackToSpaScreen(currentScreen);
     }
-    if (opts && opts.category !== undefined) {
-      setSelectedShopCategory(opts.category);
-    } else {
-      setSelectedShopCategory(undefined);
-    }
-    setCurrentScreen('shop');
+    setUserSidebarOpen(false);
+    const category = opts?.category?.trim();
+    const qs = category ? `?category=${encodeURIComponent(category)}` : '';
+    router.push(`/shop${qs}`);
   };
 
   const captureBannerNavigationOrigin = (data?: unknown) => {
@@ -922,14 +927,23 @@ export function CustomerHomeWrapper({
     else if (service === 'insurance') setCurrentScreen('insurance');
     else if (service === 'cafes') setCurrentScreen('cafes');
     else if (service === 'shop') {
-      goToShopFromParent();
+      const raw =
+        data && typeof data === 'object'
+          ? (data as { category?: string; categoryId?: string }).category ??
+            (data as { category?: string; categoryId?: string }).categoryId
+          : undefined;
+      const cat = raw != null ? String(raw).trim() : '';
+      goToShopFromParent(cat ? { category: cat } : undefined);
     }
     else if (service === 'cart') {
       if (!isCustomerEcommerceEnabled()) {
         toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
         return;
       }
-      setCurrentScreen('cart');
+      if (pathname === '/') {
+        rememberShopBackToSpaScreen(currentScreen);
+      }
+      router.push('/cart');
     }
     else if (service === 'my-bookings' || service === 'bookings') setCurrentScreen('my-bookings');
     else if (service === 'photography') setCurrentScreen('photography');
@@ -1190,6 +1204,9 @@ export function CustomerHomeWrapper({
     else if (screen === 'profile') {
       setCurrentScreen('customer-profile');
     }
+    else if (screen === 'shop') {
+      goToShopFromParent();
+    }
     else if (screen === 'purchase-package') {
       setPreviousScreen(screenToReturnAfterLeavingPackagePurchase());
       const vid = String(data?.vendorId ?? data?.doctorId ?? '').trim();
@@ -1423,7 +1440,10 @@ export function CustomerHomeWrapper({
     }
     else if (path === 'account/addresses') setCurrentScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') setCurrentScreen('wallet');
-    else if (path === 'my-packages') router.push('/my-packages');
+    else if (path === 'my-packages') {
+      rememberMyPackagesBackFromAccountMenu();
+      router.push('/my-packages');
+    }
     else if (path === 'rewards-loyalty') {
       rememberWalletHubOriginIfNeeded();
       setCurrentScreen('rewards-loyalty');
@@ -1437,11 +1457,6 @@ export function CustomerHomeWrapper({
     } else if (path === 'promotions' || path === 'offers') {
       rememberPromotionsBackSpaScreen(currentScreen);
       router.push('/promotions');
-    } else if (path === 'account/settings') {
-      // Navigate to settings page
-      if (typeof window !== 'undefined') {
-        window.location.href = '/settings';
-      }
     }
   };
 
@@ -1475,17 +1490,8 @@ export function CustomerHomeWrapper({
       setSelectedProblem(null);
       setCurrentServiceType(null);
       setProblemGridSpecialization(undefined);
-    } else if (screen === 'cart') {
-      if (!isCustomerEcommerceEnabled()) {
-        toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
-        return;
-      }
-      setUserSidebarOpen(false);
-      setPetSitterOriginScreen(null);
-      setPetSitterFacilityOptionId(null);
-      setSpaBoardingVendorsSlug(null);
-      setBoardingVendorsReturnScreen(null);
-      setCurrentScreen('cart');
+    } else if (screen === 'shop') {
+      goToShopFromParent();
     } else if (screen === 'my-bookings') {
       setUserSidebarOpen(false);
       setPetSitterOriginScreen(null);
@@ -1716,7 +1722,10 @@ export function CustomerHomeWrapper({
         onClose={() => setUserSidebarOpen(false)}
         onNavigateHome={handleBack}
         onViewBooking={handleViewBooking}
-        onViewMyPackages={() => router.push('/my-packages')}
+        onViewMyPackages={() => {
+          rememberMyPackagesBackFromAccountMenu();
+          router.push('/my-packages');
+        }}
         onViewProfile={() => {
           setUserSidebarOpen(false);
           profileFromAccountMenuRef.current = true;
@@ -2311,6 +2320,8 @@ export function CustomerHomeWrapper({
         clinic: data?.clinic,
       });
       setCurrentScreen('vet-booking');
+    } else {
+      handleVetNavigate(screen, data);
     }
   }} />;
   if (currentScreen === 'vet-clinic-profile') return <ClinicProfileView phone={phone} clinicId={vetServiceData?.id || ''} onBack={() => setCurrentScreen(vetServiceData?.clinicProfileBackScreen ?? 'vet-clinic-list')} onNavigate={(screen, data) => {
@@ -2336,6 +2347,8 @@ export function CustomerHomeWrapper({
         clinic: data?.clinic,
       });
       setCurrentScreen('vet-booking');
+    } else {
+      handleVetNavigate(screen, data);
     }
   }} />;
   if (currentScreen === 'vet-clinic-booking') return <VetBookingFlow phone={phone} serviceType={vetServiceData?.serviceType || 'tele'} vendorId={vetServiceData?.vendorId} onBack={() => setCurrentScreen('vet')} onNavigate={handleVetNavigate} />;
@@ -3603,38 +3616,11 @@ export function CustomerHomeWrapper({
   if (!isCustomerEcommerceEnabled() && isCustomerEcommerceScreen(currentScreen)) {
     return <NotAvailable label="Shop" onBack={handleBack} />;
   }
-  if (currentScreen === 'shop') {
-    return (
-      <CustomerScreenWrapper 
-        currentScreen={currentScreen}
-        onNavigate={handleBottomNav}
-        onProfileClick={handleProfileClick}
-        accountSidebar={accountSidebarOverlay}
-      >
-        <ShopDashboard
-          phone={phone}
-          category={selectedShopCategory}
-          onBack={() => {
-            setUserSidebarOpen(false);
-            setSelectedShopCategory(undefined);
-            const back = shopReturnScreen;
-            setShopReturnScreen(null);
-            if (back != null) {
-              setCurrentScreen(back);
-            } else {
-              handleBack();
-            }
-          }}
-          onNavigate={(screen, data) => { if (screen === 'pharmacy_store') setCurrentScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') setCurrentScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } else if (screen === 'cart') setCurrentScreen('cart'); else handleNavigateToService(screen, data); }}
-        />
-      </CustomerScreenWrapper>
-    );
-  }
   if (currentScreen === 'product_detail' && selectedProduct) return (
     <ProductDetailPage 
       product={selectedProduct} 
       phone={phone}
-      onBack={() => setCurrentScreen('shop')} 
+      onBack={() => goToShopFromParent()} 
       onReviewsClick={() => {
         setCurrentScreen('product_reviews');
       }} 
@@ -3649,7 +3635,7 @@ export function CustomerHomeWrapper({
     />
   );
   if (currentScreen === 'product_reviews' && selectedProduct) return <ProductReviewsView productId={selectedProduct.id || selectedProduct.productId} productName={selectedProduct.name} onBack={() => setCurrentScreen('product_detail')} />;
-  if (currentScreen === 'vendor_profile' && selectedVendorId) return <VendorProfileDetail vendorId={selectedVendorId} phone={phone} onBack={() => setCurrentScreen(selectedProduct ? 'product_detail' : 'shop')} onNavigate={(screen, data) => { if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } }} />;
+  if (currentScreen === 'vendor_profile' && selectedVendorId) return <VendorProfileDetail vendorId={selectedVendorId} phone={phone} onBack={() => { if (selectedProduct) setCurrentScreen('product_detail'); else goToShopFromParent(); }} onNavigate={(screen, data) => { if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } }} />;
   if (currentScreen === 'cart') {
     return (
       <CustomerScreenWrapper 
@@ -3659,21 +3645,15 @@ export function CustomerHomeWrapper({
         accountSidebar={accountSidebarOverlay}
       >
         <ShoppingCartView
-          onBack={() => {
-            setShopReturnScreen((prev) => (prev != null ? prev : currentScreen));
-            setCurrentScreen('shop');
-          }}
+          onBack={() => goToShopFromParent()}
           onNavigateHome={handleBack}
           onCheckout={() => router.push('/checkout')}
-          onContinueShopping={() => {
-            setShopReturnScreen((prev) => (prev != null ? prev : currentScreen));
-            setCurrentScreen('shop');
-          }}
+          onContinueShopping={() => goToShopFromParent()}
         />
       </CustomerScreenWrapper>
     );
   }
-  if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={() => setCurrentScreen('shop')} onSuccess={(orderId) => { setCurrentOrderId(orderId); setCurrentScreen('order_success'); }} onNavigate={(screen, data) => handleNavigateToService(screen, data)} />;
+  if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={() => goToShopFromParent()} onSuccess={(orderId) => { setCurrentOrderId(orderId); setCurrentScreen('order_success'); }} onNavigate={(screen, data) => handleNavigateToService(screen, data)} />;
   if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); setCurrentScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); setCurrentScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); setCurrentScreen('order_history'); }} />;
   if (currentScreen === 'order_history')
     return (
@@ -3787,6 +3767,10 @@ export function CustomerHomeWrapper({
               setVideoCallData({ bookingId: payload.bookingId, meetingId: payload.meetingId });
               setPreviousScreen('my-bookings');
               setCurrentScreen('video-call');
+            } else if (screen === 'payment' && data) {
+              setPreviousScreen('my-bookings');
+              setPaymentData({ ...(data as Record<string, unknown>), returnScreen: 'my-bookings' });
+              setCurrentScreen('payment');
             } else if (screen === 'gps-tracking' || screen === 'tracking') {
               setTrackingBookingId(data?.bookingId ?? null);
               setPreviousScreen('my-bookings');

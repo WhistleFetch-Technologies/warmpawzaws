@@ -335,13 +335,26 @@ export function buildPidgeOrderPayloadFromSimplified(
     const row = (it || {}) as Record<string, unknown>;
     const qty = Number(row.quantity ?? row.units ?? 1) || 1;
     const price = Number(row.price ?? row.selling_price ?? row.unit_price ?? 0);
+    const weightKeys = ['dead_weight', 'weight_g', 'packWeightGrams', 'pack_weight_grams', 'weightGrams'] as const;
+    let deadWeight = 100;
+    for (const k of weightKeys) {
+      const v = Number(row[k]);
+      if (Number.isFinite(v) && v > 0) {
+        deadWeight = v;
+        break;
+      }
+    }
+    const dim = row.dimension as { dead_weight?: number } | undefined;
+    if (dim && Number.isFinite(Number(dim.dead_weight)) && Number(dim.dead_weight) > 0) {
+      deadWeight = Number(dim.dead_weight);
+    }
     return {
       name: String(row.name || row.product_name || 'Item'),
       sku: String(row.sku || row.product_id || row.productId || ''),
       price,
       quantity: qty,
       dimension: {
-        dead_weight: Number(row.dead_weight ?? row.weight_g ?? 100) || 100,
+        dead_weight: deadWeight,
       },
       image_url: row.image_url ? String(row.image_url) : undefined,
     };
@@ -364,17 +377,28 @@ export function buildPidgeOrderPayloadFromSimplified(
           breadth: 2,
           height: 2,
         }))
-      : [
-          {
-            label: 'Order',
-            quantity: 1,
-            dead_weight: 0,
-            volumetric_weight: 500,
-            length: 2,
-            breadth: 2,
-            height: 2,
-          },
-        ];
+      : (() => {
+          const weightKeys = ['packageWeightGrams', 'totalWeightGrams', 'weight_g', 'pack_weight_grams'] as const;
+          let fallback = 500;
+          for (const k of weightKeys) {
+            const v = Number(input[k]);
+            if (Number.isFinite(v) && v > 0) {
+              fallback = v;
+              break;
+            }
+          }
+          return [
+            {
+              label: 'Order',
+              quantity: 1,
+              dead_weight: 0,
+              volumetric_weight: Math.max(1, Math.round(fallback)),
+              length: 2,
+              breadth: 2,
+              height: 2,
+            },
+          ];
+        })();
 
   const notes = Array.isArray(input.notes) ? input.notes : [];
 

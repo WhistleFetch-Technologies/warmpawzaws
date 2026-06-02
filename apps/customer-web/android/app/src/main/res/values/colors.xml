@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#FF8C42</color>
+    <color name="colorPrimaryDark">#FF7A35</color>
+    <color name="colorAccent">#FF8C42</color>
+    <!-- Brand orange — status bar, splash, and inset padding band under the system bar -->
+    <color name="warmpawz_brand_orange">#FF8C42</color>
+</resources>

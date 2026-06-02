@@ -171,17 +171,27 @@ export function isServiceProvider(vendor: any): boolean {
  * Strict seller check: only route to seller hub when clearly a seller.
  * Avoids accidental redirects for non-ecommerce roles (e.g., vet_clinic).
  */
+const PET_PRODUCTS_STORE_ROLE_ID = '5056756d-3b05-457a-9725-3f922800b520';
+
 export function isSellerStrict(vendor: any): boolean {
     if (isPharmacyVendor(vendor)) return false;
 
     const info = getNormalizedRoleInfo(vendor);
+    const roleId = String(info.roleId || vendor?.roleId || vendor?.role_id || '').toLowerCase();
 
-    // Role or explicit customer_service of 'shop' are strong signals
-    const byRole = info.roleName === 'seller' || info.roleName === 'marketplace_seller' || info.roleName === 'product_seller' || info.roleName === 'store_seller';
+    // Role or explicit customer_service of 'shop' are strong signals (align with Seller Hub retail routing)
+    const byRole =
+        info.roleName === 'seller' ||
+        info.roleName === 'marketplace_seller' ||
+        info.roleName === 'product_seller' ||
+        info.roleName === 'store_seller' ||
+        info.roleName === 'pet_products_store' ||
+        roleId === PET_PRODUCTS_STORE_ROLE_ID;
     const byService = info.customerService === 'shop';
+    const bySellerType = info.vendorTypes.includes('seller');
 
-    // Strict: do NOT route by capabilities or styles to avoid false positives
-    return byRole || byService;
+    // Strict: do NOT route by loose capability/style heuristics to avoid false positives
+    return byRole || byService || bySellerType;
 }
 
 /** Preferred UI route for a vendor based on role/config. */

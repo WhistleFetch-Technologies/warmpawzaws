@@ -1596,15 +1596,10 @@ export function VendorLandingPage({
       // Pet pharmacy often has customer_service "shop" and retail-like caps; never send to ecommerce Seller Hub.
       if (isRetailVendor && !isPharmacyVendor(vendorData)) {
         console.log('🏪 Pet Products Store detected - redirecting to Seller Hub. RoleId:', vendorRoleId, 'RoleName:', roleName);
-        router.push('/seller');
-        return (
-          <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto"></div>
-              <p className="mt-4 text-gray-600">Loading Seller Hub...</p>
-            </div>
-          </div>
-        );
+        if (typeof window !== 'undefined' && window.location.pathname !== '/seller') {
+          router.replace('/seller');
+        }
+        return null;
       }
 
       // ✅ Full VendorDashboard (Figma UI) – all options, appointment models, navigation

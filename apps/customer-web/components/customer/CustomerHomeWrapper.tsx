@@ -10,6 +10,10 @@ import { useCart } from '../../context/CartContext';
 import { apiClient } from '@/lib/api-client';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+import {
+  rememberMyPackagesBackFromAccountMenu,
+  rememberShopBackToSpaScreen,
+} from '@/lib/go-back-or-replace';
 import { useNotificationService } from './useNotificationService';
 
 // ============================================================================
@@ -91,7 +95,6 @@ const DiagnosticsReportViewer = dynamic(() => import('./diagnostics/DiagnosticsR
 const SampleCollectionTracker = dynamic(() => import('./diagnostics/SampleCollectionTracker').then(mod => ({ default: mod.SampleCollectionTracker })), { loading: LoadingSpinner });
 
 // Shop & E-commerce
-const ShopDashboard = dynamic(() => import('./ShopDashboard').then(mod => ({ default: mod.ShopDashboard })), { loading: LoadingSpinner });
 const ProductDetailPage = dynamic(() => import('./ProductDetailPage').then(mod => ({ default: mod.ProductDetailPage })), { loading: LoadingSpinner });
 const ShoppingCartView = dynamic(() => import('./ShoppingCartView').then(mod => ({ default: mod.ShoppingCartView })), { loading: LoadingSpinner });
 const CheckoutView = dynamic(() => import('./CheckoutView').then(mod => ({ default: mod.CheckoutView })), { loading: LoadingSpinner });
@@ -375,8 +378,14 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (service === 'sunset') navigateToScreen('sunset');
     else if (service === 'insurance') navigateToScreen('insurance');
     else if (service === 'cafes') navigateToScreen('cafes');
-    else if (service === 'shop') navigateToScreen('shop');
-    else if (service === 'cart') navigateToScreen('cart');
+    else if (service === 'shop') {
+      rememberShopBackToSpaScreen(currentScreen);
+      router.push('/shop');
+    }
+    else if (service === 'cart') {
+      rememberShopBackToSpaScreen(currentScreen);
+      router.push('/cart');
+    }
     else if (service === 'photography') navigateToScreen('photography');
     else if (service === 'breeder') navigateToScreen('breeder');
     else if (service === 'ambulance') navigateToScreen('ambulance');
@@ -454,11 +463,17 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   };
 
   const handleAccountNavigate = (path: string) => {
-    if (path === 'shop') navigateToScreen('shop');
+    if (path === 'shop') {
+      rememberShopBackToSpaScreen(currentScreen);
+      router.push('/shop');
+    }
     else if (path === 'account/orders') navigateToScreen('order_history');
     else if (path === 'account/addresses') navigateToScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') navigateToScreen('wallet');
-    else if (path === 'my-packages') router.push('/my-packages');
+    else if (path === 'my-packages') {
+      rememberMyPackagesBackFromAccountMenu();
+      router.push('/my-packages');
+    }
     else if (path === 'rewards-loyalty') navigateToScreen('rewards-loyalty');
     else if (path === 'referral-system') navigateToScreen('referral-system');
     else if (path === 'appointments') navigateToScreen('appointments');
@@ -567,7 +582,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             phone={phone}
             onClose={() => setUserSidebarOpen(false)}
             onViewBooking={handleViewBooking}
-            onViewMyPackages={() => router.push('/my-packages')}
+            onViewMyPackages={() => {
+              rememberMyPackagesBackFromAccountMenu();
+              router.push('/my-packages');
+            }}
             onViewProfile={() => {
               setUserSidebarOpen(false);
               setCurrentScreen('customer-profile');
@@ -901,8 +919,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     );
   }
 
-  // Shop & Orders
-  if (currentScreen === 'shop') return <ShopDashboard phone={phone} onBack={handleBack} onNavigate={(screen, data) => { if (screen === 'pharmacy_store') navigateToScreen('pharmacy_store'); else if (screen === 'pharmacy_checkout') navigateToScreen('pharmacy_checkout'); else if (screen === 'product_detail') { setSelectedProduct(data?.product); navigateToScreen('product_detail'); } else if (screen === 'cart') navigateToScreen('cart'); else handleNavigateToService(screen); }} />;
+  // Shop & Orders (main shop is App Router `/shop`)
   if (currentScreen === 'product_detail') {
     if (selectedProduct) return <ProductDetailPage product={selectedProduct} onBack={handleBack} onReviewsClick={() => toast.info('Reviews not available.')} onVendorClick={() => toast.info('Vendor profile not available.')} />;
     return <NotAvailable label="Product detail" onBack={handleBack} />;
@@ -926,7 +943,7 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
   if (currentScreen === 'wallet') return <WalletPage onBack={handleBack} onNavigate={handleAccountNavigate} />;
   // if (currentScreen === 'order_history') return <OrderHistoryView phone={phone} onBack={handleBack} onOrderClick={(order) => { setSelectedOrder(order); navigateToScreen('order_detail'); }} />;
   if (currentScreen === 'order_detail') {
-    if (selectedOrder) return <OrderDetailView order={selectedOrder} onBack={handleBack} onTrackOrder={() => navigateToScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); navigateToScreen('shop'); }} onHelp={() => toast.info('Support not available.')} />;
+    if (selectedOrder) return <OrderDetailView order={selectedOrder} onBack={handleBack} onTrackOrder={() => navigateToScreen('order_tracking')} onReorder={() => { toast.success('Items added to cart'); rememberShopBackToSpaScreen(currentScreen); router.push('/shop'); }} onHelp={() => toast.info('Support not available.')} />;
     return <NotAvailable label="Order detail" onBack={handleBack} />;
   }
   if (currentScreen === 'order_tracking') {

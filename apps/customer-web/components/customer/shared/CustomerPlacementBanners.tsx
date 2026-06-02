@@ -1,13 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { navigateBannerCta, type BannerNavTarget } from '@/lib/banner-cta-navigation';
 import { iconForCustomerHomeApiBanner } from '@/lib/customer-banner-icons';
+import {
+  isShopInformationalTarget,
+  parseShopBannerTargetFromMetadata,
+  resolveShopBannerProductPath,
+  type ShopBannerTargetMetadata,
+} from '@/lib/shop-banner-target';
 import type { LucideIcon } from 'lucide-react';
 
-type Placement = 'category' | 'checkout';
+type Placement = 'category' | 'checkout' | 'shop';
 
 export type CustomerPlacementBannersProps = {
   placement: Placement;
@@ -15,6 +21,8 @@ export type CustomerPlacementBannersProps = {
   className?: string;
   /** Extra classes on the banner shell (height, radius, etc.) */
   shellClassName?: string;
+  /** Shown when CMS returns no active banners for this placement (after fetch completes). */
+  fallback?: ReactNode;
 };
 
 type BannerVM = {
@@ -28,6 +36,7 @@ type BannerVM = {
   ctaLink?: string;
   navTarget?: BannerNavTarget | null;
   metadata?: unknown;
+  shopBannerTarget?: ShopBannerTargetMetadata | null;
   Icon: LucideIcon;
 };
 
@@ -45,6 +54,9 @@ function mapApiBanner(b: Record<string, unknown>, index: number): BannerVM {
     meta.bannerImageUrl ??
     meta.banner_image_url;
 
+  const ctaLink =
+    b.ctaLink != null ? String(b.ctaLink) : b.cta_link != null ? String(b.cta_link) : undefined;
+
   return {
     id: String(b.id ?? `banner-${index}`),
     title: String(b.title ?? ''),
@@ -53,9 +65,10 @@ function mapApiBanner(b: Record<string, unknown>, index: number): BannerVM {
     gradientTo: String(b.gradientTo ?? meta.gradient_to ?? '#FF6B35'),
     imageUrl: imageUrlValue != null ? String(imageUrlValue).trim() || undefined : undefined,
     ctaText: String(b.ctaText ?? b.cta_text ?? 'Learn More'),
-    ctaLink: b.ctaLink != null ? String(b.ctaLink) : b.cta_link != null ? String(b.cta_link) : undefined,
+    ctaLink,
     navTarget: (b.navTarget as BannerNavTarget | undefined) ?? null,
     metadata: b.metadata ?? null,
+    shopBannerTarget: parseShopBannerTargetFromMetadata(b.metadata, ctaLink),
     Icon: iconForCustomerHomeApiBanner(b),
   };
 }
@@ -63,22 +76,44 @@ function mapApiBanner(b: Record<string, unknown>, index: number): BannerVM {
 const CLICK_SOURCE: Record<Placement, string> = {
   category: 'category_all_services',
   checkout: 'checkout',
+  shop: 'shop_main',
 };
 
 const RETURN_SCREEN: Record<Placement, string | undefined> = {
   category: 'problem_grid',
   checkout: undefined,
+  shop: undefined,
 };
 
-/** Fetches and renders CMS banners for category (All Services) or checkout. Home hero/middle are only on the home page. */
+function scrollToShopSection(ctaLink: string): boolean {
+  const raw = ctaLink.trim();
+  if (!raw.startsWith('#')) return false;
+  const id = raw.slice(1).trim();
+  if (!id) return false;
+  const el = document.getElementById(id);
+  if (!el) return false;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  return true;
+}
+
+function isShopBannerNonClickable(banner: BannerVM): boolean {
+  if (isShopInformationalTarget(banner.shopBannerTarget)) {
+    return true;
+  }
+  return false;
+}
+
+/** Fetches and renders CMS banners for category, checkout, or shop main page. */
 export function CustomerPlacementBanners({
   placement,
   onNavigate,
   className = '',
   shellClassName = '',
+  fallback = null,
 }: CustomerPlacementBannersProps) {
   const router = useRouter();
   const [banners, setBanners] = useState<BannerVM[]>([]);
+  const [fetched, setFetched] = useState(false);
   const [ix, setIx] = useState(0);
   const count = banners.length;
   const isCheckout = placement === 'checkout';
@@ -86,6 +121,18 @@ export function CustomerPlacementBanners({
   const handleBannerClick = useCallback(
     async (banner: BannerVM) => {
       if (isCheckout) return;
+      if (placement === 'shop') {
+        if (isShopBannerNonClickable(banner)) return;
+        const productPath = resolveShopBannerProductPath(banner.shopBannerTarget, banner.ctaLink);
+        if (productPath) {
+          router.push(productPath);
+          return;
+        }
+        if (banner.ctaLink && scrollToShopSection(banner.ctaLink)) {
+          return;
+        }
+        return;
+      }
       if (!banner.ctaLink && !banner.navTarget && !banner.metadata) return;
       await navigateBannerCta(
         {
@@ -118,6 +165,10 @@ export function CustomerPlacementBanners({
         if (!cancelled) {
           setBanners([]);
         }
+      } finally {
+        if (!cancelled) {
+          setFetched(true);
+        }
       }
     })();
     return () => {
@@ -129,7 +180,8 @@ export function CustomerPlacementBanners({
     if (count > 0) setIx((prev) => prev % count);
   }, [count]);
 
-  if (count === 0) return null;
+  if (!fetched) return null;
+  if (count === 0) return <>{fallback}</>;
 
   const source = CLICK_SOURCE[placement];
 
@@ -138,7 +190,11 @@ export function CustomerPlacementBanners({
       <div
         className={`relative h-[152px] overflow-hidden rounded-2xl text-white shadow-md ${shellClassName}`}
       >
-        {banners.map((banner, index) => (
+        {banners.map((banner, index) => {
+          const displayOnly =
+            isCheckout || (placement === 'shop' && isShopBannerNonClickable(banner));
+
+          return (
           <div
             key={banner.id}
             aria-hidden={index !== ix}
@@ -162,7 +218,7 @@ export function CustomerPlacementBanners({
                 {banner.subtitle ? (
                   <p className="mt-1 line-clamp-2 text-xs text-white/90">{banner.subtitle}</p>
                 ) : null}
-                {isCheckout ? (
+                {displayOnly ? (
                   <p className="mt-3 inline-block text-xs font-medium text-white/90">{banner.ctaText}</p>
                 ) : (
                   <button
@@ -184,7 +240,8 @@ export function CustomerPlacementBanners({
               )}
             </div>
           </div>
-        ))}
+          );
+        })}
         {count > 1 ? (
           <div className="absolute bottom-2 left-0 right-0 z-20 flex justify-center gap-1.5">
             {banners.map((b, i) => (

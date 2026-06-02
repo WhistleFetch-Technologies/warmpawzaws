@@ -25,11 +25,27 @@ import {
 } from '../../../utils/temporary-vendor-ui-suppression';
 import { isValidUUID } from '../../../types/entities';
 import { prepareStorefrontProductRow, prepareStorefrontProductRows } from '../../../utils/s3-media-presign';
+import {
+  isEcommerceCategoryUuid,
+  mapCategoryRowsForPublic,
+  parseAdminCategoryPayloadItem,
+} from '../../../utils/ecommerce-category-display';
 
 /** Only admin-approved products appear on the public storefront (see products.status + is_active). */
 const STOREFRONT_PRODUCT_SQL = `
   p.is_active = true
   AND LOWER(COALESCE(NULLIF(TRIM(p.status::text), ''), 'pending')) = 'active'
+`;
+
+/** Hide products tied to admin-disabled ecommerce categories. */
+const STOREFRONT_ACTIVE_CATEGORY_SQL = `
+  AND (
+    p.category_id IS NULL
+    OR EXISTS (
+      SELECT 1 FROM ecommerce_categories ec
+      WHERE ec.id = p.category_id AND ec.is_active = true
+    )
+  )
 `;
 
 function normalizeAdminProductLifecycleStatus(raw: unknown): { status: string; is_active: boolean } {
@@ -61,7 +77,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         `SELECT p.*, v.business_name as vendor_name, v.city as vendor_city
          FROM products p
          LEFT JOIN vendors v ON p.vendor_id = v.id
-         WHERE p.id = $1 AND ${STOREFRONT_PRODUCT_SQL}`,
+         WHERE p.id = $1 AND ${STOREFRONT_PRODUCT_SQL}${STOREFRONT_ACTIVE_CATEGORY_SQL}`,
         [productId]
       );
 
@@ -105,7 +121,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         SELECT p.*, v.business_name as vendor_name
         FROM products p
         LEFT JOIN vendors v ON p.vendor_id = v.id
-        WHERE ${STOREFRONT_PRODUCT_SQL}
+        WHERE ${STOREFRONT_PRODUCT_SQL}${STOREFRONT_ACTIVE_CATEGORY_SQL}
       `;
 
       const params: any[] = [];
@@ -200,7 +216,7 @@ export function registerEcommerceEndpoints(app: Hono) {
         SELECT p.*, v.business_name as vendor_name
         FROM products p
         LEFT JOIN vendors v ON p.vendor_id = v.id
-        WHERE ${STOREFRONT_PRODUCT_SQL}
+        WHERE ${STOREFRONT_PRODUCT_SQL}${STOREFRONT_ACTIVE_CATEGORY_SQL}
       `;
 
       const params: any[] = [];
@@ -518,7 +534,8 @@ export function registerEcommerceEndpoints(app: Hono) {
       let categories;
       try {
         categories = await query(
-          `SELECT * FROM ecommerce_categories
+          `SELECT id::text AS id, name, description, display_order, is_active, image_url, created_at
+           FROM ecommerce_categories
            WHERE is_active = true
            ORDER BY display_order ASC, name ASC`
         );
@@ -533,13 +550,25 @@ export function registerEcommerceEndpoints(app: Hono) {
             message: 'Categories table not initialized. Please seed categories via admin panel.',
           });
         }
-        throw dbError;
+        if (dbError.message?.includes('column "image_url"') || dbError.code === '42703') {
+          categories = await query(
+            `SELECT id::text AS id, name, description, display_order, is_active, created_at
+             FROM ecommerce_categories
+             WHERE is_active = true
+             ORDER BY display_order ASC, name ASC`
+          );
+        } else {
+          throw dbError;
+        }
       }
+
+      const rows = (categories?.rows || []) as Record<string, unknown>[];
+      const mapped = await mapCategoryRowsForPublic(rows);
 
       return c.json({
         success: true,
-        categories: categories?.rows || [],
-        total: categories?.rows?.length || 0,
+        categories: mapped,
+        total: mapped.length,
       });
     } catch (error: any) {
       console.error('Error fetching e-commerce categories:', error);
@@ -1342,14 +1371,31 @@ export function registerEcommerceEndpoints(app: Hono) {
    */
   app.get("/admin/ecommerce/categories", async (c) => {
     try {
-      const categories = await query(
-        `SELECT * FROM ecommerce_categories
-         ORDER BY display_order ASC, name ASC`
-      );
+      let categories;
+      try {
+        categories = await query(
+          `SELECT id::text AS id, name, description, display_order, is_active, image_url, created_at
+           FROM ecommerce_categories
+           ORDER BY display_order ASC, name ASC`
+        );
+      } catch (dbError: any) {
+        if (dbError.message?.includes('column "image_url"') || dbError.code === '42703') {
+          categories = await query(
+            `SELECT id::text AS id, name, description, display_order, is_active, created_at
+             FROM ecommerce_categories
+             ORDER BY display_order ASC, name ASC`
+          );
+        } else {
+          throw dbError;
+        }
+      }
+
+      const rows = (categories?.rows || []) as Record<string, unknown>[];
+      const mapped = await mapCategoryRowsForPublic(rows, { includeInactive: true });
 
       return c.json({
         success: true,
-        categories: categories.rows || [],
+        categories: mapped,
       });
     } catch (error: any) {
       console.error('Error fetching categories:', error);
@@ -1359,7 +1405,7 @@ export function registerEcommerceEndpoints(app: Hono) {
 
   /**
    * PUT /admin/ecommerce/categories
-   * Update e-commerce categories
+   * Bulk upsert e-commerce categories (admin)
    */
   app.put("/admin/ecommerce/categories", async (c) => {
     try {
@@ -1370,11 +1416,77 @@ export function registerEcommerceEndpoints(app: Hono) {
         return c.json({ error: 'categories must be an array' }, 400);
       }
 
-      // Update categories (simplified - should use upsert)
+      for (const rawItem of categories) {
+        const item = parseAdminCategoryPayloadItem(
+          (rawItem && typeof rawItem === 'object' ? rawItem : {}) as Record<string, unknown>
+        );
+
+        if (!item.name) {
+          return c.json({ error: 'Category name is required' }, 400);
+        }
+
+        const row = {
+          name: item.name,
+          description: item.description,
+          display_order: item.display_order,
+          is_active: item.is_active,
+          image_url: item.image_url,
+        };
+
+        try {
+          if (item.id && isEcommerceCategoryUuid(item.id)) {
+            const updated = await update('ecommerce_categories', { id: item.id }, row);
+            if (!updated?.length) {
+              await insert('ecommerce_categories', { id: item.id, ...row });
+            }
+          } else {
+            await insert('ecommerce_categories', row);
+          }
+        } catch (dbErr: any) {
+          if (
+            dbErr.code === '23505' ||
+            String(dbErr.message || '').includes('ecommerce_categories_name_key')
+          ) {
+            return c.json(
+              { error: `Category name "${item.name}" already exists`, code: 'DUPLICATE_NAME' },
+              409
+            );
+          }
+          if (dbErr.message?.includes('column "image_url"') || dbErr.code === '42703') {
+            const { image_url: _img, ...rowWithoutImage } = row;
+            if (item.id && isEcommerceCategoryUuid(item.id)) {
+              await update('ecommerce_categories', { id: item.id }, rowWithoutImage);
+            } else {
+              await insert('ecommerce_categories', rowWithoutImage);
+            }
+          } else {
+            throw dbErr;
+          }
+        }
+      }
+
+      let refreshed;
+      try {
+        refreshed = await query(
+          `SELECT id::text AS id, name, description, display_order, is_active, image_url, created_at
+           FROM ecommerce_categories
+           ORDER BY display_order ASC, name ASC`
+        );
+      } catch {
+        refreshed = await query(
+          `SELECT id::text AS id, name, description, display_order, is_active, created_at
+           FROM ecommerce_categories
+           ORDER BY display_order ASC, name ASC`
+        );
+      }
+
+      const rows = (refreshed?.rows || []) as Record<string, unknown>[];
+      const mapped = await mapCategoryRowsForPublic(rows, { includeInactive: true });
+
       return c.json({
         success: true,
         message: 'Categories updated',
-        categories,
+        categories: mapped,
       });
     } catch (error: any) {
       console.error('Error updating categories:', error);

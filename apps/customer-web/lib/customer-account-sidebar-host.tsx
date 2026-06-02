@@ -4,6 +4,11 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { UserAccountSidebar } from '@/components/customer/UserAccountSidebar';
 import { navigateFromStandaloneAccountMenu } from '@/lib/customer-account-sidebar-nav';
+import {
+  consumeOpenAccountMenuAfterNav,
+  rememberMyPackagesBackFromAccountMenu,
+} from '@/lib/go-back-or-replace';
+import { ProfileMenuOpenProvider } from '@/lib/profile-menu-open-context';
 
 export { navigateFromStandaloneAccountMenu } from '@/lib/customer-account-sidebar-nav';
 
@@ -11,6 +16,7 @@ export type CustomerAccountSidebarHost = {
   phone: string | null;
   openAccountMenu: () => void;
   accountSidebar: ReactNode;
+  isAccountMenuOpen: boolean;
   /** BottomNavigation: profile opens account menu; other tabs route by screen id. */
   handleTabbedBottomNav: (screen: string) => void;
 };
@@ -23,6 +29,14 @@ export function useCustomerAccountSidebarHost(): CustomerAccountSidebarHost {
   useEffect(() => {
     const p = localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone');
     setPhone(p);
+  }, []);
+
+  useEffect(() => {
+    if (!consumeOpenAccountMenuAfterNav()) return;
+    const p = localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone');
+    if (!p) return;
+    setPhone(p);
+    setSidebarOpen(true);
   }, []);
 
   const openAccountMenu = useCallback(() => {
@@ -51,6 +65,7 @@ export function useCustomerAccountSidebarHost(): CustomerAccountSidebarHost {
       }
       setSidebarOpen(false);
       if (screen === 'home') router.push('/');
+      else if (screen === 'shop') router.push('/shop');
       else if (screen === 'cart') router.push('/cart');
       else if (screen === 'my-bookings') router.push('/bookings');
     },
@@ -80,6 +95,7 @@ export function useCustomerAccountSidebarHost(): CustomerAccountSidebarHost {
         }}
         onViewMyPackages={() => {
           setSidebarOpen(false);
+          rememberMyPackagesBackFromAccountMenu();
           router.push('/my-packages');
         }}
         onViewProfile={() => {
@@ -94,6 +110,28 @@ export function useCustomerAccountSidebarHost(): CustomerAccountSidebarHost {
     phone,
     openAccountMenu,
     accountSidebar,
+    isAccountMenuOpen: sidebarOpen,
     handleTabbedBottomNav,
   };
+}
+
+/** Wrap standalone pages that render BottomNavigation + account sidebar overlay. */
+export function CustomerAccountSidebarShell({
+  children,
+  sidebarOpen,
+  bottomNav,
+  accountSidebar,
+}: {
+  children: ReactNode;
+  sidebarOpen: boolean;
+  bottomNav: ReactNode;
+  accountSidebar: ReactNode;
+}) {
+  return (
+    <ProfileMenuOpenProvider value={sidebarOpen}>
+      {children}
+      {bottomNav}
+      {accountSidebar}
+    </ProfileMenuOpenProvider>
+  );
 }

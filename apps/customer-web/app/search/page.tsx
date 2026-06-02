@@ -2,8 +2,8 @@
 
 import React, { Suspense, useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { ArrowLeft, Calendar, Home, Search, User } from 'lucide-react';
+import { ArrowLeft, Search } from 'lucide-react';
+import { BottomNavigation } from '@/components/customer/bottomNavigation/BottomNavigation';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
@@ -169,7 +169,7 @@ export default function SearchPage() {
 function SearchContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { openAccountMenu, accountSidebar } = useCustomerAccountSidebarHost();
+  const { openAccountMenu, accountSidebar, handleTabbedBottomNav } = useCustomerAccountSidebarHost();
   const initialQuery = searchParams.get('q') || '';
   const initialCategory = searchParams.get('category') || '';
   const vendorIdParam = searchParams.get('vendorId');
@@ -424,8 +424,7 @@ function SearchContent() {
     setSearchNonce((n) => n + 1);
   };
 
-  const mainBottomPad =
-    'pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))]';
+  const mainBottomPad = 'pb-[var(--customer-tabbed-nav-offset)]';
 
   return (
     <div className="mx-auto flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-md flex-col overflow-hidden bg-gradient-to-b from-orange-50/90 to-amber-50/80 shadow-[0_0_0_1px_rgba(0,0,0,0.06)]">
@@ -663,42 +662,11 @@ function SearchContent() {
         )}
       </main>
 
-      {/* Bottom tab bar — aligned with phone shell */}
-      <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200/90 bg-white/95 backdrop-blur-md supports-[backdrop-filter]:bg-white/90">
-        <div className="mx-auto flex w-full max-w-md items-stretch justify-between gap-0 px-1 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] pt-2">
-          {[
-            { Icon: Home, label: 'Home', href: '/' },
-            { Icon: Search, label: 'Search', href: '/search', active: true },
-            { Icon: Calendar, label: 'Bookings', href: '/bookings' },
-            { Icon: User, label: 'Profile', onClick: openAccountMenu },
-          ].map((tab) => {
-            const { Icon, label, active } = tab;
-            const className = `flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-xl py-1 transition-colors ${
-              active ? 'text-[#FF8C42]' : 'text-gray-500 active:text-gray-700'
-            }`;
-            if ('onClick' in tab && tab.onClick) {
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={tab.onClick}
-                  className={className}
-                >
-                  <Icon className="h-5 w-5 shrink-0" strokeWidth={active ? 2.25 : 2} />
-                  <span className="max-w-full truncate text-[10px] font-medium leading-tight">{label}</span>
-                </button>
-              );
-            }
-            const href = 'href' in tab ? tab.href : '/';
-            return (
-              <Link key={label} href={href} className={className}>
-                <Icon className="h-5 w-5 shrink-0" strokeWidth={active ? 2.25 : 2} />
-                <span className="max-w-full truncate text-[10px] font-medium leading-tight">{label}</span>
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
+      <BottomNavigation
+        currentScreen="search"
+        onNavigate={handleTabbedBottomNav}
+        onProfileClick={openAccountMenu}
+      />
       {accountSidebar}
     </div>
   );

@@ -10,10 +10,11 @@ import {
   mapPackagesApiToSummaryRows,
   type MyPackageSummaryRow,
 } from '@/components/customer/booking/MyPackagesTrackingPanel';
+import { MyPackagesHeaderBackground } from '@/components/customer/booking/MyPackagesHeaderBackground';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import { apiClient } from '@/lib/api-client';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
-import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
+import { handleMyPackagesPageBack } from '@/lib/go-back-or-replace';
+import { useCustomerAccountSidebarHost, CustomerAccountSidebarShell } from '@/lib/customer-account-sidebar-host';
 
 /**
  * Viewport-bound column so `flex-1 min-h-0 overflow-y-auto` gets a real height and scrolls.
@@ -22,11 +23,11 @@ import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-ho
 const PAGE_OUTER_CLASS =
   'flex h-[100dvh] max-h-[100dvh] min-h-0 w-full justify-center overflow-hidden bg-[#FAF6F0]';
 const SHELL_CLASS =
-  'flex h-full min-h-0 w-full max-w-customer flex-col overflow-hidden rounded-t-3xl bg-[#FAF6F0] shadow-[0_0_0_1px_rgba(0,0,0,0.04)]';
+  'flex h-full min-h-0 w-full max-w-customer flex-col overflow-hidden bg-[#FAF6F0] shadow-[0_0_0_1px_rgba(0,0,0,0.04)]';
 
 function MyPackagesPageInner() {
   const router = useRouter();
-  const { accountSidebar, handleTabbedBottomNav, openAccountMenu } = useCustomerAccountSidebarHost();
+  const { accountSidebar, handleTabbedBottomNav, openAccountMenu, isAccountMenuOpen } = useCustomerAccountSidebarHost();
   const [phone, setPhone] = useState<string | null>(null);
   const [rows, setRows] = useState<MyPackageSummaryRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,66 +62,80 @@ function MyPackagesPageInner() {
     <ServiceDashboardHeader
       className="sticky top-0 z-40 shrink-0"
       serviceName="My packages"
-      serviceSubtitle="Track your sessions and usage"
+      serviceSubtitle="Track your sessions, benefits and usage"
       serviceIcon={Package2}
       stats={[]}
       onCloseToHome={() => router.push('/')}
-      onBack={() => goBackOrHome(router)}
+      onBack={() => handleMyPackagesPageBack(router)}
       showBackButton
       bottomEdge="sheet"
       sheetToneClass="bg-[#FAF6F0]"
+      headerBackground={<MyPackagesHeaderBackground />}
     />
   );
 
   if (!phone) {
     return (
-      <div className={PAGE_OUTER_CLASS}>
-        <div className={SHELL_CLASS}>
-          {header}
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto overscroll-y-contain px-6 pb-[var(--customer-tabbed-nav-offset)] text-center">
-            <p className="text-gray-600">Please login to view your packages</p>
-            <Link
-              href="/auth"
-              className="mt-4 inline-block rounded-full bg-orange-500 px-6 py-3 font-medium text-white"
-            >
-              Login
-            </Link>
-          </div>
+      <CustomerAccountSidebarShell
+        sidebarOpen={isAccountMenuOpen}
+        accountSidebar={accountSidebar}
+        bottomNav={
           <BottomNavigation
             currentScreen="my-packages"
             onNavigate={handleTabbedBottomNav}
             onProfileClick={openAccountMenu}
+            profileMenuOpen={isAccountMenuOpen}
           />
-          {accountSidebar}
+        }
+      >
+        <div className={PAGE_OUTER_CLASS}>
+          <div className={SHELL_CLASS}>
+            {header}
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto overscroll-y-contain px-6 pb-[var(--customer-tabbed-nav-offset)] text-center">
+              <p className="text-gray-600">Please login to view your packages</p>
+              <Link
+                href="/auth"
+                className="mt-4 inline-block rounded-full bg-orange-500 px-6 py-3 font-medium text-white"
+              >
+                Login
+              </Link>
+            </div>
+          </div>
         </div>
-      </div>
+      </CustomerAccountSidebarShell>
     );
   }
 
   return (
-    <div className={PAGE_OUTER_CLASS}>
-      <div className={SHELL_CLASS}>
-        {header}
-
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-[var(--customer-tabbed-nav-offset)]">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center px-6 py-20">
-              <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#FF8C42] border-t-transparent" />
-              <p className="mt-5 text-sm font-medium text-gray-600">Loading your packages…</p>
-            </div>
-          ) : (
-            <MyPackagesTrackingPanel rows={rows} customerPhone={phone} variant="fullPage" />
-          )}
-        </div>
-
+    <CustomerAccountSidebarShell
+      sidebarOpen={isAccountMenuOpen}
+      accountSidebar={accountSidebar}
+      bottomNav={
         <BottomNavigation
           currentScreen="my-packages"
           onNavigate={handleTabbedBottomNav}
           onProfileClick={openAccountMenu}
+          profileMenuOpen={isAccountMenuOpen}
         />
-        {accountSidebar}
+      }
+    >
+      <div className={PAGE_OUTER_CLASS}>
+        <div className={SHELL_CLASS}>
+          {header}
+
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain pb-[var(--customer-tabbed-nav-offset)]">
+            {loading ? (
+              <div className="flex flex-col items-center justify-center px-6 py-20">
+                <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#FF8C42] border-t-transparent" />
+                <p className="mt-5 text-sm font-medium text-gray-600">Loading your packages…</p>
+              </div>
+            ) : (
+              <MyPackagesTrackingPanel rows={rows} customerPhone={phone} variant="fullPage" />
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </CustomerAccountSidebarShell>
   );
 }
 

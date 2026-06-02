@@ -19,6 +19,13 @@ import { select, insert, update, query } from '../database/rds-connection';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { presignS3GetUrlIfApplicable } from '../utils/s3-media-presign';
+import {
+  buildVaccinationStorage,
+  extractHealthRecordsForClient,
+  extractVaccinationsForClient,
+  mergeHealthRecordsForStorage,
+  sanitizeVaccinationMap,
+} from '../utils/pet-health-normalize';
 
 export function registerPetEndpoints(app: Hono) {
   /**
@@ -123,6 +130,7 @@ export function registerPetEndpoints(app: Hono) {
       const pet = pets[0];
       const photo =
         (await presignS3GetUrlIfApplicable(pet.profile_photo_url)) || pet.profile_photo_url;
+      const vaccinations = extractVaccinationsForClient(pet);
 
       // Map to frontend-expected format
       return c.json({
@@ -133,7 +141,7 @@ export function registerPetEndpoints(app: Hono) {
           type: pet.species || 'Dog',
           species: pet.species,
           breed: pet.breed,
-          age: pet.age_years?.toString() || '',
+          age: pet.age_years?.toString() || pet.age_months?.toString() || '',
           age_years: pet.age_years,
           age_months: pet.age_months,
           gender: pet.gender,
@@ -142,8 +150,8 @@ export function registerPetEndpoints(app: Hono) {
           photo,
           profile_photo_url: photo,
           microchipId: pet.microchip_id,
-          healthRecords: pet.medical_history || {},
-          vaccinations: pet.vaccination_records || {},
+          healthRecords: extractHealthRecordsForClient(pet.medical_history),
+          vaccinations,
           medical_history: pet.medical_history || {},
           createdAt: pet.created_at,
         },
@@ -480,14 +488,35 @@ export function registerPetEndpoints(app: Hono) {
         return c.json({ error: 'Pet not found' }, 404);
       }
 
-      // Convert age if provided
+      const existingPet = pets[0];
+      const existingMedicalHistory = (existingPet.medical_history || {}) as Record<string, unknown>;
+
+      const incomingHealth =
+        petData.healthRecords || petData.medicalHistory || petData.medical_history || {};
+      const mergedHealth = mergeHealthRecordsForStorage(existingMedicalHistory, incomingHealth);
+      const existingVac = extractVaccinationsForClient(existingPet);
+      const incomingVacFromHealth = (incomingHealth as Record<string, unknown>).vaccinationDates as
+        | Record<string, string>
+        | undefined;
+      const mergedVac = sanitizeVaccinationMap({
+        ...existingVac,
+        ...(incomingVacFromHealth || {}),
+        ...(petData.vaccinations != null ? (petData.vaccinations as Record<string, string>) : {}),
+      });
+      const { vaccination_records, medical_history } = buildVaccinationStorage(
+        mergedHealth,
+        mergedVac
+      );
+
       const updateData: any = {
         name: petData.name,
         breed: petData.breed,
         gender: petData.gender,
-        weight_kg: petData.weight ? parseFloat(petData.weight) : undefined,
+        weight_kg: petData.weight != null && petData.weight !== '' ? parseFloat(String(petData.weight)) : undefined,
         profile_photo_url: petData.photo || petData.photos?.[0] || undefined,
-        medical_history: petData.healthRecords || petData.medicalHistory || petData.medical_history || {},
+        medical_history,
+        vaccination_records,
+        microchip_id: petData.microchipId ?? existingPet.microchip_id,
       };
 
       if (petData.age) {
@@ -530,6 +559,7 @@ export function registerPetEndpoints(app: Hono) {
       }
 
       const pet = updated[0];
+      const vaccinations = extractVaccinationsForClient(pet);
       return c.json({
         success: true,
         pet: {
@@ -538,12 +568,14 @@ export function registerPetEndpoints(app: Hono) {
           type: pet.species,
           species: pet.species,
           breed: pet.breed,
-          age: pet.age_years?.toString() || '',
+          age: pet.age_years?.toString() || pet.age_months?.toString() || '',
+          age_years: pet.age_years,
+          age_months: pet.age_months,
           gender: pet.gender,
           weight: pet.weight_kg?.toString() || '',
           photo: pet.profile_photo_url,
-          healthRecords: pet.medical_history || {},
-          vaccinations: pet.vaccination_records || {},
+          healthRecords: extractHealthRecordsForClient(pet.medical_history),
+          vaccinations,
         },
         message: 'Pet updated successfully',
       });

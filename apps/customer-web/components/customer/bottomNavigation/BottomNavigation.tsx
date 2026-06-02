@@ -1,39 +1,49 @@
 "use client";
 
-import { Home, ShoppingCart, Calendar, User } from 'lucide-react';
-import { useCart } from '@/context/CartContext';
+import { Home, ShoppingBag, Calendar, User } from 'lucide-react';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import { useProfileMenuOpen } from '@/lib/profile-menu-open-context';
 
 interface BottomNavigationProps {
   currentScreen: string;
   onNavigate: (screen: string) => void;
   onProfileClick?: () => void;
+  profileMenuOpen?: boolean;
 }
 
-export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: BottomNavigationProps) {
-  const { itemCount } = useCart();
+export function BottomNavigation({
+  currentScreen,
+  onNavigate,
+  onProfileClick,
+  profileMenuOpen: profileMenuOpenProp,
+}: BottomNavigationProps) {
   const commerceEnabled = isCustomerEcommerceEnabled();
+  const profileMenuOpenContext = useProfileMenuOpen();
+  const profileMenuOpen = profileMenuOpenProp ?? profileMenuOpenContext;
+
+  if (profileMenuOpen) {
+    return null;
+  }
 
   const isActive = (screen: string) => {
-    // Map screen names to navigation tabs - only highlight when exactly on that screen
-    // For service screens (nutritionist, vet, grooming, etc.), no tab should be active
     if (screen === 'home') {
       return currentScreen === 'home';
     }
-    if (screen === 'cart') {
-      return currentScreen === 'cart' || currentScreen === 'checkout';
+    if (screen === 'shop') {
+      return currentScreen === 'shop';
     }
     if (screen === 'bookings') {
       return currentScreen === 'my-bookings' || currentScreen === 'appointments';
     }
     if (screen === 'profile') {
       return (
+        profileMenuOpen ||
         currentScreen === 'customer-profile' ||
         currentScreen === 'user-profile' ||
-        currentScreen === 'my-packages'
+        currentScreen === 'my-packages' ||
+        currentScreen === 'account-menu'
       );
     }
-    // For all other screens (like nutritionist, vet, etc.), no tab should be active
     return false;
   };
 
@@ -45,74 +55,64 @@ export function BottomNavigation({ currentScreen, onNavigate, onProfileClick }: 
     }
   };
 
+  const profileActive = isActive('profile');
+
   return (
     <div className="cw-customer-tabbar-fixed fixed inset-x-0 bottom-0 z-50 mx-auto w-full max-w-customer border-t border-gray-200 bg-white">
       <div className="flex items-center justify-around px-4 py-3 sm:px-6">
-        {/* Home Tab */}
-        <button 
-          onClick={() => handleNavClick('home')}
-          className="flex flex-col items-center gap-1"
-        >
+        <button onClick={() => handleNavClick('home')} className="flex flex-col items-center gap-1">
           <Home className={`w-6 h-6 ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
           <span className={`text-xs font-medium ${isActive('home') ? 'text-[#FF8C42]' : 'text-gray-400'}`}>
             Home
           </span>
         </button>
 
-        {/* Cart Tab */}
         {commerceEnabled ? (
           <button
             type="button"
-            onClick={() => handleNavClick('cart')}
-            className="relative flex flex-col items-center gap-1"
+            onClick={() => handleNavClick('shop')}
+            className="flex flex-col items-center gap-1"
           >
-            <div className="relative">
-              <ShoppingCart className={`w-6 h-6 ${isActive('cart') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-              {itemCount > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  {itemCount}
-                </span>
-              )}
-            </div>
-            <span className={`text-xs ${isActive('cart') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
-              Cart
+            <ShoppingBag className={`w-6 h-6 ${isActive('shop') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
+            <span className={`text-xs ${isActive('shop') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
+              Shop
             </span>
           </button>
         ) : (
           <button
             type="button"
             disabled
-            className="relative flex flex-col items-center gap-1 opacity-40 cursor-not-allowed"
+            className="flex flex-col items-center gap-1 opacity-40 cursor-not-allowed"
           >
-            <ShoppingCart className="w-6 h-6 text-gray-400" />
+            <ShoppingBag className="w-6 h-6 text-gray-400" />
             <span className="text-xs text-gray-400">Soon</span>
           </button>
         )}
 
-        {/* Bookings Tab */}
-        <button 
-          onClick={() => handleNavClick('my-bookings')}
-          className="flex flex-col items-center gap-1"
-        >
+        <button onClick={() => handleNavClick('my-bookings')} className="flex flex-col items-center gap-1">
           <Calendar className={`w-6 h-6 ${isActive('bookings') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
           <span className={`text-xs ${isActive('bookings') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
             Bookings
           </span>
         </button>
 
-        {/* Profile Tab */}
-        <button 
-          onClick={() => handleNavClick('profile')}
-          className="flex flex-col items-center gap-1"
-        >
-          <User className={`w-6 h-6 ${isActive('profile') ? 'text-[#FF8C42]' : 'text-gray-400'}`} />
-          <span className={`text-xs ${isActive('profile') ? 'text-[#FF8C42] font-medium' : 'text-gray-400'}`}>
+        <button onClick={() => handleNavClick('profile')} className="flex flex-col items-center gap-0.5">
+          <div
+            className={`flex items-center justify-center rounded-2xl px-5 py-1.5 transition-all ${
+              profileActive ? 'bg-orange-100' : ''
+            }`}
+          >
+            <User
+              className={`h-6 w-6 ${profileActive ? 'text-[#FF8C42]' : 'text-gray-400'}`}
+              strokeWidth={profileActive ? 2.25 : 2}
+            />
+          </div>
+          <span className={`text-xs ${profileActive ? 'font-semibold text-[#FF8C42]' : 'text-gray-400'}`}>
             Profile
           </span>
         </button>
       </div>
-      
-      {/* Optional home indicator — keep subtle on devices with safe area */}
+
       <div className="flex justify-center pb-1 sm:pb-2">
         <div className="h-1 w-28 rounded-full bg-black/10 sm:bg-black/20" aria-hidden />
       </div>

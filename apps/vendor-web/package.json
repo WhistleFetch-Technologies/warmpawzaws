@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3002",
-    "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true});\" && next dev -p 3002",
+    "dev": "node scripts/clean-next-dev.js && next dev -p 3002",
+    "dev:cached": "next dev -p 3002",
+    "dev:clean": "node scripts/clean-next-dev.js && next dev -p 3002",
     "dev:prod": "node scripts/dev-prod.js",
     "build": "next build",
     "build:prod": "node scripts/build-prod.js",

@@ -1,20 +1,40 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { User, Camera, Edit2, Loader2 } from 'lucide-react';
-import { apiClient } from '@/lib/api-client';
+import {
+  User,
+  Camera,
+  Edit2,
+  Loader2,
+  Mail,
+  Phone,
+  MapPin,
+  Home,
+  Building2,
+  MapPinned,
+} from 'lucide-react';
+import { apiClient, ordersApi } from '@/lib/api-client';
 import { uploadCustomerPhotoWithProgress } from '@/lib/photo-upload-enhanced';
 import { toast } from 'sonner';
 import { validateEmail } from '@/lib/validation';
 import { inferCityStateFromCommaAddress, mergeStreetAddressLineOnly } from '@/lib/profile-address-format';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { PresignableImage } from '@/components/shared/PresignableImage';
-import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import {
   normalizeCustomerProfileFields,
   patchCustomerProfileKeysInLocalStorage,
 } from '@/lib/normalize-customer-profile-api';
+import { formatMemberSinceLabel } from '@/lib/format-member-since';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
+import { clearCustomerSession } from '@/lib/session-utils';
+import { ProfileAccountHero } from '@/components/customer/profile/ProfileAccountHero';
+import { ProfileStatCards, type ProfileStatCounts } from '@/components/customer/profile/ProfileStatCards';
+import { ProfileQuickActions } from '@/components/customer/profile/ProfileQuickActions';
+import { ProfileInfoSection } from '@/components/customer/profile/ProfileInfoSection';
+import { ProfileFieldLabel } from '@/components/customer/profile/ProfileFieldLabel';
+import { ProfileReadOnlyField } from '@/components/customer/profile/ProfileReadOnlyField';
 
 interface UserProfile {
   firstName: string;
@@ -40,19 +60,14 @@ interface CustomerProfileViewProps {
   onCloseToHome?: () => void;
 }
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return <label className="block text-xs font-semibold text-gray-500 mb-2">{children}</label>;
-}
-
-function ReadOnlyField({ value }: { value: string }) {
-  return (
-    <p className="text-gray-900 font-medium px-4 py-3 bg-gray-100 rounded-xl min-h-[48px] flex items-center">
-      {value || '—'}
-    </p>
-  );
-}
+const INITIAL_COUNTS: ProfileStatCounts = {
+  orders: null,
+  pets: null,
+  saved: null,
+};
 
 export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerProfileViewProps) {
+  const router = useRouter();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [savedProfile, setSavedProfile] = useState<UserProfile | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -62,11 +77,65 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
   const [uploadProgress, setUploadProgress] = useState(0);
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [uploadedPhotoUrl, setUploadedPhotoUrl] = useState<string>('');
+  const [statCounts, setStatCounts] = useState<ProfileStatCounts>(INITIAL_COUNTS);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const addressSectionRef = useRef<HTMLDivElement>(null);
+
+  const handleCloseToHome = onCloseToHome ?? onBack;
 
   useEffect(() => {
     loadProfile();
   }, [phone]);
+
+  const loadStatCounts = useCallback(async () => {
+    setStatCounts(INITIAL_COUNTS);
+
+    const setCount = (key: keyof ProfileStatCounts, value: number) => {
+      setStatCounts((prev) => ({ ...prev, [key]: value }));
+    };
+
+    const petsPromise = apiClient
+      .get<{ pets?: unknown[] }>(`/customer/pets/${encodeURIComponent(phone)}`)
+      .then((r) => setCount('pets', Array.isArray(r.pets) ? r.pets.length : 0))
+      .catch(() => setCount('pets', 0));
+
+    const savedPromise = apiClient
+      .get<{ savedItems?: unknown[] }>(`/customer/saved/${phone}`)
+      .then((r) => setCount('saved', Array.isArray(r.savedItems) ? r.savedItems.length : 0))
+      .catch(() => setCount('saved', 0));
+
+    const ordersPromise = (async () => {
+      try {
+        const customerId = getResolvedCustomerId();
+        if (customerId) {
+          const result = await ordersApi.list({ customerId });
+          const rawList = (result as { orders?: unknown[] })?.orders;
+          if (Array.isArray(rawList)) {
+            setCount('orders', rawList.length);
+            return;
+          }
+        }
+      } catch {
+        /* fall through to bookings */
+      }
+      try {
+        const result = await apiClient.get<{ bookings?: unknown[] }>(
+          `/customer/bookings?phone=${encodeURIComponent(phone)}`
+        );
+        setCount('orders', Array.isArray(result.bookings) ? result.bookings.length : 0);
+      } catch {
+        setCount('orders', 0);
+      }
+    })();
+
+    await Promise.all([petsPromise, savedPromise, ordersPromise]);
+  }, [phone]);
+
+  useEffect(() => {
+    if (!loading && profile) {
+      loadStatCounts();
+    }
+  }, [loading, profile, loadStatCounts]);
 
   const fetchAndApplyProfile = async (showLoadingSpinner: boolean) => {
     try {
@@ -119,6 +188,24 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
   };
 
   const loadProfile = () => fetchAndApplyProfile(true);
+
+  const cancelEdit = () => {
+    if (savedProfile) {
+      setProfile(savedProfile);
+      setPhotoPreview(savedProfile.photo || '');
+    }
+    setEditMode(false);
+    setUploadedPhotoUrl('');
+  };
+
+  const enterEditMode = (scrollToAddress?: boolean) => {
+    setEditMode(true);
+    if (scrollToAddress) {
+      requestAnimationFrame(() => {
+        addressSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -220,8 +307,8 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
       setEditMode(false);
       setUploadedPhotoUrl('');
       toast.success('Profile updated successfully!');
-      // Silently re-fetch from API so photo, houseNo, etc. reflect what is actually stored in the DB
       await fetchAndApplyProfile(false);
+      loadStatCounts();
     } catch (error) {
       console.error('Error saving profile:', error);
       toast.error('Error saving profile. Please try again.');
@@ -230,41 +317,39 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
     }
   };
 
+  const handleLogout = () => {
+    clearCustomerSession();
+    router.replace('/auth');
+  };
+
   const displayName = profile
     ? [profile.firstName, profile.lastName].filter(Boolean).join(' ').trim() || 'Account'
     : 'Account';
 
-  const headerIcon = (
-    <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-white">
-      {photoPreview ? (
-        <PresignableImage src={photoPreview} alt="" className="h-full w-full object-cover" />
-      ) : (
-        <User className="h-6 w-6 text-[#FF8C42]" />
-      )}
-    </span>
-  );
+  const memberSinceLabel = formatMemberSinceLabel(profile?.created_at);
 
-  const header = (
-    <ServiceDashboardHeader
-      serviceName={loading ? 'Account' : displayName}
-      serviceSubtitle={loading ? undefined : phone}
-      serviceIcon={headerIcon}
-      iconColor="text-white"
-      stats={[]}
-      onCloseToHome={onCloseToHome}
+  const hero = (
+    <ProfileAccountHero
+      displayName={loading ? 'Account' : displayName}
+      phone={loading ? '' : phone}
+      photoUrl={photoPreview || profile?.photo}
+      loading={loading}
+      memberSinceLabel={memberSinceLabel}
+      onCloseToHome={handleCloseToHome}
       onBack={onBack}
-      showBackButton
-      bottomEdge="sheet"
-      sheetToneClass="bg-gray-50"
+      editMode={editMode}
+      onPhotoClick={editMode ? () => fileInputRef.current?.click() : undefined}
+      uploadingPhoto={uploadingPhoto}
+      uploadProgress={uploadProgress}
     />
   );
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
-        {header}
-        <div className="-mt-1 flex items-center justify-center py-24">
-          <div className="w-12 h-12 border-4 border-[#FF8C42] border-t-transparent rounded-full animate-spin" />
+      <div className="mx-auto min-h-screen w-full max-w-customer bg-[#F5F5F5]">
+        {hero}
+        <div className="flex items-center justify-center py-24">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-[#FF8C42] border-t-transparent" />
         </div>
       </div>
     );
@@ -272,10 +357,10 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
 
   if (!profile) {
     return (
-      <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
-        {header}
-        <div className="-mt-1 flex flex-col items-center justify-center px-6 py-24">
-          <p className="text-gray-600 mb-4">Profile not found</p>
+      <div className="mx-auto min-h-screen w-full max-w-customer bg-[#F5F5F5]">
+        {hero}
+        <div className="flex flex-col items-center justify-center px-6 py-24">
+          <p className="mb-4 text-gray-600">Profile not found</p>
           <Button onClick={onBack} className="bg-[#FF8C42] hover:bg-[#FF7A2E]">
             Go Back
           </Button>
@@ -285,264 +370,332 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
   }
 
   const inputClass =
-    'w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-white focus:border-[#FF8C42] focus:outline-none';
+    'w-full rounded-xl border-2 border-gray-200 bg-white px-4 py-3 focus:border-[#FF8C42] focus:outline-none';
 
-  return (
-    <div className="min-h-screen bg-gray-50 w-full max-w-customer mx-auto">
-      {header}
-
-      <div className="-mt-1 pb-28">
-        <div className="px-5 pt-5 pb-6">
-          <div className="flex items-center justify-between gap-3 mb-5">
-            <h2 className="text-xl font-bold text-gray-900">My Profile</h2>
-            {!editMode ? (
-              <button
-                type="button"
-                onClick={() => setEditMode(true)}
-                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm active:scale-[0.98]"
-              >
-                <Edit2 className="w-4 h-4 text-gray-600" />
-                Edit Profile
-              </button>
+  const profileForm = (
+    <div className="space-y-4">
+      {!editMode && (
+        <div className="flex justify-center mb-6">
+          <div className="relative h-28 w-28 overflow-hidden rounded-full border-4 border-white bg-gray-200 shadow-lg sm:h-32 sm:w-32">
+            {photoPreview ? (
+              <PresignableImage src={photoPreview} alt="Profile" className="h-full w-full object-cover" />
             ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  if (savedProfile) {
-                    setProfile(savedProfile);
-                    setPhotoPreview(savedProfile.photo || '');
-                  }
-                  setEditMode(false);
-                  setUploadedPhotoUrl('');
-                }}
-                className="text-sm font-medium text-gray-600 px-3 py-2"
-              >
-                Cancel
-              </button>
+              <div className="flex h-full w-full items-center justify-center text-gray-400">
+                <User className="h-16 w-16 sm:h-20 sm:w-20" strokeWidth={1.25} />
+              </div>
             )}
           </div>
+        </div>
+      )}
 
-          <div className="flex justify-center mb-8">
-            <div
-              onClick={() => editMode && !uploadingPhoto && fileInputRef.current?.click()}
-              className={`w-28 h-28 sm:w-32 sm:h-32 rounded-full overflow-hidden flex items-center justify-center border-4 border-white shadow-lg bg-gray-200 relative ${
-                editMode && !uploadingPhoto ? 'cursor-pointer' : ''
-              } ${uploadingPhoto ? 'opacity-75' : ''}`}
-            >
-              {photoPreview ? (
-                <>
-                  <PresignableImage src={photoPreview} alt="Profile" className="w-full h-full object-cover" />
-                  {uploadingPhoto && (
-                    <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center">
-                      <Loader2 className="w-8 h-8 text-white animate-spin mb-1" />
-                      <span className="text-white text-xs">{uploadProgress}%</span>
-                    </div>
-                  )}
-                  {editMode && !uploadingPhoto && (
-                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                      <Camera className="w-8 h-8 text-white" />
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="flex flex-col items-center justify-center text-gray-400 w-full h-full">
-                  {uploadingPhoto ? (
-                    <>
-                      <Loader2 className="w-10 h-10 animate-spin mb-1" />
-                      <span className="text-xs text-gray-500">{uploadProgress}%</span>
-                    </>
-                  ) : (
-                    <User className="w-16 h-16 sm:w-20 sm:h-20" strokeWidth={1.25} />
-                  )}
-                </div>
-              )}
-            </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <ProfileFieldLabel>First Name</ProfileFieldLabel>
+          {editMode ? (
             <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handlePhotoUpload}
-              disabled={uploadingPhoto}
-              className="hidden"
+              type="text"
+              value={profile.firstName}
+              onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+              className={inputClass}
             />
-          </div>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <FieldLabel>First Name</FieldLabel>
-                {editMode ? (
-                  <input
-                    type="text"
-                    value={profile.firstName}
-                    onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
-                    className={inputClass}
-                  />
-                ) : (
-                  <ReadOnlyField value={profile.firstName} />
-                )}
-              </div>
-              <div>
-                <FieldLabel>Last Name</FieldLabel>
-                {editMode ? (
-                  <input
-                    type="text"
-                    value={profile.lastName}
-                    onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
-                    className={inputClass}
-                  />
-                ) : (
-                  <ReadOnlyField value={profile.lastName} />
-                )}
-              </div>
-            </div>
-
-            <div>
-              <FieldLabel>Phone Number</FieldLabel>
-              <ReadOnlyField value={profile.phone} />
-            </div>
-
-            <div>
-              <FieldLabel>Email</FieldLabel>
-              {editMode ? (
-                <input
-                  type="email"
-                  value={profile.email}
-                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                  className={inputClass}
-                />
-              ) : (
-                <ReadOnlyField value={profile.email} />
-              )}
-            </div>
-
-            <div>
-              <FieldLabel>Address</FieldLabel>
-              {editMode ? (
-                <>
-                  <EnhancedAddressAutocomplete
-                    value={profile.address}
-                    onChange={(address: string, components?: AddressComponents) => {
-                      setProfile((prev) => {
-                        if (!prev) return null;
-                        const updated = { ...prev, address };
-                        if (components?.pincode) updated.pincode = components.pincode;
-                        if (components?.city) updated.city = components.city;
-                        if (components?.state) updated.state = components.state;
-                        if (components?.coordinates) {
-                          updated.latitude = components.coordinates.lat;
-                          updated.longitude = components.coordinates.lng;
-                        } else {
-                          const { city: c, state: s } = inferCityStateFromCommaAddress(address);
-                          if (c) updated.city = c;
-                          if (s) updated.state = s;
-                        }
-                        return updated;
-                      });
-                    }}
-                    placeholder="Search address, landmark, city..."
-                    className="w-full"
-                    required
-                  />
-                  <p className="text-xs text-gray-500 mt-1.5">
-                    Type to search for your address, landmark or area
-                  </p>
-                </>
-              ) : (
-                <ReadOnlyField value={profile.address} />
-              )}
-            </div>
-
-            <div>
-              <FieldLabel>
-                House No / Flat No {editMode && <span className="text-red-500">*</span>}
-              </FieldLabel>
-              {editMode ? (
-                <input
-                  type="text"
-                  value={profile.houseNo}
-                  onChange={(e) => setProfile({ ...profile, houseNo: e.target.value })}
-                  placeholder="e.g., A-101, Flat 12B"
-                  className={inputClass}
-                />
-              ) : (
-                <ReadOnlyField value={profile.houseNo} />
-              )}
-            </div>
-
-            <div>
-              <FieldLabel>Floor</FieldLabel>
-              {editMode ? (
-                <input
-                  type="text"
-                  value={profile.floor}
-                  onChange={(e) => setProfile({ ...profile, floor: e.target.value })}
-                  placeholder="e.g., 1st Floor"
-                  className={inputClass}
-                />
-              ) : (
-                <ReadOnlyField value={profile.floor} />
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <FieldLabel>City</FieldLabel>
-                {editMode ? (
-                  <input
-                    type="text"
-                    value={profile.city ?? ''}
-                    onChange={(e) => setProfile({ ...profile, city: e.target.value })}
-                    placeholder="Bengaluru"
-                    className={inputClass}
-                  />
-                ) : (
-                  <ReadOnlyField value={profile.city ?? ''} />
-                )}
-              </div>
-              <div>
-                <FieldLabel>State</FieldLabel>
-                {editMode ? (
-                  <input
-                    type="text"
-                    value={profile.state ?? ''}
-                    onChange={(e) => setProfile({ ...profile, state: e.target.value })}
-                    placeholder="Karnataka"
-                    className={inputClass}
-                  />
-                ) : (
-                  <ReadOnlyField value={profile.state ?? ''} />
-                )}
-              </div>
-            </div>
-
-            <div>
-              <FieldLabel>Pincode</FieldLabel>
-              {editMode ? (
-                <input
-                  type="text"
-                  value={profile.pincode}
-                  onChange={(e) => {
-                    const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                    setProfile({ ...profile, pincode: value });
-                  }}
-                  maxLength={6}
-                  className={inputClass}
-                />
-              ) : (
-                <ReadOnlyField value={profile.pincode} />
-              )}
-            </div>
-          </div>
+          ) : (
+            <ProfileReadOnlyField value={profile.firstName} />
+          )}
+        </div>
+        <div>
+          <ProfileFieldLabel>Last Name</ProfileFieldLabel>
+          {editMode ? (
+            <input
+              type="text"
+              value={profile.lastName}
+              onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+              className={inputClass}
+            />
+          ) : (
+            <ProfileReadOnlyField value={profile.lastName} />
+          )}
         </div>
       </div>
 
+      <div>
+        <ProfileFieldLabel>Phone Number</ProfileFieldLabel>
+        <ProfileReadOnlyField value={profile.phone} />
+      </div>
+
+      <div>
+        <ProfileFieldLabel>Email</ProfileFieldLabel>
+        {editMode ? (
+          <input
+            type="email"
+            value={profile.email}
+            onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+            className={inputClass}
+          />
+        ) : (
+          <ProfileReadOnlyField value={profile.email} />
+        )}
+      </div>
+
+      <div ref={addressSectionRef}>
+        <ProfileFieldLabel>Address</ProfileFieldLabel>
+        {editMode ? (
+          <>
+            <EnhancedAddressAutocomplete
+              value={profile.address}
+              onChange={(address: string, components?: AddressComponents) => {
+                setProfile((prev) => {
+                  if (!prev) return null;
+                  const updated = { ...prev, address };
+                  if (components?.pincode) updated.pincode = components.pincode;
+                  if (components?.city) updated.city = components.city;
+                  if (components?.state) updated.state = components.state;
+                  if (components?.coordinates) {
+                    updated.latitude = components.coordinates.lat;
+                    updated.longitude = components.coordinates.lng;
+                  } else {
+                    const { city: c, state: s } = inferCityStateFromCommaAddress(address);
+                    if (c) updated.city = c;
+                    if (s) updated.state = s;
+                  }
+                  return updated;
+                });
+              }}
+              placeholder="Search address, landmark, city..."
+              className="w-full"
+              required
+            />
+            <p className="mt-1.5 text-xs text-gray-500">
+              Type to search for your address, landmark or area
+            </p>
+          </>
+        ) : (
+          <ProfileReadOnlyField value={profile.address} />
+        )}
+      </div>
+
+      <div>
+        <ProfileFieldLabel>
+          House No / Flat No {editMode && <span className="text-red-500">*</span>}
+        </ProfileFieldLabel>
+        {editMode ? (
+          <input
+            type="text"
+            value={profile.houseNo}
+            onChange={(e) => setProfile({ ...profile, houseNo: e.target.value })}
+            placeholder="e.g., A-101, Flat 12B"
+            className={inputClass}
+          />
+        ) : (
+          <ProfileReadOnlyField value={profile.houseNo} />
+        )}
+      </div>
+
+      <div>
+        <ProfileFieldLabel>Floor</ProfileFieldLabel>
+        {editMode ? (
+          <input
+            type="text"
+            value={profile.floor}
+            onChange={(e) => setProfile({ ...profile, floor: e.target.value })}
+            placeholder="e.g., 1st Floor"
+            className={inputClass}
+          />
+        ) : (
+          <ProfileReadOnlyField value={profile.floor} />
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <ProfileFieldLabel>City</ProfileFieldLabel>
+          {editMode ? (
+            <input
+              type="text"
+              value={profile.city ?? ''}
+              onChange={(e) => setProfile({ ...profile, city: e.target.value })}
+              placeholder="Bengaluru"
+              className={inputClass}
+            />
+          ) : (
+            <ProfileReadOnlyField value={profile.city ?? ''} />
+          )}
+        </div>
+        <div>
+          <ProfileFieldLabel>State</ProfileFieldLabel>
+          {editMode ? (
+            <input
+              type="text"
+              value={profile.state ?? ''}
+              onChange={(e) => setProfile({ ...profile, state: e.target.value })}
+              placeholder="Karnataka"
+              className={inputClass}
+            />
+          ) : (
+            <ProfileReadOnlyField value={profile.state ?? ''} />
+          )}
+        </div>
+      </div>
+
+      <div>
+        <ProfileFieldLabel>Pincode</ProfileFieldLabel>
+        {editMode ? (
+          <input
+            type="text"
+            value={profile.pincode}
+            onChange={(e) => {
+              const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+              setProfile({ ...profile, pincode: value });
+            }}
+            maxLength={6}
+            className={inputClass}
+          />
+        ) : (
+          <ProfileReadOnlyField value={profile.pincode} />
+        )}
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="mx-auto min-h-screen w-full max-w-customer bg-[#F5F5F5]">
+      {hero}
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handlePhotoUpload}
+        disabled={uploadingPhoto}
+        className="hidden"
+      />
+
+      <div className={`pb-28 ${editMode ? 'pt-2' : ''}`}>
+        {!editMode ? (
+          <>
+            <ProfileStatCards
+              counts={statCounts}
+              onViewOrders={() => router.push('/orders')}
+              onViewPets={() => router.push('/pets')}
+              onViewSaved={() => router.push('/wishlist')}
+            />
+
+            <div className="mt-3 space-y-5 pb-4 sm:mt-4">
+              <ProfileQuickActions
+                onEditProfile={() => enterEditMode()}
+                onChangePassword={() =>
+                  router.push('/auth/set-password?next=/profile')
+                }
+                onManageAddress={() => enterEditMode(true)}
+                onFavouritePets={() => router.push('/wishlist')}
+                onLogout={handleLogout}
+              />
+
+              <div className="space-y-4 px-4 sm:px-5">
+                <ProfileInfoSection
+                  title="Personal Information"
+                  titleIcon={User}
+                  onEdit={() => enterEditMode()}
+                  rows={[
+                    { label: 'First Name', value: profile.firstName, icon: User },
+                    { label: 'Last Name', value: profile.lastName, icon: User },
+                    { label: 'Phone Number', value: profile.phone, icon: Phone },
+                    { label: 'Email', value: profile.email, icon: Mail },
+                  ]}
+                />
+
+                <ProfileInfoSection
+                  title="Address Information"
+                  titleIcon={MapPin}
+                  onEdit={() => enterEditMode(true)}
+                  rows={[
+                    { label: 'Address', value: profile.address, icon: MapPin },
+                    { label: 'House No / Flat No', value: profile.houseNo, icon: Home },
+                    { label: 'Floor', value: profile.floor, icon: Building2 },
+                    { label: 'City', value: profile.city ?? '', icon: MapPinned },
+                    { label: 'State', value: profile.state ?? '', icon: MapPinned },
+                    { label: 'Pincode', value: profile.pincode, icon: MapPinned },
+                  ]}
+                />
+              </div>
+
+              <div className="px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5">
+                <button
+                  type="button"
+                  onClick={() => enterEditMode()}
+                  className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-[#FF8C42] text-base font-bold text-white shadow-[0_4px_14px_rgba(255,140,66,0.35)] active:scale-[0.98] hover:bg-[#FF7A2E]"
+                >
+                  <Edit2 className="h-5 w-5" strokeWidth={2} />
+                  Edit Profile
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="px-5 pb-6 pt-2">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <h2 className="text-xl font-bold text-gray-900">Edit Profile</h2>
+              <button
+                type="button"
+                onClick={cancelEdit}
+                className="min-h-[44px] px-3 py-2 text-sm font-medium text-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="mb-6 flex justify-center sm:hidden">
+              <div
+                onClick={() => !uploadingPhoto && fileInputRef.current?.click()}
+                className={`relative h-28 w-28 cursor-pointer overflow-hidden rounded-full border-4 border-white bg-gray-200 shadow-lg ${
+                  uploadingPhoto ? 'opacity-75' : ''
+                }`}
+              >
+                {photoPreview ? (
+                  <>
+                    <PresignableImage src={photoPreview} alt="Profile" className="h-full w-full object-cover" />
+                    {uploadingPhoto && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
+                        <Loader2 className="mb-1 h-8 w-8 animate-spin text-white" />
+                        <span className="text-xs text-white">{uploadProgress}%</span>
+                      </div>
+                    )}
+                    {!uploadingPhoto && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity hover:opacity-100">
+                        <Camera className="h-8 w-8 text-white" />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex h-full w-full flex-col items-center justify-center text-gray-400">
+                    {uploadingPhoto ? (
+                      <>
+                        <Loader2 className="mb-1 h-10 w-10 animate-spin" />
+                        <span className="text-xs text-gray-500">{uploadProgress}%</span>
+                      </>
+                    ) : (
+                      <User className="h-16 w-16" strokeWidth={1.25} />
+                    )}
+                  </div>
+                )}
+                {!uploadingPhoto && (
+                  <span className="absolute -bottom-0.5 -right-0.5 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-[#FF8C42]">
+                    <Camera className="h-4 w-4 text-white" />
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {profileForm}
+          </div>
+        )}
+      </div>
+
       {editMode && (
-        <div className="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-200 bg-white px-5 py-4 max-w-customer mx-auto w-full pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="fixed bottom-0 left-0 right-0 z-20 mx-auto w-full max-w-customer border-t border-gray-200 bg-white px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <Button
             onClick={handleSave}
             disabled={saving}
-            className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A2E] rounded-xl text-white disabled:opacity-50"
+            className="h-12 w-full rounded-xl bg-[#FF8C42] text-white hover:bg-[#FF7A2E] disabled:opacity-50"
           >
             {saving ? 'Saving...' : 'Save Changes'}
           </Button>
