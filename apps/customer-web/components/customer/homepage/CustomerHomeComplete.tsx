@@ -25,7 +25,6 @@ import { ProblemGridNavigation } from '../ProblemGridNavigation';
 import { ForYouSection } from '../ForYouSection';
 import { ServicesByProblem } from '../ServicesByProblem';
 import { TrendingProblems, type TrendingProblem } from '../TrendingProblems';
-import { WalletIcon } from '../WalletIcon';
 import { CustomerNotificationModal } from '../CustomerNotificationModal';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
 import { getServiceStyleIcon, getPetIcon } from '@/lib/icon-utils';
@@ -2101,13 +2100,6 @@ export function CustomerHomeComplete({
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
-              {/* Wallet Icon - Gold coin style with balance */}
-              <WalletIcon
-                customerPhone={phone}
-                onClick={() => handleNavigation('wallet')}
-                size="sm"
-                showBalance={true}
-              />
               <button
                 type="button"
                 onClick={() => handleNavigation('booking-messages')}
@@ -2133,14 +2125,6 @@ export function CustomerHomeComplete({
                     {notificationUnreadCount > 99 ? '99+' : notificationUnreadCount}
                   </span>
                 ) : null}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleNavigation('wishlist')}
-                className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors"
-                aria-label="Wishlist"
-              >
-                <Heart className="w-[18px] h-[18px] text-white" />
               </button>
             </div>
           </div>

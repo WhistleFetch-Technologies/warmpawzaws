@@ -1,10 +1,9 @@
 'use client';
 
 import React, { memo, useEffect, useState } from 'react';
-import { Bell, Heart, MapPin, MessageSquare } from 'lucide-react';
+import { Bell, MapPin, MessageSquare } from 'lucide-react';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { resolveCustomerLocation } from '@/lib/customer-location';
-import { WalletIcon } from '../../WalletIcon';
 import { IconBadgeButton } from '../shared/IconBadgeButton';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
@@ -99,12 +98,6 @@ function HomeHeaderSectionComponent({
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <WalletIcon
-            customerPhone={phone}
-            onClick={() => onNavigate('wallet')}
-            size="sm"
-            showBalance={true}
-          />
           <IconBadgeButton
             icon={MessageSquare}
             onClick={() => onNavigate('booking-messages')}
@@ -117,17 +110,11 @@ function HomeHeaderSectionComponent({
             ariaLabel="Notifications"
             badgeCount={notificationUnreadCount}
           />
-          <IconBadgeButton
-            icon={Heart}
-            onClick={() => onNavigate('wishlist')}
-            ariaLabel="Wishlist"
-            iconStrokeWidth={1.75}
-          />
         </div>
       </div>
     </div>
   );
 }
 
-/** Top home header: profile greeting, wallet, messages, notifications, wishlist. */
+/** Top home header: profile greeting, messages, notifications. */
 export const HomeHeaderSection = memo(HomeHeaderSectionComponent);
