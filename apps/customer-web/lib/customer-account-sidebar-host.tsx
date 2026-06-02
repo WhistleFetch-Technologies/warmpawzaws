@@ -4,6 +4,10 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { UserAccountSidebar } from '@/components/customer/UserAccountSidebar';
 import { navigateFromStandaloneAccountMenu } from '@/lib/customer-account-sidebar-nav';
+import {
+  consumeOpenAccountMenuAfterNav,
+  rememberMyPackagesBackFromAccountMenu,
+} from '@/lib/go-back-or-replace';
 import { ProfileMenuOpenProvider } from '@/lib/profile-menu-open-context';
 
 export { navigateFromStandaloneAccountMenu } from '@/lib/customer-account-sidebar-nav';
@@ -25,6 +29,14 @@ export function useCustomerAccountSidebarHost(): CustomerAccountSidebarHost {
   useEffect(() => {
     const p = localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone');
     setPhone(p);
+  }, []);
+
+  useEffect(() => {
+    if (!consumeOpenAccountMenuAfterNav()) return;
+    const p = localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone');
+    if (!p) return;
+    setPhone(p);
+    setSidebarOpen(true);
   }, []);
 
   const openAccountMenu = useCallback(() => {
@@ -83,6 +95,7 @@ export function useCustomerAccountSidebarHost(): CustomerAccountSidebarHost {
         }}
         onViewMyPackages={() => {
           setSidebarOpen(false);
+          rememberMyPackagesBackFromAccountMenu();
           router.push('/my-packages');
         }}
         onViewProfile={() => {

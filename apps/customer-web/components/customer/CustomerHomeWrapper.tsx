@@ -10,7 +10,10 @@ import { useCart } from '../../context/CartContext';
 import { apiClient } from '@/lib/api-client';
 import { isLegacyMockDiagnosticVendorId } from '@/lib/diagnostics-vendor-id';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
-import { rememberShopBackToSpaScreen } from '@/lib/go-back-or-replace';
+import {
+  rememberMyPackagesBackFromAccountMenu,
+  rememberShopBackToSpaScreen,
+} from '@/lib/go-back-or-replace';
 import { useNotificationService } from './useNotificationService';
 
 // ============================================================================
@@ -467,7 +470,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
     else if (path === 'account/orders') navigateToScreen('order_history');
     else if (path === 'account/addresses') navigateToScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') navigateToScreen('wallet');
-    else if (path === 'my-packages') router.push('/my-packages');
+    else if (path === 'my-packages') {
+      rememberMyPackagesBackFromAccountMenu();
+      router.push('/my-packages');
+    }
     else if (path === 'rewards-loyalty') navigateToScreen('rewards-loyalty');
     else if (path === 'referral-system') navigateToScreen('referral-system');
     else if (path === 'appointments') navigateToScreen('appointments');
@@ -576,7 +582,10 @@ export function CustomerHomeWrapper({ phone, onNavigate, initialScreen }: { phon
             phone={phone}
             onClose={() => setUserSidebarOpen(false)}
             onViewBooking={handleViewBooking}
-            onViewMyPackages={() => router.push('/my-packages')}
+            onViewMyPackages={() => {
+              rememberMyPackagesBackFromAccountMenu();
+              router.push('/my-packages');
+            }}
             onViewProfile={() => {
               setUserSidebarOpen(false);
               setCurrentScreen('customer-profile');

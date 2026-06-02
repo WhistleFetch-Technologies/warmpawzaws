@@ -10,9 +10,10 @@ import {
   mapPackagesApiToSummaryRows,
   type MyPackageSummaryRow,
 } from '@/components/customer/booking/MyPackagesTrackingPanel';
+import { MyPackagesHeaderBackground } from '@/components/customer/booking/MyPackagesHeaderBackground';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 import { apiClient } from '@/lib/api-client';
-import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { handleMyPackagesPageBack } from '@/lib/go-back-or-replace';
 import { useCustomerAccountSidebarHost, CustomerAccountSidebarShell } from '@/lib/customer-account-sidebar-host';
 
 /**
@@ -22,7 +23,7 @@ import { useCustomerAccountSidebarHost, CustomerAccountSidebarShell } from '@/li
 const PAGE_OUTER_CLASS =
   'flex h-[100dvh] max-h-[100dvh] min-h-0 w-full justify-center overflow-hidden bg-[#FAF6F0]';
 const SHELL_CLASS =
-  'flex h-full min-h-0 w-full max-w-customer flex-col overflow-hidden rounded-t-3xl bg-[#FAF6F0] shadow-[0_0_0_1px_rgba(0,0,0,0.04)]';
+  'flex h-full min-h-0 w-full max-w-customer flex-col overflow-hidden bg-[#FAF6F0] shadow-[0_0_0_1px_rgba(0,0,0,0.04)]';
 
 function MyPackagesPageInner() {
   const router = useRouter();
@@ -61,14 +62,15 @@ function MyPackagesPageInner() {
     <ServiceDashboardHeader
       className="sticky top-0 z-40 shrink-0"
       serviceName="My packages"
-      serviceSubtitle="Track your sessions and usage"
+      serviceSubtitle="Track your sessions, benefits and usage"
       serviceIcon={Package2}
       stats={[]}
       onCloseToHome={() => router.push('/')}
-      onBack={() => goBackOrHome(router)}
+      onBack={() => handleMyPackagesPageBack(router)}
       showBackButton
       bottomEdge="sheet"
       sheetToneClass="bg-[#FAF6F0]"
+      headerBackground={<MyPackagesHeaderBackground />}
     />
   );
 

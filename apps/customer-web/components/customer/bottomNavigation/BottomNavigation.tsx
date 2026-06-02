@@ -17,7 +17,6 @@ export function BottomNavigation({
   onProfileClick,
   profileMenuOpen: profileMenuOpenProp,
 }: BottomNavigationProps) {
-  const { itemCount } = useCart();
   const commerceEnabled = isCustomerEcommerceEnabled();
   const profileMenuOpenContext = useProfileMenuOpen();
   const profileMenuOpen = profileMenuOpenProp ?? profileMenuOpenContext;

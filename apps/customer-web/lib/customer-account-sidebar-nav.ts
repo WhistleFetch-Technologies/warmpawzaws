@@ -1,5 +1,6 @@
 import type { AppRouterInstance } from 'next/navigation';
 import {
+  rememberBeforeMyPackagesNav,
   rememberHelpBackFromCurrentUrl,
   rememberPromotionsBackFromCurrentUrl,
   rememberShopBackFromCurrentUrl,
@@ -29,6 +30,7 @@ export function navigateFromStandaloneAccountMenu(router: AppRouterInstance, pat
     return;
   }
   if (path === 'my-packages') {
+    rememberBeforeMyPackagesNav();
     router.push('/my-packages');
     return;
   }
