@@ -16,7 +16,7 @@ import { ProfileMenuFloatingSheet } from '@/components/customer/profile/ProfileM
 // Uses apiClient with Cognito auth
 import { apiClient, isUatMode } from '@/lib/api-client';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
-import { EnhancedAddressAutocomplete } from '@/components/shared/EnhancedAddressAutocomplete';
+import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { normalizeCustomerProfileFields } from '@/lib/normalize-customer-profile-api';
