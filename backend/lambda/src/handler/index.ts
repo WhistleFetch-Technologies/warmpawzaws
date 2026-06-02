@@ -105,6 +105,8 @@ import { registerCommuteTimeEndpoints } from '../endpoints/commute-time';
 import { registerRazorpaySettlementEndpoints } from '../endpoints/razorpay-settlements';
 import { registerRefundPolicyEngineEndpoints } from '../endpoints/refund-policy-engine';
 import { registerAdminAdvancedEndpoints } from '../endpoints/admin/endpoints/admin-advanced';
+import { registerAdminNotificationDeliveryEndpoints } from '../endpoints/admin/endpoints/admin-notification-delivery';
+import { registerNotificationCampaignEndpoints } from '../endpoints/admin/endpoints/notification-campaigns';
 import { registerAdminVendorDailyAccrualEndpoints } from '../endpoints/admin/endpoints/admin-vendor-daily-accrual';
 import { registerDiscoveryRulesAdminEndpoints } from '../endpoints/discovery-rules-admin';
 import { registerVendorSetupEndpoints } from '../endpoints/vendor/endpoints/vendor-setup';
@@ -724,6 +726,8 @@ registerRazorpaySettlementEndpoints(app);
 registerBookingEndpointsEnhanced(app); // Moved here to test route order (after refund-policy which works)
 registerBookingOTPEndpoint(app); // Booking OTP generation for home/center services
 registerAdminGovernanceEnhancedEndpoints(app);
+registerNotificationCampaignEndpoints(app);
+registerAdminNotificationDeliveryEndpoints(app);
 registerAdminAdvancedEndpoints(app);
 registerDiscoveryRulesAdminEndpoints(app);
 // registerVendorSetupEndpoints moved above (before vendor-services) to fix route ordering

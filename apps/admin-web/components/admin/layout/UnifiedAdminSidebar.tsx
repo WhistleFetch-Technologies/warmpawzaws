@@ -22,6 +22,9 @@ import {
   Menu,
   X,
   UserCircle,
+  Bell,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
@@ -39,22 +42,36 @@ type NavEntry = {
   icon: typeof LayoutDashboard;
   label: string;
   id: string;
+  href?: string;
   permission?: string;
-  /** Show if user has any of these permissions */
   permissionsAny?: string[];
   onClick: () => void;
+};
+
+type NavGroup = {
+  icon: typeof LayoutDashboard;
+  label: string;
+  id: string;
+  permission?: string;
+  children: NavEntry[];
 };
 
 export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSidebarProps) {
   // Desktop (md+): sidebar open by default so "entry point" to other menus is visible. Mobile: closed.
   const [open, setOpen] = useState(false);
-  /** After true, safe to read localStorage for permissions (avoids SSR vs client hydration mismatch). */
   const [hydrated, setHydrated] = useState(false);
   const pathname = usePathname();
+  const [marketingOpen, setMarketingOpen] = useState(false);
 
   useEffect(() => {
     setHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine')) {
+      setMarketingOpen(true);
+    }
+  }, [pathname]);
 
   useEffect(() => {
     const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
@@ -92,7 +109,6 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       },
       { icon: ShoppingCart, label: 'E-Commerce', id: 'ecommerce', permission: 'admin.ecommerce', onClick: () => onNavigate('ecommerce') },
       { icon: Globe, label: 'Region Manager', id: 'regions', permission: 'admin.platform_settings', onClick: () => onNavigate('regions') },
-      { icon: Megaphone, label: 'Marketing & Promotions', id: 'marketing', permission: 'admin.integrations', onClick: () => onNavigate('marketing') },
       { icon: Gift, label: 'Loyalty & Rewards', id: 'loyalty', permission: 'admin.integrations', onClick: () => onNavigate('loyalty') },
       { icon: Headphones, label: 'Support & CRM', id: 'support', permission: 'admin.support', onClick: () => onNavigate('support') },
       { icon: BookOpen, label: 'Catalog & Services', id: 'catalog', permission: 'admin.catalog', onClick: () => onNavigate('catalog') },
@@ -124,6 +140,47 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
       return hasAdminPortalPermission(item.permission);
     });
   }, [hydrated, pathname, activeView, onNavigate]);
+
+  const marketingGroup: NavGroup = useMemo(() => ({
+    icon: Megaphone,
+    label: 'Marketing & Promotions',
+    id: 'marketing-group',
+    permission: 'admin.integrations',
+    children: [
+      {
+        icon: Megaphone,
+        label: 'Marketing Hub',
+        id: 'marketing',
+        href: '/marketing',
+        permissionsAny: ['admin.integrations', 'admin.notifications.view'],
+        onClick: () => onNavigate('marketing'),
+      },
+      {
+        icon: Bell,
+        label: 'Notification Engine',
+        id: 'notification-engine',
+        href: '/notification-engine',
+        permission: 'admin.notifications.view',
+        onClick: () => {
+          window.location.href = '/notification-engine';
+        },
+      },
+    ],
+  }), [onNavigate]);
+
+  const canSeeNavEntry = (item: NavEntry) => {
+    if (!hydrated) return true;
+    const perms = getStoredAdminPermissions();
+    if (perms.includes('admin.full_access') || perms.includes('*')) return true;
+    if (item.permissionsAny?.length) return hasAdminPortalPermission(item.permissionsAny);
+    if (!item.permission) return true;
+    return hasAdminPortalPermission(item.permission);
+  };
+
+  const canSeeGroup = (group: NavGroup) => {
+    if (!hydrated) return true;
+    return group.children.some(canSeeNavEntry);
+  };
 
   // Sidebar width
   const sidebarWidth = 256; // 64 * 4 (w-64)
@@ -197,7 +254,7 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                     key={item.id}
                     onClick={() => {
                       item.onClick();
-                      setOpen(false); // Close sidebar after navigation
+                      setOpen(false);
                     }}
                     className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors rounded-lg ${
                       isActive
@@ -210,6 +267,51 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
                   </button>
                 );
               })}
+
+              {canSeeGroup(marketingGroup) && (
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setMarketingOpen((v) => !v)}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors rounded-lg ${
+                      pathname?.startsWith('/marketing') || pathname?.startsWith('/notification-engine')
+                        ? 'text-[#FF8C42] bg-orange-50 font-medium'
+                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                    }`}
+                  >
+                    <Megaphone className="w-4 h-4 shrink-0" />
+                    <span className="truncate flex-1 text-left">{marketingGroup.label}</span>
+                    {marketingOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                  {marketingOpen && (
+                    <div className="ml-4 mt-1 space-y-1 border-l border-gray-200 pl-2">
+                      {marketingGroup.children.filter(canSeeNavEntry).map((child) => {
+                        const ChildIcon = child.icon;
+                        const childActive =
+                          pathname === child.href ||
+                          activeView === child.id;
+                        return (
+                          <button
+                            key={child.id}
+                            onClick={() => {
+                              child.onClick();
+                              setOpen(false);
+                            }}
+                            className={`w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors rounded-lg ${
+                              childActive
+                                ? 'text-[#FF8C42] bg-orange-50 font-medium'
+                                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                            }`}
+                          >
+                            <ChildIcon className="w-4 h-4 shrink-0" />
+                            <span className="truncate">{child.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </nav>
           </div>
         </div>

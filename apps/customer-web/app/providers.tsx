@@ -9,6 +9,7 @@ import { ScrollToTop } from '@/components/ScrollToTop';
 import { AnalyticsRouteTracker } from '@/components/AnalyticsRouteTracker';
 import { ClientErrorBoundary } from '@/components/ClientErrorBoundary';
 import { GlobalClientErrorReporting } from '@/components/GlobalClientErrorReporting';
+import { PushSessionRegistrar } from '@/components/PushSessionRegistrar';
 
 // Lazy load DevTools - only imported in development mode
 const ReactQueryDevtools = lazy(() =>
@@ -37,6 +38,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <ClientErrorBoundary>
         <GlobalClientErrorReporting />
+        <PushSessionRegistrar />
         <CartProvider>
           <SearchContextProvider>
             <ScrollToTop />

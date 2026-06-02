@@ -19,6 +19,12 @@ import { SQSEvent, Context } from 'aws-lambda';
 import { insert, query } from '../database/rds-connection';
 import { getSnsClient } from '../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
+import {
+  ensureDeliveryLogEntries,
+  markChannelDeliveryFailed,
+  transitionNotificationDelivery,
+  type NotificationDeliveryChannel,
+} from '../utils/notification-delivery';
 
 interface NotificationMessage {
   type: 'push' | 'in_app' | 'email' | 'sms';
@@ -34,58 +40,12 @@ interface NotificationMessage {
   bookingId?: string;
 }
 
-type DeliveryChannel = 'push' | 'sms' | 'email' | 'in_app' | 'whatsapp';
-
-function resolveDeliveryChannels(notification: NotificationMessage): DeliveryChannel[] {
-  const channels: DeliveryChannel[] = ['in_app'];
+function resolveDeliveryChannels(notification: NotificationMessage): NotificationDeliveryChannel[] {
+  const channels: NotificationDeliveryChannel[] = ['in_app'];
   if (notification.type === 'push') channels.push('push');
   if (notification.type === 'sms') channels.push('sms');
   if (notification.type === 'email') channels.push('email');
   return channels;
-}
-
-async function transitionNotificationDelivery(
-  notificationId: string,
-  status: 'queued' | 'sent' | 'delivered' | 'failed',
-  extra?: { failureReason?: string }
-): Promise<void> {
-  const timestampCol =
-    status === 'queued'
-      ? 'queued_at'
-      : status === 'sent'
-        ? 'sent_at'
-        : status === 'delivered'
-          ? 'delivered_at'
-          : 'failed_at';
-
-  const params: unknown[] = [notificationId, status];
-  let failureClause = '';
-  if (status === 'failed' && extra?.failureReason) {
-    params.push(extra.failureReason);
-    failureClause = ', failure_reason = $3';
-  }
-
-  await query(
-    `UPDATE notifications
-     SET delivery_status = $2::notification_delivery_status,
-         ${timestampCol} = NOW()${failureClause}
-     WHERE id = $1`,
-    params
-  );
-
-  const logTimestampCol = timestampCol;
-  await query(
-    `UPDATE notification_delivery_log
-     SET status = $2::notification_delivery_status,
-         ${logTimestampCol} = NOW(),
-         updated_at = NOW(),
-         error_message = CASE WHEN $2::text = 'failed' THEN $3 ELSE error_message END
-     WHERE notification_id = $1
-       AND status NOT IN ('failed', 'expired')`,
-    status === 'failed' && extra?.failureReason
-      ? [notificationId, status, extra.failureReason]
-      : [notificationId, status, null]
-  );
 }
 
 export async function handler(event: SQSEvent, context: Context) {
@@ -161,32 +121,21 @@ async function processNotification(notification: NotificationMessage) {
     return;
   }
 
-  for (const channel of channels) {
-    await insert('notification_delivery_log', {
-      notification_id: notificationId,
-      channel,
-      status: 'created',
-      payload: {
-        title: notification.title,
-        body: notification.body || notification.message || '',
-        type: notification.type,
-      },
-    });
-  }
+  await ensureDeliveryLogEntries(notificationId, channels, {
+    title: notification.title,
+    body: notification.body || notification.message || '',
+    type: notification.type,
+  });
 
   await transitionNotificationDelivery(notificationId, 'queued');
 
   if (notification.type === 'push') {
     const pushOk = await sendPushNotification(notification);
     if (!pushOk) {
-      await query(
-        `UPDATE notification_delivery_log
-         SET status = 'failed'::notification_delivery_status,
-             failed_at = NOW(),
-             updated_at = NOW(),
-             error_message = $2
-         WHERE notification_id = $1 AND channel = 'push'`,
-        [notificationId, 'Push delivery failed or no active devices']
+      await markChannelDeliveryFailed(
+        notificationId,
+        'push',
+        'Push delivery failed or no active devices'
       );
     }
   }
