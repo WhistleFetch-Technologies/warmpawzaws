@@ -154,7 +154,29 @@ export function persistCustomerDatabaseId(source: unknown): string | null {
     /* ignore */
   }
 
+  schedulePushRegistrationAfterLogin(uuid);
   return uuid;
+}
+
+/** Register FCM + device with API as soon as customer UUID is known (post-login). */
+function schedulePushRegistrationAfterLogin(customerId: string): void {
+  if (typeof window === 'undefined') return;
+  if (!localStorage.getItem('authToken')) return;
+  queueMicrotask(() => {
+    void Promise.all([import('./push-bootstrap'), import('./api-client')]).then(
+      ([{ bootstrapPushNotifications, ensureCapacitorPushRegistrationPipeline }, { apiClient }]) => {
+        const opts = {
+          userId: customerId,
+          userType: 'customer' as const,
+          vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+          apiClient,
+        };
+        return ensureCapacitorPushRegistrationPipeline(opts).then(() =>
+          bootstrapPushNotifications(opts)
+        );
+      }
+    );
+  });
 }
 
 /**

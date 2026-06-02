@@ -14,6 +14,8 @@
 const PUSH_DEVICE_ID_KEY   = 'warmpawz_vendor_push_device_id';
 const PUSH_TOKEN_CACHE_KEY = 'warmpawz_vendor_push_token';
 
+let registerInFlight: Promise<void> | null = null;
+
 // Firebase onMessage attaches a persistent handler; one listener per page load avoids
 // duplicate handlers when bootstrap runs again (e.g. React Strict Mode remounts).
 let _foregroundListenerActive = false;
@@ -249,54 +251,91 @@ export interface PushBootstrapOptions {
 }
 
 /**
- * Call once after the authenticated session is ready and userId is known.
- * Idempotent — if the same FCM token is already registered (cached in
- * localStorage), the backend call is skipped entirely.
+ * Register device + FCM token at session start. Always upserts to /push/register-device.
  */
 export async function bootstrapPushNotifications(
   opts: PushBootstrapOptions
 ): Promise<void> {
   if (typeof window === 'undefined') return;
-  try {
-    const deviceId = getOrCreateDeviceId();
-    let fcmToken: string | null = null;
+  if (!opts.userId?.trim()) return;
 
-    if (isCapacitor()) {
-      fcmToken = await getTokenFromCapacitor();
-    } else if (isNativeWebView()) {
-      fcmToken = await getTokenFromNativeBridge();
-    } else if (opts.vapidKey) {
-      fcmToken = await getTokenFromBrowser(opts.vapidKey);
-    }
+  if (registerInFlight) {
+    await registerInFlight.catch(() => undefined);
+    return;
+  }
 
-    if (!fcmToken) return;
+  registerInFlight = (async () => {
+    try {
+      const deviceId = getOrCreateDeviceId();
+      let fcmToken: string | null = null;
 
-    // Skip re-registration if this exact token is already registered.
-    const cached = localStorage.getItem(PUSH_TOKEN_CACHE_KEY);
-    if (fcmToken === cached) {
+      if (isCapacitor()) {
+        fcmToken = await getTokenFromCapacitor();
+      } else if (isNativeWebView()) {
+        fcmToken = await getTokenFromNativeBridge();
+      } else if (opts.vapidKey) {
+        fcmToken = await getTokenFromBrowser(opts.vapidKey);
+      }
+
+      if (!fcmToken) {
+        console.warn('[push-bootstrap] no FCM token — skipping register-device');
+        return;
+      }
+
+      await opts.apiClient.post('/push/register-device', {
+        userId: opts.userId,
+        userType: opts.userType,
+        fcmToken,
+        deviceId,
+        platform: isCapacitor()
+          ? (((window as any).Capacitor?.getPlatform?.() as string) ?? 'android')
+          : isNativeWebView()
+            ? 'android'
+            : 'web',
+      });
+
+      localStorage.setItem(PUSH_TOKEN_CACHE_KEY, fcmToken);
+      console.log('[push-bootstrap] vendor device registered for push (session upsert)');
+
       await setupForegroundPushListener();
-      return;
+    } catch (err) {
+      console.warn('[push-bootstrap] registration failed (non-fatal):', err);
+    } finally {
+      registerInFlight = null;
     }
+  })();
 
-    await opts.apiClient.post('/push/register-device', {
-      userId:   opts.userId,
-      userType: opts.userType,
-      fcmToken,
-      deviceId,
-      // In WebView the token was obtained on a physical native device.
-      platform: isCapacitor()
-        ? (((window as any).Capacitor?.getPlatform?.() as string) ?? 'android')
-        : isNativeWebView()
-          ? 'android'
-          : 'web',
+  await registerInFlight;
+}
+
+export async function attachCapacitorPushTokenRefreshListener(
+  opts: PushBootstrapOptions
+): Promise<(() => void) | undefined> {
+  if (!isCapacitor()) return undefined;
+  try {
+    const { PushNotifications } = await import('@capacitor/push-notifications');
+    const handle = await PushNotifications.addListener('registration', (token) => {
+      const value = token.value;
+      if (!value || !opts.userId) return;
+      opts.apiClient
+        .post('/push/register-device', {
+          userId: opts.userId,
+          userType: opts.userType,
+          fcmToken: value,
+          deviceId: getOrCreateDeviceId(),
+          platform: ((window as any).Capacitor?.getPlatform?.() as string) ?? 'android',
+        })
+        .then(() => {
+          localStorage.setItem(PUSH_TOKEN_CACHE_KEY, value);
+          console.log('[push-bootstrap] vendor FCM token refreshed and re-registered');
+        })
+        .catch((err) => console.warn('[push-bootstrap] token refresh register failed:', err));
     });
-
-    localStorage.setItem(PUSH_TOKEN_CACHE_KEY, fcmToken);
-    console.log('[push-bootstrap] vendor device registered for push');
-
-    await setupForegroundPushListener();
-  } catch (err) {
-    console.warn('[push-bootstrap] registration failed (non-fatal):', err);
+    return () => {
+      handle.remove().catch(() => undefined);
+    };
+  } catch {
+    return undefined;
   }
 }
 

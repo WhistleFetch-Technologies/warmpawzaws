@@ -1,7 +1,14 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { bootstrapPushNotifications, teardownPushNotifications } from '@/lib/push-bootstrap';
+import {
+  bootstrapPushNotifications,
+  ensureCapacitorPushRegistrationPipeline,
+  getCapacitorPushPermissionStatus,
+  openAppNotificationSettings,
+  teardownPushNotifications,
+  type PushPermissionReceive,
+} from '@/lib/push-bootstrap';
 import { apiClient } from '@/lib/api-client';
 import {
   PlatformLegalPolicyDialog,
@@ -34,11 +41,18 @@ export function CustomerSettings({ customerPhone, onBack, onNavigate }: Customer
   const [saving, setSaving] = useState(false);
   const [legalOpen, setLegalOpen] = useState(false);
   const [legalType, setLegalType] = useState<PlatformPolicyType | null>(null);
+  const [pushPermission, setPushPermission] = useState<PushPermissionReceive>('unknown');
+  const [pushMessage, setPushMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadSettings();
-    requestNotificationPermission();
+    void refreshPushPermissionStatus();
   }, [customerPhone]);
+
+  const refreshPushPermissionStatus = async () => {
+    const status = await getCapacitorPushPermissionStatus();
+    setPushPermission(status);
+  };
 
   const loadSettings = async () => {
     try {
@@ -58,12 +72,6 @@ export function CustomerSettings({ customerPhone, onBack, onNavigate }: Customer
     } finally {
       setLoading(false);
     }
-  };
-
-  const requestNotificationPermission = async () => {
-    // Permission and token acquisition is handled automatically by
-    // bootstrapPushNotifications which is called from CustomerApp
-    // once the session is ready. Nothing to do here.
   };
 
   const handleToggle = async (key: keyof NotificationSettings) => {
@@ -111,25 +119,44 @@ export function CustomerSettings({ customerPhone, onBack, onNavigate }: Customer
 
   const handleRegisterDevice = async () => {
     setSaving(true);
+    setPushMessage(null);
     try {
       const customerRes = await apiClient.get<any>(
         `/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`
       );
       const userId = customerRes?.customer?.id || customerRes?.id;
       if (!userId) {
-        alert('Could not resolve customer account. Please try again.');
+        setPushMessage('Could not resolve customer account. Please try again.');
         return;
       }
-      await bootstrapPushNotifications({
+      const pushOpts = {
         userId,
-        userType: 'customer',
+        userType: 'customer' as const,
         vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
         apiClient,
-      });
-      alert('Device registered for push notifications.');
+        forcePermissionRequest: true,
+      };
+      await ensureCapacitorPushRegistrationPipeline(pushOpts);
+      const result = await bootstrapPushNotifications(pushOpts);
+      await refreshPushPermissionStatus();
+      if (result.ok) {
+        setPushMessage(
+          `Push enabled on this device. Device id: ${result.deviceId.slice(0, 8)}…`
+        );
+        return;
+      }
+      if (result.reason === 'permission_denied') {
+        setPushMessage(
+          'Notifications are blocked for Warmpawz. Tap "Open notification settings", turn notifications ON, then tap Enable again.'
+        );
+        return;
+      }
+      setPushMessage(
+        'Could not get FCM token. Force-close the app, reopen, allow notifications when asked, then try again.'
+      );
     } catch (err) {
       console.error('[CustomerSettings] Device registration error:', err);
-      alert('Failed to register device. Please try again.');
+      setPushMessage('Failed to register device. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -206,17 +233,35 @@ export function CustomerSettings({ customerPhone, onBack, onNavigate }: Customer
               </>
             )}
           </div>
-          {notifications.push_enabled && (
-            <div className="p-4 bg-gray-50">
+          <div className="p-4 bg-gray-50 space-y-3">
+            <p className="text-xs text-gray-600">
+              System permission:{' '}
+              <span className="font-medium text-gray-900">{pushPermission}</span>
+              {pushPermission === 'denied' && ' — enable in Android settings below'}
+            </p>
+            {pushMessage && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                {pushMessage}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={handleRegisterDevice}
+              disabled={saving}
+              className="w-full py-3 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50"
+            >
+              {saving ? 'Registering…' : 'Enable push on this device'}
+            </button>
+            {pushPermission === 'denied' && (
               <button
-                onClick={handleRegisterDevice}
-                disabled={saving}
-                className="w-full py-0 bg-orange-500 text-white rounded-lg font-medium disabled:opacity-50"
+                type="button"
+                onClick={() => openAppNotificationSettings()}
+                className="w-full py-2 border border-gray-300 rounded-lg text-sm text-gray-800"
               >
-                {saving ? 'Registering...' : '📱 Enable Push on This Device'}
+                Open notification settings
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </section>
 
         {/* Account Settings */}

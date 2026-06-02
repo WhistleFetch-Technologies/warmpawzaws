@@ -5,7 +5,6 @@ import { bootstrapPushNotifications, teardownPushNotifications } from '@/lib/pus
 import { apiClient } from '@/lib/api-client';
 import { CustomerHomeWrapper } from './wrappers/CustomerHomeWrapper';
 import { CustomerBookingMessagesModalProvider } from './messaging/CustomerBookingMessagesModalProvider';
-import { scheduleIdleWork } from '@/lib/schedule-idle';
 import { resetHomeBootstrapForPhone } from '@/lib/customer-home-bootstrap';
 
 interface CustomerSession {
@@ -57,17 +56,12 @@ export function CustomerApp({
       session.customerId ||
       (typeof window !== 'undefined' ? (localStorage.getItem('customerId') ?? '') : '');
     if (!userId) return;
-    let cancelled = false;
-    const runBootstrap = () => {
-      if (cancelled) return;
-      bootstrapPushNotifications({
-        userId,
-        userType: 'customer',
-        vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
-        apiClient,
-      });
-    };
-    return scheduleIdleWork(runBootstrap);
+    void bootstrapPushNotifications({
+      userId,
+      userType: 'customer',
+      vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
+      apiClient,
+    });
   }, [session.customerId]);
 
   const handleLogoutNavigate = async (screen: string) => {
