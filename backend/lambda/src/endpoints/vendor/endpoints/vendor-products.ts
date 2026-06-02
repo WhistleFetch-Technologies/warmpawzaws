@@ -55,8 +55,44 @@ async function getProductsColumnSet(): Promise<Set<string>> {
 function productsOptionalSelectExprs(cols: Set<string>) {
   return {
     metadata: cols.has('metadata') ? 'p.metadata' : `'{}'::jsonb AS metadata`,
-    status: cols.has('status') ? 'p.status' : 'NULL::text AS status',
+    status: cols.has('status') ? 'p.status' : 'NULL::text AS status`,
+    originalPrice: cols.has('compare_at_price')
+      ? 'p.compare_at_price AS original_price'
+      : 'NULL::numeric AS original_price',
   };
+}
+
+/** Vendor UI "Original Price" → DB `compare_at_price` (MRP for discount badge). */
+function parseCompareAtPriceFromBody(body: Record<string, unknown>): number | null | undefined {
+  if (
+    body.compare_at_price === undefined &&
+    body.original_price === undefined &&
+    body.compareAtPrice === undefined &&
+    body.originalPrice === undefined
+  ) {
+    return undefined;
+  }
+  const raw =
+    body.compare_at_price ?? body.original_price ?? body.compareAtPrice ?? body.originalPrice;
+  if (raw === null || raw === '') return null;
+  const n = parseFloat(String(raw));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function applyCompareAtPriceToPayload(
+  body: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  cols: Set<string>,
+  sellingPrice: number,
+): string | null {
+  if (!cols.has('compare_at_price')) return null;
+  const cap = parseCompareAtPriceFromBody(body);
+  if (cap === undefined) return null;
+  if (cap !== null && cap < sellingPrice) {
+    return 'Original price (MRP) must be greater than or equal to selling price';
+  }
+  payload.compare_at_price = cap;
+  return null;
 }
 
 /** Client may send JSONB fields as strings; pg jsonb columns need valid JSON (see rds-connection insert). */
@@ -268,7 +304,8 @@ class GetVendorProductsHandler extends BaseHandler {
       }
 
       const cols = await getProductsColumnSet();
-      const { metadata: metadataSelect, status: statusSelect } = productsOptionalSelectExprs(cols);
+      const { metadata: metadataSelect, status: statusSelect, originalPrice: originalPriceSelect } =
+        productsOptionalSelectExprs(cols);
 
       // Build query - use stock column (stock_quantity was renamed to stock in migration 013)
       // Use explicit column selection to avoid issues with p.* and missing columns
@@ -281,6 +318,7 @@ class GetVendorProductsHandler extends BaseHandler {
           p.description,
           p.sku,
           p.price,
+          ${originalPriceSelect},
           COALESCE(p.stock, 0) as stock,
           ${statusSelect},
           p.is_active,
@@ -449,6 +487,12 @@ class CreateVendorProductHandler extends BaseHandler {
       const cols = await getProductsColumnSet();
       const hasMetadataCol = cols.has('metadata');
 
+      const sellingPrice = parseFloat(String(body.price));
+      const compareErr = applyCompareAtPriceToPayload(body, productData, cols, sellingPrice);
+      if (compareErr) {
+        return this.error(compareErr, 400);
+      }
+
       // Approval: always persist explicit status when column exists; vendors cannot self-publish to active.
       let vendorLifecycleStatus = normalizeApprovalStatus(body.status);
       if (vendorLifecycleStatus === 'active') {
@@ -552,7 +596,8 @@ class GetVendorProductHandler extends BaseHandler {
       const resolvedVendorId = vendor.id;
 
       const cols = await getProductsColumnSet();
-      const { metadata: metadataSelect, status: statusSelect } = productsOptionalSelectExprs(cols);
+      const { metadata: metadataSelect, status: statusSelect, originalPrice: originalPriceSelect } =
+        productsOptionalSelectExprs(cols);
 
       // ✅ FIX: Use explicit column selection to avoid stock_quantity column error
       const products = await query(
@@ -564,6 +609,7 @@ class GetVendorProductHandler extends BaseHandler {
                 p.description,
                 p.sku,
                 p.price,
+                ${originalPriceSelect},
                 COALESCE(p.stock, 0) as stock,
                 ${statusSelect},
                 p.is_active,
@@ -641,6 +687,14 @@ class UpdateVendorProductHandler extends BaseHandler {
       if (body.category_id !== undefined) updateData.category_id = body.category_id;
       if (body.category !== undefined) updateData.category = body.category;
       if (body.price !== undefined) updateData.price = parseFloat(body.price);
+      const effectivePrice =
+        updateData.price !== undefined
+          ? Number(updateData.price)
+          : parseFloat(String(prevRow.price ?? 0)) || 0;
+      const compareErr = applyCompareAtPriceToPayload(body, updateData, cols, effectivePrice);
+      if (compareErr) {
+        return this.error(compareErr, 400);
+      }
       // ✅ FIX: Use stock column (stock_quantity was renamed to stock in migration 013)
       if (body.stock !== undefined) {
         updateData.stock = parseInt(body.stock, 10);
@@ -856,7 +910,8 @@ export function registerVendorProductsEndpoints(app: Hono) {
       console.log(`[VendorProducts] Resolved vendorId ${paramVendorId} to ${vendorId}`);
 
       const cols = await getProductsColumnSet();
-      const { metadata: metadataSelect, status: statusSelect } = productsOptionalSelectExprs(cols);
+      const { metadata: metadataSelect, status: statusSelect, originalPrice: originalPriceSelect } =
+        productsOptionalSelectExprs(cols);
 
       // Get query parameters
       const search = c.req.query('search') || '';
@@ -879,6 +934,7 @@ export function registerVendorProductsEndpoints(app: Hono) {
           p.description,
           p.sku,
           p.price,
+          ${originalPriceSelect},
           COALESCE(p.stock, 0) as stock,
           ${statusSelect},
           p.is_active,

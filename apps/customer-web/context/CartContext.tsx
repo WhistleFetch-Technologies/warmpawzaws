@@ -25,6 +25,8 @@ interface CartItem {
   image?: string;
   vendorId?: string;
   vendorName?: string;
+  categoryId?: string;
+  category?: string;
   /** Round-trip storage row for `/shop` localStorage format */
   warmpawzLine?: WarmpawzCartLine;
   [key: string]: unknown;
@@ -50,6 +52,8 @@ function lineToCartItem(line: WarmpawzCartLine): CartItem {
   const images = p?.images as string[] | undefined;
   const imageFromList = Array.isArray(images) && images[0] ? String(images[0]) : undefined;
   const imageEmoji = p?.emoji != null ? String(p.emoji) : undefined;
+  const categoryId =
+    p?.category_id != null ? String(p.category_id) : undefined;
   return {
     id,
     name,
@@ -58,6 +62,8 @@ function lineToCartItem(line: WarmpawzCartLine): CartItem {
     image: imageFromList || imageEmoji,
     vendorId: p?.vendor_id != null ? String(p.vendor_id) : undefined,
     vendorName: p?.vendor_name != null ? String(p.vendor_name) : undefined,
+    categoryId,
+    category: categoryId,
     warmpawzLine: line,
   };
 }
@@ -80,6 +86,7 @@ function cartItemsToLines(items: CartItem[]): WarmpawzCartLine[] {
       ...(item.vendorName ? { vendor_name: item.vendorName } : {}),
       ...(item.image ? { images: [item.image] } : {}),
       ...(item.vendorId ? { vendor_id: item.vendorId } : {}),
+      ...(item.categoryId ? { category_id: String(item.categoryId) } : {}),
     };
     return {
       product_id: item.id,

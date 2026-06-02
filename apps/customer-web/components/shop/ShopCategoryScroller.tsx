@@ -13,6 +13,7 @@ import {
   ToyBrick,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { getShopCategoryStaticImageUrl } from '@/lib/shop-category-static-images';
 import type { ShopCategory } from './shop-types';
 
 const FALLBACK_CATEGORIES: { id: string; name: string; Icon: LucideIcon; bg: string; color: string }[] = [
@@ -72,6 +73,8 @@ export function ShopCategoryScroller({
         {useApiCategories
           ? categories.map((cat) => {
               const visual = resolveCategoryVisual(cat.name, cat.icon);
+              const imageUrl =
+                cat.image_url || getShopCategoryStaticImageUrl(cat.name);
               return (
                 <CategoryChip
                   key={cat.id}
@@ -80,6 +83,7 @@ export function ShopCategoryScroller({
                   onClick={() => onSelectCategory(cat.id)}
                   bg={visual.bg}
                   color={visual.color}
+                  imageUrl={imageUrl}
                   icon={
                     'emoji' in visual ? (
                       <span className="text-lg leading-none">{visual.emoji}</span>
@@ -90,17 +94,21 @@ export function ShopCategoryScroller({
                 />
               );
             })
-          : FALLBACK_CATEGORIES.map((cat) => (
-              <CategoryChip
-                key={cat.id}
-                label={cat.name}
-                active={selectedCategory === cat.id}
-                onClick={() => onSelectCategory(cat.id)}
-                bg={cat.bg}
-                color={cat.color}
-                icon={<cat.Icon className={`w-5 h-5 ${cat.color}`} />}
-              />
-            ))}
+          : FALLBACK_CATEGORIES.map((cat) => {
+              const imageUrl = getShopCategoryStaticImageUrl(cat.name);
+              return (
+                <CategoryChip
+                  key={cat.id}
+                  label={cat.name}
+                  active={selectedCategory === cat.id}
+                  onClick={() => onSelectCategory(cat.id)}
+                  bg={cat.bg}
+                  color={cat.color}
+                  imageUrl={imageUrl}
+                  icon={<cat.Icon className={`w-5 h-5 ${cat.color}`} />}
+                />
+              );
+            })}
       </div>
     </div>
   );
@@ -112,6 +120,7 @@ function CategoryChip({
   onClick,
   bg,
   icon,
+  imageUrl,
 }: {
   label: string;
   active: boolean;
@@ -119,6 +128,7 @@ function CategoryChip({
   bg: string;
   color: string;
   icon: ReactNode;
+  imageUrl?: string;
 }) {
   return (
     <button
@@ -127,15 +137,26 @@ function CategoryChip({
       className="shrink-0 flex flex-col items-center gap-1.5 w-[4.25rem]"
     >
       <div
-        className={`w-12 h-12 rounded-full flex items-center justify-center box-border border-2 ${bg} ${
-          active ? 'border-[#FF8C42]' : 'border-transparent'
-        }`}
+        className={`w-12 h-12 rounded-full flex items-center justify-center overflow-hidden box-border border-2 ${
+          imageUrl ? 'bg-white' : bg
+        } ${active ? 'border-[#FF8C42]' : 'border-transparent'}`}
       >
-        {icon}
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={imageUrl}
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+            decoding="async"
+          />
+        ) : (
+          icon
+        )}
       </div>
       <span
-        className={`text-[10px] font-semibold text-center leading-none border-b-2 ${
-          active ? 'text-[#FF8C42] border-[#FF8C42]' : 'text-slate-600 border-transparent'
+        className={`text-[10px] font-semibold text-center leading-none ${
+          active ? 'text-[#FF8C42]' : 'text-slate-600'
         }`}
       >
         {label}

@@ -1,4 +1,5 @@
 import type { ShopCategory } from '@/components/shop/shop-types';
+import { getShopCategoryStaticImageUrl } from '@/lib/shop-category-static-images';
 
 export function isShopCategoryActive(row: Record<string, unknown>): boolean {
   const v = row.is_active ?? row.enabled;
@@ -7,14 +8,18 @@ export function isShopCategoryActive(row: Record<string, unknown>): boolean {
 }
 
 export function normalizeShopCategoryRow(row: Record<string, unknown>): ShopCategory {
-  const rawImage = row.image_url ?? row.imageUrl;
+  const name = String(row.name ?? '').trim();
+  const slug = row.slug != null ? String(row.slug).trim() : '';
   const icon = row.icon != null ? String(row.icon) : undefined;
+  const staticImage =
+    getShopCategoryStaticImageUrl(name) ||
+    (slug ? getShopCategoryStaticImageUrl(slug) : undefined);
 
   return {
     id: String(row.id ?? ''),
-    name: String(row.name ?? '').trim(),
+    name,
     icon,
-    image_url: rawImage != null && String(rawImage).trim() ? String(rawImage).trim() : undefined,
+    image_url: staticImage,
     product_count:
       row.product_count != null
         ? parseInt(String(row.product_count), 10) || 0
