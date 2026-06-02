@@ -45,6 +45,8 @@ public class PidgeWebhookProcessingService {
 	static {
 		PIDGE_FULFILLMENT_STATUS_MAP.put("CANCELLED", "cancelled");
 		PIDGE_FULFILLMENT_STATUS_MAP.put("CREATED", "awb_generated");
+		PIDGE_FULFILLMENT_STATUS_MAP.put("PLACED", "pending");
+		PIDGE_FULFILLMENT_STATUS_MAP.put("MANIFESTED", "pickup_scheduled");
 		PIDGE_FULFILLMENT_STATUS_MAP.put("OUT_FOR_PICKUP", "pickup_scheduled");
 		PIDGE_FULFILLMENT_STATUS_MAP.put("REACHED_PICKUP", "pickup_scheduled");
 		PIDGE_FULFILLMENT_STATUS_MAP.put("PICKED_UP", "picked_up");
@@ -62,14 +64,20 @@ public class PidgeWebhookProcessingService {
 	}
 
 	/**
-	 * Parent / sandbox order-level semantic (lowercase). Note: bare {@code fulfilled} is handled in
+	 * Parent / sandbox order-level semantic (lowercase keys). Note: bare {@code fulfilled} is handled in
 	 * {@link #resolvePidgeStatus(String, String, String)} after composite {@code fulfilled|…} checks so
 	 * {@code fulfilled|delivered} never degrades to generic in_transit.
+	 * <p>Smart Allocation may send {@code placed} / {@code manifested} on the parent {@code status} field.
 	 */
-	private static final Map<String, String> PIDGE_PARENT_STATUS_MAP = Map.of(
-			"pending", "pending",
-			"completed", "delivered",
-			"cancelled", "cancelled");
+	private static final Map<String, String> PIDGE_PARENT_STATUS_MAP = new HashMap<>();
+
+	static {
+		PIDGE_PARENT_STATUS_MAP.put("pending", "pending");
+		PIDGE_PARENT_STATUS_MAP.put("placed", "pending");
+		PIDGE_PARENT_STATUS_MAP.put("manifested", "pickup_scheduled");
+		PIDGE_PARENT_STATUS_MAP.put("completed", "delivered");
+		PIDGE_PARENT_STATUS_MAP.put("cancelled", "cancelled");
+	}
 
 	private final ShipmentRepository shipmentRepository;
 	private final DeliveryTrackingRepository deliveryTrackingRepository;
@@ -147,7 +155,7 @@ public class PidgeWebhookProcessingService {
 
 		if (shipmentOpt.isEmpty()) {
 			return handleHyperlocalDeliveryTracking(
-					payload, pidgeId, referenceId, normalized, trackCode, rider, lastLog, lastLocation);
+					payload, pidgeId, referenceId, parentStatus, normalized, trackCode, rider, lastLog, lastLocation);
 		}
 
 		return handleEcommerceShipment(
@@ -158,6 +166,7 @@ public class PidgeWebhookProcessingService {
 			JsonNode payload,
 			String pidgeId,
 			String referenceId,
+			String parentStatus,
 			String normalized,
 			String trackCode,
 			JsonNode rider,
@@ -171,6 +180,14 @@ public class PidgeWebhookProcessingService {
 		}
 
 		DeliveryTracking dt = trackingOpt.get();
+		if ("placed".equals(parentStatus) || "manifested".equals(parentStatus)) {
+			log.info(
+					"[PIDGE WEBHOOK] parent_status_mapping pidgeOrderId={} parentStatus={} resolvedInternalStatus={} previousTrackingStatus={}",
+					pidgeId,
+					parentStatus,
+					normalized,
+					dt.getStatus());
+		}
 		if ("delivered".equals(normalized) && PidgePartialDeliverySupport.hasReturnOrderInfo(payload)) {
 			return pidgePartialDeliveryWebhookService.handleForwardDeliveredWithReturn(
 					payload, pidgeId, referenceId, dt, null);
