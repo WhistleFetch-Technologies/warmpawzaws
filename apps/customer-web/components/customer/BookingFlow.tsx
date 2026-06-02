@@ -4,8 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
-import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { requestLocationPermission } from '@/lib/runtime-permissions';
+import { runInlineAddressDetect, inlineAddressCoordsPayload } from '@/lib/run-inline-address-detect';
 import {
   buildSanitizedStandardRazorpayCheckoutOptions,
   fetchCheckoutEmailForPrefill,
@@ -1839,62 +1839,13 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
     }
 
     setDetectingLocation(true);
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        setFormData(prev => ({ ...prev, latitude, longitude }));
-        
-        // Try reverse geocoding
-        try {
-          const apiKey =
-            (await getGoogleMapsBrowserApiKey()) ||
-            process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
-            '';
-          const response = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
-          );
-          const data = await response.json();
-
-          if (data.results && data.results[0]) {
-            const addressComponents = data.results[0].address_components;
-            let street = '', city = '', state = '', pincode = '';
-
-            addressComponents.forEach((component: any) => {
-              if (component.types.includes('street_number') || component.types.includes('route')) {
-                street += component.long_name + ' ';
-              }
-              if (component.types.includes('locality') || component.types.includes('administrative_area_level_2')) {
-                city = component.long_name;
-              }
-              if (component.types.includes('administrative_area_level_1')) {
-                state = component.long_name;
-              }
-              if (component.types.includes('postal_code')) {
-                pincode = component.long_name;
-              }
-            });
-
-            setFormData(prev => ({
-              ...prev,
-              addressLine1: street.trim(),
-              city,
-              state,
-              pincode
-            }));
-          }
-        } catch (error) {
-          console.error('Error reverse geocoding:', error);
-        } finally {
-          setDetectingLocation(false);
-        }
-      },
-      () => {
-        setDetectingLocation(false);
-        alert('Unable to get location. Please enter address manually.');
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+    try {
+      await runInlineAddressDetect(setFormData, {
+        onError: (message) => alert(message),
+      });
+    } finally {
+      setDetectingLocation(false);
+    }
   };
 
   const handleSaveAddress = async () => {
@@ -1921,6 +1872,7 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
       
       const updatedAddresses = [...existingAddresses, {
         ...formData,
+        ...inlineAddressCoordsPayload(formData),
         address: formData.addressLine1 + (formData.addressLine2 ? ', ' + formData.addressLine2 : ''),
         flatNo: formData.flatNo || undefined,
         houseNo: formData.houseNo || undefined,
