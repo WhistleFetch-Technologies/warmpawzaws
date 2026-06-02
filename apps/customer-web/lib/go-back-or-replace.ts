@@ -423,3 +423,99 @@ export function navigateAfterMealOrderPlaced(
     router.push(path);
   }
 }
+
+// --- My Packages: Back reopens account profile menu (overlay), not bare home feed ---
+
+export const MY_PACKAGES_BACK_INTENT_KEY = 'warmpawz_my_packages_back_intent';
+
+/** Set before `router.push('/')` when My Packages Back should reopen `UserAccountSidebar`. */
+export const WARMPAWZ_OPEN_ACCOUNT_MENU_KEY = 'warmpawz_open_account_menu';
+
+type MyPackagesBackIntent =
+  | { kind: 'account-menu' }
+  | { kind: 'path'; path: string };
+
+function setOpenAccountMenuAfterNav(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(WARMPAWZ_OPEN_ACCOUNT_MENU_KEY, '1');
+}
+
+/** Call before `/my-packages` from account sidebar (home `/` or profile tab overlay). */
+export function rememberMyPackagesBackFromAccountMenu(): void {
+  if (typeof window === 'undefined') return;
+  sessionStorage.setItem(
+    MY_PACKAGES_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'account-menu' } satisfies MyPackagesBackIntent)
+  );
+}
+
+/** Call before `/my-packages` from another standalone route (e.g. `/wallet`, `/search`). */
+export function rememberMyPackagesBackFromCurrentUrl(): void {
+  if (typeof window === 'undefined') return;
+  const path = window.location.pathname + window.location.search;
+  if (!isSafeInternalPath(path) || path.startsWith('/my-packages')) return;
+  if (path === '/' || path === '') {
+    rememberMyPackagesBackFromAccountMenu();
+    return;
+  }
+  sessionStorage.setItem(
+    MY_PACKAGES_BACK_INTENT_KEY,
+    JSON.stringify({ kind: 'path', path } satisfies MyPackagesBackIntent)
+  );
+}
+
+/** Pick account-menu vs path intent from current URL before navigating to My Packages. */
+export function rememberBeforeMyPackagesNav(): void {
+  if (typeof window === 'undefined') return;
+  const path = window.location.pathname + window.location.search;
+  if (path === '/' || path === '') {
+    rememberMyPackagesBackFromAccountMenu();
+    return;
+  }
+  rememberMyPackagesBackFromCurrentUrl();
+}
+
+export function navigateToMyPackages(router: RouterWithPush): void {
+  rememberBeforeMyPackagesNav();
+  router.push('/my-packages');
+}
+
+/** Returns true once if My Packages Back requested reopening the account menu. */
+export function consumeOpenAccountMenuAfterNav(): boolean {
+  if (typeof window === 'undefined') return false;
+  const v = sessionStorage.getItem(WARMPAWZ_OPEN_ACCOUNT_MENU_KEY);
+  if (v === '1') {
+    sessionStorage.removeItem(WARMPAWZ_OPEN_ACCOUNT_MENU_KEY);
+    return true;
+  }
+  return false;
+}
+
+/** My Packages header Back: profile menu or prior route; X still uses `router.push('/')` separately. */
+export function handleMyPackagesPageBack(router: RouterWithPush): void {
+  if (typeof window === 'undefined') {
+    setOpenAccountMenuAfterNav();
+    router.replace('/');
+    return;
+  }
+  const raw = sessionStorage.getItem(MY_PACKAGES_BACK_INTENT_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as MyPackagesBackIntent;
+      sessionStorage.removeItem(MY_PACKAGES_BACK_INTENT_KEY);
+      if (parsed.kind === 'path' && isSafeInternalPath(parsed.path)) {
+        router.push(parsed.path);
+        return;
+      }
+      if (parsed.kind === 'account-menu') {
+        setOpenAccountMenuAfterNav();
+        router.push('/');
+        return;
+      }
+    } catch {
+      sessionStorage.removeItem(MY_PACKAGES_BACK_INTENT_KEY);
+    }
+  }
+  setOpenAccountMenuAfterNav();
+  router.push('/');
+}

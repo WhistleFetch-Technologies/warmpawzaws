@@ -32,6 +32,8 @@ import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-fl
 import {
   WARMPAWZ_HOME_RESUME_SCREENS,
   WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
+  consumeOpenAccountMenuAfterNav,
+  rememberMyPackagesBackFromAccountMenu,
   rememberPromotionsBackSpaScreen,
   rememberShopBackToSpaScreen,
   clearWishlistOpenedFromShopMark,
@@ -547,6 +549,14 @@ export function CustomerHomeWrapper({
       setCurrentScreen(next);
     }
   }, [pathname, openMessages]);
+
+  /** After My Packages Back with account-menu intent: reopen profile sidebar on home. */
+  useEffect(() => {
+    if (pathname !== '/') return;
+    if (consumeOpenAccountMenuAfterNav()) {
+      setUserSidebarOpen(true);
+    }
+  }, [pathname]);
 
   /** Clear embedded boarding profile only when leaving that context — not when opening `boarding-booking` from profile (back must restore profile). */
   useEffect(() => {
@@ -1430,7 +1440,10 @@ export function CustomerHomeWrapper({
     }
     else if (path === 'account/addresses') setCurrentScreen('address_book');
     else if (path === 'account/wallet' || path === 'wallet') setCurrentScreen('wallet');
-    else if (path === 'my-packages') router.push('/my-packages');
+    else if (path === 'my-packages') {
+      rememberMyPackagesBackFromAccountMenu();
+      router.push('/my-packages');
+    }
     else if (path === 'rewards-loyalty') {
       rememberWalletHubOriginIfNeeded();
       setCurrentScreen('rewards-loyalty');
@@ -1709,7 +1722,10 @@ export function CustomerHomeWrapper({
         onClose={() => setUserSidebarOpen(false)}
         onNavigateHome={handleBack}
         onViewBooking={handleViewBooking}
-        onViewMyPackages={() => router.push('/my-packages')}
+        onViewMyPackages={() => {
+          rememberMyPackagesBackFromAccountMenu();
+          router.push('/my-packages');
+        }}
         onViewProfile={() => {
           setUserSidebarOpen(false);
           profileFromAccountMenuRef.current = true;
