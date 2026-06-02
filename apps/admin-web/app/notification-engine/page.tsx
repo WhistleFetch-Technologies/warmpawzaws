@@ -186,6 +186,14 @@ export default function NotificationEnginePage() {
     }
   };
 
+  const startNewCampaign = () => {
+    setDraftCampaignId(null);
+    setEstimate(null);
+    setError(null);
+    setSuccess(null);
+    setForm({ ...emptyForm });
+  };
+
   const saveDraft = async (): Promise<string | null> => {
     if (!canCreate) return draftCampaignId;
     if (validationErrors.length) {
@@ -207,12 +215,23 @@ export default function NotificationEnginePage() {
           ? user_ids_text.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)
           : undefined,
       };
-      const res = draftCampaignId
-        ? await apiClient.put<any>(`/admin/notifications/campaigns/${draftCampaignId}`, payload)
-        : await apiClient.post<any>('/admin/notifications/campaigns', payload);
-      const id = (res.campaign?.id as string) || draftCampaignId;
+      const existing = draftCampaignId
+        ? campaigns.find((c) => c.id === draftCampaignId)
+        : undefined;
+      const terminalStatus =
+        existing && ['SENT', 'CANCELLED', 'SENDING'].includes(existing.status);
+      const createNew = !draftCampaignId || terminalStatus;
+
+      const res = createNew
+        ? await apiClient.post<any>('/admin/notifications/campaigns', payload)
+        : await apiClient.put<any>(`/admin/notifications/campaigns/${draftCampaignId}`, payload);
+      const id = (res.campaign?.id as string) || (createNew ? null : draftCampaignId);
       if (id) setDraftCampaignId(id);
-      setSuccess('Campaign draft saved');
+      setSuccess(
+        terminalStatus
+          ? 'Previous campaign was already sent — saved as a new draft'
+          : 'Campaign draft saved'
+      );
       loadInitial();
       return id;
     } catch (e: unknown) {
@@ -248,12 +267,22 @@ export default function NotificationEnginePage() {
         });
         setSuccess('Campaign scheduled');
       } else {
-        await apiClient.post(`/admin/notifications/campaigns/${id}/send`);
-        setSuccess('Campaign sent — inbox + push delivery completed');
+        const sendRes = await apiClient.post<any>(`/admin/notifications/campaigns/${id}/send`);
+        const sent = sendRes.sentRecipients ?? estimate?.estimatedRecipients;
+        setSuccess(
+          `Campaign sent to ${sent ?? '?'} recipients (inbox + push). Use "New campaign" to send again.`
+        );
+        setDraftCampaignId(null);
+        setEstimate(null);
       }
       loadInitial();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Send failed');
+      const msg = e instanceof Error ? e.message : 'Send failed';
+      setError(
+        msg.includes('already SENT')
+          ? 'This campaign was already sent. Click "New campaign", then Save Draft and Send Now.'
+          : msg
+      );
     } finally {
       setSending(false);
     }
@@ -599,6 +628,10 @@ export default function NotificationEnginePage() {
                 </div>
 
                 <div className="flex flex-wrap gap-3">
+                  <button type="button" onClick={startNewCampaign}
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700">
+                    New campaign
+                  </button>
                   {canCreate && (
                     <button type="button" onClick={saveDraft} disabled={saving}
                       className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm">
@@ -660,12 +693,13 @@ export default function NotificationEnginePage() {
                     <th className="py-2 pr-4">Status</th>
                     <th className="py-2 pr-4">Recipients</th>
                     <th className="py-2 pr-4">Scheduled</th>
-                    <th className="py-2">Created</th>
+                    <th className="py-2 pr-4">Created</th>
+                    <th className="py-2">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {campaigns.length === 0 ? (
-                    <tr><td colSpan={7} className="py-8 text-center text-gray-500">No campaigns yet</td></tr>
+                    <tr><td colSpan={8} className="py-8 text-center text-gray-500">No campaigns yet</td></tr>
                   ) : (
                     campaigns.map((c) => (
                       <tr key={c.id} className="border-b border-gray-100">
@@ -677,7 +711,32 @@ export default function NotificationEnginePage() {
                         </td>
                         <td className="py-3 pr-4">{c.estimated_recipients?.toLocaleString() ?? 0}</td>
                         <td className="py-3 pr-4">{c.scheduled_at_utc ? new Date(c.scheduled_at_utc).toLocaleString() : '—'}</td>
-                        <td className="py-3">{new Date(c.created_at).toLocaleString()}</td>
+                        <td className="py-3 pr-4">{new Date(c.created_at).toLocaleString()}</td>
+                        <td className="py-3">
+                          {canCreate && (
+                            <button
+                              type="button"
+                              className="text-xs text-orange-600 hover:underline"
+                              onClick={async () => {
+                                try {
+                                  const res = await apiClient.post<any>(
+                                    `/admin/notifications/campaigns/${c.id}/duplicate`
+                                  );
+                                  const newId = res.campaign?.id as string;
+                                  if (newId) {
+                                    setDraftCampaignId(newId);
+                                    setSuccess(`Duplicated "${c.name}" — edit and send as a new campaign`);
+                                  }
+                                  loadInitial();
+                                } catch (e: unknown) {
+                                  setError(e instanceof Error ? e.message : 'Duplicate failed');
+                                }
+                              }}
+                            >
+                              Duplicate
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))
                   )}
