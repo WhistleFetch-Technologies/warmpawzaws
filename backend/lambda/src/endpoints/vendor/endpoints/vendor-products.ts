@@ -54,8 +54,8 @@ async function getProductsColumnSet(): Promise<Set<string>> {
 
 function productsOptionalSelectExprs(cols: Set<string>) {
   return {
-    metadata: cols.has('metadata') ? 'p.metadata' : `'{}'::jsonb AS metadata`,
-    status: cols.has('status') ? 'p.status' : 'NULL::text AS status`,
+    metadata: cols.has('metadata') ? 'p.metadata' : "'{}'::jsonb AS metadata",
+    status: cols.has('status') ? 'p.status' : 'NULL::text AS status',
     originalPrice: cols.has('compare_at_price')
       ? 'p.compare_at_price AS original_price'
       : 'NULL::numeric AS original_price',
