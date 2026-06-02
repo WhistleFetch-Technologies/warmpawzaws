@@ -160,16 +160,26 @@ export function ShoppingCartView({
 
   const promotionBannerItems = useMemo(
     () =>
-      cart.map((item) => ({
-        id: item.id,
-        productId: (item as { productId?: string }).productId ?? item.id,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        vendorId: item.vendorId,
-        category: (item as { category?: string }).category,
-        categoryId: (item as { categoryId?: string }).categoryId,
-      })),
+      cart.map((item) => {
+        const lineProduct = item.warmpawzLine?.product as
+          | { category_id?: string }
+          | undefined;
+        const categoryId =
+          item.categoryId ??
+          (lineProduct?.category_id != null
+            ? String(lineProduct.category_id)
+            : undefined);
+        return {
+          id: item.id,
+          productId: (item as { productId?: string }).productId ?? item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          vendorId: item.vendorId,
+          category: (item as { category?: string }).category ?? categoryId,
+          categoryId,
+        };
+      }),
     [cart]
   );
 

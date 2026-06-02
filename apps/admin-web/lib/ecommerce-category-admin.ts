@@ -20,7 +20,6 @@ export function mapApiCategoryToForm(row: Record<string, unknown>): EcommerceCat
       : row.enabled !== false && row.enabled !== 'false';
 
   const name = String(row.name ?? '').trim();
-  const imageUrl = String(row.image_url ?? row.imageUrl ?? '').trim() || undefined;
 
   return {
     id: String(row.id ?? ''),
@@ -29,7 +28,6 @@ export function mapApiCategoryToForm(row: Record<string, unknown>): EcommerceCat
       String(row.slug ?? '').trim() ||
       name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
     description: row.description != null ? String(row.description) : undefined,
-    imageUrl,
     order:
       parseInt(String(row.display_order ?? row.order ?? 0), 10) ||
       0,
@@ -48,8 +46,7 @@ export function mapFormCategoryToApiPayload(cat: EcommerceCategoryForm): Record<
     order: cat.order,
     is_active: cat.enabled,
     enabled: cat.enabled,
-    image_url: cat.imageUrl?.trim() || null,
-    imageUrl: cat.imageUrl?.trim() || null,
+    image_url: null,
     parent_category_id: cat.parentId ?? null,
   };
 }

@@ -23,14 +23,14 @@ describe('shop-category-display', () => {
     });
   });
 
-  it('normalizes image_url from API row', () => {
+  it('uses static local image_url by category name (ignores API S3 url)', () => {
     const cat = normalizeShopCategoryRow({
       id: 'uuid-1',
-      name: 'Food',
-      image_url: 'https://cdn.example.com/food.png',
+      name: 'Pet Food',
+      image_url: 'https://bucket.s3.amazonaws.com/ecommerce/categories/old.png',
     });
-    expect(cat.image_url).toBe('https://cdn.example.com/food.png');
-    expect(cat.name).toBe('Food');
+    expect(cat.image_url).toBe('/images/shop/categories/pet-food.jpeg');
+    expect(cat.name).toBe('Pet Food');
   });
 
   it('sorts by display_order then name', () => {

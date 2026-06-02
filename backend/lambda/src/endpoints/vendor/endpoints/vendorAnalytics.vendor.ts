@@ -19,6 +19,56 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../util
 import { isValidUUID } from '../../../types/entities';
 import { resolveVendorId } from '../../../utils/vendor-resolve';
 
+const EMPTY_SALES_STATS = {
+  total_orders: 0,
+  completed_orders: 0,
+  total_revenue: 0,
+  avg_order_value: 0,
+  unique_customers: 0,
+  cancelled_orders: 0,
+};
+
+/** Ecommerce order date window for analytics (SQL fragment; orders alias `o`). */
+function ecommerceSalesDateFilter(period: string, window: 'current' | 'previous'): string {
+  if (window === 'current') {
+    if (period === 'today') return `AND DATE(o.created_at) = CURRENT_DATE`;
+    if (period === 'week') return `AND o.created_at >= CURRENT_DATE - INTERVAL '7 days'`;
+    if (period === 'quarter') return `AND o.created_at >= CURRENT_DATE - INTERVAL '90 days'`;
+    if (period === 'year') return `AND o.created_at >= DATE_TRUNC('year', CURRENT_DATE)`;
+    return `AND o.created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
+  }
+  if (period === 'today') {
+    return `AND DATE(o.created_at) = CURRENT_DATE - INTERVAL '1 day'`;
+  }
+  if (period === 'week') {
+    return `AND o.created_at >= CURRENT_DATE - INTERVAL '14 days' AND o.created_at < CURRENT_DATE - INTERVAL '7 days'`;
+  }
+  if (period === 'quarter') {
+    return `AND o.created_at >= CURRENT_DATE - INTERVAL '180 days' AND o.created_at < CURRENT_DATE - INTERVAL '90 days'`;
+  }
+  if (period === 'year') {
+    return `AND o.created_at >= DATE_TRUNC('year', CURRENT_DATE) - INTERVAL '1 year' AND o.created_at < DATE_TRUNC('year', CURRENT_DATE)`;
+  }
+  return `AND o.created_at >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' AND o.created_at < DATE_TRUNC('month', CURRENT_DATE)`;
+}
+
+async function querySalesStats(vendorId: string, dateFilter: string) {
+  return query(
+    `
+          SELECT 
+            COUNT(*) as total_orders,
+            COUNT(*) FILTER (WHERE o.order_status != 'cancelled') as completed_orders,
+            COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status != 'cancelled'), 0) as total_revenue,
+            COALESCE(AVG(o.total_amount) FILTER (WHERE o.order_status != 'cancelled'), 0) as avg_order_value,
+            COUNT(DISTINCT o.customer_id) FILTER (WHERE o.order_status != 'cancelled') as unique_customers,
+            COUNT(*) FILTER (WHERE o.order_status = 'cancelled') as cancelled_orders
+          FROM orders o
+          WHERE o.vendor_id = $1 ${dateFilter}
+        `,
+    [vendorId]
+  );
+}
+
 // ============================================================================
 // GET /vendor/analytics/dashboard - Dashboard analytics overview
 // ============================================================================
@@ -631,46 +681,27 @@ class GetSalesAnalyticsHandler extends BaseHandler {
       }
 
       const period = context.event.queryStringParameters?.period || 'month';
-      
-      // Build date filter
-      let dateFilter = '';
-      if (period === 'today') {
-        dateFilter = `AND DATE(o.created_at) = CURRENT_DATE`;
-      } else if (period === 'week') {
-        dateFilter = `AND o.created_at >= CURRENT_DATE - INTERVAL '7 days'`;
-      } else if (period === 'month') {
-        dateFilter = `AND o.created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
-      } else if (period === 'year') {
-        dateFilter = `AND o.created_at >= DATE_TRUNC('year', CURRENT_DATE)`;
-      }
+      const includeCompare =
+        context.event.queryStringParameters?.compare === '1' ||
+        context.event.queryStringParameters?.compare === 'true';
+
+      const dateFilter = ecommerceSalesDateFilter(period, 'current');
+      const previousDateFilter = ecommerceSalesDateFilter(period, 'previous');
 
       // Sales overview (use alias `o` to match dateFilter)
       let salesStats;
+      let previousSalesStats: typeof EMPTY_SALES_STATS | null = null;
       try {
-        salesStats = await query(`
-          SELECT 
-            COUNT(*) as total_orders,
-            COUNT(*) FILTER (WHERE o.order_status != 'cancelled') as completed_orders,
-            COALESCE(SUM(o.total_amount) FILTER (WHERE o.order_status != 'cancelled'), 0) as total_revenue,
-            COALESCE(AVG(o.total_amount) FILTER (WHERE o.order_status != 'cancelled'), 0) as avg_order_value,
-            COUNT(DISTINCT o.customer_id) FILTER (WHERE o.order_status != 'cancelled') as unique_customers,
-            COUNT(*) FILTER (WHERE o.order_status = 'cancelled') as cancelled_orders
-          FROM orders o
-          WHERE o.vendor_id = $1 ${dateFilter}
-        `, [vendorId]);
+        salesStats = await querySalesStats(vendorId, dateFilter);
+        if (includeCompare) {
+          const prev = await querySalesStats(vendorId, previousDateFilter);
+          previousSalesStats = prev?.rows?.[0] || { ...EMPTY_SALES_STATS };
+        }
       } catch (error: any) {
         // If UUID validation fails, return empty stats
         if (error.message?.includes('invalid input syntax for type uuid')) {
-          salesStats = {
-            rows: [{
-              total_orders: 0,
-              completed_orders: 0,
-              total_revenue: 0,
-              avg_order_value: 0,
-              unique_customers: 0,
-              cancelled_orders: 0,
-            }],
-          };
+          salesStats = { rows: [{ ...EMPTY_SALES_STATS }] };
+          if (includeCompare) previousSalesStats = { ...EMPTY_SALES_STATS };
         } else {
           throw error;
         }
@@ -726,19 +757,17 @@ class GetSalesAnalyticsHandler extends BaseHandler {
         }
       }
 
-      return this.success({
+      const payload: Record<string, unknown> = {
         period,
-        salesStats: salesStats?.rows[0] || {
-          total_orders: 0,
-          completed_orders: 0,
-          total_revenue: 0,
-          avg_order_value: 0,
-          unique_customers: 0,
-          cancelled_orders: 0,
-        },
+        salesStats: salesStats?.rows[0] || { ...EMPTY_SALES_STATS },
         revenueByDay: revenueByDay?.rows || [],
         orderTrends: orderTrends?.rows || [],
-      });
+      };
+      if (includeCompare && previousSalesStats) {
+        payload.previousSalesStats = previousSalesStats;
+      }
+
+      return this.success(payload);
     } catch (error: any) {
       console.error('Error fetching sales analytics:', error);
       // If UUID validation fails, return empty analytics
@@ -792,17 +821,7 @@ class GetProductPerformanceHandler extends BaseHandler {
         });
       }
       
-      // Build date filter
-      let dateFilter = '';
-      if (period === 'today') {
-        dateFilter = `AND DATE(o.created_at) = CURRENT_DATE`;
-      } else if (period === 'week') {
-        dateFilter = `AND o.created_at >= CURRENT_DATE - INTERVAL '7 days'`;
-      } else if (period === 'month') {
-        dateFilter = `AND o.created_at >= DATE_TRUNC('month', CURRENT_DATE)`;
-      } else if (period === 'year') {
-        dateFilter = `AND o.created_at >= DATE_TRUNC('year', CURRENT_DATE)`;
-      }
+      const dateFilter = ecommerceSalesDateFilter(period, 'current');
 
       // Top selling products
       const topProducts = await query(`

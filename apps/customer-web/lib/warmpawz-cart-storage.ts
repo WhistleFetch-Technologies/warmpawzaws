@@ -15,7 +15,9 @@ export type WarmpawzCartProductSnapshot = {
   original_price?: number;
   emoji?: string;
   images?: string[];
+  vendor_id?: string;
   vendor_name?: string;
+  category_id?: string;
   stock: number;
 };
 

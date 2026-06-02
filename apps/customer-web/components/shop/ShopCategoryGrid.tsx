@@ -1,7 +1,6 @@
 'use client';
 
 import { Package } from 'lucide-react';
-import { PresignableImage } from '@/components/shared/PresignableImage';
 import type { ShopCategory } from './shop-types';
 
 interface ShopCategoryGridProps {
@@ -24,7 +23,7 @@ export function ShopCategoryGrid({
 
   const grid = (
     <div className="grid grid-cols-4 gap-3 sm:gap-3">
-        {categories.map((cat) => {
+        {categories.map((cat, index) => {
           const active = selectedCategory === cat.id;
           return (
             <button
@@ -41,10 +40,13 @@ export function ShopCategoryGrid({
             >
               <div className="relative mb-1 w-full aspect-square overflow-hidden rounded-2xl bg-gradient-to-br from-stone-50 to-orange-50/40">
                 {cat.image_url ? (
-                  <PresignableImage
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
                     src={cat.image_url}
                     alt={cat.name}
                     className="h-full w-full object-cover"
+                    loading={index < 4 ? 'eager' : 'lazy'}
+                    decoding="async"
                   />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center">
