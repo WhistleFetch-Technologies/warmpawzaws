@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 
 export type GeolocationAddressErrorCode =
@@ -92,7 +93,116 @@ function parseGeocodeResult(
   return parsed;
 }
 
-function getCurrentPosition(): Promise<GeolocationPosition> {
+const GEO_OPTIONS = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 } as const;
+
+function rejectFromGeolocationErrorCode(
+  code: number,
+  reject: (reason: GeolocationAddressError) => void
+): void {
+  if (code === 1) {
+    reject(
+      new GeolocationAddressError('permission_denied', 'Please allow location access')
+    );
+    return;
+  }
+  if (code === 2) {
+    reject(
+      new GeolocationAddressError(
+        'position_unavailable',
+        'Location information unavailable'
+      )
+    );
+    return;
+  }
+  if (code === 3) {
+    reject(new GeolocationAddressError('timeout', 'Location request timed out'));
+    return;
+  }
+  reject(new GeolocationAddressError('unknown', 'Could not detect location'));
+}
+
+function shouldUseCapacitorGeolocation(): boolean {
+  if (typeof window === 'undefined') return false;
+  return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('Geolocation');
+}
+
+function capacitorPositionToGeolocationPosition(position: {
+  timestamp: number;
+  coords: {
+    latitude: number;
+    longitude: number;
+    accuracy: number;
+    altitude: number | null;
+    altitudeAccuracy: number | null;
+    heading: number | null;
+    speed: number | null;
+  };
+}): GeolocationPosition {
+  return {
+    timestamp: position.timestamp,
+    coords: {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy,
+      altitude: position.coords.altitude,
+      altitudeAccuracy: position.coords.altitudeAccuracy,
+      heading: position.coords.heading,
+      speed: position.coords.speed,
+    },
+  } as GeolocationPosition;
+}
+
+function mapCapacitorGeolocationError(error: unknown): never {
+  const message =
+    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+
+  if (message.includes('permission') || message.includes('denied')) {
+    throw new GeolocationAddressError(
+      'permission_denied',
+      'Please allow location access'
+    );
+  }
+  if (message.includes('timeout')) {
+    throw new GeolocationAddressError('timeout', 'Location request timed out');
+  }
+  if (message.includes('unavailable') || message.includes('disabled')) {
+    throw new GeolocationAddressError(
+      'position_unavailable',
+      'Location information unavailable'
+    );
+  }
+  throw new GeolocationAddressError('unknown', 'Could not detect location');
+}
+
+async function getCapacitorCurrentPosition(): Promise<GeolocationPosition> {
+  const { Geolocation } = await import(
+    /* webpackIgnore: true */ '@capacitor/geolocation'
+  );
+
+  let permissions = await Geolocation.checkPermissions();
+  if (
+    permissions.location === 'prompt' ||
+    permissions.location === 'prompt-with-rationale'
+  ) {
+    permissions = await Geolocation.requestPermissions();
+  }
+
+  if (permissions.location === 'denied') {
+    throw new GeolocationAddressError(
+      'permission_denied',
+      'Please allow location access'
+    );
+  }
+
+  try {
+    const position = await Geolocation.getCurrentPosition(GEO_OPTIONS);
+    return capacitorPositionToGeolocationPosition(position);
+  } catch (error) {
+    mapCapacitorGeolocationError(error);
+  }
+}
+
+function getBrowserCurrentPosition(): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       reject(
@@ -106,38 +216,29 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
 
     navigator.geolocation.getCurrentPosition(
       resolve,
-      (error) => {
-        if (error.code === error.PERMISSION_DENIED) {
-          reject(
-            new GeolocationAddressError(
-              'permission_denied',
-              'Please allow location access'
-            )
-          );
-          return;
-        }
-        if (error.code === error.POSITION_UNAVAILABLE) {
-          reject(
-            new GeolocationAddressError(
-              'position_unavailable',
-              'Location information unavailable'
-            )
-          );
-          return;
-        }
-        if (error.code === error.TIMEOUT) {
-          reject(
-            new GeolocationAddressError('timeout', 'Location request timed out')
-          );
-          return;
-        }
-        reject(
-          new GeolocationAddressError('unknown', 'Could not detect location')
-        );
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      (error) => rejectFromGeolocationErrorCode(error.code, reject),
+      GEO_OPTIONS
     );
   });
+}
+
+async function getCurrentPosition(): Promise<GeolocationPosition> {
+  if (shouldUseCapacitorGeolocation()) {
+    return getCapacitorCurrentPosition();
+  }
+  return getBrowserCurrentPosition();
+}
+
+/** Coords only — for permission probes (no reverse geocode). */
+export async function resolveCurrentGeolocationCoords(): Promise<{
+  latitude: number;
+  longitude: number;
+}> {
+  const position = await getCurrentPosition();
+  return {
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+  };
 }
 
 async function reverseGeocodeLatLng(
