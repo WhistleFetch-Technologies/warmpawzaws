@@ -21,6 +21,7 @@ export const MEAL_CUSTOMER_DELIVERY_STAGES = [
   'meal_order_delivered',
   'meal_order_cancelled',
   'meal_logistics_cancelled',
+  'meal_refund_review_initiated',
 ] as const;
 
 /** Vendor operational events. */

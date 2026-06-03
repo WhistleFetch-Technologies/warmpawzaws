@@ -81,6 +81,7 @@ import {
 } from '../utils/meal-subscription-schedule-utils';
 import { computeMealSubscriptionCheckoutFees } from '../utils/meal-subscription-checkout-fees';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
+import { getMealRefundReviewCustomerMetadata } from '../utils/meal-refund-cases';
 import { paymentHoldExpiresAt } from '../utils/meal-payment-hold';
 import {
   assertMealOrderHasPidgeForPickup,
@@ -1714,6 +1715,11 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const order = result.rows[0];
 
+      const refundReview =
+        order.status === 'cancelled'
+          ? await getMealRefundReviewCustomerMetadata(orderId)
+          : null;
+
       // Get tracking info
       let tracking = null;
       const trackingResult = await select('delivery_tracking', { meal_order_id: orderId });
@@ -1731,6 +1737,7 @@ export function registerMealPlanEndpoints(app: Hono) {
           scheduledDeliverySlot: typeof order.scheduled_delivery_slot === 'string'
             ? JSON.parse(order.scheduled_delivery_slot)
             : order.scheduled_delivery_slot,
+          ...(refundReview ? { refundReview } : {}),
         },
         tracking,
       });

@@ -27,11 +27,17 @@ public class PidgeMealCancellationService {
 		NOT_APPLICABLE
 	}
 
+	public record MealCancelOutcome(MealCancelProcessResult result, UUID webhookEventId) {
+		public static MealCancelOutcome notApplicable() {
+			return new MealCancelOutcome(MealCancelProcessResult.NOT_APPLICABLE, null);
+		}
+	}
+
 	private final JdbcTemplate jdbc;
 	private final ObjectMapper objectMapper;
 	private final OrderStatusJdbcService orderStatusJdbc;
 
-	public MealCancelProcessResult tryProcessMealCancellation(
+	public MealCancelOutcome tryProcessMealCancellation(
 			UUID mealOrderId,
 			UUID deliveryTrackingId,
 			String pidgeOrderId,
@@ -42,19 +48,20 @@ public class PidgeMealCancellationService {
 			JsonNode lastLog,
 			JsonNode fullPayload) {
 		if (mealOrderId == null || pidgeOrderId == null || pidgeOrderId.isBlank()) {
-			return MealCancelProcessResult.NOT_APPLICABLE;
+			return MealCancelOutcome.notApplicable();
 		}
 		if (!"cancelled".equalsIgnoreCase(normalizedStatus)) {
-			return MealCancelProcessResult.NOT_APPLICABLE;
+			return MealCancelOutcome.notApplicable();
 		}
 
 		String idempotencyKey = PidgeMealCancellationSupport.cancelIdempotencyKey(pidgeOrderId);
 		String cancellationReason = PidgeMealCancellationSupport.extractCancellationReason(
 				parentStatus, fulfillmentStatus, dummyStatus, lastLog);
 
+		List<UUID> insertedIds;
 		try {
 			String payloadJson = objectMapper.writeValueAsString(fullPayload);
-			List<UUID> insertedIds = jdbc.query(
+			insertedIds = jdbc.query(
 					"""
 							INSERT INTO pidge_hyperlocal_webhook_events (
 							    pidge_order_id, event_kind, idempotency_key,
@@ -81,7 +88,7 @@ public class PidgeMealCancellationService {
 						"[PIDGE MEAL CANCEL] duplicate idempotency pidgeOrderId={} mealOrderId={}",
 						pidgeOrderId,
 						mealOrderId);
-				return MealCancelProcessResult.DUPLICATE;
+				return new MealCancelOutcome(MealCancelProcessResult.DUPLICATE, null);
 			}
 		} catch (Exception e) {
 			log.warn("[PIDGE MEAL CANCEL] archive insert failed pidgeOrderId={}: {}", pidgeOrderId, e.getMessage());
@@ -92,13 +99,15 @@ public class PidgeMealCancellationService {
 				mealOrderId,
 				PidgeMealCancellationSupport.CANCELLED_BY_SYSTEM_PIDGE,
 				cancellationReason);
+		UUID webhookEventId = insertedIds.get(0);
 		log.info(
-				"[PIDGE MEAL CANCEL] applied pidgeOrderId={} mealOrderId={} mealRowsUpdated={} reason={}",
+				"[PIDGE MEAL CANCEL] applied pidgeOrderId={} mealOrderId={} mealRowsUpdated={} webhookEventId={} reason={}",
 				pidgeOrderId,
 				mealOrderId,
 				mealRows,
+				webhookEventId,
 				cancellationReason);
 
-		return MealCancelProcessResult.APPLIED;
+		return new MealCancelOutcome(MealCancelProcessResult.APPLIED, webhookEventId);
 	}
 }

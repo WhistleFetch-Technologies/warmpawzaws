@@ -68,6 +68,7 @@ export type NotificationEventType =
     | 'meal_order_delivered'
     | 'meal_order_cancelled'
     | 'meal_logistics_cancelled'
+    | 'meal_refund_review_initiated'
     | 'meal_subscription_paused'
     | 'meal_subscription_resumed'
     | 'meal_subscription_cancelled'
@@ -274,6 +275,10 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationEventType, {
         title: 'Delivery could not be completed',
         body: 'Your meal order #{orderNumber} from {vendorName} could not be delivered. {reason}',
         sound: 'high_priority',
+    },
+    meal_refund_review_initiated: {
+        title: 'Refund under review',
+        body: 'Our team is reviewing your refund request for order #{orderNumber} from {vendorName}.',
     },
     meal_subscription_paused: {
         title: '⏸️ Subscription Paused',

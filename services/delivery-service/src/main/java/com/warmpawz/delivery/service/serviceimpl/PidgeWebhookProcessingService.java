@@ -9,7 +9,9 @@ import com.warmpawz.delivery.repository.ShipmentRepository;
 import com.warmpawz.delivery.repository.ShipmentTrackingEventRepository;
 import com.warmpawz.delivery.service.MealDeliveryNotificationService;
 import com.warmpawz.delivery.service.OrderStatusJdbcService;
+import com.warmpawz.delivery.service.MealRefundCaseBridgeService;
 import com.warmpawz.delivery.service.PidgeMealCancellationService;
+import com.warmpawz.delivery.service.PidgeMealCancellationService.MealCancelOutcome;
 import com.warmpawz.delivery.service.PidgeMealCancellationService.MealCancelProcessResult;
 import com.warmpawz.delivery.service.PidgeMealCancellationSupport;
 import com.warmpawz.delivery.service.PidgePartialDeliverySupport;
@@ -93,6 +95,7 @@ public class PidgeWebhookProcessingService {
 	private final DeliveryLocationHistoryWriter deliveryLocationHistoryWriter;
 	private final MealDeliveryNotificationService mealDeliveryNotificationService;
 	private final PidgeMealCancellationService pidgeMealCancellationService;
+	private final MealRefundCaseBridgeService mealRefundCaseBridgeService;
 
 	/** Pidge Communications Module — Rider Active Task webhook (batch rider + order_details). */
 	static boolean isRiderTaskPayload(JsonNode payload) {
@@ -250,10 +253,11 @@ public class PidgeWebhookProcessingService {
 		}
 
 		MealCancelProcessResult mealCancelResult = MealCancelProcessResult.NOT_APPLICABLE;
+		UUID mealCancelWebhookEventId = null;
 		String mealCancellationReason = null;
 		boolean isMealHyperlocal = dt.getPharmacyOrderId() == null && hyperlocalOrderId != null;
 		if (isMealHyperlocal && "cancelled".equalsIgnoreCase(normalized)) {
-			mealCancelResult = pidgeMealCancellationService.tryProcessMealCancellation(
+			MealCancelOutcome mealCancelOutcome = pidgeMealCancellationService.tryProcessMealCancellation(
 					hyperlocalOrderId,
 					dt.getId(),
 					pidgeId,
@@ -263,9 +267,20 @@ public class PidgeWebhookProcessingService {
 					dummyStatus,
 					lastLog,
 					payload);
+			mealCancelResult = mealCancelOutcome.result();
+			mealCancelWebhookEventId = mealCancelOutcome.webhookEventId();
 			if (mealCancelResult == MealCancelProcessResult.APPLIED) {
 				mealCancellationReason = PidgeMealCancellationSupport.extractCancellationReason(
 						parentStatus, rawFulfillmentStatus, dummyStatus, lastLog);
+				try {
+					mealRefundCaseBridgeService.dispatchRefundCaseOnPidgeCancel(
+							hyperlocalOrderId,
+							pidgeId,
+							mealCancellationReason,
+							mealCancelWebhookEventId);
+				} catch (Exception e) {
+					log.warn("[PIDGE WEBHOOK] meal refund case bridge failed: {}", e.getMessage());
+				}
 			}
 		}
 
