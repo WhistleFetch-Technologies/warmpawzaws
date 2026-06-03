@@ -229,10 +229,10 @@ export async function listAdminRefundHubCases(params: {
      LEFT JOIN package_purchases pp ON pp.id = b.package_purchase_id
      LEFT JOIN meal_orders mo ON p.transaction_id = 'meal_order:' || mo.id::text
      WHERE ${ECOMMERCE_PAYMENT_EXCLUDE}
-       AND (r.meal_refund_case_id IS NULL OR NOT EXISTS (
-         SELECT 1 FROM meal_refund_cases mrc
-         WHERE mrc.id = r.meal_refund_case_id AND mrc.status = 'pending_review'
-       ))
+       AND r.meal_refund_case_id IS NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM meal_refund_cases mrc WHERE mrc.refunds_row_id = r.id
+       )
      ORDER BY r.requested_at DESC NULLS LAST
      LIMIT 500`,
     [],
