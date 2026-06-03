@@ -13,6 +13,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Phone } from 'lucide-react';
 import { toast } from 'sonner';
+import { VendorMealPrepScheduleInfo } from '@/components/vendor/nutrition/VendorMealPrepScheduleInfo';
+import {
+  confirmVendorEarlyMealPrep,
+  vendorMealPrepSchedulingFromOrder,
+} from '@/lib/vendor-meal-prep-scheduling';
 
 export default function VendorMealDeliveryDetailClient() {
   const router = useRouter();
@@ -73,12 +78,32 @@ export default function VendorMealDeliveryDetailClient() {
     );
   }
 
-  const slot = row.delivery_time_slot as { start?: string; end?: string } | undefined;
   const addr = row.delivery_address as Record<string, unknown> | undefined;
   const status = String(row.status || '');
   const subLife = String(row.lifecycle_status || '');
+  const scheduleOrder: Record<string, unknown> = {
+    scheduled_delivery_date: row.delivery_date,
+    scheduled_delivery_slot: row.delivery_time_slot,
+    delivery_time_slot: row.delivery_time_slot,
+    prep_time_minutes: row.prep_time_minutes ?? row.plan_prep_time_minutes,
+    prep_minutes: row.prep_minutes,
+    prep_started_at: row.prep_started_at,
+    expected_ready_at: row.expected_ready_at,
+  };
 
   const sessionOpsDisabled = status === 'paused' || subLife === 'paused';
+
+  const requestPreparing = async () => {
+    const scheduling = vendorMealPrepSchedulingFromOrder(scheduleOrder);
+    if (!confirmVendorEarlyMealPrep(scheduling)) return;
+    try {
+      await patchVendorMealDeliveryStatus(vendorId, deliveryId, 'preparing');
+      toast.success('Marked preparing');
+      load();
+    } catch (e: any) {
+      toast.error(e?.message || 'Update failed');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24">
@@ -107,13 +132,13 @@ export default function VendorMealDeliveryDetailClient() {
             <span className="font-semibold">{String(row.meal_plan_name || '')}</span>
           </p>
           <p>
-            <span className="text-slate-500">When · </span>
-            {String(row.delivery_date)} {slot?.start}–{slot?.end}
-          </p>
-          <p>
             <span className="text-slate-500">Qty · </span>
             {String(row.meals_per_delivery || '')}
           </p>
+          <VendorMealPrepScheduleInfo
+            order={scheduleOrder}
+            showAfterPrep={status === 'preparing' || row.prep_started_at != null}
+          />
           {addr && (
             <div className="pt-2 border-t border-slate-100">
               <p className="text-xs font-semibold text-slate-400 uppercase">Address</p>
@@ -141,19 +166,7 @@ export default function VendorMealDeliveryDetailClient() {
         )}
 
         <div className={`grid grid-cols-2 gap-2 ${sessionOpsDisabled ? 'opacity-50 pointer-events-none' : ''}`}>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={async () => {
-              try {
-                await patchVendorMealDeliveryStatus(vendorId, deliveryId, 'preparing');
-                toast.success('Marked preparing');
-                load();
-              } catch (e: any) {
-                toast.error(e?.message || 'Update failed');
-              }
-            }}
-          >
+          <Button type="button" variant="outline" onClick={() => void requestPreparing()}>
             Preparing
           </Button>
           <Button

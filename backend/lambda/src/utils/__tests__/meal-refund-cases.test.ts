@@ -60,6 +60,14 @@ describe('computeMealRefundRecommendation', () => {
     );
     expect(rec?.recommendedRefundAmount).toBe(0);
   });
+
+  it('recommends 100% when case has system_pidge source but order cancelled_by is unset (backfill)', () => {
+    const rec = computeMealRefundRecommendation(
+      paidOrderContext({ cancelled_by: null, tracking_status: 'failed' }) as any,
+      { cancellationSource: 'system_pidge' },
+    );
+    expect(rec?.recommendedRefundAmount).toBe(500);
+  });
 });
 
 describe('createMealRefundCaseOnPidgeCancel', () => {

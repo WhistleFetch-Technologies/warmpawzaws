@@ -107,7 +107,7 @@ export function registerMealRefundCaseEndpoints(app: Hono) {
     try {
       const result = await approveMealRefundCase(c.req.param('id'), adminReviewerId(c));
       if (!result.ok) {
-        const code = result.alreadyProcessed ? 409 : 404;
+        const code = result.alreadyProcessed ? 409 : 400;
         return c.json({ success: false, error: result.error, ...result }, code);
       }
       return c.json({
@@ -132,7 +132,7 @@ export function registerMealRefundCaseEndpoints(app: Hono) {
         body.review_notes,
       );
       if (!result.ok) {
-        return c.json({ success: false, error: result.error }, 404);
+        return c.json({ success: false, error: result.error }, 400);
       }
       return c.json({ success: true, status: 'rejected' });
     } catch (e: unknown) {
