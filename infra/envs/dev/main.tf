@@ -270,7 +270,8 @@ module "lambda" {
     # Meal dispatch (Lambda) -> Java delivery-service internal ALB HTTP :80 (see meal-dispatch.ts)
     local.delivery_stack_live ? {
       DELIVERY_SERVICE_BASE_URL = "http://${module.delivery_service_ecs[0].internal_alb_dns_name}"
-    } : {}
+    } : {},
+    { MEAL_DELIVERY_NOTIFY_SECRET = "warmpawz-dev-meal-delivery-notify-2026" }
   )
 
   secrets_arns = concat(
@@ -337,6 +338,7 @@ module "delivery_service_ecs" {
   public_api_base_url = "https://${local.api_subdomain}"
   openapi_public_server_url = local.dev_http_api_invoke_url
   hibernate_ddl_auto  = var.delivery_hibernate_ddl_auto
+  meal_delivery_notify_secret = "warmpawz-dev-meal-delivery-notify-2026"
 }
 
 module "delivery_codebuild" {

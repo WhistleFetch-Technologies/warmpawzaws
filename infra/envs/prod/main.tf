@@ -265,6 +265,9 @@ module "lambda" {
     },
     local.delivery_stack_live ? {
       DELIVERY_SERVICE_BASE_URL = "http://${module.delivery_service_ecs[0].internal_alb_dns_name}"
+    } : {},
+    var.meal_delivery_notify_secret != "" ? {
+      MEAL_DELIVERY_NOTIFY_SECRET = var.meal_delivery_notify_secret
     } : {}
   )
 
@@ -329,6 +332,7 @@ module "delivery_service_ecs" {
   public_api_base_url       = local.prod_http_api_invoke_url
   openapi_public_server_url = local.prod_http_api_invoke_url
   hibernate_ddl_auto        = var.delivery_hibernate_ddl_auto
+  meal_delivery_notify_secret = var.meal_delivery_notify_secret
 }
 
 module "delivery_codebuild" {

@@ -77,6 +77,13 @@ variable "shiprocket_password" {
   default     = ""
   sensitive   = true
 }
+variable "meal_delivery_notify_secret" {
+  description = "HMAC-style shared secret for Java delivery-service → Lambda POST /internal/meal-delivery/notify"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "enable_push_notifications" {
   description = "Enable Android push (FCM)"
   type        = bool

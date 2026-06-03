@@ -68,13 +68,49 @@ public class MealDeliveryNotificationService {
 			if (cancellationReason != null && !cancellationReason.isBlank()) {
 				customerBody.put("reason", cancellationReason);
 			}
-			dispatchToLambda(customerBody);
+			dispatchMealNotify(customerBody, mealOrderId, pidgeOrderId, ctx.customerId(), ctx.vendorId());
+		} else if (isLogisticsTerminal(normalizedInternal, dt.getStatus())) {
+			log.warn(
+					"[PIDGE CANCEL NOTIFY] skip customer mealOrderId={} pidgeOrderId={} normalized={} trackingStatus={} — no customer event mapping",
+					mealOrderId,
+					pidgeOrderId,
+					normalizedInternal,
+					dt.getStatus());
 		}
 
 		String vendorEvent = mapVendorRiderEventType(normalizedInternal, dt.getStatus());
 		if (vendorEvent != null && ctx.vendorId() != null) {
-			dispatchToLambda(buildBody(ctx, mealOrderId, dt, pidgeOrderId, vendorEvent, "vendor", ctx.vendorId()));
+			dispatchMealNotify(
+					buildBody(ctx, mealOrderId, dt, pidgeOrderId, vendorEvent, "vendor", ctx.vendorId()),
+					mealOrderId,
+					pidgeOrderId,
+					ctx.customerId(),
+					ctx.vendorId());
+		} else if (isLogisticsTerminal(normalizedInternal, dt.getStatus())) {
+			log.warn(
+					"[PIDGE CANCEL NOTIFY] skip vendor mealOrderId={} pidgeOrderId={} normalized={} trackingStatus={} — no vendor event mapping",
+					mealOrderId,
+					pidgeOrderId,
+					normalizedInternal,
+					dt.getStatus());
 		}
+	}
+
+	private static boolean isLogisticsTerminal(String normalized, String trackingStatus) {
+		String n = normalized != null ? normalized.trim().toLowerCase(Locale.ROOT) : "";
+		String dt = trackingStatus != null ? trackingStatus.trim().toLowerCase(Locale.ROOT) : "";
+		return "cancelled".equals(n) || "failed".equals(n) || "lost".equals(n) || "damaged".equals(n) || "failed".equals(dt);
+	}
+
+	private void dispatchMealNotify(
+			ObjectNode body,
+			UUID mealOrderId,
+			String pidgeOrderId,
+			UUID customerId,
+			UUID vendorId) {
+		String eventType = body.path("eventType").asText("");
+		String recipientType = body.path("recipientType").asText("");
+		dispatchToLambda(body, mealOrderId, pidgeOrderId, customerId, vendorId, eventType, recipientType);
 	}
 
 	private ObjectNode buildBody(
@@ -220,11 +256,27 @@ public class MealDeliveryNotificationService {
 		}
 	}
 
-	private void dispatchToLambda(ObjectNode body) {
+	private void dispatchToLambda(
+			ObjectNode body,
+			UUID mealOrderId,
+			String pidgeOrderId,
+			UUID customerId,
+			UUID vendorId,
+			String eventType,
+			String recipientType) {
 		String base = properties.getApiBaseUrl() != null ? properties.getApiBaseUrl().trim() : "";
 		String secret = properties.getSecret() != null ? properties.getSecret().trim() : "";
 		if (base.isEmpty() || secret.isEmpty()) {
-			log.debug("[meal-delivery-notify] skipped — apiBaseUrl or secret not configured");
+			log.warn(
+					"[PIDGE CANCEL NOTIFY] skipped — meal-delivery-notify not configured mealOrderId={} pidgeOrderId={} eventType={} recipientType={} customerId={} vendorId={} apiBaseUrlConfigured={} secretConfigured={}",
+					mealOrderId,
+					pidgeOrderId,
+					eventType,
+					recipientType,
+					customerId,
+					vendorId,
+					!base.isEmpty(),
+					!secret.isEmpty());
 			return;
 		}
 		String url = base.replaceAll("/$", "") + "/internal/meal-delivery/notify";
@@ -235,14 +287,32 @@ public class MealDeliveryNotificationService {
 			ResponseEntity<String> resp = restTemplate.postForEntity(
 					url, new HttpEntity<>(body.toString(), headers), String.class);
 			log.info(
-					"[meal-delivery-notify] Lambda {} eventType={} recipientType={} status={}",
-					url,
-					body.path("eventType").asText(""),
-					body.path("recipientType").asText(""),
-					resp.getStatusCode().value());
+					"[PIDGE CANCEL NOTIFY] Lambda mealOrderId={} pidgeOrderId={} eventType={} recipientType={} customerId={} vendorId={} httpStatus={} body={}",
+					mealOrderId,
+					pidgeOrderId,
+					eventType,
+					recipientType,
+					customerId,
+					vendorId,
+					resp.getStatusCode().value(),
+					truncateForLog(resp.getBody(), 500));
 		} catch (RestClientException e) {
-			log.warn("[meal-delivery-notify] Lambda call failed: {}", e.getMessage());
+			log.warn(
+					"[PIDGE CANCEL NOTIFY] Lambda call failed mealOrderId={} pidgeOrderId={} eventType={} recipientType={} url={} error={}",
+					mealOrderId,
+					pidgeOrderId,
+					eventType,
+					recipientType,
+					url,
+					e.getMessage());
 		}
+	}
+
+	private static String truncateForLog(String value, int maxLen) {
+		if (value == null) {
+			return "";
+		}
+		return value.length() <= maxLen ? value : value.substring(0, maxLen) + "…";
 	}
 
 	private record MealOrderContext(
