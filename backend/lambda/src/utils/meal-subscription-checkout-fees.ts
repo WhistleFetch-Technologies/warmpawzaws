@@ -5,7 +5,7 @@
  */
 
 import { query } from '../database/rds-connection';
-import { getFeeGlobalsMap } from './admin-fee-settings-db';
+import { computeNutritionistMealCheckoutFees } from './meal-checkout-platform-fees';
 import {
   computePolicyDeliveryFeeForOrder,
   deriveDistanceKmFromLocations,
@@ -75,16 +75,9 @@ export async function computeMealSubscriptionCheckoutFees(
   const perSessionFoodSubtotal =
     dpc > 0 ? Math.round((subtotalPerCycle / dpc) * 100) / 100 : Math.round(subtotalPerCycle * 100) / 100;
 
-  const feeMap = await getFeeGlobalsMap().catch(() => ({} as Record<string, string>));
-  const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
-  const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
-  let platformFeePerCycle = Math.round(subtotalPerCycle * (platformFeePercentage / 100));
-  if (maxPlatformFee > 0 && platformFeePerCycle > maxPlatformFee) {
-    platformFeePerCycle = maxPlatformFee;
-  }
-  const convenienceFeePerCycle = parseFloat(
-    feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0',
-  );
+  const mealFees = await computeNutritionistMealCheckoutFees(subtotalPerCycle);
+  const platformFeePerCycle = mealFees.platformFee;
+  const convenienceFeePerCycle = mealFees.convenienceFee;
   const nonDeliveryPackagePerCycle = subtotalPerCycle + platformFeePerCycle + convenienceFeePerCycle;
 
   const platformFeePerSession =
