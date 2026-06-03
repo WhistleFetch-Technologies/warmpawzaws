@@ -79,6 +79,7 @@ import {
 } from '../utils/meal-plan-vendor-delete';
 import { clampLeadTimeHours } from '../utils/meal-booking-policy';
 import { parseOrderCutoffHm } from '../utils/meal-product-timing';
+import { buildVendorPrepScheduling } from '@warmpawz/shared-types';
 
 function mealOrderDeliveryTimeDisplay(o: Record<string, unknown>): string | null {
   const raw = o.scheduled_delivery_slot;
@@ -2624,7 +2625,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
               mealName = (await resolveMealCatalogDisplayName(String(o.meal_plan_id))) ?? undefined;
             }
             const mealPlanData = await query(
-              `SELECT name, plan_name, price_per_meal, price FROM meal_plans WHERE id = $1 LIMIT 1`,
+              `SELECT name, plan_name, price_per_meal, price, prep_time_minutes FROM meal_plans WHERE id = $1 LIMIT 1`,
               [o.meal_plan_id]
             ).catch(() => ({ rows: [] }));
             if (mealPlanData.rows.length > 0) {
@@ -2658,6 +2659,10 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           customer_name: customerName,
           customer_phone: customerPhone,
           meal_name: mealName,
+          prep_time_minutes:
+            mealPlanRow && mealPlanRow.prep_time_minutes != null
+              ? Number(mealPlanRow.prep_time_minutes)
+              : undefined,
           items: [],
           delivery_address: typeof o.delivery_address === 'string' ? (() => { try { return JSON.parse(o.delivery_address); } catch { return {}; } })() : o.delivery_address,
           subtotal: lineSubtotal,
@@ -2836,7 +2841,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         `SELECT mo.id, mo.vendor_id, mo.customer_id, mo.status AS order_status, mo.subscription_id,
                 mo.payment_status, mo.total_amount::text AS total_amount,
                 mo.razorpay_payment_id, mo.razorpay_order_id, mo.order_type,
-                mo.scheduled_delivery_date, mo.purchase_snapshot, mo.logistics_type
+                mo.scheduled_delivery_date, mo.scheduled_delivery_slot, mo.purchase_snapshot, mo.logistics_type
            FROM meal_orders mo
           WHERE mo.id = $1 AND mo.vendor_id::text = ANY($2::text[])
           LIMIT 1`,
@@ -3007,6 +3012,22 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
           updatePayload.expected_ready_at = new Date(
             prepStartedAt.getTime() + prepMinutes * 60_000
           ).toISOString();
+
+          const prepScheduling = buildVendorPrepScheduling({
+            scheduledDeliveryDate: orderRow.scheduled_delivery_date,
+            scheduledDeliverySlot: orderRow.scheduled_delivery_slot,
+            prepMinutes,
+          });
+          console.log(
+            '[VENDOR PREP SCHEDULING]',
+            JSON.stringify({
+              order_id: orderId,
+              commitment_at: prepScheduling.commitment_at_iso,
+              prep_minutes: prepMinutes,
+              recommended_prepare_at: prepScheduling.recommended_prepare_at_iso,
+              actual_prepare_start: prepStartedAt.toISOString(),
+            }),
+          );
         } catch (e) {
           console.warn('[meal-order-status] could not compute expected_ready_at:', e);
         }

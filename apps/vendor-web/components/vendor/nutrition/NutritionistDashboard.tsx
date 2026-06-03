@@ -3,7 +3,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { formatMealOrderDeliverySchedule } from '@/lib/format-meal-order-schedule';
+import { formatMealOrderCustomerDelivery } from '@/lib/format-meal-order-schedule';
+import {
+  confirmVendorEarlyMealPrep,
+  vendorMealPrepSchedulingFromOrder,
+} from '@/lib/vendor-meal-prep-scheduling';
+import { VendorMealPrepScheduleInfo } from '@/components/vendor/nutrition/VendorMealPrepScheduleInfo';
 import { toast } from 'sonner';
 import { MealProductFormModal } from '@/components/vendor/nutrition/MealProductFormModal';
 import { formatPackWeightLabel, resolvePackWeightGramsFromMetadata } from '@/lib/meal-pack-weight';
@@ -141,6 +146,10 @@ interface MealOrder {
   created_at: string;
   /** Scheduled drop-off day from meal_orders / booking flow (YYYY-MM-DD or ISO). */
   scheduled_delivery_date?: string;
+  scheduled_delivery_slot?: unknown;
+  prep_minutes?: number;
+  prep_time_minutes?: number;
+  expected_ready_at?: string;
   confirmed_at?: string; // Timestamp when payment was confirmed
   prep_started_at?: string; // Timestamp when vendor started preparing (indicates vendor accepted)
   items: any[];
@@ -274,17 +283,6 @@ function formatOrderCalendarDate(o: MealOrder): string {
     return new Date(y, mo - 1, d).toLocaleDateString();
   }
   return new Date(o.created_at).toLocaleDateString();
-}
-
-/**
- * Allow "Start preparing" only when the scheduled day is today or in the past (avoid early logistics / Pidge for future drops).
- * Accept remains available for future-dated subscription sessions.
- */
-function canStartPreparingForSchedule(o: MealOrder): boolean {
-  const sched = scheduledYmdForOrder(o);
-  const today = ymdLocal(new Date());
-  if (!sched) return true;
-  return sched <= today;
 }
 
 type VendorMealOrderBucket = 'past' | 'today' | 'upcoming';
@@ -558,6 +556,12 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
     }
   };
 
+  const requestStartPreparing = (order: MealOrder) => {
+    const scheduling = vendorMealPrepSchedulingFromOrder(order as Record<string, unknown>);
+    if (!confirmVendorEarlyMealPrep(scheduling)) return;
+    void handleUpdateOrderStatus(order.id, 'preparing');
+  };
+
   const handleUpdateOrderStatus = async (orderId: string, status: string) => {
     try {
       // ✅ CRITICAL: Track acceptance BEFORE API call and persist to localStorage
@@ -641,7 +645,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
 
   const renderMealOrderCard = (order: MealOrder) => {
     const badgeCanon: MealDeliveryEffective = vendorMealEffectiveStatus(order);
-    const prepOk = canStartPreparingForSchedule(order);
+    const prepScheduling = vendorMealPrepSchedulingFromOrder(order as Record<string, unknown>);
     const isParentSub = Boolean(order.subscription_vendor_parent_booking);
     const isSessionSub = isSubscriptionSessionRow(order);
     const isPidgeLogistics = String(order.logistics_type || '').toLowerCase() === 'pidge';
@@ -696,8 +700,8 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
           <div className="flex items-center justify-between mb-4">
             <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-sm text-slate-500">
               <span className="flex items-center gap-1">{Icons.phone} {order.customer_phone || 'N/A'}</span>
-              <span className="flex items-center gap-1" title="Scheduled delivery date and time">
-                {Icons.clock} Delivery: {formatMealOrderDeliverySchedule(order as Record<string, unknown>)}
+              <span className="flex items-center gap-1" title="Customer delivery commitment">
+                {Icons.clock} {formatMealOrderCustomerDelivery(order as Record<string, unknown>)}
               </span>
             </div>
             <div className="text-right">
@@ -725,6 +729,12 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
               )}
             </div>
           </div>
+
+          <VendorMealPrepScheduleInfo
+            order={order as Record<string, unknown>}
+            showAfterPrep={Boolean(order.prep_started_at) || order.status === 'preparing'}
+            className="mb-4"
+          />
 
           <div className="flex flex-wrap gap-2">
             {isPidgeLogistics &&
@@ -777,21 +787,13 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
             {sessionReadyForPrep && (
               <button
                 type="button"
-                disabled={!prepOk}
                 title={
-                  prepOk
-                    ? undefined
-                    : 'Start preparing on or after the scheduled delivery date (avoids early rider assignment).'
+                  prepScheduling.isEarlyPrep
+                    ? 'Earlier than suggested — you can still start preparing'
+                    : undefined
                 }
-                onClick={() => {
-                  if (!prepOk) return;
-                  handleUpdateOrderStatus(order.id, 'preparing');
-                }}
-                className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 ${
-                  prepOk
-                    ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                    : 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                }`}
+                onClick={() => requestStartPreparing(order)}
+                className="flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white"
               >
                 {Icons.utensils}
                 <span className="text-sm">Start Preparing</span>
@@ -817,21 +819,13 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 </button>
                 <button
                   type="button"
-                  disabled={!prepOk}
                   title={
-                    prepOk
-                      ? undefined
-                      : 'Start preparing on or after the scheduled delivery date (avoids early rider assignment).'
+                    prepScheduling.isEarlyPrep
+                      ? 'Earlier than suggested — you can still start preparing'
+                      : undefined
                   }
-                  onClick={() => {
-                    if (!prepOk) return;
-                    handleUpdateOrderStatus(order.id, 'preparing');
-                  }}
-                  className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 ${
-                    prepOk
-                      ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                      : 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                  }`}
+                  onClick={() => requestStartPreparing(order)}
+                  className="flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white"
                 >
                   {Icons.utensils}
                   <span className="text-sm">Start Preparing</span>
@@ -860,21 +854,13 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 <>
                   <button
                     type="button"
-                    disabled={!prepOk}
                     title={
-                      prepOk
-                        ? undefined
-                        : 'Start preparing on or after the scheduled delivery date (avoids early rider assignment).'
+                      prepScheduling.isEarlyPrep
+                        ? 'Earlier than suggested — you can still start preparing'
+                        : undefined
                     }
-                    onClick={() => {
-                      if (!prepOk) return;
-                      handleUpdateOrderStatus(order.id, 'preparing');
-                    }}
-                    className={`flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 ${
-                      prepOk
-                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                        : 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                    }`}
+                    onClick={() => requestStartPreparing(order)}
+                    className="flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white"
                   >
                     {Icons.utensils}
                     <span className="text-sm">Start Preparing</span>

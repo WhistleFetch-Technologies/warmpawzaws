@@ -4,7 +4,10 @@
 
 import { query } from '../database/rds-connection';
 import { notifyMealEvent } from './meal-delivery-notifications';
-import { isMealOrderPaidForRefund } from './meal-refund-cases';
+import {
+  computeMealRefundRecommendation,
+  isMealOrderPaidForRefund,
+} from './meal-refund-cases';
 import { processMealOrderAdminOriginalRefund } from './payments/meal-order-original-refund';
 
 export type MealRefundCaseExecutionResult = {
@@ -25,6 +28,7 @@ async function loadCaseForExecution(caseId: string): Promise<Record<string, unkn
   const res = await query(
     `SELECT mrc.id::text, mrc.meal_order_id::text, mrc.status,
             mrc.recommended_refund_amount::text, mrc.cancellation_reason,
+            mrc.cancellation_source,
             mo.payment_status, mo.total_amount::text, mo.cancelled_by,
             mo.picked_up_at, mo.delivered_at,
             p.amount::text AS payment_amount,
@@ -236,7 +240,24 @@ export async function approveAndExecuteMealRefundCase(
     return { ok: false, error: 'order_already_refunded', alreadyProcessed: true };
   }
 
-  const refundAmount = round2(parseFloat(String(row.recommended_refund_amount ?? '0')) || 0);
+  let refundAmount = round2(parseFloat(String(row.recommended_refund_amount ?? '0')) || 0);
+  if (refundAmount <= 0.009) {
+    const rec = computeMealRefundRecommendation(ctx, {
+      cancellationSource:
+        row.cancellation_source != null ? String(row.cancellation_source) : null,
+    });
+    refundAmount = round2(rec?.recommendedRefundAmount ?? 0);
+    if (refundAmount > 0.009 && rec) {
+      await query(
+        `UPDATE meal_refund_cases
+         SET recommended_refund_amount = $2,
+             recommendation_reason = $3,
+             updated_at = NOW()
+         WHERE id = $1::uuid`,
+        [caseId, refundAmount, rec.recommendationReason],
+      );
+    }
+  }
   if (refundAmount <= 0.009) {
     return { ok: false, error: 'invalid_refund_amount' };
   }

@@ -36,6 +36,7 @@ import {
   resolveSameDayAllowedForPlan,
 } from '../utils/meal-booking-policy';
 import { parseOrderCutoffHm } from '../utils/meal-product-timing';
+import { buildVendorPrepScheduling } from '@warmpawz/shared-types';
 import { resolvePackWeightGramsFromPlanRow } from '../utils/meal-pack-weight';
 import { mergeMealPlanCatalogForApi } from '../utils/meal-product-persistence';
 import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr, resolveMealPurchaseSubtotalInr } from '../utils/meal-order-pricing';
@@ -1887,7 +1888,45 @@ export function registerMealPlanEndpoints(app: Hono) {
       const updateData: Record<string, any> = { status };
 
       if (status === 'accepted') updateData.accepted_at = new Date().toISOString();
-      if (status === 'preparing') updateData.prep_started_at = new Date().toISOString();
+      if (status === 'preparing') {
+        const prepStartedAt = new Date();
+        updateData.prep_started_at = prepStartedAt.toISOString();
+        try {
+          const moInfo = await query(
+            `SELECT mo.prep_minutes, mo.scheduled_delivery_date, mo.scheduled_delivery_slot,
+                    mp.prep_time_minutes AS plan_prep_minutes
+               FROM meal_orders mo
+               LEFT JOIN meal_plans mp ON mp.id = mo.meal_plan_id
+              WHERE mo.id = $1`,
+            [orderId],
+          ).catch(() => ({ rows: [] as Array<Record<string, unknown>> }));
+          const moRow = (moInfo.rows && moInfo.rows[0]) as Record<string, unknown> | undefined;
+          const existingPrep =
+            moRow && typeof moRow.prep_minutes === 'number' ? (moRow.prep_minutes as number) : null;
+          const planPrep =
+            moRow && typeof moRow.plan_prep_minutes === 'number'
+              ? (moRow.plan_prep_minutes as number)
+              : null;
+          const prepMinutes = existingPrep ?? planPrep ?? 30;
+          const prepScheduling = buildVendorPrepScheduling({
+            scheduledDeliveryDate: moRow?.scheduled_delivery_date,
+            scheduledDeliverySlot: moRow?.scheduled_delivery_slot,
+            prepMinutes,
+          });
+          console.log(
+            '[VENDOR PREP SCHEDULING]',
+            JSON.stringify({
+              order_id: orderId,
+              commitment_at: prepScheduling.commitment_at_iso,
+              prep_minutes: prepMinutes,
+              recommended_prepare_at: prepScheduling.recommended_prepare_at_iso,
+              actual_prepare_start: prepStartedAt.toISOString(),
+            }),
+          );
+        } catch (e) {
+          console.warn('[meal/orders/update-status] prep scheduling log failed:', e);
+        }
+      }
       if (status === 'ready_for_pickup') updateData.ready_at = new Date().toISOString();
       if (status === 'picked_up') updateData.picked_up_at = new Date().toISOString();
       if (status === 'delivered') {

@@ -105,7 +105,10 @@ async function loadMealOrderRefundContext(mealOrderId: string): Promise<MealOrde
   };
 }
 
-export function computeMealRefundRecommendation(ctx: MealOrderRefundContext): MealRefundRecommendation | null {
+export function computeMealRefundRecommendation(
+  ctx: MealOrderRefundContext,
+  options?: { cancellationSource?: string | null },
+): MealRefundRecommendation | null {
   const paidTotal = round2(
     ctx.payment_amount != null && ctx.payment_amount > 0
       ? ctx.payment_amount
@@ -119,7 +122,11 @@ export function computeMealRefundRecommendation(ctx: MealOrderRefundContext): Me
     !ctx.picked_up_at &&
     (!tracking || !TERMINAL_TRACKING.has(tracking));
 
-  if (ctx.cancelled_by === 'system_pidge' && neverDelivered) {
+  const logisticsCancel =
+    ctx.cancelled_by === 'system_pidge' ||
+    options?.cancellationSource === 'system_pidge';
+
+  if (logisticsCancel && neverDelivered) {
     return {
       recommendedRefundAmount: paidTotal,
       recommendationReason:
@@ -220,7 +227,9 @@ export async function createMealRefundCaseOnPidgeCancel(
     return { created: false, skipped: 'not_paid' };
   }
 
-  const recommendation = computeMealRefundRecommendation(ctx);
+  const recommendation = computeMealRefundRecommendation(ctx, {
+    cancellationSource: 'system_pidge',
+  });
   const dedupeKey = `meal_refund_case:${mealOrderId}`;
 
   const ins = await query(

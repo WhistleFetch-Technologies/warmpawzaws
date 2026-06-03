@@ -290,7 +290,7 @@ export async function getAdminRefundHubDetail(
     const res = await query(
       `SELECT mrc.*,
               mo.order_number, mo.status AS order_status, mo.payment_status,
-              mo.total_amount::text, mo.cancelled_by,
+              mo.total_amount::text, mo.cancelled_by, mo.cancellation_reason AS order_cancellation_reason,
               c.full_name AS customer_name, c.phone AS customer_phone,
               v.business_name AS vendor_name,
               p.amount::text AS payment_amount, p.payment_status AS gateway_payment_status,

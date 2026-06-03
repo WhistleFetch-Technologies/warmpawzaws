@@ -113,8 +113,6 @@ function formatDt(iso?: string | null) {
 
 export function MealLogisticsRefundCases() {
   const [filter, setFilter] = useState('');
-  const [backfillOrder, setBackfillOrder] = useState('ML2606034189');
-  const [backfillLoading, setBackfillLoading] = useState(false);
   const [cases, setCases] = useState<MealRefundCaseRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -242,60 +240,6 @@ export function MealLogisticsRefundCases() {
         >
           <RefreshCw className="w-4 h-4" />
           Refresh
-        </button>
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-end p-4 bg-orange-50 border border-orange-100 rounded-xl">
-        <div className="flex-1">
-          <label className="block text-xs font-medium text-orange-900 mb-1">
-            Backfill case from meal order #
-          </label>
-          <input
-            type="text"
-            value={backfillOrder}
-            onChange={(e) => setBackfillOrder(e.target.value)}
-            placeholder="e.g. ML2606034189"
-            className="w-full rounded-lg border border-orange-200 px-3 py-2 text-sm"
-          />
-          <p className="text-xs text-orange-800/80 mt-1">
-            Use when cancel happened before the refund-case bridge ran (paid + cancelled orders only).
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={backfillLoading || !backfillOrder.trim()}
-          onClick={async () => {
-            setBackfillLoading(true);
-            try {
-              const res = await apiClient.post<{
-                success?: boolean;
-                created?: boolean;
-                caseId?: string;
-                skipped?: string;
-                error?: string;
-              }>('/admin/meal-refund-cases/backfill', {
-                orderNumber: backfillOrder.trim(),
-              });
-              if (res.created && res.caseId) {
-                toast.success(`Refund case created (${res.caseId.slice(0, 8)}…)`);
-                setSelectedId(res.caseId);
-                setFilter('pending_review');
-              } else if (res.skipped === 'duplicate_case') {
-                toast.info('Case already exists for this order — open All filter.');
-                setFilter('');
-              } else {
-                toast.warning(res.skipped || res.error || 'No case created');
-              }
-              void loadList();
-            } catch (e: unknown) {
-              toast.error((e as Error).message || 'Backfill failed');
-            } finally {
-              setBackfillLoading(false);
-            }
-          }}
-          className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-semibold hover:bg-orange-700 disabled:opacity-50 whitespace-nowrap"
-        >
-          {backfillLoading ? 'Creating…' : 'Create review case'}
         </button>
       </div>
 
