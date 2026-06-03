@@ -8,9 +8,9 @@ import { useCart } from '@/context/CartContext';
 import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
 import { SectionHeader } from '../shared/SectionHeader';
 import { HorizontalScrollRow } from '../shared/HorizontalScrollRow';
-import { FALLBACK_SHOP_CATEGORIES } from '../utils/shop-category-icons';
 import { ShopCategoryGrid } from '@/components/shop/ShopCategoryGrid';
 import type { ShopCategory as ShopCategoryTile } from '@/components/shop/shop-types';
+import { STATIC_SHOP_DISPLAY_CATEGORIES } from '@/lib/shop-category-static-images';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
 export interface ShopHotDeal {
@@ -83,11 +83,9 @@ function ShopProductsSectionComponent({
   );
 
   const visibleDeals = ecommerceEnabled ? hotDeals : [];
-  const hasCategories = categories.length > 0;
-
-  if (!ecommerceEnabled && !hasCategories) {
-    /* Still show Soon placeholders — same as legacy home shop row */
-  }
+  const displayCategories = (
+    categories.length > 0 ? categories : STATIC_SHOP_DISPLAY_CATEGORIES
+  ) as ShopCategoryTile[];
 
   return (
     <div className={`mb-6 ${className}`}>
@@ -98,52 +96,14 @@ function ShopProductsSectionComponent({
         onAction={ecommerceEnabled ? () => onNavigate('shop') : undefined}
       />
 
-      {!ecommerceEnabled ? (
-        <HorizontalScrollRow gapClassName="gap-3" paddingClassName="px-4" className="py-1">
-          {FALLBACK_SHOP_CATEGORIES.map((category) => (
-            <div
-              key={category.id}
-              className="pointer-events-none flex flex-shrink-0 select-none flex-col items-center gap-1 opacity-75"
-              aria-label={`${category.label} — coming soon`}
-            >
-              <div className="relative flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm">
-                {category.icon}
-                <span className="absolute -right-1 -top-1 rounded-full bg-amber-500 px-1 py-0.5 text-[7px] font-bold uppercase leading-none text-white">
-                  Soon
-                </span>
-              </div>
-              <span className="max-w-[4rem] text-center text-[10px] font-medium leading-tight text-gray-500">
-                {category.label}
-              </span>
-            </div>
-          ))}
-        </HorizontalScrollRow>
-      ) : !hasCategories ? (
-        <HorizontalScrollRow gapClassName="gap-3" paddingClassName="px-4" className="py-1">
-          {FALLBACK_SHOP_CATEGORIES.map((category) => (
-            <button
-              key={category.id}
-              type="button"
-              className="flex flex-shrink-0 flex-col items-center gap-1 active:opacity-90"
-              onClick={() => onNavigate('/shop')}
-              aria-label={`Browse ${category.label}`}
-            >
-              <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm">
-                {category.icon}
-              </div>
-              <span className="text-center text-[10px] font-medium leading-tight text-gray-700">
-                {category.label}
-              </span>
-            </button>
-          ))}
-        </HorizontalScrollRow>
-      ) : (
-        <ShopCategoryGrid
-          embedded
-          categories={categories as ShopCategoryTile[]}
-          onSelectCategory={(id) => onNavigate('shop', { category: id })}
-        />
-      )}
+      <ShopCategoryGrid
+        embedded
+        disabled={!ecommerceEnabled}
+        categories={displayCategories}
+        onSelectCategory={
+          ecommerceEnabled ? (id) => onNavigate('shop', { category: id }) : () => {}
+        }
+      />
 
       {visibleDeals.length > 0 ? (
         <HorizontalScrollRow gapClassName="gap-3" paddingClassName="px-4" className="mt-3">
@@ -200,5 +160,5 @@ function ShopProductsSectionComponent({
   );
 }
 
-/** Shop categories + featured products — cart when ecommerce is on, Soon chips when off. */
+/** Shop categories + featured products — image grid; disabled when ecommerce is off. */
 export const ShopProductsSection = memo(ShopProductsSectionComponent);

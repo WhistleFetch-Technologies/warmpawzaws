@@ -3,6 +3,8 @@
  * Matches admin catalog names; files live under /images/shop/categories/.
  */
 
+import type { ShopCategory } from '@/components/shop/shop-types';
+
 const SHOP_CATEGORY_IMAGE_BY_SLUG: Record<string, string> = {
   'pet-food': '/images/shop/categories/pet-food.jpeg',
   'pet-accessories': '/images/shop/categories/pet-accessories.jpeg',
@@ -63,3 +65,25 @@ export function isShopCategoryStaticImageUrl(url: string | undefined | null): bo
   if (!url) return false;
   return url.startsWith('/images/shop/categories/');
 }
+
+/** Home/shop fallback tiles when API categories are unavailable. */
+const STATIC_SHOP_DISPLAY_SPECS: ReadonlyArray<{ id: string; name: string }> = [
+  { id: 'pet-food', name: 'Pet Food' },
+  { id: 'pet-accessories', name: 'Pet Accessories' },
+  { id: 'pet-toys', name: 'Pet Toys' },
+  { id: 'pet-grooming', name: 'Pet Grooming' },
+  { id: 'pet-health', name: 'Pet Health' },
+  { id: 'pet-beds-furniture', name: 'Pet Beds & Furniture' },
+  { id: 'pet-clothing', name: 'Pet Clothing' },
+  { id: 'pet-travel', name: 'Pet Travel' },
+  { id: 'pet-training', name: 'Pet Training' },
+];
+
+export const STATIC_SHOP_DISPLAY_CATEGORIES: ShopCategory[] = STATIC_SHOP_DISPLAY_SPECS.map(
+  (spec, index) => ({
+    id: spec.id,
+    name: spec.name,
+    image_url: SHOP_CATEGORY_IMAGE_BY_SLUG[spec.id],
+    display_order: index,
+  })
+);
