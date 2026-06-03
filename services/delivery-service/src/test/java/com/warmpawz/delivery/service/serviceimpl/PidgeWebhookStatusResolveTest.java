@@ -108,4 +108,16 @@ class PidgeWebhookStatusResolveTest {
 		var r = PidgeWebhookProcessingService.resolvePidgeStatus("DELIVERED", "manifested", "");
 		assertEquals("delivered", r.normalized());
 	}
+
+	@Test
+	void fulfillmentCancelled_mapsToCancelled() {
+		var r = PidgeWebhookProcessingService.resolvePidgeStatus("CANCELLED", "", "");
+		assertEquals("cancelled", r.normalized());
+	}
+
+	@Test
+	void parentCancelled_mapsToCancelled() {
+		var r = PidgeWebhookProcessingService.resolvePidgeStatus("", "cancelled", "");
+		assertEquals("cancelled", r.normalized());
+	}
 }

@@ -20,6 +20,7 @@ export const MEAL_CUSTOMER_DELIVERY_STAGES = [
   'meal_rider_nearby',
   'meal_order_delivered',
   'meal_order_cancelled',
+  'meal_logistics_cancelled',
 ] as const;
 
 /** Vendor operational events. */
@@ -98,6 +99,9 @@ export function mealRiderNotifyStageForLogistics(
     dt === 'heading_to_pickup'
   ) {
     return 'meal_rider_assigned';
+  }
+  if (n === 'cancelled' || n === 'failed' || n === 'lost' || n === 'damaged' || dt === 'failed') {
+    return 'meal_logistics_cancelled';
   }
   return null;
 }

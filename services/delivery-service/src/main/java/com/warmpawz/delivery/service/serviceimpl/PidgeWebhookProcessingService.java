@@ -9,6 +9,9 @@ import com.warmpawz.delivery.repository.ShipmentRepository;
 import com.warmpawz.delivery.repository.ShipmentTrackingEventRepository;
 import com.warmpawz.delivery.service.MealDeliveryNotificationService;
 import com.warmpawz.delivery.service.OrderStatusJdbcService;
+import com.warmpawz.delivery.service.PidgeMealCancellationService;
+import com.warmpawz.delivery.service.PidgeMealCancellationService.MealCancelProcessResult;
+import com.warmpawz.delivery.service.PidgeMealCancellationSupport;
 import com.warmpawz.delivery.service.PidgePartialDeliverySupport;
 import com.warmpawz.delivery.service.DeliveryLocationHistoryWriter;
 import lombok.RequiredArgsConstructor;
@@ -89,6 +92,7 @@ public class PidgeWebhookProcessingService {
 	private final PidgePartialDeliveryWebhookService pidgePartialDeliveryWebhookService;
 	private final DeliveryLocationHistoryWriter deliveryLocationHistoryWriter;
 	private final MealDeliveryNotificationService mealDeliveryNotificationService;
+	private final PidgeMealCancellationService pidgeMealCancellationService;
 
 	/** Pidge Communications Module — Rider Active Task webhook (batch rider + order_details). */
 	static boolean isRiderTaskPayload(JsonNode payload) {
@@ -180,6 +184,10 @@ public class PidgeWebhookProcessingService {
 		}
 
 		DeliveryTracking dt = trackingOpt.get();
+
+		String rawFulfillmentStatus = payload.path("fulfillment").path("status").asText("");
+		String dummyStatus = payload.hasNonNull("dummy_status") ? payload.get("dummy_status").asText() : "";
+
 		if ("placed".equals(parentStatus) || "manifested".equals(parentStatus)) {
 			log.info(
 					"[PIDGE WEBHOOK] parent_status_mapping pidgeOrderId={} parentStatus={} resolvedInternalStatus={} previousTrackingStatus={}",
@@ -241,11 +249,44 @@ public class PidgeWebhookProcessingService {
 			hyperlocalOrderId = orderStatusJdbc.resolveMealOrderIdForSubscriptionDelivery(dt.getSubscriptionDeliveryId());
 		}
 
+		MealCancelProcessResult mealCancelResult = MealCancelProcessResult.NOT_APPLICABLE;
+		String mealCancellationReason = null;
+		boolean isMealHyperlocal = dt.getPharmacyOrderId() == null && hyperlocalOrderId != null;
+		if (isMealHyperlocal && "cancelled".equalsIgnoreCase(normalized)) {
+			mealCancelResult = pidgeMealCancellationService.tryProcessMealCancellation(
+					hyperlocalOrderId,
+					dt.getId(),
+					pidgeId,
+					normalized,
+					parentStatus,
+					rawFulfillmentStatus,
+					dummyStatus,
+					lastLog,
+					payload);
+			if (mealCancelResult == MealCancelProcessResult.APPLIED) {
+				mealCancellationReason = PidgeMealCancellationSupport.extractCancellationReason(
+						parentStatus, rawFulfillmentStatus, dummyStatus, lastLog);
+			}
+		}
+
+		if (mealCancelResult == MealCancelProcessResult.DUPLICATE) {
+			log.info(
+					"[PIDGE WEBHOOK] idempotent_duplicate_cancel pidgeId={} mealOrderId={}",
+					pidgeId,
+					hyperlocalOrderId);
+			return Map.of(
+					"success", true,
+					"message", "Pidge meal cancel webhook duplicate (idempotent)",
+					"deliveryTrackingId", dt.getId(),
+					"status", normalized,
+					"duplicate", true);
+		}
+
 		String orderStatus = mapPidgeNormalizedToPharmacyMealOrderStatus(normalized);
 		if (!trackingDowngradeBlocked && hyperlocalOrderId != null && orderStatus != null) {
 			if (dt.getPharmacyOrderId() != null) {
 				orderStatusJdbc.updatePharmacyOrderStatus(hyperlocalOrderId, orderStatus);
-			} else {
+			} else if (mealCancelResult != MealCancelProcessResult.APPLIED) {
 				orderStatusJdbc.updateMealOrderStatus(hyperlocalOrderId, orderStatus);
 				if ("delivered".equals(orderStatus)) {
 					orderStatusJdbc.ensureMealOrderSettlementOnDelivered(hyperlocalOrderId);
@@ -262,7 +303,8 @@ public class PidgeWebhookProcessingService {
 
 		if (dt.getMealOrderId() != null || dt.getSubscriptionDeliveryId() != null) {
 			try {
-				mealDeliveryNotificationService.notifyMealRiderStageIfApplicable(dt, normalized, pidgeId);
+				mealDeliveryNotificationService.notifyMealRiderStageIfApplicable(
+						dt, normalized, pidgeId, mealCancellationReason);
 			} catch (Exception e) {
 				log.warn("[PIDGE WEBHOOK] meal delivery notify failed: {}", e.getMessage());
 			}

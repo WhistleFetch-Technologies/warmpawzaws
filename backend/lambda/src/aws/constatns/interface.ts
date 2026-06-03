@@ -67,6 +67,7 @@ export type NotificationEventType =
     | 'meal_rider_nearby'
     | 'meal_order_delivered'
     | 'meal_order_cancelled'
+    | 'meal_logistics_cancelled'
     | 'meal_subscription_paused'
     | 'meal_subscription_resumed'
     | 'meal_subscription_cancelled'
@@ -268,6 +269,11 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationEventType, {
     meal_order_cancelled: {
         title: '❌ Meal Order Cancelled',
         body: '{vendorName} cancelled order #{orderNumber}. {reason}',
+    },
+    meal_logistics_cancelled: {
+        title: 'Delivery could not be completed',
+        body: 'Your meal order #{orderNumber} from {vendorName} could not be delivered. {reason}',
+        sound: 'high_priority',
     },
     meal_subscription_paused: {
         title: '⏸️ Subscription Paused',
