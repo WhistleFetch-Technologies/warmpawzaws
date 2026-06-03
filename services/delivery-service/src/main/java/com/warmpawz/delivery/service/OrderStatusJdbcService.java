@@ -52,6 +52,28 @@ public class OrderStatusJdbcService {
 		}
 	}
 
+	/**
+	 * Pidge logistics cancel (Phase 1): attribution + timestamps; does not refund.
+	 *
+	 * @return rows updated (0 if already terminal or row missing)
+	 */
+	public int updateMealOrderCancelledByLogistics(UUID orderId, String cancelledBy, String cancellationReason) {
+		return jdbc.update(
+				"""
+						UPDATE meal_orders SET
+						  status = 'cancelled',
+						  cancelled_at = COALESCE(cancelled_at, NOW()),
+						  cancelled_by = COALESCE(cancelled_by, ?),
+						  cancellation_reason = COALESCE(cancellation_reason, ?),
+						  updated_at = NOW()
+						WHERE id = ?
+						  AND status IS DISTINCT FROM 'delivered'
+						""",
+				cancelledBy,
+				cancellationReason,
+				orderId);
+	}
+
 	public void updateMealOrderDelivered(UUID orderId) {
 		jdbc.update(
 				"UPDATE meal_orders SET status = 'delivered', delivered_at = ?, updated_at = NOW() WHERE id = ?",

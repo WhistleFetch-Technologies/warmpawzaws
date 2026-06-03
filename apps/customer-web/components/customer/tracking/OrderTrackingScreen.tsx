@@ -26,6 +26,8 @@ import { MealOrderDetailsCollapsible } from '@/components/customer/tracking/Meal
 import { MealCustomerDetailsCard } from '@/components/customer/tracking/MealCustomerDetailsCard';
 import { DeliveryPartnerCallAction } from '@/components/customer/tracking/DeliveryPartnerCallAction';
 import { formatMealOrderDeliveryAddress } from '@/lib/meal-order-tracking-details';
+import { parseMealRefundReview } from '@/lib/meal-refund-review';
+import { MealRefundReviewTrackingCard } from '@/components/customer/meal-plans/MealRefundReviewListBanner';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
 
@@ -288,6 +290,7 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
       deliveryAddressText,
     );
     const riderPhoto = resolveRiderPhoto(tracking as Record<string, unknown>);
+    const refundReview = parseMealRefundReview(order.refundReview);
 
     return (
       <>
@@ -296,6 +299,9 @@ export function OrderTrackingScreen({ orderId, orderType, onBack }: OrderTrackin
           orderStatus={order.status}
           logisticsStatus={logisticsStatus}
           totalAmount={typeof totalAmt === 'number' ? totalAmt : undefined}
+          refundReviewCard={
+            refundReview ? <MealRefundReviewTrackingCard refundReview={refundReview} /> : undefined
+          }
           backSlot={
             <button
               type="button"

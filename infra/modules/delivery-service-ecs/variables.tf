@@ -96,3 +96,10 @@ variable "log_retention_days" {
   type    = number
   default = 14
 }
+
+variable "meal_delivery_notify_secret" {
+  description = "Shared secret for POST /internal/meal-delivery/notify (must match Lambda MEAL_DELIVERY_NOTIFY_SECRET)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

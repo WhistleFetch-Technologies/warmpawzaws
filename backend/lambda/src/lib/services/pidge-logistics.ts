@@ -367,16 +367,19 @@ export function buildPidgeOrderPayloadFromSimplified(
 
   const packagesFromItems =
     products.length > 0
-      ? products.map((p: { name: string; sku: string; quantity: number; dimension: { dead_weight: number } }) => ({
-          label: p.name,
-          quantity: p.quantity,
-          code: p.sku || undefined,
-          dead_weight: 0,
-          volumetric_weight: Math.max(1, Math.round(p.dimension.dead_weight)),
-          length: 2,
-          breadth: 2,
-          height: 2,
-        }))
+      ? products.map((p: { name: string; sku: string; quantity: number; dimension: { dead_weight: number } }) => {
+          const grams = Math.max(1, Math.round(p.dimension.dead_weight));
+          return {
+            label: p.name,
+            quantity: p.quantity,
+            code: p.sku || undefined,
+            dead_weight: grams,
+            volumetric_weight: grams,
+            length: 2,
+            breadth: 2,
+            height: 2,
+          };
+        })
       : (() => {
           const weightKeys = ['packageWeightGrams', 'totalWeightGrams', 'weight_g', 'pack_weight_grams'] as const;
           let fallback = 500;
@@ -387,12 +390,13 @@ export function buildPidgeOrderPayloadFromSimplified(
               break;
             }
           }
+          const grams = Math.max(1, Math.round(fallback));
           return [
             {
               label: 'Order',
               quantity: 1,
-              dead_weight: 0,
-              volumetric_weight: Math.max(1, Math.round(fallback)),
+              dead_weight: grams,
+              volumetric_weight: grams,
               length: 2,
               breadth: 2,
               height: 2,

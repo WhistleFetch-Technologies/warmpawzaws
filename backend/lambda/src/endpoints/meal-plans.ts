@@ -21,7 +21,7 @@ import { isValidUUID } from '../types/entities';
 import { getRazorpayConfig, razorpayRequest } from '../utils/payments/razorpay-client';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { randomUUID } from 'crypto';
-import { getFeeGlobalsMap } from '../utils/admin-fee-settings-db';
+import { computeNutritionistMealCheckoutFees } from '../utils/meal-checkout-platform-fees';
 import { getMealPlanGstRates, computeMealGstBreakdown } from '../utils/meal-plan-gst';
 import { presignMealPlanRowDisplayFields } from '../utils/s3-media-presign';
 import {
@@ -81,6 +81,7 @@ import {
 } from '../utils/meal-subscription-schedule-utils';
 import { computeMealSubscriptionCheckoutFees } from '../utils/meal-subscription-checkout-fees';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
+import { getMealRefundReviewCustomerMetadata } from '../utils/meal-refund-cases';
 import { paymentHoldExpiresAt } from '../utils/meal-payment-hold';
 import {
   assertMealOrderHasPidgeForPickup,
@@ -985,17 +986,9 @@ export function registerMealPlanEndpoints(app: Hono) {
       }
 
       let deliveryFee: number | null = null;
-      let platformFee = 0;
-      let convenienceFee = 0;
-
-      const feeMap = await getFeeGlobalsMap();
-      const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
-      const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
-      platformFee = Math.round(subtotal * (platformFeePercentage / 100));
-      if (maxPlatformFee > 0 && platformFee > maxPlatformFee) platformFee = maxPlatformFee;
-      convenienceFee = parseFloat(
-        feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0'
-      );
+      const mealFees = await computeNutritionistMealCheckoutFees(subtotal);
+      let platformFee = mealFees.platformFee;
+      let convenienceFee = mealFees.convenienceFee;
 
       const vendors = await query(
         `SELECT latitude, longitude, metadata FROM vendors WHERE id = $1 LIMIT 1`,
@@ -1394,17 +1387,9 @@ export function registerMealPlanEndpoints(app: Hono) {
         dropLng: normalizedAddress.lng,
       });
 
-      const feeMap = await getFeeGlobalsMap();
-      const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
-      const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
-      convenienceFee = parseFloat(
-        feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0',
-      );
-
-      platformFee = Math.round(subtotal * (platformFeePercentage / 100));
-      if (maxPlatformFee > 0 && platformFee > maxPlatformFee) {
-        platformFee = maxPlatformFee;
-      }
+      const mealFees = await computeNutritionistMealCheckoutFees(subtotal);
+      platformFee = mealFees.platformFee;
+      convenienceFee = mealFees.convenienceFee;
 
       if ((logisticsType || 'warmpawz') === 'warmpawz') {
         if (distanceKm == null) {
@@ -1730,6 +1715,11 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const order = result.rows[0];
 
+      const refundReview =
+        order.status === 'cancelled'
+          ? await getMealRefundReviewCustomerMetadata(orderId)
+          : null;
+
       // Get tracking info
       let tracking = null;
       const trackingResult = await select('delivery_tracking', { meal_order_id: orderId });
@@ -1747,6 +1737,7 @@ export function registerMealPlanEndpoints(app: Hono) {
           scheduledDeliverySlot: typeof order.scheduled_delivery_slot === 'string'
             ? JSON.parse(order.scheduled_delivery_slot)
             : order.scheduled_delivery_slot,
+          ...(refundReview ? { refundReview } : {}),
         },
         tracking,
       });

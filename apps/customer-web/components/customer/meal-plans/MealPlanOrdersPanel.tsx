@@ -39,6 +39,8 @@ import {
   PaymentHoldBanner,
   resolvePaymentHoldExpiresAt,
 } from '@/lib/payment-hold-ui';
+import { parseMealRefundReview, type MealRefundReviewMetadata } from '@/lib/meal-refund-review';
+import { MealRefundReviewListBanner } from '@/components/customer/meal-plans/MealRefundReviewListBanner';
 
 export interface MealPlanOrder {
   id: string;
@@ -65,6 +67,7 @@ export interface MealPlanOrder {
   otp_verified?: boolean;
   delivery_partner_name?: string;
   delivery_partner_phone?: string;
+  refundReview?: MealRefundReviewMetadata | null;
 }
 
 function resolveMealOrderImageUrl(o: Record<string, unknown>): string | undefined {
@@ -208,6 +211,7 @@ function MealPlanOrdersPanelLive({
             (o.paymentHoldExpiresAt as string | null | undefined) ??
             (o.payment_hold_expires_at as string | null | undefined) ??
             null,
+          refundReview: parseMealRefundReview(o.refundReview),
           delivery_date: o.delivery_date || o.scheduled_delivery_date || o.created_at,
           delivery_time:
             (o.delivery_time as string) || formatDeliveryTime(o.scheduled_delivery_slot) || '',
@@ -548,6 +552,11 @@ function MealPlanOrdersPanelLive({
                     <p className="text-sm text-gray-500 mt-1">Qty: {order.quantity ?? '—'}</p>
                   </div>
                 </div>
+
+                {order.status?.toLowerCase() === 'cancelled' &&
+                order.refundReview?.status === 'pending_review' ? (
+                  <MealRefundReviewListBanner refundReview={order.refundReview} />
+                ) : null}
 
                 {isMealOrderPaymentHoldVisible({
                   status: order.status,

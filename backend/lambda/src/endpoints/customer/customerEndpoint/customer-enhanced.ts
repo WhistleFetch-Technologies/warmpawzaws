@@ -48,6 +48,7 @@ import {
 } from '../../../utils/meal-delivery-effective-state';
 import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../services/meal-subscription/meal-subscription-operations-service';
 import { expireMealPaymentHolds } from '../../../utils/meal-payment-hold';
+import { getMealRefundReviewCustomerMetadata } from '../../../utils/meal-refund-cases';
 
 // ============================================================================
 // CUSTOMER HANDLERS
@@ -531,6 +532,10 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           price_per_meal: o.mp_price_per_meal,
         };
         const { subtotal, total } = resolveCustomerMealPlanOrderDisplayTotals(o, planForPricing);
+        const refundReview =
+          o.status === 'cancelled'
+            ? await getMealRefundReviewCustomerMetadata(String(o.id))
+            : null;
         allOrders.push({
           id: o.id,
           order_number: o.order_number || o.id?.toString().slice(-8),
@@ -555,6 +560,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           scheduled_delivery_slot: o.scheduled_delivery_slot,
           created_at: o.created_at,
           source: 'meal_orders',
+          ...(refundReview ? { refundReview } : {}),
         });
       }
 
