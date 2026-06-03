@@ -34,7 +34,7 @@ export function AdminRefundsPage() {
   const [refunds, setRefunds] = useState<RefundRequest[]>([]);
   const [stats, setStats] = useState<RefundStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>('pending');
+  const [filter, setFilter] = useState<string>('all');
   const [selectedRefund, setSelectedRefund] = useState<RefundRequest | null>(null);
   const [processing, setProcessing] = useState(false);
 

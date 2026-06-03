@@ -5,6 +5,7 @@
 import { Hono } from 'hono';
 import {
   approveMealRefundCase,
+  backfillMealRefundCaseByOrderRef,
   createMealRefundCaseOnPidgeCancel,
   getMealRefundCaseDetail,
   listMealRefundCases,
@@ -64,6 +65,27 @@ export function registerMealRefundCaseEndpoints(app: Hono) {
       return c.json({ success: true, cases, total, limit: limit ?? 25, offset: offset ?? 0 });
     } catch (e: unknown) {
       console.error('[admin/meal-refund-cases] list', e);
+      return c.json({ success: false, error: (e as Error).message }, 500);
+    }
+  });
+
+  app.post('/admin/meal-refund-cases/backfill', async (c) => {
+    try {
+      const body = (await c.req.json().catch(() => ({}))) as {
+        orderNumber?: string;
+        order_number?: string;
+        mealOrderId?: string;
+      };
+      const orderRef = String(
+        body.orderNumber || body.order_number || body.mealOrderId || '',
+      ).trim();
+      if (!orderRef) {
+        return c.json({ success: false, error: 'orderNumber or mealOrderId is required' }, 400);
+      }
+      const result = await backfillMealRefundCaseByOrderRef(orderRef);
+      return c.json({ success: true, ...result });
+    } catch (e: unknown) {
+      console.error('[admin/meal-refund-cases/backfill]', e);
       return c.json({ success: false, error: (e as Error).message }, 500);
     }
   });

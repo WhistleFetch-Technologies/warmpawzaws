@@ -58,6 +58,13 @@ type MealOrderRefundContext = {
 
 const TERMINAL_TRACKING = new Set(['delivered', 'picked_up']);
 
+/** Paid meal order — align with payments join and prod meal_orders values. */
+export function isMealOrderPaidForRefund(ctx: MealOrderRefundContext): boolean {
+  const ps = String(ctx.payment_status || '').trim().toLowerCase();
+  if (ps === 'paid' || ps === 'completed') return true;
+  return (ctx.payment_amount ?? 0) > 0;
+}
+
 async function loadMealOrderRefundContext(mealOrderId: string): Promise<MealOrderRefundContext | null> {
   const res = await query(
     `SELECT mo.id::text,
@@ -194,7 +201,7 @@ export async function createMealRefundCaseOnPidgeCancel(
   const ctx = await loadMealOrderRefundContext(mealOrderId);
   if (!ctx) return { created: false, skipped: 'order_not_found' };
 
-  if (ctx.payment_status !== 'paid') {
+  if (!isMealOrderPaidForRefund(ctx)) {
     return { created: false, skipped: 'not_paid' };
   }
 
@@ -357,4 +364,55 @@ export async function rejectMealRefundCase(
     return { ok: false, error: 'case_not_found_or_not_pending' };
   }
   return { ok: true };
+}
+
+/**
+ * Admin backfill: create review case for an already-cancelled paid meal order.
+ */
+export async function backfillMealRefundCaseByOrderRef(
+  orderRef: string,
+): Promise<{ created: boolean; caseId?: string; skipped?: string; mealOrderId?: string }> {
+  const ref = String(orderRef || '').trim();
+  if (!ref) return { created: false, skipped: 'missing_order_ref' };
+
+  const orderRes = await query(
+    `SELECT mo.id::text,
+            mo.order_number,
+            mo.status,
+            mo.payment_status,
+            mo.cancellation_reason,
+            mo.cancelled_by,
+            mo.pidge_order_id,
+            (
+              SELECT phe.id::text
+              FROM pidge_hyperlocal_webhook_events phe
+              WHERE phe.meal_order_id = mo.id
+                AND phe.event_kind = 'meal_cancelled'
+              ORDER BY phe.created_at DESC
+              LIMIT 1
+            ) AS webhook_event_id
+     FROM meal_orders mo
+     WHERE mo.order_number = $1 OR mo.id::text = $1
+     ORDER BY mo.created_at DESC
+     LIMIT 1`,
+    [ref],
+  );
+  const row = orderRes.rows?.[0] as Record<string, unknown> | undefined;
+  if (!row?.id) return { created: false, skipped: 'order_not_found' };
+
+  const mealOrderId = String(row.id);
+  if (String(row.status || '').toLowerCase() !== 'cancelled') {
+    return { created: false, skipped: 'order_not_cancelled', mealOrderId };
+  }
+
+  const result = await createMealRefundCaseOnPidgeCancel({
+    mealOrderId,
+    pidgeOrderId: row.pidge_order_id != null ? String(row.pidge_order_id) : null,
+    cancellationReason:
+      row.cancellation_reason != null
+        ? String(row.cancellation_reason)
+        : 'Pidge logistics cancellation (admin backfill)',
+    webhookEventId: row.webhook_event_id != null ? String(row.webhook_event_id) : null,
+  });
+  return { ...result, mealOrderId };
 }
