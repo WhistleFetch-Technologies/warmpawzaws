@@ -26,6 +26,8 @@ import { MealOrderDetailsCollapsible } from '@/components/customer/tracking/Meal
 import { MealCustomerDetailsCard } from '@/components/customer/tracking/MealCustomerDetailsCard';
 import { DeliveryPartnerCallAction } from '@/components/customer/tracking/DeliveryPartnerCallAction';
 import { formatMealOrderDeliveryAddress } from '@/lib/meal-order-tracking-details';
+import { parseMealRefundReview } from '@/lib/meal-refund-review';
+import { MealRefundReviewTrackingCard } from '@/components/customer/meal-plans/MealRefundReviewListBanner';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
 
@@ -41,6 +43,7 @@ interface TrackingData {
     total: number;
     total_amount?: number;
     createdAt: string;
+    refundReview?: unknown;
   };
   tracking: {
     awb?: string;
@@ -288,12 +291,17 @@ export function TrackingPageClient({ orderId }: { orderId: string }) {
       deliveryAddressText,
     );
 
+    const refundReview = parseMealRefundReview(tracking.order.refundReview);
+
     return (
       <MealPlanOrderTrackingUI
         orderDisplayId={formatMealOrderDisplayId(tracking.order)}
         orderStatus={tracking.order.status}
         logisticsStatus={logisticsStatus}
         totalAmount={orderTotal}
+        refundReviewCard={
+          refundReview ? <MealRefundReviewTrackingCard refundReview={refundReview} /> : undefined
+        }
         backSlot={
           <a
             href={mealBackHref}

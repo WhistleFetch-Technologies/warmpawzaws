@@ -16,12 +16,18 @@ import { notifyMealEvent } from './meal-delivery-notifications';
 export type MealRefundCaseStatus = 'pending_review' | 'approved' | 'rejected' | 'refunded';
 
 export type MealRefundReviewCustomerMetadata = {
-  status: 'pending_review';
+  status: MealRefundCaseStatus;
   message: string;
+  recommendedAmount?: number;
+  createdAt?: string;
 };
 
-const CUSTOMER_PENDING_MESSAGE =
-  'Our team is reviewing your refund request.';
+const CUSTOMER_STATUS_MESSAGES: Record<MealRefundCaseStatus, string> = {
+  pending_review: 'Our team is reviewing your refund request.',
+  approved: 'Your refund has been approved and is being processed.',
+  rejected: 'Please contact support regarding your refund request.',
+  refunded: 'Your refund has been approved and is being processed.',
+};
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -118,15 +124,24 @@ export async function getMealRefundReviewCustomerMetadata(
   mealOrderId: string,
 ): Promise<MealRefundReviewCustomerMetadata | null> {
   const res = await query(
-    `SELECT status FROM meal_refund_cases
-     WHERE meal_order_id = $1::uuid AND status = 'pending_review'
+    `SELECT status,
+            recommended_refund_amount::text,
+            created_at
+     FROM meal_refund_cases
+     WHERE meal_order_id = $1::uuid
      LIMIT 1`,
     [mealOrderId],
   );
-  if (!res.rows?.length) return null;
+  const row = res.rows?.[0] as Record<string, unknown> | undefined;
+  if (!row?.status) return null;
+  const status = String(row.status) as MealRefundCaseStatus;
+  const amount = parseFloat(String(row.recommended_refund_amount ?? ''));
+  const createdAt = row.created_at != null ? String(row.created_at) : undefined;
   return {
-    status: 'pending_review',
-    message: CUSTOMER_PENDING_MESSAGE,
+    status,
+    message: CUSTOMER_STATUS_MESSAGES[status] ?? CUSTOMER_STATUS_MESSAGES.pending_review,
+    ...(Number.isFinite(amount) && amount > 0 ? { recommendedAmount: round2(amount) } : {}),
+    ...(createdAt ? { createdAt } : {}),
   };
 }
 

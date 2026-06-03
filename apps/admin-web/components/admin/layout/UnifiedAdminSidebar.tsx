@@ -25,6 +25,7 @@ import {
   Bell,
   ChevronDown,
   ChevronRight,
+  RefreshCw,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
@@ -122,6 +123,15 @@ export function UnifiedAdminSidebar({ activeView, onNavigate }: UnifiedAdminSide
         id: 'finance',
         permissionsAny: ['admin.settlements', 'admin.logistics'],
         onClick: () => onNavigate('finance'),
+      },
+      {
+        icon: RefreshCw,
+        label: 'Refunds',
+        id: 'refunds',
+        permission: 'admin.refunds',
+        onClick: () => {
+          window.location.href = '/refunds';
+        },
       },
       { icon: UserCog, label: 'Role & User Management', id: 'roles', permission: 'admin.roles', onClick: () => onNavigate('roles') },
     ];
