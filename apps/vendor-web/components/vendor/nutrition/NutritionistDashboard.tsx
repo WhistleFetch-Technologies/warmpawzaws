@@ -17,6 +17,7 @@ import { useVendorWebSocket } from '@/hooks/useVendorWebSocket';
 import {
   resolveEffectiveMealDeliveryState,
   formatVendorMealDeliveryBadge,
+  isTerminalMealDeliveryState,
   type MealDeliveryEffective,
 } from '@warmpawz/shared-types';
 
@@ -300,15 +301,21 @@ function vendorMealEffectiveStatus(o: MealOrder): MealDeliveryEffective {
   );
 }
 
+/**
+ * Bucket orders for vendor stats:
+ * - Past: delivered, cancelled, or failed (incl. Pidge-cancelled) — all terminal work.
+ * - Today: active orders due today/yesterday or overdue (not yet delivered/cancelled).
+ * - Upcoming: future scheduled drop-offs still in progress.
+ */
 function mealOrderBucket(o: MealOrder): VendorMealOrderBucket {
   const st = vendorMealEffectiveStatus(o);
-  if (st === 'delivered' || st === 'cancelled' || st === 'failed') return 'past';
-  const sched = scheduledYmdForOrder(o);
+  if (isTerminalMealDeliveryState(st)) return 'past';
+
   const today = ymdLocal(new Date());
+  const sched = scheduledYmdForOrder(o);
   if (!sched) return 'today';
-  if (sched < today) return 'today';
-  if (sched === today) return 'today';
-  return 'upcoming';
+  if (sched > today) return 'upcoming';
+  return 'today';
 }
 
 export default function NutritionistDashboard({ vendorId, vendorName }: NutritionistDashboardProps) {
@@ -990,7 +997,14 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
           <div className="flex gap-2 mt-4">
             {[
               { id: 'products', label: 'Meal Products', icon: Icons.utensils, count: products.length },
-              { id: 'orders', label: 'Orders', icon: Icons.package, count: orders.filter(o => o.status !== 'delivered').length },
+              {
+                id: 'orders',
+                label: 'Orders',
+                icon: Icons.package,
+                count: orders.filter(
+                  (o) => !isTerminalMealDeliveryState(vendorMealEffectiveStatus(o)),
+                ).length,
+              },
               { id: 'analytics', label: 'Insights', icon: Icons.fire, count: 0 },
             ].map((tab) => (
               <button
@@ -1153,7 +1167,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                         : 'bg-white border-orange-100 ring-1 ring-orange-100 hover:border-orange-200'
                     }`}
                   >
-                    <p className="text-xs font-medium uppercase tracking-wide text-orange-800/90">Today&apos;s orders</p>
+                    <p className="text-xs font-medium uppercase tracking-wide text-orange-800/90">Today &amp; yesterday</p>
                     <p className="mt-1 text-2xl font-bold text-orange-700">{todayOrders.length}</p>
                   </button>
                   <button
@@ -1176,13 +1190,13 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                       ? {
                           title: 'Previous / completed',
                           list: pastOrders,
-                          empty: 'No completed or cancelled orders in this view.',
+                            empty: 'No delivered, cancelled, or failed orders yet.',
                         }
                       : ordersBucketFilter === 'today'
                         ? {
-                            title: "Today's orders",
+                            title: 'Today & yesterday',
                             list: todayOrders,
-                            empty: 'No orders for today (includes overdue items awaiting action).',
+                            empty: 'No active orders for today or yesterday (delivered/cancelled appear under Previous / completed).',
                           }
                         : {
                             title: 'Upcoming orders',

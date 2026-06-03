@@ -103,6 +103,7 @@ import {
 import {
   backfillMissingMealDeliverySettlementsForVendorIds,
   syncDeliveredMealOrdersFromTracking,
+  syncCancelledMealOrdersFromTracking,
 } from '../utils/meal-order-settlement';
 
 /** Coerce DB/API money fields so vendor UI never receives NaN or bogus strings. */
@@ -2579,6 +2580,7 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
 
       await syncDeliveredMealOrdersFromTracking(allVendorIds);
+      await syncCancelledMealOrdersFromTracking(allVendorIds);
       await backfillMissingMealDeliverySettlementsForVendorIds(
         allVendorIds,
         '[MEAL-ORDERS-SETTLEMENT-BACKFILL]',
