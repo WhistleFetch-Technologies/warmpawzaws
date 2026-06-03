@@ -16,7 +16,13 @@ import {
   FileText,
 } from 'lucide-react';
 
-type CaseStatus = 'pending_review' | 'approved' | 'rejected' | 'refunded';
+type CaseStatus =
+  | 'pending_review'
+  | 'approved'
+  | 'rejected'
+  | 'refund_processing'
+  | 'refunded'
+  | 'refund_failed';
 
 type MealRefundCaseRow = {
   id: string;
@@ -51,14 +57,22 @@ type MealRefundCaseDetail = MealRefundCaseRow & {
   reviewed_at?: string | null;
   review_notes?: string | null;
   updated_at?: string | null;
+  refunds_row_id?: string | null;
+  razorpay_refund_id?: string | null;
+  refund_amount_executed?: string | number | null;
+  refund_requested_at?: string | null;
+  refund_completed_at?: string | null;
+  refund_failure_reason?: string | null;
+  payout_method?: string | null;
 };
 
 const STATUS_FILTERS: { id: string; label: string }[] = [
   { id: '', label: 'All' },
   { id: 'pending_review', label: 'Pending review' },
-  { id: 'approved', label: 'Approved' },
-  { id: 'rejected', label: 'Rejected' },
+  { id: 'refund_processing', label: 'Processing' },
   { id: 'refunded', label: 'Refunded' },
+  { id: 'refund_failed', label: 'Failed' },
+  { id: 'rejected', label: 'Rejected' },
 ];
 
 function money(v: unknown): string {
@@ -72,11 +86,13 @@ function statusBadge(status: string) {
     case 'pending_review':
       return 'bg-amber-100 text-amber-800';
     case 'approved':
-      return 'bg-emerald-100 text-emerald-800';
+    case 'refund_processing':
+      return 'bg-blue-100 text-blue-800';
     case 'rejected':
+    case 'refund_failed':
       return 'bg-red-100 text-red-700';
     case 'refunded':
-      return 'bg-blue-100 text-blue-800';
+      return 'bg-emerald-100 text-emerald-800';
     default:
       return 'bg-gray-100 text-gray-700';
   }
@@ -163,13 +179,18 @@ export function MealLogisticsRefundCases() {
     if (!selectedId || !detail) return;
     setProcessing(true);
     try {
-      const res = await apiClient.post<{ success?: boolean; error?: string }>(
-        `/admin/meal-refund-cases/${selectedId}/approve`,
-        {},
-      );
+      const res = await apiClient.post<{
+        success?: boolean;
+        error?: string;
+        status?: string;
+        refundAmountExecuted?: number;
+      }>(`/admin/meal-refund-cases/${selectedId}/approve`, {});
       if (res.success !== false) {
-        toast.success('Refund case approved (workflow only — no payment issued yet)');
-        setDetail((d) => (d ? { ...d, status: 'approved' } : d));
+        toast.success(
+          res.status === 'refunded'
+            ? 'Refund completed'
+            : 'Refund initiated — processing via Razorpay',
+        );
         void loadList();
         void loadDetail(selectedId);
       } else {
@@ -211,8 +232,7 @@ export function MealLogisticsRefundCases() {
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Meal logistics refund cases</h2>
           <p className="text-sm text-gray-500 mt-1">
-            Pidge cancellations on paid meal orders — review only; approving does not run Razorpay
-            (Phase 3).
+            Pidge cancellations on paid meal orders — approve runs Razorpay/wallet refund (Phase 3).
           </p>
         </div>
         <button
@@ -432,6 +452,16 @@ export function MealLogisticsRefundCases() {
                   ) : null}
                 </Section>
 
+                <Section title="Refund execution" icon={CreditCard}>
+                  <Row label="Executed amount" value={money(detail.refund_amount_executed)} />
+                  <Row label="Payout method" value={detail.payout_method} />
+                  <Row label="Razorpay refund ID" value={detail.razorpay_refund_id} mono />
+                  <Row label="Refunds row ID" value={detail.refunds_row_id} mono />
+                  <Row label="Requested at" value={formatDt(detail.refund_requested_at)} />
+                  <Row label="Completed at" value={formatDt(detail.refund_completed_at)} />
+                  <Row label="Failure reason" value={detail.refund_failure_reason} />
+                </Section>
+
                 {detail.status === 'pending_review' ? (
                   <div className="pt-2 space-y-3 border-t">
                     <textarea
@@ -461,7 +491,7 @@ export function MealLogisticsRefundCases() {
                       </button>
                     </div>
                     <p className="text-xs text-gray-500 text-center">
-                      Workflow status only — Razorpay refund is Phase 3.
+                      Approve triggers Razorpay or wallet refund for the recommended amount.
                     </p>
                   </div>
                 ) : null}

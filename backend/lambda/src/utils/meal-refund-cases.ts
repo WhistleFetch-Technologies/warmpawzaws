@@ -6,14 +6,19 @@
  *   uses `payments` (transaction_id `meal_order:{id}`) and `refunds` rows (mirrors booking-original-refund).
  * - `meal-subscription-refund.ts` / `meal-subscription-parent-booking-refund.ts` — subscription paths.
  *
- * This module is review-only: creates `meal_refund_cases`, recommends amounts, admin approve/reject
- * updates case status only (no `meal_orders.payment_status` changes, no Razorpay).
+ * Creates `meal_refund_cases`; approve runs Razorpay via meal-refund-case-execution (Phase 3).
  */
 
 import { query, insert } from '../database/rds-connection';
 import { notifyMealEvent } from './meal-delivery-notifications';
 
-export type MealRefundCaseStatus = 'pending_review' | 'approved' | 'rejected' | 'refunded';
+export type MealRefundCaseStatus =
+  | 'pending_review'
+  | 'approved'
+  | 'rejected'
+  | 'refund_processing'
+  | 'refunded'
+  | 'refund_failed';
 
 export type MealRefundReviewCustomerMetadata = {
   status: MealRefundCaseStatus;
@@ -26,7 +31,9 @@ const CUSTOMER_STATUS_MESSAGES: Record<MealRefundCaseStatus, string> = {
   pending_review: 'Our team is reviewing your refund request.',
   approved: 'Your refund has been approved and is being processed.',
   rejected: 'Please contact support regarding your refund request.',
-  refunded: 'Your refund has been approved and is being processed.',
+  refund_processing: 'Your refund is being processed to your original payment method.',
+  refunded: 'Your refund has been completed.',
+  refund_failed: 'We could not complete your refund automatically. Please contact support.',
 };
 
 function round2(n: number): number {
@@ -133,6 +140,7 @@ export async function getMealRefundReviewCustomerMetadata(
   const res = await query(
     `SELECT status,
             recommended_refund_amount::text,
+            refund_amount_executed::text,
             created_at
      FROM meal_refund_cases
      WHERE meal_order_id = $1::uuid
@@ -142,12 +150,19 @@ export async function getMealRefundReviewCustomerMetadata(
   const row = res.rows?.[0] as Record<string, unknown> | undefined;
   if (!row?.status) return null;
   const status = String(row.status) as MealRefundCaseStatus;
-  const amount = parseFloat(String(row.recommended_refund_amount ?? ''));
+  const recommended = parseFloat(String(row.recommended_refund_amount ?? ''));
+  const executed = parseFloat(String(row.refund_amount_executed ?? ''));
+  const displayAmount =
+    ['refund_processing', 'refunded'].includes(status) && executed > 0
+      ? executed
+      : recommended;
   const createdAt = row.created_at != null ? String(row.created_at) : undefined;
   return {
     status,
     message: CUSTOMER_STATUS_MESSAGES[status] ?? CUSTOMER_STATUS_MESSAGES.pending_review,
-    ...(Number.isFinite(amount) && amount > 0 ? { recommendedAmount: round2(amount) } : {}),
+    ...(Number.isFinite(displayAmount) && displayAmount > 0
+      ? { recommendedAmount: round2(displayAmount) }
+      : {}),
     ...(createdAt ? { createdAt } : {}),
   };
 }
@@ -287,6 +302,9 @@ export async function listMealRefundCases(params: {
             mrc.cancellation_source, mrc.cancellation_reason,
             mrc.recommended_refund_amount::text, mrc.recommendation_reason,
             mrc.reviewed_by, mrc.reviewed_at, mrc.created_at, mrc.updated_at,
+            mrc.refunds_row_id::text, mrc.razorpay_refund_id, mrc.refund_amount_executed::text,
+            mrc.refund_requested_at, mrc.refund_completed_at, mrc.refund_failure_reason,
+            mrc.payout_method,
             mo.order_number, mo.payment_status, mo.total_amount::text,
             c.full_name AS customer_name, v.business_name AS vendor_name
      FROM meal_refund_cases mrc
@@ -330,18 +348,17 @@ export async function getMealRefundCaseDetail(caseId: string): Promise<Record<st
 export async function approveMealRefundCase(
   caseId: string,
   reviewedBy: string,
-): Promise<{ ok: boolean; error?: string }> {
-  const res = await query(
-    `UPDATE meal_refund_cases
-     SET status = 'approved', reviewed_by = $2, reviewed_at = NOW(), updated_at = NOW()
-     WHERE id = $1::uuid AND status = 'pending_review'
-     RETURNING id::text`,
-    [caseId, reviewedBy],
-  );
-  if (!res.rows?.length) {
-    return { ok: false, error: 'case_not_found_or_not_pending' };
-  }
-  return { ok: true };
+): Promise<{
+  ok: boolean;
+  error?: string;
+  status?: string;
+  refundsRowId?: string;
+  razorpayRefundId?: string;
+  refundAmountExecuted?: number;
+  alreadyProcessed?: boolean;
+}> {
+  const { approveAndExecuteMealRefundCase } = await import('./meal-refund-case-execution');
+  return approveAndExecuteMealRefundCase(caseId, reviewedBy);
 }
 
 export async function rejectMealRefundCase(

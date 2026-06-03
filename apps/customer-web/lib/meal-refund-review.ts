@@ -4,7 +4,9 @@ export type MealRefundReviewStatus =
   | 'pending_review'
   | 'approved'
   | 'rejected'
-  | 'refunded';
+  | 'refund_processing'
+  | 'refunded'
+  | 'refund_failed';
 
 export type MealRefundReviewMetadata = {
   status: MealRefundReviewStatus;
@@ -18,7 +20,14 @@ export function parseMealRefundReview(raw: unknown): MealRefundReviewMetadata | 
   const o = raw as Record<string, unknown>;
   const status = String(o.status || '').trim() as MealRefundReviewStatus;
   if (
-    !['pending_review', 'approved', 'rejected', 'refunded'].includes(status)
+    ![
+      'pending_review',
+      'approved',
+      'rejected',
+      'refund_processing',
+      'refunded',
+      'refund_failed',
+    ].includes(status)
   ) {
     return null;
   }
@@ -54,8 +63,12 @@ export function mealRefundReviewListTitle(status: MealRefundReviewStatus): strin
       return 'Refund approved';
     case 'rejected':
       return 'Refund not approved';
+    case 'refund_processing':
+      return 'Refund processing';
     case 'refunded':
-      return 'Refund processed';
+      return 'Refund completed';
+    case 'refund_failed':
+      return 'Refund issue';
     default:
       return 'Refund update';
   }

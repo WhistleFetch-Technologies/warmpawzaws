@@ -69,6 +69,8 @@ export type NotificationEventType =
     | 'meal_order_cancelled'
     | 'meal_logistics_cancelled'
     | 'meal_refund_review_initiated'
+    | 'meal_refund_approved'
+    | 'meal_refund_completed'
     | 'meal_subscription_paused'
     | 'meal_subscription_resumed'
     | 'meal_subscription_cancelled'
@@ -279,6 +281,15 @@ export const NOTIFICATION_TEMPLATES: Record<NotificationEventType, {
     meal_refund_review_initiated: {
         title: 'Refund under review',
         body: 'Our team is reviewing your refund request for order #{orderNumber} from {vendorName}.',
+    },
+    meal_refund_approved: {
+        title: 'Refund approved',
+        body: 'Your refund of {refundAmount} for order #{orderNumber} from {vendorName} has been approved and is being processed.',
+        sound: 'high_priority',
+    },
+    meal_refund_completed: {
+        title: 'Refund completed',
+        body: 'Your refund of {refundAmount} for order #{orderNumber} from {vendorName} has been completed.',
     },
     meal_subscription_paused: {
         title: '⏸️ Subscription Paused',

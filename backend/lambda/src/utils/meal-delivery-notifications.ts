@@ -22,6 +22,8 @@ export const MEAL_CUSTOMER_DELIVERY_STAGES = [
   'meal_order_cancelled',
   'meal_logistics_cancelled',
   'meal_refund_review_initiated',
+  'meal_refund_approved',
+  'meal_refund_completed',
 ] as const;
 
 /** Vendor operational events. */
@@ -163,6 +165,7 @@ export type NotifyMealEventParams = {
   pidgeOrderId?: string;
   logisticsStatus?: string;
   mealPlanName?: string;
+  refundAmount?: string;
   action?: string;
 };
 
@@ -227,6 +230,7 @@ export async function notifyMealEvent(
       deliveryTrackingId: params.deliveryTrackingId,
       pidgeOrderId: params.pidgeOrderId,
       logisticsStatus: params.logisticsStatus,
+      refundAmount: params.refundAmount,
       action: params.action || defaultAction,
       dedupeKey,
       eventType: params.eventType,

@@ -198,6 +198,19 @@ async function creditMealWalletRefund(
   return amount;
 }
 
+let mealRefundCaseIdColumnExists: boolean | null = null;
+
+async function refundsHasMealRefundCaseIdColumn(): Promise<boolean> {
+  if (mealRefundCaseIdColumnExists !== null) return mealRefundCaseIdColumnExists;
+  const res = await query(
+    `SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'refunds' AND column_name = 'meal_refund_case_id'
+     LIMIT 1`,
+  );
+  mealRefundCaseIdColumnExists = Boolean((res as { rows?: unknown[] }).rows?.length);
+  return mealRefundCaseIdColumnExists;
+}
+
 async function executeMealOriginalPaymentRefund(params: {
   transactionId: string;
   customerId: string;
@@ -210,6 +223,7 @@ async function executeMealOriginalPaymentRefund(params: {
   reason: string;
   initiatedBy: RefundInitiator;
   mealOrderId?: string;
+  mealRefundCaseId?: string;
   onSuccess?: () => Promise<void>;
 }): Promise<OriginalPaymentRefundResult> {
   const {
@@ -224,6 +238,7 @@ async function executeMealOriginalPaymentRefund(params: {
     reason,
     initiatedBy,
     mealOrderId,
+    mealRefundCaseId,
     onSuccess,
   } = params;
 
@@ -340,23 +355,44 @@ async function executeMealOriginalPaymentRefund(params: {
   const newPaymentStatus = isFullPaymentRefund ? 'refunded' : 'partially_refunded';
 
   let refundId: string | undefined;
+  const linkMealCase =
+    mealRefundCaseId && (await refundsHasMealRefundCaseIdColumn());
   await withTransaction(async (client) => {
-    const ins = await client.query(
-      `INSERT INTO refunds (
-         payment_id, booking_id, customer_id, vendor_id, refund_amount, refund_reason,
-         refund_status, refund_method, razorpay_refund_id, requested_at, processed_at
-       ) VALUES ($1::uuid, NULL, $2::uuid, $3::uuid, $4, $5, $6, 'original', $7, NOW(), NOW())
-       RETURNING id::text`,
-      [
-        payment.id,
-        customerId,
-        vendorId,
-        razorpayAmount,
-        reason,
-        refundStatusDb,
-        razorpayRefundId || null,
-      ],
-    );
+    const ins = linkMealCase
+      ? await client.query(
+          `INSERT INTO refunds (
+             payment_id, booking_id, customer_id, vendor_id, refund_amount, refund_reason,
+             refund_status, refund_method, razorpay_refund_id, meal_refund_case_id,
+             requested_at, processed_at
+           ) VALUES ($1::uuid, NULL, $2::uuid, $3::uuid, $4, $5, $6, 'original', $7, $8::uuid, NOW(), NOW())
+           RETURNING id::text`,
+          [
+            payment.id,
+            customerId,
+            vendorId,
+            razorpayAmount,
+            reason,
+            refundStatusDb,
+            razorpayRefundId || null,
+            mealRefundCaseId,
+          ],
+        )
+      : await client.query(
+          `INSERT INTO refunds (
+             payment_id, booking_id, customer_id, vendor_id, refund_amount, refund_reason,
+             refund_status, refund_method, razorpay_refund_id, requested_at, processed_at
+           ) VALUES ($1::uuid, NULL, $2::uuid, $3::uuid, $4, $5, $6, 'original', $7, NOW(), NOW())
+           RETURNING id::text`,
+          [
+            payment.id,
+            customerId,
+            vendorId,
+            razorpayAmount,
+            reason,
+            refundStatusDb,
+            razorpayRefundId || null,
+          ],
+        );
     refundId = ins.rows[0]?.id;
     await client.query(`UPDATE payments SET payment_status = $1, updated_at = NOW() WHERE id = $2::uuid`, [
       newPaymentStatus,
@@ -376,6 +412,7 @@ async function executeMealOriginalPaymentRefund(params: {
   }
 
   if (refundId) {
+    const refundRowId = refundId;
     setImmediate(async () => {
       try {
         const { sendRefundNotification } = await import('./refund-service');
@@ -384,7 +421,7 @@ async function executeMealOriginalPaymentRefund(params: {
           bookingId: mealOrderId,
           amount: totalReturned,
           reason,
-          refundId,
+          refundId: refundRowId,
         });
       } catch (e) {
         console.error('[meal-order-original-refund] notification failed:', e);
@@ -401,6 +438,111 @@ async function executeMealOriginalPaymentRefund(params: {
     status: finalStatus,
     message: messageParts.join('; ') || 'Refund initiated',
   };
+}
+
+/** Admin-approved meal logistics refund — custom amount, optional case linkage. */
+export async function processMealOrderAdminOriginalRefund(
+  mealOrderId: string,
+  refundAmount: number,
+  reason: string,
+  options: { mealRefundCaseId?: string; initiatedBy?: RefundInitiator } = {},
+): Promise<OriginalPaymentRefundResult> {
+  const amount = round2(refundAmount);
+  if (amount <= 0.009) {
+    return {
+      walletCredited: 0,
+      razorpayAmount: 0,
+      totalAmount: 0,
+      status: 'skipped',
+      message: 'No refundable amount',
+    };
+  }
+
+  const res = await query(
+    `SELECT id, customer_id, vendor_id, total_amount::text, payment_status,
+            razorpay_payment_id, razorpay_order_id, purchase_snapshot
+     FROM meal_orders WHERE id = $1::uuid LIMIT 1`,
+    [mealOrderId],
+  );
+  const order = (res as any).rows?.[0] as
+    | {
+        id: string;
+        customer_id: string;
+        vendor_id: string;
+        total_amount: string;
+        payment_status: string;
+        razorpay_payment_id?: string;
+        razorpay_order_id?: string;
+        purchase_snapshot?: unknown;
+      }
+    | undefined;
+
+  if (!order) throw new Error('Meal order not found');
+  if (order.payment_status === 'refunded') {
+    return {
+      walletCredited: 0,
+      razorpayAmount: 0,
+      totalAmount: 0,
+      status: 'skipped',
+      message: 'Order already refunded',
+      alreadyProcessed: true,
+    };
+  }
+  if (order.payment_status !== 'paid' && order.payment_status !== 'completed') {
+    return {
+      walletCredited: 0,
+      razorpayAmount: 0,
+      totalAmount: 0,
+      status: 'skipped',
+      message: 'Order was not paid — no refund required',
+    };
+  }
+
+  const orderTotal = round2(parseFloat(order.total_amount) || 0);
+  const cappedAmount = round2(Math.min(amount, orderTotal > 0 ? orderTotal : amount));
+
+  let walletPaid = await resolveMealOrderWalletPaidInr(
+    mealOrderId,
+    String(order.customer_id),
+    order.purchase_snapshot,
+  );
+  if (walletPaid <= 0.009) {
+    walletPaid = mealOrderWalletDebitFromRow({ purchase_snapshot: order.purchase_snapshot });
+  }
+  const gatewayId = String(order.razorpay_payment_id || '').trim();
+  if (walletPaid <= 0.009 && gatewayId === 'wallet') {
+    walletPaid = cappedAmount;
+  }
+  if (
+    walletPaid <= 0.009 &&
+    !isLikelyRazorpayPaymentCaptureId(gatewayId) &&
+    gatewayId !== 'wallet'
+  ) {
+    walletPaid = cappedAmount;
+  }
+
+  return executeMealOriginalPaymentRefund({
+    transactionId: `meal_order:${mealOrderId}`,
+    customerId: String(order.customer_id),
+    vendorId: order.vendor_id ? String(order.vendor_id) : null,
+    totalPaid: orderTotal || cappedAmount,
+    walletPaid,
+    refundAmount: cappedAmount,
+    razorpayOrderId: order.razorpay_order_id,
+    razorpayPaymentId: order.razorpay_payment_id,
+    reason,
+    initiatedBy: options.initiatedBy ?? 'admin',
+    mealOrderId,
+    mealRefundCaseId: options.mealRefundCaseId,
+    onSuccess: async () => {
+      if (cappedAmount >= (orderTotal || cappedAmount) - 0.01) {
+        await query(
+          `UPDATE meal_orders SET payment_status = 'refunded', updated_at = NOW() WHERE id = $1::uuid`,
+          [mealOrderId],
+        );
+      }
+    },
+  });
 }
 
 /** Vendor/customer cancel — one-time (adhoc) paid meal order → original payment refund. */

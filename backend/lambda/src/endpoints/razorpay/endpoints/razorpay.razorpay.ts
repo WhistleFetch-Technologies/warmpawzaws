@@ -1621,7 +1621,11 @@ class RazorpayWebhookHandler extends BaseHandler {
           }
         }
       });
-    } else if (event === 'refund.created' || event === 'refund.processed') {
+    } else if (
+      event === 'refund.created' ||
+      event === 'refund.processed' ||
+      event === 'refund.failed'
+    ) {
       const refund = payload_data.refund.entity;
       
       const { rows: paymentRows } = await query(
@@ -1732,6 +1736,38 @@ class RazorpayWebhookHandler extends BaseHandler {
       });
 
       console.log(`[RAZORPAY-WEBHOOK] ✅ Refund ${event} processed: ${refund.id}, Payment status: ${newPaymentStatus}`);
+
+      try {
+        const { reconcileMealRefundCaseFromRefundRow } = await import(
+          '../../../utils/meal-refund-case-execution'
+        );
+        const webhookStatus =
+          event === 'refund.failed'
+            ? ('failed' as const)
+            : refund.status === 'processed'
+              ? ('completed' as const)
+              : ('processing' as const);
+        const pendingUpd = await query(
+          `SELECT id::text FROM refunds
+           WHERE razorpay_refund_id = $1 OR (payment_id = $2::uuid AND razorpay_refund_id IS NULL)
+           ORDER BY requested_at DESC NULLS LAST LIMIT 1`,
+          [refund.id, payment.id],
+        );
+        const refundRowId = pendingUpd.rows?.[0]?.id
+          ? String(pendingUpd.rows[0].id)
+          : undefined;
+        await reconcileMealRefundCaseFromRefundRow({
+          refundRowId,
+          razorpayRefundId: refund.id,
+          webhookStatus,
+          failureReason:
+            event === 'refund.failed'
+              ? String(refund.error_description || refund.error_reason || 'Razorpay refund failed')
+              : undefined,
+        });
+      } catch (mealReconcileErr) {
+        console.error('[RAZORPAY-WEBHOOK] meal_refund_case reconcile failed:', mealReconcileErr);
+      }
     }
 
     return this.success({ message: 'Webhook processed' });

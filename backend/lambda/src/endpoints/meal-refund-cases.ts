@@ -107,9 +107,16 @@ export function registerMealRefundCaseEndpoints(app: Hono) {
     try {
       const result = await approveMealRefundCase(c.req.param('id'), adminReviewerId(c));
       if (!result.ok) {
-        return c.json({ success: false, error: result.error }, 404);
+        const code = result.alreadyProcessed ? 409 : 404;
+        return c.json({ success: false, error: result.error, ...result }, code);
       }
-      return c.json({ success: true, status: 'approved' });
+      return c.json({
+        success: true,
+        status: result.status ?? 'refund_processing',
+        refundsRowId: result.refundsRowId,
+        razorpayRefundId: result.razorpayRefundId,
+        refundAmountExecuted: result.refundAmountExecuted,
+      });
     } catch (e: unknown) {
       console.error('[admin/meal-refund-cases] approve', e);
       return c.json({ success: false, error: (e as Error).message }, 500);

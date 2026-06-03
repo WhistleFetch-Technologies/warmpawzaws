@@ -4,6 +4,7 @@ import {
   createMealRefundCaseOnPidgeCancel,
   rejectMealRefundCase,
 } from '../meal-refund-cases';
+import { approveAndExecuteMealRefundCase } from '../meal-refund-case-execution';
 import { query, insert } from '../../database/rds-connection';
 import { notifyMealEvent } from '../meal-delivery-notifications';
 
@@ -16,9 +17,16 @@ jest.mock('../meal-delivery-notifications', () => ({
   notifyMealEvent: jest.fn().mockResolvedValue({ sent: true }),
 }));
 
+jest.mock('../meal-refund-case-execution', () => ({
+  approveAndExecuteMealRefundCase: jest.fn(),
+}));
+
 const mockedQuery = query as jest.MockedFunction<typeof query>;
 const mockedInsert = insert as jest.MockedFunction<typeof insert>;
 const mockedNotify = notifyMealEvent as jest.MockedFunction<typeof notifyMealEvent>;
+const mockedExecute = approveAndExecuteMealRefundCase as jest.MockedFunction<
+  typeof approveAndExecuteMealRefundCase
+>;
 
 const PAID_ORDER_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -99,10 +107,17 @@ describe('createMealRefundCaseOnPidgeCancel', () => {
   });
 
   it('skips unpaid orders', async () => {
+    jest.clearAllMocks();
     mockedQuery.mockImplementation(async (sql: string) => {
       if (sql.includes('FROM meal_orders mo') && sql.includes('payment_amount')) {
         return {
-          rows: [paidOrderContext({ payment_status: 'pending' })],
+          rows: [
+            paidOrderContext({
+              payment_status: 'pending',
+              payment_amount: null,
+              total_amount: '0',
+            }),
+          ],
         } as any;
       }
       return { rows: [] } as any;
@@ -143,10 +158,15 @@ describe('approveMealRefundCase / rejectMealRefundCase', () => {
     jest.clearAllMocks();
   });
 
-  it('approve transitions pending_review to approved', async () => {
-    mockedQuery.mockResolvedValueOnce({ rows: [{ id: 'case-1' }] } as any);
+  it('approve delegates to execution module', async () => {
+    mockedExecute.mockResolvedValueOnce({
+      ok: true,
+      status: 'refund_processing',
+      refundsRowId: 'ref-1',
+    });
     const result = await approveMealRefundCase('case-1', 'admin@test.com');
     expect(result.ok).toBe(true);
+    expect(mockedExecute).toHaveBeenCalledWith('case-1', 'admin@test.com');
   });
 
   it('reject transitions pending_review to rejected with notes', async () => {
@@ -155,8 +175,8 @@ describe('approveMealRefundCase / rejectMealRefundCase', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('approve fails when not pending', async () => {
-    mockedQuery.mockResolvedValueOnce({ rows: [] } as any);
+  it('approve fails when execution rejects', async () => {
+    mockedExecute.mockResolvedValueOnce({ ok: false, error: 'case_not_found_or_not_pending' });
     const result = await approveMealRefundCase('case-1', 'admin@test.com');
     expect(result.ok).toBe(false);
   });
