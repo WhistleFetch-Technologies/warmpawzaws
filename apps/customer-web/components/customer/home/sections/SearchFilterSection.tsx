@@ -4,6 +4,7 @@ import React, { memo } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { EnhancedSearchBar } from '../../EnhancedSearchBar';
+import { traceHomeSearchUpstream } from '@/lib/search-trace';
 
 export interface SearchFilterSectionProps {
   customerId?: string;
@@ -22,13 +23,23 @@ function SearchFilterSectionComponent({
 }: SearchFilterSectionProps) {
   const router = useRouter();
 
+  const handleSearchWithTrace = (searchQuery: string) => {
+    traceHomeSearchUpstream('SearchFilterSection.onSearch', {
+      searchQuery,
+      placeholder,
+      customerId: customerId || null,
+      hasOnSearchHandler: typeof onSearch === 'function',
+    });
+    onSearch?.(searchQuery);
+  };
+
   return (
     <div className={`px-4 mt-[14px] mb-3 flex gap-2 items-center ${className}`}>
       <div className="min-w-0 flex-1">
         <EnhancedSearchBar
           placeholder={placeholder}
           customerId={customerId}
-          onSearch={onSearch}
+          onSearch={handleSearchWithTrace}
           onResultSelect={onResultSelect}
           compact
           className="shadow-sm"

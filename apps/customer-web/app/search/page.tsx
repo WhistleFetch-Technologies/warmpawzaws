@@ -28,6 +28,7 @@ import {
 } from '@/lib/search-discovery-params';
 import { dedupeSearchVendorAndServiceRows } from '@/lib/search-hub-category-filter';
 import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
+import { traceSearch } from '@/lib/search-trace';
 
 interface SearchResult {
   id: string;
@@ -202,6 +203,25 @@ function SearchContent() {
     return buildSearchFetchTrigger(query, category, vendorIdParam, searchNonce);
   }, [query, category, vendorIdParam, searchNonce]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const recentRaw = localStorage.getItem('warmpawz_recent_searches');
+    const ctxRaw = localStorage.getItem('warmpawz_search_context');
+    traceSearch('SearchPage.mount', {
+      initialQuery,
+      query,
+      category,
+      searchFetchTrigger,
+      url: window.location.href,
+      warmpawz_recent_searches: recentRaw,
+      warmpawz_search_context: ctxRaw,
+    });
+  }, []);
+
+  useEffect(() => {
+    traceSearch('SearchPage.state', { query, initialQuery, category, searchFetchTrigger });
+  }, [query, category, searchFetchTrigger, initialQuery]);
+
   const displayedResults = useMemo(() => {
     const q = (query || '').trim();
     const hub = (category || '').trim();
@@ -296,6 +316,7 @@ function SearchContent() {
         const discoveryParams = await buildSearchDiscoveryQueryParams();
         discoveryParams.forEach((value, key) => params.set(key, value));
         if (searchFetchTrigger.kind === 'keyword') {
+          traceSearch('SearchPage.fetch.keyword', { q: searchFetchTrigger.q, params: params.toString() });
           params.set('q', searchFetchTrigger.q);
           params.set('limit', '50');
           const hub = categoryRef.current.trim();

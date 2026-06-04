@@ -50,6 +50,13 @@ import {
   sqlVendorOnlineForCustomerDiscovery,
   sqlVendorServiceDiscoverable,
 } from '../lib/discovery-vendor-query';
+import {
+  resolveSearchTaxonomy,
+  logSearchTaxonomyDebug,
+  buildResidualSearchText,
+  type CategorySource,
+  type SearchCategoryMatch,
+} from '../lib/search-taxonomy';
 
 // Import OpenSearch client with fallback handling
 let openSearchClient: any = null;
@@ -170,6 +177,27 @@ function filterServicesToKeptVendors<S extends { vendorId?: string | null }>(
 // ============================================================================
 
 class UniversalSearchHandler extends BaseHandler {
+  /** Phase 2: taxonomy metadata returned on every /search response. */
+  private taxonomyResponseFields(opts: {
+    categories: SearchCategoryMatch[];
+    taxonomyResolvedHub: string | null;
+    taxonomySource: string;
+    effectiveCategory?: string;
+    categorySource: CategorySource;
+    hubDrivenRetrieval: boolean;
+    searchText: string;
+  }) {
+    return {
+      categories: opts.categories,
+      taxonomyResolvedHub: opts.taxonomyResolvedHub,
+      taxonomySource: opts.taxonomySource,
+      effectiveCategory: opts.effectiveCategory ?? null,
+      categorySource: opts.categorySource,
+      hubDrivenRetrieval: opts.hubDrivenRetrieval,
+      searchText: opts.searchText,
+    };
+  }
+
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const qs = context.event.queryStringParameters as Record<string, string | undefined> | undefined;
     const searchQuery = qs?.q || '';
@@ -177,22 +205,71 @@ class UniversalSearchHandler extends BaseHandler {
     const location = qs?.location;
     const limit = parseInt(qs?.limit || '20', 10);
     const userCoords = await resolveSearchUserCoords(qs);
-    const effectiveCategory = resolveEffectiveSearchCategory(category, searchQuery);
+
+    const explicitCategory = resolveEffectiveSearchCategory(category);
+    const taxonomy = searchQuery.trim()
+      ? await resolveSearchTaxonomy(searchQuery)
+      : {
+          categories: [],
+          topHubSlug: null,
+          topMatchedPhrase: null,
+          source: 'none' as const,
+        };
+    const taxonomyHub =
+      !explicitCategory && taxonomy.topHubSlug ? taxonomy.topHubSlug : undefined;
+    const effectiveCategory = explicitCategory ?? taxonomyHub;
+    const categorySource: CategorySource = explicitCategory
+      ? 'explicit'
+      : taxonomyHub
+        ? 'taxonomy'
+        : 'none';
+    const hubFromTaxonomy = categorySource === 'taxonomy';
+    const residual = buildResidualSearchText(searchQuery, {
+      categorySource,
+      topHubSlug: taxonomy.topHubSlug,
+      topMatchedPhrase: taxonomy.topMatchedPhrase,
+    });
     const hubContext = hubSlugToDiscoveryContext(effectiveCategory);
+    const categories = taxonomy.categories;
+    const taxonomyMeta = this.taxonomyResponseFields({
+      categories,
+      taxonomyResolvedHub: taxonomy.topHubSlug,
+      taxonomySource: taxonomy.source,
+      effectiveCategory,
+      categorySource,
+      hubDrivenRetrieval: hubFromTaxonomy,
+      searchText: residual.searchText,
+    });
 
     // Try OpenSearch first if available
     if (openSearchClient && process.env.ENABLE_OPENSEARCH === 'true') {
       try {
         console.log('🔍 Using OpenSearch for search query:', searchQuery);
-        return await this.searchWithOpenSearch(
+        const result = await this.searchWithOpenSearch(
           searchQuery,
           effectiveCategory,
           location,
           limit,
           userCoords,
           qs,
-          hubContext
+          hubContext,
+          taxonomyMeta,
+          residual.tokens
         );
+        logSearchTaxonomyDebug({
+          query: searchQuery,
+          categories,
+          topHubSlug: taxonomy.topHubSlug,
+          explicitCategory,
+          effectiveCategory,
+          categorySource,
+          searchMethod: 'opensearch',
+          taxonomySource: taxonomy.source,
+          hubDrivenRetrieval: hubFromTaxonomy,
+          searchText: residual.searchText,
+          searchTokens: residual.tokens,
+        });
+        return result;
       } catch (error) {
         console.warn('⚠️  OpenSearch failed, falling back to SQL:', error);
         // Fall through to SQL search
@@ -202,7 +279,31 @@ class UniversalSearchHandler extends BaseHandler {
     }
 
     // ✅ SQL Fallback: Search vendors and services using PostgreSQL
-    return await this.searchWithSQL(searchQuery, effectiveCategory, location, limit, userCoords, qs, hubContext);
+    const result = await this.searchWithSQL(
+      searchQuery,
+      effectiveCategory,
+      location,
+      limit,
+      userCoords,
+      qs,
+      hubContext,
+      taxonomyMeta,
+      residual.tokens
+    );
+    logSearchTaxonomyDebug({
+      query: searchQuery,
+      categories,
+      topHubSlug: taxonomy.topHubSlug,
+      explicitCategory,
+      effectiveCategory,
+      categorySource,
+      searchMethod: 'sql-fallback',
+      taxonomySource: taxonomy.source,
+      hubDrivenRetrieval: hubFromTaxonomy,
+      searchText: residual.searchText,
+      searchTokens: residual.tokens,
+    });
+    return result;
   }
 
   /**
@@ -215,7 +316,9 @@ class UniversalSearchHandler extends BaseHandler {
     limit: number,
     userCoords: { lat: number; lng: number } | null,
     qs: Record<string, string | undefined> | undefined,
-    hubContext: ReturnType<typeof hubSlugToDiscoveryContext>
+    hubContext: ReturnType<typeof hubSlugToDiscoveryContext>,
+    taxonomyMeta: Record<string, unknown>,
+    keywordTokens: string[]
   ): Promise<HandlerResponse> {
     const searchBody: any = {
       query: {
@@ -227,15 +330,17 @@ class UniversalSearchHandler extends BaseHandler {
       size: limit,
     };
 
-    // Text + category: require keyword match AND hub category (same as SQL AND semantics).
-    if (searchQuery) {
+    // Residual tokens after category constraint (taxonomy hub + intent/pet stripping).
+    if (keywordTokens.length > 0) {
       searchBody.query.bool.must.push({
         multi_match: {
-          query: searchQuery,
+          query: keywordTokens.join(' '),
           fields: ['business_name^3', 'service_name^2', 'description', 'specialization'],
           fuzziness: 'AUTO' as const,
         },
       });
+    } else if (searchBody.query.bool.must.length === 0) {
+      searchBody.query.bool.must.push({ match_all: {} });
     }
 
     // Add category filter (UI slug → multiple DB role/category strings)
@@ -376,6 +481,7 @@ class UniversalSearchHandler extends BaseHandler {
 
     return this.success({
       query: searchQuery,
+      ...taxonomyMeta,
       vendors: finalVendors,
       services: finalServices,
       total: finalVendors.length + finalServices.length,
@@ -395,7 +501,9 @@ class UniversalSearchHandler extends BaseHandler {
     limit: number,
     userCoords: { lat: number; lng: number } | null,
     qs: Record<string, string | undefined> | undefined,
-    hubContext: ReturnType<typeof hubSlugToDiscoveryContext>
+    hubContext: ReturnType<typeof hubSlugToDiscoveryContext>,
+    taxonomyMeta: Record<string, unknown>,
+    keywordTokens: string[]
   ): Promise<HandlerResponse> {
     const isBrowseAll = !searchQuery.trim() && !category;
 
@@ -423,10 +531,11 @@ class UniversalSearchHandler extends BaseHandler {
     const params: any[] = [];
     let paramIndex = 1;
 
-    const keywordTokens = searchQuery.trim() ? searchTokens(searchQuery) : [];
-    const hubBrowseOnly = isHubBrowseCategoryOnly(category, searchQuery);
+    const hubBrowseOnly = isHubBrowseCategoryOnly(
+      category,
+      keywordTokens.length > 0 ? keywordTokens.join(' ') : ''
+    );
 
-    // Keyword: each token must match vendor fields OR any listable published service on that vendor.
     for (const token of keywordTokens) {
       vendorsQuery += ` AND (
         v.business_name ILIKE $${paramIndex} OR
@@ -709,6 +818,7 @@ class UniversalSearchHandler extends BaseHandler {
 
     return this.success({
       query: searchQuery,
+      ...taxonomyMeta,
       vendors: finalVendors,
       services: finalServices,
       total: finalVendors.length + finalServices.length,

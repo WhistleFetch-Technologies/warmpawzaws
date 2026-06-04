@@ -514,13 +514,13 @@ export function filterSearchResultsByHubCategory<T extends SearchVendorRow, S ex
   return { vendors: filteredVendors, services: filteredServices };
 }
 
-export function resolveEffectiveSearchCategory(
-  category?: string,
-  searchQuery?: string
-): string | undefined {
+/**
+ * Hub filter for entity search — explicit ?category= only (Phase 1).
+ * Taxonomy keyword matches enrich the response as categories[] but do not auto-apply a hub filter.
+ */
+export function resolveEffectiveSearchCategory(category?: string): string | undefined {
   const explicit = String(category || '').trim();
-  if (explicit) return explicit;
-  return inferHubSlugFromSearchQuery(searchQuery || '') || undefined;
+  return explicit || undefined;
 }
 
 export async function applySearchDiscoveryParity<T extends SearchVendorRow, S extends SearchServiceRow>(opts: {
@@ -530,7 +530,7 @@ export async function applySearchDiscoveryParity<T extends SearchVendorRow, S ex
   searchQuery?: string;
   queryString?: Record<string, string | undefined>;
 }): Promise<{ vendors: T[]; services: S[]; discoveryApplied: boolean }> {
-  const effectiveCategory = resolveEffectiveSearchCategory(opts.category, opts.searchQuery);
+  const effectiveCategory = resolveEffectiveSearchCategory(opts.category);
   const hub = hubSlugToDiscoveryContext(effectiveCategory);
   if (!hub) return { vendors: opts.vendors, services: opts.services, discoveryApplied: false };
 
