@@ -5,7 +5,8 @@
 
 export const MEAL_PIDGE_DELIVERY_BUFFER_MIN = 30;
 
-export const MEAL_PIDGE_SLOT_SEPARATOR = ' - ';
+/** Pidge create-order pattern: HH:mm-HH:mm (no spaces), e.g. 10:15-21:30 */
+export const MEAL_PIDGE_SLOT_SEPARATOR = '-';
 
 export type MealDeliverySlotParts = {
   start: string;
@@ -74,14 +75,14 @@ export function formatPidgeDeliveryDate(raw: unknown): string | null {
 }
 
 /**
- * Pidge dashboard slot string.
- * Point (start === end): "18:04"
- * Window: "09:00 - 12:00"
+ * Pidge API `trips[].delivery_slot` — always HH:mm-HH:mm (hyphen, no spaces).
+ * Point commitment (start === end): "18:04-18:04"
+ * Window: "09:00-12:00"
  */
 export function formatPidgeDeliverySlot(slot: MealDeliverySlotParts | null): string | null {
   if (!slot) return null;
-  if (slot.start === slot.end) return slot.start;
-  return `${slot.start}${MEAL_PIDGE_SLOT_SEPARATOR}${slot.end}`;
+  const end = slot.end || slot.start;
+  return `${slot.start}${MEAL_PIDGE_SLOT_SEPARATOR}${end}`;
 }
 
 /**

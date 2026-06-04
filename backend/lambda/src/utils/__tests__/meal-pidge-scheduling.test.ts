@@ -31,16 +31,16 @@ describe('parseScheduledDeliverySlot', () => {
 });
 
 describe('formatPidgeDeliverySlot', () => {
-  it('formats point slot as single time', () => {
+  it('formats point slot as HH:mm-HH:mm range', () => {
     expect(
       formatPidgeDeliverySlot({ start: '18:04', end: '18:04' }),
-    ).toBe('18:04');
+    ).toBe('18:04-18:04');
   });
 
-  it('formats window slot with separator', () => {
+  it('formats window slot with hyphen (no spaces)', () => {
     expect(
       formatPidgeDeliverySlot({ start: '09:00', end: '12:00' }),
-    ).toBe('09:00 - 12:00');
+    ).toBe('09:00-12:00');
   });
 });
 
@@ -94,7 +94,7 @@ describe('buildMealPidgeSchedulingFields', () => {
       scheduledDeliverySlot: { start: '18:04', end: '18:04' },
     });
     expect(fields.delivery_date).toBe('2026-06-03');
-    expect(fields.delivery_slot).toBe('18:04');
+    expect(fields.delivery_slot).toBe('18:04-18:04');
     expect(fields.promised_delivery_time).toBeTruthy();
   });
 
@@ -104,6 +104,6 @@ describe('buildMealPidgeSchedulingFields', () => {
       scheduledDeliveryDate: '2026-06-03',
       scheduledDeliverySlot: { start: '09:00', end: '12:00' },
     });
-    expect(fields.delivery_slot).toBe('09:00 - 12:00');
+    expect(fields.delivery_slot).toBe('09:00-12:00');
   });
 });
