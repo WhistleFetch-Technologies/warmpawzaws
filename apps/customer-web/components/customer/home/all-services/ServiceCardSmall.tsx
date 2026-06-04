@@ -24,15 +24,15 @@ function ServiceCardSmallComponent({ service, onPress, index = 0 }: ServiceCardS
   if (isComingSoon) {
     return (
       <div
-        className="pointer-events-none flex w-[7.5rem] flex-shrink-0 select-none flex-col items-center gap-2 opacity-70"
+        className="pointer-events-none flex w-[7.5rem] flex-shrink-0 select-none flex-col items-center gap-2 overflow-visible opacity-70"
         style={{ animationDelay: staggerDelay }}
         aria-label={`${service.displayLabel} — coming soon`}
       >
         <div
-          className={`relative flex h-[4.25rem] w-[4.25rem] items-center justify-center rounded-2xl shadow-sm ring-1 ring-gray-100 ${service.color}`}
+          className={`relative flex h-[4.25rem] w-[4.25rem] items-center justify-center overflow-visible rounded-2xl shadow-sm ring-1 ring-gray-100 ${service.color}`}
         >
           <service.icon className="h-6 w-6" aria-hidden />
-          <span className="absolute -right-1 -top-1 rounded-md bg-amber-500 px-1 py-0.5 text-[7px] font-bold uppercase leading-none text-white">
+          <span className="absolute right-1 top-1 z-10 rounded-md bg-amber-500 px-1 py-0.5 text-[7px] font-bold uppercase leading-none text-white">
             Soon
           </span>
         </div>

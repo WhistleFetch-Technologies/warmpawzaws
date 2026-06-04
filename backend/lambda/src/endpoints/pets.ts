@@ -27,6 +27,7 @@ import {
   sanitizeVaccinationMap,
 } from '../utils/pet-health-normalize';
 import { findCustomerByPhone } from '../utils/customer-phone-lookup';
+import { omitMissingPetsColumns } from '../utils/pets-table-schema';
 
 export function registerPetEndpoints(app: Hono) {
   /**
@@ -547,7 +548,9 @@ export function registerPetEndpoints(app: Hono) {
         }
       });
 
-      const updated = await update('pets', { id: petId, customer_id: customer.id }, updateData);
+      const safeUpdateData = await omitMissingPetsColumns(updateData);
+
+      const updated = await update('pets', { id: petId, customer_id: customer.id }, safeUpdateData);
 
       if (updated.length === 0) {
         return c.json({ error: 'Pet not found or update failed' }, 404);
