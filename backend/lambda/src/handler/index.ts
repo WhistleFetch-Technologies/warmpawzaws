@@ -1020,10 +1020,16 @@ app.onError((err, c) => {
     return c.json({ success: true, notifications: [], unreadCount: 0 }, 200, corsHeaders);
   }
   
-  // Check for customer pets (e.g. /customer/pets/:phone) - return empty on error (non-critical)
-  if (requestPath.includes('/pets/') && requestPath.includes('customer')) {
+  // Degrade only GET list-style customer pet routes — never mask PUT/DELETE or /customer/:id/pets/:petId
+  const httpMethod = (c.req.method || 'GET').toUpperCase();
+  const isCustomerPetListRoute =
+    requestPath.includes('/pets/') &&
+    requestPath.includes('customer') &&
+    httpMethod === 'GET' &&
+    !/\/customer\/[^/]+\/pets\/[^/]+/.test(requestPath);
+  if (isCustomerPetListRoute) {
     if (process.env.DEBUG === 'true') {
-      console.log('[Hono Error Handler] MATCHED customer pets - Returning 200 empty');
+      console.log('[Hono Error Handler] MATCHED customer pets list - Returning 200 empty');
     }
     return c.json({ success: true, pets: [], count: 0 }, 200, corsHeaders);
   }

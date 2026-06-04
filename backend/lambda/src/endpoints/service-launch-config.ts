@@ -371,6 +371,235 @@ async function canonicalizeServiceLaunchConfig(raw: Record<string, any>): Promis
 // Setting key for service launch config
 const SETTING_KEY = 'platform:service-launch-config';
 
+/** Dashboard tiles not always present in published service_catalog rows. */
+const ADDITIONAL_DASHBOARD_SERVICES: ReadonlyArray<{ id: string; name: string; icon: string }> = [
+  { id: 'shop', name: 'Pet Products', icon: '🛍️' },
+  { id: 'adoption', name: 'Adoption', icon: '❤️' },
+  { id: 'mating', name: 'Peer to Peer', icon: '💕' },
+  { id: 'cafes', name: 'Pet Cafes', icon: '☕' },
+  { id: 'photography', name: 'Photography', icon: '📷' },
+  { id: 'insurance', name: 'Insurance', icon: '🛡️' },
+  { id: 'breeder', name: 'Breeder', icon: '🐕' },
+  { id: 'nutritionist', name: 'Nutritionist', icon: '🥗' },
+  { id: 'relocation', name: 'Pet Relocation', icon: '✈️' },
+  { id: 'resort', name: 'Pet Resort', icon: '🏖️' },
+  { id: 'holiday', name: 'Pet Holiday', icon: '🌴' },
+  { id: 'pet-sitter', name: 'Pet Sitter', icon: '🏠' },
+  { id: 'sunset', name: 'Sunset Care', icon: '🌅' },
+];
+
+export type DashboardLaunchService = {
+  id: string;
+  serviceId: string;
+  serviceName: string;
+  displayName: string;
+  icon: string;
+  categoryId: string;
+  categoryName: string;
+  displayOrder: number;
+  defaultStatus: LaunchStatus;
+  defaultRolloutPercentage: number;
+  stateOverrides: Record<string, StateConfig>;
+  effectiveStatus: LaunchStatus;
+  effectiveRolloutPercentage: number;
+};
+
+function resolveStateCodeFromName(state: string): string {
+  if (!state) return '';
+  const cleanedState = state.replace(/\s*\d{6}\s*$/, '').trim();
+  const stateMatch = INDIAN_STATES.find((s) => {
+    const sNameLower = s.name.toLowerCase();
+    const sCodeLower = s.code.toLowerCase();
+    const queryLower = state.toLowerCase();
+    const cleanedLower = cleanedState.toLowerCase();
+    return (
+      queryLower === sNameLower ||
+      queryLower === sCodeLower ||
+      cleanedLower === sNameLower ||
+      cleanedLower === sCodeLower
+    );
+  });
+  return stateMatch?.code || '';
+}
+
+async function loadExistingLaunchConfigRaw(): Promise<{
+  existingConfig: Record<string, ServiceLaunchConfig>;
+  uuidToSlug: Map<string, string>;
+}> {
+  const configResult = await query(
+    `SELECT setting_value FROM platform_settings WHERE setting_key = $1`,
+    [SETTING_KEY]
+  ).catch(() => ({ rows: [] }));
+
+  let existingConfig: Record<string, ServiceLaunchConfig> = {};
+  if (configResult.rows && configResult.rows.length > 0) {
+    try {
+      const value = configResult.rows[0].setting_value;
+      existingConfig = typeof value === 'string' ? JSON.parse(value) : value;
+    } catch (e) {
+      console.warn('Failed to parse existing config:', e);
+    }
+  }
+
+  const uuidKeys = Object.keys(existingConfig).filter(isUuidKey);
+  const uuidToSlug = new Map<string, string>();
+  if (uuidKeys.length > 0) {
+    const uuidRes = await query(
+      `SELECT id::text AS id, category_id::text AS category_id
+       FROM service_categories
+       WHERE id::text = ANY($1::text[])`,
+      [uuidKeys]
+    ).catch(() => ({ rows: [] }));
+    for (const r of uuidRes.rows || []) {
+      if (r.category_id) uuidToSlug.set(r.id, String(r.category_id).trim());
+    }
+  }
+
+  return { existingConfig, uuidToSlug };
+}
+
+function effectiveStatusForGeography(
+  existingService: Partial<ServiceLaunchConfig> | undefined,
+  stateCode: string,
+  city: string
+): { status: LaunchStatus; rollout: number } {
+  let status: LaunchStatus = existingService?.defaultStatus || 'hidden';
+  let rollout = existingService?.defaultRolloutPercentage || 0;
+
+  if (stateCode && existingService?.stateOverrides?.[stateCode]) {
+    const stateConfig = existingService.stateOverrides[stateCode];
+    status = stateConfig.status;
+    rollout = stateConfig.rolloutPercentage;
+
+    const cityConfig = city ? getCityLaunchOverride(stateConfig.cities, city) : undefined;
+    if (cityConfig) {
+      status = cityConfig.status;
+      rollout = cityConfig.rolloutPercentage;
+    }
+  }
+
+  return { status, rollout };
+}
+
+/**
+ * Full Marketing dashboard catalog (service_catalog + additional tiles) with per-geo status.
+ * Shared by admin GET /config/service-launch and customer GET /config/service-launch/customer.
+ */
+export async function buildDashboardServiceCatalog(
+  stateCode: string,
+  city: string
+): Promise<DashboardLaunchService[]> {
+  const categoriesResult = await query(
+    `SELECT 
+       sc.category_id AS catalog_category_id,
+       COALESCE(
+         NULLIF(TRIM(MAX(cat.name)), ''),
+         NULLIF(TRIM(MAX(sc.category_name)), ''),
+         MAX(sc.category_id)
+       ) AS category_name,
+       COALESCE(MAX(cat.category_id::text), MAX(sc.category_id::text)) AS category_slug,
+       MIN(sc.display_order) AS display_order
+     FROM service_catalog sc
+     LEFT JOIN service_categories cat
+       ON (cat.id::text = sc.category_id OR LOWER(TRIM(cat.category_id::text)) = LOWER(TRIM(sc.category_id::text)))
+     WHERE sc.status = 'active'
+       AND sc.publish_status = 'published'
+     GROUP BY sc.category_id
+     ORDER BY MIN(sc.display_order)`
+  ).catch(() => ({ rows: [] }));
+
+  const { existingConfig, uuidToSlug } = await loadExistingLaunchConfigRaw();
+
+  const dashboardServices: DashboardLaunchService[] = [];
+  const processedCategories = new Set<string>();
+
+  for (const cat of categoriesResult.rows || []) {
+    const slug = String(cat.category_slug || cat.catalog_category_id || '').trim();
+    if (!slug) continue;
+
+    const dashboardId = mapCatalogSlugToLaunchServiceId(slug);
+    if (dashboardId === 'general') continue;
+    if (processedCategories.has(dashboardId)) continue;
+    processedCategories.add(dashboardId);
+
+    const displayName = String(cat.category_name || slug).trim();
+    const existingService = collectLaunchConfigForCategory(slug, dashboardId, existingConfig, uuidToSlug);
+    const icon = getServiceIcon(dashboardId, slug);
+    const { status, rollout } = effectiveStatusForGeography(existingService, stateCode, city);
+
+    dashboardServices.push({
+      id: dashboardId,
+      serviceId: dashboardId,
+      serviceName: displayName,
+      displayName,
+      icon,
+      categoryId: slug,
+      categoryName: displayName,
+      displayOrder: cat.display_order,
+      defaultStatus: existingService?.defaultStatus || 'hidden',
+      defaultRolloutPercentage: existingService?.defaultRolloutPercentage || 0,
+      stateOverrides: existingService?.stateOverrides || {},
+      effectiveStatus: status,
+      effectiveRolloutPercentage: rollout,
+    });
+  }
+
+  for (const svc of ADDITIONAL_DASHBOARD_SERVICES) {
+    if (processedCategories.has(svc.id)) continue;
+    processedCategories.add(svc.id);
+
+    const existingService = collectLaunchConfigForCategory(svc.id, svc.id, existingConfig, uuidToSlug);
+    const { status, rollout } = effectiveStatusForGeography(existingService, stateCode, city);
+
+    dashboardServices.push({
+      id: svc.id,
+      serviceId: svc.id,
+      serviceName: svc.name,
+      displayName: svc.name,
+      icon: svc.icon,
+      categoryId: svc.id,
+      categoryName: svc.name,
+      displayOrder: 100 + ADDITIONAL_DASHBOARD_SERVICES.findIndex((s) => s.id === svc.id),
+      defaultStatus: existingService?.defaultStatus || 'hidden',
+      defaultRolloutPercentage: existingService?.defaultRolloutPercentage || 0,
+      stateOverrides: existingService?.stateOverrides || {},
+      effectiveStatus: status,
+      effectiveRolloutPercentage: rollout,
+    });
+  }
+
+  dashboardServices.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+  return dashboardServices;
+}
+
+function bucketDashboardServicesByCustomerStatus(catalog: DashboardLaunchService[]) {
+  const visibleServices: any[] = [];
+  const comingSoonServices: any[] = [];
+  const hiddenServices: any[] = [];
+
+  for (const svc of catalog) {
+    const status = svc.effectiveStatus;
+    const serviceInfo = {
+      serviceId: svc.serviceId,
+      displayName: svc.displayName,
+      status,
+      rolloutPercentage: svc.effectiveRolloutPercentage,
+      isVisible: status === 'launched' || status === 'beta',
+      isComingSoon: status === 'coming_soon',
+    };
+
+    if (status === 'launched' || status === 'beta') {
+      visibleServices.push(serviceInfo);
+    } else if (status === 'coming_soon') {
+      comingSoonServices.push(serviceInfo);
+    } else {
+      hiddenServices.push(serviceInfo);
+    }
+  }
+
+  return { visibleServices, comingSoonServices, hiddenServices };
+}
+
 export function registerServiceLaunchConfigEndpoints(app: Hono) {
   
   /**
@@ -419,176 +648,7 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
     try {
       const stateCode = c.req.query('stateCode') || '';
       const city = c.req.query('city') || '';
-
-      // 1. Unique catalog categories with names/slugs resolved via service_categories
-      //    (fixes rows where service_catalog.category_id was set to service_categories.id UUID)
-      //    Prefer service_categories.name over service_catalog.category_name: legacy backfills
-      //    used the literal "General" when category_name was empty (see migration 511), which
-      //    would otherwise hide the real category label (e.g. Vet, Training) on this dashboard.
-      const categoriesResult = await query(
-        `SELECT 
-           sc.category_id AS catalog_category_id,
-           COALESCE(
-             NULLIF(TRIM(MAX(cat.name)), ''),
-             NULLIF(TRIM(MAX(sc.category_name)), ''),
-             MAX(sc.category_id)
-           ) AS category_name,
-           COALESCE(MAX(cat.category_id::text), MAX(sc.category_id::text)) AS category_slug,
-           MIN(sc.display_order) AS display_order
-         FROM service_catalog sc
-         LEFT JOIN service_categories cat
-           ON (cat.id::text = sc.category_id OR LOWER(TRIM(cat.category_id::text)) = LOWER(TRIM(sc.category_id::text)))
-         WHERE sc.status = 'active'
-           AND sc.publish_status = 'published'
-         GROUP BY sc.category_id
-         ORDER BY MIN(sc.display_order)`
-      ).catch(() => ({ rows: [] }));
-
-      // 2. Get existing launch configuration
-      const configResult = await query(
-        `SELECT setting_value FROM platform_settings WHERE setting_key = $1`,
-        [SETTING_KEY]
-      ).catch(() => ({ rows: [] }));
-
-      let existingConfig: Record<string, ServiceLaunchConfig> = {};
-      if (configResult.rows && configResult.rows.length > 0) {
-        try {
-          const value = configResult.rows[0].setting_value;
-          existingConfig = typeof value === 'string' ? JSON.parse(value) : value;
-        } catch (e) {
-          console.warn('Failed to parse existing config:', e);
-        }
-      }
-
-      const uuidKeys = Object.keys(existingConfig).filter(isUuidKey);
-      const uuidToSlug = new Map<string, string>();
-      if (uuidKeys.length > 0) {
-        const uuidRes = await query(
-          `SELECT id::text AS id, category_id::text AS category_id
-           FROM service_categories
-           WHERE id::text = ANY($1::text[])`,
-          [uuidKeys]
-        ).catch(() => ({ rows: [] }));
-        for (const r of uuidRes.rows || []) {
-          if (r.category_id) uuidToSlug.set(r.id, String(r.category_id).trim());
-        }
-      }
-
-      // 3. Build service list from categories + additional dashboard services
-      const dashboardServices: any[] = [];
-      const processedCategories = new Set<string>();
-
-      // Add services from service_catalog categories
-      for (const cat of categoriesResult.rows || []) {
-        const slug = String(cat.category_slug || cat.catalog_category_id || '').trim();
-        if (!slug) continue;
-
-        const dashboardId = mapCatalogSlugToLaunchServiceId(slug);
-
-        // Legacy placeholder row — not a real launch surface (see service_catalog migration 511).
-        if (dashboardId === 'general') continue;
-
-        if (processedCategories.has(dashboardId)) continue;
-        processedCategories.add(dashboardId);
-
-        const displayName = String(cat.category_name || slug).trim();
-        const existingService = collectLaunchConfigForCategory(slug, dashboardId, existingConfig, uuidToSlug);
-        const icon = getServiceIcon(dashboardId, slug);
-
-        // Determine effective status for the requested geography
-        let effectiveStatus: LaunchStatus = existingService?.defaultStatus || 'hidden';
-        let effectiveRollout = existingService?.defaultRolloutPercentage || 0;
-
-        if (stateCode && existingService?.stateOverrides?.[stateCode]) {
-          const stateConfig = existingService.stateOverrides[stateCode];
-          effectiveStatus = stateConfig.status;
-          effectiveRollout = stateConfig.rolloutPercentage;
-
-          const cityConfig = city ? getCityLaunchOverride(stateConfig.cities, city) : undefined;
-          if (cityConfig) {
-            effectiveStatus = cityConfig.status;
-            effectiveRollout = cityConfig.rolloutPercentage;
-          }
-        }
-
-        dashboardServices.push({
-          id: dashboardId,
-          serviceId: dashboardId,
-          serviceName: displayName,
-          displayName,
-          icon,
-          categoryId: slug,
-          categoryName: displayName,
-          displayOrder: cat.display_order,
-          // Full config for admin editing
-          defaultStatus: existingService?.defaultStatus || 'hidden',
-          defaultRolloutPercentage: existingService?.defaultRolloutPercentage || 0,
-          stateOverrides: existingService?.stateOverrides || {},
-          // Effective status for the requested geography
-          effectiveStatus,
-          effectiveRolloutPercentage: effectiveRollout,
-        });
-      }
-
-      // 4. Add additional dashboard services not in catalog categories
-      //    (Always show these tiles in Marketing → Dashboard UI even when service_catalog
-      //    has no active+published row for that category — e.g. Pet Sitter.)
-      const additionalServices = [
-        { id: 'shop', name: 'Pet Products', icon: '🛍️' },
-        { id: 'adoption', name: 'Adoption', icon: '❤️' },
-        { id: 'mating', name: 'Peer to Peer', icon: '💕' },
-        { id: 'cafes', name: 'Pet Cafes', icon: '☕' },
-        { id: 'photography', name: 'Photography', icon: '📷' },
-        { id: 'insurance', name: 'Insurance', icon: '🛡️' },
-        { id: 'breeder', name: 'Breeder', icon: '🐕' },
-        { id: 'nutritionist', name: 'Nutritionist', icon: '🥗' },
-        { id: 'relocation', name: 'Pet Relocation', icon: '✈️' },
-        { id: 'resort', name: 'Pet Resort', icon: '🏖️' },
-        { id: 'holiday', name: 'Pet Holiday', icon: '🌴' },
-        { id: 'pet-sitter', name: 'Pet Sitter', icon: '🏠' },
-        { id: 'sunset', name: 'Sunset Care', icon: '🌅' },
-      ];
-
-      for (const svc of additionalServices) {
-        if (processedCategories.has(svc.id)) continue;
-        processedCategories.add(svc.id);
-
-        const existingService = collectLaunchConfigForCategory(svc.id, svc.id, existingConfig, uuidToSlug);
-
-        let effectiveStatus: LaunchStatus = existingService?.defaultStatus || 'hidden';
-        let effectiveRollout = existingService?.defaultRolloutPercentage || 0;
-
-        if (stateCode && existingService?.stateOverrides?.[stateCode]) {
-          const stateConfig = existingService.stateOverrides[stateCode];
-          effectiveStatus = stateConfig.status;
-          effectiveRollout = stateConfig.rolloutPercentage;
-
-          const cityCfg = city ? getCityLaunchOverride(stateConfig.cities, city) : undefined;
-          if (cityCfg) {
-            effectiveStatus = cityCfg.status;
-            effectiveRollout = cityCfg.rolloutPercentage;
-          }
-        }
-
-        dashboardServices.push({
-          id: svc.id,
-          serviceId: svc.id,
-          serviceName: svc.name,
-          displayName: svc.name,
-          icon: svc.icon,
-          categoryId: svc.id,
-          categoryName: svc.name,
-          displayOrder: 100 + additionalServices.indexOf(svc),
-          defaultStatus: existingService?.defaultStatus || 'hidden',
-          defaultRolloutPercentage: existingService?.defaultRolloutPercentage || 0,
-          stateOverrides: existingService?.stateOverrides || {},
-          effectiveStatus,
-          effectiveRolloutPercentage: effectiveRollout,
-        });
-      }
-
-      // Sort by display order
-      dashboardServices.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+      const dashboardServices = await buildDashboardServiceCatalog(stateCode, city);
 
       return c.json({
         success: true,
@@ -838,80 +898,11 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
     try {
       const state = c.req.query('state') || '';
       const city = c.req.query('city') || '';
+      const stateCode = resolveStateCodeFromName(state);
 
-      // Find state code from state name (case-insensitive).
-      // Also handles malformed values like "Karnataka 560001" where a pincode was
-      // accidentally appended to the state name — we strip trailing digits before matching.
-      let stateCode = '';
-      if (state) {
-        const cleanedState = state.replace(/\s*\d{6}\s*$/, '').trim();
-        const stateMatch = INDIAN_STATES.find(s => {
-          const sNameLower = s.name.toLowerCase();
-          const sCodeLower = s.code.toLowerCase();
-          const queryLower = state.toLowerCase();
-          const cleanedLower = cleanedState.toLowerCase();
-          return (
-            queryLower === sNameLower ||
-            queryLower === sCodeLower ||
-            cleanedLower === sNameLower ||
-            cleanedLower === sCodeLower
-          );
-        });
-        stateCode = stateMatch?.code || '';
-      }
-
-      // Get configuration
-      const configResult = await query(
-        `SELECT setting_value FROM platform_settings WHERE setting_key = $1`,
-        [SETTING_KEY]
-      ).catch(() => ({ rows: [] }));
-
-      let config: Record<string, ServiceLaunchConfig> = {};
-      if (configResult.rows && configResult.rows.length > 0) {
-        const value = configResult.rows[0].setting_value;
-        config = typeof value === 'string' ? JSON.parse(value) : value;
-      }
-
-      const canonicalConfig = await canonicalizeServiceLaunchConfig(config as Record<string, any>);
-
-      // Build list of visible services with their status
-      const visibleServices: any[] = [];
-      const comingSoonServices: any[] = [];
-      const hiddenServices: any[] = [];
-
-      for (const [serviceId, serviceConfig] of Object.entries(canonicalConfig)) {
-        let status: LaunchStatus = serviceConfig.defaultStatus || 'hidden';
-        let rollout = serviceConfig.defaultRolloutPercentage || 0;
-
-        // Check state override
-        if (stateCode && serviceConfig.stateOverrides?.[stateCode]) {
-          const stateConfig = serviceConfig.stateOverrides[stateCode];
-          status = stateConfig.status;
-          rollout = stateConfig.rolloutPercentage;
-
-          const cityConfig = city ? getCityLaunchOverride(stateConfig.cities, city) : undefined;
-          if (cityConfig) {
-            status = cityConfig.status;
-            rollout = cityConfig.rolloutPercentage;
-          }
-        }
-
-        const serviceInfo = {
-          serviceId,
-          status,
-          rolloutPercentage: rollout,
-          isVisible: status === 'launched' || status === 'beta',
-          isComingSoon: status === 'coming_soon',
-        };
-
-        if (status === 'launched' || status === 'beta') {
-          visibleServices.push(serviceInfo);
-        } else if (status === 'coming_soon') {
-          comingSoonServices.push(serviceInfo);
-        } else {
-          hiddenServices.push(serviceInfo);
-        }
-      }
+      const catalog = await buildDashboardServiceCatalog(stateCode, city);
+      const { visibleServices, comingSoonServices, hiddenServices } =
+        bucketDashboardServicesByCustomerStatus(catalog);
 
       return c.json({
         success: true,
@@ -921,6 +912,14 @@ export function registerServiceLaunchConfigEndpoints(app: Hono) {
           city: city || null,
         },
         services: {
+          catalog: catalog.map((svc) => ({
+            serviceId: svc.serviceId,
+            displayName: svc.displayName,
+            icon: svc.icon,
+            categoryId: svc.categoryId,
+            effectiveStatus: svc.effectiveStatus,
+            rolloutPercentage: svc.effectiveRolloutPercentage,
+          })),
           visible: visibleServices,
           comingSoon: comingSoonServices,
           hidden: hiddenServices,

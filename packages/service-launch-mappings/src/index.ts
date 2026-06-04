@@ -185,6 +185,7 @@ export function mapLaunchServiceIdToCustomerHomeScreen(launchId: string | null |
     grooming: 'grooming',
     training: 'training',
     walker: 'walker',
+    walking: 'walker',
     boarding: 'boarding',
     'pet-sitter': 'pet-sitter',
     holiday: 'holiday',
@@ -198,6 +199,8 @@ export function mapLaunchServiceIdToCustomerHomeScreen(launchId: string | null |
     insurance: 'insurance',
     breeder: 'breeder',
     ambulance: 'ambulance',
+    emergency: 'ambulance',
+    emergency_care: 'ambulance',
     nutritionist: 'nutritionist',
     relocation: 'relocation',
     resort: 'resort',
@@ -207,9 +210,35 @@ export function mapLaunchServiceIdToCustomerHomeScreen(launchId: string | null |
     specialty: 'insurance',
     wellness: 'nutritionist',
     nutrition: 'nutritionist',
+    'physio-therapy': 'vet',
+    physiotherapy: 'vet',
+    physio: 'vet',
+    daycare: 'boarding',
   };
   if (direct[key]) return direct[key];
   return key;
+}
+
+/**
+ * Tile `screen` for All Services catalog — keeps diagnostics on lab-diagnostics
+ * (launch gating still uses mapLaunchServiceIdToCustomerHomeScreen → vet).
+ */
+export function mapLaunchServiceIdToAllServicesTileScreen(
+  launchId: string | null | undefined
+): string {
+  const key = normalizeServiceKey(launchId);
+  if (!key) return '';
+  const tileScreen: Record<string, string> = {
+    diagnostics: 'lab-diagnostics',
+    diagnostic: 'lab-diagnostics',
+    specialty: 'insurance',
+    speciality: 'insurance',
+    'physio-therapy': 'vet',
+    physiotherapy: 'vet',
+    physio: 'vet',
+  };
+  if (tileScreen[key]) return tileScreen[key];
+  return mapLaunchServiceIdToCustomerHomeScreen(launchId);
 }
 
 /**

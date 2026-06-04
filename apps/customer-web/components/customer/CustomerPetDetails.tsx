@@ -24,6 +24,7 @@ import {
   formatDisplayDate,
   formatHealthFieldText,
   normalizeVaccinationsFromApi,
+  normalizeVaccinationDateToIso,
   genderSymbol,
 } from '@/lib/pet-profile-display';
 
@@ -150,7 +151,15 @@ function mapApiPetToPet(raw: any): Pet {
         hr.conditions ?? hr.chronicConditions ?? hr.chronic_conditions ?? hr.medicalConditions
       ),
     },
-    vaccinations: normalizeVaccinationsFromApi(raw),
+    vaccinations: (() => {
+      const v = normalizeVaccinationsFromApi(raw);
+      return {
+        rabies: normalizeVaccinationDateToIso(v.rabies),
+        distemper: normalizeVaccinationDateToIso(v.distemper),
+        parvovirus: normalizeVaccinationDateToIso(v.parvovirus),
+        other: normalizeVaccinationDateToIso(v.other),
+      };
+    })(),
   };
 }
 
@@ -200,10 +209,10 @@ function buildVaccinationPayload(pet: Pet): {
   healthRecords: Pet['healthRecords'] & { vaccinationDates?: Pet['vaccinations'] };
 } {
   const vaccinations = {
-    rabies: pet.vaccinations?.rabies?.trim() || undefined,
-    distemper: pet.vaccinations?.distemper?.trim() || undefined,
-    parvovirus: pet.vaccinations?.parvovirus?.trim() || undefined,
-    other: pet.vaccinations?.other?.trim() || undefined,
+    rabies: normalizeVaccinationDateToIso(pet.vaccinations?.rabies),
+    distemper: normalizeVaccinationDateToIso(pet.vaccinations?.distemper),
+    parvovirus: normalizeVaccinationDateToIso(pet.vaccinations?.parvovirus),
+    other: normalizeVaccinationDateToIso(pet.vaccinations?.other),
   };
   return {
     vaccinations,
@@ -212,6 +221,25 @@ function buildVaccinationPayload(pet: Pet): {
       vaccinationDates: vaccinations,
     },
   };
+}
+
+function formatPetSaveError(error: unknown): string {
+  const fallback = 'Error saving pet profile. Please try again.';
+  if (error instanceof ApiError) {
+    const data = ((error as ApiError & { responseData?: unknown }).responseData ??
+      (error as { response?: unknown }).response) as { error?: string } | undefined;
+    if (typeof data?.error === 'string' && data.error.trim()) {
+      return `${fallback}\n\n${data.error.trim()}`;
+    }
+    const msg = error.message?.trim();
+    if (msg && !/^HTTP \d+$/.test(msg)) {
+      return `${fallback}\n\n${msg}`;
+    }
+  }
+  if (error instanceof Error && error.message?.trim()) {
+    return `${fallback}\n\n${error.message.trim()}`;
+  }
+  return fallback;
 }
 
 export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDelete, onViewPetProfile }: CustomerPetDetailsProps) {
@@ -402,7 +430,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
       }
     } catch (error) {
       console.error('Error saving pet:', error);
-      alert('Error saving pet profile. Please try again.');
+      alert(formatPetSaveError(error));
     } finally {
       setSaving(false);
     }
