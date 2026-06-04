@@ -224,6 +224,7 @@ export function ShopCheckoutModal({
 
           {checkoutStep === 'payment' && showPaymentPage && cart.length > 0 && (
             <UniversalPaymentPage
+              fillViewport={false}
               type="order"
               productId={cart[0]?.product_id}
               productName={`Order: ${cart.length} item(s)`}

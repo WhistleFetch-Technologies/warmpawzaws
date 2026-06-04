@@ -587,6 +587,95 @@ export function NutritionistBookingRouter({
     setShowPaymentPage(true);
   };
 
+  const nutritionistPaymentScreen =
+    step === 'payment' &&
+    showPaymentPage &&
+    selectedVendorService &&
+    selectedPet &&
+    selectedDate &&
+    selectedTime
+      ? (() => {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          let finalServiceId = selectedVendorService.service_id || selectedVendorService.serviceId;
+
+          if (!finalServiceId || !uuidRegex.test(finalServiceId)) {
+            const foundService = vendorServices.find(
+              (s: any) =>
+                String(s.id) === String(selectedVendorService.id) ||
+                s.id === selectedVendorService.id ||
+                (s.serviceId || s.service_id) === finalServiceId
+            );
+            if (foundService && (foundService.serviceId || foundService.service_id)) {
+              finalServiceId = foundService.serviceId || foundService.service_id;
+            }
+          }
+
+          if (finalServiceId && uuidRegex.test(finalServiceId)) {
+            const displayVendorName = nutritionist?.businessName || nutritionist?.name || 'Nutritionist';
+            return (
+              <UniversalPaymentPage
+                type="booking"
+                layoutVariant="appShell"
+                vendorId={vendorId || ''}
+                vendorName={displayVendorName}
+                serviceId={finalServiceId}
+                serviceName={selectedVendorService.name || selectedServiceOption?.name || 'Diet Consultation'}
+                serviceDescription={`${selectedVendorService.name || 'Diet Consultation'} for ${selectedPet.name}`}
+                serviceStyle={
+                  selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'
+                }
+                bookingDate={selectedDate}
+                bookingTime={selectedTime}
+                petId={selectedPet.id}
+                petName={selectedPet.name}
+                petBreed={selectedPet.breed}
+                addressId={selectedServiceType === 'at_home' ? selectedAddress?.id : undefined}
+                address={
+                  selectedServiceType === 'at_home' && selectedAddress
+                    ? {
+                        id: selectedAddress.id,
+                        label: selectedAddress.label,
+                        addressLine1: selectedAddress.addressLine1 || selectedAddress.address,
+                        city: selectedAddress.city,
+                        pincode: selectedAddress.pincode,
+                        state: selectedAddress.state,
+                      }
+                    : undefined
+                }
+                baseAmount={selectedVendorService.price || selectedServiceOption?.price || 0}
+                priceIncludesTax={
+                  catalogPriceIncludesTax(selectedVendorService) || catalogPriceIncludesTax(selectedServiceOption)
+                }
+                duration={selectedVendorService.duration || selectedServiceOption?.duration || 30}
+                customerPhone={phone}
+                customerId={customerId || undefined}
+                flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
+                onBack={() => setShowPaymentPage(false)}
+                onSuccess={(bookingId) => {
+                  setBookingId(bookingId);
+                  setShowPaymentPage(false);
+                  setStep('confirmation');
+                }}
+              />
+            );
+          }
+
+          return (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl max-w-md mx-auto">
+              <p className="text-red-600 font-medium">Error: Invalid service ID</p>
+              <p className="text-red-500 text-sm mt-1">Please go back and select the service again.</p>
+              <Button onClick={() => setShowPaymentPage(false)} className="mt-3">
+                Go Back
+              </Button>
+            </div>
+          );
+        })()
+      : null;
+
+  if (nutritionistPaymentScreen) {
+    return nutritionistPaymentScreen;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {step !== 'payment' && (
@@ -978,82 +1067,6 @@ export function NutritionistBookingRouter({
             </Button>
           </div>
         )}
-
-        {/* Universal Payment Page */}
-        {step === 'payment' && showPaymentPage && selectedVendorService && selectedPet && selectedDate && selectedTime && (() => {
-          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          let finalServiceId = selectedVendorService.service_id || selectedVendorService.serviceId;
-
-          // If not a UUID, try to find it from vendorServices
-          if (!finalServiceId || !uuidRegex.test(finalServiceId)) {
-            const foundService = vendorServices.find((s: any) =>
-              String(s.id) === String(selectedVendorService.id) ||
-              s.id === selectedVendorService.id ||
-              (s.serviceId || s.service_id) === finalServiceId
-            );
-            if (foundService && (foundService.serviceId || foundService.service_id)) {
-              finalServiceId = foundService.serviceId || foundService.service_id;
-              console.log('✅ Resolved to UUID:', finalServiceId);
-            } else {
-              console.error('❌ Could not resolve serviceId to UUID:', selectedVendorService);
-            }
-          }
-
-          // Only render if we have a valid UUID
-          if (finalServiceId && uuidRegex.test(finalServiceId)) {
-            const displayVendorName = nutritionist?.businessName || nutritionist?.name || 'Nutritionist';
-
-            return (
-              <UniversalPaymentPage
-                type="booking"
-                layoutVariant="appShell"
-                vendorId={vendorId || ''}
-                vendorName={displayVendorName}
-                serviceId={finalServiceId}
-                serviceName={selectedVendorService.name || selectedServiceOption?.name || 'Diet Consultation'}
-                serviceDescription={`${selectedVendorService.name || 'Diet Consultation'} for ${selectedPet.name}`}
-                serviceStyle={selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
-                bookingDate={selectedDate}
-                bookingTime={selectedTime}
-                petId={selectedPet.id}
-                petName={selectedPet.name}
-                petBreed={selectedPet.breed}
-                addressId={selectedServiceType === 'at_home' ? selectedAddress?.id : undefined}
-                address={selectedServiceType === 'at_home' && selectedAddress ? {
-                  id: selectedAddress.id,
-                  label: selectedAddress.label,
-                  addressLine1: selectedAddress.addressLine1 || selectedAddress.address,
-                  city: selectedAddress.city,
-                  pincode: selectedAddress.pincode,
-                  state: selectedAddress.state,
-                } : undefined}
-                baseAmount={selectedVendorService.price || selectedServiceOption?.price || 0}
-                priceIncludesTax={
-                  catalogPriceIncludesTax(selectedVendorService) || catalogPriceIncludesTax(selectedServiceOption)
-                }
-                duration={selectedVendorService.duration || selectedServiceOption?.duration || 30}
-                customerPhone={phone}
-                customerId={customerId || undefined}
-                flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
-                onBack={() => setShowPaymentPage(false)}
-                onSuccess={(bookingId) => {
-                  setBookingId(bookingId);
-                  setShowPaymentPage(false);
-                  setStep('confirmation');
-                }}
-              />
-            );
-          }
-
-
-          return (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
-              <p className="text-red-600 font-medium">Error: Invalid service ID</p>
-              <p className="text-red-500 text-sm mt-1">Please go back and select the service again.</p>
-              <Button onClick={() => setShowPaymentPage(false)} className="mt-3">Go Back</Button>
-            </div>
-          );
-        })()}
 
         {/* Confirmation */}
         {step === 'confirmation' && (

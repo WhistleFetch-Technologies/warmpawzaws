@@ -287,6 +287,32 @@ This is a digital policy document. Please keep this for your records.
     );
   }
 
+  if (step === 'payment' && showPaymentPage && selectedPlan && selectedPet) {
+    return (
+      <UniversalPaymentPage
+        type="booking"
+        serviceId={selectedPlan.id}
+        serviceName={`${selectedPlan.name} - Insurance Policy`}
+        serviceDescription={`Insurance policy for ${selectedPet.name}`}
+        serviceStyle="product"
+        category="insurance"
+        vendorId={props.vendorId || ''}
+        vendorName={provider?.businessName || provider?.name || 'Insurance Provider'}
+        petId={selectedPet.id}
+        petName={selectedPet.name}
+        petBreed={selectedPet.breed}
+        baseAmount={selectedPlan.price}
+        priceIncludesTax={catalogPriceIncludesTax(selectedPlan)}
+        duration={0}
+        quantity={1}
+        customerPhone={phone}
+        customerId={customerId || undefined}
+        onBack={() => setShowPaymentPage(false)}
+        onSuccess={handlePaymentSuccess}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-500 to-orange-600 max-w-md mx-auto pb-24">
       {/* Header with ORANGE gradient theme matching InsuranceServicesLanding */}
@@ -547,30 +573,6 @@ This is a digital policy document. Please keep this for your records.
               {selectedPet ? `Continue to Payment - ₹${selectedPlan.price}/${selectedPlan.period || 'month'}` : 'Select a Pet to Continue'}
             </Button>
           </div>
-        )}
-
-        {step === 'payment' && showPaymentPage && selectedPlan && selectedPet && (
-          <UniversalPaymentPage
-            type="booking"
-            serviceId={selectedPlan.id}
-            serviceName={`${selectedPlan.name} - Insurance Policy`}
-            serviceDescription={`Insurance policy for ${selectedPet.name}`}
-            serviceStyle="product"
-            category="insurance"
-            vendorId={props.vendorId || ''}
-            vendorName={provider?.businessName || provider?.name || 'Insurance Provider'}
-            petId={selectedPet.id}
-            petName={selectedPet.name}
-            petBreed={selectedPet.breed}
-            baseAmount={selectedPlan.price}
-            priceIncludesTax={catalogPriceIncludesTax(selectedPlan)}
-            duration={0}
-            quantity={1}
-            customerPhone={phone}
-            customerId={customerId || undefined}
-            onBack={() => setShowPaymentPage(false)}
-            onSuccess={handlePaymentSuccess}
-          />
         )}
 
         {step === 'issued' && policyData && (

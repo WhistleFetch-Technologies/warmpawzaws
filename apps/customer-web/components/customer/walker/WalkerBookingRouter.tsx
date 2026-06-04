@@ -620,6 +620,51 @@ export function WalkerBookingRouter({
     }));
   };
 
+  if (step === 'payment' && showPaymentPage) {
+    return (
+      <UniversalPaymentPage
+        type="booking"
+        serviceId={
+          selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId
+        }
+        serviceName={selectedServiceOption?.name || serviceName || 'Pet Walking'}
+        serviceDescription={`Walk by ${walker?.name || 'professional walker'}`}
+        serviceStyle={
+          (bookingServiceStyle === 'outdoor' ? 'at_home' : bookingServiceStyle) as
+            | 'at_home'
+            | 'at_center'
+            | 'at_vendor'
+            | 'tele'
+            | 'ecom'
+            | 'hybrid'
+            | 'product'
+        }
+        category="walking"
+        vendorId={vendorId || ''}
+        vendorName={walker?.name || 'Walker Professional'}
+        bookingDate={selectedDate}
+        bookingTime={selectedTime}
+        petId={selectedPet?.id}
+        petName={selectedPet?.name}
+        petBreed={selectedPet?.breed}
+        addressId={selectedAddress?.id}
+        address={selectedAddress}
+        showAddressSelection={true}
+        baseAmount={selectedServiceOption?.price || price || 299}
+        priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
+        duration={selectedServiceOption?.duration || duration || 30}
+        quantity={1}
+        customerPhone={phone}
+        customerId={customerId || undefined}
+        onBack={() => setShowPaymentPage(false)}
+        onPaymentAbandoned={() => {
+          if (selectedDate) void loadTimeSlots(selectedDate);
+        }}
+        onSuccess={handlePaymentSuccess}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {step !== 'payment' && (
@@ -691,7 +736,7 @@ export function WalkerBookingRouter({
       )}
 
       {/* Main Content */}
-      {(step !== 'payment' || showPaymentPage) && (
+      {step !== 'payment' && (
       <div className="max-w-md mx-auto px-4 py-6">
         {/* Step indicator moved to header */}
 
@@ -995,50 +1040,6 @@ export function WalkerBookingRouter({
             >
               {bookingServiceStyle === 'at_home' && !selectedAddress ? 'Select an Address to Continue' : 'Continue'}
             </Button>
-          </div>
-        )}
-
-        {/* ✅ UniversalPaymentPage Integration - Full screen overlay */}
-        {step === 'payment' && showPaymentPage && (
-          <div className="fixed inset-0 z-50 bg-white">
-            <UniversalPaymentPage
-            type="booking"
-            serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
-            serviceName={selectedServiceOption?.name || serviceName || 'Pet Walking'}
-            serviceDescription={`Walk by ${walker?.name || 'professional walker'}`}
-            serviceStyle={
-              (bookingServiceStyle === 'outdoor' ? 'at_home' : bookingServiceStyle) as
-                | 'at_home'
-                | 'at_center'
-                | 'at_vendor'
-                | 'tele'
-                | 'ecom'
-                | 'hybrid'
-                | 'product'
-            }
-            category="walking"
-            vendorId={vendorId || ''}
-            vendorName={walker?.name || 'Walker Professional'}
-            bookingDate={selectedDate}
-            bookingTime={selectedTime}
-            petId={selectedPet?.id}
-            petName={selectedPet?.name}
-            petBreed={selectedPet?.breed}
-            addressId={selectedAddress?.id}
-            address={selectedAddress}
-            showAddressSelection={true}
-            baseAmount={selectedServiceOption?.price || price || 299}
-            priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
-            duration={selectedServiceOption?.duration || duration || 30}
-            quantity={1}
-            customerPhone={phone}
-            customerId={customerId || undefined}
-            onBack={() => setShowPaymentPage(false)}
-            onPaymentAbandoned={() => {
-              if (selectedDate) void loadTimeSlots(selectedDate);
-            }}
-            onSuccess={handlePaymentSuccess}
-          />
           </div>
         )}
 
