@@ -235,10 +235,13 @@ export default function MarketingPromotionsTab() {
 	}, [activeTab]);
 
 	useEffect(() => {
-		if (showBannerModal) {
-			void loadBannerDestinationOptions(bannerCtaPersona || undefined);
-		}
-	}, [showBannerModal, bannerCtaPersona]);
+		if (!showBannerModal) return;
+		const needsCategoryOptions =
+			bannerCtaTargetMode === "vendor" || bannerCtaTargetMode === "service_type";
+		void loadBannerDestinationOptions(
+			bannerCtaPersona && needsCategoryOptions ? bannerCtaPersona : bannerCtaPersona || undefined
+		);
+	}, [showBannerModal, bannerCtaPersona, bannerCtaTargetMode]);
 
 	const loadBannerDestinationOptions = async (categoryId?: string) => {
 		setBannerDestinationLoading(true);
@@ -806,7 +809,15 @@ export default function MarketingPromotionsTab() {
 			shopProductId: bannerShopProductId,
 		});
 		if (!validation.ok) {
-			toast.error(validation.message);
+			let message = validation.message;
+			if (
+				bannerCtaTargetMode === "vendor" &&
+				!bannerCtaVendorId.trim() &&
+				bannerDestinationVendors.length === 0
+			) {
+				message += " No vendors loaded for this category. Try another category or refresh.";
+			}
+			toast.error(message);
 			return;
 		}
 
@@ -1001,7 +1012,6 @@ export default function MarketingPromotionsTab() {
 		setBannerCtaPersona(value);
 		setBannerCtaServiceStyle("");
 		setBannerCtaVendorId("");
-		setBannerCtaTargetMode("none");
 	};
 
 	const handleBannerCtaTargetModeChange = (mode: BannerCtaTargetMode) => {
