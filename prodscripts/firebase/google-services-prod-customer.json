@@ -1,0 +1,67 @@
+{
+  "project_info": {
+    "project_number": "771876271254",
+    "project_id": "warmpawz-b9baf",
+    "storage_bucket": "warmpawz-b9baf.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:771876271254:android:ba4b500b0e132365f1beb7",
+        "android_client_info": {
+          "package_name": "com.warmpawz.customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxG_4GAk1-bn9UlKCXltTIglDTaM_W65A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:771876271254:android:7bf5caa7d46a7a12f1beb7",
+        "android_client_info": {
+          "package_name": "com.warmpawz.customer.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxG_4GAk1-bn9UlKCXltTIglDTaM_W65A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:771876271254:android:68ab5a70c72128baf1beb7",
+        "android_client_info": {
+          "package_name": "com.warmpawz.vendor.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxG_4GAk1-bn9UlKCXltTIglDTaM_W65A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

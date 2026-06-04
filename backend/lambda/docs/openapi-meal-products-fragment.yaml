@@ -1,0 +1,120 @@
+# Fragment: POST/PUT /vendor/{vendorId}/meal-products
+# Merge into your OpenAPI 3 document paths/components.
+
+components:
+  schemas:
+    PurchaseType:
+      type: string
+      enum: [ONE_TIME, WEEKLY_PLAN, MONTHLY_PLAN]
+      description: >
+        ONE_TIME = single purchase; WEEKLY_PLAN = recurring weekly food drops;
+        MONTHLY_PLAN = recurring monthly nutrition schedule.
+    DeliveryFrequency:
+      type: string
+      enum: [DAILY, ALTERNATE_DAYS, TWICE_WEEKLY, WEEKLY]
+    DayOfWeek:
+      type: string
+      enum: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY]
+    SubscriptionConfig:
+      type: object
+      properties:
+        deliveryFrequency: { $ref: '#/components/schemas/DeliveryFrequency' }
+        deliveryDays:
+          type: array
+          items: { $ref: '#/components/schemas/DayOfWeek' }
+        mealsPerDelivery: { type: integer, minimum: 1, maximum: 50 }
+        mealsPerDay: { type: integer, minimum: 1, maximum: 50 }
+        recommendedPlanLengthWeeks: { type: integer, enum: [1, 2, 4] }
+        subscriptionPrice: { type: number, description: '₹ per delivery (weekly) or per day (monthly)' }
+        pauseAllowed: { type: boolean }
+        cancelAnytime: { type: boolean }
+    MealProductRequest:
+      type: object
+      required:
+        [name, description, price, mealImageUrl, ingredients, mealCategories, preparationType, shelfLifeDays, petTypes]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        price: { type: number, exclusiveMinimum: 0 }
+        mealImageUrl: { type: string }
+        ingredients: { type: array, items: { type: string } }
+        mealCategories: { type: array, items: { type: string } }
+        purchaseType: { $ref: '#/components/schemas/PurchaseType' }
+        deliveryType:
+          type: string
+          enum: [ONE_TIME, WEEKLY_SUBSCRIPTION, MONTHLY_SUBSCRIPTION]
+          deprecated: true
+        subscriptionConfig: { $ref: '#/components/schemas/SubscriptionConfig' }
+        deliveryFrequency: { $ref: '#/components/schemas/DeliveryFrequency' }
+        deliveryDays:
+          type: array
+          items: { $ref: '#/components/schemas/DayOfWeek' }
+        mealsPerDelivery: { type: integer }
+        mealsPerDeliveryPreset: { type: string, enum: ['1', '2', '3', 'CUSTOM'] }
+        mealsPerDeliveryCustom: { type: string }
+        mealsPerDayPreset: { type: string, enum: ['1', '2', '3', 'CUSTOM'] }
+        mealsPerDayCustom: { type: string }
+        subscriptionPrice: { type: number }
+        recommendedPlanLengthWeeks: { type: integer, enum: [1, 2, 4] }
+        pauseAllowed: { type: boolean, default: true }
+        cancelAnytime: { type: boolean, default: true }
+      description: >
+        Conditional rules: WEEKLY_PLAN requires deliveryDays (>=1) and mealsPerDelivery* ;
+        MONTHLY_PLAN requires deliveryFrequency and mealsPerDayPreset (+ custom text when CUSTOM).
+
+paths:
+  '/vendor/{vendorId}/meal-products':
+    post:
+      summary: Create meal product (nutrition SKU)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MealProductRequest' }
+            examples:
+              oneTime:
+                summary: Buy once
+                value:
+                  name: Chicken bowl
+                  description: Balanced adult meal
+                  price: 299
+                  mealImageUrl: https://cdn.example.com/meal.jpg
+                  ingredients: [chicken, rice, carrot]
+                  mealCategories: [HOMEMADE_DIET]
+                  preparationType: FRESH_COOKED
+                  shelfLifeDays: 7
+                  petTypes: [Dog]
+                  purchaseType: ONE_TIME
+                  mealsPerDayPreset: '2'
+              weeklyPlan:
+                summary: Weekly meal plan
+                value:
+                  name: Weekly fresh bowls
+                  description: Three drops per week
+                  price: 299
+                  mealImageUrl: https://cdn.example.com/meal.jpg
+                  ingredients: [chicken, pumpkin]
+                  mealCategories: [HOMEMADE_DIET]
+                  preparationType: FRESH_COOKED
+                  shelfLifeDays: 5
+                  petTypes: [Dog]
+                  purchaseType: WEEKLY_PLAN
+                  deliveryDays: [MONDAY, WEDNESDAY, FRIDAY]
+                  mealsPerDeliveryPreset: '2'
+                  subscriptionPrice: 299
+                  recommendedPlanLengthWeeks: 4
+              monthlyPlan:
+                summary: Monthly nutrition plan
+                value:
+                  name: Daily nutrition
+                  description: Month-long schedule
+                  price: 199
+                  mealImageUrl: https://cdn.example.com/meal.jpg
+                  ingredients: [fish, sweet potato]
+                  mealCategories: [GUT_HEALTH]
+                  preparationType: FRESH_COOKED
+                  shelfLifeDays: 4
+                  petTypes: [Dog]
+                  purchaseType: MONTHLY_PLAN
+                  deliveryFrequency: DAILY
+                  mealsPerDayPreset: '2'
+                  subscriptionPrice: 299
