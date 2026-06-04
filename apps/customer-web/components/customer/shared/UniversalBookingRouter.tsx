@@ -1116,7 +1116,6 @@ export function UniversalBookingRouter({
         }
 
         return (
-          <div className="fixed inset-0 z-50 bg-white">
             <UniversalPaymentPage
               type="booking"
               vendorId={(vendorId || doctorId || clinicId || '') as string}
@@ -1157,7 +1156,6 @@ export function UniversalBookingRouter({
                 setStep('confirmation');
               }}
             />
-          </div>
         );
       })()}
 

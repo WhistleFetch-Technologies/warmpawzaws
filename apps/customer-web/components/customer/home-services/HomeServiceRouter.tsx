@@ -897,6 +897,36 @@ export function HomeServiceRouter({
     return <Home className="w-6 h-6 text-[#FF8C42]" />;
   };
 
+  if (step === 'payment' && bookingId) {
+    return (
+      <UniversalPaymentPage
+        type="booking"
+        category={feeCategoryForHomeService(serviceType)}
+        bookingId={bookingId}
+        serviceId={selectedService?.serviceId}
+        vendorId={selectedProvider?.vendorId || ''}
+        vendorName={selectedProvider?.name || selectedProvider?.businessName || 'Provider'}
+        vendorAddress={selectedProvider?.businessAddress}
+        staffName={selectedProvider?.name}
+        staffPhoto={selectedProvider?.photo}
+        serviceStyle="at_home"
+        serviceName={selectedService?.name || serviceName}
+        bookingDate={selectedDate}
+        bookingTime={selectedTime}
+        petId={selectedPet?.id}
+        petName={selectedPet?.name}
+        petBreed={selectedPet?.breed}
+        address={selectedAddress}
+        baseAmount={selectedService?.price || 0}
+        priceIncludesTax={catalogPriceIncludesTax(selectedService)}
+        customerPhone={phone}
+        customerId={customerId ?? undefined}
+        onSuccess={handlePaymentSuccess}
+        onBack={() => setStep('datetime')}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto relative overflow-hidden">
       {/* Orange Header - Half size (17-18vh) with rounded bottom edge */}
@@ -1542,38 +1572,6 @@ export function HomeServiceRouter({
                 `Proceed to ${usePackageSession ? 'Confirm' : 'Payment'}`
               )}
             </Button>
-          </div>
-        )}
-
-        {/* ============ PAYMENT STEP ============ */}
-        {/* ✅ FIX: Render payment page as full-screen overlay to escape router layout */}
-        {step === 'payment' && bookingId && (
-          <div className="fixed inset-0 z-50 bg-white">
-            <UniversalPaymentPage
-              type="booking"
-              category={feeCategoryForHomeService(serviceType)}
-              bookingId={bookingId}
-              serviceId={selectedService?.serviceId}
-              vendorId={selectedProvider?.vendorId || ''}
-              vendorName={selectedProvider?.name || selectedProvider?.businessName || 'Provider'}
-              vendorAddress={selectedProvider?.businessAddress}
-              staffName={selectedProvider?.name}
-              staffPhoto={selectedProvider?.photo}
-              serviceStyle="at_home"
-              serviceName={selectedService?.name || serviceName}
-              bookingDate={selectedDate}
-              bookingTime={selectedTime}
-              petId={selectedPet?.id}
-              petName={selectedPet?.name}
-              petBreed={selectedPet?.breed}
-              address={selectedAddress}
-              baseAmount={selectedService?.price || 0}
-              priceIncludesTax={catalogPriceIncludesTax(selectedService)}
-              customerPhone={phone}
-              customerId={customerId ?? undefined}
-              onSuccess={handlePaymentSuccess}
-              onBack={() => setStep('datetime')}
-            />
           </div>
         )}
 

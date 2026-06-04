@@ -963,6 +963,60 @@ export function GroomingBookingRouter({
     </>
   );
 
+  if (step === 'payment' && showPaymentPage) {
+    return (
+      <UniversalPaymentPage
+        type="booking"
+        serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
+        serviceName={
+          allSelectedServices.length > 1
+            ? `${allSelectedServices.length} Services Selected`
+            : selectedServiceOption?.name || serviceName || 'Grooming Service'
+        }
+        serviceDescription={`Grooming by ${groomer?.name || 'professional groomer'}`}
+        serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
+        category="grooming"
+        vendorId={vendorId || ''}
+        vendorName={groomer?.name || vendorNameProp || 'Grooming Professional'}
+        vendorAddress={
+          (groomer?.address || groomer?.business_address || groomer?.service_area || groomer?.businessAddress) as
+            | string
+            | undefined
+        }
+        staffName={selectedServiceType === 'at_home' ? groomer?.name || 'Grooming Professional' : undefined}
+        staffPhoto={selectedServiceType === 'at_home' ? groomer?.photo || groomer?.profile_photo : undefined}
+        bookingDate={selectedDate}
+        bookingTime={selectedTime}
+        petId={selectedPet?.id}
+        petName={selectedPet?.name}
+        petBreed={selectedPet?.breed}
+        addressId={selectedAddress?.id}
+        address={selectedAddress}
+        showAddressSelection={selectedServiceType === 'at_home'}
+        baseAmount={
+          allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) ||
+          selectedServiceOption?.price ||
+          price ||
+          499
+        }
+        priceIncludesTax={
+          catalogPriceIncludesTax(selectedServiceOption) ||
+          (!!allSelectedServices?.length && catalogPriceIncludesTax(allSelectedServices[0]))
+        }
+        duration={calculateTotalDuration() || selectedServiceOption?.duration || duration || 60}
+        quantity={1}
+        customerPhone={phone}
+        customerId={customerId || undefined}
+        selectedServices={allSelectedServices}
+        onBack={() => setShowPaymentPage(false)}
+        onPaymentAbandoned={() => {
+          if (selectedDate) void loadTimeSlots(selectedDate);
+        }}
+        onSuccess={handlePaymentSuccess}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 relative overflow-hidden">
       {step !== 'payment' && (
@@ -998,60 +1052,9 @@ export function GroomingBookingRouter({
         />
       )}
 
-      {/* Main Content */}
-      {(step !== 'payment' || showPaymentPage || step === 'confirmation') && (
+      {/* Main Content (booking steps + confirmation; payment uses early return above) */}
+      {step !== 'payment' && (
       <div className="max-w-md mx-auto px-4 pt-6 min-h-[calc(82vh)] pb-24 relative z-10">
-        {/* ✅ FIX: Render payment page as full-screen overlay to escape router layout */}
-        {step === 'payment' && showPaymentPage ? (
-          <div className="fixed inset-0 z-50 bg-white">
-            <UniversalPaymentPage
-            type="booking"
-            serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
-            serviceName={allSelectedServices.length > 1 
-              ? `${allSelectedServices.length} Services Selected`
-              : (selectedServiceOption?.name || serviceName || 'Grooming Service')}
-            serviceDescription={`Grooming by ${groomer?.name || 'professional groomer'}`}
-            serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
-            category="grooming"
-            vendorId={vendorId || ''}
-            vendorName={groomer?.name || vendorNameProp || 'Grooming Professional'}
-            vendorAddress={
-              (groomer?.address || groomer?.business_address || groomer?.service_area || groomer?.businessAddress) as
-                | string
-                | undefined
-            }
-            staffName={selectedServiceType === 'at_home' ? (groomer?.name || 'Grooming Professional') : undefined} // ✅ NEW: Staff name for home services
-            staffPhoto={selectedServiceType === 'at_home' ? (groomer?.photo || groomer?.profile_photo) : undefined} // ✅ NEW: Staff photo for home services
-            bookingDate={selectedDate}
-            bookingTime={selectedTime}
-            petId={selectedPet?.id}
-            petName={selectedPet?.name}
-            petBreed={selectedPet?.breed}
-            addressId={selectedAddress?.id}
-            address={selectedAddress}
-            showAddressSelection={selectedServiceType === 'at_home'}
-            baseAmount={allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) || selectedServiceOption?.price || price || 499}
-            priceIncludesTax={
-              catalogPriceIncludesTax(selectedServiceOption) ||
-              (!!(allSelectedServices?.length) && catalogPriceIncludesTax(allSelectedServices[0]))
-            }
-            duration={calculateTotalDuration() || selectedServiceOption?.duration || duration || 60}
-            quantity={1}
-            customerPhone={phone}
-            customerId={customerId || undefined}
-            selectedServices={allSelectedServices}
-            onBack={() => setShowPaymentPage(false)}
-            onPaymentAbandoned={() => {
-              if (selectedDate) void loadTimeSlots(selectedDate);
-            }}
-            onSuccess={handlePaymentSuccess}
-            />
-          </div>
-        ) : null}
-
-        {/* Main booking content - only show when not on payment */}
-        {step !== 'payment' && (
-          <>
             {/* Step indicator moved to header */}
 
             {/* Service Selection */}
@@ -1422,8 +1425,6 @@ export function GroomingBookingRouter({
               Review booking and pay
             </Button>
           </div>
-        )}
-        </>
         )}
 
         {/* Confirmation */}

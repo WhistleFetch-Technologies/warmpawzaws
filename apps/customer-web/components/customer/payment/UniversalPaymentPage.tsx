@@ -1,15 +1,13 @@
 ﻿'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import {
-  CreditCard, Wallet, Tag, ChevronRight, ChevronDown,
+  CreditCard, Wallet, Tag, ChevronRight,
   CheckCircle2, Shield, X, Percent, Info, MapPin,
-  Clock, Calendar, Plus, Smartphone, Building2,
-  Home, Video, Gift, Sparkles, AlertCircle, Loader2
+  Plus, Smartphone,
+  Gift, Sparkles, AlertCircle, Loader2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
@@ -20,9 +18,10 @@ import { apiClient, getApiBaseUrl } from '@/lib/api-client';
 import { resolveGstDisplayRatePercent } from '@/lib/resolve-gst-display-rate';
 import { buildCheckoutPaymentSources } from '@/lib/payment-display-utils';
 import type { PaymentSource } from '@/lib/payment-display-utils';
-import { petsFromApiResponse } from '@/lib/extract-pets-from-api';
-import { readAndConsumeCheckoutPetSelection } from '@/lib/checkout-pet-selection';
-import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import { PaymentPageHeader } from './PaymentPageHeader';
+import { PaymentProviderSection } from './PaymentProviderSection';
+import { PaymentBookingSummarySection } from './PaymentBookingSummarySection';
+import { paymentPageBgClass, paymentSecondaryCardClass } from './payment-page-styles';
 import {
   digitsToRazorpayContactE164,
   RAZORPAY_PREFILL_EMAIL_FALLBACK,
@@ -109,19 +108,19 @@ interface UniversalPaymentPageProps {
   vendorAddress?: string; // âœ… NEW: Vendor/clinic address for at_center services
   staffName?: string; // âœ… NEW: Staff name for at_home services
   staffPhoto?: string; // âœ… NEW: Staff photo for at_home services
+  vendorTagline?: string;
+  vendorIsVerified?: boolean;
+  includedSummary?: string;
+  includedItems?: string[];
 
   // Schedule (for bookings)
   bookingDate?: string;
   bookingTime?: string;
 
-  // Pet (for bookings)
+  // Pet (for bookings) — selected earlier in booking flow; passed through to payloads
   petId?: string;
   petName?: string;
   petBreed?: string;
-  /** When length > 1, shows an inline selector without changing the rest of the row layout */
-  petSwitcherPets?: { id: string; name: string }[];
-  /** Called when the user picks a pet from the switcher, or null for â€œno petâ€ (checkout still allowed). */
-  onPetSwitcherChange?: (pet: { id: string; name: string } | null) => void;
 
   // Address (for home services/orders)
   addressId?: string;
@@ -172,6 +171,11 @@ interface UniversalPaymentPageProps {
    * appShell: matches CustomerHomeWrapper + BottomNavigation â€” CTA sits above the tab bar.
    */
   layoutVariant?: 'fullscreen' | 'appShell';
+  /**
+   * When true (default), roots with `position:fixed` so payment escapes parent rounded
+   * content shells (e.g. `rounded-t-[32px]` booking routers). Set false inside shop modal.
+   */
+  fillViewport?: boolean;
 
   // Navigation
   onBack: () => void;
@@ -277,10 +281,6 @@ function taxCalculateResponseHasPayload(res: any): boolean {
   return Array.isArray(res.items) && res.items.length > 0;
 }
 
-function petsListForPaymentPicker(data: unknown): { id: string; name: string }[] {
-  return petsFromApiResponse(data).map((p) => ({ id: p.id, name: p.name }));
-}
-
 /**
  * Forensic: extract booking ID from any create-booking response shape.
  * Handles wrapped ({ success, data: { bookingId } }), idempotency ({ bookingId }), double-wrapped, and snake_case.
@@ -359,13 +359,15 @@ export function UniversalPaymentPage({
   vendorAddress,
   staffName,
   staffPhoto,
+  vendorTagline,
+  vendorIsVerified,
+  includedSummary,
+  includedItems,
   bookingDate,
   bookingTime,
   petId,
   petName,
   petBreed,
-  petSwitcherPets,
-  onPetSwitcherChange,
   addressId,
   address,
   showAddressSelection = false,
@@ -381,11 +383,13 @@ export function UniversalPaymentPage({
   initialPromotionId,
   initialPromotionIntent,
   layoutVariant = 'fullscreen',
+  fillViewport = true,
   onBack,
   onSuccess,
   onPaymentAbandoned,
 }: UniversalPaymentPageProps) {
-  const router = useRouter();
+  const appShell = layoutVariant === 'appShell';
+
   // State
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -446,10 +450,6 @@ export function UniversalPaymentPage({
   const [subscriptionCovered, setSubscriptionCovered] = useState(false);
   const [activeSubscription, setActiveSubscription] = useState<any>(null);
   const [checkingSubscription, setCheckingSubscription] = useState(false);
-  const [fetchedPetsForPicker, setFetchedPetsForPicker] = useState<{ id: string; name: string }[]>([]);
-  /** Bumps when user returns to this tab (e.g. after adding a pet on /pets) so the picker refetches. */
-  const [petsListRefreshNonce, setPetsListRefreshNonce] = useState(0);
-  const [localPetSelection, setLocalPetSelection] = useState<{ id: string; name: string } | null>(null);
 
   const customerAddrStateForTax =
     (typeof selectedAddress?.state === 'string' && selectedAddress.state.trim()
@@ -879,92 +879,6 @@ export function UniversalPaymentPage({
       loadAddresses();
     }
   }, [showAddressSelection, customerPhone]);
-
-  useEffect(() => {
-    setLocalPetSelection(null);
-  }, [bookingId, orderId, type]);
-
-  const petListWasHiddenRef = useRef(false);
-  useEffect(() => {
-    const onVis = () => {
-      if (document.visibilityState === 'hidden') petListWasHiddenRef.current = true;
-      if (document.visibilityState === 'visible' && petListWasHiddenRef.current) {
-        setPetsListRefreshNonce((n) => n + 1);
-      }
-    };
-    document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
-  }, []);
-
-  useEffect(() => {
-    if (type !== 'booking' || petSwitcherPets !== undefined) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        let list: { id: string; name: string }[] = [];
-        if (customerId) {
-          try {
-            const res = await apiClient.get<unknown>(`/customer/${customerId}/pets`);
-            list = petsListForPaymentPicker(res);
-          } catch {
-            list = [];
-          }
-        }
-        if (!cancelled && list.length === 0 && customerPhone) {
-          try {
-            const byQuery = await apiClient.get<unknown>(
-              `/customer/pets?phone=${encodeURIComponent(customerPhone)}`
-            );
-            list = petsListForPaymentPicker(byQuery);
-          } catch {
-            /* try path route next */
-          }
-        }
-        if (!cancelled && list.length === 0 && customerPhone) {
-          try {
-            const byPath = await apiClient.get<unknown>(
-              `/customer/pets/${encodeURIComponent(customerPhone)}`
-            );
-            list = petsListForPaymentPicker(byPath);
-          } catch {
-            list = [];
-          }
-        }
-        if (!cancelled) setFetchedPetsForPicker(list);
-      } catch {
-        if (!cancelled) setFetchedPetsForPicker([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [type, petSwitcherPets, customerId, customerPhone, petsListRefreshNonce]);
-
-  useEffect(() => {
-    if (type !== 'booking') return;
-    const applyCheckoutSelection = () => {
-      const payload = readAndConsumeCheckoutPetSelection();
-      if (!payload) return;
-      if ('skip' in payload) {
-        if (onPetSwitcherChange) onPetSwitcherChange(null);
-        else setLocalPetSelection(null);
-        return;
-      }
-      const p = payload.pet;
-      if (onPetSwitcherChange) onPetSwitcherChange({ id: p.id, name: p.name });
-      else setLocalPetSelection({ id: p.id, name: p.name });
-    };
-    applyCheckoutSelection();
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') applyCheckoutSelection();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('pageshow', applyCheckoutSelection);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('pageshow', applyCheckoutSelection);
-    };
-  }, [type, onPetSwitcherChange]);
 
   //  Resolve serviceId early (before payment flow)
   useEffect(() => {
@@ -1665,14 +1579,8 @@ export function UniversalPaymentPage({
     return { paymentSources, totalPaid };
   };
 
-  const effectivePetsForPicker = petSwitcherPets ?? fetchedPetsForPicker;
-  const effectivePetId = onPetSwitcherChange ? petId : (localPetSelection?.id ?? petId);
-  const effectivePetName = onPetSwitcherChange ? petName : (localPetSelection?.name ?? petName);
-  const selectedPetDisplayName =
-    (effectivePetName?.trim() ||
-      (effectivePetId && effectivePetsForPicker.some((x) => x.id === effectivePetId)
-        ? effectivePetsForPicker.find((x) => x.id === effectivePetId)!.name.trim()
-        : '')) || '';
+  const effectivePetId = petId;
+  const effectivePetName = petName?.trim() || undefined;
 
   const handlePayment = async (skipPolicyCheck: boolean = false) => {
     // Check if policies have been accepted (for bookings)
@@ -3244,8 +3152,13 @@ export function UniversalPaymentPage({
   };
 
   if (loading) {
+    const loadingShell = fillViewport
+      ? appShell
+        ? 'fixed inset-x-0 top-0 bottom-[var(--customer-footer-offset)] z-[60] flex items-center justify-center bg-[#FAF6F0]'
+        : 'fixed inset-0 z-[60] flex items-center justify-center bg-[#FAF6F0]'
+      : `flex min-h-[100dvh] w-full max-w-customer mx-auto items-center justify-center ${paymentPageBgClass}`;
     return (
-      <div className="flex min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto flex-col items-center justify-center bg-orange-50">
+      <div className={loadingShell}>
         <Loader2 className="h-12 w-12 animate-spin text-[#FF8C42]" />
       </div>
     );
@@ -3273,48 +3186,60 @@ export function UniversalPaymentPage({
       ? effectiveSelectedServices.reduce((sum: number, s: any) => sum + (Number(s.duration) || 0), 0)
       : firstServiceFromArray?.duration);
 
-  const appShell = layoutVariant === 'appShell';
   /** Keep in sync with globals.css --customer-footer-offset + .cw-fixed-above-customer-tabbar */
-  const ctaBottomClass = appShell
-    ? 'cw-fixed-above-customer-tabbar'
-    : 'bottom-[max(1rem,env(safe-area-inset-bottom,1rem))]';
   /** Matches --customer-sticky-cta-scroll-padding (footer + fixed pay strip) */
   const mainBottomPadding = appShell
     ? 'cw-scroll-pad-tabbar-sticky-cta'
     : 'pb-[calc(10.5rem+env(safe-area-inset-bottom,0px))]';
 
   const paymentStats = [
-    { value: formatPriceWithSymbol(displayAmount), label: 'Due' },
     {
-      value: displayDuration != null && !Number.isNaN(Number(displayDuration)) ? `${displayDuration} min` : '—',
-      label: 'Duration',
+      value: formatPriceWithSymbol(displayAmount),
+      label: 'Due',
+      icon: 'wallet' as const,
     },
-    { value: type === 'meal_subscription' || type === 'meal_one_time' ? 'Meal plan' : type === 'booking' ? 'Booking' : 'Order', label: 'Type' },
+    {
+      value:
+        displayDuration != null && !Number.isNaN(Number(displayDuration))
+          ? `${displayDuration} min`
+          : '—',
+      label: 'Duration',
+      icon: 'clock' as const,
+    },
+    {
+      value:
+        type === 'meal_subscription' || type === 'meal_one_time'
+          ? 'Meal plan'
+          : type === 'booking'
+            ? 'Booking'
+            : 'Order',
+      label: 'Type',
+      icon: 'calendar' as const,
+    },
   ];
 
+  const viewportShellClass = fillViewport
+    ? appShell
+      ? 'fixed inset-x-0 top-0 bottom-[var(--customer-footer-offset)] z-[80] bg-[#FAF6F0]'
+      : 'fixed inset-0 z-[80] bg-[#FAF6F0]'
+    : `relative flex min-h-[100dvh] w-full ${paymentPageBgClass}`;
+
+  /** No rounded sheet — column is layout only; cream bg lives on viewport shell + main/footer */
+  const pageColumnClass =
+    'mx-auto flex h-full min-h-0 w-full max-w-customer flex-col';
+
   return (
-    <div className="mx-auto flex h-[100dvh] min-h-0 w-full max-w-customer flex-col overflow-hidden bg-orange-50">
-      {/* In-app payment summary (not Razorpayâ€™s iframe). `compact` keeps safe-area without the 4rem mobile top pad. */}
-      <ServiceDashboardHeader
-        className="sticky top-0 z-50 shrink-0"
-        compact
-        serviceName="Payment"
-        serviceSubtitle="Secure checkout"
-        serviceIcon={Shield}
-        iconColor="text-white"
-        stats={paymentStats}
-        onBack={onBack}
-        showBackButton
-        bottomEdge="sheet"
-        sheetToneClass="bg-orange-50"
-      />
+    <>
+    <div className={viewportShellClass}>
+      <div className={pageColumnClass}>
+      <PaymentPageHeader className="shrink-0" onBack={onBack} stats={paymentStats} />
 
       <main
-        className={`min-h-0 flex-1 space-y-4 overflow-y-auto px-4 -mt-2 pt-5 pb-4 ${mainBottomPadding}`}
+        className={`min-h-0 flex-1 space-y-4 overflow-y-auto bg-[#FAF6F0] px-4 pt-4 ${mainBottomPadding}`}
       >
         {/* Address Selection (if needed and on top) */}
         {showAddressSelection && (
-          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+          <div className={paymentSecondaryCardClass}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <MapPin className="w-5 h-5 text-[#FF8C42]" />
@@ -3329,7 +3254,7 @@ export function UniversalPaymentPage({
             </div>
 
             {selectedAddress ? (
-              <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
+              <div className="rounded-xl bg-[#FAF6F0] p-3 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]">
                 <p className="font-medium text-gray-900">{selectedAddress.label || 'Home'}</p>
                 <p className="text-sm text-gray-600">
                   {selectedAddress.addressLine1 || selectedAddress.address}, {selectedAddress.city} - {selectedAddress.pincode}
@@ -3344,60 +3269,19 @@ export function UniversalPaymentPage({
                 Add Address
               </button>
             )}
-          </Card>
+          </div>
         )}
 
         {type === 'booking' && (vendorName || vendorAddress || staffName || staffPhoto) && (
-          <Card className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-            <h2 className="mb-3 text-lg font-bold text-gray-900">Your provider</h2>
-            <div className="flex gap-3">
-              {staffPhoto ? (
-                <img
-                  src={staffPhoto}
-                  alt=""
-                  className="h-14 w-14 flex-shrink-0 rounded-full object-cover ring-2 ring-orange-100"
-                />
-              ) : (
-                <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600">
-                  {serviceStyle === 'at_center' ? (
-                    <Building2 className="h-7 w-7" />
-                  ) : (
-                    <Home className="h-7 w-7" />
-                  )}
-                </div>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-gray-900">{vendorName || 'Provider'}</p>
-                {staffName && staffName.trim() !== (vendorName || '').trim() && (
-                  <p className="text-sm text-gray-600">Professional: {staffName}</p>
-                )}
-                {vendorAddress && (
-                  <p className="mt-1 flex items-start gap-2 text-sm text-gray-600">
-                    <MapPin className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#FF8C42]" />
-                    <span>{vendorAddress}</span>
-                  </p>
-                )}
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {type === 'booking' && (
-          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <button
-              type="button"
-              onClick={() => router.push('/pets?forCheckout=1')}
-              className="flex w-full items-center justify-between gap-3 rounded-xl text-left transition-all duration-150 active:scale-[0.98] active:bg-gray-50 touch-manipulation"
-            >
-              <span className="shrink-0 text-sm font-medium text-gray-700">Pet</span>
-              <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-                <span className="truncate text-right text-sm font-semibold text-gray-900">
-                  {selectedPetDisplayName || 'Select Pet'}
-                </span>
-                <ChevronRight className="h-5 w-5 shrink-0 text-gray-400" aria-hidden />
-              </div>
-            </button>
-          </Card>
+          <PaymentProviderSection
+            vendorName={vendorName || 'Provider'}
+            vendorAddress={vendorAddress}
+            staffName={staffName}
+            staffPhoto={staffPhoto}
+            serviceStyle={serviceStyle}
+            vendorTagline={vendorTagline}
+            vendorIsVerified={vendorIsVerified}
+          />
         )}
 
         {type === 'meal_subscription' || type === 'meal_one_time' ? (
@@ -3408,115 +3292,35 @@ export function UniversalPaymentPage({
             totalInr={resolvedMealPayTotal}
           />
         ) : (
-          <>
-        {/* Booking/Order Summary - Universal display for all service booking flows */}
-        <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">
-            {type === 'booking' ? 'Booking Summary' : 'Order Summary'}
-          </h2>
-
-          {/* Multi-service or single service display */}
-          {effectiveSelectedServices && effectiveSelectedServices.length > 0 ? (
-            <div className="space-y-3 pb-4 border-b border-gray-100">
-              {effectiveSelectedServices.map((svc: any, idx: number) => {
-                const svcName = svc.name || svc.serviceName || 'Service';
-                const svcPrice = Number(svc.price) || 0;
-                const svcDuration = svc.duration != null ? Number(svc.duration) : null;
-                const svcStyle = svc.serviceStyle || svc.service_style || serviceStyle;
-                return (
-                  <div key={svc.id || svc.serviceId || idx} className="flex items-start gap-4">
-                    <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${svcStyle === 'tele' ? 'bg-blue-100' :
-                      svcStyle === 'at_home' ? 'bg-green-100' :
-                        svcStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
-                      }`}>
-                      {svcStyle === 'tele' ? 'ðŸ“±' : svcStyle === 'at_home' ? 'ðŸ ' : svcStyle === 'at_center' ? 'ðŸ¥' : 'ðŸ›’'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-gray-900">{svcName}</h3>
-                      {idx === 0 && <p className="text-sm text-gray-500">{vendorName}</p>}
-                      {svcDuration != null && svcDuration > 0 && (
-                        <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
-                          <Clock className="w-3 h-3" /> {svcDuration} mins
-                        </p>
-                      )}
-                    </div>
-                    <p className="font-bold text-[#FF8C42]">{formatPriceWithSymbol(svcPrice)}</p>
-                  </div>
-                );
-              })}
-              {effectiveSelectedServices.length > 1 && (
-                <div className="flex justify-between items-center pt-2 font-bold">
-                  <span>Subtotal</span>
-                  <span className="text-[#FF8C42]">{formatPriceWithSymbol(displayAmount)}</span>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-start gap-4 pb-4 border-b border-gray-100">
-              <div className={`w-14 h-14 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 ${serviceStyle === 'tele' ? 'bg-blue-100' :
-                serviceStyle === 'at_home' ? 'bg-green-100' :
-                  serviceStyle === 'at_center' ? 'bg-purple-100' : 'bg-orange-100'
-                }`}>
-                {serviceStyle === 'tele' ? 'ðŸ“±' : serviceStyle === 'at_home' ? 'ðŸ ' : serviceStyle === 'at_center' ? 'ðŸ¥' : 'ðŸ›’'}
-              </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-gray-900">{displayName}</h3>
-                <p className="text-sm text-gray-500">{vendorName}</p>
-                {displayDescription && (
-                  <p className="text-sm text-gray-400 mt-1 line-clamp-2">{displayDescription}</p>
-                )}
-                {displayDuration != null && displayDuration > 0 && (
-                  <p className="text-sm text-gray-400 flex items-center gap-1 mt-1">
-                    <Clock className="w-3 h-3" /> {displayDuration} mins
-                  </p>
-                )}
-                {quantity > 1 && (
-                  <p className="text-sm text-gray-400 mt-1">Quantity: {quantity}</p>
-                )}
-              </div>
-              <p className="font-bold text-[#FF8C42]">{formatPriceWithSymbol(displayAmount)}</p>
-            </div>
-          )}
-
-          {/* Schedule (for bookings) */}
-          {type === 'booking' && (bookingDate || bookingTime) && (
-            <div className="flex items-center gap-3 py-3 border-b border-gray-100">
-              <Calendar className="w-5 h-5 text-gray-400" />
-              <div className="flex-1">
-                <p className="text-sm text-gray-500">Schedule</p>
-                <p className="font-medium">
-                  {bookingDate && new Date(bookingDate).toLocaleDateString('en-IN', {
-                    weekday: 'short', day: 'numeric', month: 'short'
-                  })}
-                  {bookingTime && ` at ${bookingTime}`}
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Address (for home services/orders) */}
-          {((serviceStyle === 'at_home' && type === 'booking') || type === 'order') && selectedAddress && (
-            <div className="flex items-center gap-3 py-3">
-              <MapPin className="w-5 h-5 text-gray-400" />
-              <div className="flex-1">
-                <p className="text-sm text-gray-500">Delivery Address</p>
-                <p className="font-medium">{selectedAddress.label || 'Home'}</p>
-                <p className="text-sm text-gray-500">
-                  {selectedAddress.addressLine1 || selectedAddress.address}, {selectedAddress.city} - {selectedAddress.pincode}
-                </p>
-              </div>
-            </div>
-          )}
-        </Card>
-          </>
+          <PaymentBookingSummarySection
+            summaryTitle={type === 'booking' ? 'Booking Summary' : 'Order Summary'}
+            displayName={displayName}
+            vendorName={vendorName}
+            displayDescription={displayDescription}
+            displayAmount={displayAmount}
+            displayDuration={displayDuration}
+            quantity={quantity}
+            petName={effectivePetName}
+            serviceStyle={serviceStyle}
+            category={category}
+            selectedServices={effectiveSelectedServices}
+            includedSummary={includedSummary}
+            includedItems={includedItems}
+            bookingDate={type === 'booking' ? bookingDate : undefined}
+            bookingTime={type === 'booking' ? bookingTime : undefined}
+            showInlineAddress={
+              ((serviceStyle === 'at_home' && type === 'booking') || type === 'order') && !!selectedAddress
+            }
+            selectedAddress={selectedAddress}
+          />
         )}
 
         {/* Wallet Section â€” right after booking summary */}
         {wallet && wallet.balance > 0 && (
-          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+          <div className={paymentSecondaryCardClass}>
             <button
               onClick={() => setUseWallet(!useWallet)}
-              className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${useWallet ? 'border-green-500 bg-green-50' : 'border-gray-200'
+              className={`w-full flex items-center justify-between rounded-xl p-3 shadow-[0_4px_16px_rgba(0,0,0,0.06)] transition-all duration-150 active:scale-[0.98] touch-manipulation ${useWallet ? 'bg-green-50 ring-2 ring-green-500/40' : 'bg-[#FAF6F0]'
                 }`}
             >
               <div className="flex items-center gap-3">
@@ -3543,12 +3347,12 @@ export function UniversalPaymentPage({
                 ₹{walletAmount.toFixed(2)} will be deducted from wallet
               </p>
             )}
-          </Card>
+          </div>
         )}
 
         {/* Promotions & Spotlight Offers */}
         {type !== 'meal_subscription' && type !== 'meal_one_time' && promotions.length > 0 && (
-          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+          <div className={paymentSecondaryCardClass}>
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="w-5 h-5 text-[#FF8C42]" />
               <h2 className="font-semibold text-gray-900">Available Offers</h2>
@@ -3584,12 +3388,12 @@ export function UniversalPaymentPage({
                 </button>
               ))}
             </div>
-          </Card>
+          </div>
         )}
 
         {/* Coupon Section */}
         {type !== 'meal_subscription' && type !== 'meal_one_time' && (
-        <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+        <div className={paymentSecondaryCardClass}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Tag className="w-5 h-5 text-[#FF8C42]" />
@@ -3644,12 +3448,12 @@ export function UniversalPaymentPage({
               <ChevronRight className="w-5 h-5 text-gray-400" />
             </button>
           )}
-        </Card>
+        </div>
         )}
 
         {/* Razorpay Offers */}
         {type !== 'meal_subscription' && type !== 'meal_one_time' && razorpayOffers.length > 0 && (
-          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+          <div className={paymentSecondaryCardClass}>
             <div className="flex items-center gap-2 mb-3">
               <Gift className="w-5 h-5 text-blue-500" />
               <h2 className="font-semibold text-gray-900">Payment Offers</h2>
@@ -3682,11 +3486,11 @@ export function UniversalPaymentPage({
                 </button>
               ))}
             </div>
-          </Card>
+          </div>
         )}
 
         {/* Price Breakdown */}
-        <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+        <div className={paymentSecondaryCardClass}>
           <h2 className="font-semibold text-gray-900 mb-4">Price Details</h2>
           {priceIncludesTax && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
@@ -3825,7 +3629,7 @@ export function UniversalPaymentPage({
               </div>
             )}
 
-            <div className="border-t border-gray-200 pt-3 mt-3">
+            <div className="mt-4 border-t border-[#EDE9E3] pt-4">
               <div className="flex justify-between text-lg font-bold">
                 <span className="text-gray-900">Total Amount</span>
                 <span className="text-[#FF8C42]">₹{finalAmount.toFixed(2)}</span>
@@ -3837,11 +3641,11 @@ export function UniversalPaymentPage({
               )}
             </div>
           </div>
-        </Card>
+        </div>
 
         {/* Payment & refund policy summary (dynamic from backend) */}
         {(refundPolicySummary || (paymentPolicies && Object.keys(paymentPolicies).length > 0)) && (
-          <Card className="bg-gray-50 rounded-2xl p-4 shadow-sm border border-gray-100">
+          <div className={paymentSecondaryCardClass}>
             {refundPolicySummary && (
               <p className="text-xs text-gray-600 mb-2">
                 <span className="font-medium text-gray-700">Cancellation: </span>
@@ -3854,12 +3658,12 @@ export function UniversalPaymentPage({
                 {paymentPolicies.payment.description}
               </p>
             )}
-          </Card>
+          </div>
         )}
 
         {/* Saved Payment Methods */}
         {savedMethods.length > 0 && (
-          <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+          <div className={paymentSecondaryCardClass}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-gray-900">Saved Payment Methods</h2>
               <button
@@ -3908,11 +3712,11 @@ export function UniversalPaymentPage({
                 </button>
               ))}
             </div>
-          </Card>
+          </div>
         )}
 
         {/* Pay with Razorpay (default) */}
-        <Card className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+        <div className={paymentSecondaryCardClass}>
           <button
             onClick={() => setSelectedMethod('razorpay')}
             className={`w-full flex items-center justify-between p-3 rounded-xl border-2 transition-all duration-150 active:scale-[0.98] touch-manipulation ${selectedMethod === 'razorpay' ? 'border-[#FF8C42] bg-orange-50' : 'border-gray-200'
@@ -3965,11 +3769,11 @@ export function UniversalPaymentPage({
               </p>
             </div>
           )}
-        </Card>
+        </div>
 
         {/* OTP Notice for Home/Center services */}
         {type === 'booking' && serviceStyle !== 'tele' && serviceStyle !== 'ecom' && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+          <div className="rounded-[20px] bg-blue-50 p-4 shadow-[0_8px_30px_rgba(0,0,0,0.06)]">
             <div className="flex items-start gap-3">
               <Info className="w-5 h-5 text-blue-500 mt-0.5" />
               <div>
@@ -3985,36 +3789,42 @@ export function UniversalPaymentPage({
         )}
       </main>
 
-      {/* Fixed CTA â€” same max width as BottomNavigation (max-w-customer) */}
-      <div
-        className={`pointer-events-none fixed left-0 right-0 z-[100] mx-auto w-full max-w-customer px-4 ${ctaBottomClass}`}
+      {/* Sticky pay bar — sits on page background, not inside scroll area */}
+      <footer
+        className="shrink-0 bg-[#FAF6F0] px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0.75rem))] shadow-[0_-8px_30px_rgba(0,0,0,0.06)]"
+        role="region"
+        aria-label="Payment actions"
       >
-        <div className="pointer-events-auto w-full space-y-2">
-          <Button
-            onClick={() => handlePayment()}
-            disabled={processing || serviceIdResolving || (showAddressSelection && !selectedAddress)}
-            className="h-auto w-full rounded-full bg-gradient-to-r from-[#FF8C42] to-[#FF7029] px-6 py-4 text-lg font-bold text-white shadow-md transition-all duration-150 hover:from-[#E67A35] hover:to-[#D66A25] active:scale-[0.98] touch-manipulation disabled:opacity-50"
-          >
-            {processing || serviceIdResolving ? (
-              <span className="flex items-center gap-2">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                {serviceIdResolving ? 'Preparing...' : 'Processing...'}
-              </span>
-            ) : (
-              <>
-                <Shield className="w-5 h-5 mr-2" />
-                {finalAmount === 0 ? `Confirm ${type === 'booking' ? 'Booking' : 'Order'}` : `Pay ₹${finalAmount.toFixed(2)}`}
-              </>
-            )}
-          </Button>
-          <p className="flex items-center justify-center gap-1 text-center text-xs text-gray-600">
-            <Shield className="h-3 w-3 shrink-0 text-gray-500" />
-            Secured by Razorpay • 100% Safe Payments
-          </p>
-        </div>
+          <div className="space-y-2">
+            <Button
+              onClick={() => handlePayment()}
+              disabled={processing || serviceIdResolving || (showAddressSelection && !selectedAddress)}
+              className="h-auto w-full rounded-full bg-gradient-to-r from-[#FF8C42] to-[#FF7029] px-6 py-4 text-lg font-bold text-white shadow-[0_8px_24px_rgba(255,107,53,0.35)] transition-all duration-150 hover:from-[#E67A35] hover:to-[#D66A25] active:scale-[0.98] touch-manipulation disabled:opacity-50"
+            >
+              {processing || serviceIdResolving ? (
+                <span className="flex items-center justify-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  {serviceIdResolving ? 'Preparing...' : 'Processing...'}
+                </span>
+              ) : (
+                <span className="flex items-center justify-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  {finalAmount === 0
+                    ? `Confirm ${type === 'booking' ? 'Booking' : 'Order'}`
+                    : `Pay ₹${finalAmount.toFixed(2)}`}
+                </span>
+              )}
+            </Button>
+            <p className="flex items-center justify-center gap-1.5 text-center text-xs text-gray-500">
+              <Shield className="h-3 w-3 shrink-0 text-gray-400" aria-hidden />
+              Secured by Razorpay • 100% Safe Payments
+            </p>
+          </div>
+      </footer>
       </div>
+    </div>
 
-      {/* Address Selection Modal */}
+    {/* Address Selection Modal */}
       {showAddressModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50">
           <div className="w-full max-w-customer bg-white rounded-t-3xl max-h-[80vh] overflow-y-auto">
@@ -4098,8 +3908,7 @@ export function UniversalPaymentPage({
         serviceId={resolvedServiceId || serviceId} // Use resolved serviceId if available
         customerId={customerId}
       />
-
-    </div>
+    </>
   );
 }
 

@@ -745,6 +745,47 @@ export function TrainingBookingRouter({
     });
   };
 
+  if (step === 'payment' && showPaymentPage) {
+    return (
+      <UniversalPaymentPage
+        type="booking"
+        serviceId={
+          selectedVendorService?.service_id ||
+          selectedVendorService?.serviceId ||
+          selectedVendorService?.id ||
+          serviceId
+        }
+        serviceName={selectedServiceOption?.name || serviceName || 'Training Session'}
+        serviceDescription={`Training session with ${trainer?.name || 'trainer'}`}
+        serviceStyle={
+          selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'
+        }
+        category="training"
+        vendorId={vendorId || ''}
+        vendorName={trainer?.name || 'Training Professional'}
+        bookingDate={selectedDate}
+        bookingTime={selectedTime}
+        petId={selectedPet?.id}
+        petName={selectedPet?.name}
+        petBreed={selectedPet?.breed}
+        addressId={selectedAddress?.id}
+        address={selectedAddress}
+        showAddressSelection={selectedServiceType === 'at_home'}
+        baseAmount={selectedServiceOption?.price || price || 499}
+        priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
+        duration={selectedServiceOption?.duration || duration || 30}
+        quantity={1}
+        customerPhone={phone}
+        customerId={customerId || undefined}
+        onBack={() => setShowPaymentPage(false)}
+        onPaymentAbandoned={() => {
+          if (selectedDate) void loadTimeSlots(selectedDate);
+        }}
+        onSuccess={handlePaymentSuccess}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {step !== 'payment' && (
@@ -814,7 +855,7 @@ export function TrainingBookingRouter({
         />
       )}
 
-      {(step !== 'payment' || showPaymentPage) && (
+      {step !== 'payment' && (
       <div className="max-w-md mx-auto px-4 py-6">
         {/* Step indicator moved to header */}
 
@@ -1143,39 +1184,6 @@ export function TrainingBookingRouter({
               {selectedServiceType === 'at_home' && !selectedAddress ? 'Select an Address to Continue' : 'Continue'}
             </Button>
           </div>
-        )}
-
-        {/* ✅ UniversalPaymentPage Integration */}
-        {step === 'payment' && showPaymentPage && (
-          <UniversalPaymentPage
-            type="booking"
-            serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
-            serviceName={selectedServiceOption?.name || serviceName || 'Training Session'}
-            serviceDescription={`Training session with ${trainer?.name || 'trainer'}`}
-            serviceStyle={selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
-            category="training"
-            vendorId={vendorId || ''}
-            vendorName={trainer?.name || 'Training Professional'}
-            bookingDate={selectedDate}
-            bookingTime={selectedTime}
-            petId={selectedPet?.id}
-            petName={selectedPet?.name}
-            petBreed={selectedPet?.breed}
-            addressId={selectedAddress?.id}
-            address={selectedAddress}
-            showAddressSelection={selectedServiceType === 'at_home'}
-            baseAmount={selectedServiceOption?.price || price || 499}
-            priceIncludesTax={catalogPriceIncludesTax(selectedServiceOption)}
-            duration={selectedServiceOption?.duration || duration || 30}
-            quantity={1}
-            customerPhone={phone}
-            customerId={customerId || undefined}
-            onBack={() => setShowPaymentPage(false)}
-            onPaymentAbandoned={() => {
-              if (selectedDate) void loadTimeSlots(selectedDate);
-            }}
-            onSuccess={handlePaymentSuccess}
-          />
         )}
 
         {/* Confirmation */}

@@ -1,7 +1,7 @@
 'use client';
 
 import { UtensilsCrossed } from 'lucide-react';
-import { Card } from '@/components/ui/card';
+import { paymentCardClass } from './payment-page-styles';
 
 export type MealSubscriptionSummaryLine = {
   label: string;
@@ -29,9 +29,9 @@ export function MealSubscriptionPaymentSummary({
   totalInr,
 }: MealSubscriptionPaymentSummaryProps) {
   return (
-    <Card className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+    <div className={`${paymentCardClass} p-5`}>
       <h2 className="mb-4 text-lg font-bold text-gray-900">Meal subscription</h2>
-      <div className="flex items-start gap-4 border-b border-gray-100 pb-4">
+      <div className="flex items-start gap-4 pb-4">
         <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-orange-100 text-orange-600">
           <UtensilsCrossed className="h-7 w-7" />
         </div>
@@ -56,11 +56,11 @@ export function MealSubscriptionPaymentSummary({
             </span>
           </div>
         ))}
-        <div className="flex justify-between border-t border-gray-100 pt-3 text-base font-bold text-gray-900">
+        <div className="flex justify-between pt-4 text-base font-bold text-gray-900">
           <span>Total due</span>
           <span className="text-[#FF8C42]">₹{totalInr.toFixed(2)}</span>
         </div>
       </div>
-    </Card>
+    </div>
   );
 }
