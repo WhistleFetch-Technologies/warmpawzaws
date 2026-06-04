@@ -90,6 +90,7 @@ function BannerCarouselComponent({
       >
         {banners.map((banner, index) => {
           const heroComingSoon = Boolean(banner.comingSoon);
+          const heroNonClickable = heroComingSoon || Boolean(banner.isInformational);
           const imageUrl = resolveBannerImageUrl(banner);
           const hasHeroImage = Boolean(imageUrl);
 
@@ -131,13 +132,13 @@ function BannerCarouselComponent({
               )}
               <div
                 className={`relative z-[1] flex h-full items-center justify-between px-4 ${
-                  heroComingSoon ? 'pointer-events-none select-none opacity-90' : ''
+                  heroNonClickable ? 'pointer-events-none select-none opacity-90' : ''
                 }`}
               >
                 <div className="min-w-0 flex-1 pr-2">
                   <h2 className="mb-0.5 truncate text-base font-bold text-white">{banner.title}</h2>
                   <p className="mb-2 line-clamp-2 text-xs text-white/90">{banner.subtitle}</p>
-                  {heroComingSoon ? (
+                  {heroNonClickable ? (
                     <span
                       role="button"
                       aria-disabled

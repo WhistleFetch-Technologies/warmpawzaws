@@ -21,6 +21,8 @@ export interface HomeCarouselBanner {
   ctaText: string;
   ctaLink: string;
   comingSoon?: boolean;
+  /** CMS home informational — CTA label only, no navigation */
+  isInformational?: boolean;
   imageUrl?: string;
   navTarget?: { kind: string; screen?: string; path?: string; data?: Record<string, unknown> } | null;
   metadata?: unknown;

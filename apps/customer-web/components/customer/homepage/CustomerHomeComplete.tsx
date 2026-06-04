@@ -41,6 +41,10 @@ import { PresignableImage } from '@/components/shared/PresignableImage';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { customerPathToScreen } from '@/lib/promotion-navigation';
 import { iconForCustomerHomeApiBanner, normalizeCustomerBannerTarget } from '@/lib/customer-banner-icons';
+import {
+  isBannerInformationalNonClickable,
+  parseBannerInformationalFromMetadata,
+} from '@/lib/banner-cta-target';
 import { navigateBannerCta } from '@/lib/banner-cta-navigation';
 import { isVendorBannerCta } from '@/lib/banner-cta-parse';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
@@ -685,8 +689,10 @@ export function CustomerHomeComplete({
       title?: string;
       subtitle?: string;
       metadata?: unknown;
+      isInformational?: boolean;
       navTarget?: { kind: string; screen?: string; path?: string; data?: Record<string, unknown> };
     }) => {
+      if (isBannerInformationalNonClickable(banner)) return;
       if (!banner?.ctaLink && !banner?.navTarget && !banner?.metadata) return;
       await navigateBannerCta(
         {
@@ -1447,6 +1453,7 @@ export function CustomerHomeComplete({
       const ctaLink = screenFromSlash ?? rawCta;
       const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
       const comingSoon = explicitComingSoonFalse ? false : Boolean(b.comingSoon || b.coming_soon);
+      const isInformational = parseBannerInformationalFromMetadata(b.metadata);
       return {
         id: b.id,
         title: b.title,
@@ -1460,6 +1467,7 @@ export function CustomerHomeComplete({
         navTarget: b.navTarget ?? null,
         metadata: b.metadata ?? null,
         comingSoon,
+        isInformational,
       };
     });
   }, [dynamicMiddleBanners]);
@@ -1473,6 +1481,7 @@ export function CustomerHomeComplete({
       const ctaLink = screenFromSlash ?? rawCta;
       const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
       const comingSoon = explicitComingSoonFalse ? false : Boolean(b.comingSoon || b.coming_soon);
+      const isInformational = parseBannerInformationalFromMetadata(b.metadata);
       return {
         id: b.id,
         title: b.title,
@@ -1486,6 +1495,7 @@ export function CustomerHomeComplete({
         navTarget: b.navTarget ?? null,
         metadata: b.metadata ?? null,
         comingSoon,
+        isInformational,
       };
     });
   }, [dynamicLowerBanners]);
@@ -2376,6 +2386,8 @@ export function CustomerHomeComplete({
           >
             {banners.map((banner, index) => {
               const heroComingSoon = Boolean((banner as { comingSoon?: boolean }).comingSoon);
+              const heroNonClickable =
+                heroComingSoon || Boolean((banner as { isInformational?: boolean }).isInformational);
               return (
                 <div
                   key={banner.id || index}
@@ -2396,12 +2408,12 @@ export function CustomerHomeComplete({
                     </span>
                   )}
                   <div
-                    className={`h-full flex items-center justify-between px-4 ${heroComingSoon ? 'opacity-90 pointer-events-none select-none' : ''}`}
+                    className={`h-full flex items-center justify-between px-4 ${heroNonClickable ? 'opacity-90 pointer-events-none select-none' : ''}`}
                   >
                     <div>
                       <h2 className="text-white text-base font-bold mb-0.5">{banner.title}</h2>
                       <p className="text-white/90 text-xs mb-2">{banner.subtitle}</p>
-                      {heroComingSoon ? (
+                      {heroNonClickable ? (
                         <span
                           role="button"
                           aria-disabled
@@ -2744,6 +2756,8 @@ export function CustomerHomeComplete({
               >
                 {featuredMiddleCarouselBanners.map((banner, index) => {
                   const slotComingSoon = Boolean((banner as { comingSoon?: boolean }).comingSoon);
+                  const slotNonClickable =
+                    slotComingSoon || Boolean((banner as { isInformational?: boolean }).isInformational);
                   return (
                     <div
                       key={String(banner.id ?? index)}
@@ -2764,7 +2778,7 @@ export function CustomerHomeComplete({
                       <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 pointer-events-none" />
                       <div
                         className={`relative z-10 h-full min-h-[188px] p-6 flex flex-col justify-between ${
-                          slotComingSoon ? 'opacity-90 pointer-events-none select-none' : ''
+                          slotNonClickable ? 'opacity-90 pointer-events-none select-none' : ''
                         }`}
                       >
                         {slotComingSoon && (
@@ -2788,7 +2802,7 @@ export function CustomerHomeComplete({
                           )}
                         </div>
                         <div className="flex items-end justify-end pt-2">
-                          {slotComingSoon ? (
+                          {slotNonClickable ? (
                             <span
                               role="button"
                               aria-disabled
@@ -3137,6 +3151,8 @@ export function CustomerHomeComplete({
           <div className="px-6 mb-6 space-y-4">
             {featuredLowerBanners.map((banner, index) => {
               const slotComingSoon = Boolean((banner as { comingSoon?: boolean }).comingSoon);
+              const slotNonClickable =
+                slotComingSoon || Boolean((banner as { isInformational?: boolean }).isInformational);
               return (
                 <div
                   key={String(banner.id ?? index)}
@@ -3156,7 +3172,7 @@ export function CustomerHomeComplete({
                       {banner.subtitle ? (
                         <p className="text-sm text-white/90 mb-4 line-clamp-3">{banner.subtitle}</p>
                       ) : null}
-                      {slotComingSoon ? (
+                      {slotNonClickable ? (
                         <span className="inline-block bg-white/85 text-[#FF8C42]/70 px-5 py-2.5 rounded-full text-sm font-medium cursor-not-allowed">
                           {banner.ctaText || 'Learn More'}
                         </span>

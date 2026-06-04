@@ -67,8 +67,12 @@ import {
 	formatShopProductOptionLabel,
 	normalizeBannerServiceStyle,
 	validateBannerSaveTarget,
-	normalizeBannerExternalUrl,
+	buildArticleBannerCtaLink,
+	formatArticleOptionLabel,
+	isPublishedArticleRow,
+	parseArticleSlugFromCtaLink,
 	isCheckoutBannerPosition,
+	isHomeBannerPosition,
 	isShopBannerPosition,
 	type BannerCtaTargetMode,
 	type BannerDestinationCategory,
@@ -122,7 +126,8 @@ export default function MarketingPromotionsTab() {
 	const [bannerCtaServiceStyle, setBannerCtaServiceStyle] = useState("");
 	const [bannerCtaVendorId, setBannerCtaVendorId] = useState("");
 	const [bannerCtaTargetMode, setBannerCtaTargetMode] = useState<BannerCtaTargetMode>("none");
-	const [bannerCtaExternalUrl, setBannerCtaExternalUrl] = useState("");
+	const [bannerCtaArticleSlug, setBannerCtaArticleSlug] = useState("");
+	const [bannerCtaArticlePageId, setBannerCtaArticlePageId] = useState("");
 	const [bannerDestinationCategories, setBannerDestinationCategories] = useState<BannerDestinationCategory[]>([]);
 	const [bannerDestinationServiceStyles, setBannerDestinationServiceStyles] = useState<BannerDestinationServiceStyle[]>([]);
 	const [bannerDestinationVendors, setBannerDestinationVendors] = useState<BannerDestinationVendor[]>([]);
@@ -796,7 +801,7 @@ export default function MarketingPromotionsTab() {
 			targetMode: bannerCtaTargetMode,
 			serviceStyle: bannerCtaServiceStyle,
 			vendorId: bannerCtaVendorId,
-			externalUrl: bannerCtaExternalUrl,
+			articleSlug: bannerCtaArticleSlug,
 			shopTargetMode: bannerShopTargetMode,
 			shopProductId: bannerShopProductId,
 		});
@@ -829,10 +834,14 @@ export default function MarketingPromotionsTab() {
 		if (bannerCtaTargetMode === "service_type") targetLevel = "service_type";
 		if (bannerCtaTargetMode === "vendor") targetLevel = "vendor";
 
-		const externalUrl =
-			bannerCtaTargetMode === "external_url"
-				? normalizeBannerExternalUrl(bannerCtaExternalUrl)
-				: "";
+		const selectedArticle = articles.find(
+			(a: Record<string, unknown>) =>
+				String(a.slug ?? "").trim() === bannerCtaArticleSlug.trim()
+		) as Record<string, unknown> | undefined;
+		const articleTitle = selectedArticle ? String(selectedArticle.title ?? "").trim() : "";
+		const articlePageId =
+			bannerCtaArticlePageId ||
+			String(selectedArticle?.pageId ?? selectedArticle?.id ?? "").trim();
 
 		let metadata = buildBannerMetadata({
 			gradientFrom: bannerForm.gradient_from,
@@ -840,10 +849,14 @@ export default function MarketingPromotionsTab() {
 			bannerTarget:
 				isCheckout || isShop
 					? null
-					: bannerCtaTargetMode === "external_url"
+					: bannerCtaTargetMode === "informational"
+						? { targetLevel: "informational" }
+						: bannerCtaTargetMode === "article"
 						? {
-								targetLevel: "external_url",
-								externalUrl,
+								targetLevel: "article",
+								articleSlug: bannerCtaArticleSlug.trim(),
+								articlePageId: articlePageId || undefined,
+								articleTitle: articleTitle || undefined,
 							}
 						: {
 								categoryId: bannerCtaPersona,
@@ -858,12 +871,12 @@ export default function MarketingPromotionsTab() {
 							},
 		});
 
-		let ctaLink = isCheckout
+		let ctaLink = isCheckout || bannerCtaTargetMode === "informational"
 			? ""
 			: isShop
 				? ""
-				: bannerCtaTargetMode === "external_url"
-					? externalUrl
+				: bannerCtaTargetMode === "article"
+					? buildArticleBannerCtaLink(bannerCtaArticleSlug)
 					: bannerCtaTargetMode === "vendor" && vendorName
 						? buildBannerCtaLink(customerScreen, vendorName)
 						: String(editingBanner?.linkUrl || editingBanner?.cta_link || "").trim();
@@ -940,7 +953,8 @@ export default function MarketingPromotionsTab() {
 		setBannerCtaServiceStyle("");
 		setBannerCtaVendorId("");
 		setBannerCtaTargetMode("none");
-		setBannerCtaExternalUrl("");
+		setBannerCtaArticleSlug("");
+		setBannerCtaArticlePageId("");
 		setBannerDestinationServiceStyles([]);
 		setBannerDestinationVendors([]);
 		setBannerShopTargetMode("informational");
@@ -992,7 +1006,15 @@ export default function MarketingPromotionsTab() {
 
 	const handleBannerCtaTargetModeChange = (mode: BannerCtaTargetMode) => {
 		setBannerCtaTargetMode(mode);
-		if (mode === "external_url") {
+		if (mode === "informational") {
+			setBannerCtaPersona("");
+			setBannerCtaServiceStyle("");
+			setBannerCtaVendorId("");
+			setBannerCtaArticleSlug("");
+			setBannerCtaArticlePageId("");
+			setBannerDestinationServiceStyles([]);
+			setBannerDestinationVendors([]);
+		} else if (mode === "article") {
 			setBannerCtaPersona("");
 			setBannerCtaServiceStyle("");
 			setBannerCtaVendorId("");
@@ -1023,6 +1045,14 @@ export default function MarketingPromotionsTab() {
 		}
 		setBannerCtaVendorId(value);
 	};
+
+	const publishedBannerArticles = useMemo(
+		() =>
+			articles.filter((p) =>
+				isPublishedArticleRow(p as Record<string, unknown>)
+			) as Record<string, unknown>[],
+		[articles]
+	);
 
 	const bannerVendorOptions = useMemo(() => {
 		const list = [...bannerDestinationVendors];
@@ -1074,17 +1104,26 @@ export default function MarketingPromotionsTab() {
 				: "";
 		const vendorId = storedTarget?.vendorId || matchedVendor?.id || matchedVendor?.vendorId || "";
 
-		if (storedTarget?.targetLevel === "external_url") {
-			setBannerCtaTargetMode("external_url");
-			setBannerCtaExternalUrl(
-				storedTarget.externalUrl ||
-					String(banner.cta_link || banner.ctaLink || banner.linkUrl || "").trim()
-			);
+		const slugFromCta = parseArticleSlugFromCtaLink(
+			banner.cta_link || banner.ctaLink || banner.linkUrl
+		);
+		if (storedTarget?.targetLevel === "informational") {
+			setBannerCtaTargetMode("informational");
+			setBannerCtaArticleSlug("");
+			setBannerCtaArticlePageId("");
+			setBannerCtaPersona("");
+			setBannerCtaVendorId("");
+			setBannerCtaServiceStyle("");
+		} else if (storedTarget?.targetLevel === "article" || slugFromCta) {
+			setBannerCtaTargetMode("article");
+			setBannerCtaArticleSlug(storedTarget?.articleSlug || slugFromCta || "");
+			setBannerCtaArticlePageId(String(storedTarget?.articlePageId ?? "").trim());
 			setBannerCtaPersona("");
 			setBannerCtaVendorId("");
 			setBannerCtaServiceStyle("");
 		} else {
-			setBannerCtaExternalUrl("");
+			setBannerCtaArticleSlug("");
+			setBannerCtaArticlePageId("");
 			setBannerCtaPersona(categoryId);
 			if (storedTarget?.targetLevel === "vendor" || vendorId) {
 				setBannerCtaTargetMode("vendor");
@@ -1146,6 +1185,16 @@ export default function MarketingPromotionsTab() {
 	// ARTICLES LOGIC
 	// ===========================
 
+	const articleRowIsPublished = (article: Record<string, unknown>): boolean => {
+		const raw = article.isPublished ?? article.is_published;
+		if (raw === true || raw === 1) return true;
+		if (typeof raw === "string") {
+			const t = raw.trim().toLowerCase();
+			return t === "true" || t === "1";
+		}
+		return false;
+	};
+
 	const loadArticles = async () => {
 		setLoading(true);
 		try {
@@ -1173,7 +1222,7 @@ export default function MarketingPromotionsTab() {
 					slug: slug,
 					content: articleForm.content,
 					category: articleForm.category,
-					isPublished: articleForm.is_published,
+					isPublished: Boolean(articleForm.is_published),
 					metadata: { read_time: articleForm.read_time, featured: articleForm.featured },
 				});
 			} else {
@@ -1182,16 +1231,15 @@ export default function MarketingPromotionsTab() {
 					slug: slug,
 					content: articleForm.content,
 					category: articleForm.category,
-					isPublished: articleForm.is_published,
+					isPublished: Boolean(articleForm.is_published),
 					metadata: { read_time: articleForm.read_time, featured: articleForm.featured },
 				});
 			}
-			toast.success(`Article ${editingArticle ? "updated" : "created"} successfully`);
-			if (!articleForm.is_published) {
-				toast.info("Draft saved", {
-					description: "Customers only see articles when Published is turned on.",
-				});
-			}
+			toast.success(`Article ${editingArticle ? "updated" : "created"} successfully`, {
+				description: articleForm.is_published
+					? "Published — customers can see it under Pet care articles."
+					: "Draft only — turn Published on when ready.",
+			});
 			setShowArticleModal(false);
 			loadArticles();
 			resetArticleForm();
@@ -1233,7 +1281,7 @@ export default function MarketingPromotionsTab() {
 			content: article.content || "",
 			category: article.category || "tips",
 			read_time: article.metadata?.read_time || "5 min",
-			is_published: article.isPublished || article.is_published || false,
+			is_published: articleRowIsPublished(article as Record<string, unknown>),
 			featured: article.metadata?.featured || false,
 		});
 		setShowArticleModal(true);
@@ -2694,6 +2742,60 @@ export default function MarketingPromotionsTab() {
 							/>
 						</div>
 
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>Position</Label>
+								<Select
+									value={bannerForm.position}
+									onValueChange={(v: string) => {
+										setBannerForm({ ...bannerForm, position: v });
+										if (isCheckoutBannerPosition(v) || isShopBannerPosition(v)) {
+											setBannerCtaPersona("");
+											setBannerCtaServiceStyle("");
+											setBannerCtaVendorId("");
+											setBannerCtaTargetMode("none");
+										}
+										if (
+											!isHomeBannerPosition(v) &&
+											bannerCtaTargetMode === "informational"
+										) {
+											setBannerCtaTargetMode("none");
+										}
+										if (isShopBannerPosition(v)) {
+											setBannerShopTargetMode("informational");
+											setBannerShopProductId("");
+											setBannerShopProductName("");
+											setBannerShopProductSku("");
+										}
+									}}
+								>
+									<SelectTrigger>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="home_top">Home Top (Hero Carousel)</SelectItem>
+										<SelectItem value="home_middle">Home Middle</SelectItem>
+										<SelectItem value="home_lower">Home Lower</SelectItem>
+										<SelectItem value="category">Category Page</SelectItem>
+										<SelectItem value="shop">Shop Main Page</SelectItem>
+										<SelectItem value="checkout">Checkout Page</SelectItem>
+									</SelectContent>
+								</Select>
+								<p className="text-xs text-gray-500 mt-1.5">
+									Home top, middle, and lower: customer home only. Category: Find All Services. Shop main: Pet Products listing. Checkout: shop checkout.
+								</p>
+							</div>
+							<div>
+								<Label>Display Order</Label>
+								<Input
+									type="number"
+									value={bannerForm.display_order}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, display_order: parseInt(e.target.value) || 0 })}
+									min="0"
+								/>
+							</div>
+						</div>
+
 						<div className="rounded-lg border border-dashed border-gray-200 p-4 bg-gray-50/80 space-y-4">
 							{isCheckoutBannerPosition(bannerForm.position) ? (
 								<p className="text-sm text-gray-600">
@@ -2731,23 +2833,40 @@ export default function MarketingPromotionsTab() {
 							<div>
 								<p className="text-sm font-medium text-gray-900">Banner destination</p>
 								<p className="text-xs text-gray-500 mt-0.5">
-									Open an external URL in the browser, or route in-app by category, service type, or vendor.
+									Open a published in-app article, or route by category, service type, or vendor.
 								</p>
 							</div>
 
 							<div className="space-y-4">
+								{bannerCtaTargetMode === "informational" ? (
+									<p className="text-sm text-gray-600">
+										Home informational banners display message and CTA label only — no tap redirect.
+									</p>
+								) : null}
 								<div className="space-y-2">
 									<Label>Route by</Label>
 									<div className="flex flex-col gap-2">
+										{isHomeBannerPosition(bannerForm.position) ? (
+											<label className="flex items-center gap-2 cursor-pointer">
+												<input
+													type="radio"
+													name="bannerCtaTargetMode"
+													checked={bannerCtaTargetMode === "informational"}
+													onChange={() => handleBannerCtaTargetModeChange("informational")}
+													className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+												/>
+												<span className="text-sm text-gray-900">Informational only (no redirect)</span>
+											</label>
+										) : null}
 										<label className="flex items-center gap-2 cursor-pointer">
 											<input
 												type="radio"
 												name="bannerCtaTargetMode"
-												checked={bannerCtaTargetMode === "external_url"}
-												onChange={() => handleBannerCtaTargetModeChange("external_url")}
+												checked={bannerCtaTargetMode === "article"}
+												onChange={() => handleBannerCtaTargetModeChange("article")}
 												className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
 											/>
-											<span className="text-sm text-gray-900">External URL (opens in browser)</span>
+											<span className="text-sm text-gray-900">In-app article</span>
 										</label>
 										<label className="flex items-center gap-2 cursor-pointer">
 											<input
@@ -2782,18 +2901,50 @@ export default function MarketingPromotionsTab() {
 									</div>
 								</div>
 
-								{bannerCtaTargetMode === "external_url" ? (
+								{bannerCtaTargetMode === "informational" ? null : bannerCtaTargetMode === "article" ? (
 									<div className="space-y-1.5 min-w-0">
-										<Label>Redirect URL</Label>
-										<Input
-											value={bannerCtaExternalUrl}
-											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-												setBannerCtaExternalUrl(e.target.value)
-											}
-											placeholder="https://www.warmpawz.com/blog/22"
-										/>
+										<Label>Article</Label>
+										<Select
+											value={bannerCtaArticleSlug || BANNER_SELECT_EMPTY}
+											onValueChange={(value) => {
+												if (value === BANNER_SELECT_EMPTY) {
+													setBannerCtaArticleSlug("");
+													setBannerCtaArticlePageId("");
+													return;
+												}
+												const page = publishedBannerArticles.find(
+													(p) => String(p.slug ?? "").trim() === value
+												);
+												setBannerCtaArticleSlug(value);
+												setBannerCtaArticlePageId(
+													String(page?.pageId ?? page?.id ?? "").trim()
+												);
+											}}
+										>
+											<SelectTrigger className={bannerSelectTriggerClass}>
+												<SelectValue placeholder="Select published article" />
+											</SelectTrigger>
+											<SelectContent position="popper" className="z-[200] max-h-60">
+												<SelectItem value={BANNER_SELECT_EMPTY}>Select</SelectItem>
+												{publishedBannerArticles.length === 0 ? (
+													<SelectItem value="__none__" disabled>
+														No published articles — create one in Articles tab
+													</SelectItem>
+												) : (
+													publishedBannerArticles.map((page) => {
+														const slug = String(page.slug ?? "").trim();
+														if (!slug) return null;
+														return (
+															<SelectItem key={slug} value={slug}>
+																{formatArticleOptionLabel(page)}
+															</SelectItem>
+														);
+													})
+												)}
+											</SelectContent>
+										</Select>
 										<p className="text-xs text-gray-500">
-											Used when the customer taps the CTA. HTTPS links open in a new browser tab.
+											Customer opens the article inside the app when they tap the CTA.
 										</p>
 									</div>
 								) : (
@@ -2881,54 +3032,6 @@ export default function MarketingPromotionsTab() {
 							</div>
 								</>
 							)}
-						</div>
-
-						<div className="grid grid-cols-2 gap-4">
-							<div>
-								<Label>Position</Label>
-								<Select
-									value={bannerForm.position}
-									onValueChange={(v: string) => {
-										setBannerForm({ ...bannerForm, position: v });
-										if (isCheckoutBannerPosition(v) || isShopBannerPosition(v)) {
-											setBannerCtaPersona("");
-											setBannerCtaServiceStyle("");
-											setBannerCtaVendorId("");
-											setBannerCtaTargetMode("none");
-										}
-										if (isShopBannerPosition(v)) {
-											setBannerShopTargetMode("informational");
-											setBannerShopProductId("");
-											setBannerShopProductName("");
-											setBannerShopProductSku("");
-										}
-									}}
-								>
-									<SelectTrigger>
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="home_top">Home Top (Hero Carousel)</SelectItem>
-										<SelectItem value="home_middle">Home Middle</SelectItem>
-										<SelectItem value="home_lower">Home Lower</SelectItem>
-										<SelectItem value="category">Category Page</SelectItem>
-										<SelectItem value="shop">Shop Main Page</SelectItem>
-										<SelectItem value="checkout">Checkout Page</SelectItem>
-									</SelectContent>
-								</Select>
-								<p className="text-xs text-gray-500 mt-1.5">
-									Home top, middle, and lower: customer home only. Category: Find All Services. Shop main: Pet Products listing. Checkout: shop checkout.
-								</p>
-							</div>
-							<div>
-								<Label>Display Order</Label>
-								<Input
-									type="number"
-									value={bannerForm.display_order}
-									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, display_order: parseInt(e.target.value) || 0 })}
-									min="0"
-								/>
-							</div>
 						</div>
 
 						<div className="grid grid-cols-2 gap-4">
@@ -3135,20 +3238,38 @@ export default function MarketingPromotionsTab() {
 							<p className="text-xs text-gray-600">
 								Only <span className="font-medium">Published</span> articles appear under Pet care articles on the customer site.
 							</p>
-							<div className="flex gap-6 flex-wrap">
-								<div className="flex items-center gap-2">
-									<Switch
-										checked={articleForm.is_published}
-										onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, is_published: checked })}
-									/>
-									<Label>Published</Label>
+							<div className="flex gap-8 flex-wrap">
+								<div className="flex flex-col gap-1">
+									<div className="flex items-center gap-2">
+										<Switch
+											id="article-published"
+											checked={articleForm.is_published}
+											onCheckedChange={(checked: boolean) =>
+												setArticleForm({ ...articleForm, is_published: checked })
+											}
+										/>
+										<Label htmlFor="article-published">Published</Label>
+									</div>
+									<p className="text-xs text-gray-500 pl-10">
+										{articleForm.is_published
+											? "On — visible to customers"
+											: "Off — saved as draft"}
+									</p>
 								</div>
-								<div className="flex items-center gap-2">
-									<Switch
-										checked={articleForm.featured}
-										onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, featured: checked })}
-									/>
-									<Label>Featured on Home</Label>
+								<div className="flex flex-col gap-1">
+									<div className="flex items-center gap-2">
+										<Switch
+											id="article-featured"
+											checked={articleForm.featured}
+											onCheckedChange={(checked: boolean) =>
+												setArticleForm({ ...articleForm, featured: checked })
+											}
+										/>
+										<Label htmlFor="article-featured">Featured on Home</Label>
+									</div>
+									<p className="text-xs text-gray-500 pl-10">
+										{articleForm.featured ? "On — highlighted on home" : "Off"}
+									</p>
 								</div>
 							</div>
 						</div>
