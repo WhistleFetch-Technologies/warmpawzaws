@@ -20,10 +20,18 @@
  * - `preparing` runs dispatch first; 422 if it fails.
  * - `ready_for_pickup` requires `meal_orders.pidge_order_id` (set when Java links Pidge).
  * Set `MEAL_DISPATCH_REQUIRED=false` only for local/dev without delivery-service.
+ *
+ * Phase A — Pidge compact payload includes customer commitment:
+ * `delivery_date` / `delivery_slot` from scheduled_delivery_* (see meal-pidge-scheduling.ts).
+ * `promised_delivery_time` = max(expected_ready_at + 30m, commitment slot end) when commitment is set.
  */
 
 import { query } from '../database/rds-connection';
 import { geocodeVendorAddressFields } from './vendor-address-geocode';
+import {
+  buildMealPidgeSchedulingFields,
+  MEAL_PIDGE_DELIVERY_BUFFER_MIN,
+} from './meal-pidge-scheduling';
 import { resolvePackWeightGramsFromPlanRow } from './meal-pack-weight';
 
 export interface DispatchResult {
@@ -44,12 +52,11 @@ interface MealOrderRow {
   customer_lat: number | null;
   customer_lng: number | null;
   scheduled_delivery_date: string | null;
+  scheduled_delivery_slot: unknown;
   prep_minutes: number | null;
   prep_started_at: string | null;
   expected_ready_at: string | null;
 }
-
-const DEFAULT_DELIVERY_BUFFER_MIN = 30;
 
 /** Lambda runs in VPC; Java ECS + TLS/handshake + cold start can exceed a short client timeout. */
 const DISPATCH_FETCH_TIMEOUT_MS = 28_000;
@@ -150,7 +157,8 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
 
     const moResult = await query(
       `SELECT mo.id, mo.order_number, mo.vendor_id, mo.customer_id, mo.total_amount,
-              mo.delivery_address, mo.customer_lat, mo.customer_lng, mo.scheduled_delivery_date,
+              mo.delivery_address, mo.customer_lat, mo.customer_lng,
+              mo.scheduled_delivery_date, mo.scheduled_delivery_slot,
               mo.meal_plan_id, mo.prep_minutes, mo.prep_started_at, mo.expected_ready_at,
               mo.quantity, mo.purchase_snapshot,
               mp.prep_time_minutes AS plan_prep_minutes,
@@ -187,10 +195,13 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
       typeof row.expected_ready_at === 'string'
         ? new Date(row.expected_ready_at).toISOString()
         : plusMinutesIso(prepStartedAt, prepMinutes);
-    const expectedDeliveryIso = plusMinutesIso(
-      new Date(expectedReadyAtIso),
-      DEFAULT_DELIVERY_BUFFER_MIN
-    );
+    const pidgeScheduling = buildMealPidgeSchedulingFields({
+      expectedReadyAtIso,
+      scheduledDeliveryDate: row.scheduled_delivery_date,
+      scheduledDeliverySlot: row.scheduled_delivery_slot,
+      bufferMinutes: MEAL_PIDGE_DELIVERY_BUFFER_MIN,
+    });
+    const promisedDeliveryIso = pidgeScheduling.promised_delivery_time;
 
     const addr = deliveryAddressRecord(row.delivery_address);
     const customerLat = pickNumber(row.customer_lat, addr.lat, addr.latitude);
@@ -339,8 +350,31 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
       codAmount: 0,
       notes: [],
       promised_prep_time: expectedReadyAtIso,
-      promised_delivery_time: expectedDeliveryIso,
+      promised_delivery_time: promisedDeliveryIso,
+      ...(pidgeScheduling.delivery_date
+        ? { delivery_date: pidgeScheduling.delivery_date }
+        : {}),
+      ...(pidgeScheduling.delivery_slot
+        ? { delivery_slot: pidgeScheduling.delivery_slot }
+        : {}),
     };
+
+    console.log(
+      JSON.stringify({
+        tag: '[PIDGE DISPATCH]',
+        mealOrderId,
+        order_number: sourceOrderId,
+        scheduled_delivery_date: pidgeScheduling.delivery_date,
+        scheduled_delivery_slot: pidgeScheduling.delivery_slot,
+        scheduled_delivery_slot_raw: row.scheduled_delivery_slot,
+        expected_ready_at: expectedReadyAtIso,
+        promised_prep_time: expectedReadyAtIso,
+        promised_delivery_time: promisedDeliveryIso,
+        promised_delivery_rule:
+          'max(expected_ready_at + buffer_min, customer_commitment_at) when commitment valid',
+        buffer_minutes: MEAL_PIDGE_DELIVERY_BUFFER_MIN,
+      }),
+    );
 
     const body = JSON.stringify({
       mealOrderId,

@@ -32,6 +32,15 @@ import {
 } from '@/lib/go-back-or-replace';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { MealPlansComingSoon } from '@/components/customer/nutrition/MealPlansComingSoon';
+import {
+  isMealOrderAwaitingPayment,
+  isMealOrderPaymentHoldVisible,
+  isMealPaymentHoldExpired,
+  PaymentHoldBanner,
+  resolvePaymentHoldExpiresAt,
+} from '@/lib/payment-hold-ui';
+import { parseMealRefundReview, type MealRefundReviewMetadata } from '@/lib/meal-refund-review';
+import { MealRefundReviewListBanner } from '@/components/customer/meal-plans/MealRefundReviewListBanner';
 
 export interface MealPlanOrder {
   id: string;
@@ -47,6 +56,8 @@ export interface MealPlanOrder {
   total_amount: number;
   status: string;
   payment_status?: string;
+  paymentHoldExpiresAt?: string | null;
+  payment_hold_expires_at?: string | null;
   delivery_date: string;
   delivery_time: string;
   delivery_address: string;
@@ -56,6 +67,7 @@ export interface MealPlanOrder {
   otp_verified?: boolean;
   delivery_partner_name?: string;
   delivery_partner_phone?: string;
+  refundReview?: MealRefundReviewMetadata | null;
 }
 
 function resolveMealOrderImageUrl(o: Record<string, unknown>): string | undefined {
@@ -93,11 +105,23 @@ function resolveMealOrderImageUrl(o: Record<string, unknown>): string | undefine
 }
 
 function isMealOrderUnpaid(order: MealPlanOrder): boolean {
-  const ps = String(order.payment_status || '').toLowerCase();
-  return ps !== 'paid' && ps !== 'completed';
+  return isMealOrderAwaitingPayment({
+    status: order.status,
+    paymentStatus: order.payment_status,
+    paymentHoldExpiresAt: order.paymentHoldExpiresAt ?? order.payment_hold_expires_at,
+    createdAt: order.created_at,
+  });
 }
 
 function displayMealOrderStatus(order: MealPlanOrder): string {
+  if (isMealPaymentHoldExpired({
+    status: order.status,
+    paymentStatus: order.payment_status,
+    paymentHoldExpiresAt: order.paymentHoldExpiresAt ?? order.payment_hold_expires_at,
+    createdAt: order.created_at,
+  })) {
+    return 'cancelled';
+  }
   if (isMealOrderUnpaid(order)) return 'payment pending';
   return order.status.replace('_', ' ');
 }
@@ -183,6 +207,11 @@ function MealPlanOrdersPanelLive({
           pet_name: (o.pet_name as string) || undefined,
           quantity: o.quantity != null ? Number(o.quantity) : undefined,
           payment_status: o.payment_status != null ? String(o.payment_status) : undefined,
+          paymentHoldExpiresAt:
+            (o.paymentHoldExpiresAt as string | null | undefined) ??
+            (o.payment_hold_expires_at as string | null | undefined) ??
+            null,
+          refundReview: parseMealRefundReview(o.refundReview),
           delivery_date: o.delivery_date || o.scheduled_delivery_date || o.created_at,
           delivery_time:
             (o.delivery_time as string) || formatDeliveryTime(o.scheduled_delivery_slot) || '',
@@ -229,11 +258,21 @@ function MealPlanOrdersPanelLive({
     );
   };
 
-  const getStatusColor = (status: string, unpaid?: boolean) => {
-    if (unpaid) return 'bg-amber-100 text-amber-900';
+  const getStatusColor = (status: string, order?: MealPlanOrder) => {
+    if (order && isMealPaymentHoldExpired({
+      status: order.status,
+      paymentStatus: order.payment_status,
+      paymentHoldExpiresAt: order.paymentHoldExpiresAt ?? order.payment_hold_expires_at,
+      createdAt: order.created_at,
+    })) {
+      return 'bg-red-100 text-red-800';
+    }
+    if (order && isMealOrderUnpaid(order)) return 'bg-amber-100 text-amber-900';
     switch (status.toLowerCase()) {
       case 'pending':
         return 'bg-yellow-100 text-yellow-800';
+      case 'cancelled':
+        return 'bg-red-100 text-red-800';
       case 'confirmed':
         return 'bg-blue-100 text-blue-800';
       case 'preparing':
@@ -268,6 +307,18 @@ function MealPlanOrdersPanelLive({
 
   const handlePayNow = async (order: MealPlanOrder, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (
+      isMealPaymentHoldExpired({
+        status: order.status,
+        paymentStatus: order.payment_status,
+        paymentHoldExpiresAt: order.paymentHoldExpiresAt ?? order.payment_hold_expires_at,
+        createdAt: order.created_at,
+      })
+    ) {
+      toast.error('Payment window expired. This order was cancelled.');
+      void loadOrders();
+      return;
+    }
     try {
       const customerPhone =
         fixedCustomerPhone?.trim() ||
@@ -446,7 +497,7 @@ function MealPlanOrdersPanelLive({
                         {order.meal_plan_name || 'Meal Plan'}
                       </h3>
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(order.status, isMealOrderUnpaid(order))}`}
+                        className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(order.status, order)}`}
                       >
                         {getStatusIcon(order.status)}
                         {displayMealOrderStatus(order).toUpperCase()}
@@ -502,10 +553,26 @@ function MealPlanOrdersPanelLive({
                   </div>
                 </div>
 
-                {isMealOrderUnpaid(order) ? (
-                  <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                    Payment not completed. Pay now to confirm this order with the kitchen.
-                  </div>
+                {order.status?.toLowerCase() === 'cancelled' &&
+                order.refundReview?.status === 'pending_review' ? (
+                  <MealRefundReviewListBanner refundReview={order.refundReview} />
+                ) : null}
+
+                {isMealOrderPaymentHoldVisible({
+                  status: order.status,
+                  paymentStatus: order.payment_status,
+                  paymentHoldExpiresAt: order.paymentHoldExpiresAt ?? order.payment_hold_expires_at,
+                  createdAt: order.created_at,
+                }) ? (
+                  <PaymentHoldBanner
+                    expiresAt={resolvePaymentHoldExpiresAt({
+                      paymentHoldExpiresAt: order.paymentHoldExpiresAt ?? order.payment_hold_expires_at,
+                      createdAt: order.created_at,
+                    })}
+                    onPayNow={(e) => void handlePayNow(order, e)}
+                    onExpired={() => void loadOrders()}
+                    holdMessage="Complete payment within 5 minutes to confirm your order with the kitchen."
+                  />
                 ) : null}
 
                 {isOutForDelivery(order.status) && order.delivery_otp && !order.otp_verified && (

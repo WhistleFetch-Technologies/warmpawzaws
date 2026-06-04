@@ -534,15 +534,29 @@ export class ApiClient {
       
       const errorMsg = getErrorMessage(error);
       
-      // Handle 404: Endpoint not found - provide helpful error message
+      // Handle 404: distinguish missing route vs resource-not-found API body
       if (response.status === 404) {
-        if (UAT_MODE && typeof window !== 'undefined') {
-          console.error(`❌ [API Client] 404 Error for ${endpoint}:`, errorMsg);
-          console.error('   Full URL:', url);
-          console.error('   Base URL:', currentBaseUrl);
-          console.error('   Check if the endpoint exists in API Gateway');
+        const routeMissing =
+          error?.success !== false &&
+          (errorMsg === 'Not Found' ||
+            errorMsg.includes('HTTP 404') ||
+            !error?.error);
+        if (routeMissing) {
+          if (UAT_MODE && typeof window !== 'undefined') {
+            console.error(`❌ [API Client] 404 Error for ${endpoint}:`, errorMsg);
+            console.error('   Full URL:', url);
+            console.error('   Base URL:', currentBaseUrl);
+            console.error('   Check if the endpoint exists in API Gateway');
+          }
+          throw new Error(
+            `Endpoint not found: ${endpoint}. Please check if the API route is configured.`,
+          );
         }
-        throw new Error(`Endpoint not found: ${endpoint}. Please check if the API route is configured.`);
+        throw new Error(
+          typeof error?.error === 'string' && error.error
+            ? error.error
+            : errorMsg || `Request failed (${response.status})`,
+        );
       }
       
       // Handle 429: Rate limiting - extract Retry-After header if present

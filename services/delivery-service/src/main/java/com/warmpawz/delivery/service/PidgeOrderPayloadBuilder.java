@@ -320,8 +320,9 @@ public class PidgeOrderPayloadBuilder {
 			pkg.put("label", name);
 			pkg.put("quantity", qty);
 			if (!sku.isEmpty()) pkg.put("code", sku);
-			pkg.put("dead_weight", 0);
-			pkg.put("volumetric_weight", Math.max(1, Math.round(deadW)));
+			long grams = Math.max(1, Math.round(deadW));
+			pkg.put("dead_weight", grams);
+			pkg.put("volumetric_weight", grams);
 			pkg.put("length", 2);
 			pkg.put("breadth", 2);
 			pkg.put("height", 2);
@@ -361,8 +362,9 @@ public class PidgeOrderPayloadBuilder {
 		ObjectNode pkg = objectMapper.createObjectNode();
 		pkg.put("label", "Order");
 		pkg.put("quantity", 1);
-		pkg.put("dead_weight", 0);
-		pkg.put("volumetric_weight", Math.max(1, Math.round(fallback)));
+		long grams = Math.max(1, Math.round(fallback));
+		pkg.put("dead_weight", grams);
+		pkg.put("volumetric_weight", grams);
 		pkg.put("length", 2);
 		pkg.put("breadth", 2);
 		pkg.put("height", 2);

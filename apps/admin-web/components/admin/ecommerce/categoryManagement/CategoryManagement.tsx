@@ -23,12 +23,13 @@ import {
   X,
 } from 'lucide-react';
 import { Button, Badge } from '@warmpawz/ui';
-import { apiClient, isUatMode } from '@/lib/api-client';
+import { apiClient } from '@/lib/api-client';
 import {
   mapApiCategoryToForm,
   mapFormCategoriesToPutBody,
   type EcommerceCategoryForm,
 } from '@/lib/ecommerce-category-admin';
+import { getShopCategoryStaticImageUrl } from '@/lib/shop-category-static-images';
 import { toast, Toaster } from 'sonner';
 
 interface Category extends EcommerceCategoryForm {
@@ -651,14 +652,15 @@ function CategoryThumbnail({
   category,
   size,
 }: {
-  category: { imageUrl?: string; icon?: string; name?: string };
+  category: { name?: string; icon?: string };
   size: 'sm' | 'md';
 }) {
   const dim = size === 'md' ? 'w-16 h-16' : 'w-10 h-10';
-  if (category.imageUrl) {
+  const staticSrc = category.name ? getShopCategoryStaticImageUrl(category.name) : undefined;
+  if (staticSrc) {
     return (
       <img
-        src={category.imageUrl}
+        src={staticSrc}
         alt={category.name || 'Category'}
         className={`${dim} rounded-xl object-cover bg-stone-100 border border-gray-200`}
       />
@@ -675,13 +677,12 @@ function CategoryThumbnail({
 
 function ShopCategoryTilePreview({
   name,
-  imageUrl,
   active = false,
 }: {
   name: string;
-  imageUrl?: string;
   active?: boolean;
 }) {
+  const staticSrc = getShopCategoryStaticImageUrl(name);
   return (
     <div
       className={`flex flex-col items-center rounded-2xl bg-stone-50 p-2 ${
@@ -689,11 +690,11 @@ function ShopCategoryTilePreview({
       }`}
     >
       <div className="relative w-full aspect-square rounded-xl bg-white overflow-hidden flex items-center justify-center mb-1.5">
-        {imageUrl ? (
+        {staticSrc ? (
           <img
-            src={imageUrl}
+            src={staticSrc}
             alt={name}
-            className="w-full h-full object-contain p-1"
+            className="h-full w-full object-cover"
           />
         ) : (
           <Package className="w-8 h-8 text-stone-300" aria-hidden />
@@ -710,13 +711,7 @@ function ShopCategoryTilePreview({
   );
 }
 
-function ShopCategoryGridPreview({
-  name,
-  imageUrl,
-}: {
-  name: string;
-  imageUrl?: string;
-}) {
+function ShopCategoryGridPreview({ name }: { name: string }) {
   const placeholders = ['Food', 'Toys', 'Grooming'];
 
   return (
@@ -726,7 +721,7 @@ function ShopCategoryGridPreview({
       <div className="rounded-2xl bg-white p-3 shadow-sm border border-stone-100 max-w-[280px] mx-auto">
         <h3 className="text-sm font-bold text-slate-900 mb-3">Shop by category</h3>
         <div className="grid grid-cols-4 gap-2">
-          <ShopCategoryTilePreview name={name} imageUrl={imageUrl} active />
+          <ShopCategoryTilePreview name={name} active />
           {placeholders.map((label) => (
             <ShopCategoryTilePreview key={label} name={label} />
           ))}
@@ -736,56 +731,10 @@ function ShopCategoryGridPreview({
   );
 }
 
-/** API upload (Lambda → S3). Avoids browser PUT to S3 / bucket CORS on localhost. */
-async function uploadCategoryImage(file: File): Promise<string> {
-  if (!file.type.startsWith('image/')) {
-    throw new Error('Please upload an image file');
-  }
-  if (file.size > 5 * 1024 * 1024) {
-    throw new Error('Image must be under 5MB');
-  }
-
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('folder', 'ecommerce/categories');
-  formData.append('userType', 'category');
-  formData.append('userId', 'admin');
-
-  const baseUrl = apiClient.getBaseUrl();
-  const token = typeof window !== 'undefined' ? localStorage.getItem('adminAuthToken') : null;
-
-  const response = await fetch(`${baseUrl}/storage/upload-media`, {
-    method: 'POST',
-    body: formData,
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(isUatMode() ? { 'X-UAT-Mode': 'true' } : {}),
-    },
-  });
-
-  if (!response.ok) {
-    const err = (await response.json().catch(() => ({}))) as { error?: string };
-    throw new Error(err.error || `Upload failed (${response.status})`);
-  }
-
-  const data = (await response.json()) as { url?: string; publicUrl?: string };
-  const imageUrl = data.url || data.publicUrl;
-  if (!imageUrl) {
-    throw new Error('Upload succeeded but no image URL returned');
-  }
-  return imageUrl;
-}
-
 // Category Editor Modal Component
 function CategoryEditorModal({ category, onSave, onClose }: any) {
-  const [uploadingImage, setUploadingImage] = useState(false);
   const [editedCategory, setEditedCategory] = useState<Category>(() => ({
     ...category,
-    imageUrl:
-      category.imageUrl ||
-      (typeof category.icon === 'string' && category.icon.startsWith('http')
-        ? category.icon
-        : undefined),
     metadata: category.metadata || {
       commissionRate: 0,
       gstRate: 0,
@@ -850,43 +799,20 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Category image</label>
-            <div className="flex items-start gap-4">
+          <div className="rounded-lg border border-stone-200 bg-stone-50 px-4 py-3">
+            <p className="text-sm font-medium text-gray-800">Customer shop image</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Tile images are fixed assets in the customer app (by category name). To change an image,
+              replace files under <code className="text-[11px]">public/images/shop/categories/</code> in
+              customer-web.
+            </p>
+            <div className="mt-3 flex items-center gap-3">
               <CategoryThumbnail category={editedCategory} size="md" />
-              <div className="flex-1 space-y-2">
-                <input
-                  type="file"
-                  accept="image/*"
-                  disabled={uploadingImage}
-                  onChange={async (e: React.ChangeEvent<HTMLInputElement>) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    try {
-                      setUploadingImage(true);
-                      const url = await uploadCategoryImage(file);
-                      setEditedCategory({ ...editedCategory, imageUrl: url });
-                      toast.success('Image uploaded');
-                    } catch (err: unknown) {
-                      toast.error(err instanceof Error ? err.message : 'Upload failed');
-                    } finally {
-                      setUploadingImage(false);
-                      e.target.value = '';
-                    }
-                  }}
-                  className="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-orange-50 file:text-[#FF8C42] file:font-semibold"
-                />
-                {editedCategory.imageUrl && (
-                  <button
-                    type="button"
-                    className="text-xs text-red-600 hover:underline"
-                    onClick={() => setEditedCategory({ ...editedCategory, imageUrl: undefined })}
-                  >
-                    Remove image
-                  </button>
-                )}
-                <p className="text-xs text-gray-500">PNG or JPG, max 5MB. Shown on customer shop category grid.</p>
-              </div>
+              <span className="text-xs text-gray-600">
+                {getShopCategoryStaticImageUrl(editedCategory.name)
+                  ? 'Static image mapped for this category name.'
+                  : 'No static image file mapped for this name yet.'}
+              </span>
             </div>
           </div>
 
@@ -999,10 +925,7 @@ function CategoryEditorModal({ category, onSave, onClose }: any) {
             </div>
 
             <div className="lg:sticky lg:top-6 lg:self-start">
-              <ShopCategoryGridPreview
-                name={editedCategory.name}
-                imageUrl={editedCategory.imageUrl}
-              />
+              <ShopCategoryGridPreview name={editedCategory.name} />
             </div>
           </div>
         </div>

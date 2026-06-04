@@ -16,6 +16,10 @@ import type { WarmpawzCartProductSnapshot } from '@/lib/warmpawz-cart-storage';
 import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
 import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
+import {
+  getProductDiscountPercent,
+  resolveProductCompareAtPrice,
+} from '@/lib/shop-product-pricing';
 import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import {
   ArrowLeft, ShoppingCart, Star, Truck, Shield, Tag,
@@ -187,7 +191,8 @@ export default function ProductDetailClient() {
           resolvedProductId: resolvedId,
           rowKeys: p && typeof p === 'object' ? Object.keys(p) : [],
         });
-        const compareOrOriginal = p.original_price ?? p.compare_at_price;
+        const sellingPrice = parseFloat(String(p.price)) || 0;
+        const compareAt = resolveProductCompareAtPrice(p as Record<string, unknown>);
         const rc = Number(p.review_count ?? 0) || 0;
         const rawRating = p.rating != null ? Number(p.rating) : NaN;
         const rating =
@@ -196,11 +201,8 @@ export default function ProductDetailClient() {
           ...p,
           id: resolvedId,
           stock: p.stock_quantity || p.stock || 0,
-          price: parseFloat(p.price) || 0,
-          original_price:
-            compareOrOriginal != null && String(compareOrOriginal) !== ''
-              ? parseFloat(String(compareOrOriginal))
-              : undefined,
+          price: sellingPrice,
+          original_price: compareAt,
           rating,
           review_count: rc,
           images: p.images || [],
@@ -242,6 +244,7 @@ export default function ProductDetailClient() {
 
   const productSnapshot = (): WarmpawzCartProductSnapshot | null => {
     if (!product) return null;
+    const vendorId = product.vendor_id?.trim();
     return {
       id: product.id,
       name: product.name,
@@ -249,7 +252,9 @@ export default function ProductDetailClient() {
       original_price: product.original_price,
       emoji: product.emoji,
       images: product.images,
+      ...(vendorId ? { vendor_id: vendorId } : {}),
       vendor_name: product.vendor_name,
+      ...(product.category_id ? { category_id: product.category_id } : {}),
       stock: product.stock,
     };
   };
@@ -347,8 +352,8 @@ export default function ProductDetailClient() {
   // COMPUTED VALUES
   // ============================================================================
 
-  const discount = product?.original_price && product.original_price > product.price
-    ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
+  const discount = product
+    ? getProductDiscountPercent(product.price, product.original_price)
     : 0;
 
   const finalPrice = product ? product.price * quantity : 0;
@@ -861,9 +866,7 @@ export default function ProductDetailClient() {
 
 function RecommendedProductCard({ product }: { product: RecommendedProduct }) {
   const router = useRouter();
-  const discount = product.original_price && product.original_price > product.price
-    ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
-    : 0;
+  const discount = getProductDiscountPercent(product.price, product.original_price);
 
   return (
     <button

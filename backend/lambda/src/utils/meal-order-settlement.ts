@@ -245,6 +245,30 @@ export async function syncDeliveredMealOrdersFromTracking(vendorIds: string[]): 
   }
 }
 
+/** Align meal_orders.status when Pidge cancelled in tracking but order row still active. */
+export async function syncCancelledMealOrdersFromTracking(vendorIds: string[]): Promise<void> {
+  if (!vendorIds?.length) return;
+  try {
+    await query(
+      `UPDATE meal_orders mo
+       SET status = 'cancelled',
+           cancelled_at = COALESCE(mo.cancelled_at, dt.updated_at, dt.created_at, NOW()),
+           updated_at = NOW()
+       FROM delivery_tracking dt
+       WHERE dt.meal_order_id = mo.id
+         AND (
+           LOWER(COALESCE(dt.status, '')) = 'cancelled'
+           OR LOWER(COALESCE(dt.status, '')) LIKE '%cancel%'
+         )
+         AND LOWER(COALESCE(mo.status, '')) NOT IN ('cancelled', 'delivered')
+         AND mo.vendor_id::text = ANY($1::text[])`,
+      [vendorIds],
+    );
+  } catch (error) {
+    console.warn('[meal-order-sync] syncCancelledMealOrdersFromTracking failed:', error);
+  }
+}
+
 const FINITE_NET_PAYOUT_SQL = `CASE
   WHEN net_payout IS NULL OR net_payout::text = 'NaN' THEN 0
   ELSE net_payout::numeric

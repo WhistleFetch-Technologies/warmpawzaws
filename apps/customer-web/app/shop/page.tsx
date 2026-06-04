@@ -554,7 +554,7 @@ export default function ShopPage() {
           onClearCoupon={() => setAppliedCoupon(null)}
           onProceedCheckout={() => {
             setShowCart(false);
-            setShowCheckout(true);
+            router.push('/cart');
           }}
         />
       </div>

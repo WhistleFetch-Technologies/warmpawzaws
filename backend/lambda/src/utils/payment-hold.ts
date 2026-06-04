@@ -59,14 +59,20 @@ export async function expirePaymentHolds(options?: {
     `SELECT b.id, b.status, b.vendor_id, b.customer_id
      FROM bookings b
      WHERE b.status = 'pending_payment'
-       AND b.payment_hold_expires_at IS NOT NULL
-       AND b.payment_hold_expires_at <= NOW()
+       AND (
+         (b.payment_hold_expires_at IS NOT NULL AND b.payment_hold_expires_at <= NOW())
+         OR (
+           b.payment_hold_expires_at IS NULL
+           AND b.created_at IS NOT NULL
+           AND b.created_at + INTERVAL '5 minutes' <= NOW()
+         )
+       )
        AND NOT EXISTS (
          SELECT 1 FROM payments p
          WHERE p.booking_id = b.id
            AND LOWER(COALESCE(p.payment_status, '')) IN ('paid', 'completed')
        )
-     ORDER BY b.payment_hold_expires_at ASC
+     ORDER BY COALESCE(b.payment_hold_expires_at, b.created_at) ASC
      LIMIT $1`,
     [limit]
   );

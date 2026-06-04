@@ -101,6 +101,7 @@ export interface MealPlanOrderTrackingUIProps {
   orderStatus: string;
   logisticsStatus: string | null | undefined;
   totalAmount?: number;
+  refundReviewCard?: ReactNode;
   headerActions?: ReactNode;
   backSlot: ReactNode;
   deliveryOtpBanner?: ReactNode;
@@ -117,6 +118,7 @@ export function MealPlanOrderTrackingUI({
   orderStatus,
   logisticsStatus,
   totalAmount,
+  refundReviewCard,
   headerActions,
   backSlot,
   deliveryOtpBanner,
@@ -158,6 +160,8 @@ export function MealPlanOrderTrackingUI({
       </div>
 
       <main className="max-w-md mx-auto px-4 -mt-2 space-y-4">
+        {refundReviewCard}
+
         {deliveryOtpBanner}
 
         {deliveryPartnerCard}

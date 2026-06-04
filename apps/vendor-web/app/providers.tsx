@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { ScrollToTop } from '@/components/ScrollToTop';
 import { ClientErrorBoundary } from '@/components/ClientErrorBoundary';
 import { GlobalClientErrorReporting } from '@/components/GlobalClientErrorReporting';
+import { PushSessionRegistrar } from '@/components/PushSessionRegistrar';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -24,6 +25,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <ClientErrorBoundary>
         <GlobalClientErrorReporting />
+        <PushSessionRegistrar />
         <ScrollToTop />
         <div className="h-full min-h-0">{children}</div>
         <Toaster position="top-right" />

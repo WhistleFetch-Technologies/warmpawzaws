@@ -20,6 +20,10 @@ export const MEAL_CUSTOMER_DELIVERY_STAGES = [
   'meal_rider_nearby',
   'meal_order_delivered',
   'meal_order_cancelled',
+  'meal_logistics_cancelled',
+  'meal_refund_review_initiated',
+  'meal_refund_approved',
+  'meal_refund_completed',
 ] as const;
 
 /** Vendor operational events. */
@@ -99,6 +103,9 @@ export function mealRiderNotifyStageForLogistics(
   ) {
     return 'meal_rider_assigned';
   }
+  if (n === 'cancelled' || n === 'failed' || n === 'lost' || n === 'damaged' || dt === 'failed') {
+    return 'meal_logistics_cancelled';
+  }
   return null;
 }
 
@@ -158,6 +165,7 @@ export type NotifyMealEventParams = {
   pidgeOrderId?: string;
   logisticsStatus?: string;
   mealPlanName?: string;
+  refundAmount?: string;
   action?: string;
 };
 
@@ -222,6 +230,7 @@ export async function notifyMealEvent(
       deliveryTrackingId: params.deliveryTrackingId,
       pidgeOrderId: params.pidgeOrderId,
       logisticsStatus: params.logisticsStatus,
+      refundAmount: params.refundAmount,
       action: params.action || defaultAction,
       dedupeKey,
       eventType: params.eventType,

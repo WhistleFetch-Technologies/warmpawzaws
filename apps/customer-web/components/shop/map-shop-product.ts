@@ -1,11 +1,16 @@
 import { canonicalProductId } from '@/lib/product-id';
+import {
+  getProductDiscountPercent as discountPercentFromPrices,
+  resolveProductCompareAtPrice,
+} from '@/lib/shop-product-pricing';
 import type { ShopProduct } from './shop-types';
 
 export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct | null {
   const id = canonicalProductId(p);
   if (!id) return null;
 
-  const compareOrOriginal = p.original_price ?? p.compare_at_price;
+  const sellingPrice = parseFloat(String(p.price)) || 0;
+  const compareAt = resolveProductCompareAtPrice(p);
   const rc = Number(p.review_count ?? 0) || 0;
   const rawRating = p.rating != null ? Number(p.rating) : NaN;
   const rating = rc > 0 && Number.isFinite(rawRating) && rawRating > 0 ? rawRating : 0;
@@ -14,11 +19,8 @@ export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct 
     ...(p as unknown as ShopProduct),
     id,
     stock: Number(p.stock_quantity ?? p.stock ?? 0) || 0,
-    price: parseFloat(String(p.price)) || 0,
-    original_price:
-      compareOrOriginal != null && String(compareOrOriginal) !== ''
-        ? parseFloat(String(compareOrOriginal))
-        : undefined,
+    price: sellingPrice,
+    original_price: compareAt,
     rating,
     review_count: rc,
     images: (p.images as string[]) || [],
@@ -39,8 +41,7 @@ export function mapApiProductsList(rawList: unknown[]): ShopProduct[] {
 }
 
 export function getProductDiscountPercent(product: ShopProduct): number {
-  if (!product.original_price || product.original_price <= product.price) return 0;
-  return Math.round(((product.original_price - product.price) / product.original_price) * 100);
+  return discountPercentFromPrices(product.price, product.original_price);
 }
 
 export function sortShopProducts(products: ShopProduct[], sortBy: string): ShopProduct[] {

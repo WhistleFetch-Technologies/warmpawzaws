@@ -75,7 +75,6 @@ import { registerPackageBookingEndpoints } from '../endpoints/package-booking';
 import { registerWalkerGPSEndpoints } from '../endpoints/walker-gps';
 import { registerPromotionEndpoints } from '../endpoints/promotions';
 import { registerVendorPromotionsEndpoints } from '../endpoints/vendor/endpoints/vendor-promotions';
-import { registerVendorBannersEndpoints } from '../endpoints/vendor/endpoints/vendor-banners';
 import { registerAdsRecommendationEndpoints } from '../endpoints/ads-recommendations';
 import { registerEventEndpoints } from '../endpoints/events';
 import { registerHealthEndpoints } from '../endpoints/health';
@@ -106,6 +105,8 @@ import { registerCommuteTimeEndpoints } from '../endpoints/commute-time';
 import { registerRazorpaySettlementEndpoints } from '../endpoints/razorpay-settlements';
 import { registerRefundPolicyEngineEndpoints } from '../endpoints/refund-policy-engine';
 import { registerAdminAdvancedEndpoints } from '../endpoints/admin/endpoints/admin-advanced';
+import { registerAdminNotificationDeliveryEndpoints } from '../endpoints/admin/endpoints/admin-notification-delivery';
+import { registerNotificationCampaignEndpoints } from '../endpoints/admin/endpoints/notification-campaigns';
 import { registerAdminVendorDailyAccrualEndpoints } from '../endpoints/admin/endpoints/admin-vendor-daily-accrual';
 import { registerDiscoveryRulesAdminEndpoints } from '../endpoints/discovery-rules-admin';
 import { registerVendorSetupEndpoints } from '../endpoints/vendor/endpoints/vendor-setup';
@@ -142,6 +143,8 @@ import { registerDeliveryPartnerAutomationEndpoints } from '../endpoints/deliver
 import { registerMealPlanEndpoints } from '../endpoints/meal-plans';
 import { registerMealCanonicalSubscriptionEndpoints } from '../endpoints/meal-canonical-subscriptions';
 import { registerMealDeliveryNotificationEndpoints } from '../endpoints/meal-delivery-notifications';
+import { registerMealRefundCaseEndpoints } from '../endpoints/meal-refund-cases';
+import { registerAdminRefundHubEndpoints } from '../endpoints/admin-refund-hub';
 import { registerMealSubscriptionVendorOperationalEndpoints } from '../endpoints/meal-subscription-vendor-endpoints';
 import { registerNutritionOrderEndpoints } from '../endpoints/nutrition-orders';
 import { registerVendorBankAccountEndpoints } from '../endpoints/vendor/endpoints/vendor-bank-accounts';
@@ -650,6 +653,8 @@ registerPharmacyInventoryEndpoints(app);
 registerDeliveryPartnerAutomationEndpoints(app);
 registerMealCanonicalSubscriptionEndpoints(app);
 registerMealDeliveryNotificationEndpoints(app);
+registerMealRefundCaseEndpoints(app);
+registerAdminRefundHubEndpoints(app);
 registerMealSubscriptionVendorOperationalEndpoints(app);
 registerMealPlanEndpoints(app);
 registerNutritionOrderEndpoints(app); // ✅ FIX GAP-9.3 & 9.4: Nutrition order tracking
@@ -684,7 +689,6 @@ registerPackageBookingEndpoints(app);
 registerWalkerGPSEndpoints(app);
 registerPromotionEndpoints(app);
 registerVendorPromotionsEndpoints(app);
-registerVendorBannersEndpoints(app);
 registerAdsRecommendationEndpoints(app);
 registerEventEndpoints(app);
 registerHealthEndpoints(app);
@@ -726,6 +730,8 @@ registerRazorpaySettlementEndpoints(app);
 registerBookingEndpointsEnhanced(app); // Moved here to test route order (after refund-policy which works)
 registerBookingOTPEndpoint(app); // Booking OTP generation for home/center services
 registerAdminGovernanceEnhancedEndpoints(app);
+registerNotificationCampaignEndpoints(app);
+registerAdminNotificationDeliveryEndpoints(app);
 registerAdminAdvancedEndpoints(app);
 registerDiscoveryRulesAdminEndpoints(app);
 // registerVendorSetupEndpoints moved above (before vendor-services) to fix route ordering

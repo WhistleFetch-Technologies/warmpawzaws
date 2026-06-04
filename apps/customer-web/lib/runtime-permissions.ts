@@ -28,21 +28,26 @@ export async function requestCameraMicrophonePermission(): Promise<RuntimePermis
 }
 
 export async function requestLocationPermission(): Promise<RuntimePermissionState> {
-  if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    return 'unsupported';
-  }
+  const { resolveCurrentGeolocationCoords, GeolocationAddressError } = await import(
+    '@/lib/address-from-geolocation'
+  );
 
-  return new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      () => resolve('granted'),
-      (error) => {
-        if (error.code === error.PERMISSION_DENIED) {
-          resolve('denied');
-          return;
-        }
-        resolve('prompt');
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
-  });
+  try {
+    await resolveCurrentGeolocationCoords();
+    return 'granted';
+  } catch (error) {
+    if (
+      error instanceof GeolocationAddressError &&
+      error.code === 'permission_denied'
+    ) {
+      return 'denied';
+    }
+    if (
+      error instanceof GeolocationAddressError &&
+      error.code === 'unsupported'
+    ) {
+      return 'unsupported';
+    }
+    return 'prompt';
+  }
 }

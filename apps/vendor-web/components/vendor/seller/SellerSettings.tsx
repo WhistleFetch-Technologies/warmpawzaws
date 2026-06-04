@@ -19,6 +19,8 @@ import {
   EnhancedAddressAutocomplete,
   type AddressComponents,
 } from '@/components/shared/EnhancedAddressAutocomplete';
+import { UseCurrentLocationButton } from '@/components/shared/UseCurrentLocationButton';
+import type { VendorAddressFromGeolocationResult } from '@/lib/address-from-geolocation';
 import { SellerSecuritySection } from './SellerSecuritySection';
 
 export type SellerSettingsHandle = {
@@ -43,6 +45,8 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
     city: sellerData?.city || '',
     state: sellerData?.state || '',
     pincode: sellerData?.pincode || '',
+    latitude: sellerData?.latitude ?? undefined,
+    longitude: sellerData?.longitude ?? undefined,
     bank_name: sellerData?.bank_name || '',
     account_number: sellerData?.account_number || '',
     ifsc_code: sellerData?.ifsc_code || '',
@@ -59,6 +63,18 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
 
   const handleSave = useCallback(async () => {
     try {
+      await apiClient.put(`/vendor/${sellerId}/profile`, {
+        businessName: formData.business_name,
+        ownerName: formData.contact_name,
+        email: formData.email,
+        phone: formData.phone,
+        address: formData.address,
+        city: formData.city,
+        state: formData.state,
+        pincode: formData.pincode,
+        ...(formData.latitude != null && { latitude: formData.latitude }),
+        ...(formData.longitude != null && { longitude: formData.longitude }),
+      });
       await apiClient.put(`/vendor/${sellerId}/settings`, formData);
     } catch (error) {
       console.error('Error saving settings:', error);
@@ -178,10 +194,31 @@ export const SellerSettings = forwardRef<SellerSettingsHandle, SellerSettingsPro
                       ...(components?.city != null && { city: components.city || '' }),
                       ...(components?.state != null && { state: components.state || '' }),
                       ...(components?.pincode != null && { pincode: components.pincode || '' }),
+                      ...(components?.coordinates?.lat != null && {
+                        latitude: components.coordinates.lat,
+                      }),
+                      ...(components?.coordinates?.lng != null && {
+                        longitude: components.coordinates.lng,
+                      }),
                     }));
                   }}
                   placeholder="Search address, landmark, city..."
                 />
+                <div className="mt-2">
+                  <UseCurrentLocationButton
+                    onSuccess={(result: VendorAddressFromGeolocationResult) => {
+                      setFormData((prev) => ({
+                        ...prev,
+                        address: result.address ?? prev.address,
+                        city: result.city ?? prev.city,
+                        state: result.state ?? prev.state,
+                        pincode: result.pincode ?? prev.pincode,
+                        latitude: result.latitude,
+                        longitude: result.longitude,
+                      }));
+                    }}
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">City</label>

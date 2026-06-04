@@ -115,16 +115,15 @@ export function VendorApp({ initialSession }: VendorAppProps) {
   }, []);
 
   useEffect(() => {
-    if (status !== 'active') return;
     const vendorId = resolveVendorId();
-    if (!vendorId) return;
-    bootstrapPushNotifications({
+    if (!vendorId || !localStorage.getItem('authToken')) return;
+    void bootstrapPushNotifications({
       userId: vendorId,
       userType: 'vendor',
       vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
       apiClient,
     });
-  }, [status]);
+  }, [status, session?.vendorId]);
 
   useEffect(() => {
     if (hasCheckedStatus.current || isCheckingStatus.current) return;

@@ -26,6 +26,8 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { PhotoUpload } from '@/components/shared/PhotoUpload';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { UseCurrentLocationButton } from '@/components/shared/UseCurrentLocationButton';
+import type { VendorAddressFromGeolocationResult } from '@/lib/address-from-geolocation';
 import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager';
 import { SpecializationSelector } from '../SpecializationSelector';
 import { ProfessionalProfile, ProfessionalProfileManagerProps } from './constants/interface';
@@ -634,6 +636,22 @@ export function ProfessionalProfileManager({ vendorId, profile: initialProfile, 
                   types={['geocode']}
                 />
                 {formErrors.address && <p className="text-red-500 text-xs mt-1">{formErrors.address}</p>}
+                <div className="mt-2">
+                  <UseCurrentLocationButton
+                    onSuccess={(result: VendorAddressFromGeolocationResult) => {
+                      setProfile((prev) => ({
+                        ...prev,
+                        address: result.address ?? prev.address,
+                        city: result.city ?? prev.city,
+                        state: result.state ?? prev.state,
+                        pincode: result.pincode ?? prev.pincode,
+                        latitude: result.latitude,
+                        longitude: result.longitude,
+                      }));
+                      setHasChanges(true);
+                    }}
+                  />
+                </div>
               </div>
               <div className="grid md:grid-cols-3 gap-6">
                 <div>

@@ -7426,23 +7426,27 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       let queryStr = `
         SELECT 
           r.*,
-          c.name as customer_name,
+          COALESCE(c.full_name, c.name, '') as customer_name,
           c.phone as customer_phone,
-          p.razorpay_payment_id,
-          b.service_name
+          p.razorpay_payment_id
         FROM refunds r
         LEFT JOIN customers c ON r.customer_id = c.id
         LEFT JOIN payments p ON r.payment_id = p.id
-        LEFT JOIN bookings b ON r.booking_id = b.id
         WHERE 1=1
       `;
       const params: any[] = [];
       let paramIndex = 1;
 
       if (status && status !== 'all') {
-        queryStr += ` AND r.refund_status = $${paramIndex}`;
-        params.push(status);
-        paramIndex++;
+        if (status === 'approved') {
+          queryStr += ` AND r.refund_status IN ('approved', 'processing', 'completed', 'processed')`;
+        } else if (status === 'processing') {
+          queryStr += ` AND r.refund_status IN ('processing', 'approved')`;
+        } else {
+          queryStr += ` AND r.refund_status = $${paramIndex}`;
+          params.push(status);
+          paramIndex++;
+        }
       }
 
       queryStr += ` ORDER BY r.requested_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;

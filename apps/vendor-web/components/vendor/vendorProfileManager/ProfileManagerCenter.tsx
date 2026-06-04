@@ -13,6 +13,8 @@ import { getAmenitiesForVendorType } from '@/lib/master-amenities';
 import { isSoloVendor, isCenterRole, getVendorRoleName, hasVendorRole, canVendorUseServiceStyle, isVendorType } from '@/lib/vendor-utils';
 import { SpecializationSelector } from '../SpecializationSelector';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { UseCurrentLocationButton } from '@/components/shared/UseCurrentLocationButton';
+import type { VendorAddressFromGeolocationResult } from '@/lib/address-from-geolocation';
 import { AdvancedAvailabilityManager } from '../AdvancedAvailabilityManager';
 import { CenterProfile, DAYS, ProfileManagerProps } from './constants/interface';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
@@ -639,6 +641,21 @@ In rare scenarios of any injury or medical issue with the pet, it will be dealt 
                     }}
                     placeholder="Search address, landmark, city..."
                   />
+                  <div className="mt-2">
+                    <UseCurrentLocationButton
+                      onSuccess={(result: VendorAddressFromGeolocationResult) => {
+                        setProfile((prev) => ({
+                          ...prev,
+                          address: result.address ?? prev.address,
+                          city: result.city ?? prev.city,
+                          state: result.state ?? prev.state,
+                          pincode: result.pincode ?? prev.pincode,
+                          latitude: result.latitude,
+                          longitude: result.longitude,
+                        }));
+                      }}
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">

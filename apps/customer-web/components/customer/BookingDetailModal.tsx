@@ -18,11 +18,11 @@ import { RateServiceModal } from './RateServiceModal';
 import { PaymentSourcesDisplay } from './payment/PaymentSourcesDisplay';
 import { normalizePaymentSources } from '@/lib/payment-display-utils';
 import {
-  formatPaymentHoldCountdown,
   isBookingAwaitingPayment,
   isPaymentHoldActive,
   isPaymentHoldExpired,
-  usePaymentHoldCountdown,
+  PaymentHoldBanner,
+  resolvePaymentHoldExpiresAt,
 } from '@/lib/payment-hold-ui';
 
 interface BookingDetailModalProps {
@@ -148,39 +148,13 @@ function BookingDetailPaymentHoldBanner({
   onPayNow: () => void;
   onExpired?: () => void;
 }) {
-  const secondsRemaining = usePaymentHoldCountdown(expiresAt);
-  const active = secondsRemaining > 0;
-  const prevActiveRef = useRef<boolean | null>(null);
-
-  useEffect(() => {
-    if (prevActiveRef.current === true && !active) {
-      onExpired?.();
-    }
-    prevActiveRef.current = active;
-  }, [active, onExpired]);
-
   return (
-    <div
-      className={`rounded-2xl border p-4 ${active ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}
-    >
-      {active ? (
-        <>
-          <p className="text-sm font-medium text-amber-900">
-            Complete payment in {formatPaymentHoldCountdown(secondsRemaining)}
-          </p>
-          <p className="text-xs text-amber-800 mt-1">Your slot is held until the timer ends.</p>
-          <button
-            type="button"
-            onClick={onPayNow}
-            className="mt-3 w-full rounded-xl bg-[#FF8C42] py-3 text-sm font-semibold text-white hover:bg-orange-600"
-          >
-            Pay now
-          </button>
-        </>
-      ) : (
-        <p className="text-sm text-gray-600">Payment window expired. This booking was cancelled.</p>
-      )}
-    </div>
+    <PaymentHoldBanner
+      expiresAt={expiresAt}
+      onPayNow={() => onPayNow()}
+      onExpired={onExpired}
+      holdMessage="Your slot is held until the timer ends."
+    />
   );
 }
 
@@ -598,6 +572,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
       isPaymentHoldExpired({
         status: raw?.status,
         paymentHoldExpiresAt: raw?.paymentHoldExpiresAt,
+        createdAt: raw?.createdAt || raw?.created_at,
       })
     ) {
       return 'Cancelled';
@@ -733,7 +708,7 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
             booking.paymentStatus !== 'paid' &&
             (isPaymentHoldActive(booking) || isPaymentHoldExpired(booking)) ? (
               <BookingDetailPaymentHoldBanner
-                expiresAt={booking.paymentHoldExpiresAt}
+                expiresAt={resolvePaymentHoldExpiresAt(booking)}
                 onPayNow={() => void handleResumePayment()}
                 onExpired={() => void loadBookingDetails()}
               />

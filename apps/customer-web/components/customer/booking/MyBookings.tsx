@@ -25,11 +25,11 @@ import {
 } from '@/lib/payment-display-utils';
 import type { PaymentSource } from '@/lib/payment-display-utils';
 import {
-  formatPaymentHoldCountdown,
   isBookingAwaitingPayment,
   isPaymentHoldActive,
   isPaymentHoldExpired,
-  usePaymentHoldCountdown,
+  PaymentHoldBanner,
+  resolvePaymentHoldExpiresAt,
 } from '@/lib/payment-hold-ui';
 
 import { useRouter } from 'next/navigation';
@@ -159,40 +159,13 @@ function PendingPaymentHoldBanner({
   onPayNow: (e: React.MouseEvent) => void;
   onExpired?: () => void;
 }) {
-  const secondsRemaining = usePaymentHoldCountdown(expiresAt);
-  const active = secondsRemaining > 0;
-  const prevActiveRef = useRef<boolean | null>(null);
-
-  useEffect(() => {
-    if (prevActiveRef.current === true && !active) {
-      onExpired?.();
-    }
-    prevActiveRef.current = active;
-  }, [active, onExpired]);
-
   return (
-    <div
-      className={`mt-3 rounded-lg border p-3 ${active ? 'border-amber-200 bg-amber-50' : 'border-gray-200 bg-gray-50'}`}
-      onClick={(e) => e.stopPropagation()}
-    >
-      {active ? (
-        <>
-          <p className="text-sm font-medium text-amber-900">
-            Complete payment in {formatPaymentHoldCountdown(secondsRemaining)}
-          </p>
-          <p className="text-xs text-amber-800 mt-0.5">Your slot is held until the timer ends.</p>
-          <button
-            type="button"
-            onClick={onPayNow}
-            className="mt-2 w-full rounded-lg bg-[#FF8C42] py-2 text-sm font-semibold text-white hover:bg-orange-600"
-          >
-            Pay now
-          </button>
-        </>
-      ) : (
-        <p className="text-sm text-gray-600">Payment window expired. This booking was cancelled.</p>
-      )}
-    </div>
+    <PaymentHoldBanner
+      expiresAt={expiresAt}
+      onPayNow={onPayNow}
+      onExpired={onExpired}
+      holdMessage="Your slot is held until the timer ends."
+    />
   );
 }
 
@@ -683,6 +656,9 @@ export function MyBookings({
 
   const getBookingStatusColor = (booking: Booking): string => {
     if (isPaymentHoldExpired(booking)) return 'bg-red-100 text-red-800';
+    if (booking.status === 'pending_payment') {
+      return 'bg-gradient-to-r from-amber-50 to-orange-50 text-orange-800 border border-orange-100/80';
+    }
     return getStatusColor(booking.status);
   };
 
@@ -883,8 +859,8 @@ export function MyBookings({
                     )}
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${getStatusColor(booking.status)}`}>
-                      {getStatusText(booking.status)}
+                    <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${getBookingStatusColor(booking)}`}>
+                      {getBookingStatusText(booking)}
                     </span>
                     {booking.paymentStatus === 'paid' && (
                       <>
@@ -921,7 +897,7 @@ export function MyBookings({
                 booking.paymentStatus !== 'paid' &&
                 (isPaymentHoldActive(booking) || isPaymentHoldExpired(booking)) ? (
                   <PendingPaymentHoldBanner
-                    expiresAt={booking.paymentHoldExpiresAt}
+                    expiresAt={resolvePaymentHoldExpiresAt(booking)}
                     onPayNow={(e) => handleResumePayment(booking, e)}
                     onExpired={refreshAfterHoldExpired}
                   />

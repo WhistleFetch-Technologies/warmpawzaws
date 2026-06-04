@@ -710,6 +710,7 @@ export async function vendorListMealSubscriptionDeliveries(options: {
             s.purchase_type,
             s.lifecycle_status AS subscription_lifecycle,
             mp.name AS meal_plan_name,
+            mp.prep_time_minutes AS prep_time_minutes,
             c.full_name AS customer_name,
             c.phone AS customer_phone
      FROM meal_subscription_deliveries d
@@ -748,6 +749,7 @@ export async function vendorGetMealSubscriptionDelivery(
             s.remaining_sessions,
             s.lifecycle_status,
             mp.name AS meal_plan_name,
+            mp.prep_time_minutes AS prep_time_minutes,
             c.full_name AS customer_name,
             c.phone AS customer_phone,
             c.email AS customer_email

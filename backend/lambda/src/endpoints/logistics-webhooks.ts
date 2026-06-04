@@ -40,6 +40,7 @@ import {
   type MealTrackingOrderSource,
 } from '../utils/meal-tracking-order-payload';
 import { presignS3GetUrlIfApplicable } from '../utils/s3-media-presign';
+import { getMealRefundReviewCustomerMetadata } from '../utils/meal-refund-cases';
 
 // Status mappings for different partners
 const SHIPROCKET_STATUS_MAP: Record<string, string> = {
@@ -1106,21 +1107,17 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
           );
         }
 
-        return c.json({
-          success: true,
-          orderType,
-          customer: customerPayload,
-          order:
-            orderType === 'meal' && mealOrderSource
-              ? buildCustomerMealTrackingOrderPayload({
-                  order,
-                  orderSource: mealOrderSource,
-                  displayStatus,
-                  mealDisplayTotals,
-                  mealPlan: mealPlanForTotals,
-                  deliveryTracking: deliveryTracking ?? null,
-                })
-              : {
+        let orderPayload: Record<string, unknown> =
+          orderType === 'meal' && mealOrderSource
+            ? buildCustomerMealTrackingOrderPayload({
+                order,
+                orderSource: mealOrderSource,
+                displayStatus,
+                mealDisplayTotals,
+                mealPlan: mealPlanForTotals,
+                deliveryTracking: deliveryTracking ?? null,
+              })
+            : {
                   id: order.id,
                   order_number: order.order_number || order.id?.toString().slice(-8),
                   orderNumber: order.order_number || order.id?.toString().slice(-8),
@@ -1129,7 +1126,20 @@ export function registerLogisticsWebhookEndpoints(app: Hono) {
                   total_amount: displayTotalAmount,
                   createdAt: order.created_at,
                   created_at: order.created_at,
-                },
+                };
+
+        if (orderType === 'meal' && mealOrderSource === 'meal_orders' && order.id) {
+          const refundReview = await getMealRefundReviewCustomerMetadata(String(order.id));
+          if (refundReview) {
+            orderPayload = { ...orderPayload, refundReview };
+          }
+        }
+
+        return c.json({
+          success: true,
+          orderType,
+          customer: customerPayload,
+          order: orderPayload,
           tracking: trackingPayload,
         });
       }

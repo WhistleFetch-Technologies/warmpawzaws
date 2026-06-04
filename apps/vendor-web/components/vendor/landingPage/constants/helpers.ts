@@ -1,5 +1,6 @@
 import { VendorSession, VendorStatus } from "./interface";
 import { isVendorPortalActiveStatus } from "@/lib/vendor-session-from-api";
+import { hasVendorRole } from "@/lib/vendor-utils";
 
 /** Compute initial state from session + localStorage so existing vendors never flash "choose role" or loading. */
 export function getInitialVendorState(session: VendorSession): { status: VendorStatus; vendorData: any; isLoading: boolean } {
@@ -146,8 +147,57 @@ export function isPharmacyVendor(vendor: any): boolean {
     return hasAnyCapability(vendor, ['pharmacy']);
 }
 
+const NUTRITIONIST_ROLE_KEYS = ['nutritionist', 'pet_nutritionist', 'nutritionist_center'];
+
+/** Pet nutritionist / meal-plan providers — never ecommerce Seller Hub. */
+export function isNutritionistVendor(vendor: any): boolean {
+    if (!vendor) return false;
+    if (hasVendorRole(vendor, NUTRITIONIST_ROLE_KEYS)) return true;
+    const info = getNormalizedRoleInfo(vendor);
+    if (info.customerService === 'nutritionist') return true;
+    const roleName = info.roleName || '';
+    return roleName.includes('nutritionist');
+}
+
+const PET_PRODUCTS_STORE_ROLE_ID = '5056756d-3b05-457a-9725-3f922800b520';
+
+/**
+ * True only for pet products store / marketplace seller roles (explicit match).
+ * Does not use substring checks on roleId (avoids false positives).
+ */
+export function isPetProductsStoreVendor(vendor: any): boolean {
+    if (!vendor || isPharmacyVendor(vendor) || isNutritionistVendor(vendor)) return false;
+
+    const info = getNormalizedRoleInfo(vendor);
+    const roleId = String(info.roleId || vendor?.roleId || vendor?.role_id || '').toLowerCase();
+    const roleName = info.roleName;
+    const displayName = String(
+        vendor?.role?.display_name || vendor?.displayRoleName || vendor?.display_role_name || ''
+    ).toLowerCase();
+
+    const byRoleId =
+        roleId === 'pet_products_store' ||
+        roleId === 'product_seller' ||
+        roleId === 'seller' ||
+        roleId === PET_PRODUCTS_STORE_ROLE_ID;
+    const byRoleName =
+        roleName === 'pet_products_store' ||
+        roleName === 'seller' ||
+        roleName === 'product_seller' ||
+        roleName === 'marketplace_seller' ||
+        roleName === 'store_seller';
+    const byDisplay = displayName === 'pet store / retailer';
+
+    if (byRoleId || byRoleName || byDisplay) return true;
+
+    const vendorType = String(vendor?.vendor_type || vendor?.vendorType || '').toLowerCase();
+    return vendorType === 'seller';
+}
+
 /** Determine if vendor is a marketplace/e-commerce seller. */
 export function isSeller(vendor: any): boolean {
+    if (isNutritionistVendor(vendor)) return false;
+    if (isPetProductsStoreVendor(vendor)) return true;
     const info = getNormalizedRoleInfo(vendor);
     const byRole = info.roleName === 'seller' || info.roleName === 'marketplace_seller' || info.roleName === 'store_seller';
     const byService = info.customerService === 'shop';
@@ -169,19 +219,17 @@ export function isServiceProvider(vendor: any): boolean {
 
 /**
  * Strict seller check: only route to seller hub when clearly a seller.
- * Avoids accidental redirects for non-ecommerce roles (e.g., vet_clinic).
+ * Avoids accidental redirects for non-ecommerce roles (e.g., vet_clinic, nutritionist).
  */
 export function isSellerStrict(vendor: any): boolean {
-    if (isPharmacyVendor(vendor)) return false;
+    if (isPharmacyVendor(vendor) || isNutritionistVendor(vendor)) return false;
+    if (isPetProductsStoreVendor(vendor)) return true;
 
     const info = getNormalizedRoleInfo(vendor);
-
-    // Role or explicit customer_service of 'shop' are strong signals
-    const byRole = info.roleName === 'seller' || info.roleName === 'marketplace_seller' || info.roleName === 'product_seller' || info.roleName === 'store_seller';
     const byService = info.customerService === 'shop';
+    const bySellerType = info.vendorTypes.includes('seller');
 
-    // Strict: do NOT route by capabilities or styles to avoid false positives
-    return byRole || byService;
+    return byService || bySellerType;
 }
 
 /** Preferred UI route for a vendor based on role/config. */

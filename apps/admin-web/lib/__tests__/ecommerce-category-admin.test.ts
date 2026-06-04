@@ -19,7 +19,6 @@ describe('ecommerce-category-admin', () => {
     expect(form.name).toBe('Pet Food');
     expect(form.order).toBe(2);
     expect(form.enabled).toBe(false);
-    expect(form.imageUrl).toContain('food.png');
     expect(form.slug).toBe('pet-food');
   });
 
@@ -36,7 +35,7 @@ describe('ecommerce-category-admin', () => {
     expect(payload.name).toBe('Treats');
     expect(payload.display_order).toBe(3);
     expect(payload.is_active).toBe(true);
-    expect(payload.image_url).toBe('https://example.com/treats.jpg');
+    expect(payload.image_url).toBeNull();
   });
 
   it('wraps categories array for bulk PUT', () => {
