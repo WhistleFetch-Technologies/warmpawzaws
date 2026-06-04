@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Shield, Loader2, Smartphone, History, KeyRound } from 'lucide-react';
+import { Shield, Loader2, Smartphone, History } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import {
   Dialog,
@@ -16,7 +16,6 @@ import { Input } from '@/components/ui/input';
 type SecuritySnapshot = {
   phone?: string;
   phoneVerified?: boolean;
-  twoFactorEnabled?: boolean;
   accountSecured?: boolean;
 };
 
@@ -27,6 +26,13 @@ type LoginEvent = {
   userAgent?: string;
   method?: string;
 };
+
+const VENDOR_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidSellerId(id: string | undefined): boolean {
+  return typeof id === 'string' && id.trim() !== '' && VENDOR_UUID_RE.test(id.trim());
+}
 
 interface SellerSecuritySectionProps {
   sellerId: string;
@@ -69,17 +75,12 @@ export function SellerSecuritySection({
   const [phoneBusy, setPhoneBusy] = useState(false);
   const [phoneError, setPhoneError] = useState('');
 
-  const [twoFaModalOpen, setTwoFaModalOpen] = useState(false);
-  const [twoFaStep, setTwoFaStep] = useState<'setup' | 'verify'>('setup');
-  const [qrCodeUrl, setQrCodeUrl] = useState('');
-  const [twoFaSecret, setTwoFaSecret] = useState('');
-  const [twoFaCode, setTwoFaCode] = useState('');
-  const [twoFaBusy, setTwoFaBusy] = useState(false);
-  const [twoFaError, setTwoFaError] = useState('');
-
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
   const [logins, setLogins] = useState<LoginEvent[]>([]);
+
+  const sellerIdValid = isValidSellerId(sellerId);
 
   const loadSecurity = useCallback(async () => {
     if (!sellerId) return;
@@ -156,70 +157,22 @@ export function SellerSecuritySection({
     }
   };
 
-  const openTwoFa = async () => {
-    if (security.twoFactorEnabled) {
-      if (!confirm('Disable two-factor authentication for this account?')) return;
-      setTwoFaBusy(true);
-      try {
-        await apiClient.post(`/vendor/${sellerId}/security/disable-2fa`, {});
-        await loadSecurity();
-      } catch (e: any) {
-        alert(e?.message || 'Failed to disable 2FA');
-      } finally {
-        setTwoFaBusy(false);
-      }
-      return;
-    }
-    setTwoFaStep('setup');
-    setTwoFaCode('');
-    setTwoFaError('');
-    setQrCodeUrl('');
-    setTwoFaSecret('');
-    setTwoFaModalOpen(true);
-    setTwoFaBusy(true);
-    try {
-      const res = await apiClient.post<{ qrCodeUrl?: string; secret?: string }>(
-        `/vendor/${sellerId}/security/enable-2fa`,
-        {}
-      );
-      setQrCodeUrl(res.qrCodeUrl || '');
-      setTwoFaSecret(res.secret || '');
-      setTwoFaStep('verify');
-    } catch (e: any) {
-      setTwoFaError(e?.message || 'Failed to start 2FA setup');
-    } finally {
-      setTwoFaBusy(false);
-    }
-  };
-
-  const confirmTwoFa = async () => {
-    if (twoFaCode.length < 6) {
-      setTwoFaError('Enter the 6-digit code from your authenticator app');
-      return;
-    }
-    setTwoFaBusy(true);
-    setTwoFaError('');
-    try {
-      await apiClient.post(`/vendor/${sellerId}/security/verify-2fa`, { code: twoFaCode });
-      setTwoFaModalOpen(false);
-      await loadSecurity();
-    } catch (e: any) {
-      setTwoFaError(e?.message || 'Invalid code');
-    } finally {
-      setTwoFaBusy(false);
-    }
-  };
-
   const openLoginHistory = async () => {
+    if (!sellerIdValid) return;
     setHistoryOpen(true);
     setHistoryLoading(true);
+    setHistoryError('');
+    setLogins([]);
     try {
       const res = await apiClient.get<{ logins?: LoginEvent[] }>(
         `/vendor/${sellerId}/security/login-history?limit=25`
       );
       setLogins(res.logins || []);
-    } catch (e) {
+    } catch (e: unknown) {
       console.error('[SellerSecurity] history failed:', e);
+      const message =
+        e instanceof Error ? e.message : 'Could not load login history. Please try again.';
+      setHistoryError(message);
       setLogins([]);
     } finally {
       setHistoryLoading(false);
@@ -227,7 +180,6 @@ export function SellerSecuritySection({
   };
 
   const phoneVerified = security.phoneVerified ?? !!phone;
-  const twoFactorEnabled = !!security.twoFactorEnabled;
 
   if (loading) {
     return (
@@ -272,7 +224,7 @@ export function SellerSecuritySection({
               }`}
             >
               {phoneVerified
-                ? `Phone verification is active${twoFactorEnabled ? ' · 2FA enabled' : ''}`
+                ? 'Phone verification is active'
                 : 'Verify your phone number to secure your seller account'}
             </p>
           </div>
@@ -303,50 +255,21 @@ export function SellerSecuritySection({
           <div className="p-4 border border-slate-200 rounded-xl">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-start gap-3">
-                <KeyRound className="w-5 h-5 text-slate-400 mt-0.5" />
+                <History className="w-5 h-5 text-slate-400 mt-0.5" />
                 <div>
-                  <p className="font-medium text-slate-900">Two-Factor Authentication</p>
+                  <p className="font-medium text-slate-900">Login History</p>
                   <p className="text-sm text-slate-500">
-                    {twoFactorEnabled
-                      ? 'Authenticator app is connected'
-                      : 'Add extra security to your account'}
+                    {sellerIdValid
+                      ? 'View your recent login activity'
+                      : 'Complete seller setup to see login history.'}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={openTwoFa}
-                disabled={twoFaBusy}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors shrink-0 ${
-                  twoFactorEnabled
-                    ? 'border border-slate-200 text-slate-600 hover:bg-slate-50'
-                    : 'bg-orange-100 text-orange-600 hover:bg-orange-200'
-                }`}
-              >
-                {twoFaBusy ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : twoFactorEnabled ? (
-                  'Disable'
-                ) : (
-                  'Enable'
-                )}
-              </button>
-            </div>
-          </div>
-
-          <div className="p-4 border border-slate-200 rounded-xl">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <History className="w-5 h-5 text-slate-400 mt-0.5" />
-                <div>
-                  <p className="font-medium text-slate-900">Login History</p>
-                  <p className="text-sm text-slate-500">View your recent login activity</p>
-                </div>
-              </div>
-              <button
-                type="button"
                 onClick={openLoginHistory}
-                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-50 transition-colors shrink-0"
+                disabled={!sellerIdValid}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg font-medium hover:bg-slate-50 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
               >
                 View
               </button>
@@ -404,50 +327,6 @@ export function SellerSecuritySection({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={twoFaModalOpen} onOpenChange={setTwoFaModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Enable two-factor authentication</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            {qrCodeUrl && (
-              <div className="flex flex-col items-center gap-2">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrCodeUrl)}`}
-                  alt="2FA QR code"
-                  width={180}
-                  height={180}
-                  className="rounded-lg border border-slate-200"
-                />
-                {twoFaSecret && (
-                  <p className="text-xs text-slate-500 font-mono break-all text-center">
-                    Manual key: {twoFaSecret}
-                  </p>
-                )}
-              </div>
-            )}
-            <p className="text-sm text-slate-600">
-              Scan with Google Authenticator or similar, then enter the 6-digit code.
-            </p>
-            <Input
-              value={twoFaCode}
-              onChange={(e) => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="6-digit code"
-              maxLength={6}
-            />
-            {twoFaError && <p className="text-sm text-red-600">{twoFaError}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTwoFaModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={confirmTwoFa} disabled={twoFaBusy}>
-              {twoFaBusy ? 'Verifying…' : 'Enable 2FA'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -457,6 +336,8 @@ export function SellerSecuritySection({
             <div className="flex justify-center py-8">
               <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
             </div>
+          ) : historyError ? (
+            <p className="text-sm text-red-600 py-4 text-center">{historyError}</p>
           ) : logins.length === 0 ? (
             <p className="text-sm text-slate-500 py-4 text-center">
               No login events recorded yet. Sign in again to see activity here.

@@ -11,8 +11,18 @@ import {
   JIO_LOGIN_OTP_TEMPLATE_ID,
 } from '../../constants/jio-login-otp-sms';
 import { normalizePhoneForOtp, dialablePhoneForCustomerAuth } from './auth/customer-username-lookup';
+import {
+  buildLoginAuditDetailsPayload,
+  isPgMissingColumnError,
+  isTempOrInvalidAuditId,
+  isValidVendorUuid,
+  mapLoginAuditRow,
+  type VendorLoginEvent,
+} from './vendor-login-audit';
 
 export const VENDOR_PHONE_CHANGE_OTP_PURPOSE = 'vendor_phone_change';
+
+export type { VendorLoginEvent };
 
 const LOGIN_HISTORY_LIMIT = 50;
 
@@ -20,14 +30,6 @@ export type VendorSecurityMeta = {
   twoFactorEnabled?: boolean;
   twoFactorSecret?: string | null;
   phoneVerified?: boolean;
-};
-
-export type VendorLoginEvent = {
-  id: string;
-  loggedInAt: string;
-  ip?: string;
-  userAgent?: string;
-  method?: string;
 };
 
 function parseMetadata(raw: unknown): Record<string, unknown> {
@@ -297,54 +299,114 @@ export async function confirmVendorPhoneChange(vendorId: string, newPhone: strin
   };
 }
 
+/** Resolve vendors.id for audit_logs (maps vendor_identity.id → vendor_id when linked). */
+export async function resolveCanonicalVendorIdForAudit(
+  inputId: string
+): Promise<string | null> {
+  if (isTempOrInvalidAuditId(inputId)) return null;
+
+  const vendors = await select('vendors', { id: inputId });
+  if (vendors.length > 0) return inputId;
+
+  const identities = await select('vendor_identity', { id: inputId });
+  if (identities.length > 0) {
+    const linked = identities[0].vendor_id;
+    return linked && isValidVendorUuid(String(linked)) ? String(linked) : null;
+  }
+
+  return null;
+}
+
+async function insertVendorLoginAuditRow(
+  canonicalVendorId: string,
+  details: { ip?: string; userAgent?: string; method?: string }
+): Promise<void> {
+  const payload = buildLoginAuditDetailsPayload(details);
+  const createdAt = new Date();
+
+  try {
+    await insert('audit_logs', {
+      entity_type: 'vendor',
+      entity_id: canonicalVendorId,
+      action: 'login',
+      actor_id: canonicalVendorId,
+      actor_type: 'vendor',
+      changes: payload,
+      created_at: createdAt,
+    });
+    return;
+  } catch (primaryErr) {
+    if (!isPgMissingColumnError(primaryErr)) throw primaryErr;
+  }
+
+  await insert('audit_logs', {
+    entity_type: 'vendor',
+    entity_id: canonicalVendorId,
+    action: 'login',
+    actor_id: canonicalVendorId,
+    actor_role: 'vendor',
+    details: payload,
+    ip_address: details.ip && details.ip !== 'unknown' ? details.ip : null,
+    user_agent: details.userAgent || null,
+    created_at: createdAt,
+  });
+}
+
 export async function recordVendorLoginEvent(
   vendorId: string,
   details: { ip?: string; userAgent?: string; method?: string }
 ): Promise<void> {
-  if (!vendorId || vendorId.startsWith('temp_')) return;
   try {
-    await insert('audit_logs', {
-      entity_type: 'vendor',
-      entity_id: vendorId,
-      action: 'login',
-      actor_id: vendorId,
-      actor_type: 'vendor',
-      changes: {
-        ip: details.ip || null,
-        userAgent: details.userAgent || null,
-        method: details.method || 'otp',
-      },
-      created_at: new Date(),
-    });
-    await saveVendorSecurityMeta(vendorId, { phoneVerified: true }).catch(() => {});
+    const canonicalId = await resolveCanonicalVendorIdForAudit(vendorId);
+    if (!canonicalId) return;
+
+    await insertVendorLoginAuditRow(canonicalId, details);
+    await saveVendorSecurityMeta(canonicalId, { phoneVerified: true }).catch(() => {});
   } catch (e) {
-    console.warn('[vendor-security] recordVendorLoginEvent failed:', (e as Error)?.message);
+    const message = (e as Error)?.message || String(e);
+    console.warn('[vendor-security] recordVendorLoginEvent failed', {
+      vendorId: vendorId?.startsWith('temp_') ? 'temp' : vendorId,
+      error: message,
+    });
   }
 }
 
 export async function getVendorLoginHistory(vendorId: string, limit = 20): Promise<VendorLoginEvent[]> {
+  if (!isValidVendorUuid(vendorId)) return [];
+
   const capped = Math.min(Math.max(limit, 1), LOGIN_HISTORY_LIMIT);
   try {
     const res = await query(
-      `SELECT id, created_at, changes
+      `SELECT id, created_at,
+              COALESCE(changes, details) AS payload,
+              ip_address, user_agent
        FROM audit_logs
-       WHERE entity_type = 'vendor' AND entity_id = $1::uuid AND action = 'login'
+       WHERE action = 'login'
+         AND entity_type = 'vendor'
+         AND (
+           entity_id = $1::uuid
+           OR entity_id IN (
+             SELECT id FROM vendor_identity WHERE vendor_id = $1::uuid
+           )
+         )
        ORDER BY created_at DESC
        LIMIT $2`,
       [vendorId, capped]
     );
-    return ((res as any).rows || []).map((row: any) => {
-      const ch = row.changes || {};
-      return {
+    return ((res as any).rows || []).map((row: any) =>
+      mapLoginAuditRow({
         id: row.id,
-        loggedInAt: row.created_at,
-        ip: ch.ip || undefined,
-        userAgent: ch.userAgent || undefined,
-        method: ch.method || 'otp',
-      };
-    });
+        created_at: row.created_at,
+        payload: row.payload,
+        ip_address: row.ip_address,
+        user_agent: row.user_agent,
+      })
+    );
   } catch (e) {
-    console.warn('[vendor-security] getVendorLoginHistory failed:', (e as Error)?.message);
+    console.warn('[vendor-security] getVendorLoginHistory failed', {
+      vendorId,
+      error: (e as Error)?.message,
+    });
     return [];
   }
 }

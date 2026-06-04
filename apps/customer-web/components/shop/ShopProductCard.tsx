@@ -90,7 +90,7 @@ export function ShopProductCard({ product, variant, onAddToCart, inCart }: ShopP
           </h3>
           <div className="flex items-baseline gap-1 mt-1">
             <span className="text-sm font-bold text-slate-900 tabular-nums">₹{product.price}</span>
-            {product.original_price && product.original_price > product.price && (
+            {discount > 0 && product.original_price != null && (
               <span className="text-[10px] text-slate-400 line-through tabular-nums">
                 ₹{product.original_price}
               </span>
@@ -162,7 +162,7 @@ export function ShopProductCard({ product, variant, onAddToCart, inCart }: ShopP
 
         <div className="flex items-baseline gap-1.5 flex-wrap">
           <span className="text-sm font-bold text-slate-900 tabular-nums">₹{product.price}</span>
-          {product.original_price && product.original_price > product.price && (
+          {discount > 0 && product.original_price != null && (
             <span className="text-[10px] text-slate-400 line-through tabular-nums">
               ₹{product.original_price}
             </span>

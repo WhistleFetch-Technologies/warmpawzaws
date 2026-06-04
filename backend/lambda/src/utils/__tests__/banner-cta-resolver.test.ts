@@ -5,6 +5,7 @@ import {
   buildVendorProfileNavTarget,
   buildBookingNavTarget,
   enrichBannersWithNavTargets,
+  resolveBannerCtaNavigation,
 } from '../banner-cta-resolver';
 
 describe('parseBannerCtaLink', () => {
@@ -83,8 +84,47 @@ describe('parseBannerTargetFromMetadata', () => {
     });
   });
 
+  it('reads external_url bannerTarget', () => {
+    const target = parseBannerTargetFromMetadata({
+      bannerTarget: {
+        targetLevel: 'external_url',
+        externalUrl: 'https://www.warmpawz.com/blog/22',
+      },
+    });
+    expect(target).toMatchObject({
+      targetLevel: 'external_url',
+      externalUrl: 'https://www.warmpawz.com/blog/22',
+    });
+  });
+
   it('returns null when no target info', () => {
     expect(parseBannerTargetFromMetadata({ bannerTarget: {} })).toBeNull();
+  });
+});
+
+describe('resolveBannerCtaNavigation external_url', () => {
+  it('resolves https external link without DB', async () => {
+    const nav = await resolveBannerCtaNavigation({
+      metadata: {
+        bannerTarget: {
+          targetLevel: 'external_url',
+          externalUrl: 'https://www.warmpawz.com/blog/22',
+        },
+      },
+    });
+    expect(nav).toEqual({ kind: 'external', url: 'https://www.warmpawz.com/blog/22' });
+  });
+
+  it('resolves in-app path external link', async () => {
+    const nav = await resolveBannerCtaNavigation({
+      metadata: {
+        bannerTarget: {
+          targetLevel: 'external_url',
+          externalUrl: '/articles?slug=pawints',
+        },
+      },
+    });
+    expect(nav).toEqual({ kind: 'path', path: '/articles?slug=pawints' });
   });
 });
 

@@ -6,10 +6,12 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.PermissionRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import androidx.core.view.WindowCompat;
+import com.getcapacitor.BridgeWebChromeClient;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
@@ -126,7 +128,26 @@ public class MainActivity extends BridgeActivity {
   @Override
   public void onStart() {
     super.onStart();
+    installBridgeWebChromeClient();
     installRazorpayWebViewClient();
+  }
+
+  /**
+   * Capacitor's BridgeWebChromeClient handles WebView geolocation (runtime permission +
+   * onGeolocationPermissionsShowPrompt). Without this, navigator.geolocation often returns
+   * PERMISSION_DENIED on Android even when manifest declares location.
+   */
+  private void installBridgeWebChromeClient() {
+    if (getBridge() == null || getBridge().getWebView() == null) {
+      return;
+    }
+    WebView webView = getBridge().getWebView();
+    webView.setWebChromeClient(new BridgeWebChromeClient(getBridge()) {
+      @Override
+      public void onPermissionRequest(final PermissionRequest request) {
+        runOnUiThread(() -> request.grant(request.getResources()));
+      }
+    });
   }
 
   private void installRazorpayWebViewClient() {

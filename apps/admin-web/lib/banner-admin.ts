@@ -66,7 +66,9 @@ export function formatAdminBannerLocationLabel(targetState?: unknown, targetCity
 /** Radix Select sentinel — clears category / type / vendor selection. */
 export const BANNER_SELECT_EMPTY = '__select__';
 
-export type BannerTargetLevel = 'category' | 'service_type' | 'vendor';
+export type BannerTargetLevel = 'category' | 'service_type' | 'vendor' | 'external_url';
+
+export type BannerCtaTargetMode = 'none' | 'service_type' | 'vendor' | 'external_url';
 
 export type BannerDestinationCategory = {
   id: string;
@@ -89,9 +91,10 @@ export type BannerDestinationVendor = {
 };
 
 export type BannerTargetMetadata = {
-  categoryId: string;
-  customerScreen: string;
   targetLevel: BannerTargetLevel;
+  categoryId?: string;
+  customerScreen?: string;
+  externalUrl?: string;
   serviceStyle?: string;
   vendorId?: string;
   vendorName?: string;
@@ -99,6 +102,22 @@ export type BannerTargetMetadata = {
   /** Legacy alias kept for deep-link display paths */
   persona?: string;
 };
+
+const HTTP_BANNER_URL_RE = /^https?:\/\//i;
+
+export function isValidBannerExternalUrl(url: unknown): boolean {
+  const trimmed = String(url ?? '').trim();
+  if (!trimmed) return false;
+  if (HTTP_BANNER_URL_RE.test(trimmed) || trimmed.startsWith('//')) return true;
+  if (trimmed.startsWith('/')) return true;
+  return false;
+}
+
+export function normalizeBannerExternalUrl(url: unknown): string {
+  const trimmed = String(url ?? '').trim();
+  if (trimmed.startsWith('//')) return `https:${trimmed}`;
+  return trimmed;
+}
 
 export type ShopBannerTargetLevel = 'informational' | 'product';
 
@@ -135,16 +154,23 @@ export function buildBannerMetadata(opts: {
     gradient_to: opts.gradientTo,
   };
   if (opts.bannerTarget) {
-    meta.bannerTarget = {
-      categoryId: opts.bannerTarget.categoryId,
-      customerScreen: opts.bannerTarget.customerScreen,
-      targetLevel: opts.bannerTarget.targetLevel,
-      serviceStyle: opts.bannerTarget.serviceStyle ?? null,
-      vendorId: opts.bannerTarget.vendorId ?? null,
-      vendorName: opts.bannerTarget.vendorName ?? null,
-      vendorServiceId: opts.bannerTarget.vendorServiceId ?? null,
-      persona: opts.bannerTarget.persona ?? opts.bannerTarget.customerScreen,
-    };
+    if (opts.bannerTarget.targetLevel === 'external_url') {
+      meta.bannerTarget = {
+        targetLevel: 'external_url',
+        externalUrl: opts.bannerTarget.externalUrl ?? null,
+      };
+    } else {
+      meta.bannerTarget = {
+        categoryId: opts.bannerTarget.categoryId,
+        customerScreen: opts.bannerTarget.customerScreen,
+        targetLevel: opts.bannerTarget.targetLevel,
+        serviceStyle: opts.bannerTarget.serviceStyle ?? null,
+        vendorId: opts.bannerTarget.vendorId ?? null,
+        vendorName: opts.bannerTarget.vendorName ?? null,
+        vendorServiceId: opts.bannerTarget.vendorServiceId ?? null,
+        persona: opts.bannerTarget.persona ?? opts.bannerTarget.customerScreen,
+      };
+    }
   }
   return meta;
 }
@@ -277,8 +303,15 @@ export function parseBannerTargetFromAdminRow(row: Record<string, unknown>): Ban
   const vendorId = String(bt.vendorId ?? bt.vendor_id ?? '').trim();
   const serviceStyleRaw = bt.serviceStyle ?? bt.service_style;
 
+  const externalUrl = String(bt.externalUrl ?? bt.external_url ?? '').trim();
+
   let targetLevel: BannerTargetLevel | null = null;
-  if (targetLevelRaw === 'category' || targetLevelRaw === 'service_type' || targetLevelRaw === 'vendor') {
+  if (
+    targetLevelRaw === 'category' ||
+    targetLevelRaw === 'service_type' ||
+    targetLevelRaw === 'vendor' ||
+    targetLevelRaw === 'external_url'
+  ) {
     targetLevel = targetLevelRaw;
   } else if (vendorId) {
     targetLevel = 'vendor';
@@ -288,7 +321,17 @@ export function parseBannerTargetFromAdminRow(row: Record<string, unknown>): Ban
     targetLevel = 'category';
   }
 
-  if (!categoryId || !customerScreen || !targetLevel) return null;
+  if (!targetLevel) return null;
+
+  if (targetLevel === 'external_url') {
+    if (!externalUrl) return null;
+    return {
+      targetLevel: 'external_url',
+      externalUrl: normalizeBannerExternalUrl(externalUrl),
+    };
+  }
+
+  if (!categoryId || !customerScreen) return null;
 
   const vendorServiceIdRaw = bt.vendorServiceId ?? bt.vendor_service_id;
 
@@ -370,9 +413,10 @@ export function vendorDisplayName(vendor: Record<string, unknown>): string {
 export function validateBannerSaveTarget(opts: {
   position: string;
   categoryId: string;
-  targetMode: 'none' | 'service_type' | 'vendor';
+  targetMode: BannerCtaTargetMode;
   serviceStyle: string;
   vendorId: string;
+  externalUrl?: string;
   shopTargetMode?: ShopBannerTargetLevel;
   shopProductId?: string;
 }): { ok: true } | { ok: false; message: string } {
@@ -384,6 +428,15 @@ export function validateBannerSaveTarget(opts: {
       targetMode: opts.shopTargetMode ?? 'informational',
       productId: opts.shopProductId ?? '',
     });
+  }
+  if (opts.targetMode === 'external_url') {
+    if (!isValidBannerExternalUrl(opts.externalUrl)) {
+      return {
+        ok: false,
+        message: 'Enter a valid redirect URL (https://… or an in-app path starting with /).',
+      };
+    }
+    return { ok: true };
   }
   if (!opts.categoryId.trim()) {
     return { ok: false, message: 'Select a service category for this banner destination.' };

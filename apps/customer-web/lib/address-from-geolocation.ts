@@ -1,6 +1,29 @@
 import { Capacitor } from '@capacitor/core';
 import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 
+// #region agent log
+function geoDebugLog(
+  location: string,
+  message: string,
+  data: Record<string, unknown>,
+  hypothesisId: string
+): void {
+  fetch('http://127.0.0.1:7507/ingest/bc4efe81-37d4-4685-8941-a5e34dbd571c', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '17312f' },
+    body: JSON.stringify({
+      sessionId: '17312f',
+      runId: 'pre-fix',
+      hypothesisId,
+      location,
+      message,
+      data,
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+}
+// #endregion
+
 export type GeolocationAddressErrorCode =
   | 'unsupported'
   | 'permission_denied'
@@ -175,19 +198,67 @@ function mapCapacitorGeolocationError(error: unknown): never {
 }
 
 async function getCapacitorCurrentPosition(): Promise<GeolocationPosition> {
-  const { Geolocation } = await import(
-    /* webpackIgnore: true */ '@capacitor/geolocation'
+  // #region agent log
+  geoDebugLog(
+    'address-from-geolocation.ts:getCapacitorCurrentPosition',
+    'capacitor path enter',
+    { platform: Capacitor.getPlatform() },
+    'H2'
   );
+  // #endregion
+  let Geolocation: typeof import('@capacitor/geolocation').Geolocation;
+  try {
+    ({ Geolocation } = await import(
+      /* webpackIgnore: true */ '@capacitor/geolocation'
+    ));
+  } catch (importError) {
+    // #region agent log
+    geoDebugLog(
+      'address-from-geolocation.ts:getCapacitorCurrentPosition',
+      'geolocation import failed',
+      {
+        err:
+          importError instanceof Error ? importError.message : String(importError),
+      },
+      'H6'
+    );
+    // #endregion
+    throw importError;
+  }
 
   let permissions = await Geolocation.checkPermissions();
+  // #region agent log
+  geoDebugLog(
+    'address-from-geolocation.ts:getCapacitorCurrentPosition',
+    'checkPermissions',
+    { location: permissions.location },
+    'H5'
+  );
+  // #endregion
   if (
     permissions.location === 'prompt' ||
     permissions.location === 'prompt-with-rationale'
   ) {
     permissions = await Geolocation.requestPermissions();
+    // #region agent log
+    geoDebugLog(
+      'address-from-geolocation.ts:getCapacitorCurrentPosition',
+      'requestPermissions result',
+      { location: permissions.location },
+      'H5'
+    );
+    // #endregion
   }
 
   if (permissions.location === 'denied') {
+    // #region agent log
+    geoDebugLog(
+      'address-from-geolocation.ts:getCapacitorCurrentPosition',
+      'permission denied after request',
+      {},
+      'H5'
+    );
+    // #endregion
     throw new GeolocationAddressError(
       'permission_denied',
       'Please allow location access'
@@ -196,8 +267,30 @@ async function getCapacitorCurrentPosition(): Promise<GeolocationPosition> {
 
   try {
     const position = await Geolocation.getCurrentPosition(GEO_OPTIONS);
+    // #region agent log
+    geoDebugLog(
+      'address-from-geolocation.ts:getCapacitorCurrentPosition',
+      'getCurrentPosition ok',
+      {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+      },
+      'H2'
+    );
+    // #endregion
     return capacitorPositionToGeolocationPosition(position);
   } catch (error) {
+    // #region agent log
+    geoDebugLog(
+      'address-from-geolocation.ts:getCapacitorCurrentPosition',
+      'getCurrentPosition error',
+      {
+        err: error instanceof Error ? error.message : String(error),
+      },
+      'H2'
+    );
+    // #endregion
     mapCapacitorGeolocationError(error);
   }
 }
@@ -215,16 +308,66 @@ function getBrowserCurrentPosition(): Promise<GeolocationPosition> {
     }
 
     navigator.geolocation.getCurrentPosition(
-      resolve,
-      (error) => rejectFromGeolocationErrorCode(error.code, reject),
+      (pos) => {
+        // #region agent log
+        geoDebugLog(
+          'address-from-geolocation.ts:getBrowserCurrentPosition',
+          'navigator success',
+          { lat: pos.coords.latitude, lng: pos.coords.longitude },
+          'H1'
+        );
+        // #endregion
+        resolve(pos);
+      },
+      (error) => {
+        // #region agent log
+        geoDebugLog(
+          'address-from-geolocation.ts:getBrowserCurrentPosition',
+          'navigator error',
+          { code: error.code, message: error.message },
+          'H1'
+        );
+        // #endregion
+        rejectFromGeolocationErrorCode(error.code, reject);
+      },
       GEO_OPTIONS
     );
   });
 }
 
 async function getCurrentPosition(): Promise<GeolocationPosition> {
-  if (shouldUseCapacitorGeolocation()) {
-    return getCapacitorCurrentPosition();
+  const useCap = shouldUseCapacitorGeolocation();
+  // #region agent log
+  geoDebugLog(
+    'address-from-geolocation.ts:getCurrentPosition',
+    'branch',
+    {
+      useCapacitor: useCap,
+      isNative: Capacitor.isNativePlatform(),
+      pluginAvailable: Capacitor.isPluginAvailable('Geolocation'),
+      platform: Capacitor.getPlatform(),
+      host: typeof window !== 'undefined' ? window.location.hostname : 'ssr',
+    },
+    'H3'
+  );
+  // #endregion
+  if (useCap) {
+    try {
+      return await getCapacitorCurrentPosition();
+    } catch (error) {
+      // #region agent log
+      geoDebugLog(
+        'address-from-geolocation.ts:getCurrentPosition',
+        'capacitor failed, fallback navigator',
+        {
+          code: error instanceof GeolocationAddressError ? error.code : 'unknown',
+          message: error instanceof Error ? error.message : String(error),
+        },
+        'H6'
+      );
+      // #endregion
+      return getBrowserCurrentPosition();
+    }
   }
   return getBrowserCurrentPosition();
 }
@@ -268,6 +411,14 @@ async function reverseGeocodeLatLng(
   };
 
   const result = geocodeData.results?.[0];
+  // #region agent log
+  geoDebugLog(
+    'address-from-geolocation.ts:reverseGeocodeLatLng',
+    'geocode response',
+    { resultsCount: geocodeData.results?.length ?? 0, hasFirst: Boolean(result) },
+    'H7'
+  );
+  // #endregion
   if (!result) {
     return {
       latitude,
@@ -290,11 +441,44 @@ async function fetchCustomerGoogleMapsKey(): Promise<string | null> {
  * Never sets houseNo / flatNo / floor — caller must keep those user-entered.
  */
 export async function fillAddressFromCurrentLocation(): Promise<AddressFromGeolocationResult> {
-  const position = await getCurrentPosition();
+  // #region agent log
+  geoDebugLog(
+    'address-from-geolocation.ts:fillAddressFromCurrentLocation',
+    'start',
+    { host: typeof window !== 'undefined' ? window.location.hostname : 'ssr' },
+    'H4'
+  );
+  // #endregion
+  let position: GeolocationPosition;
+  try {
+    position = await getCurrentPosition();
+  } catch (error) {
+    // #region agent log
+    geoDebugLog(
+      'address-from-geolocation.ts:fillAddressFromCurrentLocation',
+      'getCurrentPosition failed',
+      {
+        code: error instanceof GeolocationAddressError ? error.code : 'unknown',
+        message: error instanceof Error ? error.message : String(error),
+      },
+      'H1'
+    );
+    // #endregion
+    throw error;
+  }
   const { latitude, longitude } = position.coords;
 
   try {
-    return await reverseGeocodeLatLng(latitude, longitude, fetchCustomerGoogleMapsKey);
+    const apiKey = await fetchCustomerGoogleMapsKey();
+    // #region agent log
+    geoDebugLog(
+      'address-from-geolocation.ts:fillAddressFromCurrentLocation',
+      'reverse geocode prep',
+      { hasApiKey: Boolean(apiKey) },
+      'H7'
+    );
+    // #endregion
+    return await reverseGeocodeLatLng(latitude, longitude, async () => apiKey);
   } catch (error) {
     console.error('Error reverse geocoding:', error);
     return {

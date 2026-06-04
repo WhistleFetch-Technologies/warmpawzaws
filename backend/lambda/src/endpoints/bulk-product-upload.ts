@@ -24,6 +24,14 @@ import {
   getBulkProductTitle,
   parseBulkProductXlsxBuffer,
 } from './bulk-product-xlsx';
+import { normalizeEcommerceProductPricing } from '../utils/product-ecommerce-pricing';
+import {
+  bulkRowLimitResponse,
+  countTitledBulkRows,
+  exceedsBulkRowLimit,
+  parseProductImageList,
+  validateEcommerceProductInput,
+} from '../utils/product-ecommerce-validation';
 
 interface BulkProductRow {
   name: string;
@@ -109,6 +117,11 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         return c.json({ success: false, error: 'No rows with a Title found' }, 400);
       }
 
+      const titledCount = countTitledBulkRows(products);
+      if (exceedsBulkRowLimit(products)) {
+        return c.json(bulkRowLimitResponse(titledCount), 400);
+      }
+
       const errors: ValidationError[] = [];
       const validProducts: BulkProductRow[] = [];
 
@@ -131,73 +144,18 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         const push = (field: string, message: string, value?: unknown) =>
           rowErrors.push({ row: rowNum, field, message, value });
 
-        // ── Required ────────────────────────────────────────────────────
-        // 1. Title*
-        const title = getBulkProductTitle(product);
-        if (title.length > 255) push('name', 'Title must be ≤ 255 characters', title.length);
-
-        // 2. SP* (price)
-        const priceNum = Number(product.price);
-        if (product.price === undefined || product.price === null || product.price === '' || isNaN(priceNum)) {
-          push('price', 'SP (selling price) is required', product.price);
-        } else if (priceNum <= 0) {
-          push('price', 'SP must be greater than 0', priceNum);
-        }
-
-        // 3. Quantity* (CSV field stock_quantity; alias stock)
-        const qtyRaw = product.stock_quantity ?? product.stock;
-        const stockNum = Number(qtyRaw);
-        if (qtyRaw === undefined || qtyRaw === null || qtyRaw === '') {
-          push('stock_quantity', 'Quantity is required', product.stock_quantity);
-        } else if (isNaN(stockNum) || stockNum < 0) {
-          push('stock_quantity', 'Quantity must be a number ≥ 0', qtyRaw);
-        } else if (!Number.isInteger(stockNum)) {
-          push('stock_quantity', 'Quantity must be a whole number', qtyRaw);
-        }
-
-        // 4. Category* — required AND must match an active catalog name
-        const categoryStr = product.category ? String(product.category).trim() : '';
-        if (!categoryStr) {
-          push('category', 'Category is required (pick from the dropdown)', product.category);
-        } else if (!validCategories.has(categoryStr.toLowerCase())) {
-          push(
-            'category',
-            `Category must match an active catalog: ${[...validCategories].join(', ') || 'no active categories'}`,
-            categoryStr
-          );
-        }
-
-        // 5. HSN* — 4–8 digit numeric (Indian HSN/SAC range)
-        const hsnStr = product.hsn_code ? String(product.hsn_code).trim() : '';
-        if (!hsnStr) push('hsn_code', 'HSN is required for invoicing', product.hsn_code);
-        else if (!/^\d{4,8}$/.test(hsnStr)) push('hsn_code', 'HSN must be 4–8 digits (numbers only)', hsnStr);
-
-        // 6. Tax* / GST rate — required, must be one of the 5 GST slabs
-        const gstNum = Number(product.gst_rate);
-        if (product.gst_rate === undefined || product.gst_rate === null || product.gst_rate === '') {
-          push('gst_rate', 'Tax (GST %) is required', product.gst_rate);
-        } else if (isNaN(gstNum) || ![0, 5, 12, 18, 28].includes(gstNum)) {
-          push('gst_rate', 'Tax must be 0, 5, 12, 18 or 28', product.gst_rate);
-        }
-
-        // 7. Image* — at least one URL
-        const imageUrls = parseImageList(product.images ?? product.image_urls);
-        if (imageUrls.length === 0) {
-          push('images', 'At least one product image URL is required', product.images);
-        } else if (!imageUrls.every(isLikelyUrl)) {
-          push('images', 'Image must be an http(s) URL (1000×1000 px recommended)', product.images);
+        const validation = validateEcommerceProductInput(product as Record<string, unknown>, {
+          mode: 'bulk',
+          validCategoryNames: validCategories,
+          requireHttpImageUrls: true,
+        });
+        if (!validation.ok) {
+          push(validation.field, validation.message, product[validation.field]);
         }
 
         // ── Optional ────────────────────────────────────────────────────
         if (product.sku && existingSkus.has(String(product.sku).toLowerCase())) {
           push('sku', 'SKU already exists for this vendor', product.sku);
-        }
-
-        if (product.compare_at_price !== undefined && product.compare_at_price !== null && product.compare_at_price !== '') {
-          const mrp = Number(product.compare_at_price);
-          if (isNaN(mrp)) push('compare_at_price', 'MRP must be a number', product.compare_at_price);
-          else if (!isNaN(priceNum) && mrp < priceNum)
-            push('compare_at_price', 'MRP must be ≥ SP', product.compare_at_price);
         }
 
         if (product.weight !== undefined && product.weight !== null && product.weight !== '') {
@@ -206,20 +164,18 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         }
 
         // ── Build the cleaned product if no errors ──────────────────────
-        if (rowErrors.length === 0) {
+        if (rowErrors.length === 0 && validation.ok) {
+          const { normalized } = validation;
           validProducts.push({
-            name: title,
+            name: normalized.name,
             description: product.description?.trim() || null,
-            category: categoryStr || null,
-            sku: product.sku?.trim() || null,
-            price: priceNum,
-            compare_at_price:
-              product.compare_at_price !== undefined && product.compare_at_price !== null && product.compare_at_price !== ''
-                ? Number(product.compare_at_price)
-                : null,
-            stock_quantity: stockNum,
-            hsn_code: hsnStr,
-            gst_rate: gstNum,
+            category: normalized.category,
+            sku: normalized.sku,
+            price: normalized.sellingPrice,
+            compare_at_price: normalized.mrp,
+            stock_quantity: normalized.stock,
+            hsn_code: normalized.hsn_code,
+            gst_rate: normalized.gst_rate,
             weight:
               product.weight !== undefined && product.weight !== null && product.weight !== ''
                 ? Number(product.weight)
@@ -228,7 +184,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             material: product.material?.trim() || null,
             brand: product.brand?.trim() || null,
             tags: product.tags?.trim() || null,
-            images: imageUrls.join(', '),
+            images: normalized.imageUrls.join(', '),
             is_active: false,
             status: 'pending',
           });
@@ -267,6 +223,11 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
 
       if (!Array.isArray(products) || products.length === 0) {
         return c.json({ success: false, error: 'No products provided' }, 400);
+      }
+
+      const uploadTitledCount = countTitledBulkRows(products);
+      if (exceedsBulkRowLimit(products)) {
+        return c.json(bulkRowLimitResponse(uploadTitledCount), 400);
       }
 
       // Verify vendor exists
@@ -315,16 +276,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             }
           }
 
-          // Parse images
-          let images: string[] = [];
-          if (product.images || product.image_urls) {
-            const imageStr = product.images || product.image_urls;
-            if (typeof imageStr === 'string') {
-              images = imageStr.split(',').map((url: string) => url.trim()).filter(Boolean);
-            } else if (Array.isArray(imageStr)) {
-              images = imageStr;
-            }
-          }
+          const images = parseProductImageList(product.images ?? product.image_urls);
 
           // Parse tags
           let tags: string[] = [];
@@ -346,8 +298,14 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             category_id: resolvedCategory.id,
             category: resolvedCategory.name,
             sku: product.sku?.trim() || null,
-            price: Number(product.price),
-            compare_at_price: product.compare_at_price ? Number(product.compare_at_price) : null,
+            price: (() => {
+              const norm = normalizeEcommerceProductPricing(product as Record<string, unknown>);
+              return norm.ok ? norm.pricing.sellingPrice : Number(product.price);
+            })(),
+            compare_at_price: (() => {
+              const norm = normalizeEcommerceProductPricing(product as Record<string, unknown>);
+              return norm.ok ? norm.pricing.mrp : product.compare_at_price ? Number(product.compare_at_price) : null;
+            })(),
             stock: stockValue,
             hsn_code: product.hsn_code?.trim() || null,
             gst_rate: product.gst_rate ? Number(product.gst_rate) : null,
@@ -427,6 +385,10 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         }
         const { headers: mappedHeaders, products } = await parseBulkProductXlsxBuffer(buf);
         const normalized = products.map((p) => normalizeParsedProductRow(p));
+        const parseTitledCount = countTitledBulkRows(normalized);
+        if (exceedsBulkRowLimit(normalized)) {
+          return c.json(bulkRowLimitResponse(parseTitledCount), 400);
+        }
         return c.json({
           success: true,
           parsed: {
@@ -480,8 +442,10 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         'price': 'price',
         'sellingprice': 'price',
         'sp': 'price',
+        'selling_price': 'price',
         'mrp': 'compare_at_price',
         'compareatprice': 'compare_at_price',
+        'compare_at_price': 'compare_at_price',
         'originalprice': 'compare_at_price',
         'stock': 'stock_quantity',
         'stockquantity': 'stock_quantity',
@@ -539,6 +503,11 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         }
       }
 
+      const csvTitledCount = countTitledBulkRows(products);
+      if (exceedsBulkRowLimit(products)) {
+        return c.json(bulkRowLimitResponse(csvTitledCount), 400);
+      }
+
       return c.json({
         success: true,
         parsed: {
@@ -581,7 +550,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
 
       // Generate CSV
       const headers = [
-        'name', 'description', 'category', 'sku', 'price', 'compare_at_price',
+        'name', 'description', 'category', 'sku', 'mrp', 'selling_price',
         'stock_quantity', 'hsn_code', 'gst_rate', 'weight', 'dimensions',
         'material', 'brand', 'tags', 'image_urls', 'is_active'
       ];
@@ -596,8 +565,8 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           escapeCsvValue(p.description),
           escapeCsvValue(p.category),
           escapeCsvValue(p.sku),
+          p.compare_at_price ?? p.price,
           p.price,
-          p.compare_at_price,
           p.stock_quantity || p.stock,
           escapeCsvValue(p.hsn_code),
           p.gst_rate,
@@ -653,23 +622,6 @@ function parseCSVLine(line: string): string[] {
   
   result.push(current.trim());
   return result;
-}
-
-/** Split images cell (string | string[]) into a deduped, trimmed list. */
-function parseImageList(raw: unknown): string[] {
-  if (raw == null) return [];
-  if (Array.isArray(raw)) {
-    return raw.map((u) => String(u ?? '').trim()).filter(Boolean);
-  }
-  return String(raw)
-    .split(/[,\n]/)
-    .map((u) => u.trim())
-    .filter(Boolean);
-}
-
-/** Lightweight URL sniff — accept http(s):// and data:image/*;base64 (manual flow). */
-function isLikelyUrl(s: string): boolean {
-  return /^https?:\/\/\S+/i.test(s) || /^data:image\/[a-z0-9.+-]+;base64,/i.test(s);
 }
 
 function escapeCsvValue(value: any): string {

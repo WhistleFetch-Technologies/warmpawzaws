@@ -9,7 +9,7 @@ interface ShopCategoryGridProps {
   onSelectCategory: (id: string) => void;
   /** When true, omit outer section title (e.g. home already has "Shop Pet Products"). */
   embedded?: boolean;
-  /** Non-interactive muted tiles (e.g. marketplace gated off in prod). */
+  /** Same visuals as enabled; non-interactive when marketplace is gated off (prod). */
   disabled?: boolean;
   className?: string;
 }
@@ -34,7 +34,7 @@ function CategoryTile({
         <img
           src={cat.image_url}
           alt={cat.name}
-          className={`h-full w-full object-cover ${disabled ? 'grayscale' : ''}`}
+          className="h-full w-full object-cover"
           loading={index < 4 ? 'eager' : 'lazy'}
           decoding="async"
         />
@@ -49,7 +49,7 @@ function CategoryTile({
   const label = (
     <span
       className={`w-full px-0.5 pb-0.5 text-center text-[10px] font-bold leading-[1.2] line-clamp-2 ${
-        disabled ? 'text-slate-500' : active ? 'text-[#FF8C42]' : 'text-slate-800'
+        active ? 'text-[#FF8C42]' : 'text-slate-800'
       }`}
     >
       {cat.name}
@@ -59,7 +59,7 @@ function CategoryTile({
   if (disabled) {
     return (
       <div
-        className="pointer-events-none flex w-full select-none flex-col items-center overflow-hidden rounded-2xl border border-stone-200/90 bg-white px-1.5 pt-1.5 pb-1.5 opacity-60 shadow-sm"
+        className="pointer-events-none flex w-full select-none flex-col items-center overflow-hidden rounded-2xl border border-stone-200/90 bg-white px-1.5 pt-1.5 pb-1.5 shadow-sm"
         aria-disabled="true"
         aria-label={cat.name}
       >
