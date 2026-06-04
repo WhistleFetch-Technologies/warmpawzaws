@@ -4,6 +4,8 @@ import { useState, useRef } from 'react';
 import { Upload, Download, FileSpreadsheet, AlertCircle, CheckCircle, X, Loader2 } from 'lucide-react';
 import { apiClient as vendorApiClient } from '@/lib/api-client';
 
+import { countTitledBulkProducts, MAX_BULK_PRODUCT_ROWS } from '@/lib/bulk-product-limits';
+
 /** Keep under API Gateway JSON body limits after base64 (~33% overhead). */
 const MAX_BULK_FILE_BYTES = 6 * 1024 * 1024;
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
@@ -74,9 +76,9 @@ export function BulkProductUpload({
     setTemplateOkMessage('');
     // Compulsory headers carry `*` so the parser still maps them after
     // normalization (`*` is stripped). Order matches the XLSX template.
-    const headers = ['name*', 'description', 'category*', 'sku', 'price*', 'compare_at_price', 'stock_quantity*', 'hsn_code*', 'gst_rate*', 'weight', 'dimensions', 'material', 'brand', 'tags', 'images*', 'is_active'];
+    const headers = ['name*', 'description', 'category*', 'sku', 'mrp*', 'selling_price', 'stock_quantity*', 'hsn_code*', 'gst_rate*', 'weight', 'dimensions', 'material', 'brand', 'tags', 'images*', 'is_active'];
     const sample = [
-      '"Smiling Sunflower Dog Dress"', '"Bright, happy, full of joy."', '"Pet Accessories"', '"SKU-001"', '799', '1598', '100', '62052000', '5', '0.15', '"35x25x1"', '"Cotton Rayon Blend"', '"15 FURRIES"', '"dog,dress"', '"https://example.com/your-product-image-1000x1000.jpg"', 'false'
+      '"Smiling Sunflower Dog Dress"', '"Bright, happy, full of joy."', '"Pet Accessories"', '"SKU-001"', '1598', '799', '100', '62052000', '5', '0.15', '"35x25x1"', '"Cotton Rayon Blend"', '"15 FURRIES"', '"dog,dress"', '"https://example.com/your-product-image-1000x1000.jpg"', 'false'
     ];
     const csv = headers.join(',') + '\n' + sample.join(',');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -86,7 +88,7 @@ export function BulkProductUpload({
     a.download = 'product_upload_template_simple.csv';
     a.click();
     window.URL.revokeObjectURL(url);
-    setTemplateOkMessage('Downloaded simple CSV. Use this OR the Excel template above — both upload to the same place. Required: name, category, price, stock_quantity, hsn_code, gst_rate, images. Allowed categories: Pet Food, Pet Accessories, Pet Toys, Pet Grooming, Pet Health, Pet Beds & Furniture, Pet Clothing, Pet Travel, Pet Pharmacy, Pet Training.');
+    setTemplateOkMessage('Downloaded simple CSV. Required: name, category, mrp, stock_quantity, hsn_code, gst_rate, images. Optional: selling_price (defaults to MRP). Legacy column compare_at_price also accepted as MRP.');
   };
 
   const handleDownloadTemplate = async () => {
@@ -172,6 +174,13 @@ export function BulkProductUpload({
 
       if (!parseResult.parsed?.products?.length) {
         throw new Error('No products found in file');
+      }
+
+      const titledCount = countTitledBulkProducts(parseResult.parsed.products);
+      if (titledCount > MAX_BULK_PRODUCT_ROWS) {
+        throw new Error(
+          `Maximum ${MAX_BULK_PRODUCT_ROWS} products per file (rows with Title). Found ${titledCount}. Split into multiple files.`
+        );
       }
 
       setParsedProducts(parseResult.parsed.products);
@@ -342,42 +351,36 @@ export function BulkProductUpload({
                   {loading ? 'Processing file...' : 'Tap to upload or drag and drop'}
                 </p>
                 <p className="mt-1 text-sm text-gray-400">
-                  XLSX or CSV up to {MAX_BULK_FILE_BYTES / 1024 / 1024} MB (API limit)
+                  XLSX or CSV — up to {MAX_BULK_PRODUCT_ROWS} products per file, {MAX_BULK_FILE_BYTES / 1024 / 1024} MB max
                 </p>
               </TouchFilePicker>
 
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <h4 className="font-semibold text-amber-800 mb-2">📋 Required Fields (marked <span className="font-mono">*</span> in the template)</h4>
+                <h4 className="font-semibold text-amber-800 mb-2">Required fields (marked <span className="font-mono">*</span> in the template)</h4>
                 <ul className="text-sm text-amber-700 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                   <li>• <strong>Title*</strong> — product name</li>
                   <li>• <strong>Quantity*</strong> — whole number ≥ 0</li>
                   <li>• <strong>Image*</strong> — http(s) URL, 1000×1000 px</li>
-                  <li>• <strong>SP*</strong> — selling price in ₹ (&gt; 0)</li>
-                  <li>• <strong>Category*</strong> — pick from dropdown</li>
+                  <li>• <strong>MRP*</strong> — maximum retail price in ₹ (&gt; 0)</li>
+                  <li>• <strong>Category*</strong> — column Y (dropdown)</li>
                   <li>• <strong>Tax*</strong> — 0, 5, 12, 18, or 28%</li>
                   <li>• <strong>HSN*</strong> — 4–8 digit code</li>
                 </ul>
                 <p className="text-xs text-amber-700 mt-2">
-                  Allowed categories: Pet Food, Pet Accessories, Pet Toys, Pet Grooming, Pet Health, Pet Beds &amp; Furniture, Pet Clothing, Pet Travel, Pet Pharmacy, Pet Training.
+                  <strong>SP</strong> (selling price) is optional — leave blank to sell at MRP. Use <strong>Category*</strong> (column Y), not Type (Category). Up to {MAX_BULK_PRODUCT_ROWS} products per file (rows with Title); max {MAX_BULK_FILE_BYTES / 1024 / 1024} MB.
                 </p>
               </div>
 
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                <h4 className="font-semibold text-gray-800 mb-2">📝 Optional Fields</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm text-gray-600">
-                  <span>description</span>
-                  <span>category</span>
-                  <span>sku</span>
-                  <span>compare_at_price</span>
-                  <span>hsn_code</span>
-                  <span>gst_rate</span>
-                  <span>weight_kg</span>
-                  <span>dimensions</span>
-                  <span>material</span>
-                  <span>brand</span>
-                  <span>tags</span>
-                  <span>image_urls</span>
-                </div>
+                <h4 className="font-semibold text-gray-800 mb-2">Recommended (not required to upload)</h4>
+                <ul className="text-sm text-gray-600 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                  <li>• Vendor Product Id — for re-upload / updates</li>
+                  <li>• Description, Brand, Barcode (EAN)</li>
+                  <li>• SP — discount below MRP</li>
+                </ul>
+                <p className="text-xs text-gray-500 mt-2">
+                  Weight and dimensions are optional (you ship orders). Other columns improve listing quality.
+                </p>
               </div>
             </div>
           )}

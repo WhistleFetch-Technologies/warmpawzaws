@@ -8,17 +8,23 @@
  *   A–N  (1–14)  Product Details                      ← Title*, …, Barcode (EAN), Quantity*
  *   O–Q  (15–17) Picture Information                  ← Image*, A+ Content, Size Chart
  *   R–T  (18–20) Other Product Details                ← Weight, Weight Unit, Shelf Life
- *   U–W  (21–23) Pricing Details                      ← SP*, MRP, COGS
+ *   U–W  (21–23) Pricing Details                      ← SP (optional), MRP*, COGS
  *   X–AH (24–34) Product Brief                        ← Pet Type, Category* (=IF(Grow="","",Grow) in new templates), …, Tax*, …, HSN*, Cert
  *   AI–AM(35–39) Manufacture Details
  *   AN–AP(40–42) Product Dimension                    ← Length/Breadth/Height (cm)
  *   AQ–AT(43–46) Shipping Dimensions + Casepack Vol.
  *
  * Required (`*`) columns enforced by `bulk-product-upload.ts` validator:
- *   Title*, Quantity*, Image*, SP*, Category*, Tax*, HSN*
+ *   Title*, Quantity*, Image*, MRP*, Category*, Tax*, HSN* (max 500 titled rows per file)
  */
+import {
+  getBulkProductTitle,
+  MAX_BULK_PRODUCT_ROWS,
+} from '../utils/product-ecommerce-validation';
 
 import ExcelJS from 'exceljs';
+
+export { getBulkProductTitle };
 
 /** Matches reference workbook primary sheet name */
 export const SHEET_NAME = 'NPI';
@@ -49,8 +55,8 @@ export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Weight Unit(g)',
   'Shelf Life (Days)',
   // Pricing Details (U–W, 3 cols)
-  'SP*',
-  'MRP',
+  'SP',
+  'MRP*',
   'COGS',
   // Product Brief (X–AH, 11 cols)
   'Pet Type',
@@ -91,7 +97,7 @@ const REQUIRED_COL_LETTERS = {
   CATEGORY: 'Y',
   TAX: 'AD',
   HSN: 'AG',
-  SP: 'U',
+  MRP: 'V',
 } as const;
 
 /** 1-based column index for Category* — same letter as REQUIRED_COL_LETTERS.CATEGORY. */
@@ -128,7 +134,12 @@ const THIN_BORDER: Partial<ExcelJS.Borders> = {
 
 /** Row 1 merged group titles — 46-column layout (Quantity added to Product Details). */
 const ROW1_GROUPS: Array<{ start: number; end: number; title: string; fill: Fill }> = [
-  { start: 1, end: 14, title: 'Product Details', fill: YELLOW },
+  {
+    start: 1,
+    end: 14,
+    title: `Product Details (max ${MAX_BULK_PRODUCT_ROWS} products per file)`,
+    fill: YELLOW,
+  },
   { start: 15, end: 17, title: 'Picture Information', fill: PINK },
   { start: 18, end: 20, title: 'Other Product Details', fill: PURPLE },
   { start: 21, end: 23, title: 'Pricing Details', fill: PINK },
@@ -302,6 +313,10 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     const c = i + 1;
     const cell = ws.getCell(2, c);
     cell.value = h;
+    if (c === 1) {
+      cell.note =
+        'Required (*): Title, Quantity, Image URL, MRP, Category (column Y), Tax, HSN. SP optional. Use Category* not Type (Category). Recommend Vendor Product Id. Max 500 titled rows per upload.';
+    }
     cell.font = { bold: true, size: 10, color: h.includes('*') ? { argb: 'FFFFFFFF' } : undefined };
     cell.fill = (h.includes('*') ? HEADER_REQUIRED_FILL : HEADER_ROW_FILL) as ExcelJS.Fill;
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
@@ -374,12 +389,6 @@ export function normalizeBulkHeader(raw: string): string {
     .replace(/[()]/g, '');
 }
 
-/** Title is the row classifier — rows without a non-empty Title are ignored during bulk upload. */
-export function getBulkProductTitle(raw: Record<string, unknown>): string {
-  const name = raw.name ?? raw.title;
-  return typeof name === 'string' ? name.trim() : '';
-}
-
 export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   name: 'name',
   productname: 'name',
@@ -400,6 +409,7 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   price: 'price',
   sellingprice: 'price',
   sp: 'price',
+  selling_price: 'price',
   mrp: 'compare_at_price',
   compareatprice: 'compare_at_price',
   cogs: 'cogs',

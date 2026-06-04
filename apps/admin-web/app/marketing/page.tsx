@@ -67,8 +67,10 @@ import {
 	formatShopProductOptionLabel,
 	normalizeBannerServiceStyle,
 	validateBannerSaveTarget,
+	normalizeBannerExternalUrl,
 	isCheckoutBannerPosition,
 	isShopBannerPosition,
+	type BannerCtaTargetMode,
 	type BannerDestinationCategory,
 	type BannerDestinationServiceStyle,
 	type BannerDestinationVendor,
@@ -119,7 +121,8 @@ export default function MarketingPromotionsTab() {
 	const [bannerCtaPersona, setBannerCtaPersona] = useState("");
 	const [bannerCtaServiceStyle, setBannerCtaServiceStyle] = useState("");
 	const [bannerCtaVendorId, setBannerCtaVendorId] = useState("");
-	const [bannerCtaTargetMode, setBannerCtaTargetMode] = useState<"none" | "service_type" | "vendor">("none");
+	const [bannerCtaTargetMode, setBannerCtaTargetMode] = useState<BannerCtaTargetMode>("none");
+	const [bannerCtaExternalUrl, setBannerCtaExternalUrl] = useState("");
 	const [bannerDestinationCategories, setBannerDestinationCategories] = useState<BannerDestinationCategory[]>([]);
 	const [bannerDestinationServiceStyles, setBannerDestinationServiceStyles] = useState<BannerDestinationServiceStyle[]>([]);
 	const [bannerDestinationVendors, setBannerDestinationVendors] = useState<BannerDestinationVendor[]>([]);
@@ -793,6 +796,7 @@ export default function MarketingPromotionsTab() {
 			targetMode: bannerCtaTargetMode,
 			serviceStyle: bannerCtaServiceStyle,
 			vendorId: bannerCtaVendorId,
+			externalUrl: bannerCtaExternalUrl,
 			shopTargetMode: bannerShopTargetMode,
 			shopProductId: bannerShopProductId,
 		});
@@ -825,31 +829,44 @@ export default function MarketingPromotionsTab() {
 		if (bannerCtaTargetMode === "service_type") targetLevel = "service_type";
 		if (bannerCtaTargetMode === "vendor") targetLevel = "vendor";
 
+		const externalUrl =
+			bannerCtaTargetMode === "external_url"
+				? normalizeBannerExternalUrl(bannerCtaExternalUrl)
+				: "";
+
 		let metadata = buildBannerMetadata({
 			gradientFrom: bannerForm.gradient_from,
 			gradientTo: bannerForm.gradient_to,
-			bannerTarget: isCheckout || isShop
-				? null
-				: {
-						categoryId: bannerCtaPersona,
-						customerScreen,
-						targetLevel,
-						serviceStyle:
-							bannerCtaTargetMode === "service_type" ? bannerCtaServiceStyle : undefined,
-						vendorId: bannerCtaTargetMode === "vendor" ? bannerCtaVendorId : undefined,
-						vendorName: bannerCtaTargetMode === "vendor" ? vendorName || undefined : undefined,
-						vendorServiceId: null,
-						persona: customerScreen,
-					},
+			bannerTarget:
+				isCheckout || isShop
+					? null
+					: bannerCtaTargetMode === "external_url"
+						? {
+								targetLevel: "external_url",
+								externalUrl,
+							}
+						: {
+								categoryId: bannerCtaPersona,
+								customerScreen,
+								targetLevel,
+								serviceStyle:
+									bannerCtaTargetMode === "service_type" ? bannerCtaServiceStyle : undefined,
+								vendorId: bannerCtaTargetMode === "vendor" ? bannerCtaVendorId : undefined,
+								vendorName: bannerCtaTargetMode === "vendor" ? vendorName || undefined : undefined,
+								vendorServiceId: null,
+								persona: customerScreen,
+							},
 		});
 
 		let ctaLink = isCheckout
 			? ""
 			: isShop
 				? ""
-				: bannerCtaTargetMode === "vendor" && vendorName
-					? buildBannerCtaLink(customerScreen, vendorName)
-					: String(editingBanner?.linkUrl || editingBanner?.cta_link || "").trim();
+				: bannerCtaTargetMode === "external_url"
+					? externalUrl
+					: bannerCtaTargetMode === "vendor" && vendorName
+						? buildBannerCtaLink(customerScreen, vendorName)
+						: String(editingBanner?.linkUrl || editingBanner?.cta_link || "").trim();
 
 		if (isShop) {
 			const shopTarget = buildShopBannerTarget({
@@ -923,6 +940,7 @@ export default function MarketingPromotionsTab() {
 		setBannerCtaServiceStyle("");
 		setBannerCtaVendorId("");
 		setBannerCtaTargetMode("none");
+		setBannerCtaExternalUrl("");
 		setBannerDestinationServiceStyles([]);
 		setBannerDestinationVendors([]);
 		setBannerShopTargetMode("informational");
@@ -972,9 +990,15 @@ export default function MarketingPromotionsTab() {
 		setBannerCtaTargetMode("none");
 	};
 
-	const handleBannerCtaTargetModeChange = (mode: "none" | "service_type" | "vendor") => {
+	const handleBannerCtaTargetModeChange = (mode: BannerCtaTargetMode) => {
 		setBannerCtaTargetMode(mode);
-		if (mode === "none") {
+		if (mode === "external_url") {
+			setBannerCtaPersona("");
+			setBannerCtaServiceStyle("");
+			setBannerCtaVendorId("");
+			setBannerDestinationServiceStyles([]);
+			setBannerDestinationVendors([]);
+		} else if (mode === "none") {
 			setBannerCtaServiceStyle("");
 			setBannerCtaVendorId("");
 		} else if (mode === "service_type") {
@@ -1050,19 +1074,31 @@ export default function MarketingPromotionsTab() {
 				: "";
 		const vendorId = storedTarget?.vendorId || matchedVendor?.id || matchedVendor?.vendorId || "";
 
-		setBannerCtaPersona(categoryId);
-		if (storedTarget?.targetLevel === "vendor" || vendorId) {
-			setBannerCtaTargetMode("vendor");
-			setBannerCtaVendorId(String(vendorId));
-			setBannerCtaServiceStyle("");
-		} else if (storedTarget?.targetLevel === "service_type" || serviceStyle) {
-			setBannerCtaTargetMode("service_type");
+		if (storedTarget?.targetLevel === "external_url") {
+			setBannerCtaTargetMode("external_url");
+			setBannerCtaExternalUrl(
+				storedTarget.externalUrl ||
+					String(banner.cta_link || banner.ctaLink || banner.linkUrl || "").trim()
+			);
+			setBannerCtaPersona("");
 			setBannerCtaVendorId("");
-			setBannerCtaServiceStyle(serviceStyle);
+			setBannerCtaServiceStyle("");
 		} else {
-			setBannerCtaTargetMode("none");
-			setBannerCtaVendorId("");
-			setBannerCtaServiceStyle("");
+			setBannerCtaExternalUrl("");
+			setBannerCtaPersona(categoryId);
+			if (storedTarget?.targetLevel === "vendor" || vendorId) {
+				setBannerCtaTargetMode("vendor");
+				setBannerCtaVendorId(String(vendorId));
+				setBannerCtaServiceStyle("");
+			} else if (storedTarget?.targetLevel === "service_type" || serviceStyle) {
+				setBannerCtaTargetMode("service_type");
+				setBannerCtaVendorId("");
+				setBannerCtaServiceStyle(serviceStyle);
+			} else {
+				setBannerCtaTargetMode("none");
+				setBannerCtaVendorId("");
+				setBannerCtaServiceStyle("");
+			}
 		}
 
 		const position = (banner.position as string) || adminBannerPositionFromRow(banner);
@@ -2695,68 +2731,92 @@ export default function MarketingPromotionsTab() {
 							<div>
 								<p className="text-sm font-medium text-gray-900">Banner destination</p>
 								<p className="text-xs text-gray-500 mt-0.5">
-									Pick a category, then choose service type or vendor using the option below.
+									Open an external URL in the browser, or route in-app by category, service type, or vendor.
 								</p>
 							</div>
 
 							<div className="space-y-4">
-								<div className="space-y-1.5 min-w-0">
-									<Label>Service category</Label>
-									<Select
-										value={bannerCtaPersona || BANNER_SELECT_EMPTY}
-										onValueChange={handleBannerCtaPersonaChange}
-									>
-										<SelectTrigger className={bannerSelectTriggerClass}>
-											<SelectValue placeholder="Select" />
-										</SelectTrigger>
-										<SelectContent position="popper" className="z-[200] max-h-60">
-											<SelectItem value={BANNER_SELECT_EMPTY}>Select</SelectItem>
-											{bannerDestinationCategories.map((c) => (
-												<SelectItem key={c.categoryId} value={c.categoryId}>
-													{c.name}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
+								<div className="space-y-2">
+									<Label>Route by</Label>
+									<div className="flex flex-col gap-2">
+										<label className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="radio"
+												name="bannerCtaTargetMode"
+												checked={bannerCtaTargetMode === "external_url"}
+												onChange={() => handleBannerCtaTargetModeChange("external_url")}
+												className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+											/>
+											<span className="text-sm text-gray-900">External URL (opens in browser)</span>
+										</label>
+										<label className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="radio"
+												name="bannerCtaTargetMode"
+												checked={bannerCtaTargetMode === "none"}
+												onChange={() => handleBannerCtaTargetModeChange("none")}
+												className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+											/>
+											<span className="text-sm text-gray-900">In-app — category page only</span>
+										</label>
+										<label className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="radio"
+												name="bannerCtaTargetMode"
+												checked={bannerCtaTargetMode === "service_type"}
+												onChange={() => handleBannerCtaTargetModeChange("service_type")}
+												className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+											/>
+											<span className="text-sm text-gray-900">In-app — service type</span>
+										</label>
+										<label className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="radio"
+												name="bannerCtaTargetMode"
+												checked={bannerCtaTargetMode === "vendor"}
+												onChange={() => handleBannerCtaTargetModeChange("vendor")}
+												className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+											/>
+											<span className="text-sm text-gray-900">In-app — vendor</span>
+										</label>
+									</div>
 								</div>
 
-								{bannerCtaPersona ? (
-									<div className="space-y-2">
-										<Label>Route by</Label>
-										<div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-											<label className="flex items-center gap-2 cursor-pointer">
-												<input
-													type="radio"
-													name="bannerCtaTargetMode"
-													checked={bannerCtaTargetMode === "none"}
-													onChange={() => handleBannerCtaTargetModeChange("none")}
-													className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
-												/>
-												<span className="text-sm text-gray-900">Category page only</span>
-											</label>
-											<label className="flex items-center gap-2 cursor-pointer">
-												<input
-													type="radio"
-													name="bannerCtaTargetMode"
-													checked={bannerCtaTargetMode === "service_type"}
-													onChange={() => handleBannerCtaTargetModeChange("service_type")}
-													className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
-												/>
-												<span className="text-sm text-gray-900">Service type</span>
-											</label>
-											<label className="flex items-center gap-2 cursor-pointer">
-												<input
-													type="radio"
-													name="bannerCtaTargetMode"
-													checked={bannerCtaTargetMode === "vendor"}
-													onChange={() => handleBannerCtaTargetModeChange("vendor")}
-													className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
-												/>
-												<span className="text-sm text-gray-900">Vendor</span>
-											</label>
-										</div>
+								{bannerCtaTargetMode === "external_url" ? (
+									<div className="space-y-1.5 min-w-0">
+										<Label>Redirect URL</Label>
+										<Input
+											value={bannerCtaExternalUrl}
+											onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+												setBannerCtaExternalUrl(e.target.value)
+											}
+											placeholder="https://www.warmpawz.com/blog/22"
+										/>
+										<p className="text-xs text-gray-500">
+											Used when the customer taps the CTA. HTTPS links open in a new browser tab.
+										</p>
 									</div>
-								) : null}
+								) : (
+									<div className="space-y-1.5 min-w-0">
+										<Label>Service category</Label>
+										<Select
+											value={bannerCtaPersona || BANNER_SELECT_EMPTY}
+											onValueChange={handleBannerCtaPersonaChange}
+										>
+											<SelectTrigger className={bannerSelectTriggerClass}>
+												<SelectValue placeholder="Select" />
+											</SelectTrigger>
+											<SelectContent position="popper" className="z-[200] max-h-60">
+												<SelectItem value={BANNER_SELECT_EMPTY}>Select</SelectItem>
+												{bannerDestinationCategories.map((c) => (
+													<SelectItem key={c.categoryId} value={c.categoryId}>
+														{c.name}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+									</div>
+								)}
 
 								{bannerCtaPersona && bannerCtaTargetMode === "service_type" ? (
 									<div className="space-y-1.5 min-w-0">

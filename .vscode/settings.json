@@ -1,4 +1,7 @@
 {
+  "terminal.integrated.tabs.title": "${terminalName}${separator}${cwdFolder} #${sequence}",
+  "terminal.integrated.tabs.description": "${cwd}",
+  "terminal.integrated.enablePersistentSessions": false,
   "java.jdt.ls.java.home": "/Users/ketan/.sdkman/candidates/java/current",
   "java.configuration.runtimes": [
     {

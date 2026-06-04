@@ -16,6 +16,7 @@ import {
 } from '@/lib/vendor-product-display-status';
 import { TouchFilePicker } from '@/components/shared/TouchFilePicker';
 import { BulkProductUpload } from '@/components/vendor/products/BulkProductUpload';
+import { formatVendorProductSellingDisplay } from '@/lib/product-ecommerce-pricing';
 
 /** Persist stable S3 object URLs; list/detail APIs return presigned URLs for display. */
 function stripAwsPresignFromProductImageUrl(url: string): string {
@@ -389,10 +390,17 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
                     {categories.find(c => c.id === product.category_id)?.name || 'Uncategorized'}
                   </td>
                   <td className="p-4 text-right">
-                    <span className="font-bold text-slate-900">₹{product.price}</span>
-                    {product.original_price && product.original_price > product.price && (
-                      <span className="text-sm text-slate-400 line-through ml-2">₹{product.original_price}</span>
-                    )}
+                    {(() => {
+                      const p = formatVendorProductSellingDisplay(product.price, product.original_price);
+                      return (
+                        <>
+                          <span className="font-bold text-slate-900">₹{p.selling}</span>
+                          {p.discountPercent > 0 && p.mrp && (
+                            <span className="text-sm text-slate-400 line-through ml-2">₹{p.mrp}</span>
+                          )}
+                        </>
+                      );
+                    })()}
                   </td>
                   <td className="p-4 text-center">
                     <span className={`inline-flex items-center justify-center w-10 h-8 rounded-lg font-medium ${
@@ -472,6 +480,7 @@ export function ProductCatalogManagement({ sellerId }: ProductCatalogManagementP
 function ProductCard({ product, categories, onEdit, onDelete, getStatusBadge }: any) {
   const removed = isRemovedFromCatalog(product);
   const displayStatus = getVendorDisplayStatus(product);
+  const pricing = formatVendorProductSellingDisplay(product.price, product.original_price);
 
   return (
     <div className={`bg-white rounded-2xl border overflow-hidden hover:shadow-xl transition-all duration-300 group ${removed ? 'border-slate-200 opacity-75' : 'border-slate-100'}`}>
@@ -481,7 +490,12 @@ function ProductCard({ product, categories, onEdit, onDelete, getStatusBadge }: 
         ) : (
           <span>{product.emoji || '📦'}</span>
         )}
-        <div className="absolute top-3 right-3">
+        <div className="absolute top-3 right-3 flex flex-col items-end gap-1">
+          {pricing.discountPercent > 0 && (
+            <span className="px-2 py-0.5 rounded-md bg-emerald-500 text-white text-[10px] font-bold">
+              Save {pricing.discountPercent}%
+            </span>
+          )}
           {getStatusBadge(displayStatus)}
         </div>
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
@@ -492,9 +506,9 @@ function ProductCard({ product, categories, onEdit, onDelete, getStatusBadge }: 
         
         <div className="flex items-center justify-between mt-4 pt-4 border-t border-slate-100">
           <div>
-            <p className="text-xl font-bold text-slate-900">₹{product.price}</p>
-            {product.original_price && product.original_price > product.price && (
-              <p className="text-sm text-slate-400 line-through">₹{product.original_price}</p>
+            <p className="text-xl font-bold text-slate-900">₹{pricing.selling}</p>
+            {pricing.discountPercent > 0 && pricing.mrp && (
+              <p className="text-sm text-slate-400 line-through">₹{pricing.mrp}</p>
             )}
           </div>
           <div className={`text-sm font-medium px-3 py-1 rounded-lg ${
@@ -533,17 +547,29 @@ function ProductCard({ product, categories, onEdit, onDelete, getStatusBadge }: 
   );
 }
 
+function sellingPriceForForm(product: { price?: number; original_price?: number } | null | undefined): string {
+  if (!product?.price) return '';
+  const mrp = product.original_price;
+  if (mrp && product.price < mrp) return String(product.price);
+  return '';
+}
+
 function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
   const [formData, setFormData] = useState({
     name: product?.name || '',
     description: product?.description || '',
     category_id: product?.category_id || '',
-    price: product?.price || '',
-    original_price: product?.original_price || '',
-    stock: product?.stock || '',
-    sku: product?.sku || `SKU-${Date.now()}`,
+    price: sellingPriceForForm(product),
+    original_price: product?.original_price || product?.compare_at_price || product?.price || '',
+    stock: product?.stock ?? '',
+    sku: product?.sku || '',
+    hsn_code: product?.hsn_code || '',
+    gst_rate:
+      product?.gst_rate !== undefined && product?.gst_rate !== null
+        ? String(product.gst_rate)
+        : '',
     emoji: product?.emoji || '📦',
-    status: product?.status || 'pending'
+    status: product?.status || 'pending',
   });
   const [saving, setSaving] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
@@ -644,11 +670,66 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
     setSaving(true);
 
     try {
+      const mrp = parseFloat(formData.original_price);
+      if (!Number.isFinite(mrp) || mrp <= 0) {
+        alert('MRP is required and must be greater than 0');
+        setSaving(false);
+        return;
+      }
+      const sellingRaw = String(formData.price ?? '').trim();
+      const selling = sellingRaw ? parseFloat(sellingRaw) : mrp;
+      if (!Number.isFinite(selling) || selling <= 0) {
+        alert('Selling price must be greater than 0');
+        setSaving(false);
+        return;
+      }
+      if (selling > mrp) {
+        alert('Selling price cannot exceed MRP');
+        setSaving(false);
+        return;
+      }
+
+      if (!formData.category_id) {
+        alert('Category is required');
+        setSaving(false);
+        return;
+      }
+
+      if (images.length === 0) {
+        alert('At least one product image is required');
+        setSaving(false);
+        return;
+      }
+
+      const hsn = String(formData.hsn_code ?? '').trim();
+      if (!/^\d{4,8}$/.test(hsn)) {
+        alert('HSN is required (4–8 digits)');
+        setSaving(false);
+        return;
+      }
+
+      const gstNum = parseFloat(formData.gst_rate);
+      if (![0, 5, 12, 18, 28].includes(gstNum)) {
+        alert('Tax (GST %) is required — choose 0, 5, 12, 18, or 28');
+        setSaving(false);
+        return;
+      }
+
+      const stockNum = parseInt(String(formData.stock), 10);
+      if (!Number.isInteger(stockNum) || stockNum < 0) {
+        alert('Stock quantity must be a whole number ≥ 0');
+        setSaving(false);
+        return;
+      }
+
       const payload = {
         ...formData,
-        price: parseFloat(formData.price),
-        original_price: formData.original_price ? parseFloat(formData.original_price) : null,
-        stock: parseInt(formData.stock),
+        price: selling,
+        original_price: mrp,
+        stock: stockNum,
+        hsn_code: hsn,
+        gst_rate: gstNum,
+        sku: String(formData.sku ?? '').trim() || undefined,
         vendor_id: sellerId,
         images:
           images.length > 0 ? images.map(stripAwsPresignFromProductImageUrl) : [],
@@ -737,10 +818,11 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">SKU</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Vendor Product Id</label>
                 <input
                   value={formData.sku}
                   onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                  placeholder="Recommended — auto-generated if empty"
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
                 />
               </div>
@@ -756,26 +838,27 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
             
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Price (₹) *</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">MRP (₹) *</label>
                 <input
                   type="number"
                   required
-                  min="0"
+                  min="0.01"
                   step="0.01"
-                  value={formData.price}
-                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                  value={formData.original_price}
+                  onChange={(e) => setFormData({ ...formData, original_price: e.target.value })}
+                  placeholder="Maximum retail price"
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Original Price (₹)</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Selling price (₹)</label>
                 <input
                   type="number"
-                  min="0"
+                  min="0.01"
                   step="0.01"
-                  value={formData.original_price}
-                  onChange={(e) => setFormData({ ...formData, original_price: e.target.value })}
-                  placeholder="For showing discount"
+                  value={formData.price}
+                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                  placeholder="Optional — same as MRP if empty"
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                 />
               </div>
@@ -789,6 +872,32 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
                   onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">HSN *</label>
+                <input
+                  required
+                  value={formData.hsn_code}
+                  onChange={(e) => setFormData({ ...formData, hsn_code: e.target.value.replace(/\D/g, '').slice(0, 8) })}
+                  placeholder="4–8 digit code"
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Tax (GST %) *</label>
+                <select
+                  required
+                  value={formData.gst_rate}
+                  onChange={(e) => setFormData({ ...formData, gst_rate: e.target.value })}
+                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white"
+                >
+                  <option value="">Select GST slab</option>
+                  <option value="0">0%</option>
+                  <option value="5">5%</option>
+                  <option value="12">12%</option>
+                  <option value="18">18%</option>
+                  <option value="28">28%</option>
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Product Icon</label>
@@ -820,7 +929,7 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
           <div className="border-t border-slate-200 pt-6 space-y-4">
             <h3 className="font-semibold text-slate-900 flex items-center gap-2">
               <ImageIcon className="w-5 h-5 text-orange-500" />
-              Product Images
+              Product Images *
             </h3>
             <div className="space-y-3">
               <div className="flex items-center gap-4 flex-wrap">

@@ -1,7 +1,9 @@
 import { canonicalProductId } from '@/lib/product-id';
 import {
   getProductDiscountPercent as discountPercentFromPrices,
+  listPriceForDiscountDisplay,
   resolveProductCompareAtPrice,
+  resolveProductSellingPrice,
 } from '@/lib/shop-product-pricing';
 import type { ShopProduct } from './shop-types';
 
@@ -9,8 +11,8 @@ export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct 
   const id = canonicalProductId(p);
   if (!id) return null;
 
-  const sellingPrice = parseFloat(String(p.price)) || 0;
   const compareAt = resolveProductCompareAtPrice(p);
+  const sellingPrice = resolveProductSellingPrice(p, compareAt);
   const rc = Number(p.review_count ?? 0) || 0;
   const rawRating = p.rating != null ? Number(p.rating) : NaN;
   const rating = rc > 0 && Number.isFinite(rawRating) && rawRating > 0 ? rawRating : 0;
@@ -20,7 +22,7 @@ export function mapApiRowToShopProduct(p: Record<string, unknown>): ShopProduct 
     id,
     stock: Number(p.stock_quantity ?? p.stock ?? 0) || 0,
     price: sellingPrice,
-    original_price: compareAt,
+    original_price: listPriceForDiscountDisplay(sellingPrice, compareAt),
     rating,
     review_count: rc,
     images: (p.images as string[]) || [],

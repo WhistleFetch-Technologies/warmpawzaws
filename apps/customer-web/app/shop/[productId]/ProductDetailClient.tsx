@@ -18,7 +18,9 @@ import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import {
   getProductDiscountPercent,
+  listPriceForDiscountDisplay,
   resolveProductCompareAtPrice,
+  resolveProductSellingPrice,
 } from '@/lib/shop-product-pricing';
 import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import {
@@ -191,8 +193,8 @@ export default function ProductDetailClient() {
           resolvedProductId: resolvedId,
           rowKeys: p && typeof p === 'object' ? Object.keys(p) : [],
         });
-        const sellingPrice = parseFloat(String(p.price)) || 0;
         const compareAt = resolveProductCompareAtPrice(p as Record<string, unknown>);
+        const sellingPrice = resolveProductSellingPrice(p as Record<string, unknown>, compareAt);
         const rc = Number(p.review_count ?? 0) || 0;
         const rawRating = p.rating != null ? Number(p.rating) : NaN;
         const rating =
@@ -202,7 +204,7 @@ export default function ProductDetailClient() {
           id: resolvedId,
           stock: p.stock_quantity || p.stock || 0,
           price: sellingPrice,
-          original_price: compareAt,
+          original_price: listPriceForDiscountDisplay(sellingPrice, compareAt),
           rating,
           review_count: rc,
           images: p.images || [],
