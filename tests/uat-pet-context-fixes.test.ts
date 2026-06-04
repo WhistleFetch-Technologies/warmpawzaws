@@ -314,6 +314,8 @@ async function testPetUpdateDeleteEndpoints() {
   const testPetId = process.env.TEST_PET_ID || 'test-pet-id';
 
   // Test 3.1: PUT /customer/:phone/pets/:petId endpoint exists
+  // Phone in URL must resolve via findCustomerByPhone (10-digit vs +91 in DB). Unit test:
+  // backend/lambda/src/utils/__tests__/customer-phone-lookup.test.ts
   try {
     const result = await apiRequest(`/customer/${testPhone}/pets/${testPetId}`, 'PUT', {
       name: 'Test Pet Updated',

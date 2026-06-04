@@ -2,13 +2,10 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Pill, FlaskConical, Wheat, Heart } from 'lucide-react';
-import {
-  mapCatalogCategoryIdToCustomerHomeScreen,
-  mapCatalogSlugToLaunchServiceId,
-  mapLaunchServiceIdToCustomerHomeScreen,
-} from '@warmpawz/service-launch-mappings';
+import { mapCatalogSlugToLaunchServiceId } from '@warmpawz/service-launch-mappings';
 import { useCustomerCategories } from '@/hooks/useCustomerCategories';
 import { apiClient } from '@/lib/api-client';
+import { buildCustomerLaunchTiles } from '@/lib/customer-launch-tiles';
 import { serviceBaseOnpincode } from '../../homepage/constants/helpers';
 import { quickServices, serviceScreenMap } from '../../homepage/constants';
 import type { QuickServiceTile } from '../types';
@@ -270,61 +267,48 @@ export function useAllServicesData({ phone }: UseAllServicesDataOptions) {
       if (configResponse && (configResponse as { success?: boolean }).success) {
         const { services, buttons } = configResponse as {
           services?: {
-            visible?: Array<{ serviceId?: string }>;
+            catalog?: Array<{
+              serviceId?: string;
+              displayName?: string;
+              effectiveStatus?: string;
+            }>;
+            visible?: Array<{ serviceId?: string; status?: string }>;
             comingSoon?: Array<{ serviceId?: string }>;
             hidden?: Array<{ serviceId?: string }>;
           };
           buttons?: Array<{ id?: string; enabled?: boolean; launchPhase?: string }>;
         };
 
+        const catalog = services?.catalog;
         const visibleLaunch = services?.visible || [];
         const comingSoonLaunch = services?.comingSoon || [];
+        const hiddenLaunch = services?.hidden || [];
 
-        if (services && (visibleLaunch.length > 0 || comingSoonLaunch.length > 0)) {
-          const allTilePool = [...sourceQuickServices, ...quickServices];
-          const seenScreens = new Set<string>();
-          const resultTiles: QuickServiceTile[] = [];
-
-          const findMatchingTileForLaunchId = (svcIdRaw: string) => {
-            const svcId = (svcIdRaw || '').toLowerCase();
-            const targetScreen = mapLaunchServiceIdToCustomerHomeScreen(svcId).toLowerCase();
-            return allTilePool.find((tile) => {
-              const catId = (tile.categoryId || '').toLowerCase();
-              const tileScreen = (tile.screen || '').toLowerCase();
-              const catalogScreen = mapCatalogCategoryIdToCustomerHomeScreen(
-                tile.categoryId || ''
-              ).toLowerCase();
-              const screenAsCatalog = mapCatalogCategoryIdToCustomerHomeScreen(
-                tile.screen || ''
-              ).toLowerCase();
-              const launchFromCat = mapLaunchServiceIdToCustomerHomeScreen(catId).toLowerCase();
-              return (
-                catId === svcId ||
-                tileScreen === svcId ||
-                catalogScreen === targetScreen ||
-                screenAsCatalog === targetScreen ||
-                launchFromCat === targetScreen ||
-                tileScreen === targetScreen
-              );
-            });
-          };
-
-          const appendFromLaunchList = (list: Array<{ serviceId?: string }>, isComingSoon: boolean) => {
-            for (const entry of list) {
-              const svcId = (entry.serviceId || '').toLowerCase();
-              const matchingTile = findMatchingTileForLaunchId(svcId);
-              if (matchingTile && !seenScreens.has(matchingTile.screen)) {
-                seenScreens.add(matchingTile.screen);
-                resultTiles.push({ ...matchingTile, isComingSoon });
-              }
-            }
-          };
-
-          appendFromLaunchList(visibleLaunch, false);
-          appendFromLaunchList(comingSoonLaunch, true);
-          setFilteredServices(resultTiles);
-          setResolved(true);
-          return;
+        if (
+          services &&
+          (catalog?.length ||
+            visibleLaunch.length > 0 ||
+            comingSoonLaunch.length > 0 ||
+            hiddenLaunch.length > 0)
+        ) {
+          const resultTiles = buildCustomerLaunchTiles({
+            tilePool: [...sourceQuickServices, ...quickServices],
+            catalog: catalog?.map((c) => ({
+              serviceId: c.serviceId || '',
+              displayName: c.displayName,
+              effectiveStatus: c.effectiveStatus,
+            })),
+            visible: visibleLaunch,
+            comingSoon: comingSoonLaunch,
+            hidden: hiddenLaunch,
+            includeHiddenAsComingSoon: true,
+            dedupeByLaunchServiceId: true,
+          });
+          if (resultTiles.length > 0) {
+            setFilteredServices(resultTiles);
+            setResolved(true);
+            return;
+          }
         }
 
         const blockedCategoryIds = new Set<string>();

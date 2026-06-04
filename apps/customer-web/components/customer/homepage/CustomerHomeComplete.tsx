@@ -44,11 +44,8 @@ import { iconForCustomerHomeApiBanner, normalizeCustomerBannerTarget } from '@/l
 import { navigateBannerCta } from '@/lib/banner-cta-navigation';
 import { isVendorBannerCta } from '@/lib/banner-cta-parse';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
-import {
-  mapCatalogSlugToLaunchServiceId,
-  mapLaunchServiceIdToCustomerHomeScreen,
-  mapCatalogCategoryIdToCustomerHomeScreen,
-} from '@warmpawz/service-launch-mappings';
+import { mapCatalogSlugToLaunchServiceId } from '@warmpawz/service-launch-mappings';
+import { buildCustomerLaunchTiles } from '@/lib/customer-launch-tiles';
 import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
@@ -1231,53 +1228,25 @@ export function CustomerHomeComplete({
 
         const visibleLaunch = (services?.visible || []) as any[];
         const comingSoonLaunch = (services?.comingSoon || []) as any[];
+        const hiddenLaunch = (services?.hidden || []) as any[];
+        const launchCatalog = (services?.catalog || []) as any[];
 
-        if (services && (visibleLaunch.length > 0 || comingSoonLaunch.length > 0)) {
-          const allTilePool = [...sourceQuickServices, ...quickServices];
-          const seenScreens = new Set<string>();
-          const resultTiles: any[] = [];
+        const launchTiles = buildCustomerLaunchTiles({
+          tilePool: [...sourceQuickServices, ...quickServices],
+          catalog: launchCatalog.map((c: any) => ({
+            serviceId: c.serviceId || '',
+            displayName: c.displayName,
+            effectiveStatus: c.effectiveStatus,
+          })),
+          visible: visibleLaunch,
+          comingSoon: comingSoonLaunch,
+          hidden: hiddenLaunch,
+          includeHiddenAsComingSoon: false,
+          dedupeByLaunchServiceId: false,
+        });
 
-          const findMatchingTileForLaunchId = (svcIdRaw: string) => {
-            const svcId = (svcIdRaw || '').toLowerCase();
-            const targetScreen = mapLaunchServiceIdToCustomerHomeScreen(svcId).toLowerCase();
-            return allTilePool.find((tile: any) => {
-              const catId = (tile.categoryId || '').toLowerCase();
-              const tileScreen = (tile.screen || '').toLowerCase();
-              const catalogScreen = mapCatalogCategoryIdToCustomerHomeScreen(
-                tile.categoryId || ''
-              ).toLowerCase();
-              const screenAsCatalog = mapCatalogCategoryIdToCustomerHomeScreen(
-                tile.screen || ''
-              ).toLowerCase();
-              const launchFromCat = mapLaunchServiceIdToCustomerHomeScreen(catId).toLowerCase();
-              return (
-                catId === svcId ||
-                tileScreen === svcId ||
-                catalogScreen === targetScreen ||
-                screenAsCatalog === targetScreen ||
-                launchFromCat === targetScreen ||
-                tileScreen === targetScreen
-              );
-            });
-          };
-
-          const appendFromLaunchList = (list: any[], isComingSoon: boolean) => {
-            for (const entry of list) {
-              const svcId = (entry.serviceId || '').toLowerCase();
-              const matchingTile = findMatchingTileForLaunchId(svcId);
-              if (matchingTile && !seenScreens.has(matchingTile.screen)) {
-                seenScreens.add(matchingTile.screen);
-                resultTiles.push({
-                  ...matchingTile,
-                  isComingSoon,
-                });
-              }
-            }
-          };
-
-          appendFromLaunchList(visibleLaunch, false);
-          appendFromLaunchList(comingSoonLaunch, true);
-          applyLaunchTiles(resultTiles);
+        if (launchTiles.length > 0) {
+          applyLaunchTiles(launchTiles);
         } else {
           const blockedCategoryIds = new Set<string>();
           const comingSoonCategoryIds = new Set<string>();

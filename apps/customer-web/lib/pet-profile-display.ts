@@ -36,6 +36,30 @@ export function formatDisplayDate(dateStr?: string | null): string {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+/** Normalize vaccination dates for API + `<input type="date">` (YYYY-MM-DD). */
+export function normalizeVaccinationDateToIso(dateStr?: string | null): string | undefined {
+  if (dateStr == null) return undefined;
+  const trimmed = String(dateStr).trim();
+  if (!trimmed) return undefined;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  const dmy = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (dmy) {
+    const day = dmy[1].padStart(2, '0');
+    const month = dmy[2].padStart(2, '0');
+    const year = dmy[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  return undefined;
+}
+
 export function formatPetAge(pet: PetDisplayInput): string {
   const dob = pet.dateOfBirth;
   if (dob) {
