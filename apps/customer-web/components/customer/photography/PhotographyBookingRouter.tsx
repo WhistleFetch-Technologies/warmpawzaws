@@ -6,7 +6,7 @@ import { PrePaymentBookingReview } from '../booking/PrePaymentBookingReview';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
-import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
+import { runInlineAddressDetect, inlineAddressCoordsPayload } from '@/lib/run-inline-address-detect';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { toast } from 'sonner';
 import { EnhancedAddPetModal } from '../EnhancedAddPetModal';
@@ -1298,90 +1298,13 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
     longitude: 0,
   });
 
-  const detectCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser');
-      return;
-    }
-
+  const detectCurrentLocation = async () => {
     setDetectingLocation(true);
-
-    // ✅ FIX: Request location with proper error handling
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        setFormData(prev => ({ ...prev, latitude, longitude }));
-        
-        // Try reverse geocoding
-        try {
-          const apiKey =
-            (await getGoogleMapsBrowserApiKey()) ||
-            process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
-            '';
-          if (!apiKey) {
-            console.warn('Google Maps API key not configured');
-            toast.error('Location services not configured. Please enter address manually.');
-            setDetectingLocation(false);
-            return;
-          }
-
-          const response = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
-          );
-          const data = await response.json();
-
-          if (data.results && data.results[0]) {
-            const addressComponents = data.results[0].address_components;
-            let street = '', city = '', state = '', pincode = '';
-
-            addressComponents.forEach((component: any) => {
-              if (component.types.includes('street_number') || component.types.includes('route')) {
-                street += component.long_name + ' ';
-              }
-              if (component.types.includes('locality') || component.types.includes('administrative_area_level_2')) {
-                city = component.long_name;
-              }
-              if (component.types.includes('administrative_area_level_1')) {
-                state = component.long_name;
-              }
-              if (component.types.includes('postal_code')) {
-                pincode = component.long_name;
-              }
-            });
-
-            setFormData(prev => ({
-              ...prev,
-              addressLine1: street.trim(),
-              city,
-              state,
-              pincode
-            }));
-            toast.success('Location detected successfully!');
-          } else {
-            toast.error('Could not determine address from location. Please enter manually.');
-          }
-        } catch (error) {
-          console.error('Error reverse geocoding:', error);
-          toast.error('Error processing location. Please enter address manually.');
-        } finally {
-          setDetectingLocation(false);
-        }
-      },
-      (error) => {
-        setDetectingLocation(false);
-        // ✅ FIX: Provide specific error messages
-        if (error.code === error.PERMISSION_DENIED) {
-          toast.error('Location permission denied. Please enable location access or enter address manually.');
-        } else if (error.code === error.POSITION_UNAVAILABLE) {
-          toast.error('Location unavailable. Please enter address manually.');
-        } else if (error.code === error.TIMEOUT) {
-          toast.error('Location request timed out. Please enter address manually.');
-        } else {
-          toast.error('Unable to get location. Please enter address manually.');
-        }
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+    try {
+      await runInlineAddressDetect(setFormData);
+    } finally {
+      setDetectingLocation(false);
+    }
   };
 
   const handleSaveAddress = async () => {
@@ -1418,7 +1341,7 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
         state: formData.state,
         pincode: formData.pincode,
         landmark: formData.landmark || null,
-        coordinates: (formData.latitude && formData.longitude ? { lat: formData.latitude, lng: formData.longitude } : null),
+        ...inlineAddressCoordsPayload(formData),
         isDefault: formData.isDefault || (existingAddresses.length === 0),
         label: formData.label || 'home'
       });

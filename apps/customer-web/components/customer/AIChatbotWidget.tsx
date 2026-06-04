@@ -1796,7 +1796,7 @@ export function AIChatbotWidget({
       )}
 
       {paymentHandoff ? (
-        <div className="fixed inset-0 z-[70] bg-white overflow-y-auto">
+        <div className="fixed inset-0 z-[70] overflow-y-auto bg-[#FAF6F0]">
           <UniversalPaymentPage
             {...(paymentHandoff as any)}
             onBack={() => setPaymentHandoff(null)}

@@ -11,6 +11,8 @@ import { toast } from 'sonner';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import { UseCurrentLocationButton } from '@/components/shared/UseCurrentLocationButton';
+import type { AddressFromGeolocationResult } from '@/lib/address-from-geolocation';
 
 interface AddressBookPageProps {
   phone: string;
@@ -388,6 +390,19 @@ export function AddressBookPage({
               />
             </div>
           </div>
+
+          <UseCurrentLocationButton
+            onSuccess={(result: AddressFromGeolocationResult) => {
+              setFormData((prev) => ({
+                ...prev,
+                addressLine1: result.addressLine1 ?? prev.addressLine1,
+                city: result.city ?? prev.city,
+                state: result.state ?? prev.state,
+                pincode: result.pincode ?? prev.pincode,
+                coordinates: result.coordinates,
+              }));
+            }}
+          />
 
           {/* Address Line 1 with Google Maps Autocomplete */}
           <div>

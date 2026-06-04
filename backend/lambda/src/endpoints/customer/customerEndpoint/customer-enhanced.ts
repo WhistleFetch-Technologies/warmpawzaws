@@ -47,6 +47,8 @@ import {
   mealRiderDeliveryMessage,
 } from '../../../utils/meal-delivery-effective-state';
 import { enrichSubscriptionRowsWithPresignedMealImages } from '../../../services/meal-subscription/meal-subscription-operations-service';
+import { expireMealPaymentHolds } from '../../../utils/meal-payment-hold';
+import { getMealRefundReviewCustomerMetadata } from '../../../utils/meal-refund-cases';
 
 // ============================================================================
 // CUSTOMER HANDLERS
@@ -489,6 +491,11 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       if (!customerId) {
         return c.json({ success: false, error: 'customerId is required' }, 400);
       }
+
+      await expireMealPaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
+        console.warn('[meal-plan-orders] payment hold sweep failed:', e?.message || e)
+      );
+
       const allOrders: any[] = [];
 
       // 1. From meal_orders (MealOrderCheckout flow)
@@ -525,6 +532,10 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           price_per_meal: o.mp_price_per_meal,
         };
         const { subtotal, total } = resolveCustomerMealPlanOrderDisplayTotals(o, planForPricing);
+        const refundReview =
+          o.status === 'cancelled'
+            ? await getMealRefundReviewCustomerMetadata(String(o.id))
+            : null;
         allOrders.push({
           id: o.id,
           order_number: o.order_number || o.id?.toString().slice(-8),
@@ -542,11 +553,14 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           total_amount: total,
           status: o.status,
           payment_status: o.payment_status,
+          payment_hold_expires_at: o.payment_hold_expires_at ?? null,
+          paymentHoldExpiresAt: o.payment_hold_expires_at ?? null,
           delivery_address: o.delivery_address,
           scheduled_delivery_date: o.scheduled_delivery_date,
           scheduled_delivery_slot: o.scheduled_delivery_slot,
           created_at: o.created_at,
           source: 'meal_orders',
+          ...(refundReview ? { refundReview } : {}),
         });
       }
 

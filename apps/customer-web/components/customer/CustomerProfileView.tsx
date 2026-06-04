@@ -21,6 +21,8 @@ import { toast } from 'sonner';
 import { validateEmail } from '@/lib/validation';
 import { inferCityStateFromCommaAddress, mergeStreetAddressLineOnly } from '@/lib/profile-address-format';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { UseCurrentLocationButton } from '@/components/shared/UseCurrentLocationButton';
+import type { AddressFromGeolocationResult } from '@/lib/address-from-geolocation';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import {
   normalizeCustomerProfileFields,
@@ -440,6 +442,23 @@ export function CustomerProfileView({ phone, onBack, onCloseToHome }: CustomerPr
         <ProfileFieldLabel>Address</ProfileFieldLabel>
         {editMode ? (
           <>
+            <UseCurrentLocationButton
+              className="mb-3"
+              onSuccess={(result: AddressFromGeolocationResult) => {
+                setProfile((prev) => {
+                  if (!prev) return null;
+                  return {
+                    ...prev,
+                    address: result.addressLine1 ?? prev.address,
+                    city: result.city ?? prev.city,
+                    state: result.state ?? prev.state,
+                    pincode: result.pincode ?? prev.pincode,
+                    latitude: result.latitude,
+                    longitude: result.longitude,
+                  };
+                });
+              }}
+            />
             <EnhancedAddressAutocomplete
               value={profile.address}
               onChange={(address: string, components?: AddressComponents) => {

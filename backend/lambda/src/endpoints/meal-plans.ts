@@ -21,7 +21,7 @@ import { isValidUUID } from '../types/entities';
 import { getRazorpayConfig, razorpayRequest } from '../utils/payments/razorpay-client';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { randomUUID } from 'crypto';
-import { getFeeGlobalsMap } from '../utils/admin-fee-settings-db';
+import { computeNutritionistMealCheckoutFees } from '../utils/meal-checkout-platform-fees';
 import { getMealPlanGstRates, computeMealGstBreakdown } from '../utils/meal-plan-gst';
 import { presignMealPlanRowDisplayFields } from '../utils/s3-media-presign';
 import {
@@ -36,6 +36,7 @@ import {
   resolveSameDayAllowedForPlan,
 } from '../utils/meal-booking-policy';
 import { parseOrderCutoffHm } from '../utils/meal-product-timing';
+import { buildVendorPrepScheduling } from '@warmpawz/shared-types';
 import { resolvePackWeightGramsFromPlanRow } from '../utils/meal-pack-weight';
 import { mergeMealPlanCatalogForApi } from '../utils/meal-product-persistence';
 import { mealPlanUnitPriceInr, resolveMealLineSubtotalInr, resolveMealPurchaseSubtotalInr } from '../utils/meal-order-pricing';
@@ -81,6 +82,8 @@ import {
 } from '../utils/meal-subscription-schedule-utils';
 import { computeMealSubscriptionCheckoutFees } from '../utils/meal-subscription-checkout-fees';
 import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settlement';
+import { getMealRefundReviewCustomerMetadata } from '../utils/meal-refund-cases';
+import { paymentHoldExpiresAt } from '../utils/meal-payment-hold';
 import {
   assertMealOrderHasPidgeForPickup,
   dispatchMealLogistics,
@@ -984,17 +987,9 @@ export function registerMealPlanEndpoints(app: Hono) {
       }
 
       let deliveryFee: number | null = null;
-      let platformFee = 0;
-      let convenienceFee = 0;
-
-      const feeMap = await getFeeGlobalsMap();
-      const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
-      const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
-      platformFee = Math.round(subtotal * (platformFeePercentage / 100));
-      if (maxPlatformFee > 0 && platformFee > maxPlatformFee) platformFee = maxPlatformFee;
-      convenienceFee = parseFloat(
-        feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0'
-      );
+      const mealFees = await computeNutritionistMealCheckoutFees(subtotal);
+      let platformFee = mealFees.platformFee;
+      let convenienceFee = mealFees.convenienceFee;
 
       const vendors = await query(
         `SELECT latitude, longitude, metadata FROM vendors WHERE id = $1 LIMIT 1`,
@@ -1393,17 +1388,9 @@ export function registerMealPlanEndpoints(app: Hono) {
         dropLng: normalizedAddress.lng,
       });
 
-      const feeMap = await getFeeGlobalsMap();
-      const platformFeePercentage = parseFloat(feeMap['platform_fee_percentage'] || '2');
-      const maxPlatformFee = parseFloat(feeMap['max_platform_fee'] || '500');
-      convenienceFee = parseFloat(
-        feeMap['convenience_fee'] || feeMap['convenience_fee_booking'] || '0',
-      );
-
-      platformFee = Math.round(subtotal * (platformFeePercentage / 100));
-      if (maxPlatformFee > 0 && platformFee > maxPlatformFee) {
-        platformFee = maxPlatformFee;
-      }
+      const mealFees = await computeNutritionistMealCheckoutFees(subtotal);
+      platformFee = mealFees.platformFee;
+      convenienceFee = mealFees.convenienceFee;
 
       if ((logisticsType || 'warmpawz') === 'warmpawz') {
         if (distanceKm == null) {
@@ -1479,6 +1466,7 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const moCols = await mealOrdersTableColumns();
       const orderVendorId = await resolveVendorId(String(plan.vendor_id ?? ''));
+      const holdStarted = new Date();
       const mealOrderRow: Record<string, unknown> = {
         customer_id: customerId,
         vendor_id: orderVendorId || plan.vendor_id,
@@ -1502,6 +1490,14 @@ export function registerMealPlanEndpoints(app: Hono) {
         logistics_cost: logisticsType === 'warmpawz' ? deliveryFee : 0,
         status: 'pending',
       };
+      if (totalAmount > 0) {
+        if (moCols.has('payment_checkout_started_at')) {
+          mealOrderRow.payment_checkout_started_at = holdStarted;
+        }
+        if (moCols.has('payment_hold_expires_at')) {
+          mealOrderRow.payment_hold_expires_at = paymentHoldExpiresAt(holdStarted);
+        }
+      }
       if (moCols.has('purchase_type')) mealOrderRow.purchase_type = expectedPurchaseType;
       if (moCols.has('purchase_snapshot')) mealOrderRow.purchase_snapshot = purchase_snapshot;
       if (moCols.has('order_number')) mealOrderRow.order_number = generateMealOrderNumber();
@@ -1720,6 +1716,11 @@ export function registerMealPlanEndpoints(app: Hono) {
 
       const order = result.rows[0];
 
+      const refundReview =
+        order.status === 'cancelled'
+          ? await getMealRefundReviewCustomerMetadata(orderId)
+          : null;
+
       // Get tracking info
       let tracking = null;
       const trackingResult = await select('delivery_tracking', { meal_order_id: orderId });
@@ -1737,6 +1738,7 @@ export function registerMealPlanEndpoints(app: Hono) {
           scheduledDeliverySlot: typeof order.scheduled_delivery_slot === 'string'
             ? JSON.parse(order.scheduled_delivery_slot)
             : order.scheduled_delivery_slot,
+          ...(refundReview ? { refundReview } : {}),
         },
         tracking,
       });
@@ -1886,7 +1888,45 @@ export function registerMealPlanEndpoints(app: Hono) {
       const updateData: Record<string, any> = { status };
 
       if (status === 'accepted') updateData.accepted_at = new Date().toISOString();
-      if (status === 'preparing') updateData.prep_started_at = new Date().toISOString();
+      if (status === 'preparing') {
+        const prepStartedAt = new Date();
+        updateData.prep_started_at = prepStartedAt.toISOString();
+        try {
+          const moInfo = await query(
+            `SELECT mo.prep_minutes, mo.scheduled_delivery_date, mo.scheduled_delivery_slot,
+                    mp.prep_time_minutes AS plan_prep_minutes
+               FROM meal_orders mo
+               LEFT JOIN meal_plans mp ON mp.id = mo.meal_plan_id
+              WHERE mo.id = $1`,
+            [orderId],
+          ).catch(() => ({ rows: [] as Array<Record<string, unknown>> }));
+          const moRow = (moInfo.rows && moInfo.rows[0]) as Record<string, unknown> | undefined;
+          const existingPrep =
+            moRow && typeof moRow.prep_minutes === 'number' ? (moRow.prep_minutes as number) : null;
+          const planPrep =
+            moRow && typeof moRow.plan_prep_minutes === 'number'
+              ? (moRow.plan_prep_minutes as number)
+              : null;
+          const prepMinutes = existingPrep ?? planPrep ?? 30;
+          const prepScheduling = buildVendorPrepScheduling({
+            scheduledDeliveryDate: moRow?.scheduled_delivery_date,
+            scheduledDeliverySlot: moRow?.scheduled_delivery_slot,
+            prepMinutes,
+          });
+          console.log(
+            '[VENDOR PREP SCHEDULING]',
+            JSON.stringify({
+              order_id: orderId,
+              commitment_at: prepScheduling.commitment_at_iso,
+              prep_minutes: prepMinutes,
+              recommended_prepare_at: prepScheduling.recommended_prepare_at_iso,
+              actual_prepare_start: prepStartedAt.toISOString(),
+            }),
+          );
+        } catch (e) {
+          console.warn('[meal/orders/update-status] prep scheduling log failed:', e);
+        }
+      }
       if (status === 'ready_for_pickup') updateData.ready_at = new Date().toISOString();
       if (status === 'picked_up') updateData.picked_up_at = new Date().toISOString();
       if (status === 'delivered') {

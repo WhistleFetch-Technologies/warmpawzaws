@@ -289,7 +289,8 @@ resource "aws_ecs_task_definition" "delivery" {
           { name = "PUBLIC_API_BASE_URL", value = var.public_api_base_url },
           { name = "SPRING_JPA_HIBERNATE_DDL_AUTO", value = var.hibernate_ddl_auto }
         ],
-        var.openapi_public_server_url != "" ? [{ name = "OPENAPI_PUBLIC_SERVER_URL", value = var.openapi_public_server_url }] : []
+        var.openapi_public_server_url != "" ? [{ name = "OPENAPI_PUBLIC_SERVER_URL", value = var.openapi_public_server_url }] : [],
+        var.meal_delivery_notify_secret != "" ? [{ name = "MEAL_DELIVERY_NOTIFY_SECRET", value = var.meal_delivery_notify_secret }] : []
       )
       secrets = [
         {

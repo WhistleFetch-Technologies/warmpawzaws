@@ -1747,8 +1747,24 @@ export function CustomerHomeWrapper({
       showPets?: boolean;
       onBackOverride?: () => void;
       skipHeader?: boolean; // ✅ FIX: Allow skipping header for service routers that have their own frame UI
+      /** Payment only: no inner layout shell — UniversalPaymentPage uses fixed viewport fill. */
+      bareContent?: boolean;
     }
   ): ReactNode => {
+    if (options.bareContent) {
+      return (
+        <CustomerScreenWrapper
+          currentScreen={screen}
+          onNavigate={handleBottomNav}
+          onProfileClick={handleProfileClick}
+          accountSidebar={accountSidebarOverlay}
+        >
+          {component}
+        </CustomerScreenWrapper>
+      );
+    }
+
+    const contentClass = screen === 'payment' ? 'bg-[#FAF6F0]' : 'bg-gray-50';
     return (
       <CustomerScreenWrapper 
         currentScreen={screen}
@@ -1756,9 +1772,7 @@ export function CustomerHomeWrapper({
         onProfileClick={handleProfileClick}
         accountSidebar={accountSidebarOverlay}
       >
-        {/* Full width inside CustomerScreenWrapper (already max-w-customer); avoid double max-width + hairline frame */}
-        <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
-          {/* ✅ FIX: Skip StandardizedHeader for service routers that use ServiceDashboardHeader (frame UI) */}
+        <div className={`min-h-screen min-h-[100dvh] w-full ${contentClass}`}>
           {!options.skipHeader && (
             <StandardizedHeader
               userName={userName}
@@ -2699,7 +2713,7 @@ export function CustomerHomeWrapper({
           toast.success('Booking confirmed successfully!');
         }}
       />,
-      { title: 'Payment', subtitle: 'Secure checkout', showBackButton: false, skipHeader: true }
+      { title: 'Payment', subtitle: 'Secure checkout', showBackButton: false, skipHeader: true, bareContent: true }
     );
   }
   // ✅ Instant tele: connecting screen (after payment) → auto-join video call after 3s

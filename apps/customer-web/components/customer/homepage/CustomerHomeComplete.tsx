@@ -65,6 +65,7 @@ import { HOME_CONTENT_SHELL_CLASS } from '../home/shared/HomeContentShell';
 import { buildHomeTopCarouselBanners } from '../home/utils/banner-utils';
 import { ShopCategoryGrid } from '@/components/shop/ShopCategoryGrid';
 import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
+import { STATIC_SHOP_DISPLAY_CATEGORIES } from '@/lib/shop-category-static-images';
 import type { QuickServiceTile } from '../home/types';
 import { resolveCustomerLocation } from '@/lib/customer-location';
 import type { CustomerLocation } from '@/lib/customer-location';
@@ -2479,66 +2480,20 @@ export function CustomerHomeComplete({
               </button>
             ) : null}
           </div>
-          {!customerCommerceEnabled ? (
-            <div className="flex gap-3 overflow-x-auto px-4 py-1 scrollbar-hide">
-              {[
-                { id: 'food', label: 'Food', icon: <Bone className="w-5 h-5 text-orange-500" /> },
-                { id: 'toys', label: 'Toys', icon: <Dog className="w-5 h-5 text-blue-500" /> },
-                { id: 'clothes', label: 'Clothes', icon: <Shirt className="w-5 h-5 text-teal-500" /> },
-                { id: 'accessories', label: 'Accessories', icon: <Watch className="w-5 h-5 text-pink-500" /> },
-                { id: 'medicine', label: 'Medicine', icon: <Pill className="w-5 h-5 text-red-500" /> },
-                { id: 'grooming', label: 'Grooming', icon: <Scissors className="w-5 h-5 text-purple-500" /> },
-                { id: 'beds', label: 'Beds', icon: <Bed className="w-5 h-5 text-indigo-500" /> },
-                { id: 'bowls', label: 'Bowls', icon: <UtensilsCrossed className="w-5 h-5 text-green-500" /> },
-              ].map((category) => (
-                <div
-                  key={category.id}
-                  className="flex-shrink-0 flex flex-col items-center gap-1 pointer-events-none select-none opacity-75"
-                  aria-label={`${category.label} — coming soon`}
-                >
-                  <div className="relative w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm">
-                    {category.icon}
-                    <span className="absolute -top-1 -right-1 text-[7px] font-bold uppercase bg-amber-500 text-white px-1 rounded-full leading-none py-0.5">
-                      Soon
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-gray-500 text-center font-medium leading-tight">{category.label}</span>
-                </div>
-              ))}
-            </div>
-          ) : ecommerceShopCategories.length === 0 ? (
-            <div className="flex gap-3 overflow-x-auto px-4 py-1 scrollbar-hide">
-              {[
-                { id: 'food', label: 'Food', icon: <Bone className="w-5 h-5 text-orange-500" /> },
-                { id: 'toys', label: 'Toys', icon: <Dog className="w-5 h-5 text-blue-500" /> },
-                { id: 'clothes', label: 'Clothes', icon: <Shirt className="w-5 h-5 text-teal-500" /> },
-                { id: 'accessories', label: 'Accessories', icon: <Watch className="w-5 h-5 text-pink-500" /> },
-                { id: 'medicine', label: 'Medicine', icon: <Pill className="w-5 h-5 text-red-500" /> },
-                { id: 'grooming', label: 'Grooming', icon: <Scissors className="w-5 h-5 text-purple-500" /> },
-                { id: 'beds', label: 'Beds', icon: <Bed className="w-5 h-5 text-indigo-500" /> },
-                { id: 'bowls', label: 'Bowls', icon: <UtensilsCrossed className="w-5 h-5 text-green-500" /> },
-              ].map((category) => (
-                <button
-                  key={category.id}
-                  type="button"
-                  className="flex-shrink-0 flex flex-col items-center gap-1 active:opacity-90"
-                  onClick={() => handleNavigation('/shop')}
-                  aria-label={`Browse ${category.label}`}
-                >
-                  <div className="w-12 h-12 bg-white rounded-full border border-gray-200 flex items-center justify-center shadow-sm">
-                    {category.icon}
-                  </div>
-                  <span className="text-[10px] text-gray-700 text-center font-medium leading-tight">{category.label}</span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <ShopCategoryGrid
-              embedded
-              categories={ecommerceShopCategories}
-              onSelectCategory={(id) => handleNavigation('shop', { category: id })}
-            />
-          )}
+          <ShopCategoryGrid
+            embedded
+            disabled={!customerCommerceEnabled}
+            categories={
+              ecommerceShopCategories.length > 0
+                ? ecommerceShopCategories
+                : STATIC_SHOP_DISPLAY_CATEGORIES
+            }
+            onSelectCategory={
+              customerCommerceEnabled
+                ? (id) => handleNavigation('shop', { category: id })
+                : () => {}
+            }
+          />
         </div>
         ) : null}
 

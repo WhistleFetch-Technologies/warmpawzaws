@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Dog, Cat, Locate, Scissors, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
-import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
+import { runInlineAddressDetect, inlineAddressCoordsPayload } from '@/lib/run-inline-address-detect';
 import { toast } from 'sonner';
 import { UniversalPaymentPage } from '../payment/UniversalPaymentPage';
 import { catalogPriceIncludesTax } from '@/lib/booking-display-utils';
@@ -963,6 +963,60 @@ export function GroomingBookingRouter({
     </>
   );
 
+  if (step === 'payment' && showPaymentPage) {
+    return (
+      <UniversalPaymentPage
+        type="booking"
+        serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
+        serviceName={
+          allSelectedServices.length > 1
+            ? `${allSelectedServices.length} Services Selected`
+            : selectedServiceOption?.name || serviceName || 'Grooming Service'
+        }
+        serviceDescription={`Grooming by ${groomer?.name || 'professional groomer'}`}
+        serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
+        category="grooming"
+        vendorId={vendorId || ''}
+        vendorName={groomer?.name || vendorNameProp || 'Grooming Professional'}
+        vendorAddress={
+          (groomer?.address || groomer?.business_address || groomer?.service_area || groomer?.businessAddress) as
+            | string
+            | undefined
+        }
+        staffName={selectedServiceType === 'at_home' ? groomer?.name || 'Grooming Professional' : undefined}
+        staffPhoto={selectedServiceType === 'at_home' ? groomer?.photo || groomer?.profile_photo : undefined}
+        bookingDate={selectedDate}
+        bookingTime={selectedTime}
+        petId={selectedPet?.id}
+        petName={selectedPet?.name}
+        petBreed={selectedPet?.breed}
+        addressId={selectedAddress?.id}
+        address={selectedAddress}
+        showAddressSelection={selectedServiceType === 'at_home'}
+        baseAmount={
+          allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) ||
+          selectedServiceOption?.price ||
+          price ||
+          499
+        }
+        priceIncludesTax={
+          catalogPriceIncludesTax(selectedServiceOption) ||
+          (!!allSelectedServices?.length && catalogPriceIncludesTax(allSelectedServices[0]))
+        }
+        duration={calculateTotalDuration() || selectedServiceOption?.duration || duration || 60}
+        quantity={1}
+        customerPhone={phone}
+        customerId={customerId || undefined}
+        selectedServices={allSelectedServices}
+        onBack={() => setShowPaymentPage(false)}
+        onPaymentAbandoned={() => {
+          if (selectedDate) void loadTimeSlots(selectedDate);
+        }}
+        onSuccess={handlePaymentSuccess}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 relative overflow-hidden">
       {step !== 'payment' && (
@@ -998,60 +1052,9 @@ export function GroomingBookingRouter({
         />
       )}
 
-      {/* Main Content */}
-      {(step !== 'payment' || showPaymentPage || step === 'confirmation') && (
+      {/* Main Content (booking steps + confirmation; payment uses early return above) */}
+      {step !== 'payment' && (
       <div className="max-w-md mx-auto px-4 pt-6 min-h-[calc(82vh)] pb-24 relative z-10">
-        {/* ✅ FIX: Render payment page as full-screen overlay to escape router layout */}
-        {step === 'payment' && showPaymentPage ? (
-          <div className="fixed inset-0 z-50 bg-white">
-            <UniversalPaymentPage
-            type="booking"
-            serviceId={selectedVendorService?.service_id || selectedVendorService?.serviceId || selectedVendorService?.id || serviceId}
-            serviceName={allSelectedServices.length > 1 
-              ? `${allSelectedServices.length} Services Selected`
-              : (selectedServiceOption?.name || serviceName || 'Grooming Service')}
-            serviceDescription={`Grooming by ${groomer?.name || 'professional groomer'}`}
-            serviceStyle={selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
-            category="grooming"
-            vendorId={vendorId || ''}
-            vendorName={groomer?.name || vendorNameProp || 'Grooming Professional'}
-            vendorAddress={
-              (groomer?.address || groomer?.business_address || groomer?.service_area || groomer?.businessAddress) as
-                | string
-                | undefined
-            }
-            staffName={selectedServiceType === 'at_home' ? (groomer?.name || 'Grooming Professional') : undefined} // ✅ NEW: Staff name for home services
-            staffPhoto={selectedServiceType === 'at_home' ? (groomer?.photo || groomer?.profile_photo) : undefined} // ✅ NEW: Staff photo for home services
-            bookingDate={selectedDate}
-            bookingTime={selectedTime}
-            petId={selectedPet?.id}
-            petName={selectedPet?.name}
-            petBreed={selectedPet?.breed}
-            addressId={selectedAddress?.id}
-            address={selectedAddress}
-            showAddressSelection={selectedServiceType === 'at_home'}
-            baseAmount={allSelectedServices.reduce((total, s) => total + (s.price || 0), 0) || selectedServiceOption?.price || price || 499}
-            priceIncludesTax={
-              catalogPriceIncludesTax(selectedServiceOption) ||
-              (!!(allSelectedServices?.length) && catalogPriceIncludesTax(allSelectedServices[0]))
-            }
-            duration={calculateTotalDuration() || selectedServiceOption?.duration || duration || 60}
-            quantity={1}
-            customerPhone={phone}
-            customerId={customerId || undefined}
-            selectedServices={allSelectedServices}
-            onBack={() => setShowPaymentPage(false)}
-            onPaymentAbandoned={() => {
-              if (selectedDate) void loadTimeSlots(selectedDate);
-            }}
-            onSuccess={handlePaymentSuccess}
-            />
-          </div>
-        ) : null}
-
-        {/* Main booking content - only show when not on payment */}
-        {step !== 'payment' && (
-          <>
             {/* Step indicator moved to header */}
 
             {/* Service Selection */}
@@ -1422,8 +1425,6 @@ export function GroomingBookingRouter({
               Review booking and pay
             </Button>
           </div>
-        )}
-        </>
         )}
 
         {/* Confirmation */}
@@ -1907,90 +1908,13 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
     longitude: 0,
   });
 
-  const detectCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser');
-      return;
-    }
-
+  const detectCurrentLocation = async () => {
     setDetectingLocation(true);
-
-    // ✅ FIX: Request location with proper error handling
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        setFormData(prev => ({ ...prev, latitude, longitude }));
-        
-        // Try reverse geocoding
-        try {
-          const apiKey =
-            (await getGoogleMapsBrowserApiKey()) ||
-            process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
-            '';
-          if (!apiKey) {
-            console.warn('Google Maps API key not configured');
-            toast.error('Location services not configured. Please enter address manually.');
-            setDetectingLocation(false);
-            return;
-          }
-
-          const response = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
-          );
-          const data = await response.json();
-
-          if (data.results && data.results[0]) {
-            const addressComponents = data.results[0].address_components;
-            let street = '', city = '', state = '', pincode = '';
-
-            addressComponents.forEach((component: any) => {
-              if (component.types.includes('street_number') || component.types.includes('route')) {
-                street += component.long_name + ' ';
-              }
-              if (component.types.includes('locality') || component.types.includes('administrative_area_level_2')) {
-                city = component.long_name;
-              }
-              if (component.types.includes('administrative_area_level_1')) {
-                state = component.long_name;
-              }
-              if (component.types.includes('postal_code')) {
-                pincode = component.long_name;
-              }
-            });
-
-            setFormData(prev => ({
-              ...prev,
-              addressLine1: street.trim(),
-              city,
-              state,
-              pincode
-            }));
-            toast.success('Location detected successfully!');
-          } else {
-            toast.error('Could not determine address from location. Please enter manually.');
-          }
-        } catch (error) {
-          console.error('Error reverse geocoding:', error);
-          toast.error('Error processing location. Please enter address manually.');
-        } finally {
-          setDetectingLocation(false);
-        }
-      },
-      (error) => {
-        setDetectingLocation(false);
-        // ✅ FIX: Provide specific error messages
-        if (error.code === error.PERMISSION_DENIED) {
-          toast.error('Location permission denied. Please enable location access or enter address manually.');
-        } else if (error.code === error.POSITION_UNAVAILABLE) {
-          toast.error('Location unavailable. Please enter address manually.');
-        } else if (error.code === error.TIMEOUT) {
-          toast.error('Location request timed out. Please enter address manually.');
-        } else {
-          toast.error('Unable to get location. Please enter address manually.');
-        }
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
+    try {
+      await runInlineAddressDetect(setFormData);
+    } finally {
+      setDetectingLocation(false);
+    }
   };
 
   const handleSaveAddress = async () => {
@@ -2027,7 +1951,7 @@ function AddAddressModalInline({ phone, onClose, onSuccess }: { phone: string; o
         state: formData.state,
         pincode: formData.pincode,
         landmark: formData.landmark || null,
-        coordinates: (formData.latitude && formData.longitude ? { lat: formData.latitude, lng: formData.longitude } : null),
+        ...inlineAddressCoordsPayload(formData),
         isDefault: formData.isDefault || (existingAddresses.length === 0),
         label: formData.label || 'home'
       });

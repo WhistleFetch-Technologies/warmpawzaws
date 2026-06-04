@@ -413,7 +413,6 @@ function TeleConsultationContent() {
     });
     const svc = effectiveDirectPay;
     return (
-      <div className="min-h-screen bg-gray-50">
         <UniversalPaymentPage
             type="booking"
             flowType="tele-instant"
@@ -429,8 +428,6 @@ function TeleConsultationContent() {
             duration={svc.duration}
             petId={selectedPet?.id}
             petName={selectedPet?.name}
-            petSwitcherPets={pets}
-            onPetSwitcherChange={setSelectedPet}
             customerPhone={customerPhone}
             customerId={customerId}
             selectedServices={[
@@ -456,7 +453,6 @@ function TeleConsultationContent() {
               router.push(videoUrl);
             }}
           />
-      </div>
     );
   }
 

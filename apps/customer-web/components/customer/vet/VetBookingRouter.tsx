@@ -1099,6 +1099,132 @@ export function VetBookingRouter({
     </>
   );
 
+  const vetPaymentScreen =
+    step === 'payment' &&
+    showPaymentPage &&
+    selectedVendorService &&
+    selectedPet &&
+    selectedDate &&
+    selectedTime
+      ? (() => {
+          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          let finalServiceId = selectedVendorService.service_id || selectedVendorService.serviceId;
+
+          if (!finalServiceId || !uuidRegex.test(finalServiceId)) {
+            const foundService = vendorServices.find(
+              (s: any) =>
+                String(s.id) === String(selectedVendorService.id) ||
+                s.id === selectedVendorService.id ||
+                (s.serviceId || s.service_id) === finalServiceId
+            );
+            if (foundService && (foundService.serviceId || foundService.service_id)) {
+              finalServiceId = foundService.serviceId || foundService.service_id;
+            }
+          }
+
+          if (finalServiceId && uuidRegex.test(finalServiceId)) {
+            const totalBaseAmount = selectedPackageForSwitch
+              ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0)
+              : allSelectedServices && allSelectedServices.length > 0
+                ? allSelectedServices.reduce((sum, s) => sum + (s.price ?? 0), 0)
+                : (selectedVendorService?.price ?? selectedServiceOption?.price ?? 0);
+            const totalDuration =
+              allSelectedServices && allSelectedServices.length > 0
+                ? allSelectedServices.reduce((sum, s) => sum + (s.duration ?? 0), 0)
+                : (selectedVendorService?.duration ?? selectedServiceOption?.duration ?? 15);
+            const displayVendorName =
+              vendorNameProp || doctor?.name || doctor?.clinic_name || doctor?.clinicName || 'Veterinary Clinic';
+            return (
+              <UniversalPaymentPage
+                type="booking"
+                layoutVariant="appShell"
+                category="veterinary"
+                vendorId={(vendorId || doctorId || clinicId || '') as string}
+                vendorName={displayVendorName}
+                serviceId={finalServiceId}
+                serviceName={
+                  allSelectedServices?.length > 1
+                    ? `${allSelectedServices.length} Services`
+                    : selectedVendorService.name || selectedServiceOption?.name || 'Vet Consultation'
+                }
+                serviceDescription={
+                  allSelectedServices?.length > 1
+                    ? allSelectedServices.map((s: any) => s.name || s.serviceName).join(', ')
+                    : `${selectedServiceOption?.name || selectedVendorService?.name} for ${selectedPet.name}`
+                }
+                serviceStyle={
+                  selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'
+                }
+                bookingDate={selectedDate}
+                bookingTime={selectedTime}
+                petId={selectedPet.id}
+                petName={selectedPet.name}
+                petBreed={selectedPet.breed}
+                addressId={selectedServiceType === 'at_home' ? selectedAddress?.id : undefined}
+                address={
+                  selectedServiceType === 'at_home' && selectedAddress
+                    ? {
+                        id: selectedAddress.id,
+                        label: selectedAddress.label,
+                        addressLine1: selectedAddress.addressLine1 || selectedAddress.address,
+                        city: selectedAddress.city,
+                        pincode: selectedAddress.pincode,
+                        state: selectedAddress.state,
+                      }
+                    : undefined
+                }
+                baseAmount={totalBaseAmount}
+                priceIncludesTax={
+                  catalogPriceIncludesTax(selectedVendorService) ||
+                  catalogPriceIncludesTax(selectedServiceOption) ||
+                  (!!allSelectedServices?.length && catalogPriceIncludesTax(allSelectedServices![0]))
+                }
+                duration={totalDuration}
+                selectedServices={
+                  allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined
+                }
+                customerPhone={phone}
+                customerId={customerId || undefined}
+                flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
+                onBack={() => {
+                  setShowPaymentPage(false);
+                  if (step === 'payment') {
+                    setStep('summary');
+                  }
+                }}
+                onPaymentAbandoned={() => {
+                  if (selectedDate) void loadTimeSlots(selectedDate);
+                }}
+                onSuccess={(bookingId, _orderId, _otp, meta) => {
+                  setBookingId(bookingId);
+                  setPaymentSummary(
+                    meta?.paymentSources?.length
+                      ? { paymentSources: meta.paymentSources, totalPaid: meta.totalPaid }
+                      : null
+                  );
+                  setShowPaymentPage(false);
+                  setStep('confirmation');
+                }}
+              />
+            );
+          }
+
+          return (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl max-w-md mx-auto">
+              <p className="text-red-600 font-medium">Error: Invalid service ID</p>
+              <p className="text-red-500 text-sm mt-1">Please go back and select the service again.</p>
+              <Button onClick={() => setShowPaymentPage(false)} className="mt-3">
+                Go Back
+              </Button>
+            </div>
+          );
+        })()
+      : null;
+
+  if (vetPaymentScreen) {
+    return vetPaymentScreen;
+  }
+
   return (
     <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-gray-50">
       {!((step === 'payment' && showPaymentPage) || reviewVetPrePayment) && (
@@ -1552,109 +1678,6 @@ export function VetBookingRouter({
             </div>
           </div>
         )}
-
-        {/* Universal Payment Page */}
-        {step === 'payment' && showPaymentPage && selectedVendorService && selectedPet && selectedDate && selectedTime && (() => {
-          // ✅ CRITICAL: Ensure we only use UUID, not numeric ID
-          const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-          let finalServiceId = selectedVendorService.service_id || selectedVendorService.serviceId;
-          
-          // If not a UUID, try to find it from vendorServices
-          if (!finalServiceId || !uuidRegex.test(finalServiceId)) {
-            console.warn('⚠️ serviceId is not a UUID, attempting to resolve:', finalServiceId);
-            const foundService = vendorServices.find((s: any) => 
-              String(s.id) === String(selectedVendorService.id) ||
-              s.id === selectedVendorService.id ||
-              (s.serviceId || s.service_id) === finalServiceId
-            );
-            if (foundService && (foundService.serviceId || foundService.service_id)) {
-              finalServiceId = foundService.serviceId || foundService.service_id;
-              console.log('✅ Resolved to UUID:', finalServiceId);
-            } else {
-              console.error('❌ Could not resolve serviceId to UUID:', selectedVendorService);
-            }
-          }
-          
-          // Only render if we have a valid UUID
-          if (finalServiceId && uuidRegex.test(finalServiceId)) {
-            const totalBaseAmount = selectedPackageForSwitch
-              ? (selectedPackageForSwitch.package_price ?? selectedPackageForSwitch.price ?? 0)
-              : (allSelectedServices && allSelectedServices.length > 0
-                ? allSelectedServices.reduce((sum, s) => sum + (s.price ?? 0), 0)
-                : (selectedVendorService?.price ?? selectedServiceOption?.price ?? 0));
-            const totalDuration = allSelectedServices && allSelectedServices.length > 0
-              ? allSelectedServices.reduce((sum, s) => sum + (s.duration ?? 0), 0)
-              : (selectedVendorService?.duration ?? selectedServiceOption?.duration ?? 15);
-            const displayVendorName = vendorNameProp || doctor?.name || doctor?.clinic_name || doctor?.clinicName || 'Veterinary Clinic';
-            return (
-              <UniversalPaymentPage
-                type="booking"
-                layoutVariant="appShell"
-                category="veterinary"
-                vendorId={(vendorId || doctorId || clinicId || '') as string}
-                vendorName={displayVendorName}
-                serviceId={finalServiceId}
-                serviceName={allSelectedServices?.length > 1 ? `${allSelectedServices.length} Services` : (selectedVendorService.name || selectedServiceOption?.name || 'Vet Consultation')}
-                serviceDescription={allSelectedServices?.length > 1 ? allSelectedServices.map((s: any) => s.name || s.serviceName).join(', ') : `${selectedServiceOption?.name || selectedVendorService?.name} for ${selectedPet.name}`}
-                serviceStyle={selectedServiceType === 'tele' ? 'tele' : selectedServiceType === 'at_home' ? 'at_home' : 'at_center'}
-                bookingDate={selectedDate}
-                bookingTime={selectedTime}
-                petId={selectedPet.id}
-                petName={selectedPet.name}
-                petBreed={selectedPet.breed}
-                addressId={selectedServiceType === 'at_home' ? selectedAddress?.id : undefined}
-                address={selectedServiceType === 'at_home' && selectedAddress ? {
-                  id: selectedAddress.id,
-                  label: selectedAddress.label,
-                  addressLine1: selectedAddress.addressLine1 || selectedAddress.address,
-                  city: selectedAddress.city,
-                  pincode: selectedAddress.pincode,
-                  state: selectedAddress.state,
-                } : undefined}
-                baseAmount={totalBaseAmount}
-                priceIncludesTax={
-                  catalogPriceIncludesTax(selectedVendorService) ||
-                  catalogPriceIncludesTax(selectedServiceOption) ||
-                  (!!(allSelectedServices?.length) && catalogPriceIncludesTax(allSelectedServices![0]))
-                }
-                duration={totalDuration}
-                selectedServices={allSelectedServices && allSelectedServices.length > 0 ? allSelectedServices : undefined}
-                customerPhone={phone}
-                customerId={customerId || undefined}
-                flowType={selectedServiceType === 'tele' ? 'tele-scheduled' : undefined}
-                onBack={() => {
-                  setShowPaymentPage(false);
-                  // at_home auto-opens payment when step stays 'payment' and showPaymentPage is false — leave summary or we snap straight back into payment
-                  if (step === 'payment') {
-                    setStep('summary');
-                  }
-                }}
-                onPaymentAbandoned={() => {
-                  if (selectedDate) void loadTimeSlots(selectedDate);
-                }}
-                onSuccess={(bookingId, _orderId, _otp, meta) => {
-                  setBookingId(bookingId);
-                  setPaymentSummary(
-                    meta?.paymentSources?.length
-                      ? { paymentSources: meta.paymentSources, totalPaid: meta.totalPaid }
-                      : null
-                  );
-                  setShowPaymentPage(false);
-                  setStep('confirmation');
-                }}
-              />
-            );
-          }
-          
-          // Fallback: show error message
-          return (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
-              <p className="text-red-600 font-medium">Error: Invalid service ID</p>
-              <p className="text-red-500 text-sm mt-1">Please go back and select the service again.</p>
-              <Button onClick={() => setShowPaymentPage(false)} className="mt-3">Go Back</Button>
-            </div>
-          );
-        })()}
 
         {/* Confirmation */}
         {step === 'confirmation' && (

@@ -15,8 +15,9 @@ import { ProfileAccountHero } from '@/components/customer/profile/ProfileAccount
 import { ProfileMenuFloatingSheet } from '@/components/customer/profile/ProfileMenuFloatingSheet';
 // Uses apiClient with Cognito auth
 import { apiClient, isUatMode } from '@/lib/api-client';
-import { getGoogleMapsBrowserApiKey } from '@/lib/google-maps-browser-key';
 import { EnhancedAddressAutocomplete, AddressComponents } from '@/components/shared/EnhancedAddressAutocomplete';
+import { UseCurrentLocationButton } from '@/components/shared/UseCurrentLocationButton';
+import type { AddressFromGeolocationResult } from '@/lib/address-from-geolocation';
 import { CountryCodeSelector } from '@/components/ui/CountryCodeSelector';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { normalizeCustomerProfileFields } from '@/lib/normalize-customer-profile-api';
@@ -26,6 +27,7 @@ import {
 } from '@/lib/profile-address-format';
 import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
 import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
+import { invalidateCustomerLocationCache } from '@/lib/customer-location';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
 const CUSTOMER_SUPPORT_EMAIL = 'support@warmpawz.com';
 
@@ -740,10 +742,15 @@ export function UserAccountSidebar({
 
   const saveAddress = async (addressData: any) => {
     try {
+      const coords = addressData.coordinates as { lat: number; lng: number } | null | undefined;
       const payload = {
         ...addressData,
+        label: typeof addressData.label === 'string' ? addressData.label.toLowerCase() : addressData.label,
         flatNo: null,
         addressLine2: null,
+        coordinates: coords ?? undefined,
+        latitude: addressData.latitude ?? coords?.lat,
+        longitude: addressData.longitude ?? coords?.lng,
       };
       let data: any;
       if (editingAddress) {
@@ -753,6 +760,7 @@ export function UserAccountSidebar({
       }
 
       if (data && data.success) {
+        invalidateCustomerLocationCache(phone);
         alert(editingAddress ? '✅ Address updated!' : '✅ Address added!');
         await loadAddresses();
         setShowAddressForm(false);
@@ -2249,114 +2257,29 @@ function AddressForm({ address, onSave, onCancel }: {
   onSave: (data: any) => void;
   onCancel: () => void;
 }) {
+  const addrWithGeo = address as (Address & { latitude?: number; longitude?: number }) | null;
+  const initialCoords =
+    address?.coordinates ??
+    (addrWithGeo?.latitude != null && addrWithGeo?.longitude != null
+      ? { lat: Number(addrWithGeo.latitude), lng: Number(addrWithGeo.longitude) }
+      : null);
   const [formData, setFormData] = useState({
     label: address?.label || 'Home',
     name: address?.name || '',
     phone: address?.phone || '',
     addressLine1: address?.addressLine1 || '',
-    city: address?.city || '',
-    state: address?.state || '',
+    city: (address?.city || '').replace(/\s*\d{6}\s*$/, '').trim(),
+    state: (address?.state || '').replace(/\s*\d{6}\s*$/, '').trim(),
     pincode: address?.pincode || '',
     houseNo: address?.houseNo || '',
     floor: address?.floor || '',
-    isDefault: address?.isDefault || false
+    isDefault: address?.isDefault || false,
+    coordinates: initialCoords as { lat: number; lng: number } | null,
+    latitude: initialCoords?.lat ?? null,
+    longitude: initialCoords?.lng ?? null,
   });
 
-  const [detectingLocation, setDetectingLocation] = useState(false);
   const [addressCountryCode, setAddressCountryCode] = useState('+91');
-
-  const detectCurrentLocation = () => {
-    if (!navigator.geolocation) {
-      alert('❌ Geolocation is not supported by your browser');
-      return;
-    }
-
-    setDetectingLocation(true);
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        console.log('📍 Location detected:', { latitude, longitude });
-
-        // Reverse geocode using Google Maps
-        try {
-          const apiKey =
-            (await getGoogleMapsBrowserApiKey()) ||
-            process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ||
-            '';
-          const response = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${apiKey}`
-          );
-          const data = await response.json();
-
-          if (data.results && data.results[0]) {
-            const result = data.results[0];
-            const addressComponents = result.address_components;
-
-            // Extract address details
-            let street = '';
-            let locality = '';
-            let city = '';
-            let state = '';
-            let pincode = '';
-
-            addressComponents.forEach((component: any) => {
-              if (component.types.includes('street_number') || component.types.includes('route')) {
-                street += component.long_name + ' ';
-              }
-              if (component.types.includes('sublocality') || component.types.includes('locality')) {
-                locality = component.long_name;
-              }
-              if (component.types.includes('locality') || component.types.includes('administrative_area_level_2')) {
-                city = component.long_name;
-              }
-              if (component.types.includes('administrative_area_level_1')) {
-                state = component.long_name;
-              }
-              if (component.types.includes('postal_code')) {
-                pincode = component.long_name;
-              }
-            });
-
-            setFormData(prev => ({
-              ...prev,
-              addressLine1: street.trim() || locality,
-              city: city,
-              state: state,
-              pincode: pincode
-            }));
-
-            alert('✅ Location detected successfully!');
-          }
-        } catch (error) {
-          console.error('Error reverse geocoding:', error);
-          alert('⚠️ Location detected but could not fetch address details');
-        } finally {
-          setDetectingLocation(false);
-        }
-      },
-      (error) => {
-        setDetectingLocation(false);
-        
-        // Log user-friendly message instead of error object
-        if (error.code === 1) { // PERMISSION_DENIED
-          console.log('💡 Location permission denied by user');
-          alert('📍 Location access denied. Please enable location permissions in your browser settings or enter your address manually.');
-        } else if (error.code === 2) { // POSITION_UNAVAILABLE
-          console.log('💡 Location information unavailable');
-          alert('📍 Location information unavailable. Please try again or enter your address manually.');
-        } else if (error.code === 3) { // TIMEOUT
-          console.log('💡 Location request timeout');
-          alert('📍 Location request timeout. Please try again or enter your address manually.');
-        }
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0
-      }
-    );
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2369,25 +2292,22 @@ function AddressForm({ address, onSave, onCancel }: {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {/* Detect Location Button */}
-      <button
-        type="button"
-        onClick={detectCurrentLocation}
-        disabled={detectingLocation}
-        className="w-full py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl font-semibold flex items-center justify-center gap-3 active:scale-[0.98] transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {detectingLocation ? (
-          <>
-            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-            <span>Detecting Location...</span>
-          </>
-        ) : (
-          <>
-            <MapPin className="w-5 h-5" />
-            <span>📍 Detect My Current Location</span>
-          </>
-        )}
-      </button>
+      <UseCurrentLocationButton
+        variant="solid"
+        label="Detect My Current Location"
+        onSuccess={(result: AddressFromGeolocationResult) => {
+          setFormData((prev) => ({
+            ...prev,
+            addressLine1: result.addressLine1 ?? prev.addressLine1,
+            city: result.city ?? prev.city,
+            state: result.state ?? prev.state,
+            pincode: result.pincode ?? prev.pincode,
+            coordinates: result.coordinates,
+            latitude: result.latitude,
+            longitude: result.longitude,
+          }));
+        }}
+      />
 
       <div className="relative">
         <div className="absolute inset-x-0 flex items-center">
@@ -2447,25 +2367,23 @@ function AddressForm({ address, onSave, onCancel }: {
         <EnhancedAddressAutocomplete
           value={formData.addressLine1}
           onChange={(address: string, components?: AddressComponents) => {
-            setFormData(prev => ({ ...prev, addressLine1: address }));
-            
-            // Auto-populate city, state, pincode from Google Maps
-            if (components) {
-              const updates: any = {};
-              if (components.city && !formData.city) {
-                updates.city = components.city;
+            setFormData(prev => {
+              const next = { ...prev, addressLine1: address };
+              if (components) {
+                if (components.city && !prev.city) next.city = components.city;
+                if (components.state && !prev.state) next.state = components.state;
+                if (components.pincode && !prev.pincode) next.pincode = components.pincode;
+                if (components.coordinates) {
+                  next.coordinates = {
+                    lat: components.coordinates.lat,
+                    lng: components.coordinates.lng,
+                  };
+                  next.latitude = components.coordinates.lat;
+                  next.longitude = components.coordinates.lng;
+                }
               }
-              if (components.state && !formData.state) {
-                updates.state = components.state;
-              }
-              if (components.pincode && !formData.pincode) {
-                updates.pincode = components.pincode;
-              }
-
-              if (Object.keys(updates).length > 0) {
-                setFormData(prev => ({ ...prev, ...updates }));
-              }
-            }
+              return next;
+            });
           }}
           placeholder="Search address, landmark, city..."
           className="w-full"

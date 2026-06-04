@@ -1,19 +1,16 @@
 import { formatBookingTime } from '@/components/vendor/dashboard/helpers';
+import { parseScheduledDeliverySlot } from '@warmpawz/shared-types';
 
 function parseSlotStart(raw: unknown): string | null {
-  if (raw == null || raw === '') return null;
-  let slot: { start?: string; end?: string } | null = null;
-  if (typeof raw === 'string') {
-    try {
-      slot = JSON.parse(raw) as { start?: string };
-    } catch {
-      return null;
-    }
-  } else if (typeof raw === 'object' && !Array.isArray(raw)) {
-    slot = raw as { start?: string };
-  }
-  const start = slot?.start;
-  return typeof start === 'string' && start.trim() ? start.trim() : null;
+  const slot = parseScheduledDeliverySlot(raw);
+  return slot?.start ?? null;
+}
+
+/** Commitment time (slot end, or start) for customer delivery display. */
+function parseSlotCommitmentHm(raw: unknown): string | null {
+  const slot = parseScheduledDeliverySlot(raw);
+  if (!slot) return null;
+  return slot.end || slot.start;
 }
 
 function scheduledYmd(order: Record<string, unknown>): string | null {
@@ -43,8 +40,27 @@ function formatCalendarDateFromYmd(ymd: string): string {
   return new Date(y, mo - 1, d).toLocaleDateString();
 }
 
-/** Customer-requested delivery date + time for vendor order cards. */
-export function formatMealOrderDeliverySchedule(order: Record<string, unknown>): string {
+/** Format ISO timestamp or ms for vendor prep/delivery labels. */
+export function formatMealSchedulingInstant(
+  isoOrMs: string | number | null | undefined,
+): string {
+  if (isoOrMs == null || isoOrMs === '') return '—';
+  const d =
+    typeof isoOrMs === 'number'
+      ? new Date(isoOrMs)
+      : new Date(String(isoOrMs));
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+/** Customer-requested delivery date + commitment time (slot end when set). */
+export function formatMealOrderCustomerDelivery(order: Record<string, unknown>): string {
   const ymd = scheduledYmd(order);
   const dateLabel = ymd
     ? formatCalendarDateFromYmd(ymd)
@@ -52,16 +68,26 @@ export function formatMealOrderDeliverySchedule(order: Record<string, unknown>):
       ? new Date(String(order.created_at)).toLocaleDateString()
       : '—';
 
-  const slotStart =
-    parseSlotStart(order.scheduled_delivery_slot) ??
+  const commitmentHm =
+    parseSlotCommitmentHm(order.scheduled_delivery_slot) ??
+    parseSlotCommitmentHm(
+      order.delivery_time_slot != null
+        ? order.delivery_time_slot
+        : order.delivery_time,
+    ) ??
     (typeof order.delivery_time === 'string' ? order.delivery_time : null) ??
     (typeof order.deliveryTime === 'string' ? order.deliveryTime : null);
 
-  if (slotStart) {
-    const timeLabel = formatBookingTime(slotStart);
+  if (commitmentHm) {
+    const timeLabel = formatBookingTime(commitmentHm);
     return `${dateLabel} · ${timeLabel}`;
   }
   return dateLabel;
+}
+
+/** Customer-requested delivery date + time for vendor order cards (slot start legacy). */
+export function formatMealOrderDeliverySchedule(order: Record<string, unknown>): string {
+  return formatMealOrderCustomerDelivery(order);
 }
 
 export function mealOrderSlotStartHm(order: Record<string, unknown>): string | null {

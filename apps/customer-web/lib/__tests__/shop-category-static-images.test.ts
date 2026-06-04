@@ -1,17 +1,23 @@
-import { getShopCategoryStaticImageUrl, slugifyShopCategoryName } from '../shop-category-static-images';
+import {
+  STATIC_SHOP_DISPLAY_CATEGORIES,
+  isShopCategoryStaticImageUrl,
+} from '../shop-category-static-images';
 
 describe('shop-category-static-images', () => {
-  it('slugifies category names', () => {
-    expect(slugifyShopCategoryName('Pet Beds & Furniture')).toBe('pet-beds-furniture');
+  it('exports nine static home shop categories with local image paths', () => {
+    expect(STATIC_SHOP_DISPLAY_CATEGORIES).toHaveLength(9);
+    for (const cat of STATIC_SHOP_DISPLAY_CATEGORIES) {
+      expect(cat.id).toBeTruthy();
+      expect(cat.name).toBeTruthy();
+      expect(cat.image_url).toBeTruthy();
+      expect(isShopCategoryStaticImageUrl(cat.image_url)).toBe(true);
+    }
   });
 
-  it('maps catalog category names to public paths', () => {
-    expect(getShopCategoryStaticImageUrl('Pet Food')).toBe('/images/shop/categories/pet-food.jpeg');
-    expect(getShopCategoryStaticImageUrl('Pet Accessories')).toBe(
-      '/images/shop/categories/pet-accessories.jpeg'
-    );
-    expect(getShopCategoryStaticImageUrl('Pet Beds & Furniture')).toBe(
-      '/images/shop/categories/pet-beds-furniture.jpeg'
-    );
+  it('includes expected category names for home grid', () => {
+    const names = STATIC_SHOP_DISPLAY_CATEGORIES.map((c) => c.name);
+    expect(names).toContain('Pet Food');
+    expect(names).toContain('Pet Accessories');
+    expect(names).toContain('Pet Training');
   });
 });
