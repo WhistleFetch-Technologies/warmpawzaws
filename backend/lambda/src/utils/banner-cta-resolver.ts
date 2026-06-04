@@ -14,16 +14,22 @@ import { query } from '../database/rds-connection';
 
 export type BannerNavTarget =
   | { kind: 'screen'; screen: string; data: Record<string, unknown> }
-  | { kind: 'path'; path: string }
-  | { kind: 'external'; url: string };
+  | { kind: 'path'; path: string };
 
-export type BannerTargetLevel = 'category' | 'service_type' | 'vendor' | 'external_url';
+export type BannerTargetLevel =
+  | 'category'
+  | 'service_type'
+  | 'vendor'
+  | 'article'
+  | 'informational';
 
 export type BannerTarget = {
   categoryId?: string;
   customerScreen?: string;
   targetLevel?: BannerTargetLevel;
-  externalUrl?: string;
+  articleSlug?: string;
+  articlePageId?: string;
+  articleTitle?: string;
   /** Legacy alias for customerScreen */
   persona?: string;
   serviceStyle?: string;
@@ -32,14 +38,10 @@ export type BannerTarget = {
   vendorServiceId?: string | null;
 };
 
-function isHttpBannerUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url) || url.startsWith('//');
-}
-
-function normalizeHttpBannerUrl(url: string): string {
-  const trimmed = url.trim();
-  if (trimmed.startsWith('//')) return `https:${trimmed}`;
-  return trimmed;
+export function buildArticleBannerPath(slug: string): string {
+  const s = String(slug ?? '').trim();
+  if (!s) return '';
+  return `/articles?slug=${encodeURIComponent(s)}`;
 }
 
 export type ParsedBannerCta = {
@@ -169,7 +171,8 @@ function inferTargetLevel(bt: Record<string, unknown>): BannerTargetLevel | null
     explicit === 'category' ||
     explicit === 'service_type' ||
     explicit === 'vendor' ||
-    explicit === 'external_url'
+    explicit === 'article' ||
+    explicit === 'informational'
   ) {
     return explicit;
   }
@@ -189,11 +192,22 @@ export function parseBannerTargetFromMetadata(metadata: unknown): BannerTarget |
 
   const bt = raw as Record<string, unknown>;
   const targetLevel = inferTargetLevel(bt);
-  const externalUrl = String(bt.externalUrl ?? bt.external_url ?? '').trim();
+  const articleSlug = String(bt.articleSlug ?? bt.article_slug ?? '').trim();
 
-  if (targetLevel === 'external_url') {
-    if (!externalUrl) return null;
-    return { targetLevel: 'external_url', externalUrl: normalizeHttpBannerUrl(externalUrl) };
+  if (targetLevel === 'informational') {
+    return { targetLevel: 'informational' };
+  }
+
+  if (targetLevel === 'article') {
+    if (!articleSlug) return null;
+    const articlePageId = String(bt.articlePageId ?? bt.article_page_id ?? '').trim();
+    const articleTitle = String(bt.articleTitle ?? bt.article_title ?? '').trim();
+    return {
+      targetLevel: 'article',
+      articleSlug,
+      articlePageId: articlePageId || undefined,
+      articleTitle: articleTitle || undefined,
+    };
   }
 
   const customerScreen = resolveCustomerScreenFromTarget(bt);
@@ -573,16 +587,15 @@ async function resolveFromBannerTarget(target: BannerTarget): Promise<BannerNavT
       target.targetLevel ??
       (target.vendorId ? 'vendor' : target.serviceStyle ? 'service_type' : 'category');
 
-    if (level === 'external_url') {
-      const url = String(target.externalUrl ?? '').trim();
-      if (!url) return null;
-      if (isHttpBannerUrl(url)) {
-        return { kind: 'external', url: normalizeHttpBannerUrl(url) };
-      }
-      if (url.startsWith('/')) {
-        return { kind: 'path', path: url };
-      }
+    if (level === 'informational') {
       return null;
+    }
+
+    if (level === 'article') {
+      const slug = String(target.articleSlug ?? '').trim();
+      if (!slug) return null;
+      const path = buildArticleBannerPath(slug);
+      return path ? { kind: 'path', path } : null;
     }
 
     if (level === 'category') {
@@ -681,6 +694,11 @@ function isCheckoutBanner(banner: Record<string, unknown>): boolean {
   return type === 'checkout';
 }
 
+function isInformationalHomeBanner(banner: Record<string, unknown>): boolean {
+  const target = parseBannerTargetFromMetadata(banner.metadata);
+  return target?.targetLevel === 'informational';
+}
+
 /** Batch-resolve nav targets for banner rows (best-effort, skips failures). */
 export async function enrichBannersWithNavTargets<
   T extends {
@@ -695,7 +713,8 @@ export async function enrichBannersWithNavTargets<
 >(banners: T[]): Promise<(T & { navTarget?: BannerNavTarget })[]> {
   return Promise.all(
     banners.map(async (banner) => {
-      if (isCheckoutBanner(banner as Record<string, unknown>)) {
+      const row = banner as Record<string, unknown>;
+      if (isCheckoutBanner(row) || isInformationalHomeBanner(row)) {
         return banner;
       }
       const navTarget = await resolveBannerCtaNavigation({

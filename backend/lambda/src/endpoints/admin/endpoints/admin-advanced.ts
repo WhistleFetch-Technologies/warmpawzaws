@@ -8667,6 +8667,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
     try {
       const body = await c.req.json().catch(() => ({}));
       const { title, slug, content, category, isPublished, metadata } = body;
+      const publishedRaw = isPublished ?? body.is_published;
 
       if (!title || !slug) {
         return c.json({ error: 'title and slug are required' }, 400);
@@ -8679,7 +8680,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
         slug,
         content: content || '',
         category: category || 'other',
-        is_published: isPublished === true,
+        is_published: rowIsPublished(publishedRaw),
         metadata: metadataObj,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -8882,7 +8883,10 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       if (body.slug !== undefined) updateData.slug = body.slug;
       if (body.content !== undefined) updateData.content = body.content;
       if (body.category !== undefined) updateData.category = body.category;
-      if (body.isPublished !== undefined) updateData.is_published = body.isPublished === true;
+      if (body.isPublished !== undefined || body.is_published !== undefined) {
+        const publishedRaw = body.isPublished ?? body.is_published;
+        updateData.is_published = rowIsPublished(publishedRaw);
+      }
       if (body.metadata !== undefined) {
         updateData.metadata = normalizeContentPagesMetadataInput(body.metadata);
       }

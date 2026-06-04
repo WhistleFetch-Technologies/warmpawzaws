@@ -66,9 +66,14 @@ export function formatAdminBannerLocationLabel(targetState?: unknown, targetCity
 /** Radix Select sentinel — clears category / type / vendor selection. */
 export const BANNER_SELECT_EMPTY = '__select__';
 
-export type BannerTargetLevel = 'category' | 'service_type' | 'vendor' | 'external_url';
+export type BannerTargetLevel = 'category' | 'service_type' | 'vendor' | 'article' | 'informational';
 
-export type BannerCtaTargetMode = 'none' | 'service_type' | 'vendor' | 'external_url';
+export type BannerCtaTargetMode =
+  | 'none'
+  | 'service_type'
+  | 'vendor'
+  | 'article'
+  | 'informational';
 
 export type BannerDestinationCategory = {
   id: string;
@@ -94,7 +99,9 @@ export type BannerTargetMetadata = {
   targetLevel: BannerTargetLevel;
   categoryId?: string;
   customerScreen?: string;
-  externalUrl?: string;
+  articleSlug?: string;
+  articlePageId?: string;
+  articleTitle?: string;
   serviceStyle?: string;
   vendorId?: string;
   vendorName?: string;
@@ -103,20 +110,37 @@ export type BannerTargetMetadata = {
   persona?: string;
 };
 
-const HTTP_BANNER_URL_RE = /^https?:\/\//i;
-
-export function isValidBannerExternalUrl(url: unknown): boolean {
-  const trimmed = String(url ?? '').trim();
-  if (!trimmed) return false;
-  if (HTTP_BANNER_URL_RE.test(trimmed) || trimmed.startsWith('//')) return true;
-  if (trimmed.startsWith('/')) return true;
-  return false;
+export function buildArticleBannerCtaLink(slug: unknown): string {
+  const s = String(slug ?? '').trim();
+  if (!s) return '';
+  return `/articles?slug=${encodeURIComponent(s)}`;
 }
 
-export function normalizeBannerExternalUrl(url: unknown): string {
-  const trimmed = String(url ?? '').trim();
-  if (trimmed.startsWith('//')) return `https:${trimmed}`;
-  return trimmed;
+/** Parse slug from customer-style `/articles?slug=` CTA (for edit form). */
+export function parseArticleSlugFromCtaLink(ctaLink: unknown): string | null {
+  const raw = String(ctaLink ?? '').trim();
+  if (!raw) return null;
+  const match = raw.match(/\/articles\?slug=([^&#]+)/i);
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1].trim()) || null;
+  } catch {
+    return match[1].trim() || null;
+  }
+}
+
+export function isPublishedArticleRow(page: Record<string, unknown>): boolean {
+  const published = page.isPublished ?? page.is_published;
+  if (published === false) return false;
+  const slug = String(page.slug ?? '').trim();
+  return Boolean(slug);
+}
+
+export function formatArticleOptionLabel(page: Record<string, unknown>): string {
+  const title = String(page.title ?? '').trim() || 'Untitled article';
+  const slug = String(page.slug ?? '').trim();
+  if (slug) return `${title} (${slug})`;
+  return title;
 }
 
 export type ShopBannerTargetLevel = 'informational' | 'product';
@@ -154,10 +178,14 @@ export function buildBannerMetadata(opts: {
     gradient_to: opts.gradientTo,
   };
   if (opts.bannerTarget) {
-    if (opts.bannerTarget.targetLevel === 'external_url') {
+    if (opts.bannerTarget.targetLevel === 'informational') {
+      meta.bannerTarget = { targetLevel: 'informational' };
+    } else if (opts.bannerTarget.targetLevel === 'article') {
       meta.bannerTarget = {
-        targetLevel: 'external_url',
-        externalUrl: opts.bannerTarget.externalUrl ?? null,
+        targetLevel: 'article',
+        articleSlug: opts.bannerTarget.articleSlug ?? null,
+        articlePageId: opts.bannerTarget.articlePageId ?? null,
+        articleTitle: opts.bannerTarget.articleTitle ?? null,
       };
     } else {
       meta.bannerTarget = {
@@ -303,14 +331,20 @@ export function parseBannerTargetFromAdminRow(row: Record<string, unknown>): Ban
   const vendorId = String(bt.vendorId ?? bt.vendor_id ?? '').trim();
   const serviceStyleRaw = bt.serviceStyle ?? bt.service_style;
 
-  const externalUrl = String(bt.externalUrl ?? bt.external_url ?? '').trim();
+  const articleSlug = String(bt.articleSlug ?? bt.article_slug ?? '').trim();
+  const articlePageId = String(bt.articlePageId ?? bt.article_page_id ?? '').trim();
+  const articleTitle = String(bt.articleTitle ?? bt.article_title ?? '').trim();
+
+  if (targetLevelRaw === 'informational') {
+    return { targetLevel: 'informational' };
+  }
 
   let targetLevel: BannerTargetLevel | null = null;
   if (
     targetLevelRaw === 'category' ||
     targetLevelRaw === 'service_type' ||
     targetLevelRaw === 'vendor' ||
-    targetLevelRaw === 'external_url'
+    targetLevelRaw === 'article'
   ) {
     targetLevel = targetLevelRaw;
   } else if (vendorId) {
@@ -323,11 +357,13 @@ export function parseBannerTargetFromAdminRow(row: Record<string, unknown>): Ban
 
   if (!targetLevel) return null;
 
-  if (targetLevel === 'external_url') {
-    if (!externalUrl) return null;
+  if (targetLevel === 'article') {
+    if (!articleSlug) return null;
     return {
-      targetLevel: 'external_url',
-      externalUrl: normalizeBannerExternalUrl(externalUrl),
+      targetLevel: 'article',
+      articleSlug,
+      articlePageId: articlePageId || undefined,
+      articleTitle: articleTitle || undefined,
     };
   }
 
@@ -416,11 +452,20 @@ export function validateBannerSaveTarget(opts: {
   targetMode: BannerCtaTargetMode;
   serviceStyle: string;
   vendorId: string;
-  externalUrl?: string;
+  articleSlug?: string;
   shopTargetMode?: ShopBannerTargetLevel;
   shopProductId?: string;
 }): { ok: true } | { ok: false; message: string } {
   if (opts.position === 'checkout') {
+    return { ok: true };
+  }
+  if (opts.targetMode === 'informational') {
+    if (!isHomeBannerPosition(opts.position)) {
+      return {
+        ok: false,
+        message: 'Informational banners are only available for home placements.',
+      };
+    }
     return { ok: true };
   }
   if (opts.position === 'shop') {
@@ -429,12 +474,9 @@ export function validateBannerSaveTarget(opts: {
       productId: opts.shopProductId ?? '',
     });
   }
-  if (opts.targetMode === 'external_url') {
-    if (!isValidBannerExternalUrl(opts.externalUrl)) {
-      return {
-        ok: false,
-        message: 'Enter a valid redirect URL (https://… or an in-app path starting with /).',
-      };
+  if (opts.targetMode === 'article') {
+    if (!String(opts.articleSlug ?? '').trim()) {
+      return { ok: false, message: 'Select a published article for this banner.' };
     }
     return { ok: true };
   }
@@ -456,4 +498,10 @@ export function isCheckoutBannerPosition(position: string | undefined): boolean 
 
 export function isShopBannerPosition(position: string | undefined): boolean {
   return String(position ?? '').trim().toLowerCase() === 'shop';
+}
+
+/** Hero / middle / lower slots on the customer home screen. */
+export function isHomeBannerPosition(position: string | undefined): boolean {
+  const p = String(position ?? '').trim().toLowerCase();
+  return p === 'home_top' || p === 'home_middle' || p === 'home_lower' || p === 'main';
 }

@@ -84,16 +84,17 @@ describe('parseBannerTargetFromMetadata', () => {
     });
   });
 
-  it('reads external_url bannerTarget', () => {
+  it('reads article bannerTarget', () => {
     const target = parseBannerTargetFromMetadata({
       bannerTarget: {
-        targetLevel: 'external_url',
-        externalUrl: 'https://www.warmpawz.com/blog/22',
+        targetLevel: 'article',
+        articleSlug: 'pawints-program',
+        articleTitle: 'Pawints Program',
       },
     });
     expect(target).toMatchObject({
-      targetLevel: 'external_url',
-      externalUrl: 'https://www.warmpawz.com/blog/22',
+      targetLevel: 'article',
+      articleSlug: 'pawints-program',
     });
   });
 
@@ -102,29 +103,35 @@ describe('parseBannerTargetFromMetadata', () => {
   });
 });
 
-describe('resolveBannerCtaNavigation external_url', () => {
-  it('resolves https external link without DB', async () => {
+describe('resolveBannerCtaNavigation article', () => {
+  it('resolves article slug to in-app path without DB', async () => {
     const nav = await resolveBannerCtaNavigation({
       metadata: {
         bannerTarget: {
-          targetLevel: 'external_url',
-          externalUrl: 'https://www.warmpawz.com/blog/22',
+          targetLevel: 'article',
+          articleSlug: 'pawints-program',
         },
       },
     });
-    expect(nav).toEqual({ kind: 'external', url: 'https://www.warmpawz.com/blog/22' });
+    expect(nav).toEqual({
+      kind: 'path',
+      path: '/articles?slug=pawints-program',
+    });
   });
 
-  it('resolves in-app path external link', async () => {
+  it('encodes special characters in article slug', async () => {
     const nav = await resolveBannerCtaNavigation({
       metadata: {
         bannerTarget: {
-          targetLevel: 'external_url',
-          externalUrl: '/articles?slug=pawints',
+          targetLevel: 'article',
+          articleSlug: 'loyalty & rewards',
         },
       },
     });
-    expect(nav).toEqual({ kind: 'path', path: '/articles?slug=pawints' });
+    expect(nav).toEqual({
+      kind: 'path',
+      path: '/articles?slug=loyalty%20%26%20rewards',
+    });
   });
 });
 
@@ -211,6 +218,19 @@ describe('enrichBannersWithNavTargets', () => {
             customerScreen: 'vet',
             targetLevel: 'category',
           },
+        },
+      },
+    ]);
+    expect(result[0].navTarget).toBeUndefined();
+  });
+
+  it('skips navTarget for home informational banners', async () => {
+    const result = await enrichBannersWithNavTargets([
+      {
+        position: 'home_top',
+        title: 'Awareness',
+        metadata: {
+          bannerTarget: { targetLevel: 'informational' },
         },
       },
     ]);

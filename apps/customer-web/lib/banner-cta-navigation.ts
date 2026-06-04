@@ -13,15 +13,17 @@ import { isVendorBannerCta, parseBannerCtaLink } from '@/lib/banner-cta-parse';
 import { withBannerNavigationOrigin } from '@/lib/banner-navigation-origin';
 
 import {
-  isHttpBannerUrl,
-  normalizeHttpBannerUrl,
-  parseBannerExternalUrlFromMetadata,
-} from '@/lib/banner-external-url';
+  buildArticleBannerPath,
+  isInAppCategoryBannerTargetMetadata,
+  parseArticleSlugFromBannerPath,
+  parseArticleSlugFromCtaLink,
+  parseBannerArticleSlugFromMetadata,
+  parseBannerInformationalFromMetadata,
+} from '@/lib/banner-cta-target';
 
 export type BannerNavTarget =
   | { kind: 'screen'; screen: string; data?: Record<string, unknown> }
-  | { kind: 'path'; path: string }
-  | { kind: 'external'; url: string };
+  | { kind: 'path'; path: string };
 
 export type BannerNavInput = {
   ctaLink?: unknown;
@@ -40,33 +42,19 @@ export type InitialBannerNavigation = {
 
 type NavigateFn = (dest: string, data?: Record<string, unknown>) => void;
 
-function hasBannerTargetMetadata(metadata: unknown): boolean {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
-  const meta = metadata as Record<string, unknown>;
-  const bt = meta.bannerTarget ?? meta.banner_target;
-  return bt != null && typeof bt === 'object' && !Array.isArray(bt);
-}
-
-function hasInAppBannerTargetMetadata(metadata: unknown): boolean {
-  const external = parseBannerExternalUrlFromMetadata(metadata);
-  return hasBannerTargetMetadata(metadata) && !external;
-}
-
-export function resolveBannerExternalLink(banner: BannerNavInput): string | null {
-  if (banner.navTarget?.kind === 'external') {
-    const url = String(banner.navTarget.url ?? '').trim();
-    return url || null;
+export function resolveBannerArticlePath(banner: BannerNavInput): string | null {
+  if (banner.navTarget?.kind === 'path') {
+    const path = String(banner.navTarget.path ?? '').trim();
+    if (parseArticleSlugFromBannerPath(path)) return path;
   }
-  const fromMeta = parseBannerExternalUrlFromMetadata(banner.metadata);
-  if (fromMeta) return fromMeta;
-  const dest = String(banner.ctaLink ?? '').trim();
-  if (isHttpBannerUrl(dest)) return dest;
-  return null;
-}
 
-export function openBannerExternalUrl(url: string): void {
-  if (typeof window === 'undefined') return;
-  window.open(normalizeHttpBannerUrl(url), '_blank', 'noopener,noreferrer');
+  const slugFromMeta = parseBannerArticleSlugFromMetadata(banner.metadata);
+  if (slugFromMeta) return buildArticleBannerPath(slugFromMeta);
+
+  const slugFromCta = parseArticleSlugFromCtaLink(banner.ctaLink);
+  if (slugFromCta) return buildArticleBannerPath(slugFromCta);
+
+  return null;
 }
 
 export function navigateBannerLink(
@@ -78,8 +66,9 @@ export function navigateBannerLink(
   const dest = String(url ?? '').trim();
   if (!dest) return false;
 
-  if (isHttpBannerUrl(dest) || dest.startsWith('//')) {
-    openBannerExternalUrl(dest);
+  const articlePath = parseArticleSlugFromBannerPath(dest);
+  if (articlePath) {
+    router.push(articlePath);
     return true;
   }
 
@@ -109,10 +98,6 @@ export function applyBannerNavTarget(
   router: AppRouterInstance,
   returnScreen?: string
 ): boolean {
-  if (navTarget.kind === 'external') {
-    return navigateBannerLink(navTarget.url, onNavigate, router, returnScreen);
-  }
-
   if (navTarget.kind === 'path') {
     const path = String(navTarget.path || '').trim();
     if (!path) return false;
@@ -162,19 +147,14 @@ export async function resolveBannerNavTarget(banner: BannerNavInput): Promise<Ba
     return banner.navTarget;
   }
 
-  const external = resolveBannerExternalLink(banner);
-  if (external) {
-    if (isHttpBannerUrl(external)) {
-      return { kind: 'external', url: normalizeHttpBannerUrl(external) };
-    }
-    if (external.startsWith('/')) {
-      return { kind: 'path', path: external };
-    }
+  const articlePath = resolveBannerArticlePath(banner);
+  if (articlePath) {
+    return { kind: 'path', path: articlePath };
   }
 
   const ctaLink = String(banner.ctaLink ?? '').trim();
   const title = String(banner.title ?? '').trim();
-  const hasTarget = hasInAppBannerTargetMetadata(banner.metadata);
+  const hasTarget = isInAppCategoryBannerTargetMetadata(banner.metadata);
 
   if (!hasTarget && (!ctaLink || !parseBannerCtaLink(ctaLink))) {
     return null;
@@ -211,11 +191,15 @@ export async function navigateBannerCta(
   onNavigate: NavigateFn | undefined,
   router: AppRouterInstance
 ): Promise<boolean> {
+  if (parseBannerInformationalFromMetadata(banner.metadata)) {
+    return false;
+  }
+
   const dest = String(banner.ctaLink ?? '').trim();
   const returnScreen = banner.returnScreen;
 
-  const externalLink = resolveBannerExternalLink(banner);
-  if (externalLink && navigateBannerLink(externalLink, onNavigate, router, returnScreen)) {
+  const articlePath = resolveBannerArticlePath(banner);
+  if (articlePath && navigateBannerLink(articlePath, onNavigate, router, returnScreen)) {
     return true;
   }
 
@@ -223,12 +207,12 @@ export async function navigateBannerCta(
     return true;
   }
 
-  if (hasInAppBannerTargetMetadata(banner.metadata) || parseBannerCtaLink(dest)) {
+  if (isInAppCategoryBannerTargetMetadata(banner.metadata) || parseBannerCtaLink(dest)) {
     const resolved = await resolveBannerNavTarget(banner);
     if (resolved && applyBannerNavTarget(resolved, onNavigate, router, returnScreen)) {
       return true;
     }
-    if (hasInAppBannerTargetMetadata(banner.metadata) || parseBannerCtaLink(dest)) {
+    if (isInAppCategoryBannerTargetMetadata(banner.metadata) || parseBannerCtaLink(dest)) {
       showBannerNavigationUnavailable();
       return false;
     }
