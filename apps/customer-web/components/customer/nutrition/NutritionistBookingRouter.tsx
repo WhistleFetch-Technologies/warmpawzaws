@@ -16,6 +16,8 @@ import { NutritionistBookingRouterProps, Pet, TimeSlot } from './constants/inter
 import { defaultServiceTypeOptions } from './constants';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { normalizeAvailableSlotsResponse } from '@/lib/available-slots-response';
+import { SERVICE_DESC_VIEW_MORE_MIN_LEN } from '@/lib/service-description-preview';
+import { cn } from '@/components/ui/utils';
 
 /** Real catalog service UUID (not role/category slugs like pet_nutritionist). */
 function looksLikeCatalogServiceId(id: string | undefined | null): id is string {
@@ -128,8 +130,11 @@ export function NutritionistBookingRouter({
   // Add Pet/Address modal states
   const [showAddPetModal, setShowAddPetModal] = useState(false);
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
+  const [expandedServices, setExpandedServices] = useState<Record<string, boolean>>({});
 
-
+  const toggleExpanded = (id: string) => {
+    setExpandedServices((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Map vendor services to display format (API already filters by style via query param)
   const mapVendorServices = () => {
@@ -768,6 +773,10 @@ export function NutritionistBookingRouter({
                   {serviceOptions.map((service) => {
                     const Icon = service.icon;
                     const isSelected = selectedVendorService?.id === service.id || selectedVendorService?.serviceId === service.id;
+                    const serviceKey = String(service.id ?? service.serviceId ?? '');
+                    const expanded = !!expandedServices[serviceKey];
+                    const descTrim = (service.desc ?? '').trim();
+                    const showToggle = descTrim.length > SERVICE_DESC_VIEW_MORE_MIN_LEN;
                     return (
                       <button
                         key={service.id}
@@ -790,7 +799,31 @@ export function NutritionistBookingRouter({
                           </div>
                           <div className="flex-1 text-left">
                             <h3 className="font-semibold text-gray-900">{service.name}</h3>
-                            <p className="text-sm text-gray-500">{service.desc}</p>
+                            {descTrim ? (
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <p
+                                  className={cn(
+                                    'text-sm leading-5 text-gray-500 break-words whitespace-pre-line',
+                                    !expanded && 'line-clamp-2'
+                                  )}
+                                >
+                                  {descTrim}
+                                </p>
+                                {showToggle ? (
+                                  <button
+                                    type="button"
+                                    className="mt-1 text-[11px] font-semibold text-[#FF8C42] hover:underline"
+                                    aria-expanded={expanded}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleExpanded(serviceKey);
+                                    }}
+                                  >
+                                    {expanded ? 'View Less' : 'View More'}
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null}
                             <div className="flex items-center gap-2 mt-1">
                               <Clock className="w-3.5 h-3.5 text-gray-400" />
                               <span className="text-sm text-gray-500">{service.duration} mins</span>
