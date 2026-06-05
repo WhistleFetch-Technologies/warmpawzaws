@@ -838,17 +838,19 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
               <div className="space-y-4">
                 <div className="space-y-3">
                   <ProfileFieldLabel>Last Checkup</ProfileFieldLabel>
-                  <input
-                    type="date"
-                    value={pet.healthRecords?.lastCheckup || ''}
-                    onChange={(e) =>
-                      setPet({
-                        ...pet,
-                        healthRecords: { ...pet.healthRecords, lastCheckup: e.target.value },
-                      })
-                    }
-                    className={inputClass}
-                  />
+                  <div className="warmpawz-date-field-wrap">
+                    <input
+                      type="date"
+                      value={pet.healthRecords?.lastCheckup || ''}
+                      onChange={(e) =>
+                        setPet({
+                          ...pet,
+                          healthRecords: { ...pet.healthRecords, lastCheckup: e.target.value },
+                        })
+                      }
+                      className={inputClass}
+                    />
+                  </div>
                   <ProfileFieldLabel>Allergies</ProfileFieldLabel>
                   <textarea
                     value={pet.healthRecords?.allergies || ''}
@@ -860,7 +862,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     }
                     rows={2}
                     className={`${inputClass} resize-none`}
-                    placeholder="None"
+                    placeholder="e.g. chicken, pollen"
                   />
                   <ProfileFieldLabel>Current Medications</ProfileFieldLabel>
                   <textarea
@@ -873,7 +875,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     }
                     rows={2}
                     className={`${inputClass} resize-none`}
-                    placeholder="None"
+                    placeholder="Leave blank if none"
                   />
                   <ProfileFieldLabel>Medical Conditions</ProfileFieldLabel>
                   <textarea
@@ -886,7 +888,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     }
                     rows={2}
                     className={`${inputClass} resize-none`}
-                    placeholder="None"
+                    placeholder="Leave blank if none"
                   />
                 </div>
                 <div className="border-t border-stone-100 pt-4">
@@ -894,45 +896,51 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                   <div className="space-y-3">
                     <div>
                       <ProfileFieldLabel>Rabies Vaccine</ProfileFieldLabel>
-                      <input
-                        type="date"
-                        value={pet.vaccinations?.rabies || ''}
-                        onChange={(e) =>
-                          setPet({
-                            ...pet,
-                            vaccinations: { ...(pet.vaccinations || {}), rabies: e.target.value },
-                          })
-                        }
-                        className={inputClass}
-                      />
+                      <div className="warmpawz-date-field-wrap">
+                        <input
+                          type="date"
+                          value={pet.vaccinations?.rabies || ''}
+                          onChange={(e) =>
+                            setPet({
+                              ...pet,
+                              vaccinations: { ...(pet.vaccinations || {}), rabies: e.target.value },
+                            })
+                          }
+                          className={inputClass}
+                        />
+                      </div>
                     </div>
                     <div>
                       <ProfileFieldLabel>Distemper Vaccine</ProfileFieldLabel>
-                      <input
-                        type="date"
-                        value={pet.vaccinations?.distemper || ''}
-                        onChange={(e) =>
-                          setPet({
-                            ...pet,
-                            vaccinations: { ...(pet.vaccinations || {}), distemper: e.target.value },
-                          })
-                        }
-                        className={inputClass}
-                      />
+                      <div className="warmpawz-date-field-wrap">
+                        <input
+                          type="date"
+                          value={pet.vaccinations?.distemper || ''}
+                          onChange={(e) =>
+                            setPet({
+                              ...pet,
+                              vaccinations: { ...(pet.vaccinations || {}), distemper: e.target.value },
+                            })
+                          }
+                          className={inputClass}
+                        />
+                      </div>
                     </div>
                     <div>
                       <ProfileFieldLabel>Parvovirus Vaccine</ProfileFieldLabel>
-                      <input
-                        type="date"
-                        value={pet.vaccinations?.parvovirus || ''}
-                        onChange={(e) =>
-                          setPet({
-                            ...pet,
-                            vaccinations: { ...(pet.vaccinations || {}), parvovirus: e.target.value },
-                          })
-                        }
-                        className={inputClass}
-                      />
+                      <div className="warmpawz-date-field-wrap">
+                        <input
+                          type="date"
+                          value={pet.vaccinations?.parvovirus || ''}
+                          onChange={(e) =>
+                            setPet({
+                              ...pet,
+                              vaccinations: { ...(pet.vaccinations || {}), parvovirus: e.target.value },
+                            })
+                          }
+                          className={inputClass}
+                        />
+                      </div>
                     </div>
                     {pet.vaccinations?.other && (
                       <div>

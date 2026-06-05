@@ -1,3 +1,5 @@
+import { flatMapFromVaccinationEntries } from './vaccine-label-mapping';
+
 export interface PetDisplayInput {
   type?: string;
   breed?: string;
@@ -126,64 +128,63 @@ function isVaccineDate(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function mergeFlatVaccinationMap(into: PetVaccinationMap, source: PetVaccinationMap): void {
+  for (const key of ['rabies', 'distemper', 'parvovirus', 'other'] as const) {
+    if (isVaccineDate(source[key])) into[key] = source[key];
+  }
+}
+
 /** Normalize vaccinations from API (object, array, or nested in medical_history). */
 export function normalizeVaccinationsFromApi(raw: any): PetVaccinationMap {
   if (!raw) return {};
+
+  const flat: PetVaccinationMap = {};
 
   const direct = raw.vaccinations ?? raw.vaccination_records ?? raw.vaccinationRecords;
   if (direct && typeof direct === 'object' && !Array.isArray(direct)) {
     const obj = direct as Record<string, unknown>;
     if (isVaccineDate(obj.rabies) || isVaccineDate(obj.distemper) || isVaccineDate(obj.parvovirus)) {
-      return {
+      mergeFlatVaccinationMap(flat, {
         rabies: isVaccineDate(obj.rabies) ? obj.rabies : undefined,
         distemper: isVaccineDate(obj.distemper) ? obj.distemper : undefined,
         parvovirus: isVaccineDate(obj.parvovirus) ? obj.parvovirus : undefined,
         other: isVaccineDate(obj.other) ? String(obj.other) : undefined,
-      };
+      });
     }
   }
 
-  if (Array.isArray(direct)) {
-    const flat: PetVaccinationMap = {};
-    for (const entry of direct) {
-      if (!entry || typeof entry !== 'object') continue;
-      const rec = entry as Record<string, unknown>;
-      const label = String(rec.key ?? rec.name ?? rec.vaccine ?? '').toLowerCase();
-      const date = String(rec.date ?? rec.lastDate ?? '').trim();
-      if (!date) continue;
-      if (label.includes('rabies')) flat.rabies = date;
-      else if (label.includes('distemper')) flat.distemper = date;
-      else if (label.includes('parvo')) flat.parvovirus = date;
-    }
-    if (Object.keys(flat).length > 0) return flat;
+  if (Array.isArray(direct) && direct.length > 0) {
+    mergeFlatVaccinationMap(flat, flatMapFromVaccinationEntries(direct));
   }
 
   const mh = raw.healthRecords ?? raw.health_records ?? raw.medical_history ?? {};
   const vaccinationDates = mh.vaccinationDates;
   if (vaccinationDates && typeof vaccinationDates === 'object' && !Array.isArray(vaccinationDates)) {
     const vd = vaccinationDates as Record<string, unknown>;
-    return {
+    mergeFlatVaccinationMap(flat, {
       rabies: isVaccineDate(vd.rabies) ? vd.rabies : undefined,
       distemper: isVaccineDate(vd.distemper) ? vd.distemper : undefined,
       parvovirus: isVaccineDate(vd.parvovirus) ? vd.parvovirus : undefined,
       other: isVaccineDate(vd.other) ? String(vd.other) : undefined,
-    };
+    });
   }
 
   const nestedVaccinations = mh.vaccinations;
   if (nestedVaccinations && typeof nestedVaccinations === 'object' && !Array.isArray(nestedVaccinations)) {
     const obj = nestedVaccinations as Record<string, unknown>;
     if (isVaccineDate(obj.rabies) || isVaccineDate(obj.distemper) || isVaccineDate(obj.parvovirus)) {
-      return {
+      mergeFlatVaccinationMap(flat, {
         rabies: isVaccineDate(obj.rabies) ? obj.rabies : undefined,
         distemper: isVaccineDate(obj.distemper) ? obj.distemper : undefined,
         parvovirus: isVaccineDate(obj.parvovirus) ? obj.parvovirus : undefined,
         other: isVaccineDate(obj.other) ? String(obj.other) : undefined,
-      };
+      });
     }
+  } else if (Array.isArray(nestedVaccinations) && nestedVaccinations.length > 0) {
+    mergeFlatVaccinationMap(flat, flatMapFromVaccinationEntries(nestedVaccinations));
   }
 
-  return {};
+  return flat;
 }
 
 function hasMeaningfulText(value: unknown): boolean {

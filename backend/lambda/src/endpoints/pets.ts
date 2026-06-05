@@ -23,6 +23,7 @@ import {
   buildVaccinationStorage,
   extractHealthRecordsForClient,
   extractVaccinationsForClient,
+  flatMapFromVaccinationEntries,
   mergeHealthRecordsForStorage,
   sanitizeVaccinationMap,
 } from '../utils/pet-health-normalize';
@@ -309,10 +310,16 @@ export function registerPetEndpoints(app: Hono) {
         size: size || null,
       };
 
+      const flatFromWizard = flatMapFromVaccinationEntries(vaccinations || []);
+      const { vaccination_records, medical_history } = buildVaccinationStorage(
+        enhancedMedicalHistory,
+        flatFromWizard
+      );
+
       // Determine profile photo URL (prefer single photo over photos array)
       const profilePhotoUrl = photo || (photos && photos.length > 0 ? photos[0] : null);
 
-      const pet = await insert('pets', {
+      const insertPayload = await omitMissingPetsColumns({
         customer_id: customerId,
         name: name,
         species: petType || petData.type || petData.species, // Schema uses 'species', not 'pet_type'
@@ -322,8 +329,11 @@ export function registerPetEndpoints(app: Hono) {
         gender: gender || null,
         weight_kg: weight ? parseFloat(weight) : null, // Schema uses weight_kg
         profile_photo_url: profilePhotoUrl, // Schema uses profile_photo_url
-        medical_history: enhancedMedicalHistory, // JSONB field with all health data
+        medical_history,
+        vaccination_records,
       });
+
+      const pet = await insert('pets', insertPayload);
 
       return c.json({
         success: true,
