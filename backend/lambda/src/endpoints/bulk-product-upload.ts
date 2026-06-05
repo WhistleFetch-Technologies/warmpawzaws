@@ -29,6 +29,7 @@ import {
   bulkRowLimitResponse,
   countTitledBulkRows,
   exceedsBulkRowLimit,
+  generateVendorProductSku,
   parseProductImageList,
   validateEcommerceProductInput,
 } from '../utils/product-ecommerce-validation';
@@ -125,13 +126,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
       const errors: ValidationError[] = [];
       const validProducts: BulkProductRow[] = [];
 
-      // Get existing SKUs for this vendor
-      const existingProducts = await query(
-        'SELECT sku FROM products WHERE vendor_id = $1 AND sku IS NOT NULL',
-        [vendorId]
-      );
-      const existingSkus = new Set(existingProducts.rows.map((p: any) => p.sku?.toLowerCase()));
-
       // Get valid categories
       const categories = await select('ecommerce_categories', { is_active: true });
       const validCategories = new Set(
@@ -153,11 +147,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           push(validation.field, validation.message, product[validation.field]);
         }
 
-        // ── Optional ────────────────────────────────────────────────────
-        if (product.sku && existingSkus.has(String(product.sku).toLowerCase())) {
-          push('sku', 'SKU already exists for this vendor', product.sku);
-        }
-
         if (product.weight !== undefined && product.weight !== null && product.weight !== '') {
           const w = Number(product.weight);
           if (isNaN(w) || w < 0) push('weight', 'Weight must be a number ≥ 0', product.weight);
@@ -170,7 +159,6 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             name: normalized.name,
             description: product.description?.trim() || null,
             category: normalized.category,
-            sku: normalized.sku,
             price: normalized.sellingPrice,
             compare_at_price: normalized.mrp,
             stock_quantity: normalized.stock,
@@ -264,15 +252,18 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             );
           }
 
-          // Check if SKU exists for update
-          let existingProduct = null;
-          if (product.sku) {
+          // Match existing product by vendor + title (SKU is system-assigned; not in template).
+          const productTitle = product.name?.trim() || getBulkProductTitle(product);
+          let existingProduct: { id: string; sku?: string } | null = null;
+          if (productTitle) {
             const existing = await query(
-              'SELECT id FROM products WHERE vendor_id = $1 AND sku = $2',
-              [vendorId, product.sku]
+              `SELECT id, sku FROM products
+               WHERE vendor_id = $1 AND lower(trim(name)) = lower(trim($2))
+               LIMIT 1`,
+              [vendorId, productTitle]
             );
             if (existing.rows.length > 0) {
-              existingProduct = existing.rows[0];
+              existingProduct = existing.rows[0] as { id: string; sku?: string };
             }
           }
 
@@ -291,13 +282,12 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           const stockValue =
             Number(product.stock_quantity ?? product.stock ?? product.stockQuantity) || 0;
 
-          const productData = {
+          const productData: Record<string, unknown> = {
             vendor_id: vendorId,
             name: product.name?.trim(),
             description: product.description?.trim() || null,
             category_id: resolvedCategory.id,
             category: resolvedCategory.name,
-            sku: product.sku?.trim() || null,
             price: (() => {
               const norm = normalizeEcommerceProductPricing(product as Record<string, unknown>);
               return norm.ok ? norm.pricing.sellingPrice : Number(product.price);
@@ -311,11 +301,12 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
             gst_rate: product.gst_rate ? Number(product.gst_rate) : null,
             weight: product.weight ? Number(product.weight) : null,
             dimensions: product.dimensions?.trim() || null,
-            images: JSON.stringify(images),
+            images,
             tags: JSON.stringify(tags),
             metadata: JSON.stringify({
               material: product.material?.trim() || null,
               brand: product.brand?.trim() || null,
+              barcode: product.barcode?.trim() || null,
               bulk_uploaded: true,
               upload_date: new Date().toISOString(),
             }),
@@ -323,13 +314,18 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
           };
 
           if (existingProduct) {
-            // Update existing product
-            await update('products', { id: existingProduct.id }, productData);
+            // Update existing product — preserve system SKU; backfill if legacy row has none
+            const updatePayload = { ...productData };
+            if (!existingProduct.sku?.trim()) {
+              updatePayload.sku = generateVendorProductSku(vendorId, String(rowNum));
+            }
+            await update('products', { id: existingProduct.id }, updatePayload);
             results.updated++;
           } else {
             // Create new product — not visible until admin approves
             await insert('products', {
               ...productData,
+              sku: generateVendorProductSku(vendorId, String(rowNum)),
               is_active: false,
               status: 'pending',
               created_at: new Date().toISOString(),
@@ -435,10 +431,7 @@ export function registerBulkProductUploadEndpoints(app: Hono) {
         'category': 'category',
         'categoryname': 'category',
         'typecategory': 'category',
-        'sku': 'sku',
-        'productsku': 'sku',
-        'barcodeean': 'sku',
-        'vendorproductid': 'sku',
+        'barcodeean': 'barcode',
         'price': 'price',
         'sellingprice': 'price',
         'sp': 'price',

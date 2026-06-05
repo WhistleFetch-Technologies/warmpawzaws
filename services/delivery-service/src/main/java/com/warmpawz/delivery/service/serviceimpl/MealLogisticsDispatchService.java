@@ -22,8 +22,8 @@ import java.util.UUID;
  * <p>
  * Idempotent: if a {@code delivery_tracking} row already exists for the meal order with
  * {@code logistics_partner='pidge'} and {@code external_task_id}, the existing record is returned without a new
- * Pidge create call. The Lambda monolith calls this on the {@code preparing} status transition so the rider
- * arrives by the time the meal is ready.
+ * Pidge create call. Lambda calls this on {@code ready_for_pickup} by default (or {@code preparing} when
+ * {@code MEAL_PIDGE_DISPATCH_ON=preparing}).
  */
 @Slf4j
 @Service
@@ -96,7 +96,17 @@ public class MealLogisticsDispatchService {
 		dt.setExternalTaskId(pidgeOrderId);
 		dt.setStatus("heading_to_pickup");
 		dt.setAssignedAt(Instant.now());
-		dt.setMetadataJson("{\"pidge_order_id\":\"" + pidgeOrderId.replace("\"", "") + "\",\"trigger\":\"vendor_preparing\"}");
+		String dispatchTrigger = body.hasNonNull("dispatchTrigger")
+				? body.get("dispatchTrigger").asText().trim()
+				: "vendor_preparing";
+		if (dispatchTrigger.isEmpty()) {
+			dispatchTrigger = "vendor_preparing";
+		}
+		String triggerMeta = dispatchTrigger.startsWith("vendor_")
+				? dispatchTrigger
+				: "vendor_" + dispatchTrigger;
+		dt.setMetadataJson("{\"pidge_order_id\":\"" + pidgeOrderId.replace("\"", "")
+				+ "\",\"trigger\":\"" + triggerMeta.replace("\"", "") + "\"}");
 		dt = deliveryTrackingRepository.save(dt);
 
 		try {

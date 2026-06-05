@@ -23,6 +23,8 @@ interface Product {
   category: string;
   category_id?: string;
   price: number;
+  original_price?: number;
+  compare_at_price?: number;
   stock: number;
   stock_quantity?: number;
   images: string[];

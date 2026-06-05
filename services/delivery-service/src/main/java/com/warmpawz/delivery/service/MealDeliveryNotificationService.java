@@ -12,6 +12,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -39,6 +41,8 @@ public class MealDeliveryNotificationService {
 		notifyMealRiderStageIfApplicable(dt, normalizedInternal, pidgeOrderId, null);
 	}
 
+	/** Separate transaction so notify/SQL failures never roll back Pidge webhook status persistence. */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void notifyMealRiderStageIfApplicable(
 			DeliveryTracking dt,
 			String normalizedInternal,
@@ -231,7 +235,7 @@ public class MealDeliveryNotificationService {
 					"""
 							SELECT mo.customer_id, mo.vendor_id, mo.order_number,
 							       v.business_name AS vendor_name,
-							       COALESCE(c.full_name, c.name, 'Customer') AS customer_name
+							       COALESCE(NULLIF(TRIM(c.full_name), ''), 'Customer') AS customer_name
 							FROM meal_orders mo
 							LEFT JOIN vendors v ON v.id = mo.vendor_id
 							LEFT JOIN customers c ON c.id = mo.customer_id

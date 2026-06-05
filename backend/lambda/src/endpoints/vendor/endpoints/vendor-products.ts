@@ -103,7 +103,6 @@ function buildSingleProductValidationRecord(
     hsn_code: body.hsn_code ?? prev.hsn_code,
     gst_rate: body.gst_rate ?? prev.gst_rate,
     images,
-    sku: body.sku ?? prev.sku,
   };
 }
 
@@ -501,7 +500,21 @@ class CreateVendorProductHandler extends BaseHandler {
         return this.error('Category is required and must be an active catalog category', 400);
       }
 
-      const validationRecord = buildSingleProductValidationRecord(body);
+      let imagesNormForValidation =
+        body.images !== undefined && body.images !== null
+          ? normalizeProductJsonbField(body.images, 'images')
+          : undefined;
+      if (
+        Array.isArray(imagesNormForValidation) &&
+        imagesNormForValidation.length === 0
+      ) {
+        return this.error('At least one product image is required', 400);
+      }
+
+      const validationRecord = buildSingleProductValidationRecord({
+        ...body,
+        ...(imagesNormForValidation !== undefined ? { images: imagesNormForValidation } : {}),
+      });
       const tierA = validateEcommerceProductInput(validationRecord, {
         mode: 'single',
         resolvedCategoryName,
@@ -512,10 +525,7 @@ class CreateVendorProductHandler extends BaseHandler {
       }
       const { normalized } = tierA;
 
-      const sku =
-        normalized.sku?.trim() ||
-        (body.sku && String(body.sku).trim()) ||
-        generateVendorProductSku(resolvedVendorId);
+      const sku = generateVendorProductSku(resolvedVendorId);
 
       // Prepare product data - only use columns that exist in DB
       // Approval lifecycle:
@@ -791,7 +801,11 @@ class UpdateVendorProductHandler extends BaseHandler {
       if (body.stock_quantity !== undefined) {
         updateData.stock = parseInt(body.stock_quantity, 10); // ✅ FIX: Map stock_quantity to stock
       }
-      if (body.sku !== undefined) updateData.sku = body.sku;
+      // SKU is system-assigned; vendors cannot change it. Backfill legacy rows with null SKU on save.
+      const prevSku = prevRow.sku != null ? String(prevRow.sku).trim() : '';
+      if (!prevSku) {
+        updateData.sku = generateVendorProductSku(resolvedVendorId);
+      }
       if (body.status !== undefined && cols.has('status')) {
         let st = normalizeApprovalStatus(body.status);
         // Block privilege escalation: only already-approved rows may stay active via vendor updates.

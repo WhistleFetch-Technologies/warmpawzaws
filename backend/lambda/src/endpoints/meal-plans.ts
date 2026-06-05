@@ -46,6 +46,9 @@ import {
   notifyMealOrderPaid,
   notifyMealOrderCancelledByVendor,
   notifyMealSubscriptionLifecycle,
+  mealKitchenNotifyStageForStatus,
+  notifyMealDeliveryStage,
+  notifyVendorMealDispatchFailed,
   notifyVendorMealSubscriptionActive,
 } from '../utils/meal-delivery-notifications';
 import {
@@ -85,9 +88,11 @@ import { ensureMealOrderSettlementOnDelivered } from '../utils/meal-order-settle
 import { getMealRefundReviewCustomerMetadata } from '../utils/meal-refund-cases';
 import { paymentHoldExpiresAt } from '../utils/meal-payment-hold';
 import {
-  assertMealOrderHasPidgeForPickup,
-  dispatchMealLogistics,
   isMealDispatchStrict,
+  isMealLogisticsDispatchStatus,
+  mealPidgeDispatchOn,
+  runMealDispatchBestEffort,
+  runMealDispatchStrictGate,
 } from '../utils/meal-dispatch';
 import {
   isPidgeMealLogistics,
@@ -1938,30 +1943,50 @@ export function registerMealPlanEndpoints(app: Hono) {
         updateData.cancellation_reason = notes;
       }
 
-      if (status === 'preparing' && isMealDispatchStrict()) {
-        const dispatchResult = await dispatchMealLogistics(orderId);
-        if (!dispatchResult.ok) {
-          return c.json(
-            {
-              success: false,
-              error:
-                dispatchResult.error ||
-                'Could not schedule delivery partner. Fix the issue, then try Start preparing again.',
-              dispatch: dispatchResult,
-            },
-            422
-          );
-        }
+      if (
+        status === 'ready_for_pickup' &&
+        mealPidgeDispatchOn() === 'ready_for_pickup' &&
+        String(existing?.status || '').trim().toLowerCase() !== 'preparing'
+      ) {
+        return c.json(
+          {
+            success: false,
+            error: 'Order must be in preparing status before marking ready for pickup.',
+          },
+          400,
+        );
       }
 
-      if (status === 'ready_for_pickup' && isMealDispatchStrict()) {
-        const pidgeCheck = await assertMealOrderHasPidgeForPickup(orderId);
-        if (!pidgeCheck.ok) {
-          return c.json({ success: false, error: pidgeCheck.error }, 422);
-        }
+      const strictGate = await runMealDispatchStrictGate(orderId, status);
+      if (!strictGate.proceed) {
+        void notifyVendorMealDispatchFailed(
+          orderId,
+          strictGate.userMessage || 'Dispatch failed',
+        ).catch(() => undefined);
+        return c.json(
+          {
+            success: false,
+            error: strictGate.userMessage,
+            dispatch: strictGate.dispatchResult,
+          },
+          422,
+        );
       }
+      const dispatchStrictResult = strictGate.dispatchResult;
 
+      const previousMealStatus = String(existing?.status || '').trim();
       await update('meal_orders', { id: orderId }, updateData);
+
+      let dispatch = dispatchStrictResult;
+      if (!dispatch && isMealLogisticsDispatchStatus(status) && !isMealDispatchStrict()) {
+        dispatch = await runMealDispatchBestEffort(orderId, status);
+        if (dispatch && !dispatch.ok) {
+          void notifyVendorMealDispatchFailed(
+            orderId,
+            dispatch.error || 'Dispatch failed',
+          ).catch(() => undefined);
+        }
+      }
 
       let refundInfo: Record<string, unknown> | null = null;
       if (status === 'cancelled') {
@@ -1994,9 +2019,40 @@ export function registerMealPlanEndpoints(app: Hono) {
         await ensureMealOrderSettlementOnDelivered(orderId);
       }
 
+      const kitchenStage = mealKitchenNotifyStageForStatus(status);
+      if (kitchenStage && previousMealStatus !== status) {
+        try {
+          const ctxRows = await query(
+            `SELECT mo.customer_id, mo.order_number, v.business_name AS vendor_name
+               FROM meal_orders mo
+               LEFT JOIN vendors v ON v.id = mo.vendor_id
+              WHERE mo.id = $1
+              LIMIT 1`,
+            [orderId],
+          );
+          const ctx = ctxRows.rows?.[0] as
+            | { customer_id?: string; order_number?: string; vendor_name?: string }
+            | undefined;
+          if (ctx?.customer_id) {
+            void notifyMealDeliveryStage({
+              customerId: String(ctx.customer_id),
+              orderId,
+              eventType: kitchenStage,
+              vendorName: ctx.vendor_name || 'Your kitchen',
+              orderNumber: String(ctx.order_number || ''),
+            }).catch((e) =>
+              console.warn('[meal/orders/update-status] kitchen notify failed:', (e as Error)?.message || e),
+            );
+          }
+        } catch (notifyErr) {
+          console.warn('[meal/orders/update-status] kitchen notify setup failed:', notifyErr);
+        }
+      }
+
       return c.json({
         success: true,
         message: `Order status updated to ${status}`,
+        ...(dispatch ? { dispatch } : {}),
       });
     } catch (error: any) {
       console.error('Error updating order status:', error);

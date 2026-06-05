@@ -37,9 +37,11 @@ import {
 } from '../utils/s3-media-presign';
 import { resolveMealLineSubtotalInr } from '../utils/meal-order-pricing';
 import {
-  assertMealOrderHasPidgeForPickup,
-  dispatchMealLogistics,
   isMealDispatchStrict,
+  isMealLogisticsDispatchStatus,
+  mealPidgeDispatchOn,
+  runMealDispatchBestEffort,
+  runMealDispatchStrictGate,
 } from '../utils/meal-dispatch';
 import {
   isPidgeMealLogistics,
@@ -3044,35 +3046,37 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
         updatePayload.cancelled_at = new Date().toISOString();
       }
 
-      // Pidge must succeed before we persist `preparing` (default): avoids vendor/customer seeing
-      // "preparing" + manual logistics buttons when no rider was ever booked.
-      let dispatchStrictResult: Awaited<ReturnType<typeof dispatchMealLogistics>> | null = null;
-      if (actualStatus === 'preparing' && isMealDispatchStrict()) {
-        dispatchStrictResult = await dispatchMealLogistics(orderId);
-        if (!dispatchStrictResult.ok) {
-          void notifyVendorMealDispatchFailed(
-            orderId,
-            dispatchStrictResult.error || 'Dispatch failed',
-          ).catch(() => undefined);
-          return c.json(
-            {
-              success: false,
-              error:
-                dispatchStrictResult.error ||
-                'Could not schedule delivery partner. Fix the issue, then try Start preparing again.',
-              dispatch: dispatchStrictResult,
-            },
-            422
-          );
-        }
+      if (
+        actualStatus === 'ready_for_pickup' &&
+        mealPidgeDispatchOn() === 'ready_for_pickup' &&
+        String(orderRow.order_status || '').trim().toLowerCase() !== 'preparing'
+      ) {
+        return c.json(
+          {
+            success: false,
+            error: 'Order must be in preparing status before marking ready for pickup.',
+          },
+          400,
+        );
       }
 
-      if (actualStatus === 'ready_for_pickup' && isMealDispatchStrict()) {
-        const pidgeCheck = await assertMealOrderHasPidgeForPickup(orderId);
-        if (!pidgeCheck.ok) {
-          return c.json({ success: false, error: pidgeCheck.error }, 422);
-        }
+      // Pidge must succeed before we persist the dispatch trigger status (default: ready_for_pickup).
+      const strictGate = await runMealDispatchStrictGate(orderId, actualStatus);
+      if (!strictGate.proceed) {
+        void notifyVendorMealDispatchFailed(
+          orderId,
+          strictGate.userMessage || 'Dispatch failed',
+        ).catch(() => undefined);
+        return c.json(
+          {
+            success: false,
+            error: strictGate.userMessage,
+            dispatch: strictGate.dispatchResult,
+          },
+          422,
+        );
       }
+      const dispatchStrictResult = strictGate.dispatchResult;
 
       // Update using the order's actual vendor_id
       // Use raw query to handle potential missing columns gracefully
@@ -3116,15 +3120,9 @@ export function registerSpecializedServicesEndpoints(app: Hono) {
       }
 
       // When not strict (MEAL_DISPATCH_REQUIRED=false), keep best-effort dispatch after DB update for local dev.
-      let dispatch: Awaited<ReturnType<typeof dispatchMealLogistics>> | null =
-        dispatchStrictResult;
-      if (actualStatus === 'preparing' && !isMealDispatchStrict()) {
-        dispatch = await dispatchMealLogistics(orderId).catch((e) => {
-          console.warn('[meal-order-status] dispatchMealLogistics threw:', e);
-          return { ok: false, error: String(e) } as Awaited<
-            ReturnType<typeof dispatchMealLogistics>
-          >;
-        });
+      let dispatch = dispatchStrictResult;
+      if (!dispatch && isMealLogisticsDispatchStatus(actualStatus) && !isMealDispatchStrict()) {
+        dispatch = await runMealDispatchBestEffort(orderId, actualStatus);
         if (dispatch && !dispatch.ok) {
           void notifyVendorMealDispatchFailed(
             orderId,
