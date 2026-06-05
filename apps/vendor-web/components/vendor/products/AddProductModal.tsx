@@ -43,10 +43,10 @@ export function AddProductModal({
     categoryId: '',
     category: '',
     price: '',
+    original_price: '',
     stock: '',
     hsn_code: '',
     gst_rate: '',
-    sku: '',
     is_active: true,
   });
 
@@ -147,8 +147,46 @@ export function AddProductModal({
   };
 
   const handleSubmit = async () => {
-    if (!formData.name || !formData.price) {
-      alert('Please fill in all required fields (Name and Price)');
+    const mrp = parseFloat(formData.original_price);
+    if (!formData.name?.trim()) {
+      alert('Product name is required');
+      return;
+    }
+    if (!formData.categoryId) {
+      alert('Category is required');
+      return;
+    }
+    if (!Number.isFinite(mrp) || mrp <= 0) {
+      alert('MRP is required and must be greater than 0');
+      return;
+    }
+    const sellingRaw = String(formData.price ?? '').trim();
+    const selling = sellingRaw ? parseFloat(sellingRaw) : mrp;
+    if (!Number.isFinite(selling) || selling <= 0) {
+      alert('Selling price must be greater than 0');
+      return;
+    }
+    if (selling > mrp) {
+      alert('Selling price cannot exceed MRP');
+      return;
+    }
+    const stockNum = parseInt(String(formData.stock), 10);
+    if (!Number.isInteger(stockNum) || stockNum < 0) {
+      alert('Stock quantity must be a whole number ≥ 0');
+      return;
+    }
+    const hsn = String(formData.hsn_code ?? '').trim();
+    if (!/^\d{4,8}$/.test(hsn)) {
+      alert('HSN is required (4–8 digits)');
+      return;
+    }
+    const gstNum = parseFloat(formData.gst_rate);
+    if (![0, 5, 12, 18, 28].includes(gstNum)) {
+      alert('Tax (GST %) is required — choose 0, 5, 12, 18, or 28');
+      return;
+    }
+    if (images.length === 0) {
+      alert('At least one product image is required');
       return;
     }
 
@@ -161,19 +199,19 @@ export function AddProductModal({
       }
 
       const productData = {
-        name: formData.name,
+        name: formData.name.trim(),
         description: formData.description,
-        category_id: formData.categoryId || null,
+        category_id: formData.categoryId,
         category: formData.category || null,
-        price: parseFloat(formData.price),
-        stock: parseInt(formData.stock) || 0,
-        stock_quantity: parseInt(formData.stock) || 0,
-        hsn_code: formData.hsn_code || null,
-        gst_rate: formData.gst_rate ? parseFloat(formData.gst_rate) : null,
-        sku: formData.sku || null,
+        price: selling,
+        original_price: mrp,
+        compare_at_price: mrp,
+        stock: stockNum,
+        stock_quantity: stockNum,
+        hsn_code: hsn,
+        gst_rate: gstNum,
         is_active: formData.is_active,
-        images:
-          images.length > 0 ? images.map(stripAwsPresignFromProductImageUrl) : [],
+        images: images.map(stripAwsPresignFromProductImageUrl),
         variants: variants.length > 0 ? variants.map(v => ({
           size: v.size || null,
           color: v.color || null,
@@ -194,10 +232,10 @@ export function AddProductModal({
         categoryId: '',
         category: '',
         price: '',
+        original_price: '',
         stock: '',
         hsn_code: '',
         gst_rate: '',
-        sku: '',
         is_active: true,
       });
       setVariants([]);
@@ -260,53 +298,56 @@ export function AddProductModal({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Category
-              </label>
-              <select
-                value={formData.categoryId}
-                onChange={(e) => handleChange('categoryId', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-              >
-                <option value="">Select category</option>
-                {categories.map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                SKU (Optional)
-              </label>
-              <input
-                type="text"
-                value={formData.sku}
-                onChange={(e) => handleChange('sku', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-                placeholder="Product SKU"
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Category *
+            </label>
+            <select
+              required
+              value={formData.categoryId}
+              onChange={(e) => handleChange('categoryId', e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
+            >
+              <option value="">Select category</option>
+              {categories.map(cat => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">System SKU is assigned automatically when you save.</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Price (₹) *
+                MRP (₹) *
               </label>
               <input
                 type="number"
                 step="0.01"
-                value={formData.price}
-                onChange={(e) => handleChange('price', e.target.value)}
+                min="0.01"
+                value={formData.original_price}
+                onChange={(e) => handleChange('original_price', e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-                placeholder="0.00"
+                placeholder="Maximum retail price"
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Stock Quantity
+                Selling price (₹)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={formData.price}
+                onChange={(e) => handleChange('price', e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
+                placeholder="Optional — same as MRP if empty"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Stock Quantity *
               </label>
               <input
                 type="number"
@@ -321,28 +362,32 @@ export function AddProductModal({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                HSN Code
+                HSN *
               </label>
               <input
                 type="text"
                 value={formData.hsn_code}
-                onChange={(e) => handleChange('hsn_code', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-                placeholder="e.g., 2309"
+                onChange={(e) => handleChange('hsn_code', e.target.value.replace(/\D/g, '').slice(0, 8))}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none font-mono"
+                placeholder="4–8 digit code"
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                GST Rate (%)
+                Tax (GST %) *
               </label>
-              <input
-                type="number"
-                step="0.01"
+              <select
                 value={formData.gst_rate}
                 onChange={(e) => handleChange('gst_rate', e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-                placeholder="e.g., 18"
-              />
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none bg-white"
+              >
+                <option value="">Select GST slab</option>
+                <option value="0">0%</option>
+                <option value="5">5%</option>
+                <option value="12">12%</option>
+                <option value="18">18%</option>
+                <option value="28">28%</option>
+              </select>
             </div>
           </div>
 
@@ -361,7 +406,7 @@ export function AddProductModal({
           {/* PHASE 1.3 ENHANCEMENT: Image Upload */}
           <div className="border-t pt-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Product Images
+              Product Images *
             </label>
             <div className="space-y-3">
               <div className="flex items-center gap-4 flex-wrap">
@@ -391,9 +436,7 @@ export function AddProductModal({
               {uploadingImages && (
                 <p className="text-sm text-gray-500">Uploading images...</p>
               )}
-              {images.length === 0 && (
-                <p className="text-xs text-gray-400">Upload product images (optional, can add later)</p>
-              )}
+              <p className="text-xs text-gray-500">At least one image required. You can upload multiple images.</p>
             </div>
           </div>
 

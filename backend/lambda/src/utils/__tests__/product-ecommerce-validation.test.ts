@@ -2,6 +2,7 @@ import {
   bulkRowLimitResponse,
   countTitledBulkRows,
   exceedsBulkRowLimit,
+  generateVendorProductSku,
   MAX_BULK_PRODUCT_ROWS,
   parseProductImageList,
   validateEcommerceProductInput,
@@ -104,5 +105,65 @@ describe('product-ecommerce-validation', () => {
     expect(
       parseProductImageList('https://a.com/1.jpg, https://b.com/2.jpg'),
     ).toEqual(['https://a.com/1.jpg', 'https://b.com/2.jpg']);
+  });
+
+  it('accepts comma-separated bulk images', () => {
+    const r = validateEcommerceProductInput(
+      {
+        ...validBulkRow,
+        images: 'https://cdn.example.com/a.jpg, https://cdn.example.com/b.jpg',
+      },
+      { mode: 'bulk', validCategoryNames: petFoodCategories },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.normalized.imageUrls).toHaveLength(2);
+  });
+
+  it('rejects bulk image cell with invalid URL among valid ones', () => {
+    const r = validateEcommerceProductInput(
+      {
+        ...validBulkRow,
+        images: 'https://cdn.example.com/a.jpg, not-a-url',
+      },
+      { mode: 'bulk', validCategoryNames: petFoodCategories },
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.field).toBe('images');
+  });
+
+  it('rejects empty or comma-only image cell', () => {
+    expect(
+      validateEcommerceProductInput(
+        { ...validBulkRow, images: '  ,  , ' },
+        { mode: 'bulk', validCategoryNames: petFoodCategories },
+      ).ok,
+    ).toBe(false);
+  });
+
+  it('generateVendorProductSku matches WP-{8chars}-{digits} format', () => {
+    const vendorId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+    const sku = generateVendorProductSku(vendorId);
+    expect(sku).toMatch(/^WP-a1b2c3d4-\d+$/);
+  });
+
+  it('generateVendorProductSku appends unique suffix for bulk rows', () => {
+    const vendorId = 'vendor-uuid-1234';
+    const sku = generateVendorProductSku(vendorId, '42');
+    expect(sku).toMatch(/^WP-vendoruu-\d+-42$/);
+  });
+
+  it('does not normalize vendor-supplied sku or vendor_product_id', () => {
+    const r = validateEcommerceProductInput(
+      {
+        ...validBulkRow,
+        sku: 'VENDOR-SKU-001',
+        vendor_product_id: 'VPI-999',
+      },
+      { mode: 'bulk', validCategoryNames: petFoodCategories },
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect('sku' in r.normalized).toBe(false);
+    }
   });
 });

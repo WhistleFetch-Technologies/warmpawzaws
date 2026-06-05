@@ -562,7 +562,6 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
     price: sellingPriceForForm(product),
     original_price: product?.original_price || product?.compare_at_price || product?.price || '',
     stock: product?.stock ?? '',
-    sku: product?.sku || '',
     hsn_code: product?.hsn_code || '',
     gst_rate:
       product?.gst_rate !== undefined && product?.gst_rate !== null
@@ -729,7 +728,6 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
         stock: stockNum,
         hsn_code: hsn,
         gst_rate: gstNum,
-        sku: String(formData.sku ?? '').trim() || undefined,
         vendor_id: sellerId,
         images:
           images.length > 0 ? images.map(stripAwsPresignFromProductImageUrl) : [],
@@ -817,15 +815,24 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Vendor Product Id</label>
-                <input
-                  value={formData.sku}
-                  onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                  placeholder="Recommended — auto-generated if empty"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 font-mono"
-                />
-              </div>
+              {product ? (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">System SKU</label>
+                  {product.sku ? (
+                    <p className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 font-mono text-sm text-slate-700">
+                      {product.sku}
+                    </p>
+                  ) : (
+                    <p className="w-full px-4 py-3 border border-amber-200 rounded-xl bg-amber-50 text-sm text-amber-800">
+                      Not assigned yet — a system SKU will be generated when you save.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xs text-slate-500 pt-8">System SKU is assigned automatically when you save.</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -960,9 +967,7 @@ function ProductModal({ product, sellerId, categories, onClose, onSave }: any) {
               {uploadingImages && (
                 <p className="text-sm text-slate-500">Uploading images...</p>
               )}
-              {images.length === 0 && (
-                <p className="text-xs text-slate-400">Upload product images (optional, can add later)</p>
-              )}
+              <p className="text-xs text-slate-500">At least one image required. You can upload multiple images.</p>
             </div>
           </div>
 
