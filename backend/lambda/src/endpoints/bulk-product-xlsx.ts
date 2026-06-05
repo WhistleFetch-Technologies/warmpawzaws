@@ -4,15 +4,15 @@
  * sellable rows in one upload. Single visible sheet (`NPI`), inline data validation
  * lists (Google-Sheets compatible), one demo row pre-filled with valid values.
  *
- * 46-column layout (1-based):
+ * 45-column layout (1-based):
  *   A–N  (1–14)  Product Details                      ← Title*, …, Barcode (EAN), Quantity*
  *   O–Q  (15–17) Picture Information                  ← Image*, A+ Content, Size Chart
  *   R–T  (18–20) Other Product Details                ← Weight, Weight Unit, Shelf Life
  *   U–W  (21–23) Pricing Details                      ← SP (optional), MRP*, COGS
  *   X–AH (24–34) Product Brief                        ← Pet Type, Category* (=IF(Grow="","",Grow) in new templates), …, Tax*, …, HSN*, Cert
- *   AI–AM(35–39) Manufacture Details
- *   AN–AP(40–42) Product Dimension                    ← Length/Breadth/Height (cm)
- *   AQ–AT(43–46) Shipping Dimensions + Casepack Vol.
+ *   AI–AL(35–38) Manufacture Details
+ *   AM–AO(39–41) Product Dimension                    ← Length/Breadth/Height (cm)
+ *   AP–AS(42–45) Shipping Dimensions + Casepack Vol.
  *
  * Required (`*`) columns enforced by `bulk-product-upload.ts` validator:
  *   Title*, Quantity*, Image*, MRP*, Category*, Tax*, HSN* (max 500 titled rows per file)
@@ -29,7 +29,7 @@ export { getBulkProductTitle };
 /** Matches reference workbook primary sheet name */
 export const SHEET_NAME = 'NPI';
 
-/** 46 columns. Compulsory ones carry a `*` suffix in the visible header. */
+/** 45 columns. Compulsory ones carry a `*` suffix in the visible header. */
 export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   // Product Details (A–N, 14 cols)
   'Title*',
@@ -70,8 +70,7 @@ export const BULK_TEMPLATE_COLUMN_HEADERS: string[] = [
   'Category L5',
   'HSN*',
   'Certficate of Authenticity',
-  // Manufacture Details (AI–AM, 5 cols)
-  'Vendor Product Id',
+  // Manufacture Details (AI–AL, 4 cols)
   'Country of Origin',
   'Marketed By',
   'Manufactured By',
@@ -132,7 +131,7 @@ const THIN_BORDER: Partial<ExcelJS.Borders> = {
   right: { style: 'thin', color: { argb: 'FFAAAAAA' } },
 };
 
-/** Row 1 merged group titles — 46-column layout (Quantity added to Product Details). */
+/** Row 1 merged group titles — 45-column layout (Quantity added to Product Details). */
 const ROW1_GROUPS: Array<{ start: number; end: number; title: string; fill: Fill }> = [
   {
     start: 1,
@@ -144,9 +143,9 @@ const ROW1_GROUPS: Array<{ start: number; end: number; title: string; fill: Fill
   { start: 18, end: 20, title: 'Other Product Details', fill: PURPLE },
   { start: 21, end: 23, title: 'Pricing Details', fill: PINK },
   { start: 24, end: 34, title: 'Product Brief', fill: GREEN },
-  { start: 35, end: 39, title: 'Manufacture Details', fill: LIGHT_ORANGE },
-  { start: 40, end: 42, title: 'Product Dimension', fill: BLUE },
-  { start: 43, end: 46, title: 'Shipping Dimensions- for Courier charges', fill: TAN },
+  { start: 35, end: 38, title: 'Manufacture Details', fill: LIGHT_ORANGE },
+  { start: 39, end: 41, title: 'Product Dimension', fill: BLUE },
+  { start: 42, end: 45, title: 'Shipping Dimensions- for Courier charges', fill: TAN },
 ];
 
 /** Wide free-text columns that should wrap. */
@@ -196,7 +195,7 @@ function buildSampleRow(sampleCategory: string): string[] {
     '',                                                              // 13 Barcode (EAN)
     '100',                                                           // 14 Quantity*
     // Picture Information
-    'https://example.com/your-product-image-1000x1000.jpg',          // 15 Image*
+    'https://example.com/your-product-image-1000x1000.jpg, https://example.com/your-product-image-2.jpg', // 15 Image* (comma-separated)
     '',                                                              // 16 A+ Content
     '',                                                              // 17 Size Chart
     // Other Product Details
@@ -220,20 +219,19 @@ function buildSampleRow(sampleCategory: string): string[] {
     '62052000',                                                      // 33 HSN*
     '',                                                              // 34 Certificate
     // Manufacture Details
-    'VPI-001',                                                       // 35 Vendor Product Id
-    'India',                                                         // 36 Country of Origin
-    'Petfully Yours Pvt Ltd',                                        // 37 Marketed By
-    'Apparo Lifestyle Pvt Ltd. 205, A wing, Vasupujya Estate, Goregaon West, Mumbai 400104', // 38 Manufactured By
-    '',                                                              // 39 Imported By
+    'India',                                                         // 35 Country of Origin
+    'Petfully Yours Pvt Ltd',                                        // 36 Marketed By
+    'Apparo Lifestyle Pvt Ltd. 205, A wing, Vasupujya Estate, Goregaon West, Mumbai 400104', // 37 Manufactured By
+    '',                                                              // 38 Imported By
     // Product Dimension (cm)
-    '35',                                                            // 40 Length cm
-    '25',                                                            // 41 Breadth cm
-    '1',                                                             // 42 Height cm
+    '35',                                                            // 39 Length cm
+    '25',                                                            // 40 Breadth cm
+    '1',                                                             // 41 Height cm
     // Shipping Dimensions (mm)
-    '33',                                                            // 43 Length mm
-    '27',                                                            // 44 Breadth mm
-    '3',                                                             // 45 Height mm
-    '250 grams',                                                     // 46 Casepack Volume
+    '33',                                                            // 42 Length mm
+    '27',                                                            // 43 Breadth mm
+    '3',                                                             // 44 Height mm
+    '250 grams',                                                     // 45 Casepack Volume
   ];
 }
 
@@ -315,7 +313,11 @@ export async function buildBulkProductTemplateBuffer(categoryNames: string[]): P
     cell.value = h;
     if (c === 1) {
       cell.note =
-        'Required (*): Title, Quantity, Image URL, MRP, Category (column Y), Tax, HSN. SP optional. Use Category* not Type (Category). Recommend Vendor Product Id. Max 500 titled rows per upload.';
+        'Required (*): Title, Quantity, Image URL(s), MRP, Category (column Y), Tax, HSN. SP optional. Use Category* not Type (Category). SKU is auto-generated by the system. Re-upload same Title to update. Max 500 titled rows per upload.';
+    }
+    if (h === 'Image (1000X1000px)*') {
+      cell.note =
+        'Required. One or more image URLs, comma-separated. Example: https://a.com/1.jpg, https://a.com/2.jpg. A+ Content (next column) is separate.';
     }
     cell.font = { bold: true, size: 10, color: h.includes('*') ? { argb: 'FFFFFFFF' } : undefined };
     cell.fill = (h.includes('*') ? HEADER_REQUIRED_FILL : HEADER_ROW_FILL) as ExcelJS.Fill;
@@ -402,10 +404,8 @@ export const BULK_HEADER_FIELD_MAP: Record<string, string> = {
   category: 'category',
   categoryname: 'category',
   typecategory: 'category_type',
-  sku: 'sku',
-  productsku: 'sku',
-  barcodeean: 'sku_barcode',
-  vendorproductid: 'vendor_product_id',
+  barcodeean: 'barcode',
+  barcode: 'barcode',
   price: 'price',
   sellingprice: 'price',
   sp: 'price',
@@ -587,8 +587,6 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     );
     // Prefer the user-facing "Category" (col Y) over the legacy "Type (Category)" (col G).
     const category = bag.category?.trim() || bag.category_type?.trim() || '';
-    const sku =
-      bag.sku?.trim() || bag.sku_barcode?.trim() || bag.vendor_product_id?.trim() || '';
     const priceRaw = bag.price || '';
     const stockRaw = bag.stock_quantity || '';
     const compareRaw = bag.compare_at_price || '';
@@ -632,7 +630,7 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     if (name) product.name = name;
     if (description) product.description = description;
     if (category) product.category = category;
-    if (sku) product.sku = sku;
+    if (bag.barcode) product.barcode = bag.barcode.trim();
     if (priceRaw) product.price = parseFloat(String(priceRaw).replace(/,/g, ''));
     if (compareRaw) product.compare_at_price = parseFloat(String(compareRaw).replace(/,/g, ''));
     // Quantity is now a required column. Leave undefined here when missing so
@@ -653,6 +651,7 @@ export async function parseBulkProductXlsxBuffer(buf: Buffer): Promise<{
     if (dimensions) product.dimensions = dimensions;
     if (bag.material) product.material = bag.material.trim();
     if (bag.brand) product.brand = bag.brand.trim();
+    // Gallery images only — comma/newline URLs; A+ Content stays in images_aplus (not merged here).
     if (bag.images) product.images = bag.images.trim();
     if (tagPieces) product.tags = tagPieces;
 

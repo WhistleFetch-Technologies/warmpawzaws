@@ -25,8 +25,12 @@ import {
   formatHealthFieldText,
   normalizeVaccinationsFromApi,
   normalizeVaccinationDateToIso,
+  extractVaccinationEntriesFromApi,
+  vaccinationEntriesToApiPayload,
   genderSymbol,
+  type VaccinationEntryDisplay,
 } from '@/lib/pet-profile-display';
+import { flatMapFromVaccinationEntries } from '@/lib/vaccine-label-mapping';
 
 interface Pet {
   id: string;
@@ -53,6 +57,7 @@ interface Pet {
     parvovirus?: string;
     other?: string;
   };
+  vaccinationEntries: VaccinationEntryDisplay[];
 }
 
 interface Booking {
@@ -160,6 +165,7 @@ function mapApiPetToPet(raw: any): Pet {
         other: normalizeVaccinationDateToIso(v.other),
       };
     })(),
+    vaccinationEntries: extractVaccinationEntriesFromApi(raw),
   };
 }
 
@@ -205,20 +211,29 @@ function extractBookingsList(payload: any): any[] {
 }
 
 function buildVaccinationPayload(pet: Pet): {
-  vaccinations: Pet['vaccinations'];
-  healthRecords: Pet['healthRecords'] & { vaccinationDates?: Pet['vaccinations'] };
-} {
-  const vaccinations = {
-    rabies: normalizeVaccinationDateToIso(pet.vaccinations?.rabies),
-    distemper: normalizeVaccinationDateToIso(pet.vaccinations?.distemper),
-    parvovirus: normalizeVaccinationDateToIso(pet.vaccinations?.parvovirus),
-    other: normalizeVaccinationDateToIso(pet.vaccinations?.other),
+  vaccinations: ReturnType<typeof vaccinationEntriesToApiPayload>;
+  healthRecords: Pet['healthRecords'] & {
+    vaccinationDates?: Pet['vaccinations'];
+    vaccinations?: ReturnType<typeof vaccinationEntriesToApiPayload>;
   };
+} {
+  const entries = pet.vaccinationEntries ?? [];
+  const flat = flatMapFromVaccinationEntries(
+    entries.map((e) => ({ name: e.name, date: e.date, lastDate: e.date }))
+  );
+  const vaccinationDates = {
+    rabies: normalizeVaccinationDateToIso(flat.rabies),
+    distemper: normalizeVaccinationDateToIso(flat.distemper),
+    parvovirus: normalizeVaccinationDateToIso(flat.parvovirus),
+    other: normalizeVaccinationDateToIso(flat.other),
+  };
+  const vaccinations = vaccinationEntriesToApiPayload(entries);
   return {
     vaccinations,
     healthRecords: {
       ...pet.healthRecords,
-      vaccinationDates: vaccinations,
+      vaccinationDates,
+      vaccinations,
     },
   };
 }
@@ -838,17 +853,19 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
               <div className="space-y-4">
                 <div className="space-y-3">
                   <ProfileFieldLabel>Last Checkup</ProfileFieldLabel>
-                  <input
-                    type="date"
-                    value={pet.healthRecords?.lastCheckup || ''}
-                    onChange={(e) =>
-                      setPet({
-                        ...pet,
-                        healthRecords: { ...pet.healthRecords, lastCheckup: e.target.value },
-                      })
-                    }
-                    className={inputClass}
-                  />
+                  <div className="warmpawz-date-field-wrap">
+                    <input
+                      type="date"
+                      value={pet.healthRecords?.lastCheckup || ''}
+                      onChange={(e) =>
+                        setPet({
+                          ...pet,
+                          healthRecords: { ...pet.healthRecords, lastCheckup: e.target.value },
+                        })
+                      }
+                      className={inputClass}
+                    />
+                  </div>
                   <ProfileFieldLabel>Allergies</ProfileFieldLabel>
                   <textarea
                     value={pet.healthRecords?.allergies || ''}
@@ -860,7 +877,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     }
                     rows={2}
                     className={`${inputClass} resize-none`}
-                    placeholder="None"
+                    placeholder="e.g. chicken, pollen"
                   />
                   <ProfileFieldLabel>Current Medications</ProfileFieldLabel>
                   <textarea
@@ -873,7 +890,7 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     }
                     rows={2}
                     className={`${inputClass} resize-none`}
-                    placeholder="None"
+                    placeholder="Leave blank if none"
                   />
                   <ProfileFieldLabel>Medical Conditions</ProfileFieldLabel>
                   <textarea
@@ -886,63 +903,35 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                     }
                     rows={2}
                     className={`${inputClass} resize-none`}
-                    placeholder="None"
+                    placeholder="Leave blank if none"
                   />
                 </div>
                 <div className="border-t border-stone-100 pt-4">
                   <h4 className="mb-3 text-sm font-semibold text-gray-700">Vaccination Chart</h4>
-                  <div className="space-y-3">
-                    <div>
-                      <ProfileFieldLabel>Rabies Vaccine</ProfileFieldLabel>
-                      <input
-                        type="date"
-                        value={pet.vaccinations?.rabies || ''}
-                        onChange={(e) =>
-                          setPet({
-                            ...pet,
-                            vaccinations: { ...(pet.vaccinations || {}), rabies: e.target.value },
-                          })
-                        }
-                        className={inputClass}
-                      />
+                  {pet.vaccinationEntries.length === 0 ? (
+                    <p className="text-sm text-gray-500">No vaccinations recorded</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {pet.vaccinationEntries.map((entry, index) => (
+                        <div key={entry.key ?? `${entry.name}-${index}`}>
+                          <ProfileFieldLabel>{entry.name}</ProfileFieldLabel>
+                          <div className="warmpawz-date-field-wrap">
+                            <input
+                              type="date"
+                              value={entry.date || ''}
+                              onChange={(e) => {
+                                const nextEntries = pet.vaccinationEntries.map((item, i) =>
+                                  i === index ? { ...item, date: e.target.value } : item
+                                );
+                                setPet({ ...pet, vaccinationEntries: nextEntries });
+                              }}
+                              className={inputClass}
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    <div>
-                      <ProfileFieldLabel>Distemper Vaccine</ProfileFieldLabel>
-                      <input
-                        type="date"
-                        value={pet.vaccinations?.distemper || ''}
-                        onChange={(e) =>
-                          setPet({
-                            ...pet,
-                            vaccinations: { ...(pet.vaccinations || {}), distemper: e.target.value },
-                          })
-                        }
-                        className={inputClass}
-                      />
-                    </div>
-                    <div>
-                      <ProfileFieldLabel>Parvovirus Vaccine</ProfileFieldLabel>
-                      <input
-                        type="date"
-                        value={pet.vaccinations?.parvovirus || ''}
-                        onChange={(e) =>
-                          setPet({
-                            ...pet,
-                            vaccinations: { ...(pet.vaccinations || {}), parvovirus: e.target.value },
-                          })
-                        }
-                        className={inputClass}
-                      />
-                    </div>
-                    {pet.vaccinations?.other && (
-                      <div>
-                        <ProfileFieldLabel>Other Vaccinations</ProfileFieldLabel>
-                        <p className="rounded-xl border border-slate-100 bg-slate-50/90 px-3.5 py-3 text-[15px] font-medium text-slate-900">
-                          {pet.vaccinations.other}
-                        </p>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -951,12 +940,22 @@ export function CustomerPetDetails({ phone, petId, onBack, onViewBooking, onDele
                   label="Last Checkup"
                   value={formatDisplayDate(pet.healthRecords?.lastCheckup)}
                 />
-                <ProfileGridField label="Next Due" value={deriveNextDueDate(pet)} />
+                <ProfileGridField label="Next Due" value={deriveNextDueDate({ ...pet, vaccinationEntries: pet.vaccinationEntries })} />
                 <ProfileGridField
                   label="Allergies"
                   value={formatHealthFieldText(pet.healthRecords?.allergies) || 'None'}
                 />
-                <ProfileGridField label="Vaccination" value={deriveVaccinationStatus(pet)} />
+                <ProfileGridField
+                  label="Vaccination"
+                  value={deriveVaccinationStatus({ ...pet, vaccinationEntries: pet.vaccinationEntries })}
+                />
+                {pet.vaccinationEntries.map((entry, index) => (
+                  <ProfileGridField
+                    key={entry.key ?? `${entry.name}-${index}`}
+                    label={entry.name}
+                    value={formatDisplayDate(entry.date)}
+                  />
+                ))}
               </ProfileGridFields>
             )}
           </ProfileSectionCard>
