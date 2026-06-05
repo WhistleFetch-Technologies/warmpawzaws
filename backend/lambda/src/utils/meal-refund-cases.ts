@@ -144,16 +144,25 @@ export function computeMealRefundRecommendation(
 export async function getMealRefundReviewCustomerMetadata(
   mealOrderId: string,
 ): Promise<MealRefundReviewCustomerMetadata | null> {
-  const res = await query(
-    `SELECT status,
-            recommended_refund_amount::text,
-            refund_amount_executed::text,
-            created_at
-     FROM meal_refund_cases
-     WHERE meal_order_id = $1::uuid
-     LIMIT 1`,
-    [mealOrderId],
-  );
+  let res: { rows?: Record<string, unknown>[] };
+  try {
+    res = await query(
+      `SELECT status,
+              recommended_refund_amount::text,
+              refund_amount_executed::text,
+              created_at
+       FROM meal_refund_cases
+       WHERE meal_order_id = $1::uuid
+       LIMIT 1`,
+      [mealOrderId],
+    );
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/meal_refund_cases|does not exist|undefined_table/i.test(msg)) {
+      return null;
+    }
+    throw e;
+  }
   const row = res.rows?.[0] as Record<string, unknown> | undefined;
   if (!row?.status) return null;
   const status = String(row.status) as MealRefundCaseStatus;

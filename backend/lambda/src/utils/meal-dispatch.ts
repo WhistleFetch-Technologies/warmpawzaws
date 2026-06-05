@@ -1,5 +1,5 @@
 /**
- * Build & call the Java delivery-service to schedule a Pidge rider on the vendor "Start Preparing" click.
+ * Build & call the Java delivery-service to schedule a Pidge rider on vendor kitchen status transitions.
  *
  * Logistics authority boundary:
  * - Java delivery-service: Pidge create-order, POST /webhooks/pidge (status mapping, delivery_tracking +
@@ -9,7 +9,7 @@
  *
  * Java owns Pidge create + delivery_tracking insert + the `/webhooks/pidge` ingress (single source of truth).
  * Lambda's job is just to assemble the snapshot from `meal_orders` + `meal_plans` + `vendors` + `customers`
- * and POST `{ mealOrderId, prepMinutes, expectedReadyAt, pidgePayload }` to:
+ * and POST `{ mealOrderId, prepMinutes, expectedReadyAt, pidgePayload, dispatchTrigger }` to:
  *
  *   POST {DELIVERY_SERVICE_BASE_URL}/logistics/meal/dispatch
  *
@@ -17,8 +17,8 @@
  * this meal order with `logistics_partner='pidge'`.
  *
  * When `MEAL_DISPATCH_REQUIRED` is true (default), `PUT .../meal-orders/.../status`:
- * - `preparing` runs dispatch first; 422 if it fails.
- * - `ready_for_pickup` requires `meal_orders.pidge_order_id` (set when Java links Pidge).
+ * - Default (`MEAL_PIDGE_DISPATCH_ON=ready_for_pickup`): `ready_for_pickup` runs dispatch first; 422 if it fails.
+ * - Legacy (`MEAL_PIDGE_DISPATCH_ON=preparing`): `preparing` runs dispatch first; `ready_for_pickup` requires `pidge_order_id`.
  * Set `MEAL_DISPATCH_REQUIRED=false` only for local/dev without delivery-service.
  *
  * Phase A — Pidge compact payload includes customer commitment:
@@ -33,6 +33,21 @@ import {
   MEAL_PIDGE_DELIVERY_BUFFER_MIN,
 } from './meal-pidge-scheduling';
 import { resolvePackWeightGramsFromPlanRow } from './meal-pack-weight';
+import {
+  type MealPidgeDispatchOn,
+  isMealLogisticsDispatchStatus,
+  mealDispatchFailureUserMessage,
+  mealPidgeDispatchOn,
+  shouldRequirePidgeBeforeReadyForPickup,
+} from './meal-dispatch-policy';
+
+export type { MealPidgeDispatchOn };
+export {
+  isMealLogisticsDispatchStatus,
+  mealDispatchFailureUserMessage,
+  mealPidgeDispatchOn,
+  shouldRequirePidgeBeforeReadyForPickup,
+};
 
 export interface DispatchResult {
   ok: boolean;
@@ -111,14 +126,70 @@ function formatFetchFailure(e: unknown): string {
   return parts.join(' | ');
 }
 
-/** When true (default), transition to `preparing` fails if Pidge/delivery-service dispatch fails. */
+/** When true (default), the configured dispatch status transition fails if Pidge/delivery-service dispatch fails. */
 export function isMealDispatchStrict(): boolean {
   const v = process.env.MEAL_DISPATCH_REQUIRED;
   if (v === undefined || v === '') return true;
   return !['false', '0', 'no'].includes(String(v).trim().toLowerCase());
 }
 
-/** Enforced for `ready_for_pickup` when `isMealDispatchStrict()` — blocks fake pickup without Pidge. */
+export type MealDispatchStrictGateResult =
+  | { proceed: true; dispatchResult: DispatchResult | null }
+  | { proceed: false; dispatchResult: DispatchResult; userMessage: string };
+
+/**
+ * Strict dispatch gate — call before persisting meal_orders status when MEAL_DISPATCH_REQUIRED is true.
+ */
+export async function runMealDispatchStrictGate(
+  mealOrderId: string,
+  status: string,
+): Promise<MealDispatchStrictGateResult> {
+  const norm = String(status || '').trim().toLowerCase();
+  const dispatchOn = mealPidgeDispatchOn();
+
+  if (isMealLogisticsDispatchStatus(norm)) {
+    const dispatchResult = await dispatchMealLogistics(mealOrderId, { trigger: dispatchOn });
+    if (!dispatchResult.ok) {
+      return {
+        proceed: false,
+        dispatchResult,
+        userMessage: dispatchResult.error || mealDispatchFailureUserMessage(dispatchOn),
+      };
+    }
+    return { proceed: true, dispatchResult };
+  }
+
+  if (norm === 'ready_for_pickup' && shouldRequirePidgeBeforeReadyForPickup()) {
+    const pidgeCheck = await assertMealOrderHasPidgeForPickup(mealOrderId);
+    if (!pidgeCheck.ok) {
+      return {
+        proceed: false,
+        dispatchResult: { ok: false, error: pidgeCheck.error },
+        userMessage: pidgeCheck.error,
+      };
+    }
+  }
+
+  return { proceed: true, dispatchResult: null };
+}
+
+/** Best-effort dispatch after DB update when MEAL_DISPATCH_REQUIRED is false (local dev). */
+export async function runMealDispatchBestEffort(
+  mealOrderId: string,
+  status: string,
+): Promise<DispatchResult | null> {
+  if (isMealDispatchStrict() || !isMealLogisticsDispatchStatus(status)) {
+    return null;
+  }
+  try {
+    return await dispatchMealLogistics(mealOrderId, { trigger: mealPidgeDispatchOn() });
+  } catch (e: unknown) {
+    console.warn('[meal-dispatch] best-effort dispatch threw:', e);
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Enforced for `ready_for_pickup` when dispatch still runs on `preparing` (legacy). */
 export async function assertMealOrderHasPidgeForPickup(
   mealOrderId: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -143,11 +214,18 @@ export async function assertMealOrderHasPidgeForPickup(
   }
 }
 
+export type DispatchMealLogisticsOptions = {
+  trigger?: MealPidgeDispatchOn;
+};
+
 /**
  * Dispatch to delivery-service. Never throws — returns `{ ok:false, error }` on any failure
- * so callers can choose strict (block `preparing`) vs best-effort (dev) behavior.
+ * so callers can choose strict vs best-effort behavior.
  */
-export async function dispatchMealLogistics(mealOrderId: string): Promise<DispatchResult> {
+export async function dispatchMealLogistics(
+  mealOrderId: string,
+  options?: DispatchMealLogisticsOptions,
+): Promise<DispatchResult> {
   try {
     const baseUrl = (process.env.DELIVERY_SERVICE_BASE_URL || '').replace(/\/$/, '');
     if (!baseUrl) {
@@ -188,13 +266,21 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
     }
     const row = moResult.rows[0] as Record<string, unknown> & MealOrderRow;
 
+    const dispatchTrigger = options?.trigger ?? mealPidgeDispatchOn();
     const prepMinutes =
       pickNumber(row.prep_minutes, (row as Record<string, unknown>).plan_prep_minutes) ?? 30;
-    const prepStartedAt = row.prep_started_at ? new Date(row.prep_started_at) : new Date();
-    const expectedReadyAtIso =
-      typeof row.expected_ready_at === 'string'
-        ? new Date(row.expected_ready_at).toISOString()
-        : plusMinutesIso(prepStartedAt, prepMinutes);
+    const readyNow = new Date();
+    let expectedReadyAtIso: string;
+    if (dispatchTrigger === 'ready_for_pickup') {
+      // Food is ready now — rider should head to pickup immediately.
+      expectedReadyAtIso = readyNow.toISOString();
+    } else {
+      const prepStartedAt = row.prep_started_at ? new Date(row.prep_started_at) : readyNow;
+      expectedReadyAtIso =
+        typeof row.expected_ready_at === 'string'
+          ? new Date(row.expected_ready_at).toISOString()
+          : plusMinutesIso(prepStartedAt, prepMinutes);
+    }
     const pidgeScheduling = buildMealPidgeSchedulingFields({
       expectedReadyAtIso,
       scheduledDeliveryDate: row.scheduled_delivery_date,
@@ -363,6 +449,7 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
       JSON.stringify({
         tag: '[PIDGE DISPATCH]',
         mealOrderId,
+        dispatch_trigger: dispatchTrigger,
         order_number: sourceOrderId,
         scheduled_delivery_date: pidgeScheduling.delivery_date,
         scheduled_delivery_slot: pidgeScheduling.delivery_slot,
@@ -371,7 +458,9 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
         promised_prep_time: expectedReadyAtIso,
         promised_delivery_time: promisedDeliveryIso,
         promised_delivery_rule:
-          'max(expected_ready_at + buffer_min, customer_commitment_at) when commitment valid',
+          dispatchTrigger === 'ready_for_pickup'
+            ? 'max(now + buffer_min, customer_commitment_at) when commitment valid'
+            : 'max(expected_ready_at + buffer_min, customer_commitment_at) when commitment valid',
         buffer_minutes: MEAL_PIDGE_DELIVERY_BUFFER_MIN,
       }),
     );
@@ -381,6 +470,7 @@ export async function dispatchMealLogistics(mealOrderId: string): Promise<Dispat
       prepMinutes,
       expectedReadyAt: expectedReadyAtIso,
       pidgePayload,
+      dispatchTrigger,
     });
 
     console.log(

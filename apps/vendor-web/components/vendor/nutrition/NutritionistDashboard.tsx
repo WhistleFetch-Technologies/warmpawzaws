@@ -586,14 +586,16 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       } else if (status === 'preparing') {
         // When vendor starts preparing, they've implicitly accepted
         updateAcceptedOrderIds(prev => new Set(prev).add(orderId));
+        toast.success('Preparation started');
+      } else if (status === 'ready_for_pickup') {
         if (res?.dispatch?.ok) {
           toast.success(
             res.dispatch.idempotent
-              ? 'Preparing — delivery partner already scheduled'
-              : 'Preparing started — delivery partner scheduled'
+              ? 'Ready for pickup — delivery partner already scheduled'
+              : 'Ready for pickup — delivery partner scheduled'
           );
         } else {
-          toast.success('Order status updated');
+          toast.success('Marked ready for pickup');
         }
       } else {
         toast.success('Order status updated');
@@ -747,8 +749,9 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
             {isPidgeLogistics &&
               ['preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'].includes(badgeCanon) && (
                 <p className="text-xs text-slate-600 w-full rounded-lg bg-sky-50 border border-sky-100 px-3 py-2">
-                  Pidge delivery: after &quot;Start preparing&quot;, pickup and delivery stages update automatically from
-                  Pidge — no need to notify logistics or mark delivered manually.
+                  Pidge delivery: tap &quot;Ready for pickup&quot; when the meal is packed — we schedule the rider then.
+                  Pickup and delivery stages update automatically from Pidge — no need to notify logistics or mark
+                  delivered manually.
                 </p>
               )}
             {order.status === 'paused' && (

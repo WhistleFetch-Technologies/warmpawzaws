@@ -41,6 +41,7 @@ import {
 } from '@/lib/payment-hold-ui';
 import { parseMealRefundReview, type MealRefundReviewMetadata } from '@/lib/meal-refund-review';
 import { MealRefundReviewListBanner } from '@/components/customer/meal-plans/MealRefundReviewListBanner';
+import { getResolvedCustomerId, persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 
 export interface MealPlanOrder {
   id: string;
@@ -126,6 +127,125 @@ function displayMealOrderStatus(order: MealPlanOrder): string {
   return order.status.replace('_', ' ');
 }
 
+function resolveCustomerPhoneForOrders(
+  fixedCustomerPhone: string | undefined,
+  searchParams: ReturnType<typeof useSearchParams>,
+): string {
+  return (
+    fixedCustomerPhone?.trim() ||
+    searchParams?.get('phone')?.trim() ||
+    localStorage.getItem('customerPhone')?.trim() ||
+    localStorage.getItem('customer_phone')?.trim() ||
+    localStorage.getItem('phone')?.trim() ||
+    ''
+  );
+}
+
+async function resolveCustomerIdByPhone(
+  customerPhone: string,
+): Promise<string | null> {
+  const customer: unknown = await apiClient.get(
+    `/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`,
+  );
+  const c = customer as { customer?: { id?: string }; id?: string };
+  const customerId = c?.customer?.id || c?.id;
+  if (customerId && typeof customerId === 'string') {
+    persistCustomerDatabaseId(customerId);
+    return customerId;
+  }
+  return null;
+}
+
+function normalizeCustomerPhoneForApi(phone: string): string {
+  const last10 = phone.replace(/\D/g, '').slice(-10);
+  return last10.length >= 10 ? last10 : phone.trim();
+}
+
+async function resolveCustomerIdForMealOrders(
+  fixedCustomerPhone: string | undefined,
+  searchParams: ReturnType<typeof useSearchParams>,
+): Promise<{ customerId: string | null; customerPhone: string }> {
+  const customerPhone = resolveCustomerPhoneForOrders(fixedCustomerPhone, searchParams);
+  if (customerPhone) {
+    const byPhone = await resolveCustomerIdByPhone(normalizeCustomerPhoneForApi(customerPhone));
+    if (byPhone) return { customerId: byPhone, customerPhone };
+  }
+  const cached = getResolvedCustomerId();
+  return { customerId: cached, customerPhone };
+}
+
+function extractMealPlanOrdersFromResponse(response: unknown): unknown[] {
+  const r = response as {
+    orders?: unknown[];
+    data?: { orders?: unknown[] };
+  };
+  if (Array.isArray(r?.orders)) return r.orders;
+  if (Array.isArray(r?.data?.orders)) return r.data.orders;
+  return [];
+}
+
+function mapRawMealPlanOrderRow(o: Record<string, unknown>): MealPlanOrder {
+  return {
+    ...o,
+    subscription_id: o.subscription_id != null ? String(o.subscription_id) : null,
+    meal_plan_name:
+      (o.meal_plan_name as string) ||
+      (o.meal_name as string) ||
+      (o.meal_plan_id as string) ||
+      'Meal Plan',
+    meal_plan_image_url: resolveMealOrderImageUrl(o),
+    pet_name: (o.pet_name as string) || undefined,
+    quantity: o.quantity != null ? Number(o.quantity) : undefined,
+    payment_status: o.payment_status != null ? String(o.payment_status) : undefined,
+    paymentHoldExpiresAt:
+      (o.paymentHoldExpiresAt as string | null | undefined) ??
+      (o.payment_hold_expires_at as string | null | undefined) ??
+      null,
+    refundReview: parseMealRefundReview(o.refundReview),
+    delivery_date: o.delivery_date || o.scheduled_delivery_date || o.created_at,
+    delivery_time:
+      (o.delivery_time as string) || formatDeliveryTime(o.scheduled_delivery_slot) || '',
+    delivery_address:
+      typeof o.delivery_address === 'string'
+        ? (() => {
+            try {
+              const p = JSON.parse(o.delivery_address as string) as {
+                address?: string;
+                addressLine1?: string;
+              };
+              return p?.address || p?.addressLine1 || (o.delivery_address as string);
+            } catch {
+              return o.delivery_address as string;
+            }
+          })()
+        : ((o.delivery_address as { address?: string; addressLine1?: string })?.address ||
+            (o.delivery_address as { addressLine1?: string })?.addressLine1 ||
+            ''),
+  } as MealPlanOrder;
+}
+
+async function fetchMealPlanOrdersForCustomer(
+  customerId: string,
+  customerPhone?: string,
+): Promise<MealPlanOrder[]> {
+  const q = new URLSearchParams();
+  q.set('customerId', customerId);
+  const phone = customerPhone?.trim();
+  if (phone) q.set('phone', normalizeCustomerPhoneForApi(phone));
+
+  let rows = extractMealPlanOrdersFromResponse(
+    await apiClient.get(`/customer/meal-plan-orders?${q.toString()}`),
+  );
+
+  // Fallback: primary list route can return [] when optional refund metadata tables are missing on RDS.
+  if (rows.length === 0) {
+    const alt = await apiClient.get(`/meal/orders/customer/${encodeURIComponent(customerId)}`);
+    rows = extractMealPlanOrdersFromResponse(alt);
+  }
+
+  return rows.map((o) => mapRawMealPlanOrderRow(o as Record<string, unknown>));
+}
+
 function formatDeliveryTime(slot: unknown): string {
   if (!slot) return '';
   if (typeof slot === 'string') return slot;
@@ -181,59 +301,17 @@ function MealPlanOrdersPanelLive({
   const loadOrders = async () => {
     try {
       setLoading(true);
-      const customerPhone =
-        fixedCustomerPhone?.trim() ||
-        searchParams?.get('phone')?.trim() ||
-        localStorage.getItem('customerPhone') ||
-        '';
-      if (!customerPhone) {
+      const { customerId, customerPhone } = await resolveCustomerIdForMealOrders(
+        fixedCustomerPhone,
+        searchParams,
+      );
+      if (!customerId) {
         setOrders([]);
         return;
       }
-      const customer: unknown = await apiClient.get(
-        `/customer/by-phone?phone=${encodeURIComponent(customerPhone)}`,
-      );
-      const c = customer as { customer?: { id?: string }; id?: string };
-      const customerId = c?.customer?.id || c?.id;
 
-      if (customerId) {
-        const response: unknown = await apiClient.get(`/customer/meal-plan-orders?customerId=${customerId}`);
-        const r = response as { orders?: unknown[] };
-        const mealPlanOrders = (r?.orders || []).map((o: Record<string, unknown>) => ({
-          ...o,
-          subscription_id: o.subscription_id != null ? String(o.subscription_id) : null,
-          meal_plan_name: (o.meal_plan_name as string) || (o.meal_plan_id as string) || 'Meal Plan',
-          meal_plan_image_url: resolveMealOrderImageUrl(o),
-          pet_name: (o.pet_name as string) || undefined,
-          quantity: o.quantity != null ? Number(o.quantity) : undefined,
-          payment_status: o.payment_status != null ? String(o.payment_status) : undefined,
-          paymentHoldExpiresAt:
-            (o.paymentHoldExpiresAt as string | null | undefined) ??
-            (o.payment_hold_expires_at as string | null | undefined) ??
-            null,
-          refundReview: parseMealRefundReview(o.refundReview),
-          delivery_date: o.delivery_date || o.scheduled_delivery_date || o.created_at,
-          delivery_time:
-            (o.delivery_time as string) || formatDeliveryTime(o.scheduled_delivery_slot) || '',
-          delivery_address:
-            typeof o.delivery_address === 'string'
-              ? (() => {
-                  try {
-                    const p = JSON.parse(o.delivery_address as string) as {
-                      address?: string;
-                      addressLine1?: string;
-                    };
-                    return p?.address || p?.addressLine1 || (o.delivery_address as string);
-                  } catch {
-                    return o.delivery_address as string;
-                  }
-                })()
-              : ((o.delivery_address as { address?: string; addressLine1?: string })?.address ||
-                  (o.delivery_address as { addressLine1?: string })?.addressLine1 ||
-                  ''),
-        })) as MealPlanOrder[];
-        setOrders(mealPlanOrders);
-      }
+      const mealPlanOrders = await fetchMealPlanOrdersForCustomer(customerId, customerPhone);
+      setOrders(mealPlanOrders);
     } catch (error) {
       console.error('Error loading orders:', error);
     } finally {
@@ -320,11 +398,7 @@ function MealPlanOrdersPanelLive({
       return;
     }
     try {
-      const customerPhone =
-        fixedCustomerPhone?.trim() ||
-        searchParams?.get('phone')?.trim() ||
-        localStorage.getItem('customerPhone') ||
-        '';
+      const customerPhone = resolveCustomerPhoneForOrders(fixedCustomerPhone, searchParams);
       const res = (await apiClient.get(`/meal/orders/${order.id}`)) as {
         order?: Record<string, unknown>;
       };
