@@ -159,40 +159,134 @@ async function creditMealWalletRefund(
   reason: string,
 ): Promise<number> {
   if (amount <= 0.009) return 0;
+  const desc = `Refund: meal order [meal_order:${mealOrderId}] — ${reason}`;
+
   await withTransaction(async (client) => {
+    const cwCols = await client.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'customer_wallets'`,
+    );
+    const cwSet = new Set(cwCols.rows.map((r) => r.column_name));
+    const cwHasCurrency = cwSet.has('currency');
+    const cwHasUpdatedAt = cwSet.has('updated_at');
+
+    const upsertCols = ['customer_id', 'balance'];
+    const upsertVals: unknown[] = [customerId, 0];
+    if (cwHasCurrency) {
+      upsertCols.push('currency');
+      upsertVals.push('INR');
+    }
+    const upsertPh = upsertVals.map((_, i) => `$${i + 1}`).join(', ');
     await client.query(
-      `INSERT INTO customer_wallets (customer_id, balance, currency)
-       VALUES ($1, 0, 'INR')
+      `INSERT INTO customer_wallets (${upsertCols.join(', ')})
+       VALUES (${upsertPh})
        ON CONFLICT (customer_id) DO NOTHING`,
+      upsertVals as unknown[],
+    );
+
+    await client.query(`SELECT id FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`, [
+      customerId,
+    ]);
+
+    const walletRow = await client.query<{ id: string }>(
+      `SELECT id::text AS id FROM customer_wallets WHERE customer_id = $1::uuid LIMIT 1`,
       [customerId],
     );
-    await client.query(`SELECT id FROM customer_wallets WHERE customer_id = $1::uuid FOR UPDATE`, [customerId]);
-    await client.query(
-      `UPDATE customer_wallets SET balance = balance + $2, updated_at = NOW() WHERE customer_id = $1::uuid`,
-      [customerId, amount],
-    );
-    const desc = `Refund: vendor cancelled meal order [meal_order:${mealOrderId}] — ${reason}`;
-    const cols = await client.query(
+    const walletId = walletRow.rows[0]?.id;
+    if (!walletId) throw new Error(`customer_wallets row not found for customer ${customerId}`);
+
+    const txCols = await client.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.columns
        WHERE table_schema = 'public' AND table_name = 'wallet_transactions'`,
     );
-    const colSet = new Set(cols.rows.map((r: { column_name: string }) => r.column_name));
-    if (colSet.has('customer_id') && colSet.has('transaction_type')) {
-      await client.query(
-        `INSERT INTO wallet_transactions (customer_id, amount, transaction_type, description, created_at)
-         VALUES ($1, $2, 'credit', $3, NOW())`,
-        [customerId, amount, desc],
+    const txSet = new Set(txCols.rows.map((r) => r.column_name));
+    const hasWalletId = txSet.has('wallet_id');
+    const hasCustomerId = txSet.has('customer_id');
+    const hasReferenceType = txSet.has('reference_type');
+    const hasReferenceId = txSet.has('reference_id');
+    const hasBalanceAfter = txSet.has('balance_after');
+
+    if (hasWalletId && hasReferenceType && hasReferenceId) {
+      const dup = await client.query(
+        `SELECT id FROM wallet_transactions
+         WHERE wallet_id = $1::uuid
+           AND transaction_type = 'credit'
+           AND reference_type = 'meal_refund'
+           AND reference_id = $2::uuid
+         LIMIT 1`,
+        [walletId, mealOrderId],
       );
-    } else if (colSet.has('wallet_id')) {
-      const w = await client.query(`SELECT id FROM customer_wallets WHERE customer_id = $1 LIMIT 1`, [customerId]);
-      const walletId = w.rows[0]?.id;
-      if (walletId) {
-        await client.query(
-          `INSERT INTO wallet_transactions (wallet_id, amount, type, description, created_at)
-           VALUES ($1, $2, 'credit', $3, NOW())`,
-          [walletId, amount, desc],
-        );
-      }
+      if (dup.rows?.length) return;
+    } else if (hasCustomerId) {
+      const dup = await client.query(
+        `SELECT id FROM wallet_transactions
+         WHERE customer_id = $1::uuid
+           AND transaction_type = 'credit'
+           AND description = $2
+         LIMIT 1`,
+        [customerId, desc],
+      );
+      if (dup.rows?.length) return;
+    }
+
+    const setBal = cwHasUpdatedAt
+      ? 'SET balance = balance + $1::numeric, updated_at = NOW()'
+      : 'SET balance = balance + $1::numeric';
+    const up = await client.query<{ balance: string }>(
+      `UPDATE customer_wallets
+       ${setBal}
+       WHERE customer_id = $2::uuid
+       RETURNING balance::text`,
+      [amount, customerId],
+    );
+    if (!up.rows?.length) {
+      throw new Error(`customer_wallets UPDATE matched no row for customer ${customerId}`);
+    }
+    const balanceAfter = parseFloat(String(up.rows[0]?.balance ?? '0')) || 0;
+
+    const insertCols: string[] = [];
+    const insertParams: unknown[] = [];
+    if (hasWalletId) {
+      insertCols.push('wallet_id');
+      insertParams.push(walletId);
+    }
+    if (hasCustomerId) {
+      insertCols.push('customer_id');
+      insertParams.push(customerId);
+    }
+    insertCols.push('transaction_type');
+    insertParams.push('credit');
+    insertCols.push('amount');
+    insertParams.push(amount);
+    if (hasBalanceAfter) {
+      insertCols.push('balance_after');
+      insertParams.push(balanceAfter);
+    }
+    if (hasReferenceType) {
+      insertCols.push('reference_type');
+      insertParams.push('meal_refund');
+    }
+    if (hasReferenceId) {
+      insertCols.push('reference_id');
+      insertParams.push(mealOrderId);
+    }
+    insertCols.push('description');
+    insertParams.push(desc);
+    const ph = insertCols.map((_, i) => `$${i + 1}`).join(', ');
+    await client.query(
+      `INSERT INTO wallet_transactions (${insertCols.join(', ')}) VALUES (${ph})`,
+      insertParams as unknown[],
+    );
+
+    await client.query('SAVEPOINT sp_sync_customer_wallet_balance_meal');
+    try {
+      await client.query(
+        `UPDATE customers SET wallet_balance = COALESCE(wallet_balance, 0) + $1::numeric WHERE id = $2::uuid`,
+        [amount, customerId],
+      );
+      await client.query('RELEASE SAVEPOINT sp_sync_customer_wallet_balance_meal');
+    } catch {
+      await client.query('ROLLBACK TO SAVEPOINT sp_sync_customer_wallet_balance_meal');
     }
   });
   return amount;
