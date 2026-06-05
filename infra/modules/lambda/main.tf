@@ -157,6 +157,27 @@ resource "aws_iam_role_policy" "lambda_custom" {
           "events:DescribeRule"
         ]
         Resource = "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:rule/warmpawz-${var.environment}-settlement-calculate-daily"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "chime:CreateMeeting",
+          "chime:CreateMeetingWithAttendees",
+          "chime:DeleteMeeting",
+          "chime:GetMeeting",
+          "chime:ListMeetings",
+          "chime:CreateAttendee",
+          "chime:BatchCreateAttendee",
+          "chime:DeleteAttendee",
+          "chime:GetAttendee",
+          "chime:ListAttendees",
+          "chime:StartMeetingTranscription",
+          "chime:StopMeetingTranscription"
+        ]
+        Resource = [
+          "arn:aws:chime:${var.aws_region}:${data.aws_caller_identity.current.account_id}:meeting/*",
+          "arn:aws:chime:*:${data.aws_caller_identity.current.account_id}:meeting/*"
+        ]
       }
     ]
   })
