@@ -140,11 +140,6 @@ const OrderTrackingWidget = dynamic(
   { ssr: false }
 );
 
-const MealRiderTrackingBar = dynamic(
-  () => import('../MealRiderTrackingBar').then(mod => ({ default: mod.MealRiderTrackingBar })),
-  { ssr: false }
-);
-
 // Tele call notification - WhatsApp-like incoming call UI
 const TeleCallNotification = dynamic(
   () => import('../TeleCallNotification').then(mod => ({ default: mod.TeleCallNotification })),
@@ -523,9 +518,8 @@ export function CustomerHomeComplete({
     vendorPhoto?: string;
   } | null>(null);
 
-  // ✅ FIX GAP-8.4: Active order tracking state (pharmacy full widget; meals use rider bar)
+  // ✅ FIX GAP-8.4: Active order tracking state (pharmacy widget; meals use MealOrderFooterToast in shell)
   const [activeOrderTracking, setActiveOrderTracking] = useState<any | null>(null);
-  const [mealRiderActive, setMealRiderActive] = useState<any | null>(null);
 
   // Dynamic content from CMS
   const cachedHomeDynamic = readHomeSessionCache<CachedHomeDynamicContent>(phone, 'dynamic_content');
@@ -1850,20 +1844,6 @@ export function CustomerHomeComplete({
       pharmacyOrders = Array.isArray(pharmacyResponse?.orders) ? pharmacyResponse.orders : [];
     } catch (e) {
       console.warn('Pharmacy active orders check failed (non-fatal):', (e as Error)?.message);
-    }
-    try {
-      const riderResponse = await apiClient.get<any>(
-        `/customer/${phone}/orders/meals/rider-active`
-      );
-      const riderOrder = riderResponse?.order ?? null;
-      if (riderOrder?.showRiderBar) {
-        setMealRiderActive(riderOrder);
-      } else {
-        setMealRiderActive(null);
-      }
-    } catch (e) {
-      console.warn('Meals rider-active check failed (non-fatal):', (e as Error)?.message);
-      setMealRiderActive(null);
     }
     const activeOrders = pharmacyOrders.filter((order: any) => {
       if (!order) return false;
@@ -3550,21 +3530,7 @@ export function CustomerHomeComplete({
         />
       )}
 
-      {/* Meal rider footer bar — rider phase only, above tab navigation */}
-      {mealRiderActive && (
-        <MealRiderTrackingBar
-          order={mealRiderActive}
-          onTrack={() => {
-            const orderId = mealRiderActive.orderId || mealRiderActive.id;
-            handleNavigation('order-tracking', { orderId, orderType: 'meal' });
-            if (!onNavigate) {
-              window.location.href = `/track/${orderId}`;
-            }
-          }}
-        />
-      )}
-
-      {/* Pharmacy live tracking widget (meals use MealRiderTrackingBar instead) */}
+      {/* Pharmacy live tracking widget (meals use MealOrderFooterToast in CustomerScreenWrapper) */}
       {activeOrderTracking && (activeOrderTracking.orderType || 'pharmacy') !== 'meal' && (
         <OrderTrackingWidget
           orderId={activeOrderTracking.id || activeOrderTracking.orderId}
