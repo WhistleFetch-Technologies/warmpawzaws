@@ -668,14 +668,23 @@ export function UnifiedAdminRefundHub() {
               <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto text-sm">
                 <HubDetailSections detail={detail} />
 
-                {detail.sourceType === 'meal_case' && detail.stage === 'pending_review' ? (
+                {detail.sourceType === 'meal_case' &&
+                (detail.stage === 'pending_review' || detail.stage === 'refund_failed') ? (
                   <div className="pt-3 space-y-3 border-t border-orange-100">
-                    <textarea
-                      placeholder="Rejection notes (optional)"
-                      value={rejectNotes}
-                      onChange={(e) => setRejectNotes(e.target.value)}
-                      className="w-full text-sm border border-orange-200 rounded-lg p-3 min-h-[72px]"
-                    />
+                    {detail.stage === 'refund_failed' && (
+                      <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                        Previous refund attempt failed. You can retry approval — wallet credits use the
+                        customer wallet ledger.
+                      </p>
+                    )}
+                    {detail.stage === 'pending_review' ? (
+                      <textarea
+                        placeholder="Rejection notes (optional)"
+                        value={rejectNotes}
+                        onChange={(e) => setRejectNotes(e.target.value)}
+                        className="w-full text-sm border border-orange-200 rounded-lg p-3 min-h-[72px]"
+                      />
+                    ) : null}
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -684,8 +693,9 @@ export function UnifiedAdminRefundHub() {
                         className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-orange-600 text-white rounded-lg text-sm font-semibold hover:bg-orange-700 disabled:opacity-50"
                       >
                         <Check className="w-4 h-4" />
-                        Approve & refund
+                        {detail.stage === 'refund_failed' ? 'Retry refund' : 'Approve & refund'}
                       </button>
+                    {detail.stage === 'pending_review' ? (
                       <button
                         type="button"
                         disabled={processing}
@@ -695,7 +705,8 @@ export function UnifiedAdminRefundHub() {
                         <Ban className="w-4 h-4" />
                         Reject
                       </button>
-                    </div>
+                    ) : null}
+                  </div>
                     <p className="text-xs text-gray-500 text-center">
                       Approve triggers Razorpay or wallet refund for the recommended amount.
                     </p>
