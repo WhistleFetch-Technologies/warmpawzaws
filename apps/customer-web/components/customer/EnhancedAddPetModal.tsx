@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { addPetErrorMessage, resolveCustomerIdForPetMutation } from '@/lib/pet-create-helpers';
+import { flushPendingListItem } from '@/lib/pet-form-helpers';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -235,6 +236,8 @@ export function EnhancedAddPetModal({
   const [loading, setLoading] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  /** Staged vaccine dates — commit only on explicit confirm (avoids iOS WKWebView auto-select). */
+  const [pendingVaxDates, setPendingVaxDates] = useState<Record<string, string>>({});
   
   // Pet data state
   const [petData, setPetData] = useState<PetData>({
@@ -396,6 +399,19 @@ export function EnhancedAddPetModal({
     }));
   };
 
+  const confirmVaccinationDate = (
+    tmpl: VaccinationTemplate,
+    dateValue: string
+  ) => {
+    if (!dateValue) return;
+    addVaccination(tmpl.key, tmpl.payloadName, dateValue, tmpl.intervalDays);
+    setPendingVaxDates((prev) => {
+      const next = { ...prev };
+      delete next[tmpl.key];
+      return next;
+    });
+  };
+
   // Validate current step
   const validateStep = (): boolean => {
     const errors: Record<string, string> = {};
@@ -427,6 +443,21 @@ export function EnhancedAddPetModal({
     if (!validateStep()) {
       toast.error('Please fill in all required fields');
       return;
+    }
+
+    if (step === 'health') {
+      const allergies = flushPendingListItem(petData.allergies, newAllergy);
+      const currentMedications = flushPendingListItem(petData.currentMedications, newMedication);
+      const chronicConditions = flushPendingListItem(petData.chronicConditions, newCondition);
+      setPetData((prev) => ({
+        ...prev,
+        allergies,
+        currentMedications,
+        chronicConditions,
+      }));
+      setNewAllergy('');
+      setNewMedication('');
+      setNewCondition('');
     }
     
     const steps: Step[] = ['photo', 'basic', 'physical', 'health', 'vaccinations', 'behavior', 'review'];
@@ -466,6 +497,21 @@ export function EnhancedAddPetModal({
         return Math.max(0, Math.floor(ageInMonths / 12));
       })();
 
+      const allergies = flushPendingListItem(petData.allergies, newAllergy);
+      const currentMedications = flushPendingListItem(petData.currentMedications, newMedication);
+      const chronicConditions = flushPendingListItem(petData.chronicConditions, newCondition);
+      if (newAllergy.trim() || newMedication.trim() || newCondition.trim()) {
+        setPetData((prev) => ({
+          ...prev,
+          allergies,
+          currentMedications,
+          chronicConditions,
+        }));
+        setNewAllergy('');
+        setNewMedication('');
+        setNewCondition('');
+      }
+
       const payload: Record<string, unknown> = {
         customerId,
         name: petData.name.trim(),
@@ -481,8 +527,8 @@ export function EnhancedAddPetModal({
         photo: petData.photo || undefined,
         dob: petData.dateOfBirth || undefined,
         microchipId: petData.microchipId || undefined,
-        allergies: petData.allergies || [],
-        chronicConditions: petData.chronicConditions || [],
+        allergies,
+        chronicConditions,
         vaccinations: petData.vaccinations.map((v) => ({
           type: v.name,
           name: v.name,
@@ -496,9 +542,9 @@ export function EnhancedAddPetModal({
         dietaryRestrictions: petData.dietaryRestrictions || undefined,
         spayedNeutered: petData.isSpayedNeutered,
         medicalHistory: {
-          allergies: petData.allergies || [],
-          chronicConditions: petData.chronicConditions || [],
-          currentMedications: petData.currentMedications || [],
+          allergies,
+          chronicConditions,
+          currentMedications,
           temperament: petData.temperament || undefined,
           activityLevel: petData.activityLevel || undefined,
           isGoodWithKids: petData.isGoodWithKids,
@@ -1162,26 +1208,35 @@ export function EnhancedAddPetModal({
                         <p className="text-sm text-gray-600 leading-relaxed mb-3">{tmpl.description}</p>
 
                         {!isAdded && (
-                          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-                            <label htmlFor={dateInputId} className="text-sm font-medium text-gray-700 shrink-0">
-                              Date last given
-                            </label>
-                            <input
-                              id={dateInputId}
-                              type="date"
-                              max={new Date().toISOString().split('T')[0]}
-                              onChange={(e) => {
-                                if (e.target.value) {
-                                  addVaccination(
-                                    tmpl.key,
-                                    tmpl.payloadName,
-                                    e.target.value,
-                                    tmpl.intervalDays
-                                  );
-                                }
-                              }}
-                              className="w-full sm:max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-white"
-                            />
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
+                            <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                              <label htmlFor={dateInputId} className="text-sm font-medium text-gray-700 shrink-0">
+                                Date last given
+                              </label>
+                              <div className="warmpawz-date-field-wrap">
+                                <input
+                                  id={dateInputId}
+                                  type="date"
+                                  max={new Date().toISOString().split('T')[0]}
+                                  value={pendingVaxDates[tmpl.key] ?? ''}
+                                  onChange={(e) => {
+                                    setPendingVaxDates((prev) => ({
+                                      ...prev,
+                                      [tmpl.key]: e.target.value,
+                                    }));
+                                  }}
+                                  className="w-full sm:max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-orange-400 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-white"
+                                />
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              disabled={!pendingVaxDates[tmpl.key]}
+                              onClick={() => confirmVaccinationDate(tmpl, pendingVaxDates[tmpl.key])}
+                              className="shrink-0 px-4 py-2 rounded-lg text-sm font-medium bg-orange-500 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                            >
+                              Add record
+                            </button>
                           </div>
                         )}
 
