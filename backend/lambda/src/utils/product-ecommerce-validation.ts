@@ -36,7 +36,6 @@ export type NormalizedEcommerceProduct = {
   hsn_code: string;
   gst_rate: number;
   imageUrls: string[];
-  sku: string | null;
 };
 
 export type ValidationFailure = {
@@ -215,10 +214,6 @@ export function validateEcommerceProductInput(
     };
   }
 
-  const skuRaw = record.sku ?? record.vendor_product_id;
-  const sku =
-    skuRaw != null && String(skuRaw).trim() !== '' ? String(skuRaw).trim() : null;
-
   return {
     ok: true,
     normalized: {
@@ -234,13 +229,14 @@ export function validateEcommerceProductInput(
       hsn_code: hsnStr,
       gst_rate: gstNum,
       imageUrls,
-      sku,
     },
   };
 }
 
-/** Vendor-scoped SKU when vendor does not supply one */
-export function generateVendorProductSku(vendorId: string): string {
+/** System-assigned SKU on product create — vendors cannot set or edit. */
+export function generateVendorProductSku(vendorId: string, uniqueSuffix?: string): string {
   const prefix = String(vendorId).replace(/-/g, '').slice(0, 8);
-  return `WP-${prefix}-${Date.now()}`;
+  const base = `WP-${prefix}-${Date.now()}`;
+  const suffix = uniqueSuffix != null ? String(uniqueSuffix).trim() : '';
+  return suffix ? `${base}-${suffix}` : base;
 }
