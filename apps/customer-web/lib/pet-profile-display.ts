@@ -20,6 +20,7 @@ export interface PetDisplayInput {
     parvovirus?: string;
     other?: string;
   };
+  vaccinationEntries?: VaccinationEntryDisplay[];
 }
 
 export function petTypeEmoji(type: string): string {
@@ -124,8 +125,102 @@ export type PetVaccinationMap = {
   other?: string;
 };
 
+export type VaccinationEntryDisplay = {
+  key?: string;
+  name: string;
+  date: string;
+  nextDue?: string;
+};
+
+const LEGACY_SLOT_LABELS: Record<keyof PetVaccinationMap, string> = {
+  rabies: 'Rabies Vaccine',
+  distemper: 'Distemper Vaccine',
+  parvovirus: 'Parvovirus Vaccine',
+  other: 'Other Vaccination',
+};
+
 function isVaccineDate(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function entryLabelFromRecord(rec: Record<string, unknown>): string {
+  const name = String(rec.name ?? rec.type ?? rec.payloadName ?? rec.vaccine ?? '').trim();
+  if (name) return name;
+  const key = String(rec.key ?? rec.vaccineKey ?? '').trim();
+  if (key) return key;
+  return 'Vaccination';
+}
+
+function entryDateFromRecord(rec: Record<string, unknown>): string | undefined {
+  const raw = rec.date ?? rec.lastDate ?? rec.administered_date ?? rec.administeredDate;
+  return normalizeVaccinationDateToIso(raw != null ? String(raw) : undefined);
+}
+
+function entryNextDueFromRecord(rec: Record<string, unknown>): string | undefined {
+  const raw = rec.nextDue ?? rec.nextDueDate;
+  return normalizeVaccinationDateToIso(raw != null ? String(raw) : undefined);
+}
+
+function entriesFromArray(arr: unknown[]): VaccinationEntryDisplay[] {
+  const out: VaccinationEntryDisplay[] = [];
+  for (const entry of arr) {
+    if (!entry || typeof entry !== 'object') continue;
+    const rec = entry as Record<string, unknown>;
+    const date = entryDateFromRecord(rec);
+    if (!date) continue;
+    const key = String(rec.key ?? rec.vaccineKey ?? '').trim();
+    out.push({
+      key: key || undefined,
+      name: entryLabelFromRecord(rec),
+      date,
+      nextDue: entryNextDueFromRecord(rec),
+    });
+  }
+  return out;
+}
+
+function entriesFromFlatMap(flat: PetVaccinationMap): VaccinationEntryDisplay[] {
+  const out: VaccinationEntryDisplay[] = [];
+  for (const slot of ['rabies', 'distemper', 'parvovirus', 'other'] as const) {
+    const date = normalizeVaccinationDateToIso(flat[slot]);
+    if (!date) continue;
+    out.push({ name: LEGACY_SLOT_LABELS[slot], date });
+  }
+  return out;
+}
+
+/** One row per entered vaccine (preserves wizard array; does not collapse to 4 slots). */
+export function extractVaccinationEntriesFromApi(raw: any): VaccinationEntryDisplay[] {
+  if (!raw) return [];
+
+  const mh = raw.healthRecords ?? raw.health_records ?? raw.medical_history ?? {};
+  const nested = mh.vaccinations;
+  if (Array.isArray(nested) && nested.length > 0) {
+    const entries = entriesFromArray(nested);
+    if (entries.length > 0) return entries;
+  }
+
+  const direct = raw.vaccinations ?? raw.vaccination_records ?? raw.vaccinationRecords;
+  if (Array.isArray(direct) && direct.length > 0) {
+    const entries = entriesFromArray(direct);
+    if (entries.length > 0) return entries;
+  }
+
+  return entriesFromFlatMap(normalizeVaccinationsFromApi(raw));
+}
+
+/** Rebuild wizard/API vaccination array from display entries. */
+export function vaccinationEntriesToApiPayload(entries: VaccinationEntryDisplay[]): Record<string, string>[] {
+  return entries
+    .filter((e) => e.date)
+    .map((e) => ({
+      name: e.name,
+      type: e.name,
+      date: e.date,
+      lastDate: e.date,
+      ...(e.key ? { key: e.key, vaccineKey: e.key } : {}),
+      ...(e.nextDue ? { nextDue: e.nextDue, nextDueDate: e.nextDue } : {}),
+    }));
 }
 
 function mergeFlatVaccinationMap(into: PetVaccinationMap, source: PetVaccinationMap): void {
@@ -209,27 +304,36 @@ export function deriveHealthStatus(pet: PetDisplayInput): string {
 }
 
 export function deriveVaccinationStatus(pet: PetDisplayInput): string {
+  if (pet.vaccinationEntries && pet.vaccinationEntries.length > 0) return 'Vaccinated';
   const v = pet.vaccinations;
   if (v?.rabies || v?.distemper || v?.parvovirus || v?.other) return 'Vaccinated';
   return 'Not Vaccinated';
 }
 
 export function formatVaccinationSummary(pet: PetDisplayInput): string {
+  const entryCount = pet.vaccinationEntries?.length ?? 0;
+  if (entryCount > 0) {
+    if (entryCount === 1) return '1 vaccine recorded';
+    return `${entryCount} vaccines recorded`;
+  }
   const v = pet.vaccinations;
   if (!v) return 'Not Vaccinated';
-  const count = [v.rabies, v.distemper, v.parvovirus].filter(isVaccineDate).length;
-  if (count === 0) return v.other ? 'Vaccinated' : 'Not Vaccinated';
+  const count = [v.rabies, v.distemper, v.parvovirus, v.other].filter(isVaccineDate).length;
+  if (count === 0) return 'Not Vaccinated';
   if (count === 1) return '1 vaccine recorded';
   return `${count} vaccines recorded`;
 }
 
 export function deriveNextDueDate(pet: PetDisplayInput): string {
   const lastCheckup = pet.healthRecords?.lastCheckup;
-  const vaccinationDates = [
-    pet.vaccinations?.rabies,
-    pet.vaccinations?.distemper,
-    pet.vaccinations?.parvovirus,
-  ].filter(Boolean) as string[];
+  const vaccinationDates = (
+    pet.vaccinationEntries?.map((e) => e.nextDue || e.date) ?? [
+      pet.vaccinations?.rabies,
+      pet.vaccinations?.distemper,
+      pet.vaccinations?.parvovirus,
+      pet.vaccinations?.other,
+    ]
+  ).filter(Boolean) as string[];
 
   const candidates: Date[] = [];
 

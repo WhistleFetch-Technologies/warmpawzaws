@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
 import { addPetErrorMessage, resolveCustomerIdForPetMutation } from '@/lib/pet-create-helpers';
+import { flushPendingListItem } from '@/lib/pet-form-helpers';
 import { toast } from 'sonner';
 
 // ============================================================================
@@ -443,6 +444,21 @@ export function EnhancedAddPetModal({
       toast.error('Please fill in all required fields');
       return;
     }
+
+    if (step === 'health') {
+      const allergies = flushPendingListItem(petData.allergies, newAllergy);
+      const currentMedications = flushPendingListItem(petData.currentMedications, newMedication);
+      const chronicConditions = flushPendingListItem(petData.chronicConditions, newCondition);
+      setPetData((prev) => ({
+        ...prev,
+        allergies,
+        currentMedications,
+        chronicConditions,
+      }));
+      setNewAllergy('');
+      setNewMedication('');
+      setNewCondition('');
+    }
     
     const steps: Step[] = ['photo', 'basic', 'physical', 'health', 'vaccinations', 'behavior', 'review'];
     const currentIndex = steps.indexOf(step);
@@ -481,6 +497,21 @@ export function EnhancedAddPetModal({
         return Math.max(0, Math.floor(ageInMonths / 12));
       })();
 
+      const allergies = flushPendingListItem(petData.allergies, newAllergy);
+      const currentMedications = flushPendingListItem(petData.currentMedications, newMedication);
+      const chronicConditions = flushPendingListItem(petData.chronicConditions, newCondition);
+      if (newAllergy.trim() || newMedication.trim() || newCondition.trim()) {
+        setPetData((prev) => ({
+          ...prev,
+          allergies,
+          currentMedications,
+          chronicConditions,
+        }));
+        setNewAllergy('');
+        setNewMedication('');
+        setNewCondition('');
+      }
+
       const payload: Record<string, unknown> = {
         customerId,
         name: petData.name.trim(),
@@ -496,8 +527,8 @@ export function EnhancedAddPetModal({
         photo: petData.photo || undefined,
         dob: petData.dateOfBirth || undefined,
         microchipId: petData.microchipId || undefined,
-        allergies: petData.allergies || [],
-        chronicConditions: petData.chronicConditions || [],
+        allergies,
+        chronicConditions,
         vaccinations: petData.vaccinations.map((v) => ({
           type: v.name,
           name: v.name,
@@ -511,9 +542,9 @@ export function EnhancedAddPetModal({
         dietaryRestrictions: petData.dietaryRestrictions || undefined,
         spayedNeutered: petData.isSpayedNeutered,
         medicalHistory: {
-          allergies: petData.allergies || [],
-          chronicConditions: petData.chronicConditions || [],
-          currentMedications: petData.currentMedications || [],
+          allergies,
+          chronicConditions,
+          currentMedications,
           temperament: petData.temperament || undefined,
           activityLevel: petData.activityLevel || undefined,
           isGoodWithKids: petData.isGoodWithKids,

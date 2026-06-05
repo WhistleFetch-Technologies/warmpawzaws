@@ -500,19 +500,34 @@ export function registerPetEndpoints(app: Hono) {
       const incomingHealth =
         petData.healthRecords || petData.medicalHistory || petData.medical_history || {};
       const mergedHealth = mergeHealthRecordsForStorage(existingMedicalHistory, incomingHealth);
+
+      const incomingVacArray = Array.isArray(petData.vaccinations)
+        ? petData.vaccinations
+        : Array.isArray((incomingHealth as Record<string, unknown>).vaccinations)
+          ? ((incomingHealth as Record<string, unknown>).vaccinations as unknown[])
+          : null;
+
       const existingVac = extractVaccinationsForClient(existingPet);
       const incomingVacFromHealth = (incomingHealth as Record<string, unknown>).vaccinationDates as
         | Record<string, string>
         | undefined;
+      const incomingVacFlat =
+        petData.vaccinations != null && !Array.isArray(petData.vaccinations)
+          ? (petData.vaccinations as Record<string, string>)
+          : {};
       const mergedVac = sanitizeVaccinationMap({
         ...existingVac,
         ...(incomingVacFromHealth || {}),
-        ...(petData.vaccinations != null ? (petData.vaccinations as Record<string, string>) : {}),
+        ...incomingVacFlat,
+        ...(incomingVacArray ? flatMapFromVaccinationEntries(incomingVacArray) : {}),
       });
       const { vaccination_records, medical_history } = buildVaccinationStorage(
         mergedHealth,
         mergedVac
       );
+      if (incomingVacArray && incomingVacArray.length > 0) {
+        medical_history.vaccinations = incomingVacArray;
+      }
 
       const updateData: any = {
         name: petData.name,
