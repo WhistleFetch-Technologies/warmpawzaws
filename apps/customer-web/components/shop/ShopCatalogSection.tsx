@@ -10,11 +10,12 @@ interface ShopCatalogSectionProps {
   loading: boolean;
   error: string | null;
   products: ShopProduct[];
-  cartProductIds: Set<string>;
+  getCartQuantity: (productId: string) => number;
   sortBy: string;
   cartSubtotal: number;
   onRetry: () => void;
   onAddToCart: (product: ShopProduct) => void;
+  onQuantityChange: (product: ShopProduct, quantity: number) => void;
   onOpenSort: () => void;
 }
 
@@ -22,11 +23,12 @@ export function ShopCatalogSection({
   loading,
   error,
   products,
-  cartProductIds,
+  getCartQuantity,
   sortBy,
   cartSubtotal,
   onRetry,
   onAddToCart,
+  onQuantityChange,
   onOpenSort,
 }: ShopCatalogSectionProps) {
   return (
@@ -103,8 +105,9 @@ export function ShopCatalogSection({
               <ShopProductCard
                 product={product}
                 variant="grid"
+                cartQuantity={getCartQuantity(product.id)}
                 onAddToCart={() => onAddToCart(product)}
-                inCart={cartProductIds.has(product.id)}
+                onQuantityChange={(quantity) => onQuantityChange(product, quantity)}
               />
             </div>
           ))}

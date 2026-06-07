@@ -198,6 +198,16 @@ export function EcommerceOrderSuccessScreen() {
             variant="outline"
             onClick={() => {
               clearCheckoutOrderResponse();
+              router.replace('/orders');
+            }}
+            className="w-full h-11 rounded-xl"
+          >
+            View my orders
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              clearCheckoutOrderResponse();
               router.replace('/shop');
             }}
             className="w-full h-11 rounded-xl"

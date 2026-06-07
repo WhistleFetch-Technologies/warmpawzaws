@@ -6,16 +6,18 @@ import { ShopProductCard } from './ShopProductCard';
 interface ShopTopDealsSectionProps {
   products: ShopProduct[];
   loading: boolean;
-  cartProductIds: Set<string>;
+  getCartQuantity: (productId: string) => number;
   onAddToCart: (product: ShopProduct) => void;
+  onQuantityChange: (product: ShopProduct, quantity: number) => void;
   onViewAll: () => void;
 }
 
 export function ShopTopDealsSection({
   products,
   loading,
-  cartProductIds,
+  getCartQuantity,
   onAddToCart,
+  onQuantityChange,
   onViewAll,
 }: ShopTopDealsSectionProps) {
   if (!loading && products.length === 0) return null;
@@ -42,8 +44,9 @@ export function ShopTopDealsSection({
               key={product.id}
               product={product}
               variant="deal"
+              cartQuantity={getCartQuantity(product.id)}
               onAddToCart={() => onAddToCart(product)}
-              inCart={cartProductIds.has(product.id)}
+              onQuantityChange={(quantity) => onQuantityChange(product, quantity)}
             />
           ))}
         </div>

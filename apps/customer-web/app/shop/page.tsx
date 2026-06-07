@@ -23,7 +23,7 @@ import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
 import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { handleShopPageBack } from '@/lib/go-back-or-replace';
-import { emitWarmpawzCartUpdated, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
+import { emitWarmpawzCartUpdated, CART_UPDATED_EVENT, WARMPAWZ_CART_KEY } from '@/lib/warmpawz-cart-storage';
 import {
   loadCustomerDeliveryAddresses,
   pickDefaultDeliveryAddress,
@@ -233,6 +233,13 @@ export default function ShopPage() {
   }, [loadCustomerData, loadCart]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sync = () => loadCart();
+    window.addEventListener(CART_UPDATED_EVENT, sync);
+    return () => window.removeEventListener(CART_UPDATED_EVENT, sync);
+  }, [loadCart]);
+
+  useEffect(() => {
     loadData();
   }, [loadData]);
 
@@ -296,28 +303,40 @@ export default function ShopPage() {
     }
   };
 
-  const addToCart = (product: ShopProduct) => {
+  const updateProductQuantity = (product: ShopProduct, quantity: number) => {
+    const nextQty = Math.max(0, Math.floor(quantity));
     const existing = cart.find((item) => item.product_id === product.id);
+    if (nextQty <= 0) {
+      if (existing) saveCart(cart.filter((item) => item.product_id !== product.id));
+      return;
+    }
+    const capped = product.stock > 0 ? Math.min(nextQty, product.stock) : nextQty;
     const newCart = existing
       ? cart.map((item) =>
-          item.product_id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
+          item.product_id === product.id ? { ...item, quantity: capped } : item
         )
-      : [...cart, { product_id: product.id, product, quantity: 1 }];
+      : [...cart, { product_id: product.id, product, quantity: capped }];
     saveCart(newCart);
   };
+
+  const addToCart = (product: ShopProduct) => {
+    updateProductQuantity(
+      product,
+      (cart.find((item) => item.product_id === product.id)?.quantity ?? 0) + 1
+    );
+  };
+
+  const getCartQuantity = useCallback(
+    (productId: string) =>
+      cart.find((item) => item.product_id === productId)?.quantity ?? 0,
+    [cart]
+  );
 
   const cartSubtotal = cart.reduce(
     (sum, item) => sum + item.product.price * item.quantity,
     0
   );
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-
-  const cartProductIds = useMemo(
-    () => new Set(cart.map((item) => item.product_id)),
-    [cart]
-  );
 
   const filteredProducts = useMemo(() => {
     const filtered = products.filter((product) => {
@@ -394,19 +413,21 @@ export default function ShopPage() {
           <ShopTopDealsSection
             products={featuredProducts}
             loading={featuredLoading}
-            cartProductIds={cartProductIds}
+            getCartQuantity={getCartQuantity}
             onAddToCart={addToCart}
+            onQuantityChange={updateProductQuantity}
             onViewAll={scrollToCatalog}
           />
           <ShopCatalogSection
             loading={loading}
             error={error}
             products={filteredProducts}
-            cartProductIds={cartProductIds}
+            getCartQuantity={getCartQuantity}
             sortBy={sortBy}
             cartSubtotal={cartSubtotal}
             onRetry={loadData}
             onAddToCart={addToCart}
+            onQuantityChange={updateProductQuantity}
             onOpenSort={() => setShowSortSheet(true)}
           />
         </main>

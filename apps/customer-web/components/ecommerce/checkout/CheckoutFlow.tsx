@@ -1,20 +1,43 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCheckout } from '@/context/CheckoutProvider';
+import { readCheckoutOrderResponse } from '@/lib/ecommerce/checkout-order-storage';
 import { CheckoutStepper } from './CheckoutStepper';
 import { CheckoutOrderSummary } from './CheckoutOrderSummary';
 import { CheckoutAddressStep } from './CheckoutAddressStep';
 import { CheckoutPaymentStep } from './CheckoutPaymentStep';
 import { CheckoutReviewStep } from './CheckoutReviewStep';
+import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
 
 export function CheckoutFlow() {
-  const { step, goBack, cart } = useCheckout();
+  const router = useRouter();
+  const { step, goBack, cart, isPlacingOrder } = useCheckout();
+
+  // Payment succeeded but cart was cleared before route change — send to success/orders
+  useEffect(() => {
+    if (cart.length > 0 || isPlacingOrder) return;
+    const stored = readCheckoutOrderResponse();
+    if (stored?.orderId) {
+      router.replace('/checkout/success');
+    }
+  }, [cart.length, isPlacingOrder, router]);
 
   if (cart.length === 0) {
+    const pendingOrder = typeof window !== 'undefined' ? readCheckoutOrderResponse() : null;
+    if (pendingOrder?.orderId || isPlacingOrder) {
+      return (
+        <div className={`${ECOMMERCE_PAGE_SHELL} flex items-center justify-center`}>
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-orange-200 border-t-[#FF8C42]" />
+        </div>
+      );
+    }
+
     return (
-      <div className="min-h-screen bg-[#F2F4F7] flex flex-col max-w-customer mx-auto">
+      <div className={`${ECOMMERCE_PAGE_SHELL} flex flex-col`}>
         <header className="bg-white border-b border-slate-100 px-4 py-4 cw-header-safe-x">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={goBack} className="rounded-full">
@@ -36,7 +59,7 @@ export function CheckoutFlow() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F2F4F7] pb-8 max-w-customer mx-auto w-full">
+    <div className={`${ECOMMERCE_PAGE_SHELL} pb-8`}>
       <header className="sticky top-0 z-30 bg-white border-b border-slate-100 shadow-sm cw-header-safe-x pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-3 px-4 py-3">
           <Button variant="ghost" size="icon" onClick={goBack} className="rounded-full shrink-0">
@@ -50,7 +73,7 @@ export function CheckoutFlow() {
       </header>
 
       <div className="px-4 pt-4 lg:px-6 lg:pt-6">
-        <div className="lg:grid lg:grid-cols-[1fr_360px] lg:gap-8 lg:items-start">
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8 lg:items-start">
           <main className="min-w-0">
             {step === 'address' && <CheckoutAddressStep />}
             {step === 'payment' && <CheckoutPaymentStep />}

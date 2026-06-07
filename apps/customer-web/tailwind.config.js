@@ -15,6 +15,8 @@ module.exports = {
       maxWidth: {
         /** Full width on narrow viewports; cap ~512px on large screens; pair with mx-auto + w-full */
         customer: 'min(100%, 32rem)',
+        /** Cart / checkout two-column layout on desktop (pair with max-w-customer on mobile) */
+        ecommerce: 'min(100%, 72rem)',
       },
       minHeight: {
         'screen-dynamic': '100dvh',

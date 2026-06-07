@@ -45,6 +45,10 @@ import {
 import type { CheckoutAddress } from '@/components/customer/ecommerce/useEcommerceCheckout';
 import { goBackOrReplace } from '@/lib/go-back-or-replace';
 import type { CartPromotionResult } from '@/lib/promotions-engine';
+import {
+  ECOMMERCE_MOBILE_FOOTER_SHELL,
+  ECOMMERCE_PAGE_SHELL,
+} from '@/lib/ecommerce/ecommerce-page-shell';
 
 type EcommerceCartScreenProps = {
   phone: string;
@@ -92,6 +96,31 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
       sellerPromotion: sellerPromotionPricing,
     });
   }, [cart, itemCount, sellerPromotionPricing]);
+
+  const promotionBannerItems = useMemo(
+    () =>
+      cart.map((item) => ({
+        id: item.id,
+        productId: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        vendorId: item.vendorId,
+        categoryId: item.categoryId,
+      })),
+    [cart]
+  );
+
+  const handlePromotionApplied = useCallback((result: CartPromotionResult) => {
+    setPromotionResult((prev) => {
+      const prevId = prev?.appliedPromotions[0]?.promotion?.id;
+      const nextId = result.appliedPromotions[0]?.promotion?.id;
+      if (prev?.totalSavings === result.totalSavings && prevId === nextId) {
+        return prev;
+      }
+      return result;
+    });
+  }, []);
 
   const mrpTotal = useMemo(() => computeCartMrpTotal(cart), [cart]);
   const primaryVendorId = useMemo(
@@ -190,7 +219,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
 
   if (cart.length === 0) {
     return (
-      <div className="min-h-screen bg-[#F2F4F7] max-w-customer mx-auto flex flex-col">
+      <div className={`${ECOMMERCE_PAGE_SHELL} flex flex-col`}>
         <header className="sticky top-0 z-30 bg-white border-b border-slate-100 px-4 py-3 cw-header-safe-x">
           <div className="flex items-center gap-3">
             <Button
@@ -224,7 +253,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   }
 
   return (
-    <div className="min-h-screen bg-[#F2F4F7] max-w-customer mx-auto w-full pb-28">
+    <div className={`${ECOMMERCE_PAGE_SHELL} pb-28`}>
       <header className="sticky top-0 z-30 bg-white border-b border-slate-100 shadow-sm cw-header-safe-x pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-3 px-4 py-3">
           <Button
@@ -242,7 +271,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
       </header>
 
       <div className="px-4 pt-4 lg:px-6 lg:pt-6">
-        <div className="lg:grid lg:grid-cols-[1fr_360px] lg:gap-8 lg:items-start">
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8 lg:items-start">
           <div className="space-y-4 min-w-0">
             {/* Delivery address */}
             <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
@@ -305,17 +334,9 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             )}
 
             <CartPromotionsBanner
-              items={cart.map((item) => ({
-                id: item.id,
-                productId: item.id,
-                name: item.name,
-                price: item.price,
-                quantity: item.quantity,
-                vendorId: item.vendorId,
-                categoryId: item.categoryId,
-              }))}
+              items={promotionBannerItems}
               vendorId={primaryVendorId !== 'default' ? primaryVendorId : undefined}
-              onPromotionApplied={setPromotionResult}
+              onPromotionApplied={handlePromotionApplied}
             />
 
             {/* Line items */}
@@ -476,7 +497,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
       </div>
 
       {/* Mobile sticky CTA */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white p-4 lg:hidden max-w-customer mx-auto cw-footer-safe-b">
+      <div className={ECOMMERCE_MOBILE_FOOTER_SHELL}>
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm text-slate-600">Total</span>
           <span className="text-lg font-bold text-[#FF8C42]">₹{pricing.total.toFixed(0)}</span>

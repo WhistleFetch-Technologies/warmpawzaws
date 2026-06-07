@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { 
   Tag, Gift, Zap, Percent, ChevronDown, ChevronUp, 
   CheckCircle2, Sparkles, ShoppingBag, AlertCircle, X 
@@ -50,16 +50,21 @@ export function CartPromotionsBanner({
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastAppliedKeyRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    if (items.length > 0) {
-      calculatePromotions();
-    } else {
-      setPromotionResult(null);
-    }
-  }, [items, vendorId]);
+  /** Stable key so inline `items={[...]}` from parents does not retrigger the effect every render. */
+  const itemsKey = useMemo(
+    () =>
+      items
+        .map(
+          (i) =>
+            `${i.id ?? i.productId}:${i.quantity}:${i.price}:${i.vendorId ?? ''}:${i.categoryId ?? ''}`
+        )
+        .join('|'),
+    [items]
+  );
 
-  const calculatePromotions = async () => {
+  const calculatePromotions = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -74,26 +79,45 @@ export function CartPromotionsBanner({
           originalTotal: res.originalTotal,
           discountedTotal: res.discountedTotal,
           totalSavings: res.totalSavings,
-          appliedPromotions: res.bestPromotion ? [{
-            promotion: res.bestPromotion,
-            discountAmount: res.bestPromotion.calculatedDiscount,
-            affectedItems: [],
-            type: res.bestPromotion.type,
-            description: res.bestPromotion.description,
-          }] : [],
+          appliedPromotions: res.bestPromotion
+            ? [
+                {
+                  promotion: res.bestPromotion,
+                  discountAmount: res.bestPromotion.calculatedDiscount,
+                  affectedItems: [],
+                  type: res.bestPromotion.type,
+                  description: res.bestPromotion.description,
+                },
+              ]
+            : [],
           suggestedPromotions: (res.allPromotions || []).slice(1),
           freeItemsAdded: [],
         };
+        const resultKey = `${itemsKey}:${result.totalSavings}:${result.appliedPromotions[0]?.promotion?.id ?? 'none'}`;
         setPromotionResult(result);
-        onPromotionApplied?.(result);
+        if (lastAppliedKeyRef.current !== resultKey) {
+          lastAppliedKeyRef.current = resultKey;
+          onPromotionApplied?.(result);
+        }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error calculating promotions:', err);
       setError('Failed to load promotions');
     } finally {
       setLoading(false);
     }
-  };
+  }, [items, itemsKey, vendorId, customerId, onPromotionApplied]);
+
+  useEffect(() => {
+    if (items.length === 0) {
+      setPromotionResult(null);
+      lastAppliedKeyRef.current = null;
+      return;
+    }
+    void calculatePromotions();
+    // itemsKey gates re-fetch; calculatePromotions omitted to avoid unstable callback loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemsKey, vendorId, customerId, items.length]);
 
   if (loading) {
     return (

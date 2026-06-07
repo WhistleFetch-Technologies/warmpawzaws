@@ -388,7 +388,12 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
               ? 'Order placed! Pay on delivery.'
               : 'Order placed successfully!'
           );
-          router.replace('/checkout/success');
+          // Hard navigation avoids empty-cart flash on /checkout?step=review after clearCart
+          if (typeof window !== 'undefined') {
+            window.location.replace('/checkout/success');
+          } else {
+            router.replace('/checkout/success');
+          }
         },
       });
     } catch (err: unknown) {

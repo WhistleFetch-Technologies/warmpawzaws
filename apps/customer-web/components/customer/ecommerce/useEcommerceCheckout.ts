@@ -138,10 +138,13 @@ export function useEcommerceCheckout() {
             '/ecommerce/orders',
             orderData
           );
-          clearWarmpawzCartStorage();
-          clearPricingOptionsForCheckout();
-          clearCart?.();
-          onSuccess(result.order?.id || `order_${Date.now()}`);
+          const orderId = result.order?.id || `order_${Date.now()}`;
+          onSuccess(orderId);
+          queueMicrotask(() => {
+            clearWarmpawzCartStorage();
+            clearPricingOptionsForCheckout();
+            clearCart?.();
+          });
           return;
         }
 
@@ -197,11 +200,14 @@ export function useEcommerceCheckout() {
                   razorpay_payment_id: response.razorpay_payment_id,
                   razorpay_signature: response.razorpay_signature,
                 });
-                clearWarmpawzCartStorage();
-                clearPricingOptionsForCheckout();
-                clearCart?.();
+                // Navigate before clearing cart — otherwise checkout re-renders empty on ?step=review
                 onSuccess(shopOrderId);
                 resolve();
+                queueMicrotask(() => {
+                  clearWarmpawzCartStorage();
+                  clearPricingOptionsForCheckout();
+                  clearCart?.();
+                });
               } catch (err) {
                 reject(err);
               }
