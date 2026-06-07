@@ -1,19 +1,21 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
-import { CheckoutView } from '@/components/customer/CheckoutView';
+import { CheckoutProvider } from '@/context/CheckoutProvider';
+import { CheckoutFlow } from '@/components/ecommerce/checkout/CheckoutFlow';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { goBackOrReplace } from '@/lib/go-back-or-replace';
 
-export default function CheckoutPage() {
+function CheckoutPageContent() {
   const router = useRouter();
   const commerceEnabled = isCustomerEcommerceEnabled();
   const [phone, setPhone] = useState('');
 
   useEffect(() => {
-    let resolved = localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone') || '';
+    let resolved =
+      localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone') || '';
     if (!resolved) {
       try {
         const raw = localStorage.getItem('customerData');
@@ -50,7 +52,7 @@ export default function CheckoutPage() {
 
   if (!phone) {
     return (
-      <div className="flex min-h-screen items-center justify-center p-6">
+      <div className="flex min-h-screen items-center justify-center p-6 max-w-customer mx-auto">
         <p className="text-center text-gray-600">
           Please sign in to checkout.{' '}
           <button
@@ -66,17 +68,22 @@ export default function CheckoutPage() {
   }
 
   return (
-    <CheckoutView
-      variant="standalone"
-      phone={phone}
-      onBack={() => goBackOrReplace(router, '/cart')}
-      onSuccess={(orderId) => {
-        if (orderId) {
-          router.replace(`/orders/${orderId}/tracking`);
-        } else {
-          router.replace('/orders');
-        }
-      }}
-    />
+    <CheckoutProvider phone={phone}>
+      <CheckoutFlow />
+    </CheckoutProvider>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto flex min-h-screen w-full max-w-customer items-center justify-center bg-[#F2F4F7]">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-orange-200 border-t-orange-500" />
+        </div>
+      }
+    >
+      <CheckoutPageContent />
+    </Suspense>
   );
 }

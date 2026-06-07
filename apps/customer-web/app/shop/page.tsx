@@ -4,10 +4,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { BottomNavigation } from '@/components/customer/bottomNavigation/BottomNavigation';
-import { ShopCartSheet } from '@/components/shop/ShopCartSheet';
 import { ShopCatalogSection } from '@/components/shop/ShopCatalogSection';
 import { ShopCategoryScroller } from '@/components/shop/ShopCategoryScroller';
-import { ShopCheckoutModal } from '@/components/shop/ShopCheckoutModal';
 import { ShopDeliveryBar } from '@/components/shop/ShopDeliveryBar';
 import { ShopHeroCarousel } from '@/components/shop/ShopHeroCarousel';
 import { CustomerPlacementBanners } from '@/components/customer/shared/CustomerPlacementBanners';
@@ -19,10 +17,9 @@ import { ShopTrustRow } from '@/components/shop/ShopTrustRow';
 import { DeliveryAddressPickerSheet } from '@/components/customer/ecommerce/DeliveryAddressPickerSheet';
 import { AddAddressModal } from '@/components/customer/shared/AddAddressModal';
 import { mapApiProductsList, sortShopProducts } from '@/components/shop/map-shop-product';
-import type { ShopCartItem, ShopCategory, ShopCoupon, ShopProduct } from '@/components/shop/shop-types';
+import type { ShopCartItem, ShopCategory, ShopProduct } from '@/components/shop/shop-types';
 import { apiClient } from '@/lib/api-client';
 import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
-import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { useCustomerAccountSidebarHost } from '@/lib/customer-account-sidebar-host';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { handleShopPageBack } from '@/lib/go-back-or-replace';
@@ -33,13 +30,11 @@ import {
   type DeliveryAddress,
 } from '@/lib/ecommerce/load-customer-addresses';
 import { formatDeliveryAddressLine } from '@/lib/ecommerce/delivery-address-display';
+import {
+  readCheckoutAddressId,
+  writeCheckoutAddressId,
+} from '@/lib/ecommerce/checkout-address-storage';
 import { WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY } from '@/lib/go-back-or-replace';
-
-/** Full-viewport column — same width token as home + BottomNavigation (no grey outer frame). */
-const SHOP_PAGE_SHELL =
-  'relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-customer mx-auto flex-col overflow-hidden bg-white';
-
-const SHOP_DELIVERY_ADDRESS_ID_KEY = 'warmpawz_shop_delivery_address_id';
 
 function deliveryAddressToLabel(addr: DeliveryAddress): string {
   const area = (addr.addressLine1 || addr.street || '').trim();
@@ -47,18 +42,6 @@ function deliveryAddressToLabel(addr: DeliveryAddress): string {
   const short =
     area && city ? `${area}, ${city}` : formatDeliveryAddressLine(addr);
   return `Deliver to: ${short}`;
-}
-
-function deliveryAddressToShopAddress(addr: DeliveryAddress, phone: string) {
-  return {
-    name: addr.fullName || addr.name || '',
-    phone: addr.phone || phone,
-    line1: addr.addressLine1 || addr.street || '',
-    line2: addr.addressLine2 || '',
-    city: addr.city || '',
-    state: addr.state || '',
-    pincode: addr.pincode || '',
-  };
 }
 
 function scrollToCatalog() {
@@ -73,6 +56,10 @@ function clearShopCategoryFromUrl() {
   const next = url.pathname + (url.search ? url.search : '');
   window.history.replaceState({}, '', next);
 }
+
+/** Full-viewport column — same width token as home + BottomNavigation (no grey outer frame). */
+const SHOP_PAGE_SHELL =
+  'relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-customer mx-auto flex-col overflow-hidden bg-white';
 
 export default function ShopPage() {
   const router = useRouter();
@@ -91,34 +78,15 @@ export default function ShopPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 10000]);
 
-  const [showCart, setShowCart] = useState(false);
-  const [showCheckout, setShowCheckout] = useState(false);
-  const [checkoutStep, setCheckoutStep] = useState<'address' | 'payment' | 'confirm'>('address');
-  const [processing, setProcessing] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showSortSheet, setShowSortSheet] = useState(false);
-  const [showPaymentPage, setShowPaymentPage] = useState(false);
   const [customerPhone, setCustomerPhone] = useState('');
-  const [customerId, setCustomerId] = useState<string | undefined>(undefined);
   const [deliveryLabel, setDeliveryLabel] = useState('Deliver to: Add delivery address');
   const [savedAddresses, setSavedAddresses] = useState<DeliveryAddress[]>([]);
   const [selectedDeliveryAddress, setSelectedDeliveryAddress] = useState<DeliveryAddress | null>(null);
   const [showAddressPicker, setShowAddressPicker] = useState(false);
   const [addressPickerLoading, setAddressPickerLoading] = useState(false);
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
-
-  const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<ShopCoupon | null>(null);
-
-  const [address, setAddress] = useState({
-    name: '',
-    phone: '',
-    line1: '',
-    line2: '',
-    city: '',
-    state: '',
-    pincode: '',
-  });
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -136,19 +104,16 @@ export default function ShopPage() {
       sessionStorage.getItem('phone') ||
       '';
     setCustomerPhone(phone);
-    setCustomerId(getResolvedCustomerId() || undefined);
   }, []);
 
   const selectedDeliveryAddressRef = useRef<DeliveryAddress | null>(null);
 
-  const applySelectedDeliveryAddress = useCallback(
-    (addr: DeliveryAddress, phone: string) => {
+  const applySelectedDeliveryAddress = useCallback((addr: DeliveryAddress) => {
       selectedDeliveryAddressRef.current = addr;
       setSelectedDeliveryAddress(addr);
       setDeliveryLabel(deliveryAddressToLabel(addr));
-      setAddress(deliveryAddressToShopAddress(addr, phone));
-      if (typeof window !== 'undefined' && addr.id) {
-        localStorage.setItem(SHOP_DELIVERY_ADDRESS_ID_KEY, addr.id);
+      if (addr.id) {
+        writeCheckoutAddressId(addr.id);
       }
     },
     []
@@ -162,14 +127,14 @@ export default function ShopPage() {
       if (opts?.preserveSelection && selectedDeliveryAddressRef.current?.id) {
         const match = list.find((a) => a.id === selectedDeliveryAddressRef.current?.id);
         if (match) {
-          applySelectedDeliveryAddress(match, phone);
+          applySelectedDeliveryAddress(match);
           return list;
         }
       }
 
       let next = pickDefaultDeliveryAddress(list);
       if (typeof window !== 'undefined') {
-        const savedId = localStorage.getItem(SHOP_DELIVERY_ADDRESS_ID_KEY);
+        const savedId = readCheckoutAddressId();
         if (savedId) {
           const match = list.find((a) => a.id === savedId);
           if (match) next = match;
@@ -177,7 +142,7 @@ export default function ShopPage() {
       }
 
       if (next) {
-        applySelectedDeliveryAddress(next, phone);
+        applySelectedDeliveryAddress(next);
       } else {
         selectedDeliveryAddressRef.current = null;
         setSelectedDeliveryAddress(null);
@@ -302,7 +267,7 @@ export default function ShopPage() {
   };
 
   const handleAddressSelect = (addr: DeliveryAddress) => {
-    applySelectedDeliveryAddress(addr, customerPhone);
+    applySelectedDeliveryAddress(addr);
   };
 
   const handleAddAddressSuccess = async (newAddress: DeliveryAddress) => {
@@ -311,7 +276,7 @@ export default function ShopPage() {
     const match =
       list.find((a) => a.id && newAddress?.id && a.id === newAddress.id) ??
       pickDefaultDeliveryAddress(list);
-    if (match) applySelectedDeliveryAddress(match, customerPhone);
+    if (match) applySelectedDeliveryAddress(match);
   };
 
   const handleManageAddresses = () => {
@@ -343,34 +308,10 @@ export default function ShopPage() {
     saveCart(newCart);
   };
 
-  const updateQuantity = (productId: string, delta: number) => {
-    const newCart = cart
-      .map((item) => {
-        if (item.product_id === productId) {
-          const newQty = item.quantity + delta;
-          return newQty > 0 ? { ...item, quantity: newQty } : item;
-        }
-        return item;
-      })
-      .filter((item) => item.quantity > 0);
-    saveCart(newCart);
-  };
-
-  const removeFromCart = (productId: string) => {
-    saveCart(cart.filter((item) => item.product_id !== productId));
-  };
-
   const cartSubtotal = cart.reduce(
     (sum, item) => sum + item.product.price * item.quantity,
     0
   );
-  const discountAmount = appliedCoupon
-    ? appliedCoupon.discount_type === 'percentage'
-      ? cartSubtotal * (appliedCoupon.discount_value / 100)
-      : appliedCoupon.discount_value
-    : 0;
-  const shippingFee = cartSubtotal > 499 ? 0 : 49;
-  const cartTotal = cartSubtotal - discountAmount + shippingFee;
   const cartItemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const cartProductIds = useMemo(
@@ -386,51 +327,6 @@ export default function ShopPage() {
     });
     return sortShopProducts(filtered, sortBy);
   }, [products, searchTerm, priceRange, sortBy]);
-
-  const applyCoupon = async () => {
-    if (!couponCode.trim()) return;
-    try {
-      const result = await apiClient.post<{ valid?: boolean; coupon?: ShopCoupon }>(
-        '/ecommerce/validate-coupon',
-        { code: couponCode, order_total: cartSubtotal }
-      );
-      if (result?.valid && result.coupon) {
-        setAppliedCoupon(result.coupon);
-        setCouponCode('');
-      } else {
-        alert('Invalid coupon code');
-      }
-    } catch (err) {
-      console.error('Error applying coupon:', err);
-      alert('Failed to apply coupon');
-    }
-  };
-
-  const handleCheckout = async () => {
-    if (cart.length === 0) return;
-    if (!address.name || !address.phone || !address.line1 || !address.city || !address.pincode) {
-      alert('Please fill in all address fields');
-      return;
-    }
-    if (!customerPhone && !address.phone) {
-      alert('Please provide your phone number');
-      return;
-    }
-    setShowPaymentPage(true);
-  };
-
-  const handlePaymentSuccess = async (_bookingId: string, orderId?: string) => {
-    if (orderId) {
-      saveCart([]);
-      setAppliedCoupon(null);
-      setShowCheckout(false);
-      setShowPaymentPage(false);
-      setCheckoutStep('address');
-      alert(`Order placed successfully! Order ID: ${orderId}`);
-    } else {
-      alert('Payment successful but order ID not received. Please check your order history.');
-    }
-  };
 
   if (!isCustomerEcommerceEnabled()) {
     return (
@@ -468,7 +364,7 @@ export default function ShopPage() {
             <ShopPageHeader
               onBack={() => handleShopPageBack(router)}
               cartItemCount={cartItemCount}
-              onOpenCart={() => setShowCart(true)}
+              onOpenCart={() => router.push('/cart')}
             />
             <ShopSearchBar
               searchTerm={searchTerm}
@@ -536,50 +432,7 @@ export default function ShopPage() {
           onSelectPriceRange={setPriceRange}
         />
 
-        <ShopCartSheet
-          open={showCart}
-          cart={cart}
-          cartItemCount={cartItemCount}
-          cartSubtotal={cartSubtotal}
-          cartTotal={cartTotal}
-          shippingFee={shippingFee}
-          discountAmount={discountAmount}
-          appliedCoupon={appliedCoupon}
-          couponCode={couponCode}
-          onClose={() => setShowCart(false)}
-          onUpdateQuantity={updateQuantity}
-          onRemove={removeFromCart}
-          onCouponCodeChange={setCouponCode}
-          onApplyCoupon={applyCoupon}
-          onClearCoupon={() => setAppliedCoupon(null)}
-          onProceedCheckout={() => {
-            setShowCart(false);
-            router.push('/cart');
-          }}
-        />
       </div>
-
-      <ShopCheckoutModal
-        open={showCheckout}
-        cart={cart}
-        cartItemCount={cartItemCount}
-        cartSubtotal={cartSubtotal}
-        cartTotal={cartTotal}
-        shippingFee={shippingFee}
-        discountAmount={discountAmount}
-        checkoutStep={checkoutStep}
-        showPaymentPage={showPaymentPage}
-        processing={processing}
-        address={address}
-        customerPhone={customerPhone}
-        customerId={customerId}
-        onClose={() => setShowCheckout(false)}
-        onAddressChange={setAddress}
-        onCheckoutStepChange={setCheckoutStep}
-        onShowPaymentPage={setShowPaymentPage}
-        onPlaceOrder={handleCheckout}
-        onPaymentSuccess={handlePaymentSuccess}
-      />
 
       <DeliveryAddressPickerSheet
         open={showAddressPicker}

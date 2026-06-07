@@ -1,15 +1,33 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ShoppingCart } from 'lucide-react';
-import { ShoppingCartView } from '@/components/customer/ShoppingCartView';
+import { EcommerceCartScreen } from '@/components/ecommerce/cart/EcommerceCartScreen';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { goBackOrReplace } from '@/lib/go-back-or-replace';
 
 function CartPageContent() {
   const router = useRouter();
   const commerceEnabled = isCustomerEcommerceEnabled();
+  const [phone, setPhone] = useState('');
+
+  useEffect(() => {
+    let resolved =
+      localStorage.getItem('customerPhone') || localStorage.getItem('customer_phone') || '';
+    if (!resolved) {
+      try {
+        const raw = localStorage.getItem('customerData');
+        if (raw) {
+          const data = JSON.parse(raw) as { phone?: string };
+          if (data.phone) resolved = String(data.phone);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    setPhone(resolved);
+  }, []);
 
   if (!commerceEnabled) {
     return (
@@ -31,14 +49,7 @@ function CartPageContent() {
     );
   }
 
-  return (
-    <ShoppingCartView
-      variant="standalone"
-      onBack={() => goBackOrReplace(router, '/shop')}
-      onContinueShopping={() => router.replace('/shop')}
-      onCheckout={() => router.push('/checkout')}
-    />
-  );
+  return <EcommerceCartScreen phone={phone} />;
 }
 
 export default function CartPage() {

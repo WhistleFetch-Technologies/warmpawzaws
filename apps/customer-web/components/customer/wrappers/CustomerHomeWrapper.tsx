@@ -52,7 +52,7 @@ import {
 } from '@/lib/customer-vendor-profile-navigation';
 import { pickCustomerVendorAccountId, firstNonEmptyString } from '@warmpawz/shared-types';
 import { useNotificationService } from '../useNotificationService';
-import { toast } from 'sonner';
+import { EcommerceRouteRedirect } from '@/components/ecommerce/EcommerceRouteRedirect';
 import {
   CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE,
   isCustomerEcommerceEnabled,
@@ -128,8 +128,6 @@ const RelocationServicesLanding = dynamic(() => import('../RelocationServicesLan
 const ResortServicesLanding = dynamic(() => import('../ResortServicesLanding').then((m) => ({ default: m.ResortServicesLanding })), { loading: LoadingSpinner });
 const PetHolidayServicesLanding = dynamic(() => import('../PetHolidayServicesLanding').then((m) => ({ default: m.PetHolidayServicesLanding })), { loading: LoadingSpinner });
 const ProductDetailPage = dynamic(() => import('../ProductDetailPage').then((m) => ({ default: m.ProductDetailPage })), { loading: LoadingSpinner });
-const ShoppingCartView = dynamic(() => import('../ShoppingCartView').then((m) => ({ default: m.ShoppingCartView })), { loading: LoadingSpinner });
-const CheckoutView = dynamic(() => import('../CheckoutView').then((m) => ({ default: m.CheckoutView })), { loading: LoadingSpinner });
 const OrderSuccessView = dynamic(() => import('../OrderSuccessView').then((m) => ({ default: m.OrderSuccessView })), { loading: LoadingSpinner });
 const OrderHistoryPage = dynamic(() => import('../../shop/OrderHistoryPage').then((m) => ({ default: m.OrderHistoryPage })), { loading: LoadingSpinner });
 const AddressBookPage = dynamic(() => import('../../shop/AddressBookPage').then((m) => ({ default: m.AddressBookPage })), { loading: LoadingSpinner });
@@ -3651,23 +3649,11 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'product_reviews' && selectedProduct) return <ProductReviewsView productId={selectedProduct.id || selectedProduct.productId} productName={selectedProduct.name} onBack={() => setCurrentScreen('product_detail')} />;
   if (currentScreen === 'vendor_profile' && selectedVendorId) return <VendorProfileDetail vendorId={selectedVendorId} phone={phone} onBack={() => { if (selectedProduct) setCurrentScreen('product_detail'); else goToShopFromParent(); }} onNavigate={(screen, data) => { if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } }} />;
   if (currentScreen === 'cart') {
-    return (
-      <CustomerScreenWrapper 
-        currentScreen={currentScreen}
-        onNavigate={handleBottomNav}
-        onProfileClick={handleProfileClick}
-        accountSidebar={accountSidebarOverlay}
-      >
-        <ShoppingCartView
-          onBack={() => goToShopFromParent()}
-          onNavigateHome={handleBack}
-          onCheckout={() => router.push('/checkout')}
-          onContinueShopping={() => goToShopFromParent()}
-        />
-      </CustomerScreenWrapper>
-    );
+    return <EcommerceRouteRedirect href="/cart" />;
   }
-  if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={() => goToShopFromParent()} onSuccess={(orderId) => { setCurrentOrderId(orderId); setCurrentScreen('order_success'); }} onNavigate={(screen, data) => handleNavigateToService(screen, data)} />;
+  if (currentScreen === 'checkout') {
+    return <EcommerceRouteRedirect href="/checkout?step=address" />;
+  }
   if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); setCurrentScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); setCurrentScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); setCurrentScreen('order_history'); }} />;
   if (currentScreen === 'order_history')
     return (
