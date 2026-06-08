@@ -88,9 +88,14 @@ export function SpecializationSelector({
 
       let data: any;
       if (categoryId?.trim()) {
+        const cleanRoleId = (roleId || '').replace(/^role_/, '');
+        const roleQuery =
+          cleanRoleId.trim().length > 0
+            ? `&roleId=${encodeURIComponent(cleanRoleId.trim())}`
+            : '';
         console.log('[SPEC] Loading specializations for category:', categoryId.trim());
         data = await apiClient.get(
-          `/vendor/specializations/by-category?categoryId=${encodeURIComponent(categoryId.trim())}`
+          `/vendor/specializations/by-category?categoryId=${encodeURIComponent(categoryId.trim())}${roleQuery}`
         ) as any;
       } else {
         const cleanRoleId = (roleId || '').replace('role_', '');

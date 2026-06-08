@@ -516,6 +516,38 @@ function safeParseOperatingHours(raw: any): Record<string, any> | null {
   }
 }
 
+/** vendors.metadata may arrive as JSONB object or serialized string depending on driver/path. */
+function parseVendorMetadata(raw: unknown): Record<string, any> {
+  if (!raw) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, any>;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+        ? (parsed as Record<string, any>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function vendorAmenitiesFromMetadata(
+  metadata: Record<string, any>,
+  vendorRow?: { amenities?: unknown }
+): { amenities: string[]; customAmenities: string[] } {
+  const rawAmenities = metadata.amenities ?? vendorRow?.amenities;
+  const rawCustom = metadata.customAmenities ?? metadata.custom_amenities;
+  const amenities = Array.isArray(rawAmenities)
+    ? rawAmenities.map((a) => String(a).trim()).filter(Boolean)
+    : [];
+  const customAmenities = Array.isArray(rawCustom)
+    ? rawCustom.map((a) => String(a).trim()).filter(Boolean)
+    : [];
+  return { amenities, customAmenities };
+}
+
 /** Parse vendor_services.metadata (JSONB or string) for customer listings. */
 function parseVendorServiceMetadataForCustomer(vsMetadata: unknown): Record<string, any> {
   if (!vsMetadata) return {};
@@ -4864,6 +4896,7 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           facilityPhotos,
           boardingDisclaimer: boardingDiscProfile.disclaimer,
           boardingDisclaimerPoints: boardingDiscProfile.disclaimerPoints,
+          ...vendorAmenitiesFromMetadata(vendorMeta, vendor),
         },
         services: services.rows,
         reviews: reviews.rows,
@@ -5588,7 +5621,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       );
 
       // ✅ FIX: Extract facility data from vendor metadata and operating_hours
-      const metadata = (vendor.metadata as any) || {};
+      const metadata = parseVendorMetadata(vendor.metadata);
+      const { amenities, customAmenities } = vendorAmenitiesFromMetadata(metadata, vendor);
       const operatingHours = safeParseOperatingHours(vendor.operating_hours);
 
       const rawMixed = metadata.facility_photos || metadata.photos || [];
@@ -5618,6 +5652,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           role_id: vendor.role_id,
           boardingDisclaimer: boardingDisc.disclaimer,
           boardingDisclaimerPoints: boardingDisc.disclaimerPoints,
+          amenities,
+          customAmenities,
         },
         facility: {
           centerName: vendor.business_name, // ✅ FIX: Include centerName
@@ -5630,8 +5666,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           description: metadata.description || vendor.description || '', // ✅ FIX: Get description from metadata
           disclaimer: boardingDisc.disclaimer || metadata.disclaimer,
           disclaimerPoints: boardingDisc.disclaimerPoints.length ? boardingDisc.disclaimerPoints : metadata.disclaimerPoints || [],
-          amenities: metadata.amenities || [],
-          customAmenities: metadata.customAmenities || [], // ✅ FIX: Include custom amenities
+          amenities,
+          customAmenities,
           photos: validPhotos, // ✅ FIX: Use presigned URLs generated on-demand
           specializations: metadata.specializations || [],
           operatingHours: operatingHours || null,
@@ -5687,8 +5723,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       }
 
       // ✅ FIX: Build metadata object once to avoid overwriting
-      const existingMetadata = (vendor.metadata as any) || {};
-      const updatedMetadata: any = { ...existingMetadata };
+      const existingMetadata = parseVendorMetadata(vendor.metadata);
+      const updatedMetadata: Record<string, unknown> = { ...existingMetadata };
       let metadataChanged = false;
 
       // Amenities (stored in metadata)
@@ -6144,7 +6180,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       );
 
       // ✅ FIX: Extract metadata for description, custom amenities, and photos
-      const metadata = (vendor.metadata as any) || {};
+      const metadata = parseVendorMetadata(vendor.metadata);
+      const { amenities, customAmenities } = vendorAmenitiesFromMetadata(metadata, vendor);
       const operatingHours = safeParseOperatingHours(vendor.operating_hours);
 
       const rawMixed = metadata.facility_photos || metadata.photos || [];
@@ -6197,8 +6234,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           latitude: vendor.latitude,
           longitude: vendor.longitude,
           photos: validPhotos, // ✅ FIX: Use presigned URLs generated on-demand
-          amenities: metadata.amenities || vendor.amenities || [], // ✅ FIX: Get from metadata
-          customAmenities: metadata.customAmenities || [], // ✅ FIX: Include custom amenities
+          amenities,
+          customAmenities,
           description: metadata.description || vendor.description || '', // ✅ FIX: Include description
           disclaimer: metadata.disclaimer,
           disclaimerPoints: metadata.disclaimerPoints || [],

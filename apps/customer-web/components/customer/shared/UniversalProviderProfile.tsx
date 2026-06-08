@@ -18,6 +18,7 @@ import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
+import { resolveCustomerVendorAmenities } from '@/lib/vendor-display-media';
 
 // ============================================================================
 // TYPES
@@ -207,6 +208,8 @@ export function UniversalProviderProfile({
   const [showAddAddressModal, setShowAddAddressModal] = useState(false);
   const [notes, setNotes] = useState('');
   const [customerId, setCustomerId] = useState<string | null>(null);
+  const [profileAmenities, setProfileAmenities] = useState<string[]>(provider.amenities || []);
+  const [profileCustomAmenities, setProfileCustomAmenities] = useState<string[]>([]);
 
   const showFacilitiesAmenitiesOnAbout = !(category === 'vet' && serviceStyle === 'at_home');
 
@@ -234,6 +237,39 @@ export function UniversalProviderProfile({
   useEffect(() => {
     loadCustomerData();
   }, [phone]);
+
+  useEffect(() => {
+    const vid = String(provider.vendorId || provider.providerId || '').trim();
+    if (!vid) return;
+    if (provider.amenities && provider.amenities.length > 0) {
+      setProfileAmenities(provider.amenities);
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = (await apiClient.get(`/customer/facility/${encodeURIComponent(vid)}`)) as {
+          success?: boolean;
+          facility?: Record<string, unknown>;
+          vendor?: Record<string, unknown>;
+        };
+        if (cancelled || res?.success === false) return;
+        const resolved = resolveCustomerVendorAmenities({
+          ...(res.facility && typeof res.facility === 'object' ? res.facility : {}),
+          ...(res.vendor && typeof res.vendor === 'object' ? res.vendor : {}),
+          ...(provider.amenities ? { amenities: provider.amenities } : {}),
+        });
+        if (!cancelled) {
+          setProfileAmenities(resolved.amenities);
+          setProfileCustomAmenities(resolved.customAmenities);
+        }
+      } catch {
+        /* optional enrichment */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [provider.vendorId, provider.providerId, provider.amenities]);
 
   const refreshAddresses = async () => {
     if (serviceStyle !== 'at_home') return;
@@ -896,7 +932,8 @@ export function UniversalProviderProfile({
                       Facilities & Amenities
                     </h3>
                     <AmenitiesSection
-                      amenities={provider.amenities || []}
+                      amenities={profileAmenities}
+                      customAmenities={profileCustomAmenities}
                       compact={true}
                     />
                   </Card>

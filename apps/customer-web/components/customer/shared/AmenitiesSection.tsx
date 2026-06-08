@@ -82,6 +82,9 @@ export const AMENITY_CONFIG: Record<string, {
   'pool': { icon: Waves, label: 'Swimming Pool', category: 'boarding' },
   'training': { icon: Dumbbell, label: 'Training Facilities', category: 'boarding' },
   'cctv': { icon: Camera, label: 'CCTV Monitoring', category: 'boarding' },
+  'camera': { icon: Camera, label: 'CCTV Monitoring', category: 'boarding' },
+  'play_area': { icon: Trees, label: 'Outdoor Play Area', category: 'boarding' },
+  'medical': { icon: Stethoscope, label: 'Medical Care', category: 'medical' },
   'individual_rooms': { icon: Bed, label: 'Individual Rooms', category: 'boarding' },
   'feeding': { icon: UtensilsCrossed, label: 'Meal Service', category: 'boarding' },
 };
