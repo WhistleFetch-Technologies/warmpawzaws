@@ -782,85 +782,45 @@ export function CustomerHomeComplete({
   // Define quickServices constant (fallback when API has no categories)
   // Training / trainer labels come from API `service_categories.name` when present (not hardcoded here).
 
-  // Canonical display names: avoid duplicate-sounding labels (Lab Test vs Diagnostics, etc.)
-  const SERVICE_LABEL_OVERRIDE: Record<string, string> = {
-    // ✅ FIX: Merge emergency and ambulance to "Emergency Care"
-    emergency: 'Emergency Care',
-    ambulance: 'Emergency Care',
-    'emergency_care': 'Emergency Care',
-    // ✅ FIX: Merge all diagnostics variants to "Diagnostics / Lab Tests"
-    'lab-diagnostics': 'Diagnostics / Lab Tests',
-    diagnostic: 'Diagnostics / Lab Tests',
-    diagnostics: 'Diagnostics / Lab Tests',
-    lab: 'Diagnostics / Lab Tests',
-    // ✅ FIX: Merge all nutrition variants to "Nutritionist"
-    nutrition: 'Nutritionist',
-    nutritionist: 'Nutritionist',
-    wellness: 'Nutritionist',
-    // ✅ FIX: Rename specialty to "Pet Insurance"
-    specialty: 'Pet Insurance',
-    speciality: 'Pet Insurance',
-    veterinary: 'Vet Care',
-    vet: 'Vet Care',
-    walking: 'Dog Walker',
-    walker: 'Dog Walker',
-    shop: 'Pet Products',
-    marketplace: 'Pet Products',
-    'pet-sitter': 'Pet Sitter',
-    pet_sitter: 'Pet Sitter',
-    sitting: 'Pet Sitter',
-  };
-
-  // Use API-driven categories when available; otherwise fallback to hardcoded quickServices
-  // Ensure key flows (Pharmacy, Lab Test, Nutritionist) are always in the grid even if API omits them
-  const baseQuickServices = quickServiceTiles.length > 0 ? quickServiceTiles : quickServices;
-  const hasPharmacy = baseQuickServices.some((s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'pharmacy');
-  const hasLabDiagnostics = baseQuickServices.some((s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'lab-diagnostics' || (s.screen as string) === 'lab-diagnostics');
-  const nutritionCatalogIds = new Set(['nutritionist', 'nutrition', 'wellness']);
-  const hasNutritionist = baseQuickServices.some((s: any) => {
-    const raw = ((s.categoryId || s.screen || '') as string).toLowerCase();
-    if (nutritionCatalogIds.has(raw)) return true;
-    return mapCatalogSlugToLaunchServiceId(s.categoryId || s.screen) === 'nutritionist';
-  });
-  const hasTrainingAggregate = baseQuickServices.some((s: any) => {
-    if (((s.screen || '') as string).toLowerCase() === 'training') return true;
-    return mapCatalogSlugToLaunchServiceId(s.categoryId || '') === 'training';
-  });
-  const hasBehaviorist = baseQuickServices.some((s: any) => {
-    const raw = ((s.categoryId || s.screen || '') as string).toLowerCase();
-    return raw === 'behaviorist' || raw === 'behavioral';
-  });
+  // API categories = admin catalog (respects Customer off). Hardcoded quickServices only when API is empty.
+  const usingApiCategories = quickServiceTiles.length > 0;
+  const baseQuickServices = usingApiCategories ? quickServiceTiles : quickServices;
   let sourceQuickServices = baseQuickServices;
-  if (!hasPharmacy) sourceQuickServices = [...sourceQuickServices, { icon: Pill, label: 'Pharmacy', color: 'bg-red-100 text-red-600', screen: 'pharmacy', categoryId: 'pharmacy' }];
-  if (!hasLabDiagnostics) sourceQuickServices = [...sourceQuickServices, { icon: FlaskConical, label: 'Diagnostics / Lab Tests', color: 'bg-teal-100 text-teal-600', screen: 'lab-diagnostics', categoryId: 'lab-diagnostics' }];
-  if (!hasNutritionist) sourceQuickServices = [...sourceQuickServices, { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist', categoryId: 'nutritionist' }];
-  if (!hasBehaviorist && !hasTrainingAggregate) {
-    sourceQuickServices = [
-      ...sourceQuickServices,
-      { icon: Heart, label: 'Behaviorist', color: 'bg-indigo-100 text-indigo-600', screen: 'behaviorist', categoryId: 'behaviorist' },
-    ];
+  if (!usingApiCategories) {
+    // Legacy/offline fallback only — never re-inject tiles admin disabled via catalog toggle
+    const hasPharmacy = baseQuickServices.some((s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'pharmacy');
+    const hasLabDiagnostics = baseQuickServices.some((s: any) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'lab-diagnostics' || (s.screen as string) === 'lab-diagnostics');
+    const nutritionCatalogIds = new Set(['nutritionist', 'nutrition', 'wellness']);
+    const hasNutritionist = baseQuickServices.some((s: any) => {
+      const raw = ((s.categoryId || s.screen || '') as string).toLowerCase();
+      if (nutritionCatalogIds.has(raw)) return true;
+      return mapCatalogSlugToLaunchServiceId(s.categoryId || s.screen) === 'nutritionist';
+    });
+    const hasTrainingAggregate = baseQuickServices.some((s: any) => {
+      if (((s.screen || '') as string).toLowerCase() === 'training') return true;
+      return mapCatalogSlugToLaunchServiceId(s.categoryId || '') === 'training';
+    });
+    const hasBehaviorist = baseQuickServices.some((s: any) => {
+      const raw = ((s.categoryId || s.screen || '') as string).toLowerCase();
+      return raw === 'behaviorist' || raw === 'behavioral';
+    });
+    if (!hasPharmacy) sourceQuickServices = [...sourceQuickServices, { icon: Pill, label: 'Pharmacy', color: 'bg-red-100 text-red-600', screen: 'pharmacy', categoryId: 'pharmacy' }];
+    if (!hasLabDiagnostics) sourceQuickServices = [...sourceQuickServices, { icon: FlaskConical, label: 'Diagnostics / Lab Tests', color: 'bg-teal-100 text-teal-600', screen: 'lab-diagnostics', categoryId: 'lab-diagnostics' }];
+    if (!hasNutritionist) sourceQuickServices = [...sourceQuickServices, { icon: Wheat, label: 'Nutritionist', color: 'bg-green-100 text-green-600', screen: 'nutritionist', categoryId: 'nutritionist' }];
+    if (!hasBehaviorist && !hasTrainingAggregate) {
+      sourceQuickServices = [
+        ...sourceQuickServices,
+        { icon: Heart, label: 'Behaviorist', color: 'bg-indigo-100 text-indigo-600', screen: 'behaviorist', categoryId: 'behaviorist' },
+      ];
+    }
   }
 
-  // Deduplicate services by screen and apply label overrides
+  // Deduplicate by screen — labels come from admin catalog / launch config (no client overrides).
   const seenScreens = new Set<string>();
   const deduplicatedServices = sourceQuickServices
     .map((service: any) => {
       const screen = service.screen || service.categoryId || '';
-      const categoryId = (service.categoryId || service.screen || '').toLowerCase();
-      const launchId = mapCatalogSlugToLaunchServiceId(service.categoryId || service.screen || '').toLowerCase();
-
-      // Prefer tile's own label (from catalog); only apply overrides for merged non-training buckets.
-      const overrideKey = Object.keys(SERVICE_LABEL_OVERRIDE).find(
-        (key) => categoryId === key.toLowerCase() || screen.toLowerCase() === key.toLowerCase()
-      );
-      const label =
-        launchId === 'training'
-          ? service.label
-          : overrideKey
-            ? SERVICE_LABEL_OVERRIDE[overrideKey]
-            : service.label;
-
-      return { ...service, label, screen };
+      return { ...service, label: service.label, screen };
     })
     .filter((service: any) => {
       const screen = service.screen || '';
@@ -1232,9 +1192,10 @@ export function CustomerHomeComplete({
         const launchCatalog = (services?.catalog || []) as any[];
 
         const launchTiles = buildCustomerLaunchTiles({
-          tilePool: [...sourceQuickServices, ...quickServices],
+          tilePool: usingApiCategories ? sourceQuickServices : [...sourceQuickServices, ...quickServices],
           catalog: launchCatalog.map((c: any) => ({
             serviceId: c.serviceId || '',
+            categoryId: c.categoryId || c.category_id || '',
             displayName: c.displayName,
             effectiveStatus: c.effectiveStatus,
           })),
@@ -2231,7 +2192,7 @@ export function CustomerHomeComplete({
             services={
               (serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices) as QuickServiceTile[]
             }
-            serviceLabelOverride={SERVICE_LABEL_OVERRIDE}
+            serviceLabelOverride={{}}
             onNavigate={handleNavigation}
             homeCarouselBanners={homeCarouselBanners}
             activeBookings={activeBookings}
@@ -2469,7 +2430,7 @@ export function CustomerHomeComplete({
           <div className="grid grid-cols-5 gap-2">
             {(serviceLaunchTilesResolved ? filteredQuickServices : sourceQuickServices).map((service, index) => {
               const key = ((service.categoryId || service.screen || '') as string).toLowerCase();
-              const displayLabel = SERVICE_LABEL_OVERRIDE[key] ?? service.label;
+              const displayLabel = service.label;
               const serviceComingSoon =
                 COMING_SOON_HOME_SERVICE_SCREENS.has(String(service.screen || '').toLowerCase()) ||
                 COMING_SOON_HOME_SERVICE_SCREENS.has(key);

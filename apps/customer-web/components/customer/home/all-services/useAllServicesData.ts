@@ -76,8 +76,7 @@ export const SERVICE_DESCRIPTIONS: Record<string, string> = {
 };
 
 function displayLabelForService(service: QuickServiceTile): string {
-  const key = ((service.categoryId || service.screen || '') as string).toLowerCase();
-  return SERVICE_LABEL_OVERRIDE[key] ?? service.label;
+  return service.label?.trim() || String(service.categoryId || service.screen || 'Service');
 }
 
 function descriptionForService(service: QuickServiceTile): string {
@@ -97,7 +96,10 @@ function serviceMatchesPetFilter(service: QuickServiceTile, filter: PetTypeFilte
 }
 
 function buildSourceQuickServices(quickServiceTiles: QuickServiceTile[]): QuickServiceTile[] {
-  const baseQuickServices = quickServiceTiles.length > 0 ? quickServiceTiles : quickServices;
+  const usingApiCategories = quickServiceTiles.length > 0;
+  const baseQuickServices = usingApiCategories ? quickServiceTiles : quickServices;
+  if (usingApiCategories) return baseQuickServices;
+
   const hasPharmacy = baseQuickServices.some(
     (s) => ((s.categoryId || s.screen || '') as string).toLowerCase() === 'pharmacy'
   );
@@ -291,10 +293,14 @@ export function useAllServicesData({ phone }: UseAllServicesDataOptions) {
             comingSoonLaunch.length > 0 ||
             hiddenLaunch.length > 0)
         ) {
+          const usingApiCategories = quickServiceTiles.length > 0;
           const resultTiles = buildCustomerLaunchTiles({
-            tilePool: [...sourceQuickServices, ...quickServices],
+            tilePool: usingApiCategories ? sourceQuickServices : [...sourceQuickServices, ...quickServices],
             catalog: catalog?.map((c) => ({
               serviceId: c.serviceId || '',
+              categoryId: (c as { categoryId?: string; category_id?: string }).categoryId
+                || (c as { category_id?: string }).category_id
+                || '',
               displayName: c.displayName,
               effectiveStatus: c.effectiveStatus,
             })),

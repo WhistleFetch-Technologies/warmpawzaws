@@ -55,7 +55,6 @@ import {
   resolveVendorProfileHeroGallery,
   resolveVendorProfilePhotoUrl,
 } from '@/lib/vendor-display-media';
-import { AmenitiesSection } from '../shared/AmenitiesSection';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
 
 /** Second identity-chip line derived only from vertical (not vendor-specific catalog copy). */

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { memo, useCallback } from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import { HorizontalScrollRow } from '../shared/HorizontalScrollRow';
 import { SectionHeader } from '../shared/SectionHeader';
@@ -16,6 +16,34 @@ export interface ServiceCategoryRowProps {
   /** Optional label overrides keyed by categoryId/screen (same as CustomerHomeComplete). */
   serviceLabelOverride?: Record<string, string>;
   className?: string;
+}
+
+function isSoonService(service: QuickServiceTile): boolean {
+  const key = ((service.categoryId || service.screen || '') as string).toLowerCase();
+  return (
+    Boolean(service.isComingSoon) ||
+    COMING_SOON_HOME_SERVICE_SCREENS.has(String(service.screen || '').toLowerCase()) ||
+    COMING_SOON_HOME_SERVICE_SCREENS.has(key)
+  );
+}
+
+/** Available tiles first, then coming-soon — each group sorted by admin display_order. */
+function sortServicesAvailableFirst(services: QuickServiceTile[]): QuickServiceTile[] {
+  const indexed = services.map((service, index) => ({ service, index }));
+  const available = indexed.filter(({ service }) => !isSoonService(service));
+  const soon = indexed.filter(({ service }) => isSoonService(service));
+  const byAdminOrder = (
+    a: { service: QuickServiceTile; index: number },
+    b: { service: QuickServiceTile; index: number }
+  ) => {
+    const orderA = a.service.displayOrder ?? 9999;
+    const orderB = b.service.displayOrder ?? 9999;
+    if (orderA !== orderB) return orderA - orderB;
+    return a.index - b.index;
+  };
+  available.sort(byAdminOrder);
+  soon.sort(byAdminOrder);
+  return [...available, ...soon].map(({ service }) => service);
 }
 
 function displayLabelForService(
@@ -47,6 +75,11 @@ function ServiceCategoryRowComponent({
     [onNavigate]
   );
 
+  const sortedServices = useMemo(
+    () => sortServicesAvailableFirst(services),
+    [services]
+  );
+
   return (
     <div className={`mb-4 w-full min-w-0 ${className}`}>
       <SectionHeader
@@ -56,7 +89,7 @@ function ServiceCategoryRowComponent({
         className="mb-2.5 [&_h2]:text-[15px] [&_h2]:font-bold"
       />
       <HorizontalScrollRow className="pb-0.5 pt-2" gapClassName="gap-2.5">
-        {services.map((service, index) => {
+        {sortedServices.map((service, index) => {
           const key = ((service.categoryId || service.screen || '') as string).toLowerCase();
           const displayLabel = displayLabelForService(service, serviceLabelOverride);
           const serviceComingSoon =

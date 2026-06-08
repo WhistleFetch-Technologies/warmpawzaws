@@ -248,15 +248,17 @@ export function registerServiceCatalogEndpoints(app: Hono) {
       // ✅ FIX: Handle UUID vs text comparison properly
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(serviceId);
 
-      // 1. Try service_catalog first
+      // 1. Try service_catalog first (customer-facing: active + published only)
       const services = await query(
         isUUID
           ? `SELECT * FROM service_catalog
              WHERE (service_id = $1 OR id = $1::uuid)
-             AND status = 'active'`
+             AND status = 'active'
+             AND (publish_status IN ('published', 'auto_published') OR publish_status IS NULL)`
           : `SELECT * FROM service_catalog
              WHERE (service_id = $1 OR id::text = $1)
-             AND status = 'active'`,
+             AND status = 'active'
+             AND (publish_status IN ('published', 'auto_published') OR publish_status IS NULL)`,
         [serviceId]
       );
 

@@ -3,8 +3,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Plus, Edit, Trash2, Eye, Users, Package, Tag, Layout, IndianRupee, Clock, AlertCircle } from 'lucide-react';
 import { Button } from '@warmpawz/ui';
+import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { StatusBadge } from './StatusBadge';
+import { CatalogActiveSwitch } from './CatalogActiveSwitch';
 import { AddServiceModal } from './AddServiceModal';
 import { EnhancedModal } from '../shared/EnhancedModal';
 import { EnhancedButton } from '../shared/EnhancedButton';
@@ -29,17 +31,20 @@ interface Service {
 
 export type FilterMissing = 'none' | 'roles' | 'specialization' | 'style' | 'price' | 'duration';
 export type FilterType = 'all' | 'package' | 'service';
+export type FilterStatus = 'all' | 'active' | 'inactive' | 'draft';
 
 export function ServiceCatalogTab() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<FilterType>('all');
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
   const [filterMissing, setFilterMissing] = useState<FilterMissing>('none');
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [viewingService, setViewingService] = useState<Service | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadServices();
@@ -49,8 +54,8 @@ export function ServiceCatalogTab() {
     try {
       setLoading(true);
       
-      // Use admin service catalog endpoint directly - it returns all services
-      const data = await apiClient.get<any>('/admin/service-catalog');
+      // Admin endpoint returns all services (active + inactive) unless status filter is passed
+      const data = await apiClient.get<any>('/admin/service-catalog?groupBy=none');
       
       console.log('🔍 [ServiceCatalogTab] API Response:', {
         success: data?.success,
@@ -91,7 +96,9 @@ export function ServiceCatalogTab() {
         id: s.id || s.service_id,
         name: s.service_name || s.display_name || s.name,
         category: s.category_name || s.category_id || 'General',
-        status: (s.status === 'active' ? 'active' : s.publish_status === 'published' ? 'active' : 'inactive') as 'active' | 'inactive' | 'pending' | 'draft',
+        status: (['active', 'inactive', 'draft', 'pending'].includes(s.status)
+          ? s.status
+          : s.status === 'archived' ? 'inactive' : 'inactive') as 'active' | 'inactive' | 'pending' | 'draft',
         price: s.base_price ?? s.price ?? 0,
         description: s.description,
         createdAt: s.created_at || s.createdAt || new Date().toISOString(),
@@ -152,6 +159,7 @@ export function ServiceCatalogTab() {
       if (search && !service.name.toLowerCase().includes(search) && !service.category.toLowerCase().includes(search) && !(service.description || '').toLowerCase().includes(search)) return false;
       if (filterType === 'package' && !service.isPackage) return false;
       if (filterType === 'service' && service.isPackage) return false;
+      if (filterStatus !== 'all' && service.status !== filterStatus) return false;
       if (filterMissing !== 'none') {
         if (filterMissing === 'roles' && (service.applicableRoles?.length ?? 0) > 0) return false;
         if (filterMissing === 'specialization' && (service.specializationIds?.length ?? 0) > 0) return false;
@@ -161,7 +169,7 @@ export function ServiceCatalogTab() {
       }
       return true;
     });
-  }, [services, searchQuery, filterType, filterMissing]);
+  }, [services, searchQuery, filterType, filterStatus, filterMissing]);
 
   const handleAddService = () => {
     setEditingService(null);
@@ -176,6 +184,31 @@ export function ServiceCatalogTab() {
   const handleViewService = (service: Service) => {
     setViewingService(service);
     setViewModalOpen(true);
+  };
+
+  const handleToggleStatus = async (service: Service, enable: boolean) => {
+    if (togglingId) return;
+
+    setTogglingId(service.id);
+    const nextStatus = enable ? 'active' : 'inactive';
+    setServices(prev => prev.map(s => (s.id === service.id ? { ...s, status: nextStatus } : s)));
+    if (!enable && filterStatus === 'active') setFilterStatus('all');
+    try {
+      await apiClient.put(`/admin/service-catalog/${service.id}`, enable
+        ? { status: 'active', publish_status: 'published' }
+        : { status: 'inactive', publish_status: 'unpublished' });
+      toast.success(
+        enable
+          ? `"${service.name}" is now visible to customers`
+          : `"${service.name}" is hidden from customers (still visible here in admin)`
+      );
+    } catch (error: any) {
+      console.error('Error toggling service status:', error);
+      setServices(prev => prev.map(s => (s.id === service.id ? service : s)));
+      toast.error(error.message || `Failed to ${enable ? 'enable' : 'disable'} service`);
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   const handleDeleteService = async (service: Service) => {
@@ -200,7 +233,7 @@ export function ServiceCatalogTab() {
   if (loading) {
     return <div className="p-0 text-center text-gray-500">Loading services...</div>;
   }
-console.log('services------------------------>', services);
+
   return (
     <div className="bg-white p-6 rounded-lg">
       <div className="flex items-center justify-between mb-6 bg-white pb-4 border-b border-gray-300">
@@ -347,6 +380,16 @@ console.log('services------------------------>', services);
           />
         </div>
         <select
+          value={filterStatus}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterStatus(e.target.value as FilterStatus)}
+          className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900"
+        >
+          <option value="all">All status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="draft">Draft</option>
+        </select>
+        <select
           value={filterType}
           onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setFilterType(e.target.value as FilterType)}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white text-gray-900"
@@ -367,10 +410,10 @@ console.log('services------------------------>', services);
           <option value="price">Missing price</option>
           <option value="duration">Missing duration</option>
         </select>
-        {(filterType !== 'all' || filterMissing !== 'none') && (
+        {(filterType !== 'all' || filterStatus !== 'all' || filterMissing !== 'none') && (
           <button
             type="button"
-            onClick={() => { setFilterType('all'); setFilterMissing('none'); }}
+            onClick={() => { setFilterType('all'); setFilterStatus('all'); setFilterMissing('none'); }}
             className="px-3 py-2 text-sm text-orange-600 hover:text-orange-700 font-medium"
           >
             Clear filters
@@ -379,7 +422,8 @@ console.log('services------------------------>', services);
       </div>
       <p className="text-sm text-gray-500 mb-3">
         Showing <strong>{filteredServices.length}</strong> of {services.length} services
-        {(filterType !== 'all' || filterMissing !== 'none') && ' (filtered)'}.
+        {(filterType !== 'all' || filterStatus !== 'all' || filterMissing !== 'none') && ' (filtered)'}.
+        {' '}Turning off the switch hides a service from customers only — it always stays in this admin list.
       </p>
 
       {filteredServices.length === 0 ? (
@@ -394,7 +438,9 @@ console.log('services------------------------>', services);
           {filteredServices.map((service) => (
             <div 
               key={service.id} 
-              className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all duration-200 hover:border-[#FF8C42]/30"
+              className={`bg-white border rounded-xl p-5 hover:shadow-lg transition-all duration-200 hover:border-[#FF8C42]/30 ${
+                service.status === 'active' ? 'border-gray-200' : 'border-gray-200 opacity-60'
+              }`}
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
@@ -433,7 +479,12 @@ console.log('services------------------------>', services);
                   </div>
                 </div>
                 
-                <div className="flex gap-2 ml-6">
+                <div className="flex items-center gap-2 ml-6 shrink-0">
+                  <CatalogActiveSwitch
+                    active={service.status === 'active'}
+                    loading={togglingId === service.id}
+                    onToggle={(enable) => handleToggleStatus(service, enable)}
+                  />
                   <Button 
                     size="sm" 
                     variant="outline" 
