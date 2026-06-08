@@ -19,6 +19,7 @@ import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
 import { resolveCustomerVendorAmenities } from '@/lib/vendor-display-media';
+import { shareVendorProfile, universalCategoryToSharePersona } from '@/lib/vendor-profile-share';
 
 // ============================================================================
 // TYPES
@@ -533,13 +534,16 @@ export function UniversalProviderProfile({
               <button
                 type="button"
                 onClick={() => {
-                  if (navigator.share) {
-                    navigator.share({
-                      title: provider.name,
-                      text: `Check out ${provider.name} on Warmpawz`,
-                      url: window.location.href,
-                    });
-                  }
+                  const shareVendorId = String(provider.vendorId || provider.providerId || '').trim();
+                  if (!shareVendorId) return;
+                  void shareVendorProfile({
+                    title: provider.name,
+                    text: `Check out ${provider.name} on Warmpawz`,
+                    vendorId: shareVendorId,
+                    persona: universalCategoryToSharePersona(category),
+                    vendorName: provider.name,
+                    serviceStyle,
+                  });
                 }}
                 className="flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-white shadow-lg"
                 aria-label="Share"

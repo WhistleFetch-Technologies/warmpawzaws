@@ -56,6 +56,7 @@ import {
   resolveVendorProfilePhotoUrl,
 } from '@/lib/vendor-display-media';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
+import { homeServiceTypeToPersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 
 /** Second identity-chip line derived only from vertical (not vendor-specific catalog copy). */
 const HOME_SERVICE_CONTEXT_LABEL: Record<HomeServiceType, string> = {
@@ -445,13 +446,13 @@ export function HomeServiceProviderProfile({
   };
 
   const handleShare = async () => {
-    if (navigator.share) {
-      await navigator.share({
-        title: provider?.businessName || config.displayName,
-        text: `Check out ${provider?.businessName} for ${config.displayName}`,
-        url: window.location.href
-      });
-    }
+    await shareVendorProfile({
+      title: provider?.businessName || config.displayName,
+      text: `Check out ${provider?.businessName} for ${config.displayName}`,
+      vendorId,
+      persona: homeServiceTypeToPersona(serviceType),
+      vendorName: provider?.businessName,
+    });
   };
 
   const toggleFavorite = () => {

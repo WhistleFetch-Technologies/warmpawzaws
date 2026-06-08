@@ -1,11 +1,19 @@
 'use client';
 
-import { useEffect, useState, useRef, Suspense } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import { CustomerApp } from '@/components/customer/CustomerApp';
+import { GuestVendorShareProfile } from '@/components/customer/guest/GuestVendorShareProfile';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
+import { getStoredCustomerJwtForSession } from '@/lib/session-utils';
+import {
+  buildVendorShareAppPath,
+  readVendorIdFromShareLocation,
+  vendorShareParamsToInitialNavigation,
+  type VendorShareNavigationParams,
+} from '@/lib/vendor-profile-share';
 
 interface CustomerSession {
   phone: string;
@@ -18,22 +26,35 @@ interface CustomerSession {
   hasPets?: boolean;
 }
 
+function readBoardingShareParams(searchParams: URLSearchParams): VendorShareNavigationParams {
+  return {
+    persona: 'boarding',
+    serviceSlug: searchParams.get('service') ?? searchParams.get('serviceSlug') ?? 'overnight',
+    vendorName: searchParams.get('name') ?? searchParams.get('vendorName'),
+    intent: searchParams.get('intent'),
+    serviceId: searchParams.get('serviceId') ?? searchParams.get('service_id'),
+  };
+}
+
 function PetBoardingVendorProfileInner({ vendorId }: { vendorId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const serviceSlug = searchParams.get('service') || 'overnight';
+  const shareParams = readBoardingShareParams(searchParams);
+  const serviceSlug = shareParams.serviceSlug || 'overnight';
 
   const [session, setSession] = useState<CustomerSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [gateReady, setGateReady] = useState(false);
-  const hasRedirected = useRef(false);
+
+  const nextPath = buildVendorShareAppPath(vendorId, shareParams);
+  const initialBannerNavigation = vendorShareParamsToInitialNavigation(vendorId, shareParams);
 
   useEffect(() => {
     const { initializeSession } = require('@/lib/session-utils');
     initializeSession();
 
     const storedPhone = localStorage.getItem('customerPhone');
-    const storedToken = localStorage.getItem('authToken');
+    const storedToken = getStoredCustomerJwtForSession();
     const storedCustomer = localStorage.getItem('customerData');
     const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
     const stageOnboardingDone = localStorage.getItem('onboarding_completed') === 'true';
@@ -103,24 +124,17 @@ function PetBoardingVendorProfileInner({ vendorId }: { vendorId: string }) {
   }, []);
 
   useEffect(() => {
-    if (!isLoading && !session && !hasRedirected.current) {
-      hasRedirected.current = true;
-      router.replace('/auth');
-    }
-  }, [isLoading, session, router]);
-
-  useEffect(() => {
     if (isLoading || !session) return;
     if (!readProfileCompleted()) {
-      router.replace('/profile');
+      router.replace(`/profile?next=${encodeURIComponent(nextPath)}`);
       return;
     }
     if (!readOnboardingCompleted()) {
-      router.replace('/onboarding');
+      router.replace(`/onboarding?next=${encodeURIComponent(nextPath)}`);
       return;
     }
     setGateReady(true);
-  }, [isLoading, session, router]);
+  }, [isLoading, session, router, nextPath]);
 
   if (isLoading) {
     return (
@@ -134,7 +148,7 @@ function PetBoardingVendorProfileInner({ vendorId }: { vendorId: string }) {
   }
 
   if (!session) {
-    return null;
+    return <GuestVendorShareProfile vendorId={vendorId} shareParams={shareParams} />;
   }
 
   if (!gateReady) {
@@ -145,6 +159,15 @@ function PetBoardingVendorProfileInner({ vendorId }: { vendorId: string }) {
           <p className="text-gray-600">Loading...</p>
         </div>
       </div>
+    );
+  }
+
+  if (initialBannerNavigation?.screen === 'boarding-booking') {
+    return (
+      <CustomerApp
+        initialSession={session}
+        initialBannerNavigation={initialBannerNavigation}
+      />
     );
   }
 
@@ -160,7 +183,20 @@ function PetBoardingVendorProfileInner({ vendorId }: { vendorId: string }) {
 
 function PetBoardingVendorProfileGate() {
   const params = useParams();
-  const vendorId = typeof params?.vendorId === 'string' ? params.vendorId : Array.isArray(params?.vendorId) ? params.vendorId[0] : '';
+  const searchParams = useSearchParams();
+  const paramVendorId =
+    typeof params?.vendorId === 'string'
+      ? params.vendorId
+      : Array.isArray(params?.vendorId)
+        ? params.vendorId[0]
+        : '';
+
+  const vendorId =
+    typeof window !== 'undefined'
+      ? readVendorIdFromShareLocation() ||
+        (paramVendorId && paramVendorId !== 'placeholder' ? decodeURIComponent(paramVendorId) : '')
+      : searchParams.get('vendorId') || searchParams.get('vendor_id') ||
+        (paramVendorId && paramVendorId !== 'placeholder' ? decodeURIComponent(paramVendorId) : '');
 
   if (!vendorId) {
     return (
