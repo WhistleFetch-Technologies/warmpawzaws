@@ -42,7 +42,57 @@ export type VendorShareNavigationParams = {
   serviceStyle?: string | null;
   vendorName?: string | null;
   serviceSlug?: string | null;
+  intent?: string | null;
+  serviceId?: string | null;
 };
+
+export function buildVendorShareAppPath(
+  vendorId: string,
+  params: VendorShareNavigationParams = {}
+): string {
+  const vid = String(vendorId ?? '').trim();
+  if (!vid) return '/vendor/placeholder';
+
+  const persona = normPersona(params.persona);
+  const serviceStyle = normServiceStyle(params.serviceStyle);
+  const vendorName = String(params.vendorName ?? '').trim();
+  const serviceSlug = String(params.serviceSlug ?? '').trim();
+  const intent = String(params.intent ?? '').trim();
+  const serviceId = String(params.serviceId ?? '').trim();
+
+  if (persona === 'boarding') {
+    const qs = new URLSearchParams();
+    qs.set('vendorId', vid);
+    qs.set('service', serviceSlug || 'overnight');
+    if (intent) qs.set('intent', intent);
+    if (serviceId) qs.set('serviceId', serviceId);
+    return `/pet-boarding/vendor/placeholder?${qs.toString()}`;
+  }
+
+  const qs = new URLSearchParams();
+  qs.set('vendorId', vid);
+  if (persona) qs.set('persona', persona);
+  if (serviceStyle) qs.set('serviceStyle', serviceStyle);
+  if (vendorName) qs.set('name', vendorName);
+  if (serviceSlug) qs.set('service', serviceSlug);
+  if (intent) qs.set('intent', intent);
+  if (serviceId) qs.set('serviceId', serviceId);
+  return `/vendor/placeholder?${qs.toString()}`;
+}
+
+/** Auth redirect when a guest taps Book on a shared vendor profile. */
+export function buildGuestBookingLoginUrl(
+  vendorId: string,
+  params: VendorShareNavigationParams,
+  opts?: { serviceId?: string }
+): string {
+  const sharePath = buildVendorShareAppPath(vendorId, {
+    ...params,
+    intent: 'book',
+    serviceId: opts?.serviceId ?? params.serviceId ?? undefined,
+  });
+  return `/auth?next=${encodeURIComponent(sharePath)}`;
+}
 
 export function getCustomerShareOrigin(): string {
   if (typeof window === 'undefined') return CUSTOMER_PROD_ORIGIN;
@@ -370,6 +420,10 @@ export function vendorShareParamsToInitialNavigation(
   const vid = String(vendorId ?? '').trim();
   if (!vid) return null;
 
+  const intent = normPersona(params.intent);
+  const bookServiceId = String(params.serviceId ?? '').trim();
+  const isBookIntent = intent === 'book';
+
   const persona = normPersona(params.persona);
   const serviceStyle = normServiceStyle(params.serviceStyle) ?? 'at_center';
   const vendorName = String(params.vendorName ?? '').trim();
@@ -380,6 +434,32 @@ export function vendorShareParamsToInitialNavigation(
   if (vendorName) data.vendorName = vendorName;
   if (serviceStyle) data.serviceStyle = serviceStyle;
   if (params.serviceSlug) data.serviceSlug = params.serviceSlug;
+
+  if (isBookIntent && persona === 'boarding' && bookServiceId) {
+    return {
+      screen: 'boarding-booking',
+      data: {
+        ...data,
+        serviceType: 'boarding',
+        serviceSlug: params.serviceSlug || 'overnight',
+        serviceId: bookServiceId,
+      },
+    };
+  }
+
+  if (isBookIntent && bookServiceId) {
+    const bookingScreen = vendorShareBookIntentScreen(persona);
+    if (bookingScreen) {
+      return {
+        screen: bookingScreen,
+        data: {
+          ...data,
+          serviceId: bookServiceId,
+          serviceType: persona,
+        },
+      };
+    }
+  }
 
   switch (persona) {
     case 'boarding':
@@ -435,5 +515,35 @@ export function vendorShareParamsToInitialNavigation(
         };
       }
       return { screen: 'vet', data: { ...data, serviceStyle: serviceStyle || 'tele' } };
+  }
+}
+
+function vendorShareBookIntentScreen(persona: string): string | null {
+  switch (normPersona(persona)) {
+    case 'boarding':
+      return 'boarding-booking';
+    case 'grooming':
+      return 'grooming-booking';
+    case 'training':
+      return 'training-booking';
+    case 'vet':
+    case 'veterinarian':
+    case 'veterinary':
+      return 'vet-booking';
+    case 'walker':
+      return 'walker-booking';
+    case 'sitter':
+    case 'pet_sitter':
+    case 'pet-sitter':
+      return 'pet-sitter-booking';
+    case 'behaviorist':
+    case 'behaviourist':
+      return 'create-booking';
+    case 'nutritionist':
+    case 'nutrition':
+    case 'pet_nutritionist':
+      return 'vet-booking';
+    default:
+      return null;
   }
 }

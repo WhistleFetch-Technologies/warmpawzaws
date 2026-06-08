@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
 import { CustomerApp } from '@/components/customer/CustomerApp';
+import { GuestVendorShareProfile } from '@/components/customer/guest/GuestVendorShareProfile';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import type { InitialBannerNavigation } from '@/lib/banner-cta-navigation';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
@@ -12,7 +13,11 @@ import {
   applyUnifiedProfileToCustomerLocalStorage,
 } from '@/lib/customer-flow-guards';
 import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
-import { vendorShareParamsToInitialNavigation, readVendorIdFromShareLocation } from '@/lib/vendor-profile-share';
+import {
+  vendorShareParamsToInitialNavigation,
+  readVendorIdFromShareLocation,
+  type VendorShareNavigationParams,
+} from '@/lib/vendor-profile-share';
 
 interface CustomerSession {
   phone: string;
@@ -36,33 +41,41 @@ function LoadingShell({ message = 'Loading...' }: { message?: string }) {
   );
 }
 
+function readShareParams(searchParams: URLSearchParams): VendorShareNavigationParams {
+  return {
+    persona: searchParams.get('persona'),
+    serviceStyle: searchParams.get('serviceStyle') ?? searchParams.get('service_style'),
+    vendorName: searchParams.get('name') ?? searchParams.get('vendorName'),
+    serviceSlug: searchParams.get('service') ?? searchParams.get('serviceSlug'),
+    intent: searchParams.get('intent'),
+    serviceId: searchParams.get('serviceId') ?? searchParams.get('service_id'),
+  };
+}
+
 function VendorShareDeepLinkInner({ vendorId }: { vendorId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [session, setSession] = useState<CustomerSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [gateReady, setGateReady] = useState(false);
-  const hasRedirected = useRef(false);
 
-  const persona = searchParams.get('persona') ?? undefined;
-  const serviceStyle =
-    searchParams.get('serviceStyle') ?? searchParams.get('service_style') ?? undefined;
-  const vendorName = searchParams.get('name') ?? searchParams.get('vendorName') ?? undefined;
-  const serviceSlug = searchParams.get('service') ?? searchParams.get('serviceSlug') ?? undefined;
+  const shareParams = readShareParams(searchParams);
 
   const nextPath = (() => {
     const qs = new URLSearchParams();
     qs.set('vendorId', vendorId);
-    if (persona) qs.set('persona', persona);
-    if (serviceStyle) qs.set('serviceStyle', serviceStyle);
-    if (vendorName) qs.set('name', vendorName);
-    if (serviceSlug) qs.set('service', serviceSlug);
+    if (shareParams.persona) qs.set('persona', shareParams.persona);
+    if (shareParams.serviceStyle) qs.set('serviceStyle', shareParams.serviceStyle);
+    if (shareParams.vendorName) qs.set('name', shareParams.vendorName);
+    if (shareParams.serviceSlug) qs.set('service', shareParams.serviceSlug);
+    if (shareParams.intent) qs.set('intent', shareParams.intent);
+    if (shareParams.serviceId) qs.set('serviceId', shareParams.serviceId);
     return `/vendor/placeholder?${qs.toString()}`;
   })();
 
   const initialBannerNavigation: InitialBannerNavigation | null = vendorShareParamsToInitialNavigation(
     vendorId,
-    { persona, serviceStyle, vendorName, serviceSlug }
+    shareParams
   );
 
   useEffect(() => {
@@ -133,13 +146,6 @@ function VendorShareDeepLinkInner({ vendorId }: { vendorId: string }) {
   }, []);
 
   useEffect(() => {
-    if (!isLoading && !session && !hasRedirected.current) {
-      hasRedirected.current = true;
-      router.replace(`/auth?next=${encodeURIComponent(nextPath)}`);
-    }
-  }, [isLoading, session, router, nextPath]);
-
-  useEffect(() => {
     if (isLoading || !session) return;
     if (needsPasswordSetupAfterOtp() && getStoredCustomerJwtForSession()) {
       router.replace(`/auth/set-password?next=${encodeURIComponent(nextPath)}`);
@@ -161,7 +167,14 @@ function VendorShareDeepLinkInner({ vendorId }: { vendorId: string }) {
   }
 
   if (!session) {
-    return null;
+    if (!initialBannerNavigation) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-6">
+          <p className="text-gray-600">Invalid vendor link.</p>
+        </div>
+      );
+    }
+    return <GuestVendorShareProfile vendorId={vendorId} shareParams={shareParams} />;
   }
 
   if (!gateReady) {

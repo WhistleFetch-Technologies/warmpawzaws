@@ -1,5 +1,7 @@
 import {
+  buildGuestBookingLoginUrl,
   buildVendorProfileShareUrl,
+  buildVendorShareAppPath,
   buildVendorSharePlaceholderRedirectUrl,
   homeServiceTypeToPersona,
   parseVendorShareUrl,
@@ -149,5 +151,62 @@ describe('vendor-profile-share', () => {
     expect(homeServiceTypeToPersona('behaviourist')).toBe('behaviourist');
     expect(roleIdToSharePersona('groomer')).toBe('grooming');
     expect(roleIdToSharePersona('behaviorist')).toBe('behaviourist');
+  });
+
+  it('builds guest booking login URLs with intent and serviceId', () => {
+    const loginUrl = buildGuestBookingLoginUrl(
+      'vid-1',
+      { persona: 'grooming', serviceStyle: 'at_home', vendorName: 'Paws' },
+      { serviceId: 'svc-9' }
+    );
+
+    expect(loginUrl.startsWith('/auth?next=')).toBe(true);
+    const next = decodeURIComponent(loginUrl.replace('/auth?next=', ''));
+    expect(next).toContain('vendorId=vid-1');
+    expect(next).toContain('persona=grooming');
+    expect(next).toContain('intent=book');
+    expect(next).toContain('serviceId=svc-9');
+  });
+
+  it('builds boarding share app paths with book intent', () => {
+    const path = buildVendorShareAppPath('b-1', {
+      persona: 'boarding',
+      serviceSlug: 'daycare',
+      intent: 'book',
+      serviceId: 'plan-2',
+    });
+
+    expect(path).toContain('/pet-boarding/vendor/placeholder?');
+    expect(path).toContain('vendorId=b-1');
+    expect(path).toContain('service=daycare');
+    expect(path).toContain('intent=book');
+    expect(path).toContain('serviceId=plan-2');
+  });
+
+  it('maps book intent to booking screens after auth', () => {
+    expect(
+      vendorShareParamsToInitialNavigation('g-1', {
+        persona: 'grooming',
+        serviceStyle: 'at_center',
+        intent: 'book',
+        serviceId: 'svc-1',
+      })
+    ).toEqual({
+      screen: 'grooming-booking',
+      data: expect.objectContaining({
+        vendorId: 'g-1',
+        serviceId: 'svc-1',
+        serviceType: 'grooming',
+      }),
+    });
+
+    expect(
+      vendorShareParamsToInitialNavigation('b-2', {
+        persona: 'boarding',
+        serviceSlug: 'overnight',
+        intent: 'book',
+        serviceId: 'pkg-1',
+      })?.screen
+    ).toBe('boarding-booking');
   });
 });

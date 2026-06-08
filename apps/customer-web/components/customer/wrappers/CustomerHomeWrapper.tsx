@@ -1094,6 +1094,43 @@ export function CustomerHomeWrapper({
         })
       );
       setCurrentScreen('grooming-booking');
+    } else if (service === 'boarding-booking') {
+      setPreviousScreen('home');
+      if (vid) {
+        setEmbeddedBoardingProfileVendorId(vid);
+        setEmbeddedBoardingProfileSlug(
+          normalizeBoardingServiceSlug(String(data?.serviceSlug ?? data?.service_slug ?? 'overnight'))
+        );
+      }
+      setVetServiceData(
+        mergeBannerNavigationPayload(null, {
+          ...(data && typeof data === 'object' ? data : {}),
+          vendorId: vid ?? data?.vendorId,
+          serviceType: 'boarding',
+          serviceId: data?.serviceId,
+        })
+      );
+      setCurrentScreen('boarding-booking');
+    } else if (service === 'walker-booking') {
+      setWalkerServiceData(
+        mergeBannerNavigationPayload(null, {
+          ...(data && typeof data === 'object' ? data : {}),
+          vendorId: vid ?? data?.vendorId,
+          serviceId: data?.serviceId,
+          serviceType: 'walking',
+        })
+      );
+      setCurrentScreen('walker-booking');
+    } else if (service === 'pet-sitter-booking') {
+      setVetServiceData(
+        mergeBannerNavigationPayload(null, {
+          ...(data && typeof data === 'object' ? data : {}),
+          vendorId: vid ?? data?.vendorId,
+          serviceType: 'pet_sitter',
+          serviceId: data?.serviceId,
+        })
+      );
+      setCurrentScreen('pet-sitter-booking');
     } else {
       if (process.env.NODE_ENV === 'development') {
         console.warn('[CustomerHomeWrapper] Unhandled navigate service:', service);
