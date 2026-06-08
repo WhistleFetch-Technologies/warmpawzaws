@@ -339,16 +339,36 @@ export function VendorCustomServiceCreationEnhanced({
     [sessionPackageType, sessionFrequency, packagePeriodCount]
   );
 
-  /** Catalogue category UUID for specialization_master filter (strict with selected category). */
+  /** Catalogue category UUID or slug for specialization_master filter (strict with selected category). */
   const catalogCategoryIdForSpecs = useMemo(() => {
     if (platformCategoryId?.trim()) return platformCategoryId.trim();
     if (!categoryName || categoryName === 'other') return null;
+
+    const sel = String(categoryName).trim();
+    const selNorm = sel.toLowerCase();
+    const selKey = selNorm.replace(/\s+/g, '_').replace(/-/g, '_');
+
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sel)) {
+      return sel;
+    }
+
     const row = catalogCategories.find(
-      (c: { id?: string; name?: string }) =>
-        String(c.name || '').toLowerCase() === String(categoryName).toLowerCase()
+      (c: { id?: string; name?: string; category_id?: string }) => {
+        const name = String(c.name || '').toLowerCase();
+        const slug = String(c.category_id || '')
+          .toLowerCase()
+          .replace(/-/g, '_');
+        return (
+          name === selNorm ||
+          slug === selKey ||
+          name.replace(/\s+/g, '_').replace(/-/g, '_') === selKey
+        );
+      },
     );
     const idStr = row?.id != null ? String(row.id).trim() : '';
-    return idStr || null;
+    if (idStr) return idStr;
+    // Backend accepts category slug (e.g. pet-sitter) when UUID row is missing
+    return selKey || null;
   }, [platformCategoryId, categoryName, catalogCategories]);
 
   useEffect(() => {

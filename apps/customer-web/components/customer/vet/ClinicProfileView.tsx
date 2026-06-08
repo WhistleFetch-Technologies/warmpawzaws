@@ -5,6 +5,8 @@ import { ArrowLeft, Star, Clock, MapPin, Phone, Globe, Calendar, Users, Image as
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
 import { mergeCustomerVendorServicesPayload } from '@/lib/customer-vendor-services-merge';
+import { resolveCustomerVendorAmenities } from '@/lib/vendor-display-media';
+import { AmenitiesSection } from '../shared/AmenitiesSection';
 import { formatAverageForDisplay } from '@/lib/rating-display';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import {
@@ -46,6 +48,7 @@ interface ClinicInfo {
   doctors: { id: string; name: string; specialization: string; rating: number }[];
   photos: string[];
   amenities: string[];
+  customAmenities: string[];
 }
 
 export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: ClinicProfileViewProps) {
@@ -91,12 +94,21 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
       
       // ✅ CRITICAL: Load vendor profile from real API - NO MOCK DATA, NO FALLBACKS
       // ✅ FIX: Include serviceStyle=at_center for clinic profile (clinics offer at_center services)
-      const [vendorResponse, servicesResponse] = await Promise.all([
+      const [vendorResponse, servicesResponse, facilityResponse] = await Promise.all([
         apiClient.get(`/customer/vendor/${clinicId}`),
-        apiClient.get(`/customer/vendor/${clinicId}/services?serviceStyle=at_center`).catch(() => apiClient.get(`/vendor/${clinicId}/services`))
+        apiClient.get(`/customer/vendor/${clinicId}/services?serviceStyle=at_center`).catch(() => apiClient.get(`/vendor/${clinicId}/services`)),
+        apiClient.get(`/customer/facility/${clinicId}`).catch(() => null),
       ]);
       
       const vendorData = (vendorResponse as any)?.vendor || vendorResponse as any;
+      const facilityData =
+        facilityResponse && typeof facilityResponse === 'object' && (facilityResponse as any).facility
+          ? (facilityResponse as any).facility
+          : {};
+      const { amenities, customAmenities } = resolveCustomerVendorAmenities({
+        ...facilityData,
+        ...vendorData,
+      });
       
       // Extract services (customer endpoint returns { success, services: [...] }; vendor may return nested by style)
       let services: any[] = [];
@@ -158,8 +170,9 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
         timing: vendorData.timing || vendorData.businessHours || '9:00 AM - 8:00 PM',
         services: mappedServices, // ✅ Real services with UUID
         doctors: vendorData.doctors || vendorData.staff || [],
-        photos: vendorData.photos || vendorData.gallery || [],
-        amenities: vendorData.amenities || [],
+        photos: vendorData.photos || vendorData.gallery || facilityData.photos || [],
+        amenities,
+        customAmenities,
       });
     } catch (error) {
       console.error('❌ Error loading clinic data:', error);
@@ -286,13 +299,15 @@ export function ClinicProfileView({ phone, clinicId, onBack, onNavigate }: Clini
           </div>
 
           {/* Amenities */}
-          <div className="mt-4 flex flex-wrap gap-2">
-            {clinic.amenities.map((amenity, idx) => (
-              <span key={idx} className="px-3 py-1 bg-orange-50 text-orange-700 rounded-full text-xs font-medium">
-                {amenity}
-              </span>
-            ))}
-          </div>
+          {(clinic.amenities.length > 0 || clinic.customAmenities.length > 0) && (
+            <div className="mt-4">
+              <AmenitiesSection
+                amenities={clinic.amenities}
+                customAmenities={clinic.customAmenities}
+                compact
+              />
+            </div>
+          )}
         </div>
 
         {/* Doctors Section */}

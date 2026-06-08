@@ -40,6 +40,8 @@ import { ServiceDashboardHeader } from './shared/ServiceDashboardHeader';
 import {
   fetchWalkerVendorCatalogMerged,
   firstServiceIdFromServicePackageRow,
+  rowQualifiesForWalkingModal,
+  servicePackageQualifiesForWalkingModal,
   vendorServiceRowDedupeKey,
 } from '@/lib/walker-vendor-offerings';
 import {
@@ -542,7 +544,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
         const mergedCatalog = [...services, ...packages];
         for (let i = 0; i < mergedCatalog.length; i += 1) {
           const r = mergedCatalog[i];
-          if (!r) continue;
+          if (!r || !rowQualifiesForWalkingModal(r)) continue;
           const key = vendorServiceRowDedupeKey(r, i);
           if (!key || seen.has(key)) continue;
           seen.add(key);
@@ -562,7 +564,7 @@ export function WalkerService({ phone, onBack, onNavigate, pendingWalkSession }:
         if (key) merged.push({ kind: 'vendor_service', raw: r, dedupeKey: key });
       }
       for (const r of tableRows) {
-        if (!r) continue;
+        if (!r || !servicePackageQualifiesForWalkingModal(r)) continue;
         const spId = r.id != null && String(r.id).trim() !== '' ? String(r.id).trim() : '';
         const key = spId ? `sp:${spId}` : '';
         if (!key) continue;
