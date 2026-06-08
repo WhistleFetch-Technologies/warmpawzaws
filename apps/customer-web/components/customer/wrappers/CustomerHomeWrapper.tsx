@@ -874,6 +874,42 @@ export function CustomerHomeWrapper({
       setCurrentScreen('pet-boarding-profile');
       return;
     }
+    if (vid && (service === 'behaviorist' || service === 'behaviourist' || serviceKey === 'behaviorist')) {
+      setBehavioristProfileVendorId(vid);
+      setCurrentScreen('behaviorist-provider-profile');
+      return;
+    }
+    if (
+      vid &&
+      (service === 'pet-sitter' ||
+        service === 'pet_sitter' ||
+        service === 'sitter' ||
+        serviceKey === 'sitter' ||
+        serviceKey === 'pet_sitter')
+    ) {
+      setPetSitterProfileVendorId(vid);
+      setPetSitterProfileReturnScreen('home');
+      setCurrentScreen('pet-sitter-provider-profile');
+      return;
+    }
+    if (
+      vid &&
+      (service === 'nutritionist' ||
+        service === 'pet_nutritionist' ||
+        serviceKey === 'nutritionist' ||
+        serviceKey === 'pet_nutritionist')
+    ) {
+      setPreviousScreen('home');
+      setVetServiceData({
+        vendorId: vid,
+        vendorName: data?.vendorName,
+        serviceStyle: String(data?.serviceStyle || 'tele').toLowerCase(),
+        serviceType: 'pet_nutritionist',
+        category: 'nutritionist',
+      });
+      setCurrentScreen('nutritionist-tele');
+      return;
+    }
 
     if (service === 'walker') setCurrentScreen('walker');
     else if (service === 'vet' || service === 'veterinarian') {

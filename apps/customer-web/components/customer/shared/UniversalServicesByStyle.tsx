@@ -39,6 +39,7 @@ import {
   normalizeRatingCount,
 } from '@/lib/rating-display';
 import { resolveVendorRating } from '@/lib/resolve-vendor-rating';
+import { roleIdToSharePersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -826,17 +827,20 @@ export function UniversalServicesByStyle({
   }, 0);
 
   const handleShare = async () => {
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: profileProvider?.name || `${config.roleName} Provider`,
-          text: `Check out ${profileProvider?.name || `this ${config.roleName.toLowerCase()} provider`} on Warmpawz`,
-          url: window.location.href
-        });
-      }
-    } catch (error) {
-      console.error('Error sharing:', error);
-    }
+    const shareVendorId =
+      vendorId ||
+      pickCustomerVendorAccountId(profileProvider ?? {}) ||
+      profileProvider?.vendorId ||
+      profileProvider?.providerId;
+    if (!shareVendorId) return;
+    await shareVendorProfile({
+      title: profileProvider?.name || `${config.roleName} Provider`,
+      text: `Check out ${profileProvider?.name || `this ${config.roleName.toLowerCase()} provider`} on Warmpawz`,
+      vendorId: String(shareVendorId),
+      persona: roleIdToSharePersona(roleId),
+      vendorName: profileProvider?.name,
+      serviceStyle,
+    });
   };
 
   if (loading) {

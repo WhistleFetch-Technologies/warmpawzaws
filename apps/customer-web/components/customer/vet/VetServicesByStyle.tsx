@@ -24,6 +24,7 @@ import {
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
+import { shareVendorProfile } from '@/lib/vendor-profile-share';
 
 interface VetServicesByStyleProps {
   phone: string;
@@ -404,17 +405,20 @@ export function VetServicesByStyle({
   }, 0);
 
   const handleShare = async () => {
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: profileProvider?.name || 'Vet Provider',
-          text: `Check out ${profileProvider?.name || 'this vet provider'} on Warmpawz`,
-          url: window.location.href
-        });
-      }
-    } catch (error) {
-      console.error('Error sharing:', error);
-    }
+    const shareVendorId =
+      vendorId ||
+      pickCustomerVendorAccountId(profileProvider ?? {}) ||
+      profileProvider?.vendorId ||
+      profileProvider?.providerId;
+    if (!shareVendorId) return;
+    await shareVendorProfile({
+      title: profileProvider?.name || 'Vet Provider',
+      text: `Check out ${profileProvider?.name || 'this vet provider'} on Warmpawz`,
+      vendorId: String(shareVendorId),
+      persona: 'vet',
+      vendorName: profileProvider?.name,
+      serviceStyle,
+    });
   };
 
   if (loading) {

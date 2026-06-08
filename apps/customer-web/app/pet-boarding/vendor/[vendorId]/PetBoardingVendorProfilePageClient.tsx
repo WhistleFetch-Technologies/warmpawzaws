@@ -105,9 +105,12 @@ function PetBoardingVendorProfileInner({ vendorId }: { vendorId: string }) {
   useEffect(() => {
     if (!isLoading && !session && !hasRedirected.current) {
       hasRedirected.current = true;
-      router.replace('/auth');
+      const next = encodeURIComponent(
+        `/pet-boarding/vendor/${vendorId}?service=${encodeURIComponent(serviceSlug)}`
+      );
+      router.replace(`/auth?next=${next}`);
     }
-  }, [isLoading, session, router]);
+  }, [isLoading, session, router, vendorId, serviceSlug]);
 
   useEffect(() => {
     if (isLoading || !session) return;

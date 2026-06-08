@@ -10,6 +10,7 @@ import { AnalyticsRouteTracker } from '@/components/AnalyticsRouteTracker';
 import { ClientErrorBoundary } from '@/components/ClientErrorBoundary';
 import { GlobalClientErrorReporting } from '@/components/GlobalClientErrorReporting';
 import { PushSessionRegistrar } from '@/components/PushSessionRegistrar';
+import { CapacitorVendorDeepLinkListener } from '@/components/CapacitorVendorDeepLinkListener';
 
 // Lazy load DevTools - only imported in development mode
 const ReactQueryDevtools = lazy(() =>
@@ -39,6 +40,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <ClientErrorBoundary>
         <GlobalClientErrorReporting />
         <PushSessionRegistrar />
+        <CapacitorVendorDeepLinkListener />
         <CartProvider>
           <SearchContextProvider>
             <ScrollToTop />

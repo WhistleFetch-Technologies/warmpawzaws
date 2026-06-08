@@ -31,6 +31,7 @@ import {
 } from '@/lib/boarding-service-types';
 import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
+import { shareVendorProfile } from '@/lib/vendor-profile-share';
 
 export interface BoardingVendorProfileViewProps {
   phone: string;
@@ -243,15 +244,14 @@ export function BoardingVendorProfileView({
   }, [contextSlug, publishedPlans]);
 
   const handleShare = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    const url = window.location.href;
-    const title = vendor?.name || 'Pet boarding';
-    if (navigator.share) {
-      void navigator.share({ title, url }).catch(() => {});
-    } else {
-      void navigator.clipboard?.writeText(url).catch(() => {});
-    }
-  }, [vendor?.name]);
+    void shareVendorProfile({
+      title: vendor?.name || 'Pet boarding',
+      vendorId: vendor?.id || vendorId,
+      persona: 'boarding',
+      vendorName: vendor?.name,
+      serviceSlug: contextSlug !== 'all' ? contextSlug : undefined,
+    });
+  }, [vendor?.id, vendor?.name, vendorId, contextSlug]);
 
   const handleBook = () => {
     if (!selectedOffer?.rowId) {

@@ -68,6 +68,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="customer.warmpawz.com" android:pathPrefix="/vendor" />
+                <data android:scheme="https" android:host="customer.warmpawz.com" android:pathPrefix="/pet-boarding/vendor" />
+                <data android:scheme="https" android:host="customer.warmpawz.com" android:pathPrefix="/vet" />
+                <data android:scheme="https" android:host="customer.warmpawz.com" android:pathPrefix="/grooming" />
+                <data android:scheme="https" android:host="customer.warmpawz.com" android:pathPrefix="/walker" />
+                <data android:scheme="https" android:host="customer.warmpawz.com" android:pathPrefix="/training" />
+                <data android:scheme="https" android:host="customer.warmpawz.com" android:pathPrefix="/boarding" />
+            </intent-filter>
+
         </activity>
 
         <provider
