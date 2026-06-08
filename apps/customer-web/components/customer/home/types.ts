@@ -8,6 +8,8 @@ export interface QuickServiceTile {
   screen: string;
   categoryId: string;
   isComingSoon?: boolean;
+  /** Admin `service_categories.display_order` — drives home row sort. */
+  displayOrder?: number;
 }
 
 /** Hero carousel slide — CMS home_top banners + defaults. */

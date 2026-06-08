@@ -2117,6 +2117,11 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
       // Support type query parameter: 'service' (default) or 'ecommerce' (for products)
       const type = c.req.query('type') || 'service';
       const tableName = type === 'ecommerce' ? 'ecommerce_categories' : 'service_categories';
+      const activeOnly =
+        c.req.query('activeOnly') === 'true' || c.req.query('includeInactive') === 'false';
+      const serviceActiveFilter = activeOnly
+        ? 'WHERE is_active = true OR is_active IS NULL'
+        : '';
 
       // Use safe query that handles UUID/TEXT schema conflict
       // Ensure all fields are properly typed and never undefined
@@ -2219,7 +2224,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
             });
           }
         } else {
-          // For service_categories, use full query with category_id
+          // Admin: return active + inactive by default (disable only hides from customer, not admin)
           categories = await query(`
             SELECT 
               id::text as id,
@@ -2237,7 +2242,7 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               customer_visibility_city::text as customer_visibility_city,
               COALESCE(customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active
             FROM service_categories
-            WHERE is_active = true OR is_active IS NULL
+            ${serviceActiveFilter}
             ORDER BY display_order ASC NULLS LAST, name ASC
             LIMIT 1000
           `);
@@ -2336,7 +2341,6 @@ export function registerAdminAdvancedEndpoints(app: Hono) {
               customer_visibility_city::text as customer_visibility_city,
               COALESCE(customer_dashboard_card_active::boolean, true) as customer_dashboard_card_active
             FROM service_categories
-            WHERE is_active = true OR is_active IS NULL
             ORDER BY display_order ASC NULLS LAST, name ASC
             LIMIT 1000
           `);

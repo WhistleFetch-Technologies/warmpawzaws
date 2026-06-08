@@ -143,7 +143,7 @@ export default function ServiceCatalogPage() {
       
       const [servicesRes, categoriesRes, statsRes] = await Promise.all([
         apiClient.get<any>(servicesUrl),
-        apiClient.get<any>('/service-catalog/categories'),
+        apiClient.get<any>('/admin/catalog/categories'),
         apiClient.get<any>('/admin/catalog/stats'),
       ]);
       
@@ -311,17 +311,6 @@ export default function ServiceCatalogPage() {
       loadData();
     } catch (err: any) {
       setError(err.message || 'Failed to delete service');
-    }
-  };
-
-  const handleToggleStatus = async (service: ServiceCatalogItem) => {
-    try {
-      const newStatus = service.status === 'active' ? 'inactive' : 'active';
-      await apiClient.put(`/admin/service-catalog/${service.id}`, { status: newStatus });
-      setSuccess(`Service ${newStatus === 'active' ? 'activated' : 'deactivated'}`);
-      loadData();
-    } catch (err: any) {
-      setError(err.message || 'Failed to update service status');
     }
   };
 

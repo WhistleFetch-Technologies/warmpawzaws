@@ -71,37 +71,67 @@ describe('findMatchingTileForLaunchId', () => {
 });
 
 describe('buildCustomerLaunchTiles', () => {
-  it('synthesizes a tile when launch catalog entry has no pool match', () => {
+  it('skips launch entries without an active catalog category backing row', () => {
     const tiles = buildCustomerLaunchTiles({
       tilePool: basePool,
       catalog: [
-        { serviceId: 'physio-therapy', displayName: 'Physio Therapy', effectiveStatus: 'launched' },
+        { serviceId: 'physio-therapy', categoryId: 'physio-therapy', displayName: 'Physio Therapy', effectiveStatus: 'launched' },
       ],
       dedupeByLaunchServiceId: true,
     });
-    expect(tiles).toHaveLength(1);
-    expect(tiles[0].label).toBe('Physio Therapy');
-    expect(tiles[0].screen).toBe('vet');
+    expect(tiles).toHaveLength(0);
   });
 
-  it('shows diagnostics and vet as separate tiles when dedupeByLaunchServiceId', () => {
+  it('shows diagnostics only when its pinned catalog category is active in the pool', () => {
+    const poolWithDiagnostic: QuickServiceTile[] = [
+      ...basePool,
+      {
+        icon: Icon,
+        label: 'Diagnostics & Lab',
+        color: 'bg-teal-100',
+        screen: 'lab-diagnostics',
+        categoryId: 'diagnostic',
+      },
+    ];
     const tiles = buildCustomerLaunchTiles({
-      tilePool: basePool,
+      tilePool: poolWithDiagnostic,
       catalog: [
-        { serviceId: 'vet', effectiveStatus: 'launched' },
-        { serviceId: 'diagnostics', effectiveStatus: 'launched' },
+        { serviceId: 'vet', categoryId: 'veterinary', effectiveStatus: 'launched' },
+        { serviceId: 'diagnostics', categoryId: 'diagnostic', effectiveStatus: 'launched' },
       ],
       dedupeByLaunchServiceId: true,
     });
     expect(tiles.map((t) => t.screen).sort()).toEqual(['lab-diagnostics', 'vet']);
   });
 
-  it('includes hidden catalog entries as coming soon when requested', () => {
+  it('hides diagnostics launch when admin disabled the diagnostic catalog row', () => {
     const tiles = buildCustomerLaunchTiles({
       tilePool: basePool,
       catalog: [
-        { serviceId: 'breeder', displayName: 'Breeder', effectiveStatus: 'hidden' },
-        { serviceId: 'vet', effectiveStatus: 'launched' },
+        { serviceId: 'vet', categoryId: 'veterinary', effectiveStatus: 'launched' },
+        { serviceId: 'diagnostics', categoryId: 'diagnostic', effectiveStatus: 'launched' },
+      ],
+      dedupeByLaunchServiceId: true,
+    });
+    expect(tiles.map((t) => t.screen)).toEqual(['vet']);
+  });
+
+  it('includes hidden catalog entries as coming soon when backed by an active catalog row', () => {
+    const poolWithBreeder: QuickServiceTile[] = [
+      ...basePool,
+      {
+        icon: Icon,
+        label: 'Breeder',
+        color: 'bg-amber-100',
+        screen: 'breeder',
+        categoryId: 'breeder',
+      },
+    ];
+    const tiles = buildCustomerLaunchTiles({
+      tilePool: poolWithBreeder,
+      catalog: [
+        { serviceId: 'breeder', categoryId: 'breeder', displayName: 'Breeder', effectiveStatus: 'hidden' },
+        { serviceId: 'vet', categoryId: 'veterinary', effectiveStatus: 'launched' },
       ],
       includeHiddenAsComingSoon: true,
       dedupeByLaunchServiceId: true,
