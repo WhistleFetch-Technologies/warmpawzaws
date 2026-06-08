@@ -121,6 +121,31 @@ export default function RootLayout({
           allowing the environment variable above to take precedence.
         */}
         <script src="/runtime-config.js" />
+        {/* Redirect legacy /vendor/{uuid} paths before React (static export only ships placeholder HTML). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var path = location.pathname.replace(/\\/+$/, '') || '/';
+                  var qs = new URLSearchParams(location.search);
+                  if (qs.get('vendorId') || qs.get('vendor_id')) return;
+                  var vendorMatch = path.match(/^\\/vendor\\/([^/]+)$/);
+                  if (vendorMatch && vendorMatch[1] !== 'placeholder' && vendorMatch[1] !== '_') {
+                    qs.set('vendorId', decodeURIComponent(vendorMatch[1]));
+                    location.replace('/vendor/placeholder?' + qs.toString());
+                    return;
+                  }
+                  var boardingMatch = path.match(/^\\/pet-boarding\\/vendor\\/([^/]+)$/);
+                  if (boardingMatch && boardingMatch[1] !== 'placeholder' && boardingMatch[1] !== '_') {
+                    qs.set('vendorId', decodeURIComponent(boardingMatch[1]));
+                    location.replace('/pet-boarding/vendor/placeholder?' + qs.toString());
+                  }
+                } catch (e) { /* ignore */ }
+              })();
+            `,
+          }}
+        />
         {/* Error handler for chunk load errors */}
         <script
           dangerouslySetInnerHTML={{

@@ -12,7 +12,7 @@ import {
   applyUnifiedProfileToCustomerLocalStorage,
 } from '@/lib/customer-flow-guards';
 import { getStoredCustomerJwtForSession, needsPasswordSetupAfterOtp } from '@/lib/session-utils';
-import { vendorShareParamsToInitialNavigation } from '@/lib/vendor-profile-share';
+import { vendorShareParamsToInitialNavigation, readVendorIdFromShareLocation } from '@/lib/vendor-profile-share';
 
 interface CustomerSession {
   phone: string;
@@ -51,9 +51,13 @@ function VendorShareDeepLinkInner({ vendorId }: { vendorId: string }) {
   const serviceSlug = searchParams.get('service') ?? searchParams.get('serviceSlug') ?? undefined;
 
   const nextPath = (() => {
-    const qs = searchParams.toString();
-    const base = `/vendor/${encodeURIComponent(vendorId)}`;
-    return qs ? `${base}?${qs}` : base;
+    const qs = new URLSearchParams();
+    qs.set('vendorId', vendorId);
+    if (persona) qs.set('persona', persona);
+    if (serviceStyle) qs.set('serviceStyle', serviceStyle);
+    if (vendorName) qs.set('name', vendorName);
+    if (serviceSlug) qs.set('service', serviceSlug);
+    return `/vendor/placeholder?${qs.toString()}`;
   })();
 
   const initialBannerNavigation: InitialBannerNavigation | null = vendorShareParamsToInitialNavigation(
@@ -182,12 +186,21 @@ function VendorShareDeepLinkInner({ vendorId }: { vendorId: string }) {
 
 function VendorShareDeepLinkGate() {
   const params = useParams();
-  const vendorId =
+  const searchParams = useSearchParams();
+  const paramVendorId =
     typeof params?.vendorId === 'string'
       ? params.vendorId
       : Array.isArray(params?.vendorId)
         ? params.vendorId[0]
         : '';
+
+  const vendorId =
+    typeof window !== 'undefined'
+      ? readVendorIdFromShareLocation() ||
+        (paramVendorId && paramVendorId !== 'placeholder' ? decodeURIComponent(paramVendorId) : '')
+      : paramVendorId && paramVendorId !== 'placeholder'
+        ? decodeURIComponent(paramVendorId)
+        : searchParams.get('vendorId') || searchParams.get('vendor_id') || '';
 
   if (!vendorId) {
     return (
@@ -197,7 +210,7 @@ function VendorShareDeepLinkGate() {
     );
   }
 
-  return <VendorShareDeepLinkInner vendorId={decodeURIComponent(vendorId)} />;
+  return <VendorShareDeepLinkInner vendorId={vendorId} />;
 }
 
 export default function VendorShareDeepLinkClient() {

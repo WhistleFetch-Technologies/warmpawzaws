@@ -116,6 +116,89 @@ export function universalCategoryToSharePersona(
   return roleIdToSharePersona(c);
 }
 
+const PLACEHOLDER_VENDOR_SEGMENTS = new Set(['placeholder', '_']);
+
+export function normalizeVendorShareId(value: string | null | undefined): string {
+  const s = String(value ?? '').trim();
+  if (!s || PLACEHOLDER_VENDOR_SEGMENTS.has(s)) return '';
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+/** Resolve vendor id from static-export placeholder route + query/path (mirrors video deep links). */
+export function resolveVendorShareVendorId(input?: {
+  pathVendorSegment?: string | null;
+  queryVendorId?: string | null;
+  paramVendorId?: string | null;
+}): string {
+  return (
+    normalizeVendorShareId(input?.paramVendorId) ||
+    normalizeVendorShareId(input?.pathVendorSegment) ||
+    normalizeVendorShareId(input?.queryVendorId) ||
+    ''
+  );
+}
+
+export function readVendorIdFromShareLocation(
+  loc: Pick<Location, 'pathname' | 'search'> = typeof window !== 'undefined'
+    ? window.location
+    : { pathname: '', search: '' }
+): string {
+  const qs = new URLSearchParams(loc.search);
+  const pathSeg =
+    loc.pathname.match(/\/vendor\/([^/?]+)/)?.[1] ??
+    loc.pathname.match(/\/pet-boarding\/vendor\/([^/?]+)/)?.[1] ??
+    null;
+  return resolveVendorShareVendorId({
+    pathVendorSegment: pathSeg,
+    queryVendorId: qs.get('vendorId') ?? qs.get('vendor_id'),
+  });
+}
+
+/** True when URL uses a real vendor id in the path but static export only has placeholder HTML. */
+export function vendorSharePathNeedsPlaceholderRedirect(url: string): boolean {
+  const parsed = parseUrlObject(url);
+  if (!parsed) return false;
+
+  const pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+  const qs = new URLSearchParams(parsed.search);
+  if (qs.get('vendorId') || qs.get('vendor_id')) return false;
+
+  const canonical = pathname.match(/^\/vendor\/([^/]+)$/i);
+  if (canonical && !PLACEHOLDER_VENDOR_SEGMENTS.has(canonical[1])) return true;
+
+  const boarding = pathname.match(/^\/pet-boarding\/vendor\/([^/]+)$/i);
+  if (boarding && !PLACEHOLDER_VENDOR_SEGMENTS.has(boarding[1])) return true;
+
+  return false;
+}
+
+/** Redirect legacy /vendor/{uuid} path links to the shipped placeholder shell + vendorId query. */
+export function buildVendorSharePlaceholderRedirectUrl(url: string): string | null {
+  const parsed = parseUrlObject(url);
+  if (!parsed || !vendorSharePathNeedsPlaceholderRedirect(url)) return null;
+
+  const pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+  const qs = new URLSearchParams(parsed.search);
+
+  const canonical = pathname.match(/^\/vendor\/([^/]+)$/i);
+  if (canonical) {
+    qs.set('vendorId', normalizeVendorShareId(canonical[1]));
+    return `/vendor/placeholder?${qs.toString()}`;
+  }
+
+  const boarding = pathname.match(/^\/pet-boarding\/vendor\/([^/]+)$/i);
+  if (boarding) {
+    qs.set('vendorId', normalizeVendorShareId(boarding[1]));
+    return `/pet-boarding/vendor/placeholder?${qs.toString()}`;
+  }
+
+  return null;
+}
+
 export function buildVendorProfileShareUrl(params: BuildVendorProfileShareUrlParams): string {
   const vendorId = String(params.vendorId ?? '').trim();
   if (!vendorId) {
@@ -131,17 +214,19 @@ export function buildVendorProfileShareUrl(params: BuildVendorProfileShareUrlPar
 
   if (persona === 'boarding') {
     const qs = new URLSearchParams();
+    qs.set('vendorId', vendorId);
     qs.set('service', serviceSlug || 'overnight');
-    return `${origin}/pet-boarding/vendor/${encodeURIComponent(vendorId)}?${qs.toString()}`;
+    return `${origin}/pet-boarding/vendor/placeholder?${qs.toString()}`;
   }
 
   const qs = new URLSearchParams();
+  qs.set('vendorId', vendorId);
   qs.set('persona', persona);
   if (serviceStyle) qs.set('serviceStyle', serviceStyle);
   if (vendorName) qs.set('name', vendorName);
   if (serviceSlug) qs.set('service', serviceSlug);
 
-  return `${origin}/vendor/${encodeURIComponent(vendorId)}?${qs.toString()}`;
+  return `${origin}/vendor/placeholder?${qs.toString()}`;
 }
 
 export async function shareVendorProfile(opts: {
@@ -190,12 +275,16 @@ export function parseVendorShareUrl(url: string): ParsedVendorShareUrl | null {
   const serviceSlug = searchParams.get('service') ?? searchParams.get('serviceSlug');
 
   const canonicalMatch = pathname.match(/^\/vendor\/([^/]+)$/i);
-  if (canonicalMatch) {
-    const vendorId = decodeURIComponent(canonicalMatch[1]);
+  if (canonicalMatch || pathname === '/vendor/placeholder') {
+    const pathSeg = canonicalMatch ? canonicalMatch[1] : null;
+    const vendorId = resolveVendorShareVendorId({
+      pathVendorSegment: pathSeg,
+      queryVendorId,
+    });
     const persona = normPersona(searchParams.get('persona'));
     return {
       pathname,
-      vendorId: vendorId || queryVendorId,
+      vendorId: vendorId || null,
       persona: persona || null,
       serviceStyle: serviceStyle ?? null,
       vendorName: vendorNameFromQuery,
@@ -205,11 +294,15 @@ export function parseVendorShareUrl(url: string): ParsedVendorShareUrl | null {
   }
 
   const boardingMatch = pathname.match(/^\/pet-boarding\/vendor\/([^/]+)$/i);
-  if (boardingMatch) {
-    const vendorId = decodeURIComponent(boardingMatch[1]);
+  if (boardingMatch || pathname === '/pet-boarding/vendor/placeholder') {
+    const pathSeg = boardingMatch ? boardingMatch[1] : null;
+    const vendorId = resolveVendorShareVendorId({
+      pathVendorSegment: pathSeg,
+      queryVendorId,
+    });
     return {
       pathname,
-      vendorId: vendorId || queryVendorId,
+      vendorId: vendorId || null,
       persona: 'boarding',
       serviceStyle: serviceStyle ?? null,
       vendorName: vendorNameFromQuery,
@@ -260,8 +353,11 @@ export function parseVendorShareUrl(url: string): ParsedVendorShareUrl | null {
 }
 
 export function vendorShareUrlToAppPath(url: string): string | null {
+  const placeholderRedirect = buildVendorSharePlaceholderRedirectUrl(url);
+  if (placeholderRedirect) return placeholderRedirect;
+
   const parsed = parseVendorShareUrl(url);
-  if (!parsed) return null;
+  if (!parsed?.vendorId) return null;
 
   const qs = parsed.searchParams.toString();
   return qs ? `${parsed.pathname}?${qs}` : parsed.pathname;

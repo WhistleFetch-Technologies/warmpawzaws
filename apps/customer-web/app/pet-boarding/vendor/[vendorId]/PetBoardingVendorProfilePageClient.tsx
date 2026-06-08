@@ -6,6 +6,8 @@ import { CustomerApp } from '@/components/customer/CustomerApp';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { persistCustomerDatabaseId } from '@/lib/customer-id-storage';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
+import { getStoredCustomerJwtForSession } from '@/lib/session-utils';
+import { readVendorIdFromShareLocation } from '@/lib/vendor-profile-share';
 
 interface CustomerSession {
   phone: string;
@@ -33,7 +35,7 @@ function PetBoardingVendorProfileInner({ vendorId }: { vendorId: string }) {
     initializeSession();
 
     const storedPhone = localStorage.getItem('customerPhone');
-    const storedToken = localStorage.getItem('authToken');
+    const storedToken = getStoredCustomerJwtForSession();
     const storedCustomer = localStorage.getItem('customerData');
     const storedOnboarding = localStorage.getItem('customerOnboardingComplete');
     const stageOnboardingDone = localStorage.getItem('onboarding_completed') === 'true';
@@ -106,7 +108,7 @@ function PetBoardingVendorProfileInner({ vendorId }: { vendorId: string }) {
     if (!isLoading && !session && !hasRedirected.current) {
       hasRedirected.current = true;
       const next = encodeURIComponent(
-        `/pet-boarding/vendor/${vendorId}?service=${encodeURIComponent(serviceSlug)}`
+        `/pet-boarding/vendor/placeholder?vendorId=${encodeURIComponent(vendorId)}&service=${encodeURIComponent(serviceSlug)}`
       );
       router.replace(`/auth?next=${next}`);
     }
@@ -163,7 +165,20 @@ function PetBoardingVendorProfileInner({ vendorId }: { vendorId: string }) {
 
 function PetBoardingVendorProfileGate() {
   const params = useParams();
-  const vendorId = typeof params?.vendorId === 'string' ? params.vendorId : Array.isArray(params?.vendorId) ? params.vendorId[0] : '';
+  const searchParams = useSearchParams();
+  const paramVendorId =
+    typeof params?.vendorId === 'string'
+      ? params.vendorId
+      : Array.isArray(params?.vendorId)
+        ? params.vendorId[0]
+        : '';
+
+  const vendorId =
+    typeof window !== 'undefined'
+      ? readVendorIdFromShareLocation() ||
+        (paramVendorId && paramVendorId !== 'placeholder' ? decodeURIComponent(paramVendorId) : '')
+      : searchParams.get('vendorId') || searchParams.get('vendor_id') ||
+        (paramVendorId && paramVendorId !== 'placeholder' ? decodeURIComponent(paramVendorId) : '');
 
   if (!vendorId) {
     return (

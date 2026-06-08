@@ -1,9 +1,12 @@
 import {
   buildVendorProfileShareUrl,
+  buildVendorSharePlaceholderRedirectUrl,
   homeServiceTypeToPersona,
   parseVendorShareUrl,
+  readVendorIdFromShareLocation,
   roleIdToSharePersona,
   vendorShareParamsToInitialNavigation,
+  vendorSharePathNeedsPlaceholderRedirect,
   vendorShareUrlToAppPath,
 } from '../vendor-profile-share';
 
@@ -16,9 +19,9 @@ describe('vendor-profile-share', () => {
       serviceStyle: 'at_center',
     });
 
-    expect(url).toContain('/vendor/abc-123?');
+    expect(url).toContain('/vendor/placeholder?');
+    expect(url).toContain('vendorId=abc-123');
     expect(url).toContain('persona=vet');
-    expect(url).not.toContain('vendorId=');
     expect(url).toContain('serviceStyle=at_center');
     expect(url).toContain('name=Healing');
   });
@@ -30,19 +33,29 @@ describe('vendor-profile-share', () => {
       serviceSlug: 'daycare',
     });
 
-    expect(url).toContain('/pet-boarding/vendor/board-1?');
+    expect(url).toContain('/pet-boarding/vendor/placeholder?');
+    expect(url).toContain('vendorId=board-1');
     expect(url).toContain('service=daycare');
   });
 
-  it('parses canonical /vendor URLs', () => {
+  it('parses placeholder vendor URLs with vendorId query', () => {
     const parsed = parseVendorShareUrl(
-      'https://customer.warmpawz.com/vendor/vid-99?persona=grooming&serviceStyle=at_home&name=Paws'
+      'https://customer.warmpawz.com/vendor/placeholder?vendorId=vid-99&persona=grooming&serviceStyle=at_home&name=Paws'
     );
 
     expect(parsed?.vendorId).toBe('vid-99');
     expect(parsed?.persona).toBe('grooming');
     expect(parsed?.serviceStyle).toBe('at_home');
     expect(parsed?.vendorName).toBe('Paws');
+  });
+
+  it('parses legacy path vendor URLs', () => {
+    const parsed = parseVendorShareUrl(
+      'https://customer.warmpawz.com/vendor/vid-99?persona=grooming&serviceStyle=at_home&name=Paws'
+    );
+
+    expect(parsed?.vendorId).toBe('vid-99');
+    expect(parsed?.persona).toBe('grooming');
   });
 
   it('parses persona banner paths with vendorId query', () => {
@@ -58,7 +71,7 @@ describe('vendor-profile-share', () => {
 
   it('parses pet-boarding vendor paths', () => {
     const parsed = parseVendorShareUrl(
-      'https://customer.warmpawz.com/pet-boarding/vendor/b-42?service=overnight'
+      'https://customer.warmpawz.com/pet-boarding/vendor/placeholder?vendorId=b-42&service=overnight'
     );
 
     expect(parsed?.vendorId).toBe('b-42');
@@ -103,12 +116,32 @@ describe('vendor-profile-share', () => {
     });
   });
 
-  it('converts external URLs to in-app paths', () => {
+  it('redirects legacy path URLs to placeholder shell', () => {
+    expect(vendorSharePathNeedsPlaceholderRedirect('https://customer.warmpawz.com/vendor/uuid-1?persona=vet')).toBe(
+      true
+    );
+    const redirect = buildVendorSharePlaceholderRedirectUrl(
+      'https://customer.warmpawz.com/vendor/uuid-1?persona=vet&serviceStyle=at_center'
+    );
+    expect(redirect).toContain('/vendor/placeholder?');
+    expect(redirect).toContain('vendorId=uuid-1');
+    expect(redirect).toContain('persona=vet');
+    expect(redirect).toContain('serviceStyle=at_center');
+
+    const appPath = vendorShareUrlToAppPath(
+      'https://customer.warmpawz.com/vendor/uuid-1?persona=training&serviceStyle=at_center'
+    );
+    expect(appPath).toContain('/vendor/placeholder?');
+    expect(appPath).toContain('vendorId=uuid-1');
+  });
+
+  it('reads vendor id from placeholder location', () => {
     expect(
-      vendorShareUrlToAppPath(
-        'https://customer.warmpawz.com/vendor/x?persona=training&serviceStyle=at_center'
-      )
-    ).toBe('/vendor/x?persona=training&serviceStyle=at_center');
+      readVendorIdFromShareLocation({
+        pathname: '/vendor/placeholder',
+        search: '?vendorId=abc&persona=vet',
+      })
+    ).toBe('abc');
   });
 
   it('maps home service types and role ids to personas', () => {
@@ -116,14 +149,5 @@ describe('vendor-profile-share', () => {
     expect(homeServiceTypeToPersona('behaviourist')).toBe('behaviourist');
     expect(roleIdToSharePersona('groomer')).toBe('grooming');
     expect(roleIdToSharePersona('behaviorist')).toBe('behaviourist');
-  });
-
-  it('builds share URLs with vendor id in path segment', () => {
-    const url = buildVendorProfileShareUrl({
-      vendorId: 'x',
-      persona: 'vet',
-    });
-    expect(url).toContain('/vendor/x?');
-    expect(url).toContain('persona=vet');
   });
 });
