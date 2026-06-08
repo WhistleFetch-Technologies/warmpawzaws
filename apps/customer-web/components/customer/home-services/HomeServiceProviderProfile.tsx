@@ -55,7 +55,6 @@ import {
   resolveVendorProfileHeroGallery,
   resolveVendorProfilePhotoUrl,
 } from '@/lib/vendor-display-media';
-import { AmenitiesSection } from '../shared/AmenitiesSection';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
 import { homeServiceTypeToPersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 
