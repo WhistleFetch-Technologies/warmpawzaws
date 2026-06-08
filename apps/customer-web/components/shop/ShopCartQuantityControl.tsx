@@ -10,6 +10,11 @@ type ShopCartQuantityControlProps = {
   onQuantityChange: (quantity: number) => void;
 };
 
+const minusBtn =
+  'flex items-center justify-center shrink-0 rounded-lg bg-red-100 text-red-600 hover:bg-red-200 active:scale-95 transition-transform';
+const plusBtn =
+  'flex items-center justify-center shrink-0 rounded-lg bg-emerald-500 text-white hover:bg-emerald-600 active:scale-95 transition-transform';
+
 export function ShopCartQuantityControl({
   quantity,
   disabled = false,
@@ -65,18 +70,15 @@ export function ShopCartQuantityControl({
 
   const stepperClass =
     variant === 'deal'
-      ? 'absolute bottom-2 right-2 flex items-center gap-0 border border-slate-200 rounded-full bg-white shadow-md overflow-hidden'
-      : 'mt-auto w-full flex items-center justify-between border border-slate-200 rounded-xl bg-white overflow-hidden';
+      ? 'absolute bottom-2 right-2 flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-0.5 shadow-md'
+      : 'mt-auto w-full flex items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white p-0.5';
 
-  const btnClass =
-    variant === 'deal'
-      ? 'w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-50'
-      : 'w-10 h-9 flex items-center justify-center text-slate-600 hover:bg-slate-50';
-
+  const minusSize = variant === 'deal' ? 'w-8 h-8' : 'w-10 h-9';
+  const plusSize = variant === 'deal' ? 'w-8 h-8' : 'w-10 h-9';
   const qtyClass =
     variant === 'deal'
-      ? 'w-7 text-center text-xs font-semibold tabular-nums'
-      : 'flex-1 text-center text-sm font-semibold tabular-nums';
+      ? 'w-7 text-center text-xs font-semibold tabular-nums text-slate-900'
+      : 'flex-1 text-center text-sm font-semibold tabular-nums text-slate-900';
 
   return (
     <div
@@ -90,7 +92,7 @@ export function ShopCartQuantityControl({
         aria-label="Decrease quantity"
         disabled={disabled}
         onClick={() => onQuantityChange(quantity - 1)}
-        className={btnClass}
+        className={`${minusBtn} ${minusSize}`}
       >
         <Minus className="w-3.5 h-3.5" />
       </button>
@@ -100,7 +102,7 @@ export function ShopCartQuantityControl({
         aria-label="Increase quantity"
         disabled={disabled}
         onClick={() => onQuantityChange(quantity + 1)}
-        className={btnClass}
+        className={`${plusBtn} ${plusSize}`}
       >
         <Plus className="w-3.5 h-3.5" />
       </button>

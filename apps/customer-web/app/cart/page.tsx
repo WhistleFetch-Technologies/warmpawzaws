@@ -49,7 +49,11 @@ function CartPageContent() {
     );
   }
 
-  return <EcommerceCartScreen phone={phone} />;
+  return (
+    <div className="relative flex min-h-screen w-full flex-col bg-[#F2F4F7] mx-auto max-w-customer lg:max-w-ecommerce">
+      <EcommerceCartScreen phone={phone} />
+    </div>
+  );
 }
 
 export default function CartPage() {

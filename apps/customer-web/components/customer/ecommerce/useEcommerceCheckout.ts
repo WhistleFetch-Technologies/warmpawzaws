@@ -71,8 +71,7 @@ export function buildEcommerceOrderPayload(
   phone: string,
   cart: CartItem[],
   pricing: CartPricingBreakdown,
-  shippingAddress: CheckoutAddress,
-  paymentMethod: 'cod' | 'online'
+  shippingAddress: CheckoutAddress
 ) {
   const customerId = getResolvedCustomerId();
   return {
@@ -85,7 +84,7 @@ export function buildEcommerceOrderPayload(
       vendorId: item.vendorId || '',
     })),
     shippingAddress: normalizeShippingAddress(shippingAddress),
-    paymentMethod: paymentMethod === 'online' ? 'online' : 'cod',
+    paymentMethod: 'online' as const,
     subtotal: pricing.lineSubtotal,
     shippingFee: pricing.deliveryFees,
     taxAmount: pricing.taxAmount,
@@ -109,7 +108,6 @@ export function useEcommerceCheckout() {
       cart,
       pricing,
       shippingAddress,
-      paymentMethod,
       onSuccess,
       onProcessingChange,
       clearCart,
@@ -118,36 +116,14 @@ export function useEcommerceCheckout() {
       cart: CartItem[];
       pricing: CartPricingBreakdown;
       shippingAddress: CheckoutAddress;
-      paymentMethod: 'cod' | 'online';
       onSuccess: (orderId: string) => void;
       onProcessingChange?: (processing: boolean) => void;
       clearCart?: () => void;
     }) => {
       onProcessingChange?.(true);
-      const orderData = buildEcommerceOrderPayload(
-        phone,
-        cart,
-        pricing,
-        shippingAddress,
-        paymentMethod
-      );
+      const orderData = buildEcommerceOrderPayload(phone, cart, pricing, shippingAddress);
 
       try {
-        if (paymentMethod === 'cod') {
-          const result = await apiClient.post<{ order?: { id: string } }>(
-            '/ecommerce/orders',
-            orderData
-          );
-          const orderId = result.order?.id || `order_${Date.now()}`;
-          onSuccess(orderId);
-          queueMicrotask(() => {
-            clearWarmpawzCartStorage();
-            clearPricingOptionsForCheckout();
-            clearCart?.();
-          });
-          return;
-        }
-
         const result = await apiClient.post<{ order?: { id: string } }>(
           '/ecommerce/orders',
           orderData

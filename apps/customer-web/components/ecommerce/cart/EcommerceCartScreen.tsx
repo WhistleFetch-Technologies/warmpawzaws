@@ -4,24 +4,20 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft,
-  ChevronRight,
   MapPin,
-  Minus,
-  Plus,
   ShoppingBag,
-  Tag,
   Trash2,
-  Truck,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import {
   computeCartPricing,
   persistPricingOptionsForCheckout,
   readPricingOptionsForCheckout,
-  VENDOR_DELIVERY_CONFIG,
 } from '@/lib/ecommerce/cart-pricing';
-import { CartPromotionsBanner } from '@/components/customer/shared/CartPromotionsBanner';
+import { CartPromotionSelect, type SelectedCartPromotion } from '@/components/ecommerce/cart/CartPromotionSelect';
+import { CartLineQuantityStepper } from '@/components/ecommerce/shared/CartLineQuantityStepper';
 import { DeliveryAddressPickerSheet } from '@/components/customer/ecommerce/DeliveryAddressPickerSheet';
 import { AddAddressModal } from '@/components/customer/shared/AddAddressModal';
 import {
@@ -44,11 +40,8 @@ import {
 } from '@/lib/ecommerce/cart-product-helpers';
 import type { CheckoutAddress } from '@/components/customer/ecommerce/useEcommerceCheckout';
 import { goBackOrReplace } from '@/lib/go-back-or-replace';
-import type { CartPromotionResult } from '@/lib/promotions-engine';
-import {
-  ECOMMERCE_MOBILE_FOOTER_SHELL,
-  ECOMMERCE_PAGE_SHELL,
-} from '@/lib/ecommerce/ecommerce-page-shell';
+import { ApiError } from '@/lib/error-handling';
+import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
 
 type EcommerceCartScreenProps = {
   phone: string;
@@ -68,7 +61,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   const { cart, itemCount, updateQuantity, removeFromCart, addToCart } = useCart();
   const phone = phoneProp || resolveCustomerPhone();
 
-  const [promotionResult, setPromotionResult] = useState<CartPromotionResult | null>(null);
+  const [selectedPromo, setSelectedPromo] = useState<SelectedCartPromotion | null>(null);
   const [addresses, setAddresses] = useState<DeliveryAddress[]>([]);
   const [selectedAddress, setSelectedAddress] = useState<DeliveryAddress | null>(null);
   const [addressesLoading, setAddressesLoading] = useState(true);
@@ -77,66 +70,45 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   const [recommendations, setRecommendations] = useState<ShopProduct[]>([]);
   const [recsLoading, setRecsLoading] = useState(false);
 
+  useEffect(() => {
+    const persisted = readPricingOptionsForCheckout();
+    const sp = persisted.sellerPromotion;
+    if (sp?.code && (sp.codeDiscount ?? 0) > 0) {
+      setSelectedPromo({
+        code: sp.code,
+        discountAmount: sp.codeDiscount ?? 0,
+        promotionId: sp.promotionId,
+        label: sp.label || sp.code,
+      });
+    }
+  }, []);
+
   const sellerPromotionPricing = useMemo(() => {
-    if (!promotionResult?.totalSavings) return undefined;
-    const main = promotionResult.appliedPromotions[0];
+    if (!selectedPromo) return undefined;
     return {
-      autoDiscount: promotionResult.totalSavings,
-      label: main?.description || main?.promotion?.name,
-      promotionId: main?.promotion?.id,
-      code: main?.promotion?.code,
+      autoDiscount: 0,
+      codeDiscount: selectedPromo.discountAmount,
+      label: selectedPromo.label,
+      promotionId: selectedPromo.promotionId,
+      code: selectedPromo.code,
     };
-  }, [promotionResult]);
+  }, [selectedPromo]);
 
   const pricing = useMemo(() => {
     const persisted = readPricingOptionsForCheckout();
     return computeCartPricing(cart, {
       ...persisted,
+      deliverySpeed: 'standard',
       itemCount,
       sellerPromotion: sellerPromotionPricing,
     });
   }, [cart, itemCount, sellerPromotionPricing]);
 
-  const promotionBannerItems = useMemo(
-    () =>
-      cart.map((item) => ({
-        id: item.id,
-        productId: item.id,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        vendorId: item.vendorId,
-        categoryId: item.categoryId,
-      })),
-    [cart]
-  );
-
-  const handlePromotionApplied = useCallback((result: CartPromotionResult) => {
-    setPromotionResult((prev) => {
-      const prevId = prev?.appliedPromotions[0]?.promotion?.id;
-      const nextId = result.appliedPromotions[0]?.promotion?.id;
-      if (prev?.totalSavings === result.totalSavings && prevId === nextId) {
-        return prev;
-      }
-      return result;
-    });
-  }, []);
-
   const mrpTotal = useMemo(() => computeCartMrpTotal(cart), [cart]);
   const primaryVendorId = useMemo(
-    () => cart.find((i) => i.vendorId && i.vendorId !== 'default')?.vendorId ?? 'default',
+    () => cart.find((i) => i.vendorId && i.vendorId !== 'default')?.vendorId,
     [cart]
   );
-  const freeDeliveryMin =
-    VENDOR_DELIVERY_CONFIG[primaryVendorId]?.freeDeliveryMin ??
-    VENDOR_DELIVERY_CONFIG.default.freeDeliveryMin;
-  const freeDeliveryProgress = useMemo(() => {
-    if (pricing.freeDeliveryGap <= 0) return 100;
-    const subtotal =
-      pricing.byVendor.find((v) => v.vendorId === primaryVendorId)?.subtotal ??
-      pricing.lineSubtotal;
-    return Math.min(100, Math.round((subtotal / freeDeliveryMin) * 100));
-  }, [pricing, primaryVendorId, freeDeliveryMin]);
 
   const refreshAddresses = useCallback(async () => {
     if (!phone) {
@@ -166,47 +138,107 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
     void refreshAddresses();
   }, [refreshAddresses]);
 
-  const firstProductId = cart[0]?.id;
-
   useEffect(() => {
-    if (!firstProductId) {
+    if (cart.length === 0) {
       setRecommendations([]);
       return;
     }
     let cancelled = false;
-    setRecsLoading(true);
-    apiClient
-      .get<{ products?: unknown[] }>(`/products/${firstProductId}/also-bought`)
-      .then((res) => {
+
+    async function loadRecommendations() {
+      setRecsLoading(true);
+      try {
+        let products: ShopProduct[] = [];
+        try {
+          const res = await apiClient.post<{ products?: unknown[] }>(
+            '/ecommerce/cart/recommendations',
+            {
+              items: cart.map((item) => ({
+                productId: item.id,
+                categoryId: item.categoryId || item.category,
+                quantity: item.quantity,
+                price: item.price,
+              })),
+              limit: 5,
+            }
+          );
+          products = mapApiProductsList(res?.products ?? []);
+        } catch (err) {
+          const is404 = err instanceof ApiError && err.statusCode === 404;
+          if (!is404) throw err;
+          const anchorId = cart[0]?.id;
+          if (anchorId) {
+            const fallback = await apiClient.get<{ products?: unknown[] }>(
+              `/products/${anchorId}/also-bought?limit=5`
+            );
+            products = mapApiProductsList(fallback?.products ?? []);
+          }
+        }
         if (cancelled) return;
-        const mapped = mapApiProductsList(res?.products ?? []).filter(
-          (p) => !cart.some((c) => c.id === p.id)
-        );
-        setRecommendations(mapped.slice(0, 6));
-      })
-      .catch(() => {
+        const filtered = products.filter((p) => !cart.some((c) => c.id === p.id));
+        setRecommendations(filtered.slice(0, 5));
+      } catch {
         if (!cancelled) setRecommendations([]);
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setRecsLoading(false);
-      });
+      }
+    }
+
+    void loadRecommendations();
     return () => {
       cancelled = true;
     };
-  }, [firstProductId, cart]);
+  }, [cart]);
 
   const handleAddressSelect = (addr: DeliveryAddress) => {
     if (addr.id) writeCheckoutAddressId(addr.id);
     setSelectedAddress(addr);
   };
 
+  const persistPromoForCheckout = useCallback(
+    (promo: SelectedCartPromotion | null) => {
+      const persisted = readPricingOptionsForCheckout();
+      persistPricingOptionsForCheckout({
+        ...persisted,
+        itemCount,
+        deliverySpeed: 'standard',
+        sellerPromotion: promo
+          ? {
+              autoDiscount: 0,
+              codeDiscount: promo.discountAmount,
+              label: promo.label,
+              code: promo.code,
+              promotionId: promo.promotionId,
+            }
+          : undefined,
+      });
+    },
+    [itemCount]
+  );
+
+  const handleApplyPromo = (promo: SelectedCartPromotion) => {
+    setSelectedPromo(promo);
+    persistPromoForCheckout(promo);
+  };
+
+  const handleRemovePromo = () => {
+    setSelectedPromo(null);
+    persistPromoForCheckout(null);
+  };
+
   const handleProceedCheckout = () => {
+    if (!selectedAddress?.id) {
+      toast.error('Please add a delivery address before checkout');
+      setShowAddressPicker(true);
+      return;
+    }
     persistPricingOptionsForCheckout({
       ...readPricingOptionsForCheckout(),
       itemCount,
+      deliverySpeed: 'standard',
       sellerPromotion: sellerPromotionPricing,
     });
-    router.push('/checkout?step=address');
+    router.push('/checkout?step=payment');
   };
 
   const handleAddAddressSuccess = async (newAddress: CheckoutAddress) => {
@@ -217,9 +249,11 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
     }
   };
 
+  const contentPad = 'pb-[calc(5.75rem+env(safe-area-inset-bottom,0px))] lg:pb-8';
+
   if (cart.length === 0) {
     return (
-      <div className={`${ECOMMERCE_PAGE_SHELL} flex flex-col`}>
+      <div className={`${ECOMMERCE_PAGE_SHELL} flex flex-col ${contentPad}`}>
         <header className="sticky top-0 z-30 bg-white border-b border-slate-100 px-4 py-3 cw-header-safe-x">
           <div className="flex items-center gap-3">
             <Button
@@ -253,7 +287,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
   }
 
   return (
-    <div className={`${ECOMMERCE_PAGE_SHELL} pb-28`}>
+    <div className={`${ECOMMERCE_PAGE_SHELL} ${contentPad}`}>
       <header className="sticky top-0 z-30 bg-white border-b border-slate-100 shadow-sm cw-header-safe-x pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="flex items-center gap-3 px-4 py-3">
           <Button
@@ -273,7 +307,6 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
       <div className="px-4 pt-4 lg:px-6 lg:pt-6">
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8 lg:items-start">
           <div className="space-y-4 min-w-0">
-            {/* Delivery address */}
             <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex gap-3 min-w-0">
@@ -296,7 +329,9 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                         </p>
                       </>
                     ) : (
-                      <p className="text-sm text-slate-500 mt-0.5">Add delivery address</p>
+                      <p className="text-sm text-amber-700 mt-0.5 font-medium">
+                        Add delivery address to checkout
+                      </p>
                     )}
                   </div>
                 </div>
@@ -310,36 +345,14 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               </div>
             </section>
 
-            {/* Free delivery progress */}
-            {pricing.freeDeliveryGap > 0 ? (
-              <section className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Truck className="w-4 h-4 text-emerald-600" />
-                  <p className="text-sm font-medium text-emerald-800">
-                    Add ₹{Math.ceil(pricing.freeDeliveryGap)} more for free delivery
-                  </p>
-                </div>
-                <div className="h-2 rounded-full bg-emerald-100 overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-                    style={{ width: `${freeDeliveryProgress}%` }}
-                  />
-                </div>
-              </section>
-            ) : (
-              <section className="rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 flex items-center gap-2">
-                <Truck className="w-4 h-4 text-emerald-600" />
-                <p className="text-sm font-medium text-emerald-800">You&apos;ve unlocked free delivery</p>
-              </section>
-            )}
-
-            <CartPromotionsBanner
-              items={promotionBannerItems}
-              vendorId={primaryVendorId !== 'default' ? primaryVendorId : undefined}
-              onPromotionApplied={handlePromotionApplied}
+            <CartPromotionSelect
+              orderAmount={pricing.lineSubtotal}
+              vendorId={primaryVendorId}
+              selected={selectedPromo}
+              onApply={handleApplyPromo}
+              onRemove={handleRemovePromo}
             />
 
-            {/* Line items */}
             <section className="space-y-3">
               {cart.map((item) => {
                 const variantLabel = formatSelectedVariations(item.selectedVariations);
@@ -381,25 +394,12 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                         )}
                       </div>
                       <div className="flex items-center justify-between mt-auto pt-2">
-                        <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg">
-                          <button
-                            type="button"
-                            aria-label="Decrease quantity"
-                            onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                            className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-50 rounded-l-lg"
-                          >
-                            <Minus className="w-4 h-4" />
-                          </button>
-                          <span className="w-8 text-center text-sm font-semibold">{item.quantity}</span>
-                          <button
-                            type="button"
-                            aria-label="Increase quantity"
-                            onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                            className="w-8 h-8 flex items-center justify-center text-slate-600 hover:bg-slate-50 rounded-r-lg"
-                          >
-                            <Plus className="w-4 h-4" />
-                          </button>
-                        </div>
+                        <CartLineQuantityStepper
+                          quantity={item.quantity}
+                          onDecrease={() => updateQuantity(item.id, item.quantity - 1)}
+                          onIncrease={() => updateQuantity(item.id, item.quantity + 1)}
+                          size="sm"
+                        />
                         <button
                           type="button"
                           aria-label="Remove item"
@@ -415,7 +415,6 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               })}
             </section>
 
-            {/* Recommendations */}
             {(recsLoading || recommendations.length > 0) && (
               <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
                 <h2 className="font-semibold text-slate-900 mb-3">You may also like</h2>
@@ -428,7 +427,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
                         key={product.id}
                         className="snap-start shrink-0 w-36 rounded-xl border border-slate-100 p-2"
                       >
-                        <div className="w-full aspect-square rounded-lg bg-slate-50 flex items-center justify-center text-2xl mb-2">
+                        <div className="w-full aspect-square rounded-lg bg-slate-50 flex items-center justify-center text-2xl mb-2 overflow-hidden">
                           {product.images?.[0] ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -458,24 +457,11 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               </section>
             )}
 
-            {/* Mobile summary */}
             <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm lg:hidden">
-              <button
-                type="button"
-                onClick={handleProceedCheckout}
-                className="w-full flex items-center justify-between py-2 mb-3 border-b border-slate-100"
-              >
-                <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                  <Tag className="w-4 h-4 text-[#FF8C42]" />
-                  Coupons applied at checkout
-                </span>
-                <ChevronRight className="w-4 h-4 text-slate-400" />
-              </button>
               <CheckoutPriceBreakdown cart={cart} pricing={pricing} showItems={false} />
             </section>
           </div>
 
-          {/* Desktop sticky summary */}
           <aside className="hidden lg:block">
             <div className="sticky top-24 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
               <h2 className="font-bold text-slate-900 mb-4">Order summary</h2>
@@ -487,7 +473,8 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               <CheckoutPriceBreakdown cart={cart} pricing={pricing} />
               <Button
                 onClick={handleProceedCheckout}
-                className="w-full mt-4 h-12 bg-[#FF8C42] hover:bg-[#FF7A29] text-white font-semibold rounded-xl"
+                disabled={!selectedAddress?.id}
+                className="w-full mt-4 h-12 bg-[#FF8C42] hover:bg-[#FF7A29] text-white font-semibold rounded-xl disabled:opacity-60"
               >
                 Proceed to checkout
               </Button>
@@ -496,17 +483,17 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
         </div>
       </div>
 
-      {/* Mobile sticky CTA */}
-      <div className={ECOMMERCE_MOBILE_FOOTER_SHELL}>
+      <div className="fixed left-0 right-0 z-40 border-t border-slate-200 bg-white p-4 lg:hidden mx-auto w-full max-w-customer cw-footer-safe-b bottom-0">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm text-slate-600">Total</span>
           <span className="text-lg font-bold text-[#FF8C42]">₹{pricing.total.toFixed(0)}</span>
         </div>
         <Button
           onClick={handleProceedCheckout}
-          className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A29] text-white font-semibold rounded-xl"
+          disabled={!selectedAddress?.id}
+          className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A29] text-white font-semibold rounded-xl disabled:opacity-60"
         >
-          Proceed to checkout
+          {selectedAddress?.id ? 'Proceed to checkout' : 'Add address to checkout'}
         </Button>
       </div>
 

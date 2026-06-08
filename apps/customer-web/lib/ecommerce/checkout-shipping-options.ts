@@ -8,7 +8,7 @@ export type CheckoutShippingOption = {
   feeLabel: string;
 };
 
-/** Client-side shipping choices until marketplace shipping API exists. */
+/** Standard delivery only — express not offered yet. */
 export const CHECKOUT_SHIPPING_OPTIONS: CheckoutShippingOption[] = [
   {
     id: 'standard',
@@ -16,13 +16,6 @@ export const CHECKOUT_SHIPPING_OPTIONS: CheckoutShippingOption[] = [
     description: 'Delivered in 2–3 business days',
     eta: '2–3 days',
     feeLabel: '₹60',
-  },
-  {
-    id: 'express',
-    label: 'Express delivery',
-    description: 'Priority handling',
-    eta: 'Tomorrow',
-    feeLabel: '₹150',
   },
 ];
 

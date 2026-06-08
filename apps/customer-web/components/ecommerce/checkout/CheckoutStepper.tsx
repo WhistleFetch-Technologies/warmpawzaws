@@ -4,7 +4,6 @@ import { Check } from 'lucide-react';
 import type { CheckoutStep } from '@/context/CheckoutProvider';
 
 const STEPS: { id: CheckoutStep; label: string }[] = [
-  { id: 'address', label: 'Address' },
   { id: 'payment', label: 'Payment' },
   { id: 'review', label: 'Review' },
 ];

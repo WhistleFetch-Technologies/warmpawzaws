@@ -8,7 +8,6 @@ import { useCheckout } from '@/context/CheckoutProvider';
 import { readCheckoutOrderResponse } from '@/lib/ecommerce/checkout-order-storage';
 import { CheckoutStepper } from './CheckoutStepper';
 import { CheckoutOrderSummary } from './CheckoutOrderSummary';
-import { CheckoutAddressStep } from './CheckoutAddressStep';
 import { CheckoutPaymentStep } from './CheckoutPaymentStep';
 import { CheckoutReviewStep } from './CheckoutReviewStep';
 import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
@@ -75,7 +74,6 @@ export function CheckoutFlow() {
       <div className="px-4 pt-4 lg:px-6 lg:pt-6">
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8 lg:items-start">
           <main className="min-w-0">
-            {step === 'address' && <CheckoutAddressStep />}
             {step === 'payment' && <CheckoutPaymentStep />}
             {step === 'review' && <CheckoutReviewStep />}
           </main>

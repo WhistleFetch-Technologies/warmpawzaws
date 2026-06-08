@@ -21,6 +21,7 @@ import {
   type StoredCheckoutOrderResponse,
 } from '@/lib/ecommerce/checkout-order-storage';
 import { getShippingOptionLabel } from '@/lib/ecommerce/checkout-shipping-options';
+import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
 import { toast } from 'sonner';
 
 const TIMELINE_STEPS = [
@@ -103,7 +104,7 @@ export function EcommerceOrderSuccessScreen() {
   const displayId = order.orderNumber || order.orderId;
 
   return (
-    <div className="min-h-screen bg-[#F2F4F7] max-w-customer mx-auto w-full pb-10">
+    <div className={`${ECOMMERCE_PAGE_SHELL} pb-8`}>
       <div className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white px-4 pt-10 pb-12 cw-header-safe-x text-center">
         <div className="w-16 h-16 mx-auto rounded-full bg-white/20 flex items-center justify-center mb-4">
           <CheckCircle2 className="w-10 h-10" />
@@ -129,9 +130,6 @@ export function EcommerceOrderSuccessScreen() {
           {order.totalAmount != null && (
             <p className="text-sm text-slate-600 mt-2">
               Total paid: <span className="font-semibold">₹{order.totalAmount.toFixed(0)}</span>
-              {order.paymentMethod === 'cod' && (
-                <span className="text-slate-500"> · Pay on delivery</span>
-              )}
             </p>
           )}
         </section>

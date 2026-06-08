@@ -131,6 +131,117 @@ export function registerRecommendationEndpoints(app: Hono) {
   });
 
   // ============================================================================
+  // CART-BASED CATEGORY RECOMMENDATIONS
+  // ============================================================================
+
+  app.post('/ecommerce/cart/recommendations', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const items = Array.isArray(body.items) ? body.items : [];
+      const limit = Math.min(Math.max(parseInt(String(body.limit ?? '5'), 10) || 5, 1), 10);
+
+      const excludeIds = new Set(
+        items.map((i: { productId?: string }) => String(i.productId || '')).filter(Boolean)
+      );
+
+      const categorySpend = new Map<string, number>();
+      for (const item of items) {
+        const cat = item.categoryId ? String(item.categoryId) : '';
+        if (!cat) continue;
+        const spend = (Number(item.price) || 0) * (Number(item.quantity) || 1);
+        categorySpend.set(cat, (categorySpend.get(cat) || 0) + spend);
+      }
+
+      const sortedCategories = [...categorySpend.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([cat]) => cat);
+
+      if (sortedCategories.length === 0) {
+        return c.json({ success: true, products: [] });
+      }
+
+      const results: Record<string, unknown>[] = [];
+
+      const pickFromCategory = async (categoryId: string) => {
+        const exclude = [...excludeIds];
+        const params: unknown[] = [categoryId];
+        let excludeClause = '';
+        if (exclude.length > 0) {
+          excludeClause = ` AND p.id NOT IN (${exclude.map((_, i) => `$${i + 2}`).join(',')})`;
+          params.push(...exclude);
+        }
+        params.push(1);
+        const limitParam = `$${params.length}`;
+        const sql = `
+          SELECT
+            p.id,
+            p.name,
+            p.description,
+            p.price,
+            p.compare_at_price,
+            p.images,
+            p.rating,
+            p.review_count,
+            p.category,
+            p.category_id,
+            v.business_name as vendor_name
+          FROM products p
+          LEFT JOIN vendors v ON p.vendor_id = v.id
+          WHERE p.is_active = true
+            AND p.stock > 0
+            AND (p.category_id::text = $1 OR p.category = $1)
+            ${excludeClause}
+          ORDER BY COALESCE(p.sales_count, 0) DESC, COALESCE(p.rating, 0) DESC NULLS LAST
+          LIMIT ${limitParam}
+        `;
+        const res = await query(sql, params);
+        return (res.rows?.[0] as Record<string, unknown>) || null;
+      };
+
+      for (const cat of sortedCategories) {
+        if (results.length >= limit) break;
+        const row = await pickFromCategory(cat);
+        if (row?.id) {
+          results.push(row);
+          excludeIds.add(String(row.id));
+        }
+      }
+
+      for (const cat of sortedCategories) {
+        while (results.length < limit) {
+          const row = await pickFromCategory(cat);
+          if (!row?.id) break;
+          results.push(row);
+          excludeIds.add(String(row.id));
+        }
+        if (results.length >= limit) break;
+      }
+
+      return c.json({
+        success: true,
+        products: results.map((p) => ({
+          id: p.id,
+          name: p.name,
+          description: p.description,
+          price: parseFloat(String(p.price)),
+          compareAtPrice: p.compare_at_price ? parseFloat(String(p.compare_at_price)) : null,
+          images:
+            typeof p.images === 'string' ? JSON.parse(String(p.images || '[]')) : p.images || [],
+          rating: parseFloat(String(p.rating)) || 0,
+          reviewCount: parseInt(String(p.review_count), 10) || 0,
+          category: p.category,
+          categoryId: p.category_id,
+          vendorName: p.vendor_name,
+        })),
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Recommendation failed';
+      console.error('Error fetching cart recommendations:', error);
+      return c.json({ success: false, error: message, products: [] }, 500);
+    }
+  });
+
+  // ============================================================================
   // FREQUENTLY BOUGHT TOGETHER
   // ============================================================================
 

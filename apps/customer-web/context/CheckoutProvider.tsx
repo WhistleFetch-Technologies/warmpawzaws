@@ -38,7 +38,7 @@ import {
 } from '@/lib/ecommerce/checkout-order-storage';
 import { computeCartMrpTotal } from '@/lib/ecommerce/cart-product-helpers';
 
-export type CheckoutStep = 'address' | 'payment' | 'review';
+export type CheckoutStep = 'payment' | 'review';
 
 export type CheckoutCoupon = {
   code: string;
@@ -46,11 +46,14 @@ export type CheckoutCoupon = {
   promotionId?: string;
 };
 
-const VALID_STEPS: CheckoutStep[] = ['address', 'payment', 'review'];
+const VALID_STEPS: CheckoutStep[] = ['payment', 'review'];
 
 function parseStep(raw: string | null): CheckoutStep {
-  if (raw && VALID_STEPS.includes(raw as CheckoutStep)) return raw as CheckoutStep;
-  return 'address';
+  if (raw === 'review') return 'review';
+  if (raw === 'payment') return 'payment';
+  /** Legacy URLs — address step removed; address is set on cart. */
+  if (raw === 'address') return 'payment';
+  return 'payment';
 }
 
 function deliveryToCheckoutAddress(addr: DeliveryAddress): CheckoutAddress {
@@ -89,7 +92,6 @@ type CheckoutContextValue = {
   addressesLoading: boolean;
   shippingMethod: DeliverySpeed;
   coupon: CheckoutCoupon | null;
-  paymentMethod: 'cod' | 'online';
   orderResponse: StoredCheckoutOrderResponse | null;
   isPlacingOrder: boolean;
   primaryVendorId: string | undefined;
@@ -100,7 +102,6 @@ type CheckoutContextValue = {
   selectShipping: (method: DeliverySpeed) => void;
   applyCoupon: (coupon: CheckoutCoupon) => void;
   removeCoupon: () => void;
-  selectPayment: (method: 'cod' | 'online') => void;
   refreshAddresses: () => Promise<void>;
   placeOrder: () => Promise<void>;
   reset: () => void;
@@ -129,7 +130,6 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
   const [addressesLoading, setAddressesLoading] = useState(true);
   const [shippingMethod, setShippingMethod] = useState<DeliverySpeed>('standard');
   const [coupon, setCoupon] = useState<CheckoutCoupon | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('online');
   const [orderResponse, setOrderResponse] = useState<StoredCheckoutOrderResponse | null>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
@@ -220,9 +220,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
 
   useEffect(() => {
     const persisted = readPricingOptionsForCheckout();
-    if (persisted.deliverySpeed) {
-      setShippingMethod(persisted.deliverySpeed);
-    }
+    setShippingMethod('standard');
     const sp = persisted.sellerPromotion;
     if (sp?.code && (sp.codeDiscount ?? 0) > 0) {
       setCoupon({
@@ -257,34 +255,13 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
   );
 
   const goNext = useCallback(() => {
-    if (step === 'address') {
-      if (!address || !addressId) {
-        toast.error('Please select a delivery address');
-        return;
-      }
-      if (!shippingMethod) {
-        toast.error('Please select a delivery option');
-        return;
-      }
-      persistCheckoutOptions();
-      syncStepToUrl('payment');
-      return;
-    }
     if (step === 'payment') {
-      if (!paymentMethod) {
-        toast.error('Please select a payment method');
-        return;
-      }
       persistCheckoutOptions();
       syncStepToUrl('review');
     }
-  }, [step, address, addressId, shippingMethod, paymentMethod, persistCheckoutOptions, syncStepToUrl]);
+  }, [step, persistCheckoutOptions, syncStepToUrl]);
 
   const goBack = useCallback(() => {
-    if (step === 'payment') {
-      syncStepToUrl('address');
-      return;
-    }
     if (step === 'review') {
       syncStepToUrl('payment');
       return;
@@ -338,20 +315,16 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
     });
   }, []);
 
-  const selectPayment = useCallback((method: 'cod' | 'online') => {
-    setPaymentMethod(method);
-  }, []);
-
   const reset = useCallback(() => {
-    setStepState('address');
+    setStepState('payment');
     setOrderResponse(null);
     setIsPlacingOrder(false);
   }, []);
 
   const placeOrder = useCallback(async () => {
     if (!address) {
-      toast.error('Please select a delivery address');
-      syncStepToUrl('address');
+      toast.error('Please add a delivery address on the cart page');
+      router.push('/cart');
       return;
     }
     if (cart.length === 0) {
@@ -368,7 +341,6 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
         cart,
         pricing,
         shippingAddress: address,
-        paymentMethod,
         onProcessingChange: setIsPlacingOrder,
         clearCart,
         onSuccess: (orderId) => {
@@ -378,16 +350,12 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
             phone,
             shippingAddress: address,
             status: 'confirmed',
-            paymentMethod,
+            paymentMethod: 'online',
             shippingMethod,
           };
           setOrderResponse(stored);
           persistCheckoutOrderResponse(stored);
-          toast.success(
-            paymentMethod === 'cod'
-              ? 'Order placed! Pay on delivery.'
-              : 'Order placed successfully!'
-          );
+          toast.success('Order placed successfully!');
           // Hard navigation avoids empty-cart flash on /checkout?step=review after clearCart
           if (typeof window !== 'undefined') {
             window.location.replace('/checkout/success');
@@ -406,7 +374,6 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
     address,
     cart,
     clearCart,
-    paymentMethod,
     persistCheckoutOptions,
     phone,
     placeEcommerceOrder,
@@ -430,7 +397,6 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
       addressesLoading,
       shippingMethod,
       coupon,
-      paymentMethod,
       orderResponse,
       isPlacingOrder,
       primaryVendorId,
@@ -441,7 +407,6 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
       selectShipping,
       applyCoupon,
       removeCoupon,
-      selectPayment,
       refreshAddresses,
       placeOrder,
       reset,
@@ -460,7 +425,6 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
       addressesLoading,
       shippingMethod,
       coupon,
-      paymentMethod,
       orderResponse,
       isPlacingOrder,
       primaryVendorId,
@@ -471,7 +435,6 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
       selectShipping,
       applyCoupon,
       removeCoupon,
-      selectPayment,
       refreshAddresses,
       placeOrder,
       reset,

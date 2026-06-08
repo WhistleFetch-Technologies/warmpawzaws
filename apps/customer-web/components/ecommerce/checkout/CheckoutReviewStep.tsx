@@ -1,18 +1,19 @@
 'use client';
 
 import { Loader2, MapPin, Package, Truck } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { useCheckout } from '@/context/CheckoutProvider';
 import { CheckoutPriceBreakdown } from './CheckoutPriceBreakdown';
 import { getShippingOptionLabel } from '@/lib/ecommerce/checkout-shipping-options';
 
 export function CheckoutReviewStep() {
+  const router = useRouter();
   const {
     cart,
     pricing,
     address,
     shippingMethod,
-    paymentMethod,
     savingsAmount,
     isPlacingOrder,
     placeOrder,
@@ -35,7 +36,7 @@ export function CheckoutReviewStep() {
           </div>
           <button
             type="button"
-            onClick={() => setStep('address')}
+            onClick={() => router.push('/cart')}
             className="text-sm font-medium text-[#FF8C42]"
           >
             Change
@@ -53,18 +54,9 @@ export function CheckoutReviewStep() {
       </section>
 
       <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="flex items-center gap-2">
-            <Truck className="h-4 w-4 text-[#FF8C42]" />
-            <h3 className="font-semibold text-slate-900">Delivery</h3>
-          </div>
-          <button
-            type="button"
-            onClick={() => setStep('address')}
-            className="text-sm font-medium text-[#FF8C42]"
-          >
-            Change
-          </button>
+        <div className="flex items-center gap-2 mb-2">
+          <Truck className="h-4 w-4 text-[#FF8C42]" />
+          <h3 className="font-semibold text-slate-900">Delivery</h3>
         </div>
         <p className="text-sm text-slate-600">{getShippingOptionLabel(shippingMethod)}</p>
       </section>
@@ -95,9 +87,7 @@ export function CheckoutReviewStep() {
             </div>
           ))}
         </div>
-        <p className="mt-2 text-xs text-slate-500">
-          Payment: {paymentMethod === 'cod' ? 'Cash on delivery' : 'Online (Razorpay)'}
-        </p>
+        <p className="mt-2 text-xs text-slate-500">Payment: Online (Razorpay)</p>
       </section>
 
       <section className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm lg:hidden">
@@ -115,8 +105,6 @@ export function CheckoutReviewStep() {
             <Loader2 className="h-5 w-5 animate-spin" />
             Placing order…
           </span>
-        ) : paymentMethod === 'cod' ? (
-          `Place order · ₹${pricing.total.toFixed(0)} COD`
         ) : (
           `Pay ₹${pricing.total.toFixed(0)}`
         )}

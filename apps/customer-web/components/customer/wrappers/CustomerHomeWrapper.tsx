@@ -3652,7 +3652,7 @@ export function CustomerHomeWrapper({
     return <EcommerceRouteRedirect href="/cart" />;
   }
   if (currentScreen === 'checkout') {
-    return <EcommerceRouteRedirect href="/checkout?step=address" />;
+    return <EcommerceRouteRedirect href="/checkout?step=payment" />;
   }
   if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); setCurrentScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); setCurrentScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); setCurrentScreen('order_history'); }} />;
   if (currentScreen === 'order_history')

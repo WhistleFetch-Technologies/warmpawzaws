@@ -10,6 +10,7 @@ import { ShopDeliveryBar } from '@/components/shop/ShopDeliveryBar';
 import { ShopHeroCarousel } from '@/components/shop/ShopHeroCarousel';
 import { CustomerPlacementBanners } from '@/components/customer/shared/CustomerPlacementBanners';
 import { ShopPageHeader } from '@/components/shop/ShopPageHeader';
+import { ShopFloatingCartBar } from '@/components/shop/ShopFloatingCartBar';
 import { ShopSearchBar } from '@/components/shop/ShopSearchBar';
 import { ShopSortFilterSheets } from '@/components/shop/ShopSortFilterSheets';
 import { ShopTopDealsSection } from '@/components/shop/ShopTopDealsSection';
@@ -380,11 +381,7 @@ export default function ShopPage() {
       <div className={SHOP_PAGE_SHELL}>
         <header className="sticky top-0 z-40 shrink-0 bg-white/95 backdrop-blur-lg border-b border-slate-100">
           <div className="px-4 pt-[max(0.75rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-1">
-            <ShopPageHeader
-              onBack={() => handleShopPageBack(router)}
-              cartItemCount={cartItemCount}
-              onOpenCart={() => router.push('/cart')}
-            />
+            <ShopPageHeader onBack={() => handleShopPageBack(router)} />
             <ShopSearchBar
               searchTerm={searchTerm}
               onSearchChange={setSearchTerm}
@@ -431,6 +428,8 @@ export default function ShopPage() {
             onOpenSort={() => setShowSortSheet(true)}
           />
         </main>
+
+        <ShopFloatingCartBar cart={cart} itemCount={cartItemCount} />
 
         <BottomNavigation
           currentScreen="shop"

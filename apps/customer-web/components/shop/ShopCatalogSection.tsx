@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronDown } from 'lucide-react';
-import { Package, Truck } from 'lucide-react';
+import { Package } from 'lucide-react';
 import type { ShopProduct } from './shop-types';
 import { SHOP_SORT_LABELS } from './shop-types';
 import { ShopProductCard } from './ShopProductCard';
@@ -51,26 +51,6 @@ export function ShopCatalogSection({
           <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-60" />
         </button>
       </div>
-
-      {cartSubtotal > 0 && cartSubtotal < 499 && (
-        <div className="mb-3 rounded-2xl p-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-md shadow-emerald-500/20">
-          <div className="flex items-start gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
-              <Truck className="w-4 h-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold leading-snug">Free delivery over ₹499</p>
-              <p className="text-xs text-emerald-50/95 mt-0.5">Add ₹{499 - cartSubtotal} more</p>
-              <div className="mt-2 h-1.5 bg-white/20 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-white rounded-full transition-all duration-300"
-                  style={{ width: `${Math.min((cartSubtotal / 499) * 100, 100)}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center py-16">

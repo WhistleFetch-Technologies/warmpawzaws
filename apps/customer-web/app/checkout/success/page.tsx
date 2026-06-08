@@ -20,7 +20,11 @@ function SuccessContent() {
       </div>
     );
   }
-  return <EcommerceOrderSuccessScreen />;
+  return (
+    <div className="relative flex min-h-screen w-full flex-col bg-[#F2F4F7] mx-auto max-w-customer lg:max-w-ecommerce">
+      <EcommerceOrderSuccessScreen />
+    </div>
+  );
 }
 
 export default function CheckoutSuccessPage() {

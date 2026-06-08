@@ -8,7 +8,7 @@ export type StoredCheckoutOrderResponse = {
   email?: string;
   shippingAddress?: CheckoutAddress;
   status?: string;
-  paymentMethod?: 'cod' | 'online';
+  paymentMethod?: 'online';
   shippingMethod?: 'standard' | 'express' | 'scheduled';
 };
 
