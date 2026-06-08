@@ -4,11 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation';
 import { apiClient, ordersApi } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
-import {
-  goBackOrHome,
-  rememberShopBackFromCurrentUrl,
-  rememberShopBackToSpaScreen,
-} from '@/lib/go-back-or-replace';
+import { goBackOrHome, rememberShopBackFromCurrentUrl, rememberShopBackToSpaScreen, WARMPAWZ_EXPAND_SHOP_ORDER_ID_KEY } from '@/lib/go-back-or-replace';
 import type { ShopReturnSpaScreen } from '@/lib/go-back-or-replace';
 import {
   Package, Truck, Clock, Check, X as XIcon,
@@ -180,12 +176,15 @@ export interface CustomerShopOrdersScreenProps {
   onCloseToHome?: () => void;
   /** When My Orders lives on `/` (profile), remember this SPA screen so `/shop` back restores it. */
   spaShopReturnScreen?: ShopReturnSpaScreen;
+  /** Expand a specific order (e.g. from `/orders?expand=` or post-checkout track). */
+  initialExpandedOrderId?: string | null;
 }
 
-export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnScreen }: CustomerShopOrdersScreenProps) {
+export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnScreen, initialExpandedOrderId }: CustomerShopOrdersScreenProps) {
   const router = useRouter();
   const listHeaderRef = useRef<HTMLButtonElement>(null);
   const listShellRef = useRef<HTMLDivElement>(null);
+  const pendingExpandOrderId = useRef<string | null>(null);
 
   const goToShop = () => {
     if (spaShopReturnScreen) {
@@ -255,6 +254,25 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
   useEffect(() => {
     loadOrders();
   }, [loadOrders]);
+
+  useEffect(() => {
+    let pending = initialExpandedOrderId?.trim() || null;
+    if (!pending && typeof window !== 'undefined') {
+      pending = sessionStorage.getItem(WARMPAWZ_EXPAND_SHOP_ORDER_ID_KEY);
+      if (pending) sessionStorage.removeItem(WARMPAWZ_EXPAND_SHOP_ORDER_ID_KEY);
+    }
+    pendingExpandOrderId.current = pending;
+    if (pending) setExpandedOrder(pending);
+  }, [initialExpandedOrderId]);
+
+  useEffect(() => {
+    const pending = pendingExpandOrderId.current;
+    if (!pending || loading) return;
+    if (orders.some((o) => o.id === pending)) {
+      setExpandedOrder(pending);
+      pendingExpandOrderId.current = null;
+    }
+  }, [orders, loading]);
 
   const cancelOrder = async (orderId: string) => {
     if (!confirm('Are you sure you want to cancel this order?')) return;

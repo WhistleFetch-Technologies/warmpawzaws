@@ -1,6 +1,6 @@
 /**
- * Shared marketplace cart pricing (ShoppingCartView + CheckoutView).
- * Business rules match ShoppingCartView: per-vendor delivery, coupons, GST via tax-system.
+ * Shared marketplace cart pricing for `/cart` and checkout routes.
+ * Business rules: per-vendor delivery, coupons, GST via tax-system.
  */
 import { calculateTax } from '@/lib/tax-system';
 import type { TaxResult } from '@/lib/tax-system/types';
@@ -118,13 +118,9 @@ export function calculateVendorDeliveryFee(
   vendorTotal: number,
   options: CartPricingOptions
 ): number {
-  const vendor = VENDOR_DELIVERY_CONFIG[vendorId] || VENDOR_DELIVERY_CONFIG.default;
-  const appliedCoupons = options.appliedCoupons ?? [];
-  const hasDeliveryFreeCoupon = appliedCoupons.some((c) => c.type === 'delivery');
-  if (hasDeliveryFreeCoupon || vendorTotal >= vendor.freeDeliveryMin) return 0;
-
+  void vendorId;
+  void vendorTotal;
   const speed = options.deliverySpeed ?? 'standard';
-  if (speed === 'express') return EXPRESS_DELIVERY_FEE;
   if (speed === 'scheduled') return SCHEDULED_DELIVERY_FEE;
   return STANDARD_DELIVERY_FEE;
 }
@@ -175,16 +171,13 @@ export function computeCartPricing(
   const byVendor: VendorPricingRow[] = Object.keys(itemsByVendor).map((vendorId) => {
     const vendorItems = itemsByVendor[vendorId];
     const subtotal = getVendorSubtotal(vendorItems);
-    const config = VENDOR_DELIVERY_CONFIG[vendorId] || VENDOR_DELIVERY_CONFIG.default;
     const deliveryFee = calculateVendorDeliveryFee(vendorId, subtotal, options);
-    const freeDeliveryGap =
-      deliveryFee === 0 ? 0 : Math.max(0, config.freeDeliveryMin - subtotal);
     return {
       vendorId,
       subtotal,
       deliveryFee,
-      freeDeliveryMin: config.freeDeliveryMin,
-      freeDeliveryGap,
+      freeDeliveryMin: 0,
+      freeDeliveryGap: 0,
     };
   });
 
@@ -207,10 +200,7 @@ export function computeCartPricing(
   const total =
     subtotalAfterDiscount + deliveryFees + giftWrapFee + protectionFee + taxAmount;
 
-  const freeDeliveryGap =
-    byVendor.length > 0
-      ? Math.min(...byVendor.map((v) => v.freeDeliveryGap).filter((g) => g > 0), Infinity)
-      : 0;
+  const freeDeliveryGap = 0;
 
   return {
     lineSubtotal,
@@ -224,7 +214,7 @@ export function computeCartPricing(
     taxAmount,
     taxResult,
     total,
-    freeDeliveryGap: Number.isFinite(freeDeliveryGap) ? freeDeliveryGap : 0,
+    freeDeliveryGap: 0,
     byVendor,
     itemCount,
   };
