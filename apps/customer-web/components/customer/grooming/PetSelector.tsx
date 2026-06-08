@@ -288,7 +288,7 @@ export function PetSelector({
             <span className="text-xs text-gray-400">Cart</span>
           </button>
           <button 
-            onClick={() => onNavigate?.('bookings')}
+            onClick={() => onNavigate?.('my-bookings')}
             className="flex flex-col items-center gap-1"
           >
             <Calendar className="w-6 h-6 text-gray-400" />

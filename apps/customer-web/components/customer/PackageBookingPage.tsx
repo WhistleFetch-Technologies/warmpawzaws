@@ -13,7 +13,7 @@
  * Status: ✅ P0 IMPLEMENTATION
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { petsFromApiResponse, type PetUi } from '@/lib/extract-pets-from-api';
 import {
@@ -177,6 +177,8 @@ interface PackageBookingPageProps {
   customerId: string;
   petId?: string;
   onBack?: () => void;
+  /** Expose step-aware back for shell header / hardware back. */
+  onInternalBackReady?: (handleBack: () => void) => void;
   /** Walker / home-service flow: custom vendor_services package + vendor catalog */
   vendorPackageIntent?: VendorPackageIntent | null;
   /** Single walk (30/60 min) chosen from dog walking — show summary + path back to pick a walker */
@@ -189,6 +191,7 @@ export function PackageBookingPage({
   customerId,
   petId,
   onBack,
+  onInternalBackReady,
   vendorPackageIntent,
   walkSessionIntent,
   onContinueToChooseWalker,
@@ -1033,6 +1036,29 @@ export function PackageBookingPage({
     return today.toISOString().split('T')[0];
   };
 
+  /** review → schedule → browse → shell exit */
+  const handleInternalBack = useCallback(() => {
+    if (view === 'review') {
+      setView('schedule');
+      setError(null);
+      return;
+    }
+    if (view === 'schedule') {
+      setView('browse');
+      setSelectedPackage(null);
+      return;
+    }
+    if (view === 'my-packages') {
+      setView('browse');
+      return;
+    }
+    onBack?.();
+  }, [view, onBack]);
+
+  useEffect(() => {
+    onInternalBackReady?.(handleInternalBack);
+  }, [handleInternalBack, onInternalBackReady]);
+
   if (loading && view === 'browse') {
     return (
       <div className="flex min-h-screen min-h-[100dvh] items-center justify-center cw-header-safe-top cw-header-safe-x max-w-customer mx-auto w-full bg-gray-50">
@@ -1048,7 +1074,7 @@ export function PackageBookingPage({
         {onBack && (
           <button
             type="button"
-            onClick={onBack}
+            onClick={handleInternalBack}
             className="mb-2 inline-flex min-h-11 min-w-11 items-center justify-start gap-2 rounded-lg px-1 text-gray-600 hover:bg-gray-50 hover:text-gray-900"
             aria-label="Go back"
           >

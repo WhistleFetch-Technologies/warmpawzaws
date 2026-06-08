@@ -12,6 +12,7 @@ export interface NutritionistBookingRouterProps {
     onBack: () => void;
     onNavigate: (screen: string, data?: any) => void;
     onViewBooking?: (bookingId: string) => void;
+    onInternalBackReady?: (handleBack: () => void) => void;
 }
 
 export type BookingStep = 'service' | 'datetime' | 'pet' | 'address' | 'payment' | 'confirmation';

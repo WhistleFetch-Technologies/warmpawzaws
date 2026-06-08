@@ -19,7 +19,7 @@ See also: `ANDROID_UPI_FIX.md` (JS + Android manifest), `docs/COPILOT_V7_ANDROID
 ## Prerequisites
 
 - Mac with Xcode 15+ and CocoaPods (`pod --version`)
-- Apple Developer account + distribution cert / provisioning for `com.warmpawz.customer`
+- Apple Developer account + distribution cert / provisioning for `com.warmpawz.app`
 - `customer-web` deployed to prod with Razorpay UPI JS (`ANDROID_UPI_FIX.md` §1)
 - Razorpay Dashboard: UPI enabled on live merchant
 
@@ -47,7 +47,7 @@ Add an `ios` block (keep existing `server.url`; **no** `CapacitorHttp`):
 
 ```json
 {
-  "appId": "com.warmpawz.customer",
+  "appId": "com.warmpawz.app",
   "appName": "Warmpawz Customer",
   "webDir": "dist",
   "server": {
@@ -241,7 +241,7 @@ open App.xcworkspace
 In Xcode:
 
 1. Select **App** scheme, **Any iOS Device (arm64)**.
-2. **Signing & Capabilities** → Team + bundle `com.warmpawz.customer`.
+2. **Signing & Capabilities** → Team + bundle `com.warmpawz.app`.
 3. Bump **Version** / **Build** (greater than last App Store build).
 4. **Product → Archive** → **Distribute App** → App Store Connect / TestFlight.
 

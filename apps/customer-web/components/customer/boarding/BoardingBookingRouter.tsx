@@ -11,7 +11,7 @@
  * - Confirmation
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   ArrowLeft, Moon, Sun, Calendar, Clock, MapPin, User, 
   CheckCircle2, Package, Plus, X, Upload, Building2, Home, Dog, Cat, CalendarRange
@@ -54,6 +54,8 @@ interface BoardingBookingRouterProps {
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
+  /** Expose step-aware back for shell header / hardware back. */
+  onInternalBackReady?: (handleBack: () => void) => void;
 }
 
 /** Map Pet Sitting hub tile ids to default router slugs (see `defaultPetSittingOptions`). */
@@ -503,7 +505,8 @@ export function BoardingBookingRouter({
   presetSittingOptionId,
   onBack, 
   onNavigate, 
-  onViewBooking 
+  onViewBooking,
+  onInternalBackReady,
 }: BoardingBookingRouterProps) {
   const isPetSitting = flowVariant === "pet_sitting";
   const apiCategory = isPetSitting ? "sitting" : "boarding";
@@ -1398,7 +1401,7 @@ export function BoardingBookingRouter({
     }
   };
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     if (step === 'confirmation') {
       onBack();
       return;
@@ -1419,7 +1422,11 @@ export function BoardingBookingRouter({
     }
 
     setStep(steps[currentIdx - 1]);
-  };
+  }, [step, isPetSitting, onBack]);
+
+  useEffect(() => {
+    onInternalBackReady?.(handleBack);
+  }, [handleBack, onInternalBackReady]);
 
   const handlePaymentSuccess = (paidBookingId: string) => {
     setBookingId(paidBookingId);

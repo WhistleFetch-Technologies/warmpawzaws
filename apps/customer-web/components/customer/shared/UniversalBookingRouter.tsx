@@ -722,11 +722,21 @@ export function UniversalBookingRouter({
   const handleBack = () => {
     // Phase 1: Include summary step
     const steps: BookingStep[] = ['service', 'details', 'summary', 'payment', 'confirmation'];
-    
+
     const currentIdx = steps.indexOf(step);
-    
+
+    if (step === 'details' && hasServiceContext) {
+      onBack();
+      return;
+    }
+
     if (currentIdx > 0) {
-      setStep(steps[currentIdx - 1]);
+      const prevStep = steps[currentIdx - 1];
+      if (prevStep === 'service' && hasServiceContext) {
+        onBack();
+        return;
+      }
+      setStep(prevStep);
     } else {
       onBack();
     }
@@ -892,7 +902,9 @@ export function UniversalBookingRouter({
       payment: 3,
       confirmation: 4
     };
-    const currentIdx = currentStepMap[step];
+    const effectiveStep =
+      step === 'service' && hasServiceContext ? 'details' : step;
+    const currentIdx = currentStepMap[effectiveStep];
     
     return stepLabels.map((label, idx) => ({
       label,
@@ -1278,7 +1290,7 @@ export function UniversalBookingRouter({
         {/* Phase 1: Staff step skipped (treat as single staff until StaffSelectionStep implemented) */}
 
         {/* Combined Details Selection: Schedule, Pet, and Address */}
-        {step === 'details' && (
+        {step === 'details' || (step === 'service' && hasServiceContext) ? (
           <div className="space-y-4 cw-scroll-pad-tabbar">
             <div className="space-y-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
               <div>
@@ -1430,7 +1442,7 @@ export function UniversalBookingRouter({
               </Button>
             </div>
           </div>
-        )}
+        ) : null}
             
         {/* Phase 1: Summary step with package advice */}
         {step === 'summary' && (

@@ -114,7 +114,7 @@ export function RelocationQuoteCalculator({
       toast.success('Relocation booked successfully!');
       onSuccess?.(response.booking?.id);
       // Navigate to booking confirmation or payment
-      onNavigate?.('bookings', { bookingId: response.booking?.id });
+      onNavigate?.('my-bookings', { bookingId: response.booking?.id });
     } catch (error) {
       console.error('Error booking relocation:', error);
       toast.error('Failed to book relocation');

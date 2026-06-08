@@ -368,7 +368,7 @@ export function HolidayPackageBuilder({
 
       <div className="space-y-3">
         <Button
-          onClick={() => onNavigate?.('bookings')}
+          onClick={() => onNavigate?.('my-bookings')}
           className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white py-6"
         >
           View My Requests
