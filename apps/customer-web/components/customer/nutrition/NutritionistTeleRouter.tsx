@@ -15,6 +15,10 @@ import { toast } from 'sonner';
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
 import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
 import { InstantTeleQueue } from '../InstantTele/InstantTeleQueue';
+import {
+  saveTeleWizardSnapshot,
+  type TeleWizardSnapshot,
+} from '@/lib/navigation/wizard-session-state';
 
 // ============================================================================
 // TYPES
@@ -73,6 +77,8 @@ interface NutritionistTeleRouterProps {
   phone: string;
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
+  restoredSnapshot?: TeleWizardSnapshot | null;
+  onRestoredSnapshotConsumed?: () => void;
 }
 
 type FlowStep = 
@@ -353,9 +359,28 @@ function InstantPetSelection({ phone, selectedProblem, pets, loading, onSelectPe
 // MAIN COMPONENT
 // ============================================================================
 
-export function NutritionistTeleRouter({ phone, onBack, onNavigate }: NutritionistTeleRouterProps) {
-  const [step, setStep] = useState<FlowStep>('mode-selection');
-  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
+export function NutritionistTeleRouter({
+  phone,
+  onBack,
+  onNavigate,
+  restoredSnapshot,
+  onRestoredSnapshotConsumed,
+}: NutritionistTeleRouterProps) {
+  const restoredStep = restoredSnapshot?.step as FlowStep | undefined;
+  const initialStep: FlowStep =
+    restoredStep && restoredStep !== 'payment' && restoredStep !== 'confirmation'
+      ? restoredStep
+      : 'mode-selection';
+  const [step, setStep] = useState<FlowStep>(initialStep);
+  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(
+    (restoredSnapshot?.selectedProvider as Provider | null) ?? null,
+  );
+  const [bookingFormRestore] = useState(() => ({
+    showBookingForm: restoredSnapshot?.showBookingForm,
+    selectedDate: restoredSnapshot?.selectedDate,
+    selectedTime: restoredSnapshot?.selectedTime,
+    selectedPetId: restoredSnapshot?.selectedPetId,
+  }));
   const [selectedProblem, setSelectedProblem] = useState<{ id: string; name: string } | null>(null);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
@@ -369,6 +394,13 @@ export function NutritionistTeleRouter({ phone, onBack, onNavigate }: Nutritioni
     loadCustomerId();
     loadPets();
   }, [phone]);
+
+  useEffect(() => {
+    if (restoredSnapshot) {
+      onRestoredSnapshotConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- consume snapshot once on mount
+  }, []);
 
   const loadCustomerId = async () => {
     try {
@@ -416,6 +448,14 @@ export function NutritionistTeleRouter({ phone, onBack, onNavigate }: Nutritioni
   };
 
   const handleProceedToPayment = (bookingData: any) => {
+    saveTeleWizardSnapshot({
+      step: 'provider-profile',
+      selectedProvider: (selectedProvider as Record<string, unknown> | null) ?? null,
+      showBookingForm: true,
+      selectedDate: bookingData?.bookingDate,
+      selectedTime: bookingData?.bookingTime,
+      selectedPetId: bookingData?.petId,
+    });
     onNavigate('payment', {
       ...bookingData,
       serviceType: 'tele',
@@ -498,6 +538,10 @@ export function NutritionistTeleRouter({ phone, onBack, onNavigate }: Nutritioni
           onBack={handleBack}
           onNavigate={onNavigate}
           onProceedToPayment={handleProceedToPayment}
+          initialShowBookingForm={bookingFormRestore.showBookingForm}
+          initialSelectedDate={bookingFormRestore.selectedDate}
+          initialSelectedTime={bookingFormRestore.selectedTime}
+          initialSelectedPetId={bookingFormRestore.selectedPetId}
         />
       );
 

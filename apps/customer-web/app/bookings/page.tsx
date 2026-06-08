@@ -1,6 +1,7 @@
 'use client';
 
 import { MyBookings } from '@/components/customer/booking/MyBookings';
+import { goBackOrReplace } from '@/lib/go-back-or-replace';
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
@@ -38,11 +39,13 @@ function BookingsPageInner() {
     return null;
   }
 
+  const backToHome = () => goBackOrReplace(router, '/');
+
   return (
     <MyBookings
       phone={phone}
-      onBack={() => router.replace('/')}
-      onCloseToHome={() => router.replace('/')}
+      onBack={backToHome}
+      onCloseToHome={backToHome}
       reviewBookingIdFromUrl={reviewBookingId}
     />
   );

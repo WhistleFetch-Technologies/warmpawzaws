@@ -8,6 +8,7 @@ import {
   consumeOpenAccountMenuAfterNav,
   rememberMyPackagesBackFromAccountMenu,
 } from '@/lib/go-back-or-replace';
+import { createCustomerNavigation } from '@/lib/navigation/navigation-service';
 import { ProfileMenuOpenProvider } from '@/lib/profile-menu-open-context';
 
 export { navigateFromStandaloneAccountMenu } from '@/lib/customer-account-sidebar-nav';
@@ -59,15 +60,21 @@ export function useCustomerAccountSidebarHost(): CustomerAccountSidebarHost {
 
   const handleTabbedBottomNav = useCallback(
     (screen: string) => {
+      const nav = createCustomerNavigation(router);
       if (screen === 'profile') {
-        openAccountMenu();
+        nav.handleTab('profile', { openProfile: openAccountMenu });
         return;
       }
       setSidebarOpen(false);
-      if (screen === 'home') router.push('/');
-      else if (screen === 'shop') router.push('/shop');
-      else if (screen === 'cart') router.push('/cart');
-      else if (screen === 'my-bookings') router.push('/bookings');
+      if (screen === 'home') {
+        nav.handleTab('home');
+      } else if (screen === 'shop') {
+        nav.handleTab('shop');
+      } else if (screen === 'cart') {
+        nav.goToCart();
+      } else if (screen === 'my-bookings') {
+        nav.handleTab('bookings');
+      }
     },
     [openAccountMenu, router]
   );

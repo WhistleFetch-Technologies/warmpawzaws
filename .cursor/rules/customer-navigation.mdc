@@ -1,0 +1,78 @@
+---
+description: Customer app stack navigation — shell + URL layers, Capacitor back, new service checklist
+globs: apps/customer-web/**/*
+alwaysApply: false
+---
+
+# Customer navigation (Capacitor + Next.js)
+
+Prod mobile: **Capacitor WebView** loading `https://customer.warmpawz.com` — not React Native.
+
+## Two layers
+
+| Layer | API | Examples |
+|-------|-----|----------|
+| **URL** | `useCustomerNavigation()` | `/shop`, `/cart`, `/checkout`, `/orders` |
+| **Shell on `/`** | `createShellNavigationService` in `CustomerHomeWrapper` | `vet`, embedded `checkout`, `order_tracking` |
+
+Read `apps/customer-web/CUSTOMER_NAV_AUDIT.md` and `lib/navigation/` before changing navigation.
+
+## Rules (do / don't)
+
+| Do | Don't |
+|----|--------|
+| Register routes in `lib/navigation/route-registry.ts` + `shell-route-policies.ts` | Ad-hoc screen strings only |
+| URL nav → `useCustomerNavigation()` | Raw `router.push` for shop/cart/checkout/orders |
+| Shell forward → `navigateToScreen(screen, routeKey.*(id))` or `replaceShellScreen` for overlays | Bare `setCurrentScreen('other')` outside the stack hook |
+| Back → `handleBack()` → `shellNav.back()` | `onBack={() => setCurrentScreen('x')}` (ping-pong loops) |
+| Tab re-tap → `shellNav.focusTabRoot('bookings' \| 'home')` | Push duplicate tab roots |
+| Checkout/success → `replaceTop` or `resetTo` | Push success after checkout |
+| Entity drill-down → pass `routeKey.clinic` / `vendor` / `booking` / `pet` | Same entity without key |
+| iOS shell on `/` → history sync via `ios-shell-history.ts` | Assume swipe-back works without stack sync |
+
+## Shell navigation service
+
+- Factory: `lib/navigation/shell-navigation-service.ts`
+- Policies: `lib/navigation/shell-route-policies.ts` (hub = `focus-root`, entity = `push`+key, overlay = `replace`)
+- Guardrails: `NAV_CONFIG.maxDepth`, oscillation collapse (A→B→A→B)
+- Telemetry: `lib/navigation/nav-telemetry.ts`
+
+Wrapper helpers in `CustomerHomeWrapper`:
+
+```typescript
+navigateToScreen('vet-clinic-profile', routeKey.clinic(id));
+replaceShellScreen('purchase-package', routeKey.packagePurchase(vsid));
+handleBack(); // shellNav.back()
+shellNav.focusTabRoot('bookings');
+goToHome(); // shellNav.resetTo('home')
+```
+
+**Do not change payment initiation** (Razorpay open timing). Navigating to shell `payment` after `setPaymentData` is OK; do not alter embedded payment step order.
+
+## Capacitor back
+
+- **Android:** `App.backButton` → `runBackHandlers()` (`hardware-back.ts`)
+- **iOS:** edge swipe → `popstate` → `initIosShellHistoryBridge()` + stack depth sync in wrapper
+- **URL routes:** `NavigationBackBridge` priority 50 → `goBackOrReplace`
+
+## New service checklist
+
+1. Add `routeKey.*(id)` if same entity can open twice
+2. Add policy in `shell-route-policies.ts` (hub vs entity vs replace)
+3. URL route → method on `createCustomerNavigation()`
+4. Shell screen → `ScreenType` + branch in `CustomerHomeWrapper` using `navigateToScreen`
+5. Back uses stack pop, not hardcoded screen or `previousScreen`
+6. Test in `lib/navigation/__tests__/`
+7. Deep links → update `public/.well-known/` paths if needed
+
+## Key files
+
+- `components/customer/wrappers/CustomerHomeWrapper.tsx` — shell router + `shellNav`
+- `components/navigation/NavigationBackBridge.tsx` — global back + deep links
+- `lib/navigation/ios-shell-history.ts` — iOS swipe ↔ shell stack
+- `public/.well-known/` — Universal Links + Android App Links (replace TEAMID / SHA256 before prod verify)
+- `CAPACITOR_MOBILE_TODO.md` — **manual steps you still must do** (build, deploy, QA)
+
+## ESLint
+
+`apps/customer-web/.eslintrc.json` warns on `setPreviousScreen` outside the wrapper and `lib/navigation/`.

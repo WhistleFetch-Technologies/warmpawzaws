@@ -1,0 +1,31 @@
+/**
+ * Back-intent helpers — re-exported from go-back-or-replace for NavigationService consumers.
+ * Existing call sites keep importing from @/lib/go-back-or-replace.
+ */
+export {
+  goBackOrReplace,
+  goBackOrHome,
+  clearShopBackIntent,
+  clearWishlistOpenedFromShopMark,
+  rememberShopBackFromCurrentUrl,
+  rememberShopBackToSpaScreen,
+  handleShopPageBack,
+  rememberPromotionsBackFromCurrentUrl,
+  rememberPromotionsBackSpaScreen,
+  handlePromotionsPageBack,
+  rememberHelpBackFromCurrentUrl,
+  rememberHelpBackSpaScreen,
+  handleHelpPageBack,
+  rememberWalletChildBackFromCurrentUrl,
+  rememberWalletChildBackSpaScreen,
+  handleWalletChildPageBack,
+  rememberSubscriptionsBackFromCurrentUrl,
+  rememberSubscriptionsBackSpaScreen,
+  handleSubscriptionsPageBack,
+  rememberMyPackagesBackFromAccountMenu,
+  rememberMyPackagesBackFromCurrentUrl,
+  handleMyPackagesPageBack,
+  navigateAfterMealOrderPlaced,
+  WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY,
+  WARMPAWZ_HOME_RESUME_SCREENS,
+} from '@/lib/go-back-or-replace';

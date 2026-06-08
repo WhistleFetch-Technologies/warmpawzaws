@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, Star, Clock, MapPin, Phone, Video, Home, Building2,
   Shield, Award, GraduationCap, Heart, Share2, Check, X, Calendar,
@@ -113,6 +113,13 @@ interface UniversalProviderProfileProps {
   /** When user returns from address book after selecting an address */
   initialSelectedAddress?: any;
   onConsumeInitialAddress?: () => void;
+  /** Restore booking form after returning from shell payment screen */
+  initialShowBookingForm?: boolean;
+  initialSelectedDate?: string;
+  initialSelectedTime?: string;
+  initialSelectedPetId?: string;
+  /** Hardware / shell back: close booking form or address modal before parent step back */
+  onInternalBackReady?: (handleBack: () => void) => void;
 }
 
 // ============================================================================
@@ -189,6 +196,11 @@ export function UniversalProviderProfile({
   onProceedToPayment,
   initialSelectedAddress,
   onConsumeInitialAddress,
+  initialShowBookingForm,
+  initialSelectedDate,
+  initialSelectedTime,
+  initialSelectedPetId,
+  onInternalBackReady,
 }: UniversalProviderProfileProps) {
   const [activeTab, setActiveTab] = useState<'services' | 'about' | 'reviews'>('services');
   const [selectedServices, setSelectedServices] = useState<Set<string>>(new Set());
@@ -197,9 +209,9 @@ export function UniversalProviderProfile({
   const [loadingReviews, setLoadingReviews] = useState(false);
   
   // Booking form state
-  const [showBookingForm, setShowBookingForm] = useState(false);
-  const [selectedDate, setSelectedDate] = useState('');
-  const [selectedTime, setSelectedTime] = useState('');
+  const [showBookingForm, setShowBookingForm] = useState(initialShowBookingForm ?? false);
+  const [selectedDate, setSelectedDate] = useState(initialSelectedDate ?? '');
+  const [selectedTime, setSelectedTime] = useState(initialSelectedTime ?? '');
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [pets, setPets] = useState<Pet[]>([]);
@@ -215,6 +227,22 @@ export function UniversalProviderProfile({
   const showFacilitiesAmenitiesOnAbout =
     shouldShowVendorAmenities(serviceStyle) &&
     !(category === 'vet' && serviceStyle === 'at_home');
+
+  const handleInternalBack = useCallback(() => {
+    if (showAddAddressModal) {
+      setShowAddAddressModal(false);
+      return;
+    }
+    if (showBookingForm) {
+      setShowBookingForm(false);
+      return;
+    }
+    onBack();
+  }, [showAddAddressModal, showBookingForm, onBack]);
+
+  useEffect(() => {
+    onInternalBackReady?.(handleInternalBack);
+  }, [handleInternalBack, onInternalBackReady]);
 
   // When returning from address book with a selected address, pre-select it
   useEffect(() => {
@@ -303,9 +331,15 @@ export function UniversalProviderProfile({
       const petsResponse = await apiClient.get(`/customer/pets/${phone}`) as any;
       if (petsResponse?.pets) {
         setPets(petsResponse.pets);
-        // Auto-select first pet
         if (petsResponse.pets.length > 0) {
-          setSelectedPet(petsResponse.pets[0]);
+          if (initialSelectedPetId) {
+            const match = petsResponse.pets.find(
+              (p: Pet) => String(p.id) === String(initialSelectedPetId),
+            );
+            setSelectedPet(match ?? petsResponse.pets[0]);
+          } else {
+            setSelectedPet(petsResponse.pets[0]);
+          }
         }
       }
 
@@ -517,7 +551,7 @@ export function UniversalProviderProfile({
           <div className="absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-2 cw-header-safe-top cw-header-safe-x pointer-events-none">
             <button
               type="button"
-              onClick={showBookingForm ? () => setShowBookingForm(false) : onBack}
+              onClick={handleInternalBack}
               className="pointer-events-auto flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-full bg-white/20 backdrop-blur transition-colors hover:bg-white/30"
               aria-label="Go back"
             >

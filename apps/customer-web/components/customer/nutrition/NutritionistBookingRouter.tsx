@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { UtensilsCrossed, Apple, Heart, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Video, Home, Building2, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -73,7 +73,8 @@ export function NutritionistBookingRouter({
   duration,
   onBack,
   onNavigate,
-  onViewBooking
+  onViewBooking,
+  onInternalBackReady,
 }: NutritionistBookingRouterProps) {
   console.log('NutritionistBookingRouter--------------------->', phone, vendorId, nutritionist, selectedService, serviceType, serviceId, serviceName, serviceStyle, price, duration, onBack, onNavigate, onViewBooking);
 
@@ -432,22 +433,41 @@ export function NutritionistBookingRouter({
     }
   };
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
+    if (showPaymentPage) {
+      setShowPaymentPage(false);
+      return;
+    }
     const steps: BookingStep[] = ['service', 'datetime', 'pet', 'address', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
 
-    // ✅ FIX: Handle back from payment for tele and at_center (both skip address)
     if (step === 'payment' && (selectedServiceType === 'tele' || selectedServiceType === 'at_center')) {
       setStep('pet');
       return;
     }
 
+    if (step === 'datetime' && hasServiceContext) {
+      onBack();
+      return;
+    }
+
     if (currentIdx > 0) {
-      setStep(steps[currentIdx - 1]);
+      const prevStep = steps[currentIdx - 1];
+      if (prevStep === 'service' && hasServiceContext) {
+        onBack();
+        return;
+      }
+      setStep(prevStep);
     } else {
       onBack();
     }
-  };
+  }, [showPaymentPage, step, selectedServiceType, onBack, hasServiceContext]);
+
+  useEffect(() => {
+    if (onInternalBackReady) {
+      onInternalBackReady(handleBack);
+    }
+  }, [handleBack, onInternalBackReady]);
 
   const handleConfirmBooking = async () => {
     setProcessing(true);

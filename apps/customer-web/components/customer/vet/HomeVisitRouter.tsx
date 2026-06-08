@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   ArrowLeft, Home, MapPin, Clock, Star, User, ChevronRight
 } from 'lucide-react';
@@ -11,6 +11,10 @@ import { toast } from 'sonner';
 
 import { UniversalServiceProviderList } from '../shared/UniversalServiceProviderList';
 import { UniversalProviderProfile } from '../shared/UniversalProviderProfile';
+import {
+  saveHomeVisitWizardSnapshot,
+  type HomeVisitWizardSnapshot,
+} from '@/lib/navigation/wizard-session-state';
 
 // ============================================================================
 // TYPES
@@ -54,6 +58,10 @@ interface HomeVisitRouterProps {
   onNavigate: (screen: string, data?: any) => void;
   initialAddressFromBook?: any;
   onConsumeInitialAddress?: () => void;
+  restoredSnapshot?: HomeVisitWizardSnapshot | null;
+  onRestoredSnapshotConsumed?: () => void;
+  /** Expose step-aware back for shell header / hardware back. */
+  onInternalBackReady?: (handleBack: () => void) => void;
 }
 
 type FlowStep = 
@@ -65,9 +73,37 @@ type FlowStep =
 // MAIN COMPONENT
 // ============================================================================
 
-export function HomeVisitRouter({ phone, onBack, onNavigate, initialAddressFromBook, onConsumeInitialAddress }: HomeVisitRouterProps) {
-  const [step, setStep] = useState<FlowStep>('provider-list');
-  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
+export function HomeVisitRouter({
+  phone,
+  onBack,
+  onNavigate,
+  initialAddressFromBook,
+  onConsumeInitialAddress,
+  restoredSnapshot,
+  onRestoredSnapshotConsumed,
+  onInternalBackReady,
+}: HomeVisitRouterProps) {
+  const restoredStep = restoredSnapshot?.step as FlowStep | undefined;
+  const initialStep: FlowStep =
+    restoredStep && restoredStep !== 'payment' ? restoredStep : 'provider-list';
+  const [step, setStep] = useState<FlowStep>(initialStep);
+  const providerProfileInternalBackRef = useRef<(() => void) | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(
+    (restoredSnapshot?.selectedProvider as Provider | null) ?? null,
+  );
+  const [bookingFormRestore] = useState(() => ({
+    showBookingForm: restoredSnapshot?.showBookingForm,
+    selectedDate: restoredSnapshot?.selectedDate,
+    selectedTime: restoredSnapshot?.selectedTime,
+    selectedPetId: restoredSnapshot?.selectedPetId,
+  }));
+
+  useEffect(() => {
+    if (restoredSnapshot) {
+      onRestoredSnapshotConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- consume snapshot once on mount
+  }, []);
 
   // Handlers
   const handleSelectProvider = (provider: Provider) => {
@@ -76,7 +112,14 @@ export function HomeVisitRouter({ phone, onBack, onNavigate, initialAddressFromB
   };
 
   const handleProceedToPayment = (bookingData: any) => {
-    // Navigate to universal payment page
+    saveHomeVisitWizardSnapshot({
+      step: 'provider-profile',
+      selectedProvider: (selectedProvider as Record<string, unknown> | null) ?? null,
+      showBookingForm: true,
+      selectedDate: bookingData?.bookingDate,
+      selectedTime: bookingData?.bookingTime,
+      selectedPetId: bookingData?.petId,
+    });
     onNavigate('payment', {
       ...bookingData,
       serviceType: 'at_home',
@@ -85,19 +128,37 @@ export function HomeVisitRouter({ phone, onBack, onNavigate, initialAddressFromB
     });
   };
 
-  const handleBack = () => {
+  const handleProviderProfileStepBack = useCallback(() => {
+    setSelectedProvider(null);
+    setStep('provider-list');
+  }, []);
+
+  const handleBack = useCallback(() => {
     switch (step) {
       case 'provider-list':
         onBack();
         break;
       case 'provider-profile':
-        setSelectedProvider(null);
-        setStep('provider-list');
+        if (providerProfileInternalBackRef.current) {
+          providerProfileInternalBackRef.current();
+        } else {
+          handleProviderProfileStepBack();
+        }
         break;
       default:
         onBack();
     }
-  };
+  }, [step, onBack, handleProviderProfileStepBack]);
+
+  useEffect(() => {
+    if (step !== 'provider-profile') {
+      providerProfileInternalBackRef.current = null;
+    }
+  }, [step]);
+
+  useEffect(() => {
+    onInternalBackReady?.(handleBack);
+  }, [handleBack, onInternalBackReady]);
 
   // Render based on step
   switch (step) {
@@ -128,11 +189,16 @@ export function HomeVisitRouter({ phone, onBack, onNavigate, initialAddressFromB
           provider={selectedProvider}
           category="vet"
           serviceStyle="at_home"
-          onBack={handleBack}
+          onBack={handleProviderProfileStepBack}
+          onInternalBackReady={(fn) => { providerProfileInternalBackRef.current = fn; }}
           onNavigate={onNavigate}
           onProceedToPayment={handleProceedToPayment}
           initialSelectedAddress={initialAddressFromBook}
           onConsumeInitialAddress={onConsumeInitialAddress}
+          initialShowBookingForm={bookingFormRestore.showBookingForm}
+          initialSelectedDate={bookingFormRestore.selectedDate}
+          initialSelectedTime={bookingFormRestore.selectedTime}
+          initialSelectedPetId={bookingFormRestore.selectedPetId}
         />
       );
 

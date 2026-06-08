@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Video, Home, Building2, Calendar, Clock, MapPin, User, CreditCard, CheckCircle2, ChevronRight, Package, Gift, Plus, X, Upload, Stethoscope, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { apiClient } from '@/lib/api-client';
@@ -42,6 +42,7 @@ interface VetBookingRouterProps {
   onBack: () => void;
   onNavigate: (screen: string, data?: any) => void;
   onViewBooking?: (bookingId: string) => void;
+  onInternalBackReady?: (handleBack: () => void) => void;
 }
 
 type BookingStep = 'service' | 'details' | 'address' | 'summary' | 'payment' | 'confirmation';
@@ -76,7 +77,8 @@ export function VetBookingRouter({
   vendorName: vendorNameProp,
   onBack, 
   onNavigate, 
-  onViewBooking 
+  onViewBooking,
+  onInternalBackReady,
 }: VetBookingRouterProps) {
   const formatTime12Hour = (time24: string) => {
     if (!time24) return '';
@@ -812,18 +814,34 @@ export function VetBookingRouter({
     }
   };
 
-  const handleBack = () => {
+  const handleBack = useCallback(() => {
     const steps: BookingStep[] = selectedServiceType === 'at_home'
       ? ['service', 'details', 'address', 'summary', 'payment', 'confirmation']
       : ['service', 'details', 'summary', 'payment', 'confirmation'];
     const currentIdx = steps.indexOf(step);
-    
+
+    // Pre-selected service/clinic context skips the in-flow service step — back from the
+    // first visible step must exit the flow, not land on the hidden `service` step (blank UI).
+    if (step === 'details' && hasServiceContext) {
+      onBack();
+      return;
+    }
+
     if (currentIdx > 0) {
-      setStep(steps[currentIdx - 1]);
+      const prevStep = steps[currentIdx - 1];
+      if (prevStep === 'service' && hasServiceContext) {
+        onBack();
+        return;
+      }
+      setStep(prevStep);
     } else {
       onBack();
     }
-  };
+  }, [step, selectedServiceType, onBack, hasServiceContext]);
+
+  useEffect(() => {
+    onInternalBackReady?.(handleBack);
+  }, [handleBack, onInternalBackReady]);
 
   const handleConfirmBooking = async () => {
     setProcessing(true);
@@ -960,14 +978,16 @@ export function VetBookingRouter({
   // Phase 1: Step indicators include Summary
   const getStepIndicators = (): StepInfo[] | undefined => {
     if (step === 'payment' || step === 'confirmation') return undefined;
-    
+
     const stepLabels = selectedServiceType === 'at_home'
       ? ['Service', 'Details', 'Address', 'Summary', 'Payment']
       : ['Service', 'Details', 'Summary', 'Payment'];
     const currentStepMap: Record<BookingStep, number> = selectedServiceType === 'at_home'
       ? { service: 0, details: 1, address: 2, summary: 3, payment: 4, confirmation: 5 }
       : { service: 0, details: 1, address: 1, summary: 2, payment: 3, confirmation: 4 };
-    const currentIdx = currentStepMap[step] ?? 0;
+    const effectiveStep =
+      step === 'service' && hasServiceContext ? 'details' : step;
+    const currentIdx = currentStepMap[effectiveStep] ?? 0;
     
     return stepLabels.map((label, idx) => ({
       label,
@@ -1382,7 +1402,7 @@ export function VetBookingRouter({
         )}
 
         {/* Combined Details Selection: Schedule, Pet, and Address */}
-        {step === 'details' && (
+        {step === 'details' || (step === 'service' && hasServiceContext) ? (
           <div className="space-y-4 cw-scroll-pad-tabbar">
             <div className="space-y-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
               {/* Date & Time Selection */}
@@ -1532,7 +1552,7 @@ export function VetBookingRouter({
               </Button>
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* Address Step - only for at_home */}
         {step === 'address' && selectedServiceType === 'at_home' && (

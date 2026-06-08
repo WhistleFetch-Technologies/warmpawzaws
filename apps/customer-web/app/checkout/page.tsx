@@ -1,15 +1,14 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { CheckoutProvider } from '@/context/CheckoutProvider';
 import { CheckoutFlow } from '@/components/ecommerce/checkout/CheckoutFlow';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
-import { goBackOrReplace } from '@/lib/go-back-or-replace';
+import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation';
 
 function CheckoutPageContent() {
-  const router = useRouter();
+  const nav = useCustomerNavigation();
   const commerceEnabled = isCustomerEcommerceEnabled();
   const [phone, setPhone] = useState('');
 
@@ -35,7 +34,7 @@ function CheckoutPageContent() {
       <div className="relative flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
         <button
           type="button"
-          onClick={() => goBackOrReplace(router, '/')}
+          onClick={() => nav.backOr('/')}
           className="absolute left-4 top-4 rounded-lg bg-white/90 p-2 shadow-sm"
           aria-label="Back"
         >
@@ -58,7 +57,7 @@ function CheckoutPageContent() {
           <button
             type="button"
             className="font-semibold text-orange-600 underline"
-            onClick={() => router.push('/auth')}
+            onClick={() => nav.goToAuth()}
           >
             Sign in
           </button>

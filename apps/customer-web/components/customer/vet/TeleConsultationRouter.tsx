@@ -21,6 +21,10 @@ import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { InstantTeleQueue } from '../InstantTele/InstantTeleQueue';
 import { isInstantTeleUiEnabled } from '@/lib/instant-tele-ui';
+import {
+  saveTeleWizardSnapshot,
+  type TeleWizardSnapshot,
+} from '@/lib/navigation/wizard-session-state';
 
 // ============================================================================
 // TYPES
@@ -88,6 +92,11 @@ interface TeleConsultationRouterProps {
    * `skipModeSelection` (instant) takes precedence if both are true.
    */
   skipToScheduled?: boolean;
+  /** Restore step/provider/booking form after returning from shell payment. */
+  restoredSnapshot?: TeleWizardSnapshot | null;
+  onRestoredSnapshotConsumed?: () => void;
+  /** Expose step-aware back for shell header / hardware back. */
+  onInternalBackReady?: (handleBack: () => void) => void;
 }
 
 type FlowStep =
@@ -785,16 +794,39 @@ function CallingVendorScreen({
 // MAIN COMPONENT
 // ============================================================================
 
-export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSelection, skipToScheduled }: TeleConsultationRouterProps) {
+export function TeleConsultationRouter({
+  phone,
+  onBack,
+  onNavigate,
+  skipModeSelection,
+  skipToScheduled,
+  restoredSnapshot,
+  onRestoredSnapshotConsumed,
+  onInternalBackReady,
+}: TeleConsultationRouterProps) {
   const instantUiEnabled = isInstantTeleUiEnabled();
   const skipToInstantList = Boolean(skipModeSelection && instantUiEnabled);
-  const initialStep: FlowStep = skipToInstantList
+  const defaultInitialStep: FlowStep = skipToInstantList
     ? 'instant-vendor-list'
     : skipToScheduled || (skipModeSelection && !instantUiEnabled)
       ? 'provider-list'
       : 'mode-selection';
+  const restoredStep = restoredSnapshot?.step as FlowStep | undefined;
+  const initialStep: FlowStep =
+    restoredStep && restoredStep !== 'payment' && restoredStep !== 'confirmation'
+      ? restoredStep
+      : defaultInitialStep;
   const [step, setStep] = useState<FlowStep>(initialStep);
-  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
+  const providerProfileInternalBackRef = useRef<(() => void) | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(
+    (restoredSnapshot?.selectedProvider as Provider | null) ?? null,
+  );
+  const [bookingFormRestore] = useState(() => ({
+    showBookingForm: restoredSnapshot?.showBookingForm,
+    selectedDate: restoredSnapshot?.selectedDate,
+    selectedTime: restoredSnapshot?.selectedTime,
+    selectedPetId: restoredSnapshot?.selectedPetId,
+  }));
   const [selectedService, setSelectedService] = useState<PlatformService | null>(null);
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
@@ -821,6 +853,13 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
     loadCustomerId();
     loadPets();
   }, [phone]);
+
+  useEffect(() => {
+    if (restoredSnapshot) {
+      onRestoredSnapshotConsumed?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- consume snapshot once on mount
+  }, []);
 
   const loadCustomerId = async () => {
     try {
@@ -1027,6 +1066,13 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
         serviceType: 'tele',
       };
       console.log('[TeleConsultationRouter] Navigating to payment with data:', paymentData);
+      saveTeleWizardSnapshot({
+        step: 'instant-pet',
+        selectedProvider: null,
+        selectedInstantVendorId: selectedInstantVendor.vendorId,
+        selectedServiceId: selectedService.serviceId,
+        selectedPet: selectedPet as Record<string, unknown>,
+      });
       onNavigate('payment', paymentData);
     } else {
       console.error('[TeleConsultationRouter] ❌ Missing required data for payment navigation:', {
@@ -1047,6 +1093,13 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
   // Legacy: Called when provider accepts from the queue - navigate to payment
   const handleQueueAccepted = (bookingId: string, meetingId?: string) => {
     if (selectedInstantVendor && selectedService && selectedPet && customerId) {
+      saveTeleWizardSnapshot({
+        step: 'instant-pet',
+        selectedProvider: null,
+        selectedInstantVendorId: selectedInstantVendor.vendorId,
+        selectedServiceId: selectedService.serviceId,
+        selectedPet: selectedPet as Record<string, unknown>,
+      });
       onNavigate('payment', {
         flowType: 'tele-queue-accepted',
         bookingId,
@@ -1068,8 +1121,14 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
   };
 
   const handleProceedToPayment = (bookingData: any) => {
-    // Scheduled tele should pick slot only once (inside provider profile),
-    // then proceed directly to payment.
+    saveTeleWizardSnapshot({
+      step: 'provider-profile',
+      selectedProvider: (selectedProvider as Record<string, unknown> | null) ?? null,
+      showBookingForm: true,
+      selectedDate: bookingData?.bookingDate,
+      selectedTime: bookingData?.bookingTime,
+      selectedPetId: bookingData?.petId,
+    });
     onNavigate('payment', {
       ...bookingData,
       vendorId: bookingData?.vendorId || selectedProvider?.vendorId || selectedProvider?.providerId,
@@ -1082,10 +1141,22 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
   };
 
   const handleAddPet = () => {
+    saveTeleWizardSnapshot({
+      step,
+      selectedProvider: (selectedProvider as Record<string, unknown> | null) ?? null,
+      selectedInstantVendorId: selectedInstantVendor?.vendorId,
+      selectedServiceId: selectedService?.serviceId,
+      selectedPet: (selectedPet as Record<string, unknown> | null) ?? null,
+    });
     onNavigate('add-pet', { returnTo: 'tele-consultation' });
   };
 
-  const handleBack = () => {
+  const handleProviderProfileStepBack = useCallback(() => {
+    setSelectedProvider(null);
+    setStep('provider-list');
+  }, []);
+
+  const handleBack = useCallback(() => {
     switch (step) {
       case 'mode-selection':
         onBack();
@@ -1098,8 +1169,11 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
         }
         break;
       case 'provider-profile':
-        setSelectedProvider(null);
-        setStep('provider-list');
+        if (providerProfileInternalBackRef.current) {
+          providerProfileInternalBackRef.current();
+        } else {
+          handleProviderProfileStepBack();
+        }
         break;
       case 'instant-vendor-list':
         setAvailableNowVendors([]);
@@ -1139,7 +1213,24 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
       default:
         onBack();
     }
-  };
+  }, [
+    step,
+    skipToScheduled,
+    onBack,
+    callingBookingId,
+    selectedInstantVendor,
+    handleProviderProfileStepBack,
+  ]);
+
+  useEffect(() => {
+    if (step !== 'provider-profile') {
+      providerProfileInternalBackRef.current = null;
+    }
+  }, [step]);
+
+  useEffect(() => {
+    onInternalBackReady?.(handleBack);
+  }, [handleBack, onInternalBackReady]);
 
   // Render based on step
   switch (step) {
@@ -1180,9 +1271,14 @@ export function TeleConsultationRouter({ phone, onBack, onNavigate, skipModeSele
           provider={selectedProvider}
           category="vet"
           serviceStyle="tele"
-          onBack={handleBack}
+          onBack={handleProviderProfileStepBack}
+          onInternalBackReady={(fn) => { providerProfileInternalBackRef.current = fn; }}
           onNavigate={onNavigate}
           onProceedToPayment={handleProceedToPayment}
+          initialShowBookingForm={bookingFormRestore.showBookingForm}
+          initialSelectedDate={bookingFormRestore.selectedDate}
+          initialSelectedTime={bookingFormRestore.selectedTime}
+          initialSelectedPetId={bookingFormRestore.selectedPetId}
         />
       );
 
