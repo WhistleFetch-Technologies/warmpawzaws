@@ -1,16 +1,19 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Package } from 'lucide-react';
 import { CustomerShopOrdersScreen } from '@/components/customer/CustomerShopOrdersScreen';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { goBackOrReplace } from '@/lib/go-back-or-replace';
+import { useRouter } from 'next/navigation';
 
-export default function OrdersPage() {
+function OrdersPageContent() {
   const router = useRouter();
-  const commerceEnabled = isCustomerEcommerceEnabled();
+  const searchParams = useSearchParams();
+  const expand = searchParams.get('expand');
 
-  if (!commerceEnabled) {
+  if (!isCustomerEcommerceEnabled()) {
     return (
       <div className="relative flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-orange-50 via-white to-amber-50 px-4">
         <button
@@ -32,5 +35,19 @@ export default function OrdersPage() {
     );
   }
 
-  return <CustomerShopOrdersScreen />;
+  return <CustomerShopOrdersScreen initialExpandedOrderId={expand} />;
+}
+
+export default function OrdersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto flex min-h-screen w-full max-w-customer items-center justify-center bg-[#FAF6F0]">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-orange-200 border-t-orange-500" />
+        </div>
+      }
+    >
+      <OrdersPageContent />
+    </Suspense>
+  );
 }

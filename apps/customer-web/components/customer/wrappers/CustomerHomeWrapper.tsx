@@ -53,6 +53,7 @@ import {
 import { pickCustomerVendorAccountId, firstNonEmptyString } from '@warmpawz/shared-types';
 import { useNotificationService } from '../useNotificationService';
 import { EcommerceRouteRedirect } from '@/components/ecommerce/EcommerceRouteRedirect';
+import { ProfileOrdersRedirect } from '@/components/ecommerce/ProfileOrdersRedirect';
 import {
   CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE,
   isCustomerEcommerceEnabled,
@@ -64,7 +65,7 @@ import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMes
 import { isNewHomeUiEnabled } from '@/lib/customer-new-home-ui-flag';
 
 // ============================================================================
-// Lazy-loaded shell screens (pattern aligned with components/customer/CustomerHomeWrapper.tsx)
+// Lazy-loaded shell screens
 // ============================================================================
 const LoadingSpinner = () => (
   <div className="flex min-h-[200px] items-center justify-center">
@@ -128,7 +129,6 @@ const RelocationServicesLanding = dynamic(() => import('../RelocationServicesLan
 const ResortServicesLanding = dynamic(() => import('../ResortServicesLanding').then((m) => ({ default: m.ResortServicesLanding })), { loading: LoadingSpinner });
 const PetHolidayServicesLanding = dynamic(() => import('../PetHolidayServicesLanding').then((m) => ({ default: m.PetHolidayServicesLanding })), { loading: LoadingSpinner });
 const ProductDetailPage = dynamic(() => import('../ProductDetailPage').then((m) => ({ default: m.ProductDetailPage })), { loading: LoadingSpinner });
-const OrderSuccessView = dynamic(() => import('../OrderSuccessView').then((m) => ({ default: m.OrderSuccessView })), { loading: LoadingSpinner });
 const OrderHistoryPage = dynamic(() => import('../../shop/OrderHistoryPage').then((m) => ({ default: m.OrderHistoryPage })), { loading: LoadingSpinner });
 const AddressBookPage = dynamic(() => import('../../shop/AddressBookPage').then((m) => ({ default: m.AddressBookPage })), { loading: LoadingSpinner });
 const WalletPage = dynamic(() => import('../../shop/WalletPage').then((m) => ({ default: m.WalletPage })), { loading: LoadingSpinner });
@@ -3654,7 +3654,9 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'checkout') {
     return <EcommerceRouteRedirect href="/checkout?step=payment" />;
   }
-  if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); setCurrentScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); setCurrentScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); setCurrentScreen('order_history'); }} />;
+  if (currentScreen === 'order_success' && currentOrderId && isCustomerEcommerceEnabled()) {
+    return <ProfileOrdersRedirect orderId={currentOrderId} />;
+  }
   if (currentScreen === 'order_history')
     return (
       <CustomerScreenWrapper

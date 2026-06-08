@@ -1,6 +1,6 @@
 /**
- * Shared marketplace cart pricing (ShoppingCartView + CheckoutView).
- * Business rules match ShoppingCartView: per-vendor delivery, coupons, GST via tax-system.
+ * Shared marketplace cart pricing for `/cart` and checkout routes.
+ * Business rules: per-vendor delivery, coupons, GST via tax-system.
  */
 import { calculateTax } from '@/lib/tax-system';
 import type { TaxResult } from '@/lib/tax-system/types';

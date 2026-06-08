@@ -22,6 +22,7 @@ import {
 } from '@/lib/ecommerce/checkout-order-storage';
 import { getShippingOptionLabel } from '@/lib/ecommerce/checkout-shipping-options';
 import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
+import { navigateToProfileShopOrders } from '@/lib/go-back-or-replace';
 import { toast } from 'sonner';
 
 const TIMELINE_STEPS = [
@@ -102,6 +103,11 @@ export function EcommerceOrderSuccessScreen() {
   }
 
   const displayId = order.orderNumber || order.orderId;
+
+  const goToProfileOrders = (expandCurrent = true) => {
+    clearCheckoutOrderResponse();
+    navigateToProfileShopOrders(router, expandCurrent ? order.orderId : undefined);
+  };
 
   return (
     <div className={`${ECOMMERCE_PAGE_SHELL} pb-8`}>
@@ -186,7 +192,7 @@ export function EcommerceOrderSuccessScreen() {
 
         <div className="flex flex-col gap-2">
           <Button
-            onClick={() => router.push(`/orders/${order.orderId}/tracking`)}
+            onClick={() => goToProfileOrders(true)}
             className="w-full h-12 bg-[#FF8C42] hover:bg-[#FF7A29] text-white font-semibold rounded-xl"
           >
             <Package className="w-4 h-4 mr-2" />
@@ -194,10 +200,7 @@ export function EcommerceOrderSuccessScreen() {
           </Button>
           <Button
             variant="outline"
-            onClick={() => {
-              clearCheckoutOrderResponse();
-              router.replace('/orders');
-            }}
+            onClick={() => goToProfileOrders(true)}
             className="w-full h-11 rounded-xl"
           >
             View my orders
