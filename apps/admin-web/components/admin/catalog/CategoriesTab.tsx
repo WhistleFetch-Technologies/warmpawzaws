@@ -1006,7 +1006,7 @@ export function CategoriesTab() {
       <div className="grid grid-cols-4 gap-3 mb-4">
         <div className="bg-blue-50 rounded-lg p-3 text-center">
           <p className="text-2xl font-bold text-blue-600">{categories.length}</p>
-          <p className="text-xs text-blue-600">Services</p>
+          <p className="text-xs text-blue-600">Categories</p>
         </div>
         <div className="bg-orange-50 rounded-lg p-3 text-center">
           <p className="text-2xl font-bold text-orange-600">{categories.filter(c => c.specializationCount > 0).length}</p>

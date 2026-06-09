@@ -318,6 +318,9 @@ function mealOrderBucket(o: MealOrder): VendorMealOrderBucket {
   return 'today';
 }
 
+const START_PREP_UPCOMING_TITLE =
+  "Start preparing is only available under Today & yesterday. Future drop-offs unlock on their scheduled date.";
+
 export default function NutritionistDashboard({ vendorId, vendorName }: NutritionistDashboardProps) {
   const router = useRouter();
   const { subscribeToMealSubscriptionDeliveryBroadcast } = useVendorWebSocket(vendorId);
@@ -346,7 +349,7 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   };
   const [acceptedOrderIds, setAcceptedOrderIds] = useState<Set<string>>(getStoredAcceptedOrders());
   /** Which bucket’s order list is shown under the stats on the Orders tab. */
-  const [ordersBucketFilter, setOrdersBucketFilter] = useState<OrdersTabBucketFilter>('upcoming');
+  const [ordersBucketFilter, setOrdersBucketFilter] = useState<OrdersTabBucketFilter>('today');
   const [ordersFetchError, setOrdersFetchError] = useState<string | null>(null);
   
   // Helper to update both state and localStorage
@@ -485,6 +488,20 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   }, [fetchProducts, fetchOrders]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    if (tab === 'orders') {
+      setActiveTab('orders');
+      setOrdersBucketFilter('today');
+    }
+  }, []);
+
+  const openOrdersTab = useCallback(() => {
+    setActiveTab('orders');
+    setOrdersBucketFilter('today');
+  }, []);
+
+  useEffect(() => {
     if (activeTab !== 'orders') return;
     const id = window.setInterval(() => {
       void fetchOrders();
@@ -564,6 +581,10 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
   };
 
   const requestStartPreparing = (order: MealOrder) => {
+    if (mealOrderBucket(order) !== 'today') {
+      toast.error('Start preparing is only available for today’s orders.');
+      return;
+    }
     const scheduling = vendorMealPrepSchedulingFromOrder(order as Record<string, unknown>);
     if (!confirmVendorEarlyMealPrep(scheduling)) return;
     void handleUpdateOrderStatus(order.id, 'preparing');
@@ -586,14 +607,16 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       } else if (status === 'preparing') {
         // When vendor starts preparing, they've implicitly accepted
         updateAcceptedOrderIds(prev => new Set(prev).add(orderId));
+        toast.success('Preparation started');
+      } else if (status === 'ready_for_pickup') {
         if (res?.dispatch?.ok) {
           toast.success(
             res.dispatch.idempotent
-              ? 'Preparing — delivery partner already scheduled'
-              : 'Preparing started — delivery partner scheduled'
+              ? 'Ready for pickup — delivery partner already scheduled'
+              : 'Ready for pickup — delivery partner scheduled'
           );
         } else {
-          toast.success('Order status updated');
+          toast.success('Marked ready for pickup');
         }
       } else {
         toast.success('Order status updated');
@@ -661,6 +684,15 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
       (isSessionSub || isParentSub) &&
       vendorReadyStatuses.includes(String(order.status || '').toLowerCase()) &&
       !order.prep_started_at;
+    const allowStartPreparing = mealOrderBucket(order) === 'today';
+    const startPrepTitle = !allowStartPreparing
+      ? START_PREP_UPCOMING_TITLE
+      : prepScheduling.isEarlyPrep
+        ? 'Earlier than suggested — you can still start preparing'
+        : undefined;
+    const startPrepButtonClass = allowStartPreparing
+      ? 'flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white'
+      : 'flex-1 py-2 rounded-lg flex items-center justify-center gap-1 bg-slate-200 text-slate-500 cursor-not-allowed';
 
     return (
       <div key={order.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow">
@@ -747,8 +779,9 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
             {isPidgeLogistics &&
               ['preparing', 'ready_for_pickup', 'picked_up', 'on_the_way'].includes(badgeCanon) && (
                 <p className="text-xs text-slate-600 w-full rounded-lg bg-sky-50 border border-sky-100 px-3 py-2">
-                  Pidge delivery: after &quot;Start preparing&quot;, pickup and delivery stages update automatically from
-                  Pidge — no need to notify logistics or mark delivered manually.
+                  Pidge delivery: tap &quot;Ready for pickup&quot; when the meal is packed — we schedule the rider then.
+                  Pickup and delivery stages update automatically from Pidge — no need to notify logistics or mark
+                  delivered manually.
                 </p>
               )}
             {order.status === 'paused' && (
@@ -794,13 +827,12 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
             {sessionReadyForPrep && (
               <button
                 type="button"
-                title={
-                  prepScheduling.isEarlyPrep
-                    ? 'Earlier than suggested — you can still start preparing'
-                    : undefined
-                }
-                onClick={() => requestStartPreparing(order)}
-                className="flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white"
+                disabled={!allowStartPreparing}
+                title={startPrepTitle}
+                onClick={() => {
+                  if (allowStartPreparing) requestStartPreparing(order);
+                }}
+                className={startPrepButtonClass}
               >
                 {Icons.utensils}
                 <span className="text-sm">Start Preparing</span>
@@ -826,13 +858,12 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 </button>
                 <button
                   type="button"
-                  title={
-                    prepScheduling.isEarlyPrep
-                      ? 'Earlier than suggested — you can still start preparing'
-                      : undefined
-                  }
-                  onClick={() => requestStartPreparing(order)}
-                  className="flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white"
+                  disabled={!allowStartPreparing}
+                  title={startPrepTitle}
+                  onClick={() => {
+                    if (allowStartPreparing) requestStartPreparing(order);
+                  }}
+                  className={startPrepButtonClass}
                 >
                   {Icons.utensils}
                   <span className="text-sm">Start Preparing</span>
@@ -861,13 +892,12 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                 <>
                   <button
                     type="button"
-                    title={
-                      prepScheduling.isEarlyPrep
-                        ? 'Earlier than suggested — you can still start preparing'
-                        : undefined
-                    }
-                    onClick={() => requestStartPreparing(order)}
-                    className="flex-1 py-2 rounded-lg transition-colors flex items-center justify-center gap-1 bg-indigo-600 hover:bg-indigo-700 text-white"
+                    disabled={!allowStartPreparing}
+                    title={startPrepTitle}
+                    onClick={() => {
+                      if (allowStartPreparing) requestStartPreparing(order);
+                    }}
+                    className={startPrepButtonClass}
                   >
                     {Icons.utensils}
                     <span className="text-sm">Start Preparing</span>
@@ -1009,7 +1039,13 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
             ].map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
+                onClick={() => {
+                  if (tab.id === 'orders') {
+                    openOrdersTab();
+                  } else {
+                    setActiveTab(tab.id as 'products' | 'orders' | 'analytics');
+                  }
+                }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
                     ? 'bg-white text-orange-600 shadow-md'
                     : 'bg-white/20 text-white hover:bg-white/30'
@@ -1206,6 +1242,11 @@ export default function NutritionistDashboard({ vendorId, vendorName }: Nutritio
                   return (
                     <div className="space-y-3 pt-2">
                       <h3 className="text-sm font-semibold text-slate-800 px-1">{section.title}</h3>
+                      {ordersBucketFilter === 'upcoming' && section.list.length > 0 ? (
+                        <p className="text-xs text-slate-500 px-1">
+                          Start preparing is available only under Today &amp; yesterday when the drop-off date arrives.
+                        </p>
+                      ) : null}
                       {section.list.length === 0 ? (
                         <p className="text-sm text-slate-400 px-1 py-1">{section.empty}</p>
                       ) : (

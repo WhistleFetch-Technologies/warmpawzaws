@@ -41,6 +41,17 @@ function handler(event) {
     { pattern: /^\/orders\/[^/]+\/tracking$/, rewrite: '/orders/placeholder/tracking.html' },
     // Next static export only emits pet-boarding/vendor/placeholder.html; real IDs hydrate client-side.
     { pattern: /^\/pet-boarding\/vendor\/[^/]+$/, rewrite: '/pet-boarding/vendor/placeholder.html' },
+    // Vendor profile share deep links — /vendor/[uuid] → placeholder shell (client reads real id from URL).
+    { pattern: /^\/vendor\/[^/]+$/, rewrite: '/vendor/placeholder.html' },
+    // Banner persona vendor links — /vet/Clinic Name?vendorId=…
+    { pattern: /^\/vet\/[^/]+$/, rewrite: '/vet/placeholder.html' },
+    { pattern: /^\/grooming\/[^/]+$/, rewrite: '/grooming/placeholder.html' },
+    { pattern: /^\/training\/[^/]+$/, rewrite: '/training/placeholder.html' },
+    { pattern: /^\/boarding\/[^/]+$/, rewrite: '/boarding/placeholder.html' },
+    { pattern: /^\/walker\/[^/]+$/, rewrite: '/walker/placeholder.html' },
+    { pattern: /^\/nutritionist\/[^/]+$/, rewrite: '/nutritionist/placeholder.html' },
+    // Shop product detail — static export only builds /shop/placeholder; real ids hydrate client-side.
+    { pattern: /^\/shop\/[^/]+$/, rewrite: '/shop/placeholder.html' },
   ];
 
   for (var i = 0; i < dynamicRoutes.length; i++) {

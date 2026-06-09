@@ -1,6 +1,6 @@
 /**
- * Shared marketplace cart pricing (ShoppingCartView + CheckoutView).
- * Business rules match ShoppingCartView: per-vendor delivery, coupons, GST via tax-system.
+ * Shared marketplace cart pricing for `/cart` and checkout routes.
+ * Business rules: per-vendor delivery, coupons, GST via tax-system.
  */
 import { calculateTax } from '@/lib/tax-system';
 import type { TaxResult } from '@/lib/tax-system/types';
@@ -89,11 +89,17 @@ export const VENDOR_DELIVERY_CONFIG: Record<
   default: { name: 'Warmpawz Store', deliveryTime: '2-3 days', freeDeliveryMin: 999 },
 };
 
-const STANDARD_DELIVERY_FEE = 60;
-const EXPRESS_DELIVERY_FEE = 150;
-const SCHEDULED_DELIVERY_FEE = 80;
+export const ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL = 1000;
+export const ECOMMERCE_DEFAULT_DELIVERY_FEE = 150;
+
 const GIFT_WRAP_PER_ITEM = 25;
 const PROTECTION_RATE = 0.02;
+
+/** Order-level delivery: free when subtotal (after discounts) >= ₹1000, else ₹150. */
+export function computeEcommerceDeliveryFee(subtotalAfterDiscount: number): number {
+  const subtotal = Number(subtotalAfterDiscount) || 0;
+  return subtotal >= ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL ? 0 : ECOMMERCE_DEFAULT_DELIVERY_FEE;
+}
 
 export function groupCartLinesByVendor(
   cart: PricingCartLine[]
@@ -114,19 +120,15 @@ export function getVendorSubtotal(vendorItems: PricingCartLine[]): number {
 }
 
 export function calculateVendorDeliveryFee(
-  vendorId: string,
-  vendorTotal: number,
-  options: CartPricingOptions
+  _vendorId: string,
+  _vendorTotal: number,
+  _options: CartPricingOptions,
+  orderSubtotalAfterDiscount: number
 ): number {
-  const vendor = VENDOR_DELIVERY_CONFIG[vendorId] || VENDOR_DELIVERY_CONFIG.default;
-  const appliedCoupons = options.appliedCoupons ?? [];
-  const hasDeliveryFreeCoupon = appliedCoupons.some((c) => c.type === 'delivery');
-  if (hasDeliveryFreeCoupon || vendorTotal >= vendor.freeDeliveryMin) return 0;
-
-  const speed = options.deliverySpeed ?? 'standard';
-  if (speed === 'express') return EXPRESS_DELIVERY_FEE;
-  if (speed === 'scheduled') return SCHEDULED_DELIVERY_FEE;
-  return STANDARD_DELIVERY_FEE;
+  void _vendorId;
+  void _vendorTotal;
+  void _options;
+  return computeEcommerceDeliveryFee(orderSubtotalAfterDiscount);
 }
 
 export function computeSellerPromotionDiscount(
@@ -171,24 +173,28 @@ export function computeCartPricing(
     couponDiscount + sellerPromotionDiscount
   );
   const subtotalAfterDiscount = Math.max(0, lineSubtotal - discount);
+  const deliveryFees = computeEcommerceDeliveryFee(subtotalAfterDiscount);
+  const freeDeliveryGap =
+    subtotalAfterDiscount >= ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL
+      ? 0
+      : ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL - subtotalAfterDiscount;
 
   const byVendor: VendorPricingRow[] = Object.keys(itemsByVendor).map((vendorId) => {
     const vendorItems = itemsByVendor[vendorId];
     const subtotal = getVendorSubtotal(vendorItems);
-    const config = VENDOR_DELIVERY_CONFIG[vendorId] || VENDOR_DELIVERY_CONFIG.default;
-    const deliveryFee = calculateVendorDeliveryFee(vendorId, subtotal, options);
-    const freeDeliveryGap =
-      deliveryFee === 0 ? 0 : Math.max(0, config.freeDeliveryMin - subtotal);
     return {
       vendorId,
       subtotal,
-      deliveryFee,
-      freeDeliveryMin: config.freeDeliveryMin,
-      freeDeliveryGap,
+      deliveryFee: 0,
+      freeDeliveryMin: ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL,
+      freeDeliveryGap: 0,
     };
   });
 
-  const deliveryFees = byVendor.reduce((sum, row) => sum + row.deliveryFee, 0);
+  if (byVendor.length > 0) {
+    byVendor[0].deliveryFee = deliveryFees;
+    byVendor[0].freeDeliveryGap = freeDeliveryGap;
+  }
   const giftWrapFee = options.giftWrap ? itemCount * GIFT_WRAP_PER_ITEM : 0;
   const protectionFee = options.productProtection ? lineSubtotal * PROTECTION_RATE : 0;
 
@@ -207,11 +213,6 @@ export function computeCartPricing(
   const total =
     subtotalAfterDiscount + deliveryFees + giftWrapFee + protectionFee + taxAmount;
 
-  const freeDeliveryGap =
-    byVendor.length > 0
-      ? Math.min(...byVendor.map((v) => v.freeDeliveryGap).filter((g) => g > 0), Infinity)
-      : 0;
-
   return {
     lineSubtotal,
     discount,
@@ -224,7 +225,7 @@ export function computeCartPricing(
     taxAmount,
     taxResult,
     total,
-    freeDeliveryGap: Number.isFinite(freeDeliveryGap) ? freeDeliveryGap : 0,
+    freeDeliveryGap,
     byVendor,
     itemCount,
   };

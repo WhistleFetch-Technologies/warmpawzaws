@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import { customerPathToScreen } from '@/lib/promotion-navigation';
 import { isVendorBannerCta } from '@/lib/banner-cta-parse';
+import { parseBannerInformationalFromMetadata } from '@/lib/banner-cta-target';
 import { iconForCustomerHomeApiBanner, normalizeCustomerBannerTarget } from '@/lib/customer-banner-icons';
 import { defaultBanners } from '../../homepage/constants';
 import type { HomeCarouselBanner } from '../types';
@@ -15,6 +16,7 @@ function mapApiBannerRecord(
   const ctaLink = screenFromSlash ?? rawCta;
   const explicitComingSoonFalse = b.comingSoon === false || b.coming_soon === false;
   const comingSoon = explicitComingSoonFalse ? false : Boolean(b.comingSoon || b.coming_soon);
+  const isInformational = parseBannerInformationalFromMetadata(b.metadata);
   return {
     id: b.id as string | number,
     title: String(b.title ?? ''),
@@ -28,6 +30,7 @@ function mapApiBannerRecord(
     navTarget: (b.navTarget as HomeCarouselBanner['navTarget']) ?? null,
     metadata: b.metadata ?? null,
     comingSoon,
+    isInformational,
   };
 }
 

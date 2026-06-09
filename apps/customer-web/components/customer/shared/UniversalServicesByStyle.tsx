@@ -17,7 +17,8 @@ import { ServiceDashboardHeader } from './ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
-import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
+import { resolveVendorProfileHeroGallery, resolveCustomerVendorAmenities } from '@/lib/vendor-display-media';
+import { AmenitiesSection } from './AmenitiesSection';
 import { VendorHeroPhotoCarousel } from './VendorHeroPhotoCarousel';
 import {
   getWebGroomingTrainingEmbedVendorId,
@@ -38,6 +39,7 @@ import {
   normalizeRatingCount,
 } from '@/lib/rating-display';
 import { resolveVendorRating } from '@/lib/resolve-vendor-rating';
+import { roleIdToSharePersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 
 interface UniversalServicesByStyleProps {
   phone: string;
@@ -825,17 +827,20 @@ export function UniversalServicesByStyle({
   }, 0);
 
   const handleShare = async () => {
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: profileProvider?.name || `${config.roleName} Provider`,
-          text: `Check out ${profileProvider?.name || `this ${config.roleName.toLowerCase()} provider`} on Warmpawz`,
-          url: window.location.href
-        });
-      }
-    } catch (error) {
-      console.error('Error sharing:', error);
-    }
+    const shareVendorId =
+      vendorId ||
+      pickCustomerVendorAccountId(profileProvider ?? {}) ||
+      profileProvider?.vendorId ||
+      profileProvider?.providerId;
+    if (!shareVendorId) return;
+    await shareVendorProfile({
+      title: profileProvider?.name || `${config.roleName} Provider`,
+      text: `Check out ${profileProvider?.name || `this ${config.roleName.toLowerCase()} provider`} on Warmpawz`,
+      vendorId: String(shareVendorId),
+      persona: roleIdToSharePersona(roleId),
+      vendorName: profileProvider?.name,
+      serviceStyle,
+    });
   };
 
   if (loading) {
@@ -854,7 +859,12 @@ export function UniversalServicesByStyle({
     const providerName = vendor?.business_name || vendor?.name || profileProvider.name;
     const photos = resolveVendorProfileHeroGallery({ facility, vendor, profileProvider });
     const hasPhotos = photos.length > 0;
-    const amenities = facility?.amenities || vendor?.amenities || [];
+    const { amenities, customAmenities } = resolveCustomerVendorAmenities({
+      ...(facility && typeof facility === 'object' ? facility : {}),
+      ...(vendor && typeof vendor === 'object' ? vendor : {}),
+      ...(profileProvider.amenities ? { amenities: profileProvider.amenities } : {}),
+    });
+    const hasAmenities = amenities.length > 0 || customAmenities.length > 0;
     const address = vendor?.address || facility?.address || profileProvider.address || '';
     const phoneNumber = vendor?.phone || facility?.phone || profileProvider.phone || '';
     const description = vendor?.description || facility?.description || `${providerName} provides professional ${config.category} services.`;
@@ -1025,21 +1035,10 @@ export function UniversalServicesByStyle({
             </div>
 
             {/* Amenities/Features */}
-            {amenities.length > 0 && (
+            {hasAmenities && (
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Features</h3>
-                <div className="flex flex-wrap gap-2">
-                  {amenities.slice(0, 6).map((amenity: string, idx: number) => (
-                    <span key={idx} className="px-3 py-1.5 bg-orange-50 text-orange-700 rounded-lg text-xs font-medium border border-orange-100">
-                      {amenity}
-                    </span>
-                  ))}
-                  {amenities.length > 6 && (
-                    <span className="px-3 py-1.5 bg-gray-100 text-gray-600 rounded-lg text-xs font-medium">
-                      +{amenities.length - 6} more
-                    </span>
-                  )}
-                </div>
+                <AmenitiesSection amenities={amenities} customAmenities={customAmenities} compact />
               </div>
             )}
           </div>
@@ -1113,17 +1112,10 @@ export function UniversalServicesByStyle({
                 )}
 
                 {/* Full Amenities List */}
-                {amenities.length > 0 && (
+                {hasAmenities && (
                   <div>
                     <h3 className="text-lg font-bold text-gray-900 mb-3">All Features</h3>
-                    <div className="grid grid-cols-2 gap-2">
-                      {amenities.map((amenity: string, idx: number) => (
-                        <div key={idx} className="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                          <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
-                          <span className="text-sm text-gray-700">{amenity}</span>
-                        </div>
-                      ))}
-                    </div>
+                    <AmenitiesSection amenities={amenities} customAmenities={customAmenities} />
                   </div>
                 )}
 

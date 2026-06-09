@@ -487,9 +487,24 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
   // GET /customer/meal-plan-orders?customerId=... - MUST come before /customer/:customerId
   app.get('/customer/meal-plan-orders', async (c) => {
     try {
-      const customerId = c.req.query('customerId');
+      let customerId = String(c.req.query('customerId') || '').trim();
+      const phone = String(c.req.query('phone') || '').trim();
+
+      if (phone) {
+        const row = await findCustomerByPhone(phone);
+        const phoneCustomerId = row?.id ? String(row.id) : '';
+        if (phoneCustomerId) {
+          if (customerId && customerId !== phoneCustomerId) {
+            console.warn(
+              `[meal-plan-orders] customerId/phone mismatch queryCustomerId=${customerId} phoneCustomerId=${phoneCustomerId}`
+            );
+          }
+          customerId = phoneCustomerId;
+        }
+      }
+
       if (!customerId) {
-        return c.json({ success: false, error: 'customerId is required' }, 400);
+        return c.json({ success: false, error: 'customerId or phone is required' }, 400);
       }
 
       await expireMealPaymentHolds({ limit: 30, requestId: randomUUID() }).catch((e) =>
@@ -499,27 +514,31 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       const allOrders: any[] = [];
 
       // 1. From meal_orders (MealOrderCheckout flow)
-      const mealResult = await query(
-        `SELECT mo.*,
-                COALESCE(
-                  NULLIF(TRIM(mp.name), ''),
-                  NULLIF(TRIM(mp.plan_name), ''),
-                  NULLIF(TRIM(prod.name), '')
-                ) AS meal_plan_name,
-                mp.plan_name AS mp_plan_name,
-                mp.price_per_meal AS mp_price_per_meal,
-                v.business_name AS vendor_name,
-                p.name AS pet_name
-         FROM meal_orders mo
-         LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
-         LEFT JOIN products prod ON prod.id = mo.meal_plan_id
-           AND prod.category IN ('meal_plan', 'nutrition', 'food')
-         LEFT JOIN vendors v ON mo.vendor_id = v.id
-         LEFT JOIN pets p ON mo.pet_id = p.id
-         WHERE mo.customer_id = $1
-         ORDER BY mo.created_at DESC`,
-        [customerId]
-      ).catch(() => ({ rows: [] }));
+      let mealResult: { rows?: unknown[] };
+      try {
+        mealResult = await query(
+          `SELECT mo.*,
+                  COALESCE(NULLIF(TRIM(mp.name), ''), NULLIF(TRIM(mp.plan_name), '')) AS meal_plan_name,
+                  mp.plan_name AS mp_plan_name,
+                  mp.price_per_meal AS mp_price_per_meal,
+                  mp.thumbnail_url AS mp_thumbnail_url,
+                  v.business_name AS vendor_name,
+                  p.name AS pet_name
+           FROM meal_orders mo
+           LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
+           LEFT JOIN vendors v ON mo.vendor_id = v.id
+           LEFT JOIN pets p ON mo.pet_id = p.id
+           WHERE mo.customer_id = $1
+           ORDER BY mo.created_at DESC`,
+          [customerId]
+        );
+      } catch (queryErr: unknown) {
+        console.error(
+          '[meal-plan-orders] meal_orders query failed:',
+          queryErr instanceof Error ? queryErr.message : queryErr
+        );
+        mealResult = { rows: [] };
+      }
 
       const safeMoney = (v: unknown) => {
         if (v === null || v === undefined || v === '') return 0;
@@ -532,10 +551,17 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
           price_per_meal: o.mp_price_per_meal,
         };
         const { subtotal, total } = resolveCustomerMealPlanOrderDisplayTotals(o, planForPricing);
-        const refundReview =
-          o.status === 'cancelled'
-            ? await getMealRefundReviewCustomerMetadata(String(o.id))
-            : null;
+        let refundReview = null;
+        if (o.status === 'cancelled') {
+          try {
+            refundReview = await getMealRefundReviewCustomerMetadata(String(o.id));
+          } catch (refundErr: unknown) {
+            console.warn(
+              '[meal-plan-orders] refund review metadata skipped:',
+              refundErr instanceof Error ? refundErr.message : refundErr
+            );
+          }
+        }
         allOrders.push({
           id: o.id,
           order_number: o.order_number || o.id?.toString().slice(-8),
@@ -615,12 +641,19 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
       // Sort by created_at desc
       allOrders.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
-      await enrichSubscriptionRowsWithPresignedMealImages(allOrders);
+      try {
+        await enrichSubscriptionRowsWithPresignedMealImages(allOrders);
+      } catch (enrichErr: unknown) {
+        console.warn(
+          '[meal-plan-orders] image presign skipped:',
+          enrichErr instanceof Error ? enrichErr.message : enrichErr
+        );
+      }
 
       return c.json({ success: true, orders: allOrders });
     } catch (error: any) {
       console.error('[meal-plan-orders] Error:', error);
-      return c.json({ success: true, orders: [] });
+      return c.json({ success: false, error: error?.message || 'Failed to load meal plan orders', orders: [] }, 500);
     }
   });
 

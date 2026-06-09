@@ -20,6 +20,7 @@ import {
 } from '@/lib/vendor-package-purchase-nav';
 import { VendorRatingDisplay } from '@/components/customer/shared/VendorRatingDisplay';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
+import { shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 
@@ -603,17 +604,20 @@ export function GroomingServicesByStyle({
   }, 0);
 
   const handleShare = async () => {
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: profileProvider?.name || 'Grooming Salon',
-          text: `Check out ${profileProvider?.name || 'this grooming salon'} on Warmpawz`,
-          url: window.location.href
-        });
-      }
-    } catch (error) {
-      console.error('Error sharing:', error);
-    }
+    const shareVendorId =
+      vendorId ||
+      pickCustomerVendorAccountId(profileProvider ?? {}) ||
+      profileProvider?.vendorId ||
+      profileProvider?.providerId;
+    if (!shareVendorId) return;
+    await shareVendorProfile({
+      title: profileProvider?.name || 'Grooming Salon',
+      text: `Check out ${profileProvider?.name || 'this grooming salon'} on Warmpawz`,
+      vendorId: String(shareVendorId),
+      persona: 'grooming',
+      vendorName: profileProvider?.name,
+      serviceStyle,
+    });
   };
 
   if (loading) {

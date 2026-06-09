@@ -1,0 +1,61 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Dev: Admin Web",
+      "type": "shell",
+      "command": "npm run dev:admin",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "warmpawz-dev",
+        "clear": true
+      },
+      "runOptions": { "instanceLimit": 1 }
+    },
+    {
+      "label": "Dev: Vendor Web",
+      "type": "shell",
+      "command": "npm run dev:vendor",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "warmpawz-dev",
+        "clear": true
+      },
+      "runOptions": { "instanceLimit": 1 }
+    },
+    {
+      "label": "Dev: Customer Web",
+      "type": "shell",
+      "command": "npm run dev:customer",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "warmpawz-dev",
+        "clear": true
+      },
+      "runOptions": { "instanceLimit": 1 }
+    },
+    {
+      "label": "Dev: Local API + Admin",
+      "type": "shell",
+      "command": "npm run local:admin",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "warmpawz-dev",
+        "clear": true
+      },
+      "runOptions": { "instanceLimit": 1 }
+    }
+  ]
+}

@@ -79,23 +79,99 @@ function servicesPayloadRoot(svcRes: Record<string, any>): Record<string, any> {
   return svcRes;
 }
 
+const NON_WALKER_CATEGORY_HINTS = [
+  'groom',
+  'train',
+  'vet',
+  'veterinar',
+  'diagnostic',
+  'nutrition',
+  'meal',
+  'ambulance',
+  'board',
+  'sitting',
+  'sitter',
+  'daycare',
+  'cafe',
+  'counsel',
+  'behavi',
+];
+
+const NON_WALKER_NAME_HINTS = [
+  'endocrine',
+  'fluid',
+  ' iv ',
+  'surgery',
+  'vaccin',
+  'x-ray',
+  'xray',
+  'blood',
+  'dental',
+  'dermat',
+  'cardio',
+  'neuro',
+  'ortho',
+];
+
+function categoryLooksLikeWalking(category: string): boolean {
+  const c = category.replace(/-/g, ' ').trim().toLowerCase();
+  if (!c) return false;
+  if (/\b(board|boarding)\b/.test(c)) return false;
+  if (/\b(walking|dog walking|dog walker|dog_walker|dog_walk|pet walker|pet walking)\b/.test(c)) {
+    return true;
+  }
+  if (/\bwalker\b/.test(c) && !/\bvet\b/.test(c)) return true;
+  if (/\bwalk\b/.test(c) && !/\bboard/.test(c)) return true;
+  return false;
+}
+
+function nameLooksLikeWalk(name: string): boolean {
+  const n = name.trim().toLowerCase();
+  if (!n || n.includes('walk-in')) return false;
+  return /(dog\s*walk|pet\s*walk|\bwalk\b|stroll|outing|dog park|park visit|leash|perimeter)/.test(n);
+}
+
 /** True if this row should appear in the walker “walk options” modal (full-catalog fetch, client filter). */
 export function rowQualifiesForWalkingModal(s: Record<string, any> | null | undefined): boolean {
   if (!s) return false;
   const meta = s.metadata && typeof s.metadata === 'object' ? (s.metadata as Record<string, unknown>) : {};
-  const c = String(s.category ?? s.categorySlug ?? (meta.category as string) ?? '').toLowerCase();
-  if (c.includes('groom') && !c.includes('walk')) return false;
-  if ((c.includes('board') || c.includes('sitting')) && !c.includes('walk')) return false;
-  if (c.includes('train') && !c.includes('walk')) return false;
-  if (c.includes('vet') && !c.includes('walk')) return false;
-  if (c.includes('walk') || c.includes('dog_walk') || c === 'walking' || c.includes('dog walking')) return true;
-  const n = String(s.name ?? s.service_name ?? s.serviceName ?? '').toLowerCase();
-  const nameLooksLikeWalk = /(walk|stroll|outing|dog park|park visit|leash|perimeter)/.test(n);
-  if (nameLooksLikeWalk && !n.includes('walk-in')) return true;
-  const st = String(s.serviceStyle ?? s.service_style ?? (meta.serviceStyle as string) ?? '').toLowerCase();
-  if (st === 'outdoor' || st === 'at_home' || st === 'home' || st === 'home_visit') return true;
-  if (!st) return false;
+  const c = String(s.category ?? s.categorySlug ?? (meta.category as string) ?? '')
+    .trim()
+    .toLowerCase();
+  const n = String(s.name ?? s.service_name ?? s.serviceName ?? '').trim().toLowerCase();
+  const metaHub = String(
+    meta.bookingHub ?? meta.booking_hub ?? meta.serviceHub ?? meta.service_hub ?? ''
+  )
+    .trim()
+    .toLowerCase();
+
+  if (c && NON_WALKER_CATEGORY_HINTS.some((h) => c.includes(h)) && !categoryLooksLikeWalking(c)) {
+    return false;
+  }
+  if (NON_WALKER_NAME_HINTS.some((h) => n.includes(h)) && !nameLooksLikeWalk(n)) {
+    return false;
+  }
+  if (categoryLooksLikeWalking(c)) return true;
+  if (metaHub.includes('walk')) return true;
+  if (nameLooksLikeWalk(n)) return true;
+
+  if (isWalkerVendorServicePackageRow(s)) {
+    return categoryLooksLikeWalking(c) || nameLooksLikeWalk(n) || metaHub.includes('walk');
+  }
+
   return false;
+}
+
+/** Legacy `service_packages` rows use package_name / package category field names. */
+export function servicePackageQualifiesForWalkingModal(
+  r: Record<string, any> | null | undefined
+): boolean {
+  if (!r) return false;
+  return rowQualifiesForWalkingModal({
+    ...r,
+    name: r.name ?? r.package_name ?? r.packageName,
+    category: r.category ?? r.package_category ?? r.packageCategory,
+  });
 }
 
 /**
@@ -155,18 +231,19 @@ export async function fetchWalkerVendorCatalogMerged(
     : `${baseCustomerServices}?category=walking`;
   const fullCatalog = phoneQuery ? `${baseCustomerServices}?${phoneQuery}` : baseCustomerServices;
 
+  const walkFilter = rowQualifiesForWalkingModal;
   const [fromWalkingCategory, fromFullRaw] = await Promise.all([
-    fetchVendorServicesRows(get, withWalkingCategory, vendorId),
-    fetchVendorServicesRows(get, fullCatalog, vendorId),
+    fetchVendorServicesRows(get, withWalkingCategory, vendorId, { filterRow: walkFilter }),
+    fetchVendorServicesRows(get, fullCatalog, vendorId, { filterRow: walkFilter }),
   ]);
 
-  const fromFullFiltered: any[] = fromFullRaw.filter((r) => rowQualifiesForWalkingModal(r));
+  const fromFullFiltered: any[] = fromFullRaw;
 
   const merged: any[] = [];
   const seen = new Set<string>();
   for (let i = 0; i < fromWalkingCategory.length; i += 1) {
     const r = fromWalkingCategory[i];
-    if (!r) continue;
+    if (!r || !rowQualifiesForWalkingModal(r)) continue;
     const key = vendorServiceRowDedupeKey(r, i);
     if (!key || seen.has(key)) continue;
     seen.add(key);
@@ -213,14 +290,17 @@ export function getWalkerDisplayOfferings(
 async function fetchVendorServicesRows(
   get: (url: string) => Promise<unknown>,
   customerUrl: string,
-  vendorId: string
+  vendorId: string,
+  opts?: { filterRow?: (r: Record<string, any>) => boolean }
 ): Promise<any[]> {
+  const filterRow = opts?.filterRow;
   const seen = new Set<string>();
   const out: any[] = [];
   const pushRows = (rows: any[], indexOffset = 0) => {
     for (let i = 0; i < rows.length; i += 1) {
       const r = rows[i];
       if (!r) continue;
+      if (filterRow && !filterRow(r)) continue;
       const key = vendorServiceRowDedupeKey(r, indexOffset + i);
       if (!key || seen.has(key)) continue;
       seen.add(key);

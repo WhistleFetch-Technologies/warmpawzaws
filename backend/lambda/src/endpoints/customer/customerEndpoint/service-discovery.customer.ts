@@ -516,6 +516,38 @@ function safeParseOperatingHours(raw: any): Record<string, any> | null {
   }
 }
 
+/** vendors.metadata may arrive as JSONB object or serialized string depending on driver/path. */
+function parseVendorMetadata(raw: unknown): Record<string, any> {
+  if (!raw) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, any>;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+        ? (parsed as Record<string, any>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function vendorAmenitiesFromMetadata(
+  metadata: Record<string, any>,
+  vendorRow?: { amenities?: unknown }
+): { amenities: string[]; customAmenities: string[] } {
+  const rawAmenities = metadata.amenities ?? vendorRow?.amenities;
+  const rawCustom = metadata.customAmenities ?? metadata.custom_amenities;
+  const amenities = Array.isArray(rawAmenities)
+    ? rawAmenities.map((a) => String(a).trim()).filter(Boolean)
+    : [];
+  const customAmenities = Array.isArray(rawCustom)
+    ? rawCustom.map((a) => String(a).trim()).filter(Boolean)
+    : [];
+  return { amenities, customAmenities };
+}
+
 /** Parse vendor_services.metadata (JSONB or string) for customer listings. */
 function parseVendorServiceMetadataForCustomer(vsMetadata: unknown): Record<string, any> {
   if (!vsMetadata) return {};
@@ -1590,6 +1622,221 @@ async function countDiscoverableVendorsForDiscoveryQuery(opts: {
   }
 
   return candidates.length;
+}
+
+type CustomerVendorProfileBundle = {
+  success: true;
+  vendor: Record<string, unknown>;
+  services: unknown[];
+  reviews: unknown[];
+  staff: unknown[];
+};
+
+async function fetchCustomerVendorProfileBundle(vendorId: string): Promise<CustomerVendorProfileBundle | null> {
+  const vendor = await resolveVendorById(vendorId);
+  if (!vendor) return null;
+  const resolvedVendorId = vendor.id;
+
+  const roles = await select('roles', { id: vendor.role_id });
+  const role = roles[0];
+
+  const serviceColumns = await query(
+    `SELECT column_name FROM information_schema.columns 
+     WHERE table_name = 'services' AND column_name = 'is_global'`
+  );
+  const hasIsGlobal = serviceColumns.rows.length > 0;
+
+  const services = await query(
+    `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled, vs.service_style
+     FROM services s
+     LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
+     WHERE (vs.vendor_id = $1${hasIsGlobal ? ' OR s.is_global = true' : ''})
+     AND s.is_active = true
+     AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
+     ORDER BY s.name`,
+    [resolvedVendorId]
+  );
+
+  const reviews = await query(
+    `SELECT r.*, c.full_name as customer_name
+     FROM reviews r
+     LEFT JOIN customers c ON r.customer_id = c.id
+     WHERE r.vendor_id = $1 
+     AND r.is_approved = true
+     ORDER BY r.created_at DESC
+     LIMIT 20`,
+    [resolvedVendorId]
+  );
+
+  const avgRating = reviews.rows.length > 0
+    ? reviews.rows.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / reviews.rows.length
+    : 0;
+
+  const staff = await query(
+    `SELECT s.* FROM staff s
+     WHERE s.vendor_id = $1 
+     AND s.is_active = true
+     ORDER BY s.name`,
+    [resolvedVendorId]
+  );
+
+  let vendorSpecializations: string[] = [];
+  try {
+    const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [resolvedVendorId]);
+    vendorSpecializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
+  } catch (_) { }
+  if (vendorSpecializations.length === 0 && vendor.specializations) {
+    try {
+      vendorSpecializations = Array.isArray(vendor.specializations)
+        ? vendor.specializations
+        : JSON.parse(vendor.specializations || '[]');
+    } catch (_) { }
+  }
+
+  let vendorServiceStyles: string[] = [];
+  try {
+    const styleRes = await query(
+      `SELECT DISTINCT service_style FROM vendor_services
+       WHERE vendor_id = $1 AND is_enabled = true AND (publish_status IN ('published','auto_published') OR publish_status IS NULL)
+       AND service_style IS NOT NULL`,
+      [resolvedVendorId]
+    );
+    vendorServiceStyles = (styleRes.rows || []).map((r: any) => normalizeServiceStyle(r.service_style)).filter(Boolean) as string[];
+  } catch (_) { }
+
+  const vendorMeta = parseVendorMetadata(vendor.metadata);
+
+  let facilityPhotos: string[] = [];
+  try {
+    const raw = vendorMeta.facility_photos || vendorMeta.photos || [];
+    const rawArr = Array.isArray(raw) ? raw : [];
+    facilityPhotos = await presignCustomerFacilityGalleryUrls(resolvedVendorId, rawArr);
+  } catch (_) {
+    facilityPhotos = [];
+  }
+
+  const profileSpecMap = await batchLoadVendorSpecializationsForDiscovery([
+    {
+      vendor_id: String(vendor.id),
+      metadata: vendor.metadata,
+      v_specs_jsonb: (vendor as { specializations?: unknown }).specializations,
+    },
+  ]);
+  const profileSpecializationLabels =
+    profileSpecMap.get(String(vendor.id))?.displayLabels ?? [];
+  const specializationsForProfile =
+    profileSpecializationLabels.length > 0
+      ? profileSpecializationLabels
+      : vendorSpecializations.length > 0
+        ? vendorSpecializations
+        : Array.isArray(vendorMeta.specializations)
+          ? vendorMeta.specializations.map((s: unknown) => String(s).trim()).filter(Boolean)
+          : [];
+
+  const boardingDiscProfile = resolveBoardingDisclaimerFromVendor(vendor, vendorMeta || {});
+
+  return {
+    success: true,
+    vendor: {
+      id: vendor.id,
+      businessName: vendor.business_name,
+      ownerName: vendor.owner_name,
+      roleId: vendor.role_id,
+      roleName: role?.name,
+      category: getCategoryFromRole(
+        String(role?.name || '')
+          .toLowerCase()
+          .replace(/-/g, '_')
+      ),
+      address: vendor.address,
+      city: vendor.city,
+      state: vendor.state,
+      pincode: vendor.pincode,
+      phone: vendor.phone,
+      email: vendor.email,
+      latitude: vendor.latitude,
+      longitude: vendor.longitude,
+      rating: avgRating,
+      totalReviews: reviews.rows.length,
+      operatingHours: safeParseOperatingHours(vendor.operating_hours),
+      description: vendor.description || '',
+      photoUrl: await getVendorListingPhotoUrl(vendor),
+      vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
+      specializations: specializationsForProfile,
+      serviceStyles: vendorServiceStyles,
+      facilityPhotos,
+      boardingDisclaimer: boardingDiscProfile.disclaimer,
+      boardingDisclaimerPoints: boardingDiscProfile.disclaimerPoints,
+      ...vendorAmenitiesFromMetadata(vendorMeta, vendor),
+    },
+    services: services.rows,
+    reviews: reviews.rows,
+    staff: staff.rows,
+  };
+}
+
+const GUEST_VENDOR_STAFF_OMIT = new Set([
+  'phone',
+  'email',
+  'bank_account',
+  'bank_account_number',
+  'ifsc',
+  'ifsc_code',
+  'pan',
+  'pan_number',
+  'aadhar',
+  'aadhaar',
+  'password',
+  'password_hash',
+]);
+
+function guestSafeCustomerName(raw: unknown): string {
+  const name = String(raw ?? '').trim();
+  if (!name) return 'Customer';
+  const first = name.split(/\s+/)[0];
+  return first || 'Customer';
+}
+
+/** Strip PII / internal fields for anonymous vendor share profile reads. */
+export function sanitizeGuestVendorProfileBundle(bundle: CustomerVendorProfileBundle) {
+  const vendor = { ...bundle.vendor };
+  delete vendor.phone;
+  delete vendor.email;
+  delete vendor.ownerName;
+
+  const services = (bundle.services || []).map((row: any) => {
+    const s = { ...row };
+    delete s.vendor_id;
+    delete s.created_by;
+    delete s.updated_by;
+    return s;
+  });
+
+  const reviews = (bundle.reviews || []).map((row: any) => ({
+    id: row.id,
+    rating: row.rating,
+    comment: row.comment,
+    created_at: row.created_at,
+    customer_name: guestSafeCustomerName(row.customer_name),
+  }));
+
+  const staff = (bundle.staff || []).map((row: any) => {
+    const s: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(row || {})) {
+      if (GUEST_VENDOR_STAFF_OMIT.has(key)) continue;
+      if (/bank|ifsc|pan|aadhaar|password/i.test(key)) continue;
+      s[key] = value;
+    }
+    return s;
+  });
+
+  return {
+    success: true as const,
+    vendor,
+    services,
+    reviews,
+    staff,
+  };
 }
 
 export function registerServiceDiscoveryEndpoints(app: Hono) {
@@ -4729,146 +4976,32 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
    * Get detailed vendor profile with all services
    * ✅ FIX: Must be registered AFTER /customer/vendor/:vendorId/available-slots to avoid route conflict
    */
+  /**
+   * GET /public/vendor/:vendorId/profile
+   * Guest-safe vendor profile for share links (no auth).
+   */
+  app.get('/public/vendor/:vendorId/profile', async (c) => {
+    try {
+      const { vendorId } = c.req.param();
+      const bundle = await fetchCustomerVendorProfileBundle(vendorId);
+      if (!bundle) {
+        return c.json({ error: 'Vendor not found' }, 404);
+      }
+      return c.json(sanitizeGuestVendorProfileBundle(bundle));
+    } catch (error: any) {
+      console.error('Error fetching guest vendor profile:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
   app.get("/customer/vendor/:vendorId", async (c) => {
     try {
       const { vendorId } = c.req.param();
-
-      // Resolve vendor (frontend may pass vendor_identity.id or staff id; resolve to vendors.id)
-      const vendor = await resolveVendorById(vendorId);
-      if (!vendor) {
+      const bundle = await fetchCustomerVendorProfileBundle(vendorId);
+      if (!bundle) {
         return c.json({ error: 'Vendor not found' }, 404);
       }
-      const resolvedVendorId = vendor.id;
-
-      // Get role
-      const roles = await select('roles', { id: vendor.role_id });
-      const role = roles[0];
-
-      // Get all services
-      // Check if is_global column exists
-      const serviceColumns = await query(
-        `SELECT column_name FROM information_schema.columns 
-         WHERE table_name = 'services' AND column_name = 'is_global'`
-      );
-      const hasIsGlobal = serviceColumns.rows.length > 0;
-
-      const services = await query(
-        `SELECT s.*, vs.custom_price, vs.custom_duration, vs.is_enabled, vs.service_style
-         FROM services s
-         LEFT JOIN vendor_services vs ON s.id = vs.service_id AND vs.vendor_id = $1
-         WHERE (vs.vendor_id = $1${hasIsGlobal ? ' OR s.is_global = true' : ''})
-         AND s.is_active = true
-         AND (vs.is_enabled IS NULL OR vs.is_enabled = true)
-         ORDER BY s.name`,
-        [resolvedVendorId]
-      );
-
-      // Get reviews
-      const reviews = await query(
-        `SELECT r.*, c.full_name as customer_name
-         FROM reviews r
-         LEFT JOIN customers c ON r.customer_id = c.id
-         WHERE r.vendor_id = $1 
-         AND r.is_approved = true
-         ORDER BY r.created_at DESC
-         LIMIT 20`,
-        [resolvedVendorId]
-      );
-
-      const avgRating = reviews.rows.length > 0
-        ? reviews.rows.reduce((sum: number, r: any) => sum + (r.rating || 0), 0) / reviews.rows.length
-        : 0;
-
-      // Get staff (if applicable)
-      const staff = await query(
-        `SELECT s.* FROM staff s
-         WHERE s.vendor_id = $1 
-         AND s.is_active = true
-         ORDER BY s.name`,
-        [resolvedVendorId]
-      );
-
-      // Enrich vendor profile: specializations, styles, photos
-      let vendorSpecializations: string[] = [];
-      try {
-        const specRes = await query(`SELECT specialization FROM vendor_specializations WHERE vendor_id = $1`, [resolvedVendorId]);
-        vendorSpecializations = (specRes.rows || []).map((r: any) => r.specialization).filter(Boolean);
-      } catch (_) { }
-      if (vendorSpecializations.length === 0 && vendor.specializations) {
-        try {
-          vendorSpecializations = Array.isArray(vendor.specializations)
-            ? vendor.specializations
-            : JSON.parse(vendor.specializations || '[]');
-        } catch (_) { }
-      }
-
-      let vendorServiceStyles: string[] = [];
-      try {
-        const styleRes = await query(
-          `SELECT DISTINCT service_style FROM vendor_services
-           WHERE vendor_id = $1 AND is_enabled = true AND (publish_status IN ('published','auto_published') OR publish_status IS NULL)
-           AND service_style IS NOT NULL`,
-          [resolvedVendorId]
-        );
-        vendorServiceStyles = (styleRes.rows || []).map((r: any) => normalizeServiceStyle(r.service_style)).filter(Boolean) as string[];
-      } catch (_) { }
-
-      let facilityPhotos: string[] = [];
-      try {
-        const meta = vendor.metadata ? (typeof vendor.metadata === 'string' ? JSON.parse(vendor.metadata) : vendor.metadata) : null;
-        const raw = meta?.facility_photos || meta?.photos || [];
-        const rawArr = Array.isArray(raw) ? raw : [];
-        facilityPhotos = await presignCustomerFacilityGalleryUrls(resolvedVendorId, rawArr);
-      } catch (_) {
-        facilityPhotos = [];
-      }
-
-      const vendorMeta = (() => {
-        try {
-          return vendor.metadata ? (typeof vendor.metadata === 'string' ? JSON.parse(vendor.metadata) : vendor.metadata) : {};
-        } catch {
-          return {};
-        }
-      })();
-      const boardingDiscProfile = resolveBoardingDisclaimerFromVendor(vendor, vendorMeta || {});
-
-      return c.json({
-        success: true,
-        vendor: {
-          id: vendor.id,
-          businessName: vendor.business_name,
-          ownerName: vendor.owner_name,
-          roleId: vendor.role_id,
-          roleName: role?.name,
-          category: getCategoryFromRole(
-            String(role?.name || '')
-              .toLowerCase()
-              .replace(/-/g, '_')
-          ),
-          address: vendor.address,
-          city: vendor.city,
-          state: vendor.state,
-          pincode: vendor.pincode,
-          phone: vendor.phone,
-          email: vendor.email,
-          latitude: vendor.latitude,
-          longitude: vendor.longitude,
-          rating: avgRating,
-          totalReviews: reviews.rows.length,
-          operatingHours: safeParseOperatingHours(vendor.operating_hours),
-          description: vendor.description || '',
-          photoUrl: await getVendorListingPhotoUrl(vendor),
-          vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
-          specializations: vendorSpecializations,
-          serviceStyles: vendorServiceStyles,
-          facilityPhotos,
-          boardingDisclaimer: boardingDiscProfile.disclaimer,
-          boardingDisclaimerPoints: boardingDiscProfile.disclaimerPoints,
-        },
-        services: services.rows,
-        reviews: reviews.rows,
-        staff: staff.rows,
-      });
+      return c.json(bundle);
     } catch (error: any) {
       console.error('Error fetching vendor profile:', error);
       return c.json({ error: error.message }, 500);
@@ -5588,7 +5721,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       );
 
       // ✅ FIX: Extract facility data from vendor metadata and operating_hours
-      const metadata = (vendor.metadata as any) || {};
+      const metadata = parseVendorMetadata(vendor.metadata);
+      const { amenities, customAmenities } = vendorAmenitiesFromMetadata(metadata, vendor);
       const operatingHours = safeParseOperatingHours(vendor.operating_hours);
 
       const rawMixed = metadata.facility_photos || metadata.photos || [];
@@ -5618,6 +5752,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           role_id: vendor.role_id,
           boardingDisclaimer: boardingDisc.disclaimer,
           boardingDisclaimerPoints: boardingDisc.disclaimerPoints,
+          amenities,
+          customAmenities,
         },
         facility: {
           centerName: vendor.business_name, // ✅ FIX: Include centerName
@@ -5630,8 +5766,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           description: metadata.description || vendor.description || '', // ✅ FIX: Get description from metadata
           disclaimer: boardingDisc.disclaimer || metadata.disclaimer,
           disclaimerPoints: boardingDisc.disclaimerPoints.length ? boardingDisc.disclaimerPoints : metadata.disclaimerPoints || [],
-          amenities: metadata.amenities || [],
-          customAmenities: metadata.customAmenities || [], // ✅ FIX: Include custom amenities
+          amenities,
+          customAmenities,
           photos: validPhotos, // ✅ FIX: Use presigned URLs generated on-demand
           specializations: metadata.specializations || [],
           operatingHours: operatingHours || null,
@@ -5687,8 +5823,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       }
 
       // ✅ FIX: Build metadata object once to avoid overwriting
-      const existingMetadata = (vendor.metadata as any) || {};
-      const updatedMetadata: any = { ...existingMetadata };
+      const existingMetadata = parseVendorMetadata(vendor.metadata);
+      const updatedMetadata: Record<string, unknown> = { ...existingMetadata };
       let metadataChanged = false;
 
       // Amenities (stored in metadata)
@@ -6144,7 +6280,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
       );
 
       // ✅ FIX: Extract metadata for description, custom amenities, and photos
-      const metadata = (vendor.metadata as any) || {};
+      const metadata = parseVendorMetadata(vendor.metadata);
+      const { amenities, customAmenities } = vendorAmenitiesFromMetadata(metadata, vendor);
       const operatingHours = safeParseOperatingHours(vendor.operating_hours);
 
       const rawMixed = metadata.facility_photos || metadata.photos || [];
@@ -6197,8 +6334,8 @@ export function registerServiceDiscoveryEndpoints(app: Hono) {
           latitude: vendor.latitude,
           longitude: vendor.longitude,
           photos: validPhotos, // ✅ FIX: Use presigned URLs generated on-demand
-          amenities: metadata.amenities || vendor.amenities || [], // ✅ FIX: Get from metadata
-          customAmenities: metadata.customAmenities || [], // ✅ FIX: Include custom amenities
+          amenities,
+          customAmenities,
           description: metadata.description || vendor.description || '', // ✅ FIX: Include description
           disclaimer: metadata.disclaimer,
           disclaimerPoints: metadata.disclaimerPoints || [],

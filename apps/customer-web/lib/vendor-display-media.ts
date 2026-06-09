@@ -322,6 +322,25 @@ export function mergeCustomerFacilityPayload(root: Record<string, unknown> | nul
   return { ...facility, ...vendor };
 }
 
+/** Amenities live on facility metadata; merge may expose them on facility or vendor keys. */
+export function resolveCustomerVendorAmenities(source: Record<string, unknown> | null | undefined): {
+  amenities: string[];
+  customAmenities: string[];
+} {
+  if (!source || typeof source !== 'object') {
+    return { amenities: [], customAmenities: [] };
+  }
+  const rawAmenities = source.amenities;
+  const rawCustom = source.customAmenities ?? source.custom_amenities;
+  const amenities = Array.isArray(rawAmenities)
+    ? rawAmenities.map((a) => String(a).trim()).filter(Boolean)
+    : [];
+  const customAmenities = Array.isArray(rawCustom)
+    ? rawCustom.map((a) => String(a).trim()).filter(Boolean)
+    : [];
+  return { amenities, customAmenities };
+}
+
 export function ratingFromFacilityRoot(root: Record<string, unknown> | null | undefined): {
   average?: number;
   count?: number;

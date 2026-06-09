@@ -216,7 +216,8 @@ export async function approveAndExecuteMealRefundCase(
       status,
     };
   }
-  if (status !== 'pending_review') {
+  const canApprove = status === 'pending_review' || status === 'refund_failed';
+  if (!canApprove) {
     return { ok: false, error: 'case_not_found_or_not_pending' };
   }
 
@@ -268,8 +269,9 @@ export async function approveAndExecuteMealRefundCase(
          reviewed_by = $2,
          reviewed_at = NOW(),
          refund_requested_at = NOW(),
+         refund_failure_reason = NULL,
          updated_at = NOW()
-     WHERE id = $1::uuid AND status = 'pending_review'
+     WHERE id = $1::uuid AND status IN ('pending_review', 'refund_failed')
      RETURNING id::text, meal_order_id::text`,
     [caseId, reviewedBy],
   );
@@ -300,7 +302,9 @@ export async function approveAndExecuteMealRefundCase(
     }
 
     const terminalStatus =
-      result.status === 'completed' ? 'refunded' : 'refund_processing';
+      result.status === 'completed' || result.status === 'wallet_only'
+        ? 'refunded'
+        : 'refund_processing';
     const payoutMethod =
       result.razorpayAmount > 0.009
         ? 'original_payment'

@@ -7,6 +7,20 @@ import {
   AlertCircle, ArrowRight, Send
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
+import { buildMarkShippedPayload } from '@/lib/carrier-registry';
+import {
+  VendorShipmentDetailsForm,
+  isShipmentFormValid,
+  type VendorShipmentFormValues,
+} from '@/components/vendor/orders/VendorShipmentDetailsForm';
+import { VendorShipmentTrackingReadOnly } from '@/components/vendor/orders/VendorShipmentTrackingReadOnly';
+
+const EMPTY_SHIPMENT_FORM: VendorShipmentFormValues = {
+  carrierId: '',
+  carrierName: '',
+  trackingNumber: '',
+  trackingUrl: '',
+};
 
 interface SellerOrderManagementProps {
   sellerId: string;
@@ -52,9 +66,8 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [updating, setUpdating] = useState(false);
-  const [trackingNumber, setTrackingNumber] = useState('');
-  const [deliveryPartner, setDeliveryPartner] = useState('');
-  const [trackingUrl, setTrackingUrl] = useState('');
+  const [shipmentForm, setShipmentForm] = useState<VendorShipmentFormValues>(EMPTY_SHIPMENT_FORM);
+  const [shipmentFormShowErrors, setShipmentFormShowErrors] = useState(false);
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancellationReason, setCancellationReason] = useState('');
@@ -76,33 +89,45 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
     }
   };
 
-  const markOrderAsShipped = async (
-    orderId: string,
-    trackingNum: string,
-    partner: string,
-    url?: string
-  ) => {
+  const markOrderAsShipped = async (orderId: string, form: VendorShipmentFormValues) => {
+    if (!isShipmentFormValid(form)) {
+      setShipmentFormShowErrors(true);
+      return;
+    }
+
     try {
       setUpdating(true);
+      const payload = buildMarkShippedPayload(form);
 
       const result = await apiClient.post<{
         success: boolean;
         error?: string;
-        tracking?: { awb: string; trackingUrl?: string | null };
-      }>(`/vendor/${sellerId}/orders/${orderId}/mark-shipped`, {
-        trackingNumber: trackingNum,
-        deliveryPartner: partner || 'Other',
-        trackingUrl: url || undefined,
-      });
+        tracking?: {
+          trackingNumber?: string;
+          carrierName?: string;
+          trackingUrl?: string | null;
+        };
+      }>(`/vendor/${sellerId}/orders/${orderId}/mark-shipped`, payload);
 
       if (result?.error || result?.success === false) {
         alert(result?.error || 'Failed to mark order as shipped');
         return;
       }
 
+      const trackingNum = result.tracking?.trackingNumber || payload.trackingNumber;
+      const carrierName = result.tracking?.carrierName || payload.carrierName;
+      const trackingUrlValue = result.tracking?.trackingUrl || payload.trackingUrl;
+
       setOrders(orders.map(o =>
         o.id === orderId
-          ? { ...o, status: 'shipped', order_status: 'shipped', tracking_number: trackingNum }
+          ? {
+              ...o,
+              status: 'shipped',
+              order_status: 'shipped',
+              tracking_number: trackingNum,
+              delivery_partner: carrierName,
+              tracking_url: trackingUrlValue,
+            }
           : o
       ));
 
@@ -112,13 +137,14 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
           status: 'shipped',
           order_status: 'shipped',
           tracking_number: trackingNum,
+          delivery_partner: carrierName,
+          tracking_url: trackingUrlValue,
         });
       }
 
       setShowShippingModal(false);
-      setTrackingNumber('');
-      setDeliveryPartner('');
-      setTrackingUrl('');
+      setShipmentForm(EMPTY_SHIPMENT_FORM);
+      setShipmentFormShowErrors(false);
     } catch (error: any) {
       console.error('Error marking order shipped:', error);
       alert(error.message || 'Failed to mark order as shipped');
@@ -184,6 +210,13 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
 
   const handleStatusAction = (orderId: string, newStatus: string, requiresTracking?: boolean) => {
     if (requiresTracking) {
+      const order = orders.find((o) => o.id === orderId) || selectedOrder;
+      if (order?.tracking_number) {
+        alert('Tracking already submitted and cannot be changed');
+        return;
+      }
+      setShipmentForm(EMPTY_SHIPMENT_FORM);
+      setShipmentFormShowErrors(false);
       setShowShippingModal(true);
     } else if (newStatus === 'cancelled') {
       setCancellationReason('');
@@ -395,11 +428,12 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
 
                 {/* Tracking Info */}
                 {selectedOrder.tracking_number && (
-                  <div className="flex items-center gap-2 text-sm text-purple-600 bg-purple-100 px-3 py-2 rounded-lg mb-4">
-                    <Truck className="w-4 h-4" />
-                    <span>Tracking: {selectedOrder.tracking_number}</span>
-                    {selectedOrder.delivery_partner && <span>• {selectedOrder.delivery_partner}</span>}
-                  </div>
+                  <VendorShipmentTrackingReadOnly
+                    carrierName={selectedOrder.delivery_partner}
+                    trackingNumber={selectedOrder.tracking_number}
+                    trackingUrl={selectedOrder.tracking_url}
+                    className="mb-4"
+                  />
                 )}
 
                 {(selectedOrder.status === 'cancelled' || selectedOrder.order_status === 'cancelled') &&
@@ -601,75 +635,28 @@ export function SellerOrderManagement({ sellerId }: SellerOrderManagementProps) 
             </div>
             
             <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Tracking Number *
-                </label>
-                <input
-                  type="text"
-                  value={trackingNumber}
-                  onChange={(e) => setTrackingNumber(e.target.value)}
-                  placeholder="e.g., AWB123456789"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Delivery Partner
-                </label>
-                <select
-                  value={deliveryPartner}
-                  onChange={(e) => setDeliveryPartner(e.target.value)}
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
-                >
-                  <option value="">Select Partner</option>
-                  <option value="Shiprocket">Shiprocket</option>
-                  <option value="Delhivery">Delhivery</option>
-                  <option value="BlueDart">BlueDart</option>
-                  <option value="DTDC">DTDC</option>
-                  <option value="Ekart">Ekart</option>
-                  <option value="Shadowfax">Shadowfax</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Tracking URL <span className="text-slate-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="url"
-                  value={trackingUrl}
-                  onChange={(e) => setTrackingUrl(e.target.value)}
-                  placeholder="Auto-generated for Delhivery, BlueDart, DTDC if left blank"
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500"
-                />
-              </div>
-
-              {!trackingNumber && (
-                <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
-                  <AlertCircle className="w-4 h-4" />
-                  <span>Tracking number is required to mark as shipped</span>
-                </div>
-              )}
+              <VendorShipmentDetailsForm
+                values={shipmentForm}
+                onChange={setShipmentForm}
+                disabled={updating}
+                showErrors={shipmentFormShowErrors}
+              />
             </div>
             
             <div className="p-6 border-t border-slate-100 flex gap-3">
               <button
                 onClick={() => {
                   setShowShippingModal(false);
-                  setTrackingNumber('');
-                  setDeliveryPartner('');
-                  setTrackingUrl('');
+                  setShipmentForm(EMPTY_SHIPMENT_FORM);
+                  setShipmentFormShowErrors(false);
                 }}
                 className="flex-1 px-4 py-3 border border-slate-200 rounded-xl font-medium text-slate-700 hover:bg-slate-50 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={() => markOrderAsShipped(selectedOrder.id, trackingNumber, deliveryPartner, trackingUrl)}
-                disabled={!trackingNumber || !deliveryPartner || updating}
+                onClick={() => markOrderAsShipped(selectedOrder.id, shipmentForm)}
+                disabled={updating}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {updating ? (

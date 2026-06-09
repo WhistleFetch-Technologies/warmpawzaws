@@ -17,16 +17,19 @@ import {
   type WarmpawzCartProductSnapshot,
 } from "@/lib/warmpawz-cart-storage";
 
-interface CartItem {
+export interface CartItem {
   id: string;
   name: string;
   price: number;
+  /** MRP / compare-at when a discount exists */
+  originalPrice?: number;
   quantity: number;
   image?: string;
   vendorId?: string;
   vendorName?: string;
   categoryId?: string;
   category?: string;
+  selectedVariations?: Record<string, string>;
   /** Round-trip storage row for `/shop` localStorage format */
   warmpawzLine?: WarmpawzCartLine;
   [key: string]: unknown;
@@ -54,16 +57,21 @@ function lineToCartItem(line: WarmpawzCartLine): CartItem {
   const imageEmoji = p?.emoji != null ? String(p.emoji) : undefined;
   const categoryId =
     p?.category_id != null ? String(p.category_id) : undefined;
+  const originalRaw = p?.original_price;
+  const originalPrice =
+    originalRaw != null && Number(originalRaw) > 0 ? Number(originalRaw) : undefined;
   return {
     id,
     name,
     price,
+    originalPrice,
     quantity: Math.max(1, Number(line.quantity) || 1),
     image: imageFromList || imageEmoji,
     vendorId: p?.vendor_id != null ? String(p.vendor_id) : undefined,
     vendorName: p?.vendor_name != null ? String(p.vendor_name) : undefined,
     categoryId,
     category: categoryId,
+    selectedVariations: line.selected_variations,
     warmpawzLine: line,
   };
 }

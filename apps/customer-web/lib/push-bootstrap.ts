@@ -1,3 +1,6 @@
+import { WARMPAWZ_ANDROID_PUSH_CHANNEL_ID } from './push-channel';
+import { navigateFromPushPayload } from './push-navigation';
+
 /**
  * push-bootstrap.ts — customer-web
  *
@@ -34,6 +37,41 @@ let capacitorRegistrationContext: {
 } | null = null;
 
 let capacitorRegistrationPipeline: Promise<void> | null = null;
+let capacitorPushTapListenersAttached = false;
+
+function extractPushDataFromAction(action: unknown): Record<string, string> {
+  const envelope = action as {
+    notification?: { data?: Record<string, unknown> };
+  };
+  const raw = envelope?.notification?.data ?? {};
+  const data: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (value != null) data[key] = String(value);
+  }
+  return data;
+}
+
+async function attachCapacitorPushTapListeners(PushNotifications: {
+  addListener: (
+    event: string,
+    handler: (payload: unknown) => void
+  ) => Promise<{ remove: () => void }>;
+}): Promise<void> {
+  if (capacitorPushTapListenersAttached) return;
+  capacitorPushTapListenersAttached = true;
+
+  await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+    console.log('[push-bootstrap] pushNotificationActionPerformed');
+    try {
+      navigateFromPushPayload(extractPushDataFromAction(action));
+    } catch (err) {
+      console.warn('[push-bootstrap] push tap navigation failed:', err);
+      window.location.assign('/');
+    }
+  });
+
+  console.log('[push-bootstrap] push tap listener attached');
+}
 
 // Firebase onMessage attaches a persistent handler; one listener per page load avoids
 // duplicate handlers when bootstrap runs again (e.g. React Strict Mode remounts).
@@ -232,6 +270,8 @@ export async function ensureCapacitorPushRegistrationPipeline(
       console.warn('[push-bootstrap] Capacitor registrationError (persistent):', err);
     });
 
+    await attachCapacitorPushTapListeners(PushNotifications);
+
     console.log('[push-bootstrap] persistent FCM registration listener attached');
     await ensureAndroidNotificationChannel();
     await triggerCapacitorPushRegister('pipeline-init');
@@ -390,15 +430,17 @@ async function ensureAndroidNotificationChannel(): Promise<void> {
       ?.createChannel;
     if (!createChannel) return;
     await createChannel({
-      id: 'warmpawz_push',
-      name: 'Warmpawz notifications',
-      description: 'Booking and campaign alerts',
+      id: WARMPAWZ_ANDROID_PUSH_CHANNEL_ID,
+      name: 'Warmpawz alerts',
+      description: 'Booking and campaign alerts with sound',
       importance: 5,
       visibility: 1,
       sound: 'default',
       vibration: true,
     });
-    console.log('[push-bootstrap] Android notification channel warmpawz_push ready');
+    console.log('[push-bootstrap] Android notification channel ready', {
+      channelId: WARMPAWZ_ANDROID_PUSH_CHANNEL_ID,
+    });
   } catch (err) {
     console.warn('[push-bootstrap] createChannel failed (non-fatal):', err);
   }

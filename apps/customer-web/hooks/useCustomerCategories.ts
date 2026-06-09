@@ -41,6 +41,7 @@ export interface QuickServiceTile {
   color: string;
   screen: string;
   categoryId: string;
+  displayOrder?: number;
 }
 
 /** Map backend icon_color (e.g. text-blue-500) to Tailwind bg/label class for tiles. */
@@ -98,15 +99,6 @@ export function useCustomerCategories(phone?: string | null) {
         return !HIDDEN_CATEGORIES.some(hidden => categoryIdLower.includes(hidden.toLowerCase()));
       });
 
-      // ✅ FIX: Label overrides for merged categories
-      const LABEL_OVERRIDES: Record<string, string> = {
-        'lab-diagnostics': 'Diagnostics / Lab Tests',
-        'ambulance': 'Emergency Care',
-        'nutritionist': 'Nutritionist',
-        'insurance': 'Pet Insurance',
-        'pet-sitter': 'Pet Sitter',
-      };
-
       // Deduplicate by screen (canonical mapping from @warmpawz/service-launch-mappings)
       const seenScreens = new Set<string>();
       const tiles: QuickServiceTile[] = [];
@@ -123,10 +115,7 @@ export function useCustomerCategories(phone?: string | null) {
         seenScreens.add(screen);
         const IconComponent = getIcon(cat.icon);
         // Prefer admin-configured `name` (Training, Trainer, etc.); else screen override; else title-case category_id.
-        const label =
-          cat.name?.trim() ||
-          LABEL_OVERRIDES[screen] ||
-          displayNameFromCategoryId(cat.category_id);
+        const label = cat.name?.trim() || displayNameFromCategoryId(cat.category_id);
         
         tiles.push({
           icon: IconComponent,
@@ -134,6 +123,7 @@ export function useCustomerCategories(phone?: string | null) {
           color: iconColorToBg(cat.icon_color),
           screen,
           categoryId: cat.category_id,
+          displayOrder: cat.display_order != null ? Number(cat.display_order) : undefined,
         });
       }
       

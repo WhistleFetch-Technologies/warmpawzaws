@@ -3,6 +3,7 @@
 import React, { memo } from 'react';
 import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
+import { isBannerInformationalNonClickable } from '@/lib/banner-cta-target';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import type { FeaturedLowerBanner } from './FeaturedOfferSection';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
@@ -45,6 +46,7 @@ function HomeLowerBannersSectionComponent({
     <div className={`mb-6 space-y-4 px-4 ${className}`}>
       {lowerBanners.map((banner, index) => {
         const slotComingSoon = Boolean(banner.comingSoon);
+        const slotNonClickable = slotComingSoon || isBannerInformationalNonClickable(banner);
         const hasImage = Boolean(banner.imageUrl?.trim());
         return (
           <div
@@ -71,7 +73,7 @@ function HomeLowerBannersSectionComponent({
                 {banner.subtitle ? (
                   <p className="mb-4 line-clamp-3 text-sm text-white/90">{banner.subtitle}</p>
                 ) : null}
-                {slotComingSoon ? (
+                {slotNonClickable ? (
                   <span className="inline-block cursor-not-allowed rounded-full bg-white/85 px-5 py-2.5 text-sm font-medium text-[#FF8C42]/70">
                     {banner.ctaText || 'Learn More'}
                   </span>

@@ -1070,6 +1070,9 @@ export function ChimeVideoCall({
             disconnectingRef.current = true;
             endedByOtherRef.current = true;
             setEndedByOther(true);
+            if (response.bookingCompleted) {
+              toast.info('This consultation has been completed.');
+            }
             void endCall(false, true);
             return;
           }

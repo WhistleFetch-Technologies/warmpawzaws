@@ -10,6 +10,7 @@ import { formatOperatingHours } from '@/lib/format-utils';
 import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { VendorRatingDisplay } from '../shared/VendorRatingDisplay';
+import { shareVendorProfile } from '@/lib/vendor-profile-share';
 
 interface VetCenterProfileViewProps {
   phone: string;
@@ -99,17 +100,14 @@ export function VetCenterProfileView({ phone, centerId, onBack, onNavigate }: Ve
   };
 
   const handleShare = async () => {
-    try {
-      if (navigator.share) {
-        await navigator.share({
-          title: center?.businessName || 'Vet Clinic',
-          text: `Check out ${center?.businessName || 'this vet clinic'} on Warmpawz`,
-          url: window.location.href
-        });
-      }
-    } catch (error) {
-      console.error('Error sharing:', error);
-    }
+    await shareVendorProfile({
+      title: center?.businessName || 'Vet Clinic',
+      text: `Check out ${center?.businessName || 'this vet clinic'} on Warmpawz`,
+      vendorId: centerId,
+      persona: 'vet',
+      vendorName: center?.businessName,
+      serviceStyle: 'at_center',
+    });
   };
 
   if (loading) {

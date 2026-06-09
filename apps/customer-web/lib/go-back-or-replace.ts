@@ -56,6 +56,9 @@ export function goBackOrHome(router: MinimalRouter): void {
 
 export const WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY = 'warmpawz_open_screen_after_nav';
 
+/** After marketplace checkout: expand this shop order on profile My Orders (`order_history`). */
+export const WARMPAWZ_EXPAND_SHOP_ORDER_ID_KEY = 'warmpawz_expand_shop_order_id';
+
 /** After full-screen My Bookings (from account sidebar), reopen sheet on this tab. */
 export const WARMPAWZ_ACCOUNT_SIDEBAR_ACTIVE_VIEW_KEY = 'warmpawz_account_sidebar_active_view';
 
@@ -517,5 +520,21 @@ export function handleMyPackagesPageBack(router: RouterWithPush): void {
     }
   }
   setOpenAccountMenuAfterNav();
+  router.push('/');
+}
+
+/** Open profile My Orders (`order_history` on `/`) and optionally expand a shop order. */
+export function navigateToProfileShopOrders(
+  router: RouterWithPush,
+  orderId?: string
+): void {
+  if (typeof window !== 'undefined') {
+    sessionStorage.setItem(WARMPAWZ_OPEN_SCREEN_AFTER_NAV_KEY, 'order_history');
+    if (orderId) {
+      sessionStorage.setItem(WARMPAWZ_EXPAND_SHOP_ORDER_ID_KEY, orderId);
+    } else {
+      sessionStorage.removeItem(WARMPAWZ_EXPAND_SHOP_ORDER_ID_KEY);
+    }
+  }
   router.push('/');
 }

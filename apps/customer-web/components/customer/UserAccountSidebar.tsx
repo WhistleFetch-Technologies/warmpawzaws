@@ -1236,6 +1236,11 @@ export function UserAccountSidebar({
     },
   ];
 
+  const visibleMenuItems = menuItems.filter(
+    (item) =>
+      !(isCustomerEcommerceEnabled() && 'view' in item && item.view === 'cart')
+  );
+
   const displayName = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ').trim() || 'Account';
   const memberSinceLabel = formatMemberSinceLabel(profile?.created_at);
 
@@ -1298,7 +1303,7 @@ export function UserAccountSidebar({
           {activeView === 'menu' && (
             <ProfileMenuFloatingSheet>
                 <div className="space-y-2.5">
-              {menuItems.map((item, index) => {
+              {visibleMenuItems.map((item, index) => {
                 const isComingSoon = 'comingSoon' in item && item.comingSoon;
                 const showCountBadge =
                   !isComingSoon &&

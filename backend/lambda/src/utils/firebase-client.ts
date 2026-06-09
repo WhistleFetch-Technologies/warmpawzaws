@@ -170,6 +170,61 @@ export interface PushNotificationResult {
   error?: string;
 }
 
+/** Android channel created by Capacitor apps in push-bootstrap.ts — must stay in sync. */
+export const WARMPAWZ_FCM_ANDROID_CHANNEL_ID = 'warmpawz_push_alerts';
+
+function buildAndroidPushConfig() {
+  return {
+    priority: 'high' as const,
+    notification: {
+      channelId: WARMPAWZ_FCM_ANDROID_CHANNEL_ID,
+      sound: 'default',
+      defaultSound: true,
+      defaultVibrateTimings: true,
+      visibility: 'PUBLIC' as const,
+      notificationPriority: 'PRIORITY_HIGH' as const,
+    },
+  };
+}
+
+function buildApnsPushConfig() {
+  return {
+    headers: {
+      'apns-priority': '10',
+    },
+    payload: {
+      aps: {
+        sound: 'default',
+        badge: 1,
+        'interruption-level': 'active',
+      },
+    },
+  };
+}
+
+function buildFcmMessage(payload: PushNotificationPayload, target: 'token' | 'tokens' | 'topic', address: string | string[]) {
+  const base: Record<string, unknown> = {
+    notification: {
+      title: payload.title,
+      body: payload.body,
+      imageUrl: payload.imageUrl,
+    },
+    data: payload.data,
+    android: buildAndroidPushConfig(),
+    apns: buildApnsPushConfig(),
+  };
+
+  if (target === 'token') {
+    base.token = address;
+  } else if (target === 'tokens') {
+    base.tokens = address;
+  } else {
+    base.topic = address;
+  }
+
+  return base;
+}
+
 /**
  * Send push notification to a single device
  */
@@ -180,30 +235,7 @@ export async function sendPushToDevice(
   try {
     const messaging = await getFirebaseMessaging();
 
-    const message: any = {
-      token: fcmToken,
-      notification: {
-        title: payload.title,
-        body: payload.body,
-        imageUrl: payload.imageUrl,
-      },
-      data: payload.data,
-      android: {
-        priority: 'high',
-        notification: {
-          sound: 'default',
-          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: 'default',
-            badge: 1,
-          },
-        },
-      },
-    };
+    const message = buildFcmMessage(payload, 'token', fcmToken);
 
     const response = await messaging.send(message);
     console.log('[Firebase] Push sent successfully:', response);
@@ -243,30 +275,7 @@ export async function sendPushToMultipleDevices(
   try {
     const messaging = await getFirebaseMessaging();
 
-    const message: any = {
-      tokens: fcmTokens,
-      notification: {
-        title: payload.title,
-        body: payload.body,
-        imageUrl: payload.imageUrl,
-      },
-      data: payload.data,
-      android: {
-        priority: 'high',
-        notification: {
-          sound: 'default',
-          clickAction: 'FLUTTER_NOTIFICATION_CLICK',
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: 'default',
-            badge: 1,
-          },
-        },
-      },
-    };
+    const message = buildFcmMessage(payload, 'tokens', fcmTokens);
 
     const response = await messaging.sendEachForMulticast(message);
 
@@ -303,28 +312,7 @@ export async function sendPushToTopic(
   try {
     const messaging = await getFirebaseMessaging();
 
-    const message: any = {
-      topic: topic,
-      notification: {
-        title: payload.title,
-        body: payload.body,
-        imageUrl: payload.imageUrl,
-      },
-      data: payload.data,
-      android: {
-        priority: 'high',
-        notification: {
-          sound: 'default',
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            sound: 'default',
-          },
-        },
-      },
-    };
+    const message = buildFcmMessage(payload, 'topic', topic);
 
     const response = await messaging.send(message);
     console.log('[Firebase] Topic push sent:', response);

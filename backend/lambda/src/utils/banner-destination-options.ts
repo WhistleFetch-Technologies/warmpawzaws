@@ -7,6 +7,7 @@ import {
   getSearchCategoryAliases,
   labelForBannerServiceStyle,
   mapCatalogCategoryIdToCustomerHomeScreen,
+  mapCatalogSlugToLaunchServiceId,
   normalizeBannerServiceStyle,
   normalizeCategoryToken,
 } from '@warmpawz/service-launch-mappings';
@@ -31,16 +32,21 @@ export type BannerDestinationVendor = {
   roleName: string | null;
 };
 
-function vendorMatchesCategoryAliases(
+/** Pure matcher for admin banner vendor picker (exported for unit tests). */
+export function vendorMatchesBannerDestinationCategory(
   categoryId: string,
   vendorCategory: string | null,
   roleName: string | null
 ): boolean {
-  const aliases = getSearchCategoryAliases(categoryId);
-  if (!aliases.length) return false;
+  const launchId = mapCatalogSlugToLaunchServiceId(categoryId);
+  const aliases = new Set([
+    ...getSearchCategoryAliases(launchId),
+    ...getSearchCategoryAliases(categoryId),
+  ]);
+  if (!aliases.size) return false;
   const cat = normalizeCategoryToken(vendorCategory);
   const role = normalizeCategoryToken(roleName);
-  return aliases.some((a) => {
+  return Array.from(aliases).some((a) => {
     if (!a) return false;
     if (cat && (cat.includes(a) || a.includes(cat))) return true;
     if (role && (role.includes(a) || a.includes(role))) return true;
@@ -128,7 +134,7 @@ async function listVendorsForCategory(categoryId: string): Promise<BannerDestina
   ).catch(() => ({ rows: [] }));
 
   return (rows as Array<{ id: string; business_name: string; category: string; role_name: string }>)
-    .filter((v) => vendorMatchesCategoryAliases(categoryId, v.category, v.role_name))
+    .filter((v) => vendorMatchesBannerDestinationCategory(categoryId, v.category, v.role_name))
     .map((v) => ({
       id: String(v.id),
       businessName: String(v.business_name ?? '').trim(),

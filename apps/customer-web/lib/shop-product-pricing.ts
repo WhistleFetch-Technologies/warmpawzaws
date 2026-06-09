@@ -1,6 +1,6 @@
 /**
- * Shop product discount from selling price vs compare-at / original (MRP).
- * Vendor form sends `original_price`; DB column is usually `compare_at_price`.
+ * Shop product pricing: MRP (compare_at_price) vs selling price (price).
+ * MRP is required in catalog; selling defaults to MRP when omitted.
  */
 
 export function resolveProductCompareAtPrice(
@@ -28,11 +28,55 @@ export function resolveProductCompareAtPrice(
   return undefined;
 }
 
+/** Checkout / display selling price; falls back to MRP when price is missing. */
+export function resolveProductSellingPrice(
+  row: Record<string, unknown>,
+  mrp?: number,
+): number {
+  const listMrp = mrp ?? resolveProductCompareAtPrice(row);
+  const meta =
+    row.metadata != null && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+      ? (row.metadata as Record<string, unknown>)
+      : null;
+
+  const candidates = [
+    row.price,
+    row.selling_price,
+    row.sellingPrice,
+    meta?.selling_price,
+  ];
+
+  for (const raw of candidates) {
+    if (raw == null || raw === '') continue;
+    const n = parseFloat(String(raw));
+    if (!Number.isFinite(n) || n <= 0) continue;
+    if (listMrp && n > listMrp) return listMrp;
+    return n;
+  }
+  return listMrp ?? 0;
+}
+
+/** True when MRP is strictly greater than selling price (a real discount exists). */
+export function productHasListDiscount(
+  sellingPrice: number,
+  mrp: number | undefined,
+): boolean {
+  return !!mrp && mrp > sellingPrice;
+}
+
+/** MRP for UI strikethrough / % OFF — only when there is a discount. */
+export function listPriceForDiscountDisplay(
+  sellingPrice: number,
+  mrp: number | undefined,
+): number | undefined {
+  return productHasListDiscount(sellingPrice, mrp) ? mrp : undefined;
+}
+
 /** Rounded percent off when compare-at (MRP) is greater than selling price. */
 export function getProductDiscountPercent(
   sellingPrice: number,
   compareAtPrice: number | undefined,
 ): number {
-  if (!compareAtPrice || compareAtPrice <= sellingPrice) return 0;
-  return Math.round(((compareAtPrice - sellingPrice) / compareAtPrice) * 100);
+  if (!productHasListDiscount(sellingPrice, compareAtPrice)) return 0;
+  return Math.round(((compareAtPrice! - sellingPrice) / compareAtPrice!) * 100);
 }

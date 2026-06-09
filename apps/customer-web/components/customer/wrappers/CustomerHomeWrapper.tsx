@@ -52,7 +52,8 @@ import {
 } from '@/lib/customer-vendor-profile-navigation';
 import { pickCustomerVendorAccountId, firstNonEmptyString } from '@warmpawz/shared-types';
 import { useNotificationService } from '../useNotificationService';
-import { toast } from 'sonner';
+import { EcommerceRouteRedirect } from '@/components/ecommerce/EcommerceRouteRedirect';
+import { ProfileOrdersRedirect } from '@/components/ecommerce/ProfileOrdersRedirect';
 import {
   CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE,
   isCustomerEcommerceEnabled,
@@ -64,7 +65,7 @@ import { useCustomerBookingMessagesModal } from '../messaging/CustomerBookingMes
 import { isNewHomeUiEnabled } from '@/lib/customer-new-home-ui-flag';
 
 // ============================================================================
-// Lazy-loaded shell screens (pattern aligned with components/customer/CustomerHomeWrapper.tsx)
+// Lazy-loaded shell screens
 // ============================================================================
 const LoadingSpinner = () => (
   <div className="flex min-h-[200px] items-center justify-center">
@@ -128,9 +129,6 @@ const RelocationServicesLanding = dynamic(() => import('../RelocationServicesLan
 const ResortServicesLanding = dynamic(() => import('../ResortServicesLanding').then((m) => ({ default: m.ResortServicesLanding })), { loading: LoadingSpinner });
 const PetHolidayServicesLanding = dynamic(() => import('../PetHolidayServicesLanding').then((m) => ({ default: m.PetHolidayServicesLanding })), { loading: LoadingSpinner });
 const ProductDetailPage = dynamic(() => import('../ProductDetailPage').then((m) => ({ default: m.ProductDetailPage })), { loading: LoadingSpinner });
-const ShoppingCartView = dynamic(() => import('../ShoppingCartView').then((m) => ({ default: m.ShoppingCartView })), { loading: LoadingSpinner });
-const CheckoutView = dynamic(() => import('../CheckoutView').then((m) => ({ default: m.CheckoutView })), { loading: LoadingSpinner });
-const OrderSuccessView = dynamic(() => import('../OrderSuccessView').then((m) => ({ default: m.OrderSuccessView })), { loading: LoadingSpinner });
 const OrderHistoryPage = dynamic(() => import('../../shop/OrderHistoryPage').then((m) => ({ default: m.OrderHistoryPage })), { loading: LoadingSpinner });
 const AddressBookPage = dynamic(() => import('../../shop/AddressBookPage').then((m) => ({ default: m.AddressBookPage })), { loading: LoadingSpinner });
 const WalletPage = dynamic(() => import('../../shop/WalletPage').then((m) => ({ default: m.WalletPage })), { loading: LoadingSpinner });
@@ -874,6 +872,42 @@ export function CustomerHomeWrapper({
       setCurrentScreen('pet-boarding-profile');
       return;
     }
+    if (vid && (service === 'behaviorist' || service === 'behaviourist' || serviceKey === 'behaviorist')) {
+      setBehavioristProfileVendorId(vid);
+      setCurrentScreen('behaviorist-provider-profile');
+      return;
+    }
+    if (
+      vid &&
+      (service === 'pet-sitter' ||
+        service === 'pet_sitter' ||
+        service === 'sitter' ||
+        serviceKey === 'sitter' ||
+        serviceKey === 'pet_sitter')
+    ) {
+      setPetSitterProfileVendorId(vid);
+      setPetSitterProfileReturnScreen('home');
+      setCurrentScreen('pet-sitter-provider-profile');
+      return;
+    }
+    if (
+      vid &&
+      (service === 'nutritionist' ||
+        service === 'pet_nutritionist' ||
+        serviceKey === 'nutritionist' ||
+        serviceKey === 'pet_nutritionist')
+    ) {
+      setPreviousScreen('home');
+      setVetServiceData({
+        vendorId: vid,
+        vendorName: data?.vendorName,
+        serviceStyle: String(data?.serviceStyle || 'tele').toLowerCase(),
+        serviceType: 'pet_nutritionist',
+        category: 'nutritionist',
+      });
+      setCurrentScreen('nutritionist-tele');
+      return;
+    }
 
     if (service === 'walker') setCurrentScreen('walker');
     else if (service === 'vet' || service === 'veterinarian') {
@@ -1058,6 +1092,43 @@ export function CustomerHomeWrapper({
         })
       );
       setCurrentScreen('grooming-booking');
+    } else if (service === 'boarding-booking') {
+      setPreviousScreen('home');
+      if (vid) {
+        setEmbeddedBoardingProfileVendorId(vid);
+        setEmbeddedBoardingProfileSlug(
+          normalizeBoardingServiceSlug(String(data?.serviceSlug ?? data?.service_slug ?? 'overnight'))
+        );
+      }
+      setVetServiceData(
+        mergeBannerNavigationPayload(null, {
+          ...(data && typeof data === 'object' ? data : {}),
+          vendorId: vid ?? data?.vendorId,
+          serviceType: 'boarding',
+          serviceId: data?.serviceId,
+        })
+      );
+      setCurrentScreen('boarding-booking');
+    } else if (service === 'walker-booking') {
+      setWalkerServiceData(
+        mergeBannerNavigationPayload(null, {
+          ...(data && typeof data === 'object' ? data : {}),
+          vendorId: vid ?? data?.vendorId,
+          serviceId: data?.serviceId,
+          serviceType: 'walking',
+        })
+      );
+      setCurrentScreen('walker-booking');
+    } else if (service === 'pet-sitter-booking') {
+      setVetServiceData(
+        mergeBannerNavigationPayload(null, {
+          ...(data && typeof data === 'object' ? data : {}),
+          vendorId: vid ?? data?.vendorId,
+          serviceType: 'pet_sitter',
+          serviceId: data?.serviceId,
+        })
+      );
+      setCurrentScreen('pet-sitter-booking');
     } else {
       if (process.env.NODE_ENV === 'development') {
         console.warn('[CustomerHomeWrapper] Unhandled navigate service:', service);
@@ -3651,24 +3722,14 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'product_reviews' && selectedProduct) return <ProductReviewsView productId={selectedProduct.id || selectedProduct.productId} productName={selectedProduct.name} onBack={() => setCurrentScreen('product_detail')} />;
   if (currentScreen === 'vendor_profile' && selectedVendorId) return <VendorProfileDetail vendorId={selectedVendorId} phone={phone} onBack={() => { if (selectedProduct) setCurrentScreen('product_detail'); else goToShopFromParent(); }} onNavigate={(screen, data) => { if (screen === 'product_detail') { setSelectedProduct(data?.product); setCurrentScreen('product_detail'); } }} />;
   if (currentScreen === 'cart') {
-    return (
-      <CustomerScreenWrapper 
-        currentScreen={currentScreen}
-        onNavigate={handleBottomNav}
-        onProfileClick={handleProfileClick}
-        accountSidebar={accountSidebarOverlay}
-      >
-        <ShoppingCartView
-          onBack={() => goToShopFromParent()}
-          onNavigateHome={handleBack}
-          onCheckout={() => router.push('/checkout')}
-          onContinueShopping={() => goToShopFromParent()}
-        />
-      </CustomerScreenWrapper>
-    );
+    return <EcommerceRouteRedirect href="/cart" />;
   }
-  if (currentScreen === 'checkout') return <CheckoutView phone={phone} onBack={() => goToShopFromParent()} onSuccess={(orderId) => { setCurrentOrderId(orderId); setCurrentScreen('order_success'); }} onNavigate={(screen, data) => handleNavigateToService(screen, data)} />;
-  if (currentScreen === 'order_success' && currentOrderId) return <OrderSuccessView orderId={currentOrderId} onTrackOrder={() => { setSelectedOrder({ id: currentOrderId }); setCurrentScreen('order_tracking'); }} onBackToHome={() => { setCurrentOrderId(null); setCurrentScreen('home'); }} onViewOrders={() => { setCurrentOrderId(null); setCurrentScreen('order_history'); }} />;
+  if (currentScreen === 'checkout') {
+    return <EcommerceRouteRedirect href="/checkout?step=payment" />;
+  }
+  if (currentScreen === 'order_success' && currentOrderId && isCustomerEcommerceEnabled()) {
+    return <ProfileOrdersRedirect orderId={currentOrderId} />;
+  }
   if (currentScreen === 'order_history')
     return (
       <CustomerScreenWrapper

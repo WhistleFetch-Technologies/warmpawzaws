@@ -24,6 +24,7 @@ import { bookingUsesDedicatedEndSessionOtp, ensureDedicatedEndSessionOtp } from 
 import { isCanonicalPackageParentBooking } from '../utils/vendor-commission-rate';
 import {
   completeTeleConsultation,
+  finalizeVideoCallSessionsForBooking,
   loadLatestSessionForBooking,
   validateTeleVendorCompleteEligibility,
 } from '../utils/tele-completion-service';
@@ -266,6 +267,8 @@ export function registerVendorBookingActionsEndpoints(app: Hono) {
       );
 
       console.log(`✅ [COMPLETE-BOOKING] Booking completed successfully with OTP verification`);
+
+      await finalizeVideoCallSessionsForBooking(bookingId).catch(() => undefined);
 
       // Close any active GPS tracking session for this booking. Without this the
       // home-screen "Vendor on the way" card and the live-tracking ETA banner

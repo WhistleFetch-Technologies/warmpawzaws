@@ -13,6 +13,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, type CSSProperties }
 import type { LucideIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
+import { AmenitiesSection } from '../shared/AmenitiesSection';
 import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { StarRating } from '../shared/StarRating';
@@ -49,11 +50,13 @@ import {
   mergeCustomerFacilityPayload,
   mergeVendorPhotoFieldsForHero,
   ratingFromFacilityRoot,
+  resolveCustomerVendorAmenities,
   resolveVendorCoverImageUrl,
   resolveVendorProfileHeroGallery,
   resolveVendorProfilePhotoUrl,
 } from '@/lib/vendor-display-media';
 import { HomeServiceType } from './UniversalHomeServiceRouter';
+import { homeServiceTypeToPersona, shareVendorProfile } from '@/lib/vendor-profile-share';
 
 /** Second identity-chip line derived only from vertical (not vendor-specific catalog copy). */
 const HOME_SERVICE_CONTEXT_LABEL: Record<HomeServiceType, string> = {
@@ -131,6 +134,7 @@ interface ProviderDetails {
   reviewCount: number;
   specializations: string[];
   amenities: string[];
+  customAmenities: string[];
   certifications: string[];
   experience: number;
   serviceCount: number;
@@ -375,6 +379,8 @@ export function HomeServiceProviderProfile({
           ? (specFallback as string[])
           : [];
 
+      const { amenities, customAmenities } = resolveCustomerVendorAmenities(merged);
+
       setProvider({
         id: (merged.id as string) || vendorId,
         vendorId: (merged.vendorId as string) || vendorId,
@@ -396,7 +402,8 @@ export function HomeServiceProviderProfile({
           ratingAvg != null && Number.isFinite(Number(ratingAvg)) ? Number(ratingAvg) : 0,
         reviewCount,
         specializations,
-        amenities: (Array.isArray(merged.amenities) ? merged.amenities : []) as string[],
+        amenities,
+        customAmenities,
         certifications: (Array.isArray(merged.certifications) ? merged.certifications : []) as string[],
         experience: Number(merged.experience ?? merged.yearsOfExperience ?? merged.years_of_experience ?? 0),
         serviceCount: Number(merged.serviceCount ?? merged.completedServices ?? merged.completed_bookings ?? 0),
@@ -439,13 +446,13 @@ export function HomeServiceProviderProfile({
   };
 
   const handleShare = async () => {
-    if (navigator.share) {
-      await navigator.share({
-        title: provider?.businessName || config.displayName,
-        text: `Check out ${provider?.businessName} for ${config.displayName}`,
-        url: window.location.href
-      });
-    }
+    await shareVendorProfile({
+      title: provider?.businessName || config.displayName,
+      text: `Check out ${provider?.businessName} for ${config.displayName}`,
+      vendorId,
+      persona: homeServiceTypeToPersona(serviceType),
+      vendorName: provider?.businessName,
+    });
   };
 
   const toggleFavorite = () => {
@@ -708,17 +715,14 @@ export function HomeServiceProviderProfile({
             )}
 
             {/* Amenities */}
-            {provider.amenities.length > 0 && (
+            {(provider.amenities.length > 0 || provider.customAmenities.length > 0) && (
               <div>
                 <h3 className="font-semibold text-gray-800 mb-2">Amenities</h3>
-                <div className="grid grid-cols-2 gap-2">
-                  {provider.amenities.map((amenity, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm text-gray-600">
-                      <div className="w-2 h-2 shrink-0 rounded-full" style={{ backgroundColor: config.primaryColor }} />
-                      {amenity}
-                    </div>
-                  ))}
-                </div>
+                <AmenitiesSection
+                  amenities={provider.amenities}
+                  customAmenities={provider.customAmenities}
+                  compact
+                />
               </div>
             )}
 

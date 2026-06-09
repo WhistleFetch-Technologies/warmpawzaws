@@ -190,7 +190,8 @@ export function ProductDetailPage({
     const rawOp = product.original_price ?? product.mrp ?? product.compare_at_price;
     const parsedOp =
       rawOp != null && String(rawOp) !== '' ? parseFloat(String(rawOp)) : NaN;
-    const original_price = Number.isFinite(parsedOp) ? parsedOp : undefined;
+    const original_price =
+      Number.isFinite(parsedOp) && parsedOp > unitPrice ? parsedOp : undefined;
 
     let images: string[] | undefined;
     if (Array.isArray(product.images) && product.images.length > 0) images = product.images;
@@ -281,8 +282,15 @@ export function ProductDetailPage({
     (product.primary_image ? [product.primary_image] : []) ||
     ['🐾'];
   const price = parseFloat(product.price || product.unit_price || 0);
-  const originalPrice = (product.original_price || product.mrp) ? parseFloat(product.original_price || product.mrp) : null;
-  const discount = originalPrice ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0;
+  const rawList =
+    product.original_price ?? product.mrp ?? product.compare_at_price;
+  const parsedList =
+    rawList != null && String(rawList) !== '' ? parseFloat(String(rawList)) : NaN;
+  const originalPrice =
+    Number.isFinite(parsedList) && parsedList > price ? parsedList : null;
+  const discount = originalPrice
+    ? Math.round(((originalPrice - price) / originalPrice) * 100)
+    : 0;
   const rating = Number(product.rating || product.average_rating || 0);
   const reviewCount = product.reviews || product.review_count || 0;
   const inStock = product.in_stock !== false && (product.stock_quantity > 0 || product.stock !== 'Out of Stock');

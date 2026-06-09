@@ -14,6 +14,14 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import {
+  CATEGORY_TO_SPEC,
+  expandSpecCategorySlugs,
+  expandSpecCategorySlugsForDbQuery,
+  filterSpecializationMasterRowsForVendorCategory,
+  normalizeCatalogCategoryKey,
+  roleNamesForSpecCategoryQuery,
+} from '../utils/vendor-spec-category-slugs';
 
 // ============================================================================
 // TYPES
@@ -100,26 +108,29 @@ function getCategoryDisplayName(categoryId: string): string {
   return categoryNames[categoryId] || categoryId;
 }
 
-/** Map service_catalog category_id to specialization_master category_id (some differ) */
-const CATEGORY_TO_SPEC: Record<string, string> = {
-  veterinary: 'veterinary',
-  grooming: 'grooming',
-  training: 'training',
-  walking: 'walking',
-  diagnostic: 'veterinary',
-  diagnostics: 'veterinary',
-  pharmacy: 'veterinary',
-  emergency: 'veterinary',
-  wellness: 'wellness',
-  specialty: 'veterinary',
-  boarding: 'boarding',
-  pet_boarding: 'boarding',
-  pet_boarder: 'boarding',
-  pet_daycare: 'boarding',
-  nutrition: 'wellness',
-  behavioral: 'behavioral',
-  behaviour: 'behavioral',
-};
+async function resolveVendorCatalogCategorySlug(categoryIdInput: string): Promise<string | null> {
+  const raw = (categoryIdInput || '').trim();
+  if (!raw) return null;
+
+  const looksLikeUuid =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
+  let slug = raw;
+
+  if (looksLikeUuid || !CATEGORY_TO_SPEC[normalizeCatalogCategoryKey(raw)]) {
+    const resolved = await query(
+      `SELECT category_id FROM service_categories
+       WHERE (id::text = $1 OR LOWER(TRIM(category_id)) = LOWER(TRIM($1)))
+         AND COALESCE(is_active, true) = true
+       LIMIT 1`,
+      [raw]
+    );
+    if (resolved.rows?.[0]?.category_id) {
+      slug = String(resolved.rows[0].category_id).trim();
+    }
+  }
+
+  return slug;
+}
 
 /**
  * Expand role names for overlap matching.
@@ -1152,8 +1163,8 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
       behaviorist_center: ['training', 'behavioral'],
       pet_walker: ['walking'],
       walker: ['walking'],
-      pet_sitter: ['boarding'],
-      sitter: ['boarding'],
+      pet_sitter: ['sitter'],
+      sitter: ['sitter'],
       pet_boarding: ['boarding'],
       boarding: ['boarding'],
       nutritionist: ['nutrition'],
@@ -1205,8 +1216,12 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
       sitter: ['sitter', 'pet_sitter'],
       pet_taxi: ['transport', 'pet_transport', 'pet_taxi', 'relocation'],
       relocation: ['pet_transport', 'relocation', 'pet_relocation'],
-      pet_boarding: ['boarding', 'pet_boarder', 'pet_hotel', 'pet_boarding', 'pet_daycare'],
-      boarding: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter'],
+      pet_boarding: ['boarding', 'pet_boarder', 'pet_hotel', 'pet_boarding', 'pet_daycare', 'pet_sitter', 'boarding_solo', 'boarding_center'],
+      boarding: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding', 'boarding_solo', 'boarding_center'],
+      boarding_solo: ['boarding', 'boarding_solo', 'boarding_center', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding'],
+      boarding_center: ['boarding', 'boarding_solo', 'boarding_center', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding'],
+      pet_boarder: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding', 'boarding_solo', 'boarding_center'],
+      pet_daycare: ['boarding', 'pet_daycare', 'pet_sitter', 'pet_boarding', 'pet_boarder', 'boarding_solo', 'boarding_center'],
       pet_resort: ['resort', 'pet_resort'],
       resort: ['resort', 'pet_resort'],
       pet_cafe: ['cafe', 'pet_cafe'],
@@ -1234,34 +1249,66 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
   app.get('/vendor/specializations/by-category', async (c) => {
     try {
       const categoryId = (c.req.query('categoryId') || '').trim();
+      const roleId = (c.req.query('roleId') || '').trim();
       if (!categoryId) {
         return c.json({ success: false, error: 'categoryId is required', specializations: [] }, 400);
       }
-      const catResult = await query(
-        `SELECT id::text, category_id FROM service_categories
-         WHERE (id::text = $1 OR LOWER(TRIM(category_id)) = LOWER(TRIM($1)))
-           AND COALESCE(is_active, true) = true
-         LIMIT 1`,
-        [categoryId]
-      );
-      const catRow = catResult.rows?.[0];
-      if (!catRow?.category_id) {
+
+      const catalogSlug = await resolveVendorCatalogCategorySlug(categoryId);
+      if (!catalogSlug) {
         return c.json({ success: true, specializations: [], categorySlug: null });
       }
-      const slug = String(catRow.category_id).trim();
+
+      const vendorPickSlugs = expandSpecCategorySlugs(catalogSlug).map((s) =>
+        normalizeCatalogCategoryKey(s)
+      );
+      const dbQuerySlugs = expandSpecCategorySlugsForDbQuery(catalogSlug).map((s) =>
+        normalizeCatalogCategoryKey(s)
+      );
+
+      let roleNames: string[] = [];
+      if (roleId) {
+        let actualRoleId = roleId;
+        if (roleId.includes('-')) {
+          const roleResult = await query(
+            'SELECT name FROM roles WHERE id::text = $1 AND is_active = true',
+            [roleId]
+          );
+          if (roleResult.rows.length > 0) {
+            actualRoleId = String(roleResult.rows[0].name || actualRoleId)
+              .toLowerCase()
+              .replace(/\s+/g, '_');
+          }
+        } else {
+          actualRoleId = actualRoleId.toLowerCase().replace(/\s+/g, '_');
+        }
+        roleNames = expandRoleIdsForOverlap(getRoleNamesForCatalog(actualRoleId));
+      }
+
+      const roleFilter = roleNamesForSpecCategoryQuery(vendorPickSlugs, roleNames);
       const smResult = await query(
         `SELECT sm.*
          FROM specialization_master sm
          WHERE sm.is_active = true
            AND (sm.show_in_vendor_profile = true OR sm.show_in_vendor_profile IS NULL)
-           AND LOWER(TRIM(COALESCE(sm.category_id, ''))) = LOWER(TRIM($1))
+           AND LOWER(REPLACE(REPLACE(TRIM(COALESCE(sm.category_id, '')), '-', '_'), ' ', '_')) = ANY($1::text[])
+           AND (
+             $2::text[] IS NULL
+             OR cardinality($2::text[]) = 0
+             OR sm.applicable_roles = '{}'
+             OR sm.applicable_roles && $2::text[]
+           )
          ORDER BY sm.display_order, sm.name`,
-        [slug]
+        [dbQuerySlugs, roleFilter]
       );
-      const rows = smResult.rows || [];
+      const rows = filterSpecializationMasterRowsForVendorCategory(
+        smResult.rows || [],
+        vendorPickSlugs
+      );
       return c.json({
         success: true,
-        categorySlug: slug,
+        categorySlug: vendorPickSlugs[0] ?? null,
+        categorySlugs: vendorPickSlugs,
         specializations: rows.map((row: any) => ({
           id: row.specialization_id,
           name: row.name,

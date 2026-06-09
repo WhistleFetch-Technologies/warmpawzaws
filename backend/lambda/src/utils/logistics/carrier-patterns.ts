@@ -1,55 +1,163 @@
-/** Carrier URL templates and display names for vendor-managed shipping. */
+/** Carrier registry: portal base URL + AWB suffix concatenation for vendor-managed shipping. */
 
-export const CARRIER_PATTERNS: Record<
-  string,
-  { name: string; trackingUrlTemplate: string; aftershipSlug?: string }
-> = {
-  bluedart: {
-    name: 'Blue Dart',
-    trackingUrlTemplate: 'https://www.bluedart.com/tracking?tracknumbers={awb}',
-    aftershipSlug: 'bluedart',
-  },
-  delhivery: {
+export interface CarrierDefinition {
+  id: string;
+  name: string;
+  /** Portal tracking page base URL */
+  portalTrackingUrl: string | null;
+  /** Appended to portal URL; must contain {awb}. null = no auto URL (custom / portal-only). */
+  awbSuffix: string | null;
+  aftershipSlug?: string;
+}
+
+export const CARRIERS: CarrierDefinition[] = [
+  {
+    id: 'delhivery',
     name: 'Delhivery',
-    trackingUrlTemplate: 'https://www.delhivery.com/track/package/{awb}',
+    portalTrackingUrl: 'https://www.delhivery.com/tracking',
+    awbSuffix: '/{awb}',
     aftershipSlug: 'delhivery',
   },
-  dtdc: {
+  {
+    id: 'bluedart',
+    name: 'Blue Dart',
+    portalTrackingUrl: 'https://www.bluedart.com/tracking',
+    awbSuffix: '?tracknumbers={awb}',
+    aftershipSlug: 'bluedart',
+  },
+  {
+    id: 'dtdc',
     name: 'DTDC',
-    trackingUrlTemplate:
-      'https://tracking.dtdc.com/ctbs-tracking/customerInterface.tr?submitName=showCITrackingDetails&cType=Ref&cnNo={awb}',
+    portalTrackingUrl: 'https://www.dtdc.in/tracking/shipment-tracking.asp',
+    awbSuffix: '?cnNo={awb}',
     aftershipSlug: 'dtdc',
   },
-  shiprocket: {
-    name: 'Shiprocket',
-    trackingUrlTemplate: 'https://shiprocket.co/tracking/{awb}',
-    aftershipSlug: 'shiprocket',
+  {
+    id: 'xpressbees',
+    name: 'XpressBees',
+    portalTrackingUrl: 'https://www.xpressbees.com/shipment/tracking',
+    awbSuffix: '/{awb}',
   },
-  ekart: {
-    name: 'Ekart',
-    trackingUrlTemplate: 'https://ekartlogistics.com/shipmenttrack/{awb}',
-    aftershipSlug: 'ekart-logistics',
+  {
+    id: 'ecomexpress',
+    name: 'Ecom Express',
+    portalTrackingUrl: 'https://ecomexpress.in/tracking',
+    awbSuffix: '/{awb}',
   },
-  shadowfax: {
+  {
+    id: 'shadowfax',
     name: 'Shadowfax',
-    trackingUrlTemplate: 'https://tracker.shadowfax.in/#/order/{awb}',
+    portalTrackingUrl: 'https://www.shadowfax.in/tracking',
+    awbSuffix: '/{awb}',
     aftershipSlug: 'shadowfax',
   },
-  india_post: {
-    name: 'India Post',
-    trackingUrlTemplate:
-      'https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx?{awb}',
+  {
+    id: 'ekart',
+    name: 'Ekart Logistics',
+    portalTrackingUrl: 'https://ekartlogistics.com',
+    awbSuffix: '/shipmenttrack/{awb}',
+    aftershipSlug: 'ekart-logistics',
+  },
+  {
+    id: 'shiprocket',
+    name: 'Shiprocket',
+    portalTrackingUrl: 'https://www.shiprocket.in/shipment-tracking',
+    awbSuffix: '/{awb}',
+    aftershipSlug: 'shiprocket',
+  },
+  {
+    id: 'amazon_shipping',
+    name: 'Amazon Shipping',
+    portalTrackingUrl: 'https://track.amazon.in',
+    awbSuffix: '?trackingId={awb}',
+  },
+  {
+    id: 'india_post',
+    name: 'India Post / Speed Post',
+    portalTrackingUrl:
+      'https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx',
+    awbSuffix: '?{awb}',
     aftershipSlug: 'india-post',
   },
-  fedex: {
+  {
+    id: 'trackon',
+    name: 'Trackon Couriers',
+    portalTrackingUrl: 'https://trackon.in',
+    awbSuffix: '/?track={awb}',
+  },
+  {
+    id: 'professional',
+    name: 'Professional Couriers',
+    portalTrackingUrl: 'https://www.tpcindia.com/Tracking.aspx',
+    awbSuffix: '?TrackingNo={awb}',
+  },
+  {
+    id: 'gati',
+    name: 'Gati',
+    portalTrackingUrl: 'https://www.gati.com/tracking',
+    awbSuffix: '/{awb}',
+  },
+  {
+    id: 'safexpress',
+    name: 'Safexpress',
+    portalTrackingUrl: 'https://www.safexpress.com',
+    awbSuffix: '/?awb={awb}',
+  },
+  {
+    id: 'custom',
+    name: 'Other Carrier',
+    portalTrackingUrl: null,
+    awbSuffix: null,
+  },
+];
+
+/** Legacy FedEx — not in vendor dropdown; kept for normalizeCarrierKey on old orders. */
+const LEGACY_CARRIERS: CarrierDefinition[] = [
+  {
+    id: 'fedex',
     name: 'FedEx',
-    trackingUrlTemplate: 'https://www.fedex.com/fedextrack/?trknbr={awb}',
+    portalTrackingUrl: 'https://www.fedex.com/fedextrack/',
+    awbSuffix: '?trknbr={awb}',
     aftershipSlug: 'fedex',
   },
-  custom: {
-    name: 'Other Carrier',
-    trackingUrlTemplate: '{tracking_url}',
-  },
+];
+
+export const CARRIER_PATTERNS: Record<string, CarrierDefinition> = Object.fromEntries(
+  [...CARRIERS, ...LEGACY_CARRIERS].map((c) => [c.id, c])
+);
+
+const LABEL_TO_CARRIER_ID: Record<string, string> = {
+  bluedart: 'bluedart',
+  'blue dart': 'bluedart',
+  delhivery: 'delhivery',
+  dtdc: 'dtdc',
+  xpressbees: 'xpressbees',
+  'xpress bees': 'xpressbees',
+  ecomexpress: 'ecomexpress',
+  'ecom express': 'ecomexpress',
+  shadowfax: 'shadowfax',
+  ekart: 'ekart',
+  'ekart logistics': 'ekart',
+  'ekart-logistics': 'ekart',
+  shiprocket: 'shiprocket',
+  amazon_shipping: 'amazon_shipping',
+  'amazon shipping': 'amazon_shipping',
+  amazon: 'amazon_shipping',
+  india_post: 'india_post',
+  'india post': 'india_post',
+  'india post / speed post': 'india_post',
+  'speed post': 'india_post',
+  trackon: 'trackon',
+  'trackon couriers': 'trackon',
+  professional: 'professional',
+  'professional couriers': 'professional',
+  tpc: 'professional',
+  gati: 'gati',
+  safexpress: 'safexpress',
+  fedex: 'fedex',
+  other: 'custom',
+  'other carrier': 'custom',
+  custom: 'custom',
 };
 
 /** Map vendor UI labels / slugs to internal carrier key. */
@@ -58,26 +166,14 @@ export function normalizeCarrierKey(partner: string): string {
   if (!raw) return 'custom';
 
   const lower = raw.toLowerCase();
-  const labelMap: Record<string, string> = {
-    bluedart: 'bluedart',
-    'blue dart': 'bluedart',
-    delhivery: 'delhivery',
-    dtdc: 'dtdc',
-    shiprocket: 'shiprocket',
-    ekart: 'ekart',
-    'ekart-logistics': 'ekart',
-    shadowfax: 'shadowfax',
-    'india post': 'india_post',
-    india_post: 'india_post',
-    fedex: 'fedex',
-    other: 'custom',
-    custom: 'custom',
-  };
+  if (LABEL_TO_CARRIER_ID[lower]) return LABEL_TO_CARRIER_ID[lower];
 
-  if (labelMap[lower]) return labelMap[lower];
+  for (const carrier of CARRIERS) {
+    if (carrier.name.toLowerCase() === lower) return carrier.id;
+  }
 
-  for (const [key, val] of Object.entries(CARRIER_PATTERNS)) {
-    if (val.name.toLowerCase() === lower) return key;
+  for (const carrier of LEGACY_CARRIERS) {
+    if (carrier.name.toLowerCase() === lower) return carrier.id;
   }
 
   return lower.replace(/\s+/g, '_');
@@ -94,12 +190,24 @@ export function buildTrackingUrl(
 ): string | null {
   if (explicitUrl?.trim()) return explicitUrl.trim();
 
-  const pattern = CARRIER_PATTERNS[carrierKey];
-  if (!pattern || carrierKey === 'custom') return explicitUrl?.trim() || null;
+  const carrier = CARRIER_PATTERNS[carrierKey];
+  if (!carrier?.portalTrackingUrl || !carrier.awbSuffix || carrierKey === 'custom') {
+    return explicitUrl?.trim() || null;
+  }
 
-  return pattern.trackingUrlTemplate.replace('{awb}', trackingNumber);
+  const awb = encodeURIComponent(trackingNumber.trim());
+  return `${carrier.portalTrackingUrl}${carrier.awbSuffix.replace('{awb}', awb)}`;
 }
 
 export function getCarrierDisplayName(carrierKey: string): string {
   return CARRIER_PATTERNS[carrierKey]?.name || carrierKey;
+}
+
+export function supportsAutoTrackingUrl(carrierKey: string): boolean {
+  const carrier = CARRIER_PATTERNS[carrierKey];
+  return Boolean(carrier?.portalTrackingUrl && carrier.awbSuffix && carrierKey !== 'custom');
+}
+
+export function isKnownCarrierKey(carrierKey: string): boolean {
+  return carrierKey === 'custom' || Boolean(CARRIER_PATTERNS[carrierKey]);
 }

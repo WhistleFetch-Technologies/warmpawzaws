@@ -71,7 +71,7 @@ describe('findMatchingTileForLaunchId', () => {
 });
 
 describe('buildCustomerLaunchTiles', () => {
-  it('synthesizes a tile when launch catalog entry has no pool match', () => {
+  it('synthesizes a tile when launch config has no matching pool entry', () => {
     const tiles = buildCustomerLaunchTiles({
       tilePool: basePool,
       catalog: [
@@ -81,12 +81,21 @@ describe('buildCustomerLaunchTiles', () => {
     });
     expect(tiles).toHaveLength(1);
     expect(tiles[0].label).toBe('Physio Therapy');
-    expect(tiles[0].screen).toBe('vet');
   });
 
-  it('shows diagnostics and vet as separate tiles when dedupeByLaunchServiceId', () => {
+  it('shows diagnostics when pool has a matching tile', () => {
+    const poolWithDiagnostic: QuickServiceTile[] = [
+      ...basePool,
+      {
+        icon: Icon,
+        label: 'Diagnostics & Lab',
+        color: 'bg-teal-100',
+        screen: 'lab-diagnostics',
+        categoryId: 'diagnostic',
+      },
+    ];
     const tiles = buildCustomerLaunchTiles({
-      tilePool: basePool,
+      tilePool: poolWithDiagnostic,
       catalog: [
         { serviceId: 'vet', effectiveStatus: 'launched' },
         { serviceId: 'diagnostics', effectiveStatus: 'launched' },
@@ -96,9 +105,19 @@ describe('buildCustomerLaunchTiles', () => {
     expect(tiles.map((t) => t.screen).sort()).toEqual(['lab-diagnostics', 'vet']);
   });
 
-  it('includes hidden catalog entries as coming soon when requested', () => {
+  it('includes hidden catalog entries as coming soon when pool has a match', () => {
+    const poolWithBreeder: QuickServiceTile[] = [
+      ...basePool,
+      {
+        icon: Icon,
+        label: 'Breeder',
+        color: 'bg-amber-100',
+        screen: 'breeder',
+        categoryId: 'breeder',
+      },
+    ];
     const tiles = buildCustomerLaunchTiles({
-      tilePool: basePool,
+      tilePool: poolWithBreeder,
       catalog: [
         { serviceId: 'breeder', displayName: 'Breeder', effectiveStatus: 'hidden' },
         { serviceId: 'vet', effectiveStatus: 'launched' },

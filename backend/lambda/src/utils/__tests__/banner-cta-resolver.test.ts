@@ -5,6 +5,7 @@ import {
   buildVendorProfileNavTarget,
   buildBookingNavTarget,
   enrichBannersWithNavTargets,
+  resolveBannerCtaNavigation,
 } from '../banner-cta-resolver';
 
 describe('parseBannerCtaLink', () => {
@@ -83,8 +84,54 @@ describe('parseBannerTargetFromMetadata', () => {
     });
   });
 
+  it('reads article bannerTarget', () => {
+    const target = parseBannerTargetFromMetadata({
+      bannerTarget: {
+        targetLevel: 'article',
+        articleSlug: 'pawints-program',
+        articleTitle: 'Pawints Program',
+      },
+    });
+    expect(target).toMatchObject({
+      targetLevel: 'article',
+      articleSlug: 'pawints-program',
+    });
+  });
+
   it('returns null when no target info', () => {
     expect(parseBannerTargetFromMetadata({ bannerTarget: {} })).toBeNull();
+  });
+});
+
+describe('resolveBannerCtaNavigation article', () => {
+  it('resolves article slug to in-app path without DB', async () => {
+    const nav = await resolveBannerCtaNavigation({
+      metadata: {
+        bannerTarget: {
+          targetLevel: 'article',
+          articleSlug: 'pawints-program',
+        },
+      },
+    });
+    expect(nav).toEqual({
+      kind: 'path',
+      path: '/articles?slug=pawints-program',
+    });
+  });
+
+  it('encodes special characters in article slug', async () => {
+    const nav = await resolveBannerCtaNavigation({
+      metadata: {
+        bannerTarget: {
+          targetLevel: 'article',
+          articleSlug: 'loyalty & rewards',
+        },
+      },
+    });
+    expect(nav).toEqual({
+      kind: 'path',
+      path: '/articles?slug=loyalty%20%26%20rewards',
+    });
   });
 });
 
@@ -171,6 +218,19 @@ describe('enrichBannersWithNavTargets', () => {
             customerScreen: 'vet',
             targetLevel: 'category',
           },
+        },
+      },
+    ]);
+    expect(result[0].navTarget).toBeUndefined();
+  });
+
+  it('skips navTarget for home informational banners', async () => {
+    const result = await enrichBannersWithNavTargets([
+      {
+        position: 'home_top',
+        title: 'Awareness',
+        metadata: {
+          bannerTarget: { targetLevel: 'informational' },
         },
       },
     ]);

@@ -1,8 +1,11 @@
 import {
+  BULK_HEADER_FIELD_MAP,
+  BULK_TEMPLATE_COLUMN_HEADERS,
   buildBulkProductTemplateBuffer,
   getBulkProductTitle,
   parseBulkProductXlsxBuffer,
 } from '../bulk-product-xlsx';
+import { parseProductImageList } from '../../utils/product-ecommerce-validation';
 
 describe('getBulkProductTitle', () => {
   it('returns trimmed name', () => {
@@ -27,6 +30,31 @@ describe('parseBulkProductXlsxBuffer', () => {
 
     expect(products).toHaveLength(1);
     expect(getBulkProductTitle(products[0])).toBe('Smiling Sunflower Dog Dress');
+    const demoImages = String(products[0].images ?? '');
+    expect(parseProductImageList(demoImages)).toHaveLength(2);
+    expect(demoImages).toContain('example.com/your-product-image-2.jpg');
+  });
+
+  it('maps A+ Content separately from gallery images', () => {
+    expect(BULK_HEADER_FIELD_MAP.acontent).toBe('images_aplus');
+    expect(BULK_HEADER_FIELD_MAP.image1000x1000px).toBe('images');
+  });
+
+  it('template has 45 columns without Vendor Product Id', () => {
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).toHaveLength(45);
+    expect(BULK_TEMPLATE_COLUMN_HEADERS).not.toContain('Vendor Product Id');
+  });
+
+  it('maps Barcode (EAN) to barcode, not sku', () => {
+    expect(BULK_HEADER_FIELD_MAP.barcodeean).toBe('barcode');
+    expect(BULK_HEADER_FIELD_MAP.sku).toBeUndefined();
+    expect(BULK_HEADER_FIELD_MAP.vendorproductid).toBeUndefined();
+  });
+
+  it('demo row parse does not set sku from template', async () => {
+    const buf = await buildBulkProductTemplateBuffer(['Pet Accessories']);
+    const { products } = await parseBulkProductXlsxBuffer(buf);
+    expect(products[0].sku).toBeUndefined();
   });
 
   it('ignores rows with partial data but no Title', async () => {

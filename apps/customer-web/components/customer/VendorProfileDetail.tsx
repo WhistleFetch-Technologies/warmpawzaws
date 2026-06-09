@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
+import { resolveCustomerVendorAmenities } from '@/lib/vendor-display-media';
 import { formatAverageForDisplay } from '@/lib/rating-display';
 import { toast } from 'sonner';
 import { VendorRatingDisplay } from './shared/VendorRatingDisplay';
@@ -25,16 +26,19 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
   const [products, setProducts] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
   const [rating, setRating] = useState<any>(null);
+  const [amenities, setAmenities] = useState<string[]>([]);
+  const [customAmenities, setCustomAmenities] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<'overview' | 'amenities' | 'products' | 'reviews'>('overview');
 
   const loadVendorData = async () => {
     try {
       setLoading(true);
       
-      const [vendorRes, productsRes, reviewsRes] = await Promise.all([
+      const [vendorRes, productsRes, reviewsRes, facilityRes] = await Promise.all([
         apiClient.get<any>(`/vendor/${vendorId}`),
         apiClient.get<any>(`/vendor/${vendorId}/products`),
-        apiClient.get<any>(`/vendor/${vendorId}/reviews`)
+        apiClient.get<any>(`/vendor/${vendorId}/reviews`),
+        apiClient.get<any>(`/customer/facility/${vendorId}`).catch(() => null),
       ]);
 
       if (vendorRes.vendor || vendorRes.success) {
@@ -71,6 +75,18 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
       if (reviewsRes.reviews || reviewsRes.recentReviews) {
         setReviews(reviewsRes.reviews || reviewsRes.recentReviews || []);
       }
+
+      const facilityPayload =
+        facilityRes && typeof facilityRes === 'object' && facilityRes.facility
+          ? facilityRes.facility
+          : {};
+      const vendorPayload = vendorRes?.vendor || vendorRes || {};
+      const resolved = resolveCustomerVendorAmenities({
+        ...facilityPayload,
+        ...vendorPayload,
+      });
+      setAmenities(resolved.amenities);
+      setCustomAmenities(resolved.customAmenities);
     } catch (error) {
       console.error('Error loading vendor data:', error);
       toast.error('Failed to load vendor information');
@@ -264,8 +280,8 @@ export function VendorProfileDetail({ vendorId, phone, onBack, onBook, onNavigat
               <h3 className="font-semibold text-gray-900">Facilities & Amenities</h3>
             </div>
             <AmenitiesSection
-              amenities={vendor?.amenities || []}
-              customAmenities={vendor?.customAmenities || []}
+              amenities={amenities}
+              customAmenities={customAmenities}
               showCategories={true}
             />
           </Card>

@@ -9,8 +9,50 @@ export type PetVaccinationMap = {
   other?: string;
 };
 
+export type VaccinationSlot = keyof PetVaccinationMap;
+
 function isNonEmptyDate(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+/** Map wizard / stored vaccine names to flat history slots (incl. DHPP → distemper). */
+export function mapVaccineLabelToSlot(label: string): VaccinationSlot {
+  const l = String(label || '').toLowerCase();
+  if (l.includes('rabies')) return 'rabies';
+  if (l.includes('distemper') || l.includes('dhpp') || l.includes('dhp') || l.includes('hepatitis')) {
+    return 'distemper';
+  }
+  if (l.includes('parvo')) return 'parvovirus';
+  return 'other';
+}
+
+function vaccineDateFromEntry(rec: Record<string, unknown>): string {
+  return String(rec.date ?? rec.lastDate ?? rec.administered_date ?? rec.administeredDate ?? '').trim();
+}
+
+function vaccineLabelFromEntry(rec: Record<string, unknown>): string {
+  return String(rec.key ?? rec.name ?? rec.vaccine ?? rec.type ?? rec.payloadName ?? '');
+}
+
+/** Flatten wizard / legacy vaccination arrays into { rabies, distemper, parvovirus, other }. */
+export function flatMapFromVaccinationEntries(entries: unknown[]): PetVaccinationMap {
+  const flat: PetVaccinationMap = {};
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const rec = entry as Record<string, unknown>;
+    const date = vaccineDateFromEntry(rec);
+    if (!date) continue;
+    const slot = mapVaccineLabelToSlot(vaccineLabelFromEntry(rec));
+    flat[slot] = date;
+  }
+  return flat;
+}
+
+function applyFlatMapFromArray(entries: unknown[], into: PetVaccinationMap): void {
+  const mapped = flatMapFromVaccinationEntries(entries);
+  for (const key of Object.keys(mapped) as VaccinationSlot[]) {
+    if (mapped[key]) into[key] = mapped[key];
+  }
 }
 
 export function sanitizeVaccinationMap(v: PetVaccinationMap | Record<string, unknown>): PetVaccinationMap {
@@ -20,6 +62,18 @@ export function sanitizeVaccinationMap(v: PetVaccinationMap | Record<string, unk
     parvovirus: isNonEmptyDate(v.parvovirus) ? String(v.parvovirus) : undefined,
     other: isNonEmptyDate(v.other) ? String(v.other) : undefined,
   };
+}
+
+function formatHealthListField(value: unknown): string {
+  if (value == null || value === '') return '';
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item).trim())
+      .filter((item) => item.length > 0 && item.toLowerCase() !== 'none')
+      .join(', ');
+  }
+  const text = String(value).trim();
+  return text.toLowerCase() === 'none' ? '' : text;
 }
 
 /** Flat UI map { rabies, distemper, parvovirus } from DB row fields. */
@@ -34,48 +88,43 @@ export function extractVaccinationsForClient(pet: {
   if (vacRecords && typeof vacRecords === 'object' && !Array.isArray(vacRecords)) {
     const obj = vacRecords as Record<string, unknown>;
     if (isNonEmptyDate(obj.rabies) || isNonEmptyDate(obj.distemper) || isNonEmptyDate(obj.parvovirus)) {
-      return {
+      return sanitizeVaccinationMap({
         rabies: isNonEmptyDate(obj.rabies) ? obj.rabies : undefined,
         distemper: isNonEmptyDate(obj.distemper) ? obj.distemper : undefined,
         parvovirus: isNonEmptyDate(obj.parvovirus) ? obj.parvovirus : undefined,
         other: isNonEmptyDate(obj.other) ? String(obj.other) : undefined,
-      };
+      });
     }
   }
+
+  const flat: PetVaccinationMap = {};
 
   if (Array.isArray(vacRecords) && vacRecords.length > 0) {
-    const flat: PetVaccinationMap = {};
-    for (const entry of vacRecords) {
-      if (!entry || typeof entry !== 'object') continue;
-      const rec = entry as Record<string, unknown>;
-      const label = String(rec.key ?? rec.name ?? rec.vaccine ?? rec.type ?? '').toLowerCase();
-      const date = String(rec.date ?? rec.lastDate ?? rec.administered_date ?? rec.administeredDate ?? '').trim();
-      if (!date) continue;
-      if (label.includes('rabies')) flat.rabies = date;
-      else if (label.includes('distemper')) flat.distemper = date;
-      else if (label.includes('parvo')) flat.parvovirus = date;
-      else if (!flat.other) flat.other = date;
-    }
-    if (Object.keys(flat).length > 0) return flat;
+    applyFlatMapFromArray(vacRecords, flat);
   }
 
-  const vaccinationDates = mh.vaccinationDates as PetVaccinationMap | undefined;
+  const vaccinationDates = mh.vaccinationDates;
   if (vaccinationDates && typeof vaccinationDates === 'object' && !Array.isArray(vaccinationDates)) {
-    return sanitizeVaccinationMap(vaccinationDates);
+    Object.assign(flat, sanitizeVaccinationMap(vaccinationDates as PetVaccinationMap));
   }
 
   const nested = mh.vaccinations;
   if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
     const obj = nested as Record<string, unknown>;
-    return {
-      rabies: isNonEmptyDate(obj.rabies) ? obj.rabies : undefined,
-      distemper: isNonEmptyDate(obj.distemper) ? obj.distemper : undefined,
-      parvovirus: isNonEmptyDate(obj.parvovirus) ? obj.parvovirus : undefined,
-      other: isNonEmptyDate(obj.other) ? String(obj.other) : undefined,
-    };
+    Object.assign(
+      flat,
+      sanitizeVaccinationMap({
+        rabies: isNonEmptyDate(obj.rabies) ? obj.rabies : undefined,
+        distemper: isNonEmptyDate(obj.distemper) ? obj.distemper : undefined,
+        parvovirus: isNonEmptyDate(obj.parvovirus) ? obj.parvovirus : undefined,
+        other: isNonEmptyDate(obj.other) ? String(obj.other) : undefined,
+      })
+    );
+  } else if (Array.isArray(nested) && nested.length > 0) {
+    applyFlatMapFromArray(nested, flat);
   }
 
-  return {};
+  return sanitizeVaccinationMap(flat);
 }
 
 /** Merge health record fields for medical_history JSONB. */
@@ -131,8 +180,8 @@ export function extractHealthRecordsForClient(
   const mh = medicalHistory || {};
   return {
     lastCheckup: mh.lastCheckup ?? mh.last_checkup ?? '',
-    allergies: mh.allergies ?? '',
-    medications: mh.medications ?? '',
-    conditions: mh.conditions ?? '',
+    allergies: formatHealthListField(mh.allergies),
+    medications: formatHealthListField(mh.medications ?? mh.currentMedications ?? mh.current_medications),
+    conditions: formatHealthListField(mh.conditions ?? mh.chronicConditions ?? mh.chronic_conditions),
   };
 }

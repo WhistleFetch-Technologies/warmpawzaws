@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { shouldSuppressPollToastForPush } from '@/lib/notification-display-policy';
 
 interface NotificationServiceProps {
   phone: string;
@@ -62,16 +63,19 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
             // Check if there's a new notification (by id and unread)
             if (notificationId != null && notificationId !== lastNotificationIdRef.current && !isRead) {
               lastNotificationIdRef.current = notificationId;
-              
+
               console.log(`🎉 [NOTIFICATION-SERVICE] NEW NOTIFICATION DETECTED!`, latestNotification);
-              
-              // Play notification sound
-              playNotificationSound();
-              
-              // Show toast notification
-              showToastNotification(latestNotification);
-              
-              // Trigger callback
+
+              const suppressBanner = shouldSuppressPollToastForPush(latestNotification);
+              if (suppressBanner) {
+                console.log(
+                  '🔔 [NOTIFICATION-SERVICE] Skipping in-app toast/sound — native push handles display'
+                );
+              } else {
+                playNotificationSound();
+                showToastNotification(latestNotification);
+              }
+
               if (onNewNotification) {
                 onNewNotification(latestNotification);
               }

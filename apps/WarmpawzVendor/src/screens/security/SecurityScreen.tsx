@@ -153,28 +153,6 @@ export function SecurityScreen({ vendorId, onBack }: SecurityScreenProps) {
             )}
           </TouchableOpacity>
         </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Two-Factor Authentication</Text>
-          <View style={styles.infoBox}>
-            <Text style={styles.infoText}>
-              Two-factor authentication adds an extra layer of security to your account.
-            </Text>
-            <TouchableOpacity 
-              style={styles.enableButton}
-              onPress={async () => {
-                try {
-                  await SecurityApi.enable2FA(vendorId);
-                  Alert.alert('Success', '2FA has been enabled. Please follow the setup instructions.');
-                } catch (error: any) {
-                  Alert.alert('Error', error.message || 'Failed to enable 2FA');
-                }
-              }}
-            >
-              <Text style={styles.enableButtonText}>Enable 2FA</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );

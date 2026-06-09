@@ -16,6 +16,7 @@
 
 import { Hono } from 'hono';
 import { select, update, query } from '../database/rds-connection';
+import { buildStructuredTracking } from '../utils/logistics/shipment-tracking';
 import { getSnsClient } from '../utils/sns-client';
 import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
@@ -174,19 +175,28 @@ export function registerOrderManagementEndpoints(app: Hono) {
 
       // Get shipment info if exists
       const shipments = await query(
-        'SELECT * FROM shipments WHERE order_id = $1',
+        'SELECT * FROM shipments WHERE order_id = $1 ORDER BY created_at DESC',
         [orderId]
       ).catch(() => ({ rows: [] }));
 
+      const latestShipment = shipments.rows[0] || null;
+      const tracking = buildStructuredTracking(order, latestShipment);
+
       return c.json({
         success: true,
+        tracking,
         order: {
           id: order.id,
           orderNumber: order.order_number,
           status: order.order_status,
-          trackingNumber: order.tracking_number,
-          shippedAt: order.shipped_at,
+          trackingNumber: tracking?.trackingNumber || order.tracking_number,
+          carrierId: tracking?.carrierId,
+          carrierName: tracking?.carrierName,
+          trackingUrl: tracking?.trackingUrl,
+          identifierType: tracking?.identifierType,
+          shippedAt: tracking?.shippedAt || order.shipped_at,
           deliveredAt: order.delivered_at,
+          locked: tracking?.locked ?? false,
         },
         shipments: shipments.rows,
       });

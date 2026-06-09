@@ -26,6 +26,14 @@ import {
   stripPresignFromProductImagesJsonb,
 } from '../../../utils/s3-media-presign';
 import { resolveVendorById } from './vendorProfile.vendor';
+import {
+  applyNormalizedPricingToDbPayload,
+  normalizeEcommerceProductPricing,
+} from '../../../utils/product-ecommerce-pricing';
+import {
+  generateVendorProductSku,
+  validateEcommerceProductInput,
+} from '../../../utils/product-ecommerce-validation';
 
 // PHASE 1.3: S3 client for product image uploads
 const s3Client = new S3Client({
@@ -62,36 +70,69 @@ function productsOptionalSelectExprs(cols: Set<string>) {
   };
 }
 
-/** Vendor UI "Original Price" → DB `compare_at_price` (MRP for discount badge). */
-function parseCompareAtPriceFromBody(body: Record<string, unknown>): number | null | undefined {
-  if (
-    body.compare_at_price === undefined &&
-    body.original_price === undefined &&
-    body.compareAtPrice === undefined &&
-    body.originalPrice === undefined
-  ) {
-    return undefined;
+async function resolveActiveCategoryName(categoryId: string): Promise<string | null> {
+  try {
+    const cat = await query(
+      'SELECT name FROM ecommerce_categories WHERE id = $1 AND is_active = true',
+      [categoryId],
+    );
+    return cat.rows?.[0]?.name ? String(cat.rows[0].name).trim() : null;
+  } catch {
+    return null;
   }
-  const raw =
-    body.compare_at_price ?? body.original_price ?? body.compareAtPrice ?? body.originalPrice;
-  if (raw === null || raw === '') return null;
-  const n = parseFloat(String(raw));
-  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function applyCompareAtPriceToPayload(
+function buildSingleProductValidationRecord(
+  body: Record<string, unknown>,
+  prevRow?: Record<string, unknown>,
+): Record<string, unknown> {
+  const prev = prevRow || {};
+  const images =
+    body.images !== undefined && body.images !== null ? body.images : prev.images;
+  return {
+    name: body.name ?? prev.name,
+    category_id: body.category_id ?? prev.category_id,
+    compare_at_price:
+      body.compare_at_price ?? body.original_price ?? body.mrp ?? prev.compare_at_price,
+    original_price: body.original_price ?? body.compare_at_price ?? prev.compare_at_price,
+    mrp: body.mrp ?? body.compare_at_price ?? prev.compare_at_price,
+    price: body.price ?? body.selling_price ?? prev.price,
+    selling_price: body.selling_price ?? body.price ?? prev.price,
+    stock: body.stock ?? body.stock_quantity ?? prev.stock,
+    stock_quantity: body.stock_quantity ?? body.stock ?? prev.stock,
+    hsn_code: body.hsn_code ?? prev.hsn_code,
+    gst_rate: body.gst_rate ?? prev.gst_rate,
+    images,
+  };
+}
+
+function vendorProductValidationTouched(body: Record<string, unknown>): boolean {
+  return (
+    body.name !== undefined ||
+    body.category_id !== undefined ||
+    body.images !== undefined ||
+    body.hsn_code !== undefined ||
+    body.gst_rate !== undefined ||
+    body.stock !== undefined ||
+    body.stock_quantity !== undefined ||
+    body.price !== undefined ||
+    body.selling_price !== undefined ||
+    body.compare_at_price !== undefined ||
+    body.original_price !== undefined ||
+    body.mrp !== undefined
+  );
+}
+
+function applyBodyPricingToPayload(
   body: Record<string, unknown>,
   payload: Record<string, unknown>,
   cols: Set<string>,
-  sellingPrice: number,
 ): string | null {
-  if (!cols.has('compare_at_price')) return null;
-  const cap = parseCompareAtPriceFromBody(body);
-  if (cap === undefined) return null;
-  if (cap !== null && cap < sellingPrice) {
-    return 'Original price (MRP) must be greater than or equal to selling price';
+  const normalized = normalizeEcommerceProductPricing(body);
+  if (!normalized.ok) {
+    return normalized.message;
   }
-  payload.compare_at_price = cap;
+  applyNormalizedPricingToDbPayload(normalized.pricing, payload, cols);
   return null;
 }
 
@@ -443,8 +484,6 @@ class CreateVendorProductHandler extends BaseHandler {
         return this.error('Vendor ID is required', 400);
       }
 
-      this.validateRequired(body, ['name', 'price']);
-
       // ✅ FIX: Resolve vendor ID (handles vendor_identity auto-create)
       const vendor = await resolveVendorById(vendorId);
       if (!vendor || !vendor.id) {
@@ -453,19 +492,40 @@ class CreateVendorProductHandler extends BaseHandler {
       }
       const resolvedVendorId = vendor.id;
 
-      // ✅ FIX: Use stock column (stock_quantity was renamed to stock in migration 013)
-      const stockValue = parseInt(body.stock || body.stock_quantity || '0', 10);
-
-      // Resolve category name (optional) so free-text `category` is populated alongside `category_id`
-      let resolvedCategoryName: string | null = null;
-      if (body.category_id) {
-        try {
-          const cat = await query('SELECT name FROM ecommerce_categories WHERE id = $1', [body.category_id]);
-          resolvedCategoryName = cat.rows?.[0]?.name || null;
-        } catch {
-          resolvedCategoryName = null;
-        }
+      const categoryId = body.category_id ? String(body.category_id).trim() : '';
+      const resolvedCategoryName = categoryId
+        ? await resolveActiveCategoryName(categoryId)
+        : null;
+      if (categoryId && !resolvedCategoryName) {
+        return this.error('Category is required and must be an active catalog category', 400);
       }
+
+      let imagesNormForValidation =
+        body.images !== undefined && body.images !== null
+          ? normalizeProductJsonbField(body.images, 'images')
+          : undefined;
+      if (
+        Array.isArray(imagesNormForValidation) &&
+        imagesNormForValidation.length === 0
+      ) {
+        return this.error('At least one product image is required', 400);
+      }
+
+      const validationRecord = buildSingleProductValidationRecord({
+        ...body,
+        ...(imagesNormForValidation !== undefined ? { images: imagesNormForValidation } : {}),
+      });
+      const tierA = validateEcommerceProductInput(validationRecord, {
+        mode: 'single',
+        resolvedCategoryName,
+        requireHttpImageUrls: false,
+      });
+      if (!tierA.ok) {
+        return this.error(tierA.message, 400);
+      }
+      const { normalized } = tierA;
+
+      const sku = generateVendorProductSku(resolvedVendorId);
 
       // Prepare product data - only use columns that exist in DB
       // Approval lifecycle:
@@ -473,25 +533,25 @@ class CreateVendorProductHandler extends BaseHandler {
       // - keep product hidden until approved by admin (is_active = false)
       const productData: any = {
         vendor_id: resolvedVendorId,
-        name: body.name,
+        name: normalized.name,
         description: body.description || null,
-        category_id: body.category_id || null,
+        category_id: normalized.category_id || categoryId || null,
         category: body.category ?? resolvedCategoryName ?? null,
-        price: parseFloat(body.price),
-        stock: stockValue, // ✅ FIX: Use stock column (migration 013 renamed stock_quantity to stock)
-        sku: body.sku || null,
-        // Visibility control: vendors cannot publish directly; admin approval required
+        stock: normalized.stock,
+        sku,
+        hsn_code: normalized.hsn_code,
+        gst_rate: normalized.gst_rate,
         is_active: false,
       };
 
       const cols = await getProductsColumnSet();
       const hasMetadataCol = cols.has('metadata');
 
-      const sellingPrice = parseFloat(String(body.price));
-      const compareErr = applyCompareAtPriceToPayload(body, productData, cols, sellingPrice);
-      if (compareErr) {
-        return this.error(compareErr, 400);
-      }
+      applyNormalizedPricingToDbPayload(
+        { mrp: normalized.mrp, sellingPrice: normalized.sellingPrice },
+        productData,
+        cols,
+      );
 
       // Approval: always persist explicit status when column exists; vendors cannot self-publish to active.
       let vendorLifecycleStatus = normalizeApprovalStatus(body.status);
@@ -679,6 +739,27 @@ class UpdateVendorProductHandler extends BaseHandler {
       const cols = await getProductsColumnSet();
       const hasMetadataCol = cols.has('metadata');
 
+      if (vendorProductValidationTouched(body)) {
+        const mergeRecord = buildSingleProductValidationRecord(body, prevRow);
+        const categoryIdForVal = mergeRecord.category_id
+          ? String(mergeRecord.category_id).trim()
+          : '';
+        const resolvedCategoryName = categoryIdForVal
+          ? await resolveActiveCategoryName(categoryIdForVal)
+          : null;
+        if (categoryIdForVal && !resolvedCategoryName) {
+          return this.error('Category must be an active catalog category', 400);
+        }
+        const tierA = validateEcommerceProductInput(mergeRecord, {
+          mode: 'single',
+          resolvedCategoryName,
+          requireHttpImageUrls: false,
+        });
+        if (!tierA.ok) {
+          return this.error(tierA.message, 400);
+        }
+      }
+
       // Prepare update data
       const updateData: any = {};
 
@@ -686,14 +767,32 @@ class UpdateVendorProductHandler extends BaseHandler {
       if (body.description !== undefined) updateData.description = body.description;
       if (body.category_id !== undefined) updateData.category_id = body.category_id;
       if (body.category !== undefined) updateData.category = body.category;
-      if (body.price !== undefined) updateData.price = parseFloat(body.price);
-      const effectivePrice =
-        updateData.price !== undefined
-          ? Number(updateData.price)
-          : parseFloat(String(prevRow.price ?? 0)) || 0;
-      const compareErr = applyCompareAtPriceToPayload(body, updateData, cols, effectivePrice);
-      if (compareErr) {
-        return this.error(compareErr, 400);
+      const pricingTouched =
+        body.price !== undefined ||
+        body.selling_price !== undefined ||
+        body.compare_at_price !== undefined ||
+        body.original_price !== undefined ||
+        body.mrp !== undefined;
+      if (pricingTouched) {
+        const mergeBody: Record<string, unknown> = {
+          ...prevRow,
+          ...body,
+          price: body.price ?? body.selling_price ?? prevRow.price,
+          compare_at_price:
+            body.compare_at_price ??
+            body.original_price ??
+            body.mrp ??
+            prevRow.compare_at_price,
+          original_price:
+            body.original_price ??
+            body.compare_at_price ??
+            body.mrp ??
+            prevRow.compare_at_price,
+        };
+        const pricingErr = applyBodyPricingToPayload(mergeBody, updateData, cols);
+        if (pricingErr) {
+          return this.error(pricingErr, 400);
+        }
       }
       // ✅ FIX: Use stock column (stock_quantity was renamed to stock in migration 013)
       if (body.stock !== undefined) {
@@ -702,7 +801,11 @@ class UpdateVendorProductHandler extends BaseHandler {
       if (body.stock_quantity !== undefined) {
         updateData.stock = parseInt(body.stock_quantity, 10); // ✅ FIX: Map stock_quantity to stock
       }
-      if (body.sku !== undefined) updateData.sku = body.sku;
+      // SKU is system-assigned; vendors cannot change it. Backfill legacy rows with null SKU on save.
+      const prevSku = prevRow.sku != null ? String(prevRow.sku).trim() : '';
+      if (!prevSku) {
+        updateData.sku = generateVendorProductSku(resolvedVendorId);
+      }
       if (body.status !== undefined && cols.has('status')) {
         let st = normalizeApprovalStatus(body.status);
         // Block privilege escalation: only already-approved rows may stay active via vendor updates.

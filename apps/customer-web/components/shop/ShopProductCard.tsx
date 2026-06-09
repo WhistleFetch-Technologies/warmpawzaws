@@ -1,9 +1,10 @@
 'use client';
 
 import React from 'react';
-import { Check, ShoppingCart } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { canonicalProductId } from '@/lib/product-id';
 import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
+import { ShopCartQuantityControl } from './ShopCartQuantityControl';
 import type { ShopProduct } from './shop-types';
 import { getProductDiscountPercent } from './map-shop-product';
 
@@ -13,11 +14,19 @@ const PRODUCT_CARD_SHADOW =
 interface ShopProductCardProps {
   product: ShopProduct;
   variant: 'deal' | 'grid';
+  cartQuantity: number;
   onAddToCart: () => void;
-  inCart: boolean;
+  onQuantityChange: (quantity: number) => void;
 }
 
-export function ShopProductCard({ product, variant, onAddToCart, inCart }: ShopProductCardProps) {
+export function ShopProductCard({
+  product,
+  variant,
+  cartQuantity,
+  onAddToCart,
+  onQuantityChange,
+}: ShopProductCardProps) {
+  const router = useRouter();
   const [imageFailed, setImageFailed] = React.useState(false);
 
   const wishlistPid = canonicalProductId(product as unknown as Record<string, unknown>) || product.id;
@@ -34,7 +43,9 @@ export function ShopProductCard({ product, variant, onAddToCart, inCart }: ShopP
   const outOfStock = product.stock === 0;
 
   const handleCardClick = () => {
-    window.location.href = `/shop/${wishlistPid}`;
+    const pid = (wishlistPid || product.id || '').trim();
+    if (!pid) return;
+    router.push(`/shop/${encodeURIComponent(pid)}`);
   };
 
   if (variant === 'deal') {
@@ -65,24 +76,13 @@ export function ShopProductCard({ product, variant, onAddToCart, inCart }: ShopP
               {product.emoji || '🐾'}
             </div>
           )}
-          <button
-            type="button"
+          <ShopCartQuantityControl
+            variant="deal"
+            quantity={cartQuantity}
             disabled={outOfStock}
-            onClick={(e) => {
-              e.stopPropagation();
-              onAddToCart();
-            }}
-            className={`absolute bottom-2 right-2 w-9 h-9 rounded-full flex items-center justify-center shadow-md ${
-              outOfStock
-                ? 'bg-slate-200 text-slate-400'
-                : inCart
-                  ? 'bg-emerald-500 text-white'
-                  : 'bg-[#FF8C42] text-white'
-            }`}
-            aria-label="Add to cart"
-          >
-            {inCart ? <Check className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
-          </button>
+            onAdd={onAddToCart}
+            onQuantityChange={onQuantityChange}
+          />
         </div>
         <div className="px-2.5 pb-3 pt-1">
           <h3 className="text-[11px] font-semibold text-slate-900 line-clamp-2 leading-snug min-h-[2.25rem]">
@@ -90,7 +90,7 @@ export function ShopProductCard({ product, variant, onAddToCart, inCart }: ShopP
           </h3>
           <div className="flex items-baseline gap-1 mt-1">
             <span className="text-sm font-bold text-slate-900 tabular-nums">₹{product.price}</span>
-            {product.original_price && product.original_price > product.price && (
+            {discount > 0 && product.original_price != null && (
               <span className="text-[10px] text-slate-400 line-through tabular-nums">
                 ₹{product.original_price}
               </span>
@@ -162,42 +162,20 @@ export function ShopProductCard({ product, variant, onAddToCart, inCart }: ShopP
 
         <div className="flex items-baseline gap-1.5 flex-wrap">
           <span className="text-sm font-bold text-slate-900 tabular-nums">₹{product.price}</span>
-          {product.original_price && product.original_price > product.price && (
+          {discount > 0 && product.original_price != null && (
             <span className="text-[10px] text-slate-400 line-through tabular-nums">
               ₹{product.original_price}
             </span>
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onAddToCart();
-          }}
+        <ShopCartQuantityControl
+          variant="grid"
+          quantity={cartQuantity}
           disabled={outOfStock}
-          className={`mt-auto w-full py-2.5 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1.5 shrink-0 ${
-            outOfStock
-              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-              : inCart
-                ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
-                : 'bg-[#FF8C42] text-white shadow-md shadow-orange-500/20 active:opacity-90'
-          }`}
-        >
-          {outOfStock ? (
-            'Unavailable'
-          ) : inCart ? (
-            <>
-              <Check className="w-3.5 h-3.5" />
-              In cart
-            </>
-          ) : (
-            <>
-              <ShoppingCart className="w-3.5 h-3.5" />
-              Add
-            </>
-          )}
-        </button>
+          onAdd={onAddToCart}
+          onQuantityChange={onQuantityChange}
+        />
       </div>
     </div>
   );

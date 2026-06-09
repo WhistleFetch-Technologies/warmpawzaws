@@ -67,8 +67,14 @@ import {
 	formatShopProductOptionLabel,
 	normalizeBannerServiceStyle,
 	validateBannerSaveTarget,
+	buildArticleBannerCtaLink,
+	formatArticleOptionLabel,
+	isPublishedArticleRow,
+	parseArticleSlugFromCtaLink,
 	isCheckoutBannerPosition,
+	isHomeBannerPosition,
 	isShopBannerPosition,
+	type BannerCtaTargetMode,
 	type BannerDestinationCategory,
 	type BannerDestinationServiceStyle,
 	type BannerDestinationVendor,
@@ -119,7 +125,9 @@ export default function MarketingPromotionsTab() {
 	const [bannerCtaPersona, setBannerCtaPersona] = useState("");
 	const [bannerCtaServiceStyle, setBannerCtaServiceStyle] = useState("");
 	const [bannerCtaVendorId, setBannerCtaVendorId] = useState("");
-	const [bannerCtaTargetMode, setBannerCtaTargetMode] = useState<"none" | "service_type" | "vendor">("none");
+	const [bannerCtaTargetMode, setBannerCtaTargetMode] = useState<BannerCtaTargetMode>("none");
+	const [bannerCtaArticleSlug, setBannerCtaArticleSlug] = useState("");
+	const [bannerCtaArticlePageId, setBannerCtaArticlePageId] = useState("");
 	const [bannerDestinationCategories, setBannerDestinationCategories] = useState<BannerDestinationCategory[]>([]);
 	const [bannerDestinationServiceStyles, setBannerDestinationServiceStyles] = useState<BannerDestinationServiceStyle[]>([]);
 	const [bannerDestinationVendors, setBannerDestinationVendors] = useState<BannerDestinationVendor[]>([]);
@@ -227,10 +235,13 @@ export default function MarketingPromotionsTab() {
 	}, [activeTab]);
 
 	useEffect(() => {
-		if (showBannerModal) {
-			void loadBannerDestinationOptions(bannerCtaPersona || undefined);
-		}
-	}, [showBannerModal, bannerCtaPersona]);
+		if (!showBannerModal) return;
+		const needsCategoryOptions =
+			bannerCtaTargetMode === "vendor" || bannerCtaTargetMode === "service_type";
+		void loadBannerDestinationOptions(
+			bannerCtaPersona && needsCategoryOptions ? bannerCtaPersona : bannerCtaPersona || undefined
+		);
+	}, [showBannerModal, bannerCtaPersona, bannerCtaTargetMode]);
 
 	const loadBannerDestinationOptions = async (categoryId?: string) => {
 		setBannerDestinationLoading(true);
@@ -793,11 +804,20 @@ export default function MarketingPromotionsTab() {
 			targetMode: bannerCtaTargetMode,
 			serviceStyle: bannerCtaServiceStyle,
 			vendorId: bannerCtaVendorId,
+			articleSlug: bannerCtaArticleSlug,
 			shopTargetMode: bannerShopTargetMode,
 			shopProductId: bannerShopProductId,
 		});
 		if (!validation.ok) {
-			toast.error(validation.message);
+			let message = validation.message;
+			if (
+				bannerCtaTargetMode === "vendor" &&
+				!bannerCtaVendorId.trim() &&
+				bannerDestinationVendors.length === 0
+			) {
+				message += " No vendors loaded for this category. Try another category or refresh.";
+			}
+			toast.error(message);
 			return;
 		}
 
@@ -825,31 +845,52 @@ export default function MarketingPromotionsTab() {
 		if (bannerCtaTargetMode === "service_type") targetLevel = "service_type";
 		if (bannerCtaTargetMode === "vendor") targetLevel = "vendor";
 
+		const selectedArticle = articles.find(
+			(a: Record<string, unknown>) =>
+				String(a.slug ?? "").trim() === bannerCtaArticleSlug.trim()
+		) as Record<string, unknown> | undefined;
+		const articleTitle = selectedArticle ? String(selectedArticle.title ?? "").trim() : "";
+		const articlePageId =
+			bannerCtaArticlePageId ||
+			String(selectedArticle?.pageId ?? selectedArticle?.id ?? "").trim();
+
 		let metadata = buildBannerMetadata({
 			gradientFrom: bannerForm.gradient_from,
 			gradientTo: bannerForm.gradient_to,
-			bannerTarget: isCheckout || isShop
-				? null
-				: {
-						categoryId: bannerCtaPersona,
-						customerScreen,
-						targetLevel,
-						serviceStyle:
-							bannerCtaTargetMode === "service_type" ? bannerCtaServiceStyle : undefined,
-						vendorId: bannerCtaTargetMode === "vendor" ? bannerCtaVendorId : undefined,
-						vendorName: bannerCtaTargetMode === "vendor" ? vendorName || undefined : undefined,
-						vendorServiceId: null,
-						persona: customerScreen,
-					},
+			bannerTarget:
+				isCheckout || isShop
+					? null
+					: bannerCtaTargetMode === "informational"
+						? { targetLevel: "informational" }
+						: bannerCtaTargetMode === "article"
+						? {
+								targetLevel: "article",
+								articleSlug: bannerCtaArticleSlug.trim(),
+								articlePageId: articlePageId || undefined,
+								articleTitle: articleTitle || undefined,
+							}
+						: {
+								categoryId: bannerCtaPersona,
+								customerScreen,
+								targetLevel,
+								serviceStyle:
+									bannerCtaTargetMode === "service_type" ? bannerCtaServiceStyle : undefined,
+								vendorId: bannerCtaTargetMode === "vendor" ? bannerCtaVendorId : undefined,
+								vendorName: bannerCtaTargetMode === "vendor" ? vendorName || undefined : undefined,
+								vendorServiceId: null,
+								persona: customerScreen,
+							},
 		});
 
-		let ctaLink = isCheckout
+		let ctaLink = isCheckout || bannerCtaTargetMode === "informational"
 			? ""
 			: isShop
 				? ""
-				: bannerCtaTargetMode === "vendor" && vendorName
-					? buildBannerCtaLink(customerScreen, vendorName)
-					: String(editingBanner?.linkUrl || editingBanner?.cta_link || "").trim();
+				: bannerCtaTargetMode === "article"
+					? buildArticleBannerCtaLink(bannerCtaArticleSlug)
+					: bannerCtaTargetMode === "vendor" && vendorName
+						? buildBannerCtaLink(customerScreen, vendorName)
+						: String(editingBanner?.linkUrl || editingBanner?.cta_link || "").trim();
 
 		if (isShop) {
 			const shopTarget = buildShopBannerTarget({
@@ -923,6 +964,8 @@ export default function MarketingPromotionsTab() {
 		setBannerCtaServiceStyle("");
 		setBannerCtaVendorId("");
 		setBannerCtaTargetMode("none");
+		setBannerCtaArticleSlug("");
+		setBannerCtaArticlePageId("");
 		setBannerDestinationServiceStyles([]);
 		setBannerDestinationVendors([]);
 		setBannerShopTargetMode("informational");
@@ -969,12 +1012,25 @@ export default function MarketingPromotionsTab() {
 		setBannerCtaPersona(value);
 		setBannerCtaServiceStyle("");
 		setBannerCtaVendorId("");
-		setBannerCtaTargetMode("none");
 	};
 
-	const handleBannerCtaTargetModeChange = (mode: "none" | "service_type" | "vendor") => {
+	const handleBannerCtaTargetModeChange = (mode: BannerCtaTargetMode) => {
 		setBannerCtaTargetMode(mode);
-		if (mode === "none") {
+		if (mode === "informational") {
+			setBannerCtaPersona("");
+			setBannerCtaServiceStyle("");
+			setBannerCtaVendorId("");
+			setBannerCtaArticleSlug("");
+			setBannerCtaArticlePageId("");
+			setBannerDestinationServiceStyles([]);
+			setBannerDestinationVendors([]);
+		} else if (mode === "article") {
+			setBannerCtaPersona("");
+			setBannerCtaServiceStyle("");
+			setBannerCtaVendorId("");
+			setBannerDestinationServiceStyles([]);
+			setBannerDestinationVendors([]);
+		} else if (mode === "none") {
 			setBannerCtaServiceStyle("");
 			setBannerCtaVendorId("");
 		} else if (mode === "service_type") {
@@ -999,6 +1055,14 @@ export default function MarketingPromotionsTab() {
 		}
 		setBannerCtaVendorId(value);
 	};
+
+	const publishedBannerArticles = useMemo(
+		() =>
+			articles.filter((p) =>
+				isPublishedArticleRow(p as Record<string, unknown>)
+			) as Record<string, unknown>[],
+		[articles]
+	);
 
 	const bannerVendorOptions = useMemo(() => {
 		const list = [...bannerDestinationVendors];
@@ -1050,19 +1114,40 @@ export default function MarketingPromotionsTab() {
 				: "";
 		const vendorId = storedTarget?.vendorId || matchedVendor?.id || matchedVendor?.vendorId || "";
 
-		setBannerCtaPersona(categoryId);
-		if (storedTarget?.targetLevel === "vendor" || vendorId) {
-			setBannerCtaTargetMode("vendor");
-			setBannerCtaVendorId(String(vendorId));
-			setBannerCtaServiceStyle("");
-		} else if (storedTarget?.targetLevel === "service_type" || serviceStyle) {
-			setBannerCtaTargetMode("service_type");
+		const slugFromCta = parseArticleSlugFromCtaLink(
+			banner.cta_link || banner.ctaLink || banner.linkUrl
+		);
+		if (storedTarget?.targetLevel === "informational") {
+			setBannerCtaTargetMode("informational");
+			setBannerCtaArticleSlug("");
+			setBannerCtaArticlePageId("");
+			setBannerCtaPersona("");
 			setBannerCtaVendorId("");
-			setBannerCtaServiceStyle(serviceStyle);
+			setBannerCtaServiceStyle("");
+		} else if (storedTarget?.targetLevel === "article" || slugFromCta) {
+			setBannerCtaTargetMode("article");
+			setBannerCtaArticleSlug(storedTarget?.articleSlug || slugFromCta || "");
+			setBannerCtaArticlePageId(String(storedTarget?.articlePageId ?? "").trim());
+			setBannerCtaPersona("");
+			setBannerCtaVendorId("");
+			setBannerCtaServiceStyle("");
 		} else {
-			setBannerCtaTargetMode("none");
-			setBannerCtaVendorId("");
-			setBannerCtaServiceStyle("");
+			setBannerCtaArticleSlug("");
+			setBannerCtaArticlePageId("");
+			setBannerCtaPersona(categoryId);
+			if (storedTarget?.targetLevel === "vendor" || vendorId) {
+				setBannerCtaTargetMode("vendor");
+				setBannerCtaVendorId(String(vendorId));
+				setBannerCtaServiceStyle("");
+			} else if (storedTarget?.targetLevel === "service_type" || serviceStyle) {
+				setBannerCtaTargetMode("service_type");
+				setBannerCtaVendorId("");
+				setBannerCtaServiceStyle(serviceStyle);
+			} else {
+				setBannerCtaTargetMode("none");
+				setBannerCtaVendorId("");
+				setBannerCtaServiceStyle("");
+			}
 		}
 
 		const position = (banner.position as string) || adminBannerPositionFromRow(banner);
@@ -1110,6 +1195,16 @@ export default function MarketingPromotionsTab() {
 	// ARTICLES LOGIC
 	// ===========================
 
+	const articleRowIsPublished = (article: Record<string, unknown>): boolean => {
+		const raw = article.isPublished ?? article.is_published;
+		if (raw === true || raw === 1) return true;
+		if (typeof raw === "string") {
+			const t = raw.trim().toLowerCase();
+			return t === "true" || t === "1";
+		}
+		return false;
+	};
+
 	const loadArticles = async () => {
 		setLoading(true);
 		try {
@@ -1137,7 +1232,7 @@ export default function MarketingPromotionsTab() {
 					slug: slug,
 					content: articleForm.content,
 					category: articleForm.category,
-					isPublished: articleForm.is_published,
+					isPublished: Boolean(articleForm.is_published),
 					metadata: { read_time: articleForm.read_time, featured: articleForm.featured },
 				});
 			} else {
@@ -1146,16 +1241,15 @@ export default function MarketingPromotionsTab() {
 					slug: slug,
 					content: articleForm.content,
 					category: articleForm.category,
-					isPublished: articleForm.is_published,
+					isPublished: Boolean(articleForm.is_published),
 					metadata: { read_time: articleForm.read_time, featured: articleForm.featured },
 				});
 			}
-			toast.success(`Article ${editingArticle ? "updated" : "created"} successfully`);
-			if (!articleForm.is_published) {
-				toast.info("Draft saved", {
-					description: "Customers only see articles when Published is turned on.",
-				});
-			}
+			toast.success(`Article ${editingArticle ? "updated" : "created"} successfully`, {
+				description: articleForm.is_published
+					? "Published — customers can see it under Pet care articles."
+					: "Draft only — turn Published on when ready.",
+			});
 			setShowArticleModal(false);
 			loadArticles();
 			resetArticleForm();
@@ -1197,7 +1291,7 @@ export default function MarketingPromotionsTab() {
 			content: article.content || "",
 			category: article.category || "tips",
 			read_time: article.metadata?.read_time || "5 min",
-			is_published: article.isPublished || article.is_published || false,
+			is_published: articleRowIsPublished(article as Record<string, unknown>),
 			featured: article.metadata?.featured || false,
 		});
 		setShowArticleModal(true);
@@ -2658,6 +2752,60 @@ export default function MarketingPromotionsTab() {
 							/>
 						</div>
 
+						<div className="grid grid-cols-2 gap-4">
+							<div>
+								<Label>Position</Label>
+								<Select
+									value={bannerForm.position}
+									onValueChange={(v: string) => {
+										setBannerForm({ ...bannerForm, position: v });
+										if (isCheckoutBannerPosition(v) || isShopBannerPosition(v)) {
+											setBannerCtaPersona("");
+											setBannerCtaServiceStyle("");
+											setBannerCtaVendorId("");
+											setBannerCtaTargetMode("none");
+										}
+										if (
+											!isHomeBannerPosition(v) &&
+											bannerCtaTargetMode === "informational"
+										) {
+											setBannerCtaTargetMode("none");
+										}
+										if (isShopBannerPosition(v)) {
+											setBannerShopTargetMode("informational");
+											setBannerShopProductId("");
+											setBannerShopProductName("");
+											setBannerShopProductSku("");
+										}
+									}}
+								>
+									<SelectTrigger>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="home_top">Home Top (Hero Carousel)</SelectItem>
+										<SelectItem value="home_middle">Home Middle</SelectItem>
+										<SelectItem value="home_lower">Home Lower</SelectItem>
+										<SelectItem value="category">Category Page</SelectItem>
+										<SelectItem value="shop">Shop Main Page</SelectItem>
+										<SelectItem value="checkout">Checkout Page</SelectItem>
+									</SelectContent>
+								</Select>
+								<p className="text-xs text-gray-500 mt-1.5">
+									Home top, middle, and lower: customer home only. Category: Find All Services. Shop main: Pet Products listing. Checkout: shop checkout.
+								</p>
+							</div>
+							<div>
+								<Label>Display Order</Label>
+								<Input
+									type="number"
+									value={bannerForm.display_order}
+									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, display_order: parseInt(e.target.value) || 0 })}
+									min="0"
+								/>
+							</div>
+						</div>
+
 						<div className="rounded-lg border border-dashed border-gray-200 p-4 bg-gray-50/80 space-y-4">
 							{isCheckoutBannerPosition(bannerForm.position) ? (
 								<p className="text-sm text-gray-600">
@@ -2695,68 +2843,141 @@ export default function MarketingPromotionsTab() {
 							<div>
 								<p className="text-sm font-medium text-gray-900">Banner destination</p>
 								<p className="text-xs text-gray-500 mt-0.5">
-									Pick a category, then choose service type or vendor using the option below.
+									Open a published in-app article, or route by category, service type, or vendor.
 								</p>
 							</div>
 
 							<div className="space-y-4">
-								<div className="space-y-1.5 min-w-0">
-									<Label>Service category</Label>
-									<Select
-										value={bannerCtaPersona || BANNER_SELECT_EMPTY}
-										onValueChange={handleBannerCtaPersonaChange}
-									>
-										<SelectTrigger className={bannerSelectTriggerClass}>
-											<SelectValue placeholder="Select" />
-										</SelectTrigger>
-										<SelectContent position="popper" className="z-[200] max-h-60">
-											<SelectItem value={BANNER_SELECT_EMPTY}>Select</SelectItem>
-											{bannerDestinationCategories.map((c) => (
-												<SelectItem key={c.categoryId} value={c.categoryId}>
-													{c.name}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
+								{bannerCtaTargetMode === "informational" ? (
+									<p className="text-sm text-gray-600">
+										Home informational banners display message and CTA label only — no tap redirect.
+									</p>
+								) : null}
+								<div className="space-y-2">
+									<Label>Route by</Label>
+									<div className="flex flex-col gap-2">
+										{isHomeBannerPosition(bannerForm.position) ? (
+											<label className="flex items-center gap-2 cursor-pointer">
+												<input
+													type="radio"
+													name="bannerCtaTargetMode"
+													checked={bannerCtaTargetMode === "informational"}
+													onChange={() => handleBannerCtaTargetModeChange("informational")}
+													className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+												/>
+												<span className="text-sm text-gray-900">Informational only (no redirect)</span>
+											</label>
+										) : null}
+										<label className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="radio"
+												name="bannerCtaTargetMode"
+												checked={bannerCtaTargetMode === "article"}
+												onChange={() => handleBannerCtaTargetModeChange("article")}
+												className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+											/>
+											<span className="text-sm text-gray-900">In-app article</span>
+										</label>
+										<label className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="radio"
+												name="bannerCtaTargetMode"
+												checked={bannerCtaTargetMode === "none"}
+												onChange={() => handleBannerCtaTargetModeChange("none")}
+												className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+											/>
+											<span className="text-sm text-gray-900">In-app — category page only</span>
+										</label>
+										<label className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="radio"
+												name="bannerCtaTargetMode"
+												checked={bannerCtaTargetMode === "service_type"}
+												onChange={() => handleBannerCtaTargetModeChange("service_type")}
+												className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+											/>
+											<span className="text-sm text-gray-900">In-app — service type</span>
+										</label>
+										<label className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="radio"
+												name="bannerCtaTargetMode"
+												checked={bannerCtaTargetMode === "vendor"}
+												onChange={() => handleBannerCtaTargetModeChange("vendor")}
+												className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
+											/>
+											<span className="text-sm text-gray-900">In-app — vendor</span>
+										</label>
+									</div>
 								</div>
 
-								{bannerCtaPersona ? (
-									<div className="space-y-2">
-										<Label>Route by</Label>
-										<div className="flex flex-col gap-2 sm:flex-row sm:gap-6">
-											<label className="flex items-center gap-2 cursor-pointer">
-												<input
-													type="radio"
-													name="bannerCtaTargetMode"
-													checked={bannerCtaTargetMode === "none"}
-													onChange={() => handleBannerCtaTargetModeChange("none")}
-													className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
-												/>
-												<span className="text-sm text-gray-900">Category page only</span>
-											</label>
-											<label className="flex items-center gap-2 cursor-pointer">
-												<input
-													type="radio"
-													name="bannerCtaTargetMode"
-													checked={bannerCtaTargetMode === "service_type"}
-													onChange={() => handleBannerCtaTargetModeChange("service_type")}
-													className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
-												/>
-												<span className="text-sm text-gray-900">Service type</span>
-											</label>
-											<label className="flex items-center gap-2 cursor-pointer">
-												<input
-													type="radio"
-													name="bannerCtaTargetMode"
-													checked={bannerCtaTargetMode === "vendor"}
-													onChange={() => handleBannerCtaTargetModeChange("vendor")}
-													className="w-4 h-4 text-orange-600 accent-[#FF8C42]"
-												/>
-												<span className="text-sm text-gray-900">Vendor</span>
-											</label>
-										</div>
+								{bannerCtaTargetMode === "informational" ? null : bannerCtaTargetMode === "article" ? (
+									<div className="space-y-1.5 min-w-0">
+										<Label>Article</Label>
+										<Select
+											value={bannerCtaArticleSlug || BANNER_SELECT_EMPTY}
+											onValueChange={(value) => {
+												if (value === BANNER_SELECT_EMPTY) {
+													setBannerCtaArticleSlug("");
+													setBannerCtaArticlePageId("");
+													return;
+												}
+												const page = publishedBannerArticles.find(
+													(p) => String(p.slug ?? "").trim() === value
+												);
+												setBannerCtaArticleSlug(value);
+												setBannerCtaArticlePageId(
+													String(page?.pageId ?? page?.id ?? "").trim()
+												);
+											}}
+										>
+											<SelectTrigger className={bannerSelectTriggerClass}>
+												<SelectValue placeholder="Select published article" />
+											</SelectTrigger>
+											<SelectContent position="popper" className="z-[200] max-h-60">
+												<SelectItem value={BANNER_SELECT_EMPTY}>Select</SelectItem>
+												{publishedBannerArticles.length === 0 ? (
+													<SelectItem value="__none__" disabled>
+														No published articles — create one in Articles tab
+													</SelectItem>
+												) : (
+													publishedBannerArticles.map((page) => {
+														const slug = String(page.slug ?? "").trim();
+														if (!slug) return null;
+														return (
+															<SelectItem key={slug} value={slug}>
+																{formatArticleOptionLabel(page)}
+															</SelectItem>
+														);
+													})
+												)}
+											</SelectContent>
+										</Select>
+										<p className="text-xs text-gray-500">
+											Customer opens the article inside the app when they tap the CTA.
+										</p>
 									</div>
-								) : null}
+								) : (
+									<div className="space-y-1.5 min-w-0">
+										<Label>Service category</Label>
+										<Select
+											value={bannerCtaPersona || BANNER_SELECT_EMPTY}
+											onValueChange={handleBannerCtaPersonaChange}
+										>
+											<SelectTrigger className={bannerSelectTriggerClass}>
+												<SelectValue placeholder="Select" />
+											</SelectTrigger>
+											<SelectContent position="popper" className="z-[200] max-h-60">
+												<SelectItem value={BANNER_SELECT_EMPTY}>Select</SelectItem>
+												{bannerDestinationCategories.map((c) => (
+													<SelectItem key={c.categoryId} value={c.categoryId}>
+														{c.name}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+									</div>
+								)}
 
 								{bannerCtaPersona && bannerCtaTargetMode === "service_type" ? (
 									<div className="space-y-1.5 min-w-0">
@@ -2821,54 +3042,6 @@ export default function MarketingPromotionsTab() {
 							</div>
 								</>
 							)}
-						</div>
-
-						<div className="grid grid-cols-2 gap-4">
-							<div>
-								<Label>Position</Label>
-								<Select
-									value={bannerForm.position}
-									onValueChange={(v: string) => {
-										setBannerForm({ ...bannerForm, position: v });
-										if (isCheckoutBannerPosition(v) || isShopBannerPosition(v)) {
-											setBannerCtaPersona("");
-											setBannerCtaServiceStyle("");
-											setBannerCtaVendorId("");
-											setBannerCtaTargetMode("none");
-										}
-										if (isShopBannerPosition(v)) {
-											setBannerShopTargetMode("informational");
-											setBannerShopProductId("");
-											setBannerShopProductName("");
-											setBannerShopProductSku("");
-										}
-									}}
-								>
-									<SelectTrigger>
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="home_top">Home Top (Hero Carousel)</SelectItem>
-										<SelectItem value="home_middle">Home Middle</SelectItem>
-										<SelectItem value="home_lower">Home Lower</SelectItem>
-										<SelectItem value="category">Category Page</SelectItem>
-										<SelectItem value="shop">Shop Main Page</SelectItem>
-										<SelectItem value="checkout">Checkout Page</SelectItem>
-									</SelectContent>
-								</Select>
-								<p className="text-xs text-gray-500 mt-1.5">
-									Home top, middle, and lower: customer home only. Category: Find All Services. Shop main: Pet Products listing. Checkout: shop checkout.
-								</p>
-							</div>
-							<div>
-								<Label>Display Order</Label>
-								<Input
-									type="number"
-									value={bannerForm.display_order}
-									onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, display_order: parseInt(e.target.value) || 0 })}
-									min="0"
-								/>
-							</div>
 						</div>
 
 						<div className="grid grid-cols-2 gap-4">
@@ -3075,20 +3248,38 @@ export default function MarketingPromotionsTab() {
 							<p className="text-xs text-gray-600">
 								Only <span className="font-medium">Published</span> articles appear under Pet care articles on the customer site.
 							</p>
-							<div className="flex gap-6 flex-wrap">
-								<div className="flex items-center gap-2">
-									<Switch
-										checked={articleForm.is_published}
-										onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, is_published: checked })}
-									/>
-									<Label>Published</Label>
+							<div className="flex gap-8 flex-wrap">
+								<div className="flex flex-col gap-1">
+									<div className="flex items-center gap-2">
+										<Switch
+											id="article-published"
+											checked={articleForm.is_published}
+											onCheckedChange={(checked: boolean) =>
+												setArticleForm({ ...articleForm, is_published: checked })
+											}
+										/>
+										<Label htmlFor="article-published">Published</Label>
+									</div>
+									<p className="text-xs text-gray-500 pl-10">
+										{articleForm.is_published
+											? "On — visible to customers"
+											: "Off — saved as draft"}
+									</p>
 								</div>
-								<div className="flex items-center gap-2">
-									<Switch
-										checked={articleForm.featured}
-										onCheckedChange={(checked: boolean) => setArticleForm({ ...articleForm, featured: checked })}
-									/>
-									<Label>Featured on Home</Label>
+								<div className="flex flex-col gap-1">
+									<div className="flex items-center gap-2">
+										<Switch
+											id="article-featured"
+											checked={articleForm.featured}
+											onCheckedChange={(checked: boolean) =>
+												setArticleForm({ ...articleForm, featured: checked })
+											}
+										/>
+										<Label htmlFor="article-featured">Featured on Home</Label>
+									</div>
+									<p className="text-xs text-gray-500 pl-10">
+										{articleForm.featured ? "On — highlighted on home" : "Off"}
+									</p>
 								</div>
 							</div>
 						</div>

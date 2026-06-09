@@ -71,10 +71,19 @@ export function buildEcommerceOrderPayload(
   phone: string,
   cart: CartItem[],
   pricing: CartPricingBreakdown,
-  shippingAddress: CheckoutAddress,
-  paymentMethod: 'cod' | 'online'
+  shippingAddress: CheckoutAddress
 ) {
   const customerId = getResolvedCustomerId();
+  const persisted = readPricingOptionsForCheckout();
+  const promo = persisted.sellerPromotion;
+  const cgst = pricing.taxResult.byType.find((t) => t.taxType === 'cgst')?.totalAmount ?? 0;
+  const sgst = pricing.taxResult.byType.find((t) => t.taxType === 'sgst')?.totalAmount ?? 0;
+  const igst = pricing.taxResult.byType.find((t) => t.taxType === 'igst')?.totalAmount ?? 0;
+  const couponCode =
+    promo?.code ||
+    persisted.appliedCoupons?.[0]?.code ||
+    undefined;
+
   return {
     customerId,
     customerPhone: phone,
@@ -85,12 +94,18 @@ export function buildEcommerceOrderPayload(
       vendorId: item.vendorId || '',
     })),
     shippingAddress: normalizeShippingAddress(shippingAddress),
-    paymentMethod: paymentMethod === 'online' ? 'online' : 'cod',
+    paymentMethod: 'online' as const,
     subtotal: pricing.lineSubtotal,
     shippingFee: pricing.deliveryFees,
     taxAmount: pricing.taxAmount,
+    taxBreakdown: pricing.taxResult.breakdown,
+    cgstAmount: cgst,
+    sgstAmount: sgst,
+    igstAmount: igst,
     discountAmount: pricing.discount,
     totalAmount: pricing.total,
+    couponCode,
+    promotionId: promo?.promotionId,
   };
 }
 
@@ -109,7 +124,6 @@ export function useEcommerceCheckout() {
       cart,
       pricing,
       shippingAddress,
-      paymentMethod,
       onSuccess,
       onProcessingChange,
       clearCart,
@@ -118,33 +132,14 @@ export function useEcommerceCheckout() {
       cart: CartItem[];
       pricing: CartPricingBreakdown;
       shippingAddress: CheckoutAddress;
-      paymentMethod: 'cod' | 'online';
       onSuccess: (orderId: string) => void;
       onProcessingChange?: (processing: boolean) => void;
       clearCart?: () => void;
     }) => {
       onProcessingChange?.(true);
-      const orderData = buildEcommerceOrderPayload(
-        phone,
-        cart,
-        pricing,
-        shippingAddress,
-        paymentMethod
-      );
+      const orderData = buildEcommerceOrderPayload(phone, cart, pricing, shippingAddress);
 
       try {
-        if (paymentMethod === 'cod') {
-          const result = await apiClient.post<{ order?: { id: string } }>(
-            '/ecommerce/orders',
-            orderData
-          );
-          clearWarmpawzCartStorage();
-          clearPricingOptionsForCheckout();
-          clearCart?.();
-          onSuccess(result.order?.id || `order_${Date.now()}`);
-          return;
-        }
-
         const result = await apiClient.post<{ order?: { id: string } }>(
           '/ecommerce/orders',
           orderData
@@ -197,11 +192,14 @@ export function useEcommerceCheckout() {
                   razorpay_payment_id: response.razorpay_payment_id,
                   razorpay_signature: response.razorpay_signature,
                 });
-                clearWarmpawzCartStorage();
-                clearPricingOptionsForCheckout();
-                clearCart?.();
+                // Navigate before clearing cart — otherwise checkout re-renders empty on ?step=review
                 onSuccess(shopOrderId);
                 resolve();
+                queueMicrotask(() => {
+                  clearWarmpawzCartStorage();
+                  clearPricingOptionsForCheckout();
+                  clearCart?.();
+                });
               } catch (err) {
                 reject(err);
               }

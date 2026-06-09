@@ -2,6 +2,7 @@
 
 import { ReactNode } from 'react';
 import { BottomNavigation } from './bottomNavigation/BottomNavigation';
+import { MealOrderFooterToast } from './meal-plans/MealOrderFooterToast';
 import { ProfileMenuOpenProvider } from '@/lib/profile-menu-open-context';
 
 interface CustomerScreenWrapperProps {
@@ -28,6 +29,7 @@ export function CustomerScreenWrapper({
       <div className="min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto pb-[var(--customer-tabbed-nav-offset)]">
         {children}
       </div>
+      <MealOrderFooterToast />
       <BottomNavigation 
         currentScreen={currentScreen}
         onNavigate={onNavigate}

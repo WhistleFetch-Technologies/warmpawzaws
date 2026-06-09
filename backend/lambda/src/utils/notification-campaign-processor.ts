@@ -117,13 +117,15 @@ async function deliverToRecipient(
     if (wantsPush) {
       // Tray push: every active registered device for this user (android/ios/web FCM).
       const tokensResult = await query(
-        `SELECT fcm_token FROM device_tokens
+        `SELECT DISTINCT fcm_token FROM device_tokens
          WHERE user_id = $1 AND user_type = $2 AND is_active = true AND fcm_token IS NOT NULL`,
         [recipientId, recipientType]
       );
-      const fcmTokens = (tokensResult.rows || [])
-        .map((r: { fcm_token: string }) => r.fcm_token)
-        .filter(Boolean);
+      const fcmTokens = [...new Set(
+        (tokensResult.rows || [])
+          .map((r: { fcm_token: string }) => r.fcm_token)
+          .filter(Boolean)
+      )];
 
       if (fcmTokens.length === 0) {
         await markChannelDeliveryFailed(notificationId, 'push', 'No active device tokens');

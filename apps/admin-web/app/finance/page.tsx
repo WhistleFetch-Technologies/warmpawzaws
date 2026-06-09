@@ -33,6 +33,7 @@ import {
 	DynamicSettlementRulesManager,
 	EcommercePoliciesSection,
 	VendorDailyAccrualReport,
+	VendorMonthlyAccrualReport,
 } from "@/components/admin/finance";
 import { FeeConfigurationManager } from "@/components/admin/finance/FeeConfigurationManager";
 import { CustomerDeliveryFeePolicyManager } from "@/components/admin/finance/CustomerDeliveryFeePolicyManager";
@@ -66,7 +67,8 @@ type TabType =
 	| "schedule-settings"
 	| "payment-settings"
 	| "settlement-rules"
-	| "vendor-daily-accrual";
+	| "vendor-daily-accrual"
+	| "vendor-monthly-accrual";
 
 function FinanceManagementContent() {
 	const searchParams = useSearchParams();
@@ -86,6 +88,7 @@ function FinanceManagementContent() {
 		"payment-settings",
 		"settlement-rules",
 		"vendor-daily-accrual",
+		"vendor-monthly-accrual",
 	];
 	const initialTab = tabFromUrl && validTabs.includes(tabFromUrl) ? tabFromUrl : "dashboard";
 	const [activeTab, setActiveTab] = useState<TabType>(initialTab);
@@ -179,6 +182,11 @@ function FinanceManagementContent() {
 		{
 			id: "vendor-daily-accrual",
 			label: "Daily accrual (IST)",
+			icon: TableProperties,
+		},
+		{
+			id: "vendor-monthly-accrual",
+			label: "Monthly accrual (IST)",
 			icon: TableProperties,
 		},
 		{ id: "payment-settings", label: "Payment Gateway", icon: Settings },
@@ -408,6 +416,13 @@ function FinanceManagementContent() {
 						<div className="rounded-lg border border-gray-200 bg-white p-6">
 							<h2 className="mb-4 text-lg font-semibold text-gray-900">Vendor daily accrual (IST)</h2>
 							<VendorDailyAccrualReport />
+						</div>
+					)}
+
+					{activeTab === "vendor-monthly-accrual" && (
+						<div className="rounded-lg border border-gray-200 bg-white p-6">
+							<h2 className="mb-4 text-lg font-semibold text-gray-900">Vendor monthly accrual (IST)</h2>
+							<VendorMonthlyAccrualReport />
 						</div>
 					)}
 

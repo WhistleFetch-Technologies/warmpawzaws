@@ -34,6 +34,25 @@ export function UseCurrentLocationButton({
     setDetecting(true);
     try {
       const result = await fillAddressFromCurrentLocation();
+      // #region agent log
+      fetch('http://127.0.0.1:7507/ingest/bc4efe81-37d4-4685-8941-a5e34dbd571c', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '17312f' },
+        body: JSON.stringify({
+          sessionId: '17312f',
+          runId: 'post-fix',
+          hypothesisId: 'H8',
+          location: 'UseCurrentLocationButton.tsx:handleClick',
+          message: 'button success',
+          data: {
+            lat: result.latitude,
+            lng: result.longitude,
+            addressLine1Len: result.addressLine1?.length ?? 0,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       onSuccess(result);
       const { type, message } = geolocationSuccessMessage(result);
       if (type === 'success') {
@@ -42,6 +61,24 @@ export function UseCurrentLocationButton({
         toast.info(message);
       }
     } catch (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7507/ingest/bc4efe81-37d4-4685-8941-a5e34dbd571c', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '17312f' },
+        body: JSON.stringify({
+          sessionId: '17312f',
+          runId: 'pre-fix',
+          hypothesisId: 'H4',
+          location: 'UseCurrentLocationButton.tsx:handleClick',
+          message: 'button catch',
+          data: {
+            toast: geolocationErrorMessage(error),
+            errName: error instanceof Error ? error.name : 'unknown',
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       toast.error(geolocationErrorMessage(error));
     } finally {
       setDetecting(false);

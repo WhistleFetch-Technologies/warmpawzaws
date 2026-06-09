@@ -8,6 +8,8 @@ export interface QuickServiceTile {
   screen: string;
   categoryId: string;
   isComingSoon?: boolean;
+  /** Admin `service_categories.display_order` — drives home row sort. */
+  displayOrder?: number;
 }
 
 /** Hero carousel slide — CMS home_top banners + defaults. */
@@ -21,6 +23,8 @@ export interface HomeCarouselBanner {
   ctaText: string;
   ctaLink: string;
   comingSoon?: boolean;
+  /** CMS home informational — CTA label only, no navigation */
+  isInformational?: boolean;
   imageUrl?: string;
   navTarget?: { kind: string; screen?: string; path?: string; data?: Record<string, unknown> } | null;
   metadata?: unknown;

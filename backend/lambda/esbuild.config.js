@@ -156,6 +156,7 @@ esbuild.build({
     '@warmpawz/api-contracts/common': path.resolve(__dirname, '../../packages/api-contracts/dist/common/index.js'),
     '@warmpawz/api-contracts/discovery': path.resolve(__dirname, '../../packages/api-contracts/dist/discovery.js'),
     '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/dist/index.js'),
+    '@warmpawz/shared-types': path.resolve(__dirname, '../../packages/shared-types/src/index.ts'),
   },
   
   // AWS Lambda specific settings
@@ -208,6 +209,7 @@ esbuild.build({
     '@warmpawz/api-contracts/common': path.resolve(__dirname, '../../packages/api-contracts/dist/common/index.js'),
     '@warmpawz/api-contracts/discovery': path.resolve(__dirname, '../../packages/api-contracts/dist/discovery.js'),
     '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/dist/index.js'),
+    '@warmpawz/shared-types': path.resolve(__dirname, '../../packages/shared-types/src/index.ts'),
   },
   define: {
     'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development'),
@@ -247,6 +249,7 @@ esbuild.build({
   alias: {
     '@warmpawz/api-contracts': path.resolve(__dirname, '../../packages/api-contracts/dist/index.js'),
     '@warmpawz/service-launch-mappings': path.resolve(__dirname, '../../packages/service-launch-mappings/src/index.ts'),
+    '@warmpawz/shared-types': path.resolve(__dirname, '../../packages/shared-types/src/index.ts'),
   },
   define: {
     'process.env.NODE_ENV': JSON.stringify(isProduction ? 'production' : 'development'),

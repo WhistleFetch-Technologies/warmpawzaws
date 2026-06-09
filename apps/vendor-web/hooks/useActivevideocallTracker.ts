@@ -4,6 +4,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { useRouter } from 'next/navigation';
 
+const NON_JOINABLE_BOOKING_STATUSES = new Set(['completed', 'cancelled', 'no_show', 'expired']);
+
+function isJoinableTeleTrackerSession(session: { bookingStatus?: string; status?: string }): boolean {
+  const bookingStatus = String(session.bookingStatus || '').toLowerCase();
+  if (NON_JOINABLE_BOOKING_STATUSES.has(bookingStatus)) return false;
+  return true;
+}
+
 export interface ActiveVideoCallSession {
     sessionId: string;
     bookingId: string;
@@ -71,7 +79,9 @@ export function useActiveVideoCallForVendor(
             );
 
             if (response.success) {
-                const sessions = (response.sessions || []) as ActiveVideoCallSession[];
+                const sessions = ((response.sessions || []) as ActiveVideoCallSession[]).filter(
+                    isJoinableTeleTrackerSession
+                );
 
                 // Filter out sessions where vendor is already in the call
                 // Only filter if session is 'active' (not 'waiting') to handle stale data after refresh

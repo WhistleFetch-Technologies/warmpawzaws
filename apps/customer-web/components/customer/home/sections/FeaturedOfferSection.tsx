@@ -3,6 +3,7 @@
 import React, { memo } from 'react';
 import type { ComponentType } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { isBannerInformationalNonClickable } from '@/lib/banner-cta-target';
 import { PromotionBanner } from '../../shared/PromotionBanner';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
@@ -17,6 +18,7 @@ export interface FeaturedLowerBanner {
   ctaText: string;
   ctaLink: string;
   comingSoon?: boolean;
+  isInformational?: boolean;
 }
 
 export interface FeaturedOfferSectionProps {
@@ -42,6 +44,7 @@ function FeaturedOfferSectionComponent({
         <div className="mb-6 space-y-4 px-4">
           {lowerBanners.map((banner, index) => {
             const slotComingSoon = Boolean(banner.comingSoon);
+            const slotNonClickable = slotComingSoon || isBannerInformationalNonClickable(banner);
             return (
               <div
                 key={String(banner.id ?? index)}
@@ -61,7 +64,7 @@ function FeaturedOfferSectionComponent({
                     {banner.subtitle ? (
                       <p className="mb-4 line-clamp-3 text-sm text-white/90">{banner.subtitle}</p>
                     ) : null}
-                    {slotComingSoon ? (
+                    {slotNonClickable ? (
                       <span className="inline-block cursor-not-allowed rounded-full bg-white/85 px-5 py-2.5 text-sm font-medium text-[#FF8C42]/70">
                         {banner.ctaText || 'Learn More'}
                       </span>

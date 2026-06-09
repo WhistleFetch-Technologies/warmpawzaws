@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import { shouldSuppressPollToastForPush } from '@/lib/notification-display-policy';
 
 interface VendorNotificationServiceProps {
   vendorId: string;
@@ -63,16 +64,19 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
             // Check if there's a new notification
             if (latestId !== lastNotificationIdRef.current && !isRead) {
               lastNotificationIdRef.current = latestId;
-              
+
               console.log(`🎉 [VENDOR-NOTIFICATION-SERVICE] NEW NOTIFICATION DETECTED!`, latestNotification);
-              
-              // Play notification sound
-              playNotificationSound();
-              
-              // Show toast notification
-              showToastNotification(latestNotification);
-              
-              // Trigger callback
+
+              const suppressBanner = shouldSuppressPollToastForPush(latestNotification);
+              if (suppressBanner) {
+                console.log(
+                  '🔔 [VENDOR-NOTIFICATION-SERVICE] Skipping in-app toast/sound — native push handles display'
+                );
+              } else {
+                playNotificationSound();
+                showToastNotification(latestNotification);
+              }
+
               if (onNewNotification) {
                 onNewNotification(latestNotification);
               }
