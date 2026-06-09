@@ -12,6 +12,7 @@ import {
   resolvePickupPincode,
   shipmentPincodeFieldsForInsert,
 } from '../shipment-pincodes';
+import { buildStructuredTracking } from '../shipment-tracking';
 
 describe('carrier-patterns', () => {
   it('normalizes vendor UI labels to carrier keys', () => {
@@ -96,5 +97,34 @@ describe('shipment-pincodes', () => {
       })
     ).toBe('700001');
     expect(resolvePickupPincode({}, { pincode: '560078' })).toBe('560078');
+  });
+});
+
+describe('buildStructuredTracking', () => {
+  it('returns AWB, carrier, and tracking URL without ETA fields', () => {
+    const tracking = buildStructuredTracking(
+      { order_status: 'shipped', tracking_number: 'FALLBACK123' },
+      {
+        awb_code: 'AWB999',
+        logistics_partner: 'delhivery',
+        courier_name: 'Delhivery',
+        tracking_url: 'https://www.delhivery.com/tracking/AWB999',
+        shipped_at: '2026-06-01T10:00:00.000Z',
+      }
+    );
+
+    expect(tracking).toMatchObject({
+      carrierId: 'delhivery',
+      carrierName: 'Delhivery',
+      trackingNumber: 'AWB999',
+      trackingUrl: 'https://www.delhivery.com/tracking/AWB999',
+      shippedAt: '2026-06-01T10:00:00.000Z',
+      locked: true,
+    });
+    expect(tracking).not.toHaveProperty('estimatedDelivery');
+  });
+
+  it('returns null when no tracking number is available', () => {
+    expect(buildStructuredTracking({ order_status: 'processing' }, null)).toBeNull();
   });
 });

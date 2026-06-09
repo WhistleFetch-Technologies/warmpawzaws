@@ -74,6 +74,16 @@ export function buildEcommerceOrderPayload(
   shippingAddress: CheckoutAddress
 ) {
   const customerId = getResolvedCustomerId();
+  const persisted = readPricingOptionsForCheckout();
+  const promo = persisted.sellerPromotion;
+  const cgst = pricing.taxResult.byType.find((t) => t.taxType === 'cgst')?.totalAmount ?? 0;
+  const sgst = pricing.taxResult.byType.find((t) => t.taxType === 'sgst')?.totalAmount ?? 0;
+  const igst = pricing.taxResult.byType.find((t) => t.taxType === 'igst')?.totalAmount ?? 0;
+  const couponCode =
+    promo?.code ||
+    persisted.appliedCoupons?.[0]?.code ||
+    undefined;
+
   return {
     customerId,
     customerPhone: phone,
@@ -88,8 +98,14 @@ export function buildEcommerceOrderPayload(
     subtotal: pricing.lineSubtotal,
     shippingFee: pricing.deliveryFees,
     taxAmount: pricing.taxAmount,
+    taxBreakdown: pricing.taxResult.breakdown,
+    cgstAmount: cgst,
+    sgstAmount: sgst,
+    igstAmount: igst,
     discountAmount: pricing.discount,
     totalAmount: pricing.total,
+    couponCode,
+    promotionId: promo?.promotionId,
   };
 }
 

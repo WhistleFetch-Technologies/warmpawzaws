@@ -126,6 +126,13 @@ export default function TrackingContent() {
       }
       
       // Merge structured tracking + delivery OTP info
+      const normalizedShipments = Array.isArray(response.shipments)
+        ? response.shipments.map((s: any) => ({
+            ...s,
+            current_status: s.current_status || s.status,
+          }))
+        : [];
+
       if (response && response.order) {
         const structured = response.tracking;
         if (structured) {
@@ -141,8 +148,11 @@ export default function TrackingContent() {
         response.order.deliveryPartnerName = deliveryInfo?.partner_name || deliveryInfo?.partnerName;
         response.order.deliveryPartnerPhone = deliveryInfo?.partner_phone || deliveryInfo?.partnerPhone;
       }
-      
-      setTracking(response);
+
+      setTracking({
+        order: response.order,
+        shipments: normalizedShipments,
+      });
     } catch (err: any) {
       console.error('Error loading tracking:', err);
       setError(err.message || 'Failed to load tracking information');
@@ -416,18 +426,6 @@ export default function TrackingContent() {
                     <p className="text-sm text-gray-500">Status</p>
                     <p className="font-medium text-gray-900 capitalize">{shipment.current_status || shipment.status}</p>
                   </div>
-                  {shipment.estimated_delivery_date && (
-                    <div>
-                      <p className="text-sm text-gray-500">Estimated Delivery</p>
-                      <p className="font-medium text-gray-900">
-                        {new Date(shipment.estimated_delivery_date).toLocaleDateString('en-IN', {
-                          day: 'numeric',
-                          month: 'long',
-                          year: 'numeric',
-                        })}
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 {/* Status History */}

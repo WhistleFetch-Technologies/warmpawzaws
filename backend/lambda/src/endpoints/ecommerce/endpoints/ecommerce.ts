@@ -25,6 +25,7 @@ import {
 } from '../../../utils/temporary-vendor-ui-suppression';
 import { isValidUUID } from '../../../types/entities';
 import { prepareStorefrontProductRow, prepareStorefrontProductRows } from '../../../utils/s3-media-presign';
+import { computeEcommerceDeliveryFee } from '../../../utils/ecommerce/delivery-fee';
 import {
   isEcommerceCategoryUuid,
   mapCategoryRowsForPublic,
@@ -430,13 +431,17 @@ export function registerEcommerceEndpoints(app: Hono) {
       const bodyTax = orderData.taxAmount ?? orderData.tax_amount;
       const bodyDiscount = orderData.discountAmount ?? orderData.discount_amount ?? 0;
       const bodyTotal = orderData.totalAmount ?? orderData.total_amount;
+      const taxBreakdown = orderData.taxBreakdown ?? orderData.tax_breakdown ?? null;
+      const bodyCgst = orderData.cgstAmount ?? orderData.cgst_amount;
+      const bodySgst = orderData.sgstAmount ?? orderData.sgst_amount;
+      const bodyIgst = orderData.igstAmount ?? orderData.igst_amount;
+      const promoId = orderData.promotionId ?? orderData.promotion_id ?? null;
 
+      const subtotalAfterDiscount = Math.max(0, subtotal - (Number(bodyDiscount) || 0));
       const shippingAmount =
         bodyShipping != null && Number.isFinite(Number(bodyShipping))
           ? Number(bodyShipping)
-          : subtotal > 499
-            ? 0
-            : 49;
+          : computeEcommerceDeliveryFee(subtotalAfterDiscount);
       const taxAmount =
         bodyTax != null && Number.isFinite(Number(bodyTax)) && Number(bodyTax) >= 0
           ? Number(bodyTax)
@@ -445,13 +450,42 @@ export function registerEcommerceEndpoints(app: Hono) {
         bodyDiscount != null && Number.isFinite(Number(bodyDiscount)) && Number(bodyDiscount) >= 0
           ? Number(bodyDiscount)
           : 0;
+      const cgstAmount =
+        bodyCgst != null && Number.isFinite(Number(bodyCgst)) ? Number(bodyCgst) : null;
+      const sgstAmount =
+        bodySgst != null && Number.isFinite(Number(bodySgst)) ? Number(bodySgst) : null;
+      const igstAmount =
+        bodyIgst != null && Number.isFinite(Number(bodyIgst)) ? Number(bodyIgst) : null;
       const recomputedTotal = subtotal + shippingAmount + taxAmount - discountAmount;
       const totalAmount =
         bodyTotal != null && Number.isFinite(Number(bodyTotal)) && Number(bodyTotal) > 0
           ? Number(bodyTotal)
           : recomputedTotal;
 
-      const order = {
+      const normalizedAddress = {
+        name: shippingAddress.name || '',
+        phone: shippingAddress.phone || customerPhone,
+        line1: shippingAddress.line1 || shippingAddress.addressLine1 || '',
+        city: shippingAddress.city || '',
+        state: shippingAddress.state || '',
+        pincode: shippingAddress.pincode || '',
+      };
+
+      const orderMetadata = {
+        checkoutSnapshot: {
+          subtotal,
+          itemCount: orderItems.reduce((sum, i) => sum + (i.quantity || 0), 0),
+          shipping_amount: shippingAmount,
+          tax_amount: taxAmount,
+          discount_amount: discountAmount,
+          total_amount: totalAmount,
+        },
+        shippingAddress: normalizedAddress,
+        promotionId: promoId,
+        couponCode: couponCode || null,
+      };
+
+      const order: Record<string, unknown> = {
         id: orderId,
         order_number: orderNumber,
         customer_id: customerId,
@@ -464,14 +498,24 @@ export function registerEcommerceEndpoints(app: Hono) {
         tax_amount: taxAmount,
         discount_amount: discountAmount,
         total_amount: totalAmount,
-        shipping_address: shippingAddress.line1 || '',
-        shipping_city: shippingAddress.city || '',
-        shipping_state: shippingAddress.state || '',
-        shipping_pincode: shippingAddress.pincode || '',
+        coupon_code: couponCode || null,
+        shipping_address: normalizedAddress.line1 || '',
+        shipping_city: normalizedAddress.city || '',
+        shipping_state: normalizedAddress.state || '',
+        shipping_pincode: normalizedAddress.pincode || '',
         shipping_phone: customerPhone,
+        metadata: JSON.stringify(orderMetadata),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
+
+      if (taxBreakdown) {
+        order.tax_breakdown =
+          typeof taxBreakdown === 'string' ? taxBreakdown : JSON.stringify(taxBreakdown);
+      }
+      if (cgstAmount != null) order.cgst_amount = cgstAmount;
+      if (sgstAmount != null) order.sgst_amount = sgstAmount;
+      if (igstAmount != null) order.igst_amount = igstAmount;
 
       try {
         await insert('orders', order);

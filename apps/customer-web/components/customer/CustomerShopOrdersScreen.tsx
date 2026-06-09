@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { apiClient, ordersApi } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { goBackOrHome, rememberShopBackFromCurrentUrl, rememberShopBackToSpaScreen, WARMPAWZ_EXPAND_SHOP_ORDER_ID_KEY } from '@/lib/go-back-or-replace';
@@ -46,6 +47,7 @@ interface OrderItem {
   product_id: string;
   product_name: string;
   product_emoji?: string;
+  product_image?: string;
   quantity: number;
   price: number;
   vendor_id: string;
@@ -67,6 +69,7 @@ interface Order {
   };
   subtotal: number;
   shipping_fee: number;
+  tax_amount: number;
   discount: number;
   total: number;
   payment_method: string;
@@ -79,7 +82,6 @@ interface Order {
     trackingNumber?: string;
     trackingUrl?: string | null;
   };
-  estimated_delivery?: string;
   created_at: string;
   updated_at: string;
 }
@@ -107,6 +109,14 @@ function getOrderStatusDisplay(order: Order): { badge: string; icon: typeof Cloc
   return base;
 }
 
+function formatPaymentMethod(raw: unknown): string {
+  const value = String(raw || '').trim();
+  if (!value || value === '—') return '—';
+  if (value.toLowerCase() === 'online') return 'Online';
+  if (value.toLowerCase() === 'razorpay') return 'Online';
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 function normalizeItems(items: unknown): OrderItem[] {
   if (!Array.isArray(items)) return [];
   return items.map((it: any, idx: number) => ({
@@ -114,6 +124,7 @@ function normalizeItems(items: unknown): OrderItem[] {
     product_id: String(it.product_id ?? it.productId ?? ''),
     product_name: it.product_name || it.service_name || it.name || 'Item',
     product_emoji: it.product_emoji,
+    product_image: it.product_image || it.image_url || undefined,
     quantity: Number(it.quantity) || 1,
     price: Number(it.unit_price ?? it.price ?? it.unitPrice ?? 0),
     vendor_id: String(it.vendor_id ?? ''),
@@ -161,8 +172,9 @@ function normalizeOrder(raw: any): Order {
 
   const discount = Number(raw.discount_amount ?? raw.discount ?? 0) || 0;
   const shippingFee = Number(raw.shipping_amount ?? raw.shipping_fee ?? 0) || 0;
+  const taxAmount = Number(raw.tax_amount ?? raw.taxAmount ?? 0) || 0;
   const total = Number(raw.final_amount ?? raw.total_amount ?? raw.total ?? 0) || 0;
-  const subtotal = Number(raw.subtotal ?? raw.total_amount ?? Math.max(0, total - shippingFee + discount)) || 0;
+  const subtotal = Number(raw.subtotal ?? raw.total_amount ?? Math.max(0, total - shippingFee - taxAmount + discount)) || 0;
 
   const tracking = resolveOrderTracking(raw);
 
@@ -174,15 +186,15 @@ function normalizeOrder(raw: any): Order {
     shipping_address: parseShippingAddress(raw),
     subtotal,
     shipping_fee: shippingFee,
+    tax_amount: taxAmount,
     discount,
     total,
-    payment_method: raw.payment_method || '—',
+    payment_method: formatPaymentMethod(raw.payment_method),
     payment_status: String(raw.payment_status || 'pending').toLowerCase(),
     tracking_number: tracking?.trackingNumber || raw.tracking_number,
     tracking_url: tracking?.trackingUrl || raw.tracking_url,
     carrier_name: tracking?.carrierName || raw.delivery_partner,
     tracking: raw.tracking,
-    estimated_delivery: raw.estimated_delivery,
     created_at: raw.created_at || new Date().toISOString(),
     updated_at: raw.updated_at || raw.created_at || new Date().toISOString(),
   };
@@ -307,7 +319,7 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
     if (!confirm('Are you sure you want to return this order?')) return;
 
     try {
-      await apiClient.put(`/orders/${orderId}/status`, { status: 'returned' });
+      await ordersApi.returnOrder(orderId, { reason: 'Customer return request' });
       await loadOrders();
     } catch (err: any) {
       console.error('Error requesting return:', err);
@@ -574,7 +586,15 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                     {shouldShowOrderTracking(order.status, order.tracking_number) && (() => {
                       const trackingInfo = resolveOrderTracking(order);
                       return trackingInfo ? (
-                        <OrderTrackingCard tracking={trackingInfo} />
+                        <div className="space-y-2">
+                          <OrderTrackingCard tracking={trackingInfo} />
+                          <Link
+                            href={`/orders/${order.id}/tracking`}
+                            className="inline-flex text-xs font-semibold text-blue-700 hover:text-blue-900 underline-offset-2 hover:underline"
+                          >
+                            View full tracking
+                          </Link>
+                        </div>
                       ) : null;
                     })()}
 
@@ -586,8 +606,16 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                             key={item.id}
                             className="flex items-center gap-3 rounded-2xl bg-stone-50/90 p-3 text-sm"
                           >
-                            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-stone-100 bg-white text-xl">
-                              {item.product_emoji || '📦'}
+                            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-stone-100 bg-white text-xl">
+                              {item.product_image ? (
+                                <img
+                                  src={item.product_image}
+                                  alt={item.product_name}
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                item.product_emoji || '📦'
+                              )}
                             </div>
                             <div className="min-w-0 flex-1">
                               <p className="text-sm font-semibold text-gray-900">{item.product_name}</p>
@@ -633,6 +661,12 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                             <span className="font-medium text-emerald-600">-₹{order.discount}</span>
                           </div>
                         )}
+                        {order.tax_amount > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">GST</span>
+                            <span className="font-medium text-gray-900">₹{order.tax_amount}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between">
                           <span className="text-gray-600">Shipping</span>
                           <span
@@ -668,7 +702,7 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                     </div>
 
                     <div className="flex flex-col gap-2.5">
-                      {['pending', 'confirmed', 'processing'].includes(order.status) && (
+                      {['pending', 'confirmed'].includes(order.status) && (
                         <button
                           type="button"
                           onClick={() => cancelOrder(order.id)}
