@@ -4,6 +4,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { useRouter } from 'next/navigation';
 
+const NON_JOINABLE_BOOKING_STATUSES = new Set(['completed', 'cancelled', 'no_show', 'expired']);
+
+function isJoinableTeleTrackerSession(session: { bookingStatus?: string; status?: string }): boolean {
+  const bookingStatus = String(session.bookingStatus || '').toLowerCase();
+  if (NON_JOINABLE_BOOKING_STATUSES.has(bookingStatus)) return false;
+  return true;
+}
+
 export interface ActiveVideoCallSession {
   sessionId: string;
   bookingId: string;
@@ -50,13 +58,24 @@ export function useActiveVideoCall(
   const fetchActiveCalls = useCallback(async () => {
     if (!customerId || !enabled) return;
 
+    if (typeof window !== 'undefined') {
+      const pathname = window.location.pathname;
+      if (pathname === '/video' || pathname.startsWith('/video/')) {
+        setActiveSessions([]);
+        setHasActiveCall(false);
+        return;
+      }
+    }
+
     try {
       const response = await apiClient.get<any>(
         `/video-call/customer/${customerId}/active`
       );
 
       if (response.success) {
-        const sessions = (response.sessions || []) as ActiveVideoCallSession[];
+        const sessions = ((response.sessions || []) as ActiveVideoCallSession[]).filter(
+          isJoinableTeleTrackerSession
+        );
         setActiveSessions(sessions);
         setHasActiveCall(sessions.length > 0);
         setError(null);

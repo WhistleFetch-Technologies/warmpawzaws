@@ -17,6 +17,7 @@ import { FollowUpBookingModal } from './FollowUpBookingModal';
 import { RateServiceModal } from './RateServiceModal';
 import { PaymentSourcesDisplay } from './payment/PaymentSourcesDisplay';
 import { normalizePaymentSources } from '@/lib/payment-display-utils';
+import { downloadBookingInvoice } from '@/lib/booking-invoice-download';
 import {
   isBookingAwaitingPayment,
   isPaymentHoldActive,
@@ -536,6 +537,45 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
       copyTextToClipboard(booking.completionOTP);
       setCopiedOtp(true);
       setTimeout(() => setCopiedOtp(false), 2000);
+    }
+  };
+
+  const openMedicalRecord = async (rec: { id: string; file_url?: string; document_url?: string }) => {
+    const directUrl = (rec.document_url || rec.file_url || '').trim();
+    if (directUrl.startsWith('http://') || directUrl.startsWith('https://')) {
+      window.open(directUrl, '_blank', 'noopener,noreferrer');
+      toast.success('Opening document...');
+      return;
+    }
+
+    try {
+      const result = (await apiClient.get(
+        `/medical-records/booking/${bookingId}/view/${rec.id}`
+      )) as { fileUrl?: string; record?: { file_url?: string } };
+      const fileUrl = (result.fileUrl || result.record?.file_url || '').trim();
+      if (fileUrl) {
+        window.open(fileUrl, '_blank', 'noopener,noreferrer');
+        toast.success('Opening document...');
+        return;
+      }
+      setShowPrescriptionHistory(true);
+    } catch (error) {
+      console.error('Error opening medical record:', error);
+      toast.error('Failed to open document. Try again from Upload Documents.');
+    }
+  };
+
+  const formatMedicalRecordDate = (rec: { record_date?: string; created_at?: string }) => {
+    const raw = rec.record_date || rec.created_at;
+    if (!raw) return '';
+    try {
+      return new Date(raw).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch {
+      return '';
     }
   };
 
@@ -1280,31 +1320,12 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 <Button
                   onClick={async () => {
                     try {
-                      const apiBaseUrl = apiClient['baseUrl'] || process.env.NEXT_PUBLIC_API_BASE_URL || '';
-                      const token = localStorage.getItem('authToken') || localStorage.getItem('cognitoIdToken');
-                      const url = `${apiBaseUrl}/bookings/${booking.id}/invoice`;
-                      
-                      const response = await fetch(url, {
-                        headers: {
-                          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                        },
-                      });
-                      
-                      if (!response.ok) {
-                        throw new Error('Failed to download invoice');
-                      }
-                      
-                      const blob = await response.blob();
-                      const downloadUrl = window.URL.createObjectURL(blob);
-                      const link = document.createElement('a');
-                      link.href = downloadUrl;
-                      link.download = `invoice-${booking.id.slice(0, 8)}.pdf`;
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                      window.URL.revokeObjectURL(downloadUrl);
-                      
-                      toast.success('Invoice downloaded successfully');
+                      const { openedInBrowser } = await downloadBookingInvoice(booking.id);
+                      toast.success(
+                        openedInBrowser
+                          ? 'Invoice opened in your browser'
+                          : 'Invoice downloaded — open the HTML file in your browser'
+                      );
                     } catch (error: any) {
                       console.error('Error downloading invoice:', error);
                       toast.error('Failed to download invoice. Please try again later.');
@@ -1356,46 +1377,55 @@ export function BookingDetailModal({ bookingId, petId, phone, onClose, onReorder
                 )}
               </Button>
 
-              {/* Medical Records & Lab Reports - Only for vet/diagnostics/nutritionist */}
-              {showPrescriptionAndMedicalRecords(booking.serviceType, booking.serviceCategory, booking) && medicalRecords.length > 0 && (
+              {/* Uploaded documents — visible for all booking types */}
+              {medicalRecords.length > 0 && (
                 <div className="space-y-2">
-                  <p className="text-sm font-medium text-gray-700 px-1">Medical records & reports</p>
-                  {medicalRecords.map((rec: any) => (
-                    <div
-                      key={rec.id}
-                      className="flex items-center justify-between gap-2 p-3 rounded-xl bg-purple-50 border border-purple-100"
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <FileText className="w-5 h-5 text-purple-600 flex-shrink-0" />
-                        <div className="min-w-0">
-                          <p className="font-medium text-gray-900 truncate">{rec.title || rec.record_type || 'Report'}</p>
-                          {rec.record_type && (
-                            <p className="text-xs text-gray-500 capitalize">{rec.record_type.replace('_', ' ')}</p>
-                          )}
+                  <p className="text-sm font-medium text-gray-700 px-1">Uploaded documents</p>
+                  {medicalRecords.map((rec: any) => {
+                    const hasFile =
+                      Boolean(rec.file_url || rec.document_url) ||
+                      rec.record_type === 'diagnostic_report';
+                    const recordDate = formatMedicalRecordDate(rec);
+                    return (
+                      <div
+                        key={rec.id}
+                        className="flex items-center justify-between gap-2 p-3 rounded-xl bg-indigo-50 border border-indigo-100"
+                      >
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <FileText className="w-5 h-5 text-indigo-600 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="font-medium text-gray-900 truncate">
+                              {rec.title || rec.record_type || 'Document'}
+                            </p>
+                            <p className="text-xs text-gray-500 capitalize">
+                              {[rec.record_type?.replace(/_/g, ' '), recordDate].filter(Boolean).join(' · ')}
+                            </p>
+                          </div>
                         </div>
+                        {hasFile ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-shrink-0 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+                            onClick={() => openMedicalRecord(rec)}
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            View
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-shrink-0 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+                            onClick={() => setShowPrescriptionHistory(true)}
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            Details
+                          </Button>
+                        )}
                       </div>
-                      {(rec.document_url || rec.record_type === 'diagnostic_report') && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-shrink-0 border-purple-200 text-purple-700 hover:bg-purple-100"
-                          onClick={() => {
-                            const url = rec.document_url;
-                            if (url) {
-                              window.open(url, '_blank');
-                              toast.success('Opening report...');
-                            } else {
-                              toast.info('View in Medical Records');
-                              onNavigate?.('medical-records', {});
-                            }
-                          }}
-                        >
-                          <Download className="w-4 h-4 mr-1" />
-                          Download
-                        </Button>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 

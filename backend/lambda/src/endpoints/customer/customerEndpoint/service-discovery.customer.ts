@@ -1704,23 +1704,35 @@ async function fetchCustomerVendorProfileBundle(vendorId: string): Promise<Custo
     vendorServiceStyles = (styleRes.rows || []).map((r: any) => normalizeServiceStyle(r.service_style)).filter(Boolean) as string[];
   } catch (_) { }
 
+  const vendorMeta = parseVendorMetadata(vendor.metadata);
+
   let facilityPhotos: string[] = [];
   try {
-    const meta = vendor.metadata ? (typeof vendor.metadata === 'string' ? JSON.parse(vendor.metadata) : vendor.metadata) : null;
-    const raw = meta?.facility_photos || meta?.photos || [];
+    const raw = vendorMeta.facility_photos || vendorMeta.photos || [];
     const rawArr = Array.isArray(raw) ? raw : [];
     facilityPhotos = await presignCustomerFacilityGalleryUrls(resolvedVendorId, rawArr);
   } catch (_) {
     facilityPhotos = [];
   }
 
-  const vendorMeta = (() => {
-    try {
-      return vendor.metadata ? (typeof vendor.metadata === 'string' ? JSON.parse(vendor.metadata) : vendor.metadata) : {};
-    } catch {
-      return {};
-    }
-  })();
+  const profileSpecMap = await batchLoadVendorSpecializationsForDiscovery([
+    {
+      vendor_id: String(vendor.id),
+      metadata: vendor.metadata,
+      v_specs_jsonb: (vendor as { specializations?: unknown }).specializations,
+    },
+  ]);
+  const profileSpecializationLabels =
+    profileSpecMap.get(String(vendor.id))?.displayLabels ?? [];
+  const specializationsForProfile =
+    profileSpecializationLabels.length > 0
+      ? profileSpecializationLabels
+      : vendorSpecializations.length > 0
+        ? vendorSpecializations
+        : Array.isArray(vendorMeta.specializations)
+          ? vendorMeta.specializations.map((s: unknown) => String(s).trim()).filter(Boolean)
+          : [];
+
   const boardingDiscProfile = resolveBoardingDisclaimerFromVendor(vendor, vendorMeta || {});
 
   return {
@@ -1750,7 +1762,7 @@ async function fetchCustomerVendorProfileBundle(vendorId: string): Promise<Custo
       description: vendor.description || '',
       photoUrl: await getVendorListingPhotoUrl(vendor),
       vendorType: vendor.vendor_type === 'solo' ? 'solo' : 'business',
-      specializations: vendorSpecializations,
+      specializations: specializationsForProfile,
       serviceStyles: vendorServiceStyles,
       facilityPhotos,
       boardingDisclaimer: boardingDiscProfile.disclaimer,

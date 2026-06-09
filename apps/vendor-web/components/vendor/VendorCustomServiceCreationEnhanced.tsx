@@ -58,6 +58,7 @@ import {
   SESSION_PACKAGE_TYPE_LABEL,
   type SessionPackageType,
 } from '@/lib/session-package-normalize';
+import { resolveVendorCustomServiceSpecCategoryId } from '@/lib/vendor-custom-service-spec-category';
 
 const SpecializationSelector = lazy(() =>
   import('@/components/vendor/SpecializationSelector').then((m) => ({ default: m.SpecializationSelector }))
@@ -340,36 +341,15 @@ export function VendorCustomServiceCreationEnhanced({
   );
 
   /** Catalogue category UUID or slug for specialization_master filter (strict with selected category). */
-  const catalogCategoryIdForSpecs = useMemo(() => {
-    if (platformCategoryId?.trim()) return platformCategoryId.trim();
-    if (!categoryName || categoryName === 'other') return null;
-
-    const sel = String(categoryName).trim();
-    const selNorm = sel.toLowerCase();
-    const selKey = selNorm.replace(/\s+/g, '_').replace(/-/g, '_');
-
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sel)) {
-      return sel;
-    }
-
-    const row = catalogCategories.find(
-      (c: { id?: string; name?: string; category_id?: string }) => {
-        const name = String(c.name || '').toLowerCase();
-        const slug = String(c.category_id || '')
-          .toLowerCase()
-          .replace(/-/g, '_');
-        return (
-          name === selNorm ||
-          slug === selKey ||
-          name.replace(/\s+/g, '_').replace(/-/g, '_') === selKey
-        );
-      },
-    );
-    const idStr = row?.id != null ? String(row.id).trim() : '';
-    if (idStr) return idStr;
-    // Backend accepts category slug (e.g. pet-sitter) when UUID row is missing
-    return selKey || null;
-  }, [platformCategoryId, categoryName, catalogCategories]);
+  const catalogCategoryIdForSpecs = useMemo(
+    () =>
+      resolveVendorCustomServiceSpecCategoryId({
+        platformCategoryId,
+        categoryName,
+        catalogCategories,
+      }),
+    [platformCategoryId, categoryName, catalogCategories]
+  );
 
   useEffect(() => {
     setSelectedSpecializationIds([]);
@@ -1221,7 +1201,7 @@ export function VendorCustomServiceCreationEnhanced({
                 {availableCategories.length > 0 && (
                   <optgroup label="📚 Suggested Categories">
                     {availableCategories.map((cat: MicroCategory) => (
-                      <option key={cat.id} value={cat.name}>
+                      <option key={cat.id} value={cat.id}>
                         {cat.name}
                       </option>
                     ))}
@@ -1267,6 +1247,7 @@ export function VendorCustomServiceCreationEnhanced({
             </div>
 
             {/* 360°: Specializations (optional) – multi-select; links to "What's your pet needs?" discovery */}
+            {catalogCategoryIdForSpecs ? (
             <div className="space-y-2">
               <Label>Specializations (Optional)</Label>
               <p className="text-xs text-gray-500 mb-1">
@@ -1282,6 +1263,11 @@ export function VendorCustomServiceCreationEnhanced({
                 />
               </Suspense>
             </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">
+                Select a category above to load specializations for that service type.
+              </div>
+            )}
 
             {/* Is Package Toggle */}
             {/* ✅ Solo trainers/walkers/sitters CAN create session packages */}

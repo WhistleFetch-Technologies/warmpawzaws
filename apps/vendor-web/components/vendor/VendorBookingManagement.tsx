@@ -1540,9 +1540,7 @@ export function VendorBookingManagement({
                                 toast.error('Missing booking id');
                                 return;
                               }
-                              const params = new URLSearchParams();
-                              params.set('bookingId', bid);
-                              router.push(`/video?${params.toString()}`);
+                              router.push(`/video/${bid}`);
                             }}
                             className="flex-1 min-w-[100px] py-2 px-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
                           >

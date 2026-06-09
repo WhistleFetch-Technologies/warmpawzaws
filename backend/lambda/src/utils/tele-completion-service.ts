@@ -629,6 +629,10 @@ export async function completeTeleConsultation(params: {
 
   await update('bookings', { id: bookingId }, bookingUpdate);
 
+  if (bookingCompleted || alreadyCompleted) {
+    await finalizeVideoCallSessionsForBooking(bookingId);
+  }
+
   teleLog(
     'completion-decision',
     {
@@ -682,6 +686,20 @@ export async function completeTeleConsultation(params: {
     alreadyCompleted,
     message: getTeleCompletionUserMessage(evaluation.teleCompletionStatus),
   };
+}
+
+/** Close any lingering active/waiting sessions once a booking is finalized. */
+export async function finalizeVideoCallSessionsForBooking(bookingId: string): Promise<number> {
+  const result = await query(
+    `UPDATE video_call_sessions
+     SET status = 'completed',
+         ended_at = COALESCE(ended_at, NOW()),
+         updated_at = NOW()
+     WHERE booking_id = $1
+       AND status IN ('active', 'waiting')`,
+    [bookingId]
+  );
+  return Number((result as any).rowCount ?? 0);
 }
 
 /** Vendor manual complete: must meet qualification thresholds. */

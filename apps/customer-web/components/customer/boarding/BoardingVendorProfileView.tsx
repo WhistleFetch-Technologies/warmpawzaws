@@ -29,7 +29,12 @@ import {
   boardingSlugMatchesText,
   BOARDING_SERVICE_LABELS,
 } from '@/lib/boarding-service-types';
-import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
+import {
+  mergeCustomerFacilityPayload,
+  resolveCustomerVendorAmenities,
+  resolveVendorProfileHeroGallery,
+} from '@/lib/vendor-display-media';
+import { AmenitiesSection } from '../shared/AmenitiesSection';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
 
@@ -65,6 +70,7 @@ interface VendorInfo {
   timing: string;
   photos: string[];
   amenities: string[];
+  customAmenities: string[];
   isVerified: boolean;
 }
 
@@ -135,16 +141,29 @@ export function BoardingVendorProfileView({
       ]);
 
       const fr = facilityRes as Record<string, unknown> | null;
-      if (fr && typeof fr === 'object' && fr.success !== false && fr.facility && typeof fr.facility === 'object') {
-        setFacilityForHero(fr.facility as Record<string, unknown>);
+      let facilityRoot: Record<string, unknown> | null = null;
+      if (fr && typeof fr === 'object' && fr.success !== false && (fr.facility || fr.vendor)) {
+        facilityRoot = fr;
+        if (fr.facility && typeof fr.facility === 'object') {
+          setFacilityForHero(fr.facility as Record<string, unknown>);
+        } else {
+          setFacilityForHero(null);
+        }
       } else {
         setFacilityForHero(null);
       }
 
       const vendorData = (vendorResponse as any)?.vendor || vendorResponse;
-      const raw =
+      const vendorRow =
         vendorData && typeof vendorData === 'object' ? (vendorData as Record<string, unknown>) : {};
-      setVendorRaw(raw);
+
+      const merged: Record<string, unknown> = facilityRoot
+        ? { ...mergeCustomerFacilityPayload(facilityRoot), ...vendorRow }
+        : { ...vendorRow };
+
+      setVendorRaw(merged);
+
+      const { amenities, customAmenities } = resolveCustomerVendorAmenities(merged);
 
       let services: any[] = [];
       const servicesData = servicesResponse as any;
@@ -180,19 +199,24 @@ export function BoardingVendorProfileView({
 
       setPublishedPlans(mapped);
       setVendor({
-        id: (vendorData.id as string) || vendorId,
-        name: (vendorData.business_name as string) || (vendorData.name as string) || 'Pet Boarding',
-        description: (vendorData.description as string) || '',
-        address: (vendorData.address as string) || '',
-        city: (vendorData.city as string) || '',
-        pincode: (vendorData.pincode as string) || '',
-        phone: (vendorData.phone as string) || '',
-        rating: parseFloat(String(vendorData.rating || '0')),
-        review_count: parseInt(String(vendorData.review_count || '0'), 10),
-        timing: (vendorData.timing as string) || (vendorData.businessHours as string) || '9:00 AM - 8:00 PM',
-        photos: (vendorData.photos as string[]) || (vendorData.gallery as string[]) || [],
-        amenities: Array.isArray(vendorData.amenities) ? (vendorData.amenities as string[]) : [],
-        isVerified: !!(vendorData.isVerified ?? vendorData.is_verified),
+        id: String(merged.id ?? vendorId),
+        name:
+          String(merged.businessName ?? merged.business_name ?? merged.name ?? '').trim() ||
+          'Pet Boarding',
+        description: String(merged.description ?? '').trim(),
+        address: String(merged.address ?? '').trim(),
+        city: String(merged.city ?? '').trim(),
+        pincode: String(merged.pincode ?? '').trim(),
+        phone: String(merged.phone ?? '').trim(),
+        rating: parseFloat(String(merged.rating ?? '0')),
+        review_count: parseInt(String(merged.review_count ?? merged.totalReviews ?? '0'), 10),
+        timing:
+          String(merged.timing ?? merged.businessHours ?? merged.operatingHours ?? '').trim() ||
+          '9:00 AM - 8:00 PM',
+        photos: (Array.isArray(merged.photos) ? merged.photos : merged.gallery) as string[] | undefined ?? [],
+        amenities,
+        customAmenities,
+        isVerified: !!(merged.isVerified ?? merged.is_verified),
       });
     } catch (e) {
       console.error('[BoardingVendorProfileView]', e);
@@ -423,24 +447,13 @@ export function BoardingVendorProfileView({
               </div>
             </div>
 
-            {vendor.amenities.length > 0 ? (
+            {vendor.amenities.length > 0 || vendor.customAmenities.length > 0 ? (
               <div className="mt-4 border-t border-gray-100 pt-4">
-                <h3 className="mb-2 text-xs font-semibold uppercase text-gray-500">Features</h3>
-                <div className="flex flex-wrap gap-2">
-                  {vendor.amenities.slice(0, 8).map((a, idx) => (
-                    <span
-                      key={idx}
-                      className="rounded-lg border border-orange-100 bg-orange-50 px-3 py-1.5 text-xs font-medium text-orange-700"
-                    >
-                      {a}
-                    </span>
-                  ))}
-                  {vendor.amenities.length > 8 ? (
-                    <span className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600">
-                      +{vendor.amenities.length - 8} more
-                    </span>
-                  ) : null}
-                </div>
+                <AmenitiesSection
+                  amenities={vendor.amenities}
+                  customAmenities={vendor.customAmenities}
+                  compact
+                />
               </div>
             ) : null}
 

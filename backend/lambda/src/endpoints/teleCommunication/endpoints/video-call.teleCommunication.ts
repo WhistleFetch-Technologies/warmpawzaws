@@ -31,6 +31,7 @@ import { pushNotificationService } from '../../../aws/aws-sns-notification-servi
 import { getRazorpayConfig } from 'src/utils/payments/razorpay-client';
 import {
   completeTeleConsultation,
+  finalizeVideoCallSessionsForBooking,
   loadLatestSessionForBooking,
   recordParticipantJoined,
   recordParticipantLeft,
@@ -45,6 +46,28 @@ import {
 
 
 /** Video call allowed whenever the appointment is not completed. No time-window restriction. */
+
+async function resolveCustomerIdForVideoActive(customerIdOrPhone: string): Promise<string | null> {
+  const raw = (customerIdOrPhone || '').trim();
+  if (!raw) return null;
+  if (isValidUUID(raw)) return raw;
+
+  const byId = await query(
+    `SELECT id::text AS id FROM customers WHERE id::text = $1 LIMIT 1`,
+    [raw]
+  );
+  if (byId.rows?.[0]?.id) return String(byId.rows[0].id);
+
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return null;
+  const byPhone = await query(
+    `SELECT id::text AS id FROM customers
+     WHERE regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') = $1
+     LIMIT 1`,
+    [digits.length >= 10 ? digits.slice(-10) : digits]
+  );
+  return byPhone.rows?.[0]?.id ? String(byPhone.rows[0].id) : null;
+}
 
 /** Persist real join attendance (idempotent). */
 async function trackParticipantJoined(
@@ -845,6 +868,11 @@ class GetAttendeesHandler extends BaseHandler {
     const sessions = await select('video_call_sessions', {
       booking_id: bookingId,
     });
+    const bookingRows = await select('bookings', { id: bookingId });
+    const booking = bookingRows[0] as any;
+    const bookingStatus = String(booking?.status ?? '').toLowerCase();
+    const bookingFinalized = ['completed', 'cancelled', 'no_show', 'expired'].includes(bookingStatus);
+
     const sessionsList = sessions as any[];
     const activeSessions = sessionsList.filter(
       (s) => s.status === 'active' || s.status === 'waiting'
@@ -857,15 +885,19 @@ class GetAttendeesHandler extends BaseHandler {
       (s) => s.customer_attendee_id && s.vendor_attendee_id
     ) || activeSessions[0];
 
-    if (!activeSession) {
+    if (!activeSession || bookingFinalized) {
       return this.success({
         success: true,
         customerJoined: false,
         vendorJoined: false,
-        sessionEnded: completedSessions.length > 0,
-        message: completedSessions.length > 0
-          ? 'Call has ended'
-          : 'No active meeting session',
+        sessionEnded: bookingFinalized || completedSessions.length > 0,
+        bookingStatus: bookingStatus || null,
+        bookingCompleted: bookingStatus === 'completed',
+        message: bookingFinalized
+          ? `Booking is ${bookingStatus}`
+          : completedSessions.length > 0
+            ? 'Call has ended'
+            : 'No active meeting session',
       });
     }
 
@@ -1183,11 +1215,15 @@ export function registerVideoCallEndpoints(app: Hono) {
 
   app.get('/video-call/customer/:customerId/active', async (c) => {
     try {
-      const { customerId } = c.req.param();
-      if (!customerId) {
+      const { customerId: customerIdParam } = c.req.param();
+      if (!customerIdParam) {
         return c.json({ error: 'customerId is required' }, 400);
       }
 
+      const customerId = await resolveCustomerIdForVideoActive(customerIdParam);
+      if (!customerId) {
+        return c.json({ success: true, sessions: [], hasActiveCall: false });
+      }
 
       const activeSessions = await query(`
         SELECT 
@@ -1220,18 +1256,15 @@ export function registerVideoCallEndpoints(app: Hono) {
         LEFT JOIN pets p ON b.pet_id = p.id
         LEFT JOIN customers c ON b.customer_id = c.id
         WHERE b.customer_id = $1
-          AND b.status NOT IN ('completed', 'cancelled', 'no_show')
+          AND b.status NOT IN ('completed', 'cancelled', 'no_show', 'expired')
+          AND (b.booking_date + b.booking_time::time) >= NOW() - INTERVAL '6 hours'
           AND (
-            -- Active or waiting sessions
-            (vcs.status IN ('active', 'waiting'))
-            OR
-            -- Recently ended sessions (within last 15 minutes) - allows rejoin after page refresh.
-            -- The booking-level NOT IN filter above ensures this never resurrects a finalized
-            -- consultation card; combined they make the tele "rejoin" banner disappear as soon
-            -- as the booking is marked completed (or cancelled / no_show).
-            (vcs.status = 'completed' 
-             AND vcs.ended_at IS NOT NULL 
-             AND vcs.ended_at > (NOW() - INTERVAL '15 minutes'))
+            vcs.status IN ('active', 'waiting')
+            OR (
+              vcs.status = 'completed'
+              AND vcs.ended_at IS NOT NULL
+              AND vcs.ended_at > (NOW() - INTERVAL '15 minutes')
+            )
           )
         ORDER BY 
           CASE WHEN vcs.status IN ('active', 'waiting') THEN 0 ELSE 1 END,
@@ -1311,15 +1344,15 @@ export function registerVideoCallEndpoints(app: Hono) {
         LEFT JOIN pets p ON b.pet_id = p.id
         LEFT JOIN customers c ON b.customer_id = c.id
         WHERE b.vendor_id = $1
+          AND b.status NOT IN ('completed', 'cancelled', 'no_show', 'expired')
+          AND (b.booking_date + b.booking_time::time) >= NOW() - INTERVAL '6 hours'
           AND (
-            -- Active or waiting sessions
-            (vcs.status IN ('active', 'waiting') AND b.status != 'completed')
-            OR
-            -- Recently ended sessions (within last 15 minutes) - allows rejoin after page refresh
-            (vcs.status = 'completed' 
-             AND vcs.ended_at IS NOT NULL 
-             AND vcs.ended_at > (NOW() - INTERVAL '15 minutes')
-             AND b.status != 'completed')
+            vcs.status IN ('active', 'waiting')
+            OR (
+              vcs.status = 'completed'
+              AND vcs.ended_at IS NOT NULL
+              AND vcs.ended_at > (NOW() - INTERVAL '15 minutes')
+            )
           )
         ORDER BY 
           CASE WHEN vcs.status IN ('active', 'waiting') THEN 0 ELSE 1 END,
