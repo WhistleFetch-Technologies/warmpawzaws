@@ -3,6 +3,12 @@
 import { X, Package } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
+import { buildMarkShippedPayload } from '@/lib/carrier-registry';
+import {
+  VendorShipmentDetailsForm,
+  isShipmentFormValid,
+  type VendorShipmentFormValues,
+} from '@/components/vendor/orders/VendorShipmentDetailsForm';
 
 interface Order {
   id: string;
@@ -30,15 +36,12 @@ const STATUS_TRANSITIONS: Record<string, string[]> = {
   'refunded': [],
 };
 
-const DELIVERY_PARTNERS = [
-  'Delhivery',
-  'BlueDart',
-  'DTDC',
-  'Shiprocket',
-  'Ekart',
-  'Shadowfax',
-  'Other',
-];
+const EMPTY_SHIPMENT_FORM: VendorShipmentFormValues = {
+  carrierId: '',
+  carrierName: '',
+  trackingNumber: '',
+  trackingUrl: '',
+};
 
 export function OrderStatusUpdateModal({
   isOpen,
@@ -49,9 +52,8 @@ export function OrderStatusUpdateModal({
 }: OrderStatusUpdateModalProps) {
   const [loading, setLoading] = useState(false);
   const [newStatus, setNewStatus] = useState<string>('');
-  const [trackingNumber, setTrackingNumber] = useState<string>('');
-  const [deliveryPartner, setDeliveryPartner] = useState<string>('');
-  const [trackingUrl, setTrackingUrl] = useState<string>('');
+  const [shipmentForm, setShipmentForm] = useState<VendorShipmentFormValues>(EMPTY_SHIPMENT_FORM);
+  const [shipmentFormShowErrors, setShipmentFormShowErrors] = useState(false);
   const [notes, setNotes] = useState<string>('');
   const [cancellationReason, setCancellationReason] = useState<string>('');
 
@@ -63,6 +65,8 @@ export function OrderStatusUpdateModal({
     }
     if (!isOpen) {
       setCancellationReason('');
+      setShipmentForm(EMPTY_SHIPMENT_FORM);
+      setShipmentFormShowErrors(false);
     }
   }, [isOpen, availableStatuses]);
 
@@ -84,12 +88,13 @@ export function OrderStatusUpdateModal({
       setLoading(true);
 
       if (newStatus === 'shipped') {
-        if (!trackingNumber.trim()) {
-          alert('Tracking number is required when marking as shipped');
+        if (order.tracking_number) {
+          alert('Tracking already submitted and cannot be changed');
           return;
         }
-        if (!deliveryPartner) {
-          alert('Please select a delivery partner');
+
+        if (!isShipmentFormValid(shipmentForm)) {
+          setShipmentFormShowErrors(true);
           return;
         }
 
@@ -99,14 +104,11 @@ export function OrderStatusUpdateModal({
           return;
         }
 
+        const payload = buildMarkShippedPayload({ ...shipmentForm, notes: notes || undefined });
+
         const result = await apiClient.post<{ success?: boolean; error?: string }>(
           `/vendor/${resolvedVendorId}/orders/${order.id}/mark-shipped`,
-          {
-            trackingNumber: trackingNumber.trim(),
-            deliveryPartner,
-            trackingUrl: trackingUrl.trim() || undefined,
-            notes: notes || undefined,
-          }
+          payload
         );
 
         if (result?.error || result?.success === false) {
@@ -137,9 +139,7 @@ export function OrderStatusUpdateModal({
       onSuccess?.();
       onClose();
       setNewStatus('');
-      setTrackingNumber('');
-      setDeliveryPartner('');
-      setTrackingUrl('');
+      setShipmentForm(EMPTY_SHIPMENT_FORM);
       setNotes('');
       setCancellationReason('');
     } catch (error: any) {
@@ -202,50 +202,13 @@ export function OrderStatusUpdateModal({
             </select>
           </div>
 
-          {newStatus === 'shipped' && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Tracking Number *
-                </label>
-                <input
-                  type="text"
-                  value={trackingNumber}
-                  onChange={(e) => setTrackingNumber(e.target.value)}
-                  placeholder="e.g., AWB123456789"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Delivery Partner *
-                </label>
-                <select
-                  value={deliveryPartner}
-                  onChange={(e) => setDeliveryPartner(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-                >
-                  <option value="">Select partner</option>
-                  {DELIVERY_PARTNERS.map((partner) => (
-                    <option key={partner} value={partner}>
-                      {partner}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Tracking URL <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <input
-                  type="url"
-                  value={trackingUrl}
-                  onChange={(e) => setTrackingUrl(e.target.value)}
-                  placeholder="Auto-generated for known carriers if left blank"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-                />
-              </div>
-            </>
+          {newStatus === 'shipped' && order.order_status === 'processing' && !order.tracking_number && (
+            <VendorShipmentDetailsForm
+              values={shipmentForm}
+              onChange={setShipmentForm}
+              disabled={loading}
+              showErrors={shipmentFormShowErrors}
+            />
           )}
 
           {newStatus === 'cancelled' ? (
@@ -263,18 +226,20 @@ export function OrderStatusUpdateModal({
               <p className="text-xs text-gray-500 mt-1">This message will be shown to the customer.</p>
             </div>
           ) : (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Notes (Optional)
-              </label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Add any notes about this status update..."
-                rows={3}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
-              />
-            </div>
+            newStatus !== 'shipped' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Notes (Optional)
+                </label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Add any notes about this status update..."
+                  rows={3}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:border-orange-500 focus:ring-2 focus:ring-orange-100 outline-none"
+                />
+              </div>
+            )
           )}
         </div>
 

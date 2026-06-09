@@ -19,6 +19,8 @@ interface TrackingInfo {
     orderNumber: string;
     status: string;
     trackingNumber?: string;
+    carrierName?: string;
+    trackingUrl?: string | null;
     shippedAt?: string;
     deliveredAt?: string;
     // Delivery OTP fields
@@ -81,6 +83,7 @@ export default function TrackingContent() {
   // OTP display states
   const [showOTP, setShowOTP] = useState(false);
   const [copiedOTP, setCopiedOTP] = useState(false);
+  const [copiedTracking, setCopiedTracking] = useState(false);
   
   // Check if order is out for delivery
   const isOutForDelivery = (status: string) => {
@@ -122,8 +125,17 @@ export default function TrackingContent() {
         console.log('Delivery status not available:', e);
       }
       
-      // Merge delivery OTP info into tracking response
+      // Merge structured tracking + delivery OTP info
       if (response && response.order) {
+        const structured = response.tracking;
+        if (structured) {
+          response.order.trackingNumber =
+            structured.trackingNumber || response.order.trackingNumber;
+          response.order.carrierName =
+            structured.carrierName || response.order.carrierName;
+          response.order.trackingUrl =
+            structured.trackingUrl || response.order.trackingUrl;
+        }
         response.order.deliveryOtp = deliveryInfo?.delivery_otp || deliveryInfo?.deliveryOtp || deliveryInfo?.otp;
         response.order.otpVerified = deliveryInfo?.otp_verified || deliveryInfo?.otpVerified;
         response.order.deliveryPartnerName = deliveryInfo?.partner_name || deliveryInfo?.partnerName;
@@ -207,19 +219,43 @@ export default function TrackingContent() {
         {/* Tracking Number */}
         {tracking.order.trackingNumber && (
           <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-            <div className="flex items-center justify-between">
-              <div>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm text-gray-500 mb-1">Tracking Number</p>
-                <p className="text-xl font-bold text-gray-900">{tracking.order.trackingNumber}</p>
+                {tracking.order.carrierName && (
+                  <p className="text-sm text-gray-600 mb-1">
+                    Courier: <span className="font-medium text-gray-800">{tracking.order.carrierName}</span>
+                  </p>
+                )}
+                <div className="flex items-center gap-2">
+                  <p className="text-xl font-bold text-gray-900 break-all">{tracking.order.trackingNumber}</p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(tracking.order.trackingNumber || '');
+                        setCopiedTracking(true);
+                        toast.success('Tracking number copied');
+                        setTimeout(() => setCopiedTracking(false), 2000);
+                      } catch {
+                        toast.error('Could not copy tracking number');
+                      }
+                    }}
+                    className="shrink-0 p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition"
+                    title="Copy tracking number"
+                  >
+                    {copiedTracking ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-gray-600" />}
+                  </button>
+                </div>
               </div>
-              {tracking.shipments[0]?.tracking_url && (
+              {(tracking.order.trackingUrl || tracking.shipments[0]?.tracking_url) && (
                 <a
-                  href={tracking.shipments[0].tracking_url}
+                  href={tracking.order.trackingUrl || tracking.shipments[0]?.tracking_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition"
+                  className="shrink-0 px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition"
                 >
-                  Track on Carrier Site
+                  Track shipment
                 </a>
               )}
             </div>

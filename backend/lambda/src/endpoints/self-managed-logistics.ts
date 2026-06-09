@@ -10,8 +10,15 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
-import { CARRIER_PATTERNS, buildTrackingUrl, getCarrierDisplayName, normalizeCarrierKey } from '../utils/logistics/carrier-patterns';
+import { buildTrackingUrl, getCarrierDisplayName } from '../utils/logistics/carrier-patterns';
 import { markOrderShippedByVendor } from '../utils/logistics/vendor-mark-shipped';
+import {
+  getShipmentOverwriteLockedError,
+  listCarriersForVendor,
+  parseMarkShippedBody,
+  toLegacyTrackingResponse,
+  validateMarkShippedInput,
+} from '../utils/logistics/shipment-tracking';
 import { shipmentPincodeFieldsForInsert } from '../utils/logistics/shipment-pincodes';
 import { syncVendorManagedShipments } from '../jobs/vendor-shipment-tracking-processor';
 
@@ -70,12 +77,7 @@ export function registerSelfManagedLogisticsEndpoints(app: Hono) {
           shippingOriginPincode: vendor.shipping_origin_pincode,
           processingDays: vendor.processing_days || 1,
         },
-        availableCarriers: Object.entries(CARRIER_PATTERNS)
-          .filter(([key]) => key !== 'custom')
-          .map(([key, val]) => ({
-            id: key,
-            name: val.name,
-          })),
+        availableCarriers: listCarriersForVendor(),
       });
     } catch (error: any) {
       console.error('Error fetching logistics settings:', error);
@@ -91,27 +93,15 @@ export function registerSelfManagedLogisticsEndpoints(app: Hono) {
     try {
       const { vendorId, orderId } = c.req.param();
       const body = await c.req.json();
-      const {
-        trackingNumber,
-        tracking_number,
-        deliveryPartner,
-        delivery_partner,
-        trackingUrl,
-        tracking_url,
-        notes,
-      } = body;
 
       const result = await markOrderShippedByVendor({
         vendorId,
         orderId,
-        trackingNumber: trackingNumber || tracking_number,
-        deliveryPartner: deliveryPartner || delivery_partner || 'custom',
-        trackingUrl: trackingUrl || tracking_url,
-        notes,
+        ...body,
       });
 
       if (!result.success) {
-        return c.json({ success: false, error: result.error }, 400);
+        return c.json({ success: false, error: result.error }, result.statusCode || 400);
       }
 
       return c.json({
@@ -133,18 +123,14 @@ export function registerSelfManagedLogisticsEndpoints(app: Hono) {
     try {
       const orderId = c.req.param('orderId');
       const body = await c.req.json();
-      const {
-        vendorId,
-        carrier,
-        trackingNumber,
-        trackingUrl,
-        estimatedDeliveryDate,
-        notes,
-      } = body;
-
-      if (!trackingNumber) {
-        return c.json({ success: false, error: 'Tracking number is required' }, 400);
+      const parsed = parseMarkShippedBody(body);
+      const validationError = validateMarkShippedInput(parsed);
+      if (validationError) {
+        return c.json({ success: false, error: validationError }, 400);
       }
+
+      const { vendorId, estimatedDeliveryDate, notes } = body;
+      const { carrierId, carrierName, trackingNumber, trackingUrl } = parsed;
 
       const orders = await select('orders', { id: orderId });
       if (orders.length === 0) {
@@ -156,17 +142,25 @@ export function registerSelfManagedLogisticsEndpoints(app: Hono) {
         return c.json({ success: false, error: 'Order does not belong to this vendor' }, 403);
       }
 
-      const carrierKey = normalizeCarrierKey(carrier || 'custom');
-      const finalTrackingUrl = buildTrackingUrl(carrierKey, trackingNumber, trackingUrl);
-
       const existingShipment = await query(
-        `SELECT id FROM shipments WHERE order_id = $1`,
+        `SELECT id, awb_code FROM shipments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`,
         [orderId]
       );
 
+      const lockedError = getShipmentOverwriteLockedError(
+        order.order_status,
+        existingShipment.rows[0]?.awb_code
+      );
+      if (lockedError) {
+        return c.json({ success: false, error: lockedError }, 409);
+      }
+
+      const finalTrackingUrl = buildTrackingUrl(carrierId, trackingNumber, trackingUrl);
+
       const shipmentData = {
         order_id: orderId,
-        logistics_partner: carrierKey,
+        logistics_partner: carrierId,
+        courier_name: carrierName,
         awb_code: trackingNumber,
         tracking_url: finalTrackingUrl,
         estimated_delivery: estimatedDeliveryDate || null,
@@ -191,23 +185,29 @@ export function registerSelfManagedLogisticsEndpoints(app: Hono) {
         });
       }
 
+      const now = new Date().toISOString();
       await update('orders', { id: orderId }, {
         order_status: 'shipped',
         tracking_number: trackingNumber,
-        delivery_partner: getCarrierDisplayName(carrierKey),
-        shipped_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        delivery_partner: carrierName,
+        shipped_at: now,
+        updated_at: now,
+      });
+
+      const tracking = toLegacyTrackingResponse({
+        carrierId,
+        carrierName,
+        trackingNumber,
+        trackingUrl: finalTrackingUrl,
+        identifierType: 'UNKNOWN',
+        shippedAt: now,
+        locked: true,
       });
 
       return c.json({
         success: true,
         message: 'Tracking information added',
-        tracking: {
-          carrier: getCarrierDisplayName(carrierKey),
-          trackingNumber,
-          trackingUrl: finalTrackingUrl,
-          estimatedDelivery: estimatedDeliveryDate,
-        },
+        tracking,
       });
     } catch (error: any) {
       console.error('Error adding tracking:', error);

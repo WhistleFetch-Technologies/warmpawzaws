@@ -16,6 +16,7 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { query, insert } from '../../../database/rds-connection';
+import { buildStructuredTracking } from '../../../utils/logistics/shipment-tracking';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
 
@@ -377,12 +378,28 @@ class GetCustomerOrdersHandler extends BaseHandler {
           o.shipping_pincode,
           o.cancelled_at,
           o.cancellation_reason,
+          o.tracking_number,
+          o.delivery_partner,
+          o.shipped_at,
           o.created_at,
           o.updated_at,
+          s.awb_code AS shipment_awb,
+          s.logistics_partner AS shipment_carrier_id,
+          s.tracking_url AS shipment_tracking_url,
+          s.courier_name AS shipment_courier_name,
+          s.shipped_at AS shipment_shipped_at,
+          s.estimated_delivery AS shipment_estimated_delivery,
           v.business_name as vendor_name,
           v.phone as vendor_phone,
           v.address as vendor_address
         FROM orders o
+        LEFT JOIN LATERAL (
+          SELECT awb_code, logistics_partner, tracking_url, courier_name, shipped_at, estimated_delivery
+          FROM shipments
+          WHERE order_id = o.id
+          ORDER BY created_at DESC
+          LIMIT 1
+        ) s ON true
         LEFT JOIN vendors v ON o.vendor_id = v.id
         WHERE o.customer_id = $1
       `;
@@ -424,11 +441,49 @@ class GetCustomerOrdersHandler extends BaseHandler {
         itemsByOrder[item.order_id].push(item);
       });
 
-      // Attach items to orders
-      const ordersWithItems = orders.rows.map((order: any) => ({
-        ...order,
-        items: itemsByOrder[order.id] || []
-      }));
+      // Attach items and structured tracking to orders
+      const ordersWithItems = orders.rows.map((order: any) => {
+        const shipment = order.shipment_awb || order.shipment_carrier_id
+          ? {
+              awb_code: order.shipment_awb,
+              logistics_partner: order.shipment_carrier_id,
+              tracking_url: order.shipment_tracking_url,
+              courier_name: order.shipment_courier_name,
+              shipped_at: order.shipment_shipped_at,
+              estimated_delivery: order.shipment_estimated_delivery,
+            }
+          : null;
+
+        const tracking = buildStructuredTracking(
+          {
+            order_status: order.status,
+            tracking_number: order.tracking_number,
+            delivery_partner: order.delivery_partner,
+            shipped_at: order.shipped_at,
+          },
+          shipment
+        );
+
+        const {
+          shipment_awb,
+          shipment_carrier_id,
+          shipment_tracking_url,
+          shipment_courier_name,
+          shipment_shipped_at,
+          shipment_estimated_delivery,
+          ...rest
+        } = order;
+
+        return {
+          ...rest,
+          items: itemsByOrder[order.id] || [],
+          tracking,
+          tracking_number: tracking?.trackingNumber || order.tracking_number || null,
+          estimated_delivery: tracking?.shippedAt
+            ? order.shipment_estimated_delivery || null
+            : null,
+        };
+      });
 
       // Get statistics
       const statsQuery = await query(`

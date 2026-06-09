@@ -15,6 +15,10 @@
 import { Hono } from 'hono';
 import { select, query } from '../../../database/rds-connection';
 import { triggerAutoShipment } from '../../../utils/logistics/trigger-auto-shipment';
+import {
+  bodyContainsTrackingFields,
+  getShipmentTrackingLockedError,
+} from '../../../utils/logistics/shipment-tracking';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
@@ -445,6 +449,13 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       }
 
       const currentStatus = existingOrder.rows[0].order_status;
+
+      if (bodyContainsTrackingFields(body)) {
+        const lockedError = getShipmentTrackingLockedError(currentStatus);
+        if (lockedError) {
+          return c.json({ error: lockedError }, 409);
+        }
+      }
       
       // Validate transitions
       const allowedTransitions: Record<string, string[]> = {
@@ -555,6 +566,13 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       }
 
       const currentStatus = existingOrder.rows[0].order_status;
+
+      if (bodyContainsTrackingFields(body)) {
+        const lockedError = getShipmentTrackingLockedError(currentStatus);
+        if (lockedError) {
+          return c.json({ error: lockedError }, 409);
+        }
+      }
       
       // Validate transitions
       const allowedTransitions: Record<string, string[]> = {

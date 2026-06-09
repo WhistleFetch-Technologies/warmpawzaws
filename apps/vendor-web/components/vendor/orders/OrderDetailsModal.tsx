@@ -3,6 +3,7 @@
 import { X, Package, User, MapPin, CreditCard, Truck } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { apiClientWithMock as apiClient } from '@/lib/api-client-with-mock';
+import { VendorShipmentTrackingReadOnly } from '@/components/vendor/orders/VendorShipmentTrackingReadOnly';
 
 interface OrderItem {
   id: string;
@@ -30,6 +31,8 @@ interface Order {
   payment_status: string;
   shipping_address: any;
   tracking_number?: string;
+  delivery_partner?: string;
+  tracking_url?: string;
   shipped_at?: string;
   delivered_at?: string;
   cancelled_at?: string;
@@ -221,27 +224,11 @@ export function OrderDetailsModal({
 
             {/* Tracking Info */}
             {fullOrder.tracking_number && (
-              <div className="bg-blue-50 rounded-lg p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Truck className="w-5 h-5 text-blue-600" />
-                  <h4 className="font-semibold text-gray-900">Tracking Information</h4>
-                </div>
-                <div className="text-sm">
-                  <p className="text-gray-700">
-                    <span className="font-medium">Tracking Number:</span> {fullOrder.tracking_number}
-                  </p>
-                  {fullOrder.shipped_at && (
-                    <p className="text-gray-600 mt-1">
-                      Shipped on: {new Date(fullOrder.shipped_at).toLocaleString('en-IN')}
-                    </p>
-                  )}
-                  {fullOrder.delivered_at && (
-                    <p className="text-green-600 mt-1">
-                      Delivered on: {new Date(fullOrder.delivered_at).toLocaleString('en-IN')}
-                    </p>
-                  )}
-                </div>
-              </div>
+              <VendorShipmentTrackingReadOnly
+                carrierName={fullOrder.delivery_partner}
+                trackingNumber={fullOrder.tracking_number}
+                trackingUrl={fullOrder.tracking_url}
+              />
             )}
 
             {/* Order Summary */}

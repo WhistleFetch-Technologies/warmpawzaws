@@ -13,6 +13,11 @@ import {
 } from 'lucide-react';
 import { cn } from '@/components/ui/utils';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
+import {
+  OrderTrackingCard,
+  resolveOrderTracking,
+  shouldShowOrderTracking,
+} from '@/components/shop/OrderTrackingCard';
 import { MyOrdersHeaderBackground } from '@/components/customer/MyOrdersHeaderBackground';
 import {
   MY_ORDERS_CARD_CLASS,
@@ -67,6 +72,13 @@ interface Order {
   payment_method: string;
   payment_status: string;
   tracking_number?: string;
+  tracking_url?: string;
+  carrier_name?: string;
+  tracking?: {
+    carrierName?: string;
+    trackingNumber?: string;
+    trackingUrl?: string | null;
+  };
   estimated_delivery?: string;
   created_at: string;
   updated_at: string;
@@ -152,6 +164,8 @@ function normalizeOrder(raw: any): Order {
   const total = Number(raw.final_amount ?? raw.total_amount ?? raw.total ?? 0) || 0;
   const subtotal = Number(raw.subtotal ?? raw.total_amount ?? Math.max(0, total - shippingFee + discount)) || 0;
 
+  const tracking = resolveOrderTracking(raw);
+
   return {
     id: String(raw.id),
     order_number: raw.order_number || String(raw.id).slice(0, 8),
@@ -164,7 +178,10 @@ function normalizeOrder(raw: any): Order {
     total,
     payment_method: raw.payment_method || '—',
     payment_status: String(raw.payment_status || 'pending').toLowerCase(),
-    tracking_number: raw.tracking_number,
+    tracking_number: tracking?.trackingNumber || raw.tracking_number,
+    tracking_url: tracking?.trackingUrl || raw.tracking_url,
+    carrier_name: tracking?.carrierName || raw.delivery_partner,
+    tracking: raw.tracking,
     estimated_delivery: raw.estimated_delivery,
     created_at: raw.created_at || new Date().toISOString(),
     updated_at: raw.updated_at || raw.created_at || new Date().toISOString(),
@@ -554,15 +571,12 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                       </div>
                     </div>
 
-                    {order.tracking_number && (
-                      <div className="rounded-2xl bg-blue-50/90 p-4 text-sm">
-                        <p className="text-xs font-semibold text-blue-600">Tracking</p>
-                        <p className="mt-1 break-all font-bold text-blue-900">{order.tracking_number}</p>
-                        {order.estimated_delivery && (
-                          <p className="mt-1 text-xs text-blue-700">Expected by {order.estimated_delivery}</p>
-                        )}
-                      </div>
-                    )}
+                    {shouldShowOrderTracking(order.status, order.tracking_number) && (() => {
+                      const trackingInfo = resolveOrderTracking(order);
+                      return trackingInfo ? (
+                        <OrderTrackingCard tracking={trackingInfo} />
+                      ) : null;
+                    })()}
 
                     <div>
                       <h4 className="mb-2.5 text-sm font-bold text-gray-900">Items</h4>
