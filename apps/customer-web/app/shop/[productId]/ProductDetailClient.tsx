@@ -10,20 +10,12 @@ import { useCustomerNavigation } from '@/lib/navigation/use-customer-navigation'
 import { useDeepLinkBackStack } from '@/lib/navigation/use-deep-link-back-stack';
 import {
   mergeLineIntoWarmpawzCartStorage,
-  setLineQuantityInWarmpawzCartStorage,
-  readWarmpawzCartLines,
   CART_UPDATED_EVENT,
+  WARMPAWZ_CART_KEY,
 } from '@/lib/warmpawz-cart-storage';
-import type { WarmpawzCartProductSnapshot } from '@/lib/warmpawz-cart-storage';
 import { WishlistProductHeartButton } from '@/components/customer/WishlistProductHeartButton';
 import { formatAverageForDisplay, formatRatingNumberOrDash } from '@/lib/rating-display';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
-import {
-  getProductDiscountPercent,
-  listPriceForDiscountDisplay,
-  resolveProductCompareAtPrice,
-  resolveProductSellingPrice,
-} from '@/lib/shop-product-pricing';
 import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import {
   ArrowLeft, ShoppingCart, Star, Truck, Shield, Tag,
@@ -145,11 +137,10 @@ export default function ProductDetailClient() {
   useEffect(() => {
     if (!wishlistProductId || typeof window === 'undefined') return;
     const sync = () => {
-      const line = readWarmpawzCartLines().find(
-        (item) => String(item.product_id) === String(wishlistProductId)
+      const cart = JSON.parse(localStorage.getItem(WARMPAWZ_CART_KEY) || '[]');
+      setIsInCart(
+        cart.some((item: CartItem) => String(item.product_id) === String(wishlistProductId))
       );
-      setIsInCart(!!line);
-      if (line) setQuantity(Math.max(1, line.quantity));
     };
     sync();
     window.addEventListener(CART_UPDATED_EVENT, sync);
@@ -200,8 +191,7 @@ export default function ProductDetailClient() {
           resolvedProductId: resolvedId,
           rowKeys: p && typeof p === 'object' ? Object.keys(p) : [],
         });
-        const compareAt = resolveProductCompareAtPrice(p as Record<string, unknown>);
-        const sellingPrice = resolveProductSellingPrice(p as Record<string, unknown>, compareAt);
+        const compareOrOriginal = p.original_price ?? p.compare_at_price;
         const rc = Number(p.review_count ?? 0) || 0;
         const rawRating = p.rating != null ? Number(p.rating) : NaN;
         const rating =
@@ -210,8 +200,11 @@ export default function ProductDetailClient() {
           ...p,
           id: resolvedId,
           stock: p.stock_quantity || p.stock || 0,
-          price: sellingPrice,
-          original_price: listPriceForDiscountDisplay(sellingPrice, compareAt),
+          price: parseFloat(p.price) || 0,
+          original_price:
+            compareOrOriginal != null && String(compareOrOriginal) !== ''
+              ? parseFloat(String(compareOrOriginal))
+              : undefined,
           rating,
           review_count: rc,
           images: p.images || [],
@@ -251,64 +244,27 @@ export default function ProductDetailClient() {
   // ACTIONS
   // ============================================================================
 
-  const productSnapshot = (): WarmpawzCartProductSnapshot | null => {
-    if (!product) return null;
-    const vendorId = product.vendor_id?.trim();
-    return {
-      id: product.id,
-      name: product.name,
-      price: product.price,
-      original_price: product.original_price,
-      emoji: product.emoji,
-      images: product.images,
-      ...(vendorId ? { vendor_id: vendorId } : {}),
-      vendor_name: product.vendor_name,
-      ...(product.category_id ? { category_id: product.category_id } : {}),
-      stock: product.stock,
-    };
-  };
-
-  const persistCartQuantity = (qty: number): boolean => {
-    if (!product || product.stock === 0) return false;
-    const snap = productSnapshot();
-    if (!snap) return false;
-    const lineId = String(wishlistProductId || productId);
-    const ok = setLineQuantityInWarmpawzCartStorage({
-      lineId,
-      quantity: qty,
-      product: snap,
-      selectedVariations:
-        Object.keys(selectedVariations).length > 0 ? selectedVariations : undefined,
-    });
-    if (ok) setIsInCart(true);
-    return ok;
-  };
-
   const mergeLineIntoLocalCart = (): boolean => {
     if (!product || product.stock === 0) return false;
     const lineId = wishlistProductId || productId;
-    const snap = productSnapshot();
-    if (!snap) return false;
     const ok = mergeLineIntoWarmpawzCartStorage({
       lineId: String(lineId),
       quantity,
-      product: snap,
+      product: {
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        original_price: product.original_price,
+        emoji: product.emoji,
+        images: product.images,
+        vendor_name: product.vendor_name,
+        stock: product.stock,
+      },
       selectedVariations:
         Object.keys(selectedVariations).length > 0 ? selectedVariations : undefined,
     });
     if (ok) setIsInCart(true);
     return ok;
-  };
-
-  const changeQuantity = (delta: number) => {
-    if (!product) return;
-    const next = Math.max(1, Math.min(product.stock, quantity + delta));
-    setQuantity(next);
-    const lineId = String(wishlistProductId || productId);
-    const inCartNow = readWarmpawzCartLines().some(
-      (item) => String(item.product_id) === lineId
-    );
-    if (inCartNow) persistCartQuantity(next);
   };
 
   const addToCart = async () => {
@@ -316,15 +272,14 @@ export default function ProductDetailClient() {
 
     setAddingToCart(true);
     try {
-      if (isInCart) persistCartQuantity(quantity);
-      else mergeLineIntoLocalCart();
+      mergeLineIntoLocalCart();
     } finally {
       setAddingToCart(false);
     }
   };
 
   const buyNow = () => {
-    if (!persistCartQuantity(quantity)) return;
+    if (!mergeLineIntoLocalCart()) return;
     router.push('/cart?buynow=1');
   };
 
@@ -361,8 +316,8 @@ export default function ProductDetailClient() {
   // COMPUTED VALUES
   // ============================================================================
 
-  const discount = product
-    ? getProductDiscountPercent(product.price, product.original_price)
+  const discount = product?.original_price && product.original_price > product.price
+    ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
     : 0;
 
   const finalPrice = product ? product.price * quantity : 0;
@@ -394,7 +349,7 @@ export default function ProductDetailClient() {
           <h2 className="text-xl font-bold text-slate-900 mb-2">Shop coming soon</h2>
           <p className="text-slate-500 mb-6">We&apos;re preparing the Warmpawz marketplace for customers.</p>
           <button
-            onClick={() => nav.backOr('/')}
+            onClick={() => goBackOrHome(router)}
             className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg"
           >
             Go Back
@@ -440,7 +395,7 @@ export default function ProductDetailClient() {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <button
-              onClick={() => nav.backOr('/')}
+              onClick={() => goBackOrHome(router)}
               className="p-2 hover:bg-slate-100 rounded-xl"
             >
               <ArrowLeft className="w-5 h-5 text-slate-600" />
@@ -489,7 +444,7 @@ export default function ProductDetailClient() {
             <div className="aspect-square bg-white rounded-2xl border border-slate-100 overflow-hidden flex items-center justify-center relative">
               <button
                 type="button"
-                onClick={() => nav.backOr('/')}
+                onClick={() => goBackOrHome(router)}
                 className="absolute top-3 left-3 z-20 flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-slate-200/90 bg-white/95 text-slate-900 shadow-md backdrop-blur-sm touch-manipulation active:scale-[0.98] transition-transform hover:bg-white lg:hidden"
                 aria-label="Go back"
               >
@@ -636,14 +591,14 @@ export default function ProductDetailClient() {
               <div className="flex items-center gap-4">
                 <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden">
                   <button
-                    onClick={() => changeQuantity(-1)}
+                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
                     className="p-3 hover:bg-slate-100 transition-colors"
                   >
                     <Minus className="w-5 h-5 text-slate-600" />
                   </button>
                   <span className="w-14 text-center font-semibold text-slate-900">{quantity}</span>
                   <button
-                    onClick={() => changeQuantity(1)}
+                    onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
                     className="p-3 hover:bg-slate-100 transition-colors"
                     disabled={quantity >= product.stock}
                   >
@@ -874,12 +829,14 @@ export default function ProductDetailClient() {
 // ============================================================================
 
 function RecommendedProductCard({ product }: { product: RecommendedProduct }) {
-  const nav = useCustomerNavigation();
-  const discount = getProductDiscountPercent(product.price, product.original_price);
+  const router = useRouter();
+  const discount = product.original_price && product.original_price > product.price
+    ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
+    : 0;
 
   return (
     <button
-      onClick={() => nav.goToProduct(product.id)}
+      onClick={() => router.push(`/shop/${product.id}`)}
       className="bg-white rounded-xl border border-slate-100 p-4 text-left hover:shadow-lg transition-all"
     >
       <div className="aspect-square bg-slate-50 rounded-lg flex items-center justify-center text-4xl mb-3 relative">

@@ -58,51 +58,9 @@ export default function SellerPage() {
     }
   }, [vendorId]);
 
-  const loadVendorData = useCallback(async () => {
-    const persistVendorId = (v: Record<string, unknown> | null | undefined) => {
-      const id = v && (v.id ?? v.vendorId);
-      if (id != null && String(id).trim() !== '') {
-        localStorage.setItem('vendorId', String(id).trim());
-      }
-    };
-
-    try {
-      const stored = localStorage.getItem('vendorData');
-      if (stored) {
-        const parsed = JSON.parse(stored) as Record<string, unknown>;
-        setVendorData(parsed);
-        persistVendorId(parsed);
-        return;
-      }
-
-      const phone =
-        localStorage.getItem('vendorPhone') || localStorage.getItem('vendor_phone');
-      if (!phone) return;
-
-      const data = await Promise.race([
-        apiClient.get<{ vendor?: Record<string, unknown> }>(
-          `/vendor/by-phone/${encodeURIComponent(phone)}`
-        ),
-        new Promise<null>((_, reject) =>
-          window.setTimeout(() => reject(new Error('Vendor profile request timed out')), 15_000)
-        ),
-      ]);
-      if (data?.vendor) {
-        setVendorData(data.vendor);
-        localStorage.setItem('vendorData', JSON.stringify(data.vendor));
-        persistVendorId(data.vendor);
-      }
-    } catch (error) {
-      console.error('[SellerPage] Error loading vendor data:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    setLoading(true);
-    void loadVendorData();
-  }, [loadVendorData]);
+    loadVendorData();
+  }, []);
 
   useEffect(() => {
     if (loading || !vendorData) return;
@@ -120,6 +78,42 @@ export default function SellerPage() {
     const intervalId = window.setInterval(() => void refreshNotificationUnreadCount(), NOTIFICATION_POLL_MS);
     return () => window.clearInterval(intervalId);
   }, [vendorId, refreshNotificationUnreadCount]);
+
+  const loadVendorData = async () => {
+    try {
+      const persistVendorId = (v: Record<string, unknown> | null | undefined) => {
+        const id = v && (v.id ?? v.vendorId);
+        if (id != null && String(id).trim() !== '') {
+          localStorage.setItem('vendorId', String(id).trim());
+        }
+      };
+
+      // Get vendor data from localStorage (set during login)
+      const stored = localStorage.getItem('vendorData');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setVendorData(parsed);
+        persistVendorId(parsed);
+        setLoading(false);
+        return;
+      }
+
+      // Try to get vendor from session
+      const phone = localStorage.getItem('vendorPhone');
+      if (phone) {
+        const data = await apiClient.get<{ vendor?: any }>(`/vendor/by-phone/${phone}`);
+        if (data?.vendor) {
+          setVendorData(data.vendor);
+          localStorage.setItem('vendorData', JSON.stringify(data.vendor));
+          persistVendorId(data.vendor);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading vendor data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('vendorData');

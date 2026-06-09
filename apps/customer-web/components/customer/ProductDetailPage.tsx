@@ -30,7 +30,7 @@ import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
-import { setLineQuantityInWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
+import { mergeLineIntoWarmpawzCartStorage } from '@/lib/warmpawz-cart-storage';
 import { resolveVendorIdFromProduct } from '@/lib/ecommerce/seller-promotions';
 import { SellerProductPromotions } from '@/components/customer/ecommerce/SellerProductPromotions';
 import { toast } from 'sonner';
@@ -143,20 +143,15 @@ export function ProductDetailPage({
 
   const buildCartItemForContext = () => {
     if (!product) return null;
-    const vendorId = String(product.vendorId || product.vendor_id || '').trim() || undefined;
-    const categoryId =
-      String(product.category_id || product.categoryId || '').trim() || undefined;
     return {
       id: product.id || product.productId,
       name: product.name || product.product_name,
       price: parseFloat(product.price || product.unit_price || 0),
       quantity: quantity,
       image: product.image || product.image_url || product.primary_image,
-      vendorId,
+      vendorId: product.vendorId || product.vendor_id,
       vendorName: product.vendor?.name || product.vendor_name,
-      categoryId,
-      category: categoryId,
-      ...product,
+      ...product
     };
   };
 
@@ -168,7 +163,8 @@ export function ProductDetailPage({
   };
 
   const handleBuyNow = () => {
-    if (!product) return;
+    const cartItem = buildCartItemForContext();
+    if (!cartItem || !product) return;
 
     const lineId = String(
       canonicalProductId(product) ||
@@ -190,8 +186,7 @@ export function ProductDetailPage({
     const rawOp = product.original_price ?? product.mrp ?? product.compare_at_price;
     const parsedOp =
       rawOp != null && String(rawOp) !== '' ? parseFloat(String(rawOp)) : NaN;
-    const original_price =
-      Number.isFinite(parsedOp) && parsedOp > unitPrice ? parsedOp : undefined;
+    const original_price = Number.isFinite(parsedOp) ? parsedOp : undefined;
 
     let images: string[] | undefined;
     if (Array.isArray(product.images) && product.images.length > 0) images = product.images;
@@ -199,15 +194,7 @@ export function ProductDetailPage({
     else if (product.image_url) images = [product.image_url];
     else if (product.primary_image) images = [product.primary_image];
 
-    // Persist the selected quantity only (matches shop PDP). Avoid merge + addToCart:
-    // merge wrote `warmpawz_cart` and emitted `cart-updated`; addToCart would add the
-    // same quantity again on top of the reloaded line (doubling).
-    const vendorId = String(product.vendorId || product.vendor_id || '').trim();
-    const categoryId = String(
-      product.category_id || product.categoryId || ''
-    ).trim();
-
-    const persisted = setLineQuantityInWarmpawzCartStorage({
+    const persisted = mergeLineIntoWarmpawzCartStorage({
       lineId,
       quantity,
       product: {
@@ -217,9 +204,7 @@ export function ProductDetailPage({
         original_price,
         emoji: product.emoji,
         images,
-        ...(vendorId ? { vendor_id: vendorId } : {}),
         vendor_name: product.vendor?.name || product.vendor_name,
-        ...(categoryId ? { category_id: categoryId } : {}),
         stock: stockNum,
       },
     });
@@ -229,6 +214,7 @@ export function ProductDetailPage({
       return;
     }
 
+    addToCart(cartItem);
     router.push('/cart?buynow=1');
   };
 
@@ -282,15 +268,8 @@ export function ProductDetailPage({
     (product.primary_image ? [product.primary_image] : []) ||
     ['🐾'];
   const price = parseFloat(product.price || product.unit_price || 0);
-  const rawList =
-    product.original_price ?? product.mrp ?? product.compare_at_price;
-  const parsedList =
-    rawList != null && String(rawList) !== '' ? parseFloat(String(rawList)) : NaN;
-  const originalPrice =
-    Number.isFinite(parsedList) && parsedList > price ? parsedList : null;
-  const discount = originalPrice
-    ? Math.round(((originalPrice - price) / originalPrice) * 100)
-    : 0;
+  const originalPrice = (product.original_price || product.mrp) ? parseFloat(product.original_price || product.mrp) : null;
+  const discount = originalPrice ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0;
   const rating = Number(product.rating || product.average_rating || 0);
   const reviewCount = product.reviews || product.review_count || 0;
   const inStock = product.in_stock !== false && (product.stock_quantity > 0 || product.stock !== 'Out of Stock');
