@@ -71,8 +71,8 @@ export function ChatInterfaceFromNotification({
   const loadMessages = async () => {
     try {
       setLoading(true);
-      const response = await apiClient.get(`/chat/booking/${bookingId}/messages`) as any;
-      
+      const response = await apiClient.get(`/chat/booking/${bookingId}/conversation`) as any;
+
       if (response.success && response.messages) {
         setMessages(response.messages.map((m: any) => ({
           id: m.id,
@@ -88,6 +88,16 @@ export function ChatInterfaceFromNotification({
     }
   };
 
+  const getCustomerPhone = (): string => {
+    if (typeof window === 'undefined') return '';
+    return (
+      localStorage.getItem('customerPhone') ||
+      localStorage.getItem('phone') ||
+      localStorage.getItem('userPhone') ||
+      ''
+    ).trim();
+  };
+
   const sendMessage = async () => {
     if (!newMessage.trim()) return;
 
@@ -96,22 +106,24 @@ export function ChatInterfaceFromNotification({
     setSending(true);
 
     try {
-      const response = await apiClient.post(`/chat/booking/${bookingId}/send`, {
-        message: messageText,
+      const response = await apiClient.post(`/chat/booking/${bookingId}/message`, {
+        senderPhone: getCustomerPhone() || 'customer',
+        senderName: 'Customer',
         senderType: 'customer',
+        message: messageText,
+        messageType: 'text',
       }) as any;
 
       if (response.success) {
-        // Reload messages to get the new one
         await loadMessages();
       } else {
         toast.error('Failed to send message');
-        setNewMessage(messageText); // Restore message on error
+        setNewMessage(messageText);
       }
     } catch (error: any) {
       console.error('Error sending message:', error);
       toast.error('Failed to send message');
-      setNewMessage(messageText); // Restore message on error
+      setNewMessage(messageText);
     } finally {
       setSending(false);
     }

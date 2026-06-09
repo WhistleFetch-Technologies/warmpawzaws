@@ -35,6 +35,40 @@ interface Message {
   read_at?: string;
 }
 
+function getCustomerPhone(): string {
+  if (typeof window === 'undefined') return '';
+  return (
+    localStorage.getItem('customerPhone') ||
+    localStorage.getItem('phone') ||
+    localStorage.getItem('userPhone') ||
+    ''
+  ).trim();
+}
+
+function threadBookingId(
+  bookingIdParam: string,
+  activeConversation: Conversation | null
+): string {
+  const fromUrl = bookingIdParam.trim();
+  if (fromUrl) return fromUrl;
+  return String(activeConversation?.booking_id || '').trim();
+}
+
+function mapConversationMessages(list: any[], conversationKey: string): Message[] {
+  return list.map((m: any) => ({
+    id: String(m.id ?? `m-${Date.now()}`),
+    conversation_id: conversationKey,
+    sender_type: (m.sender_type || m.senderType || m.sender || 'system') as Message['sender_type'],
+    sender_id: String(m.sender_id || m.senderId || m.sender_phone || ''),
+    content: String(m.content ?? m.message ?? ''),
+    content_type: (m.content_type || m.message_type || 'text') as Message['content_type'],
+    attachment_url: m.attachment_url || m.file_url,
+    attachment_name: m.attachment_name || m.file_name,
+    created_at: String(m.created_at || m.timestamp || new Date().toISOString()),
+    read_at: m.read_at,
+  }));
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -133,23 +167,11 @@ function ChatPageContent() {
   const loadMessages = async (conversationId: string, silent = false) => {
     try {
       if (!silent) setLoading(true);
-      if (bookingIdParam && activeConversation?.id === `booking:${bookingIdParam}`) {
-        const response = await apiClient.get<any>(`/chat/booking/${bookingIdParam}/messages`);
+      const bid = threadBookingId(bookingIdParam, activeConversation);
+      if (bid) {
+        const response = await apiClient.get<any>(`/chat/booking/${bid}/conversation`);
         const list = Array.isArray(response?.messages) ? response.messages : [];
-        setMessages(
-          list.map((m: any) => ({
-            id: String(m.id ?? `m-${Date.now()}`),
-            conversation_id: `booking:${bookingIdParam}`,
-            sender_type: (m.sender_type || m.sender || 'system') as Message['sender_type'],
-            sender_id: String(m.sender_id || m.senderId || ''),
-            content: String(m.content ?? m.message ?? ''),
-            content_type: (m.content_type || 'text') as Message['content_type'],
-            attachment_url: m.attachment_url,
-            attachment_name: m.attachment_name,
-            created_at: String(m.created_at || m.timestamp || new Date().toISOString()),
-            read_at: m.read_at,
-          }))
-        );
+        setMessages(mapConversationMessages(list, `booking:${bid}`));
       } else {
         const response = await apiClient.get<any>(`/chat/conversations/${conversationId}/messages`);
         setMessages(response.messages || response || []);
@@ -178,36 +200,41 @@ function ChatPageContent() {
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !activeConversation) return;
-    
+
+    const messageText = newMessage.trim();
+
     try {
       setSending(true);
-      
-      // Optimistic update
+
       const optimisticMessage: Message = {
         id: `temp-${Date.now()}`,
         conversation_id: activeConversation.id,
         sender_type: 'customer',
         sender_id: 'me',
-        content: newMessage,
+        content: messageText,
         content_type: 'text',
         created_at: new Date().toISOString(),
       };
-      
+
       setMessages(prev => [...prev, optimisticMessage]);
       setNewMessage('');
-      
-      if (bookingIdParam && activeConversation.id === `booking:${bookingIdParam}`) {
-        await apiClient.post(`/chat/booking/${bookingIdParam}/send`, {
-          message: newMessage,
+
+      const bid = threadBookingId(bookingIdParam, activeConversation);
+      if (bid) {
+        await apiClient.post(`/chat/booking/${bid}/message`, {
+          senderPhone: getCustomerPhone() || 'customer',
+          senderName: 'Customer',
           senderType: 'customer',
+          message: messageText,
+          messageType: 'text',
         });
       } else {
         await apiClient.post(`/chat/conversations/${activeConversation.id}/messages`, {
-          content: newMessage,
+          content: messageText,
           content_type: 'text',
         });
       }
-      
+
       loadMessages(activeConversation.id, true);
     } catch (err: any) {
       setError(err.message || 'Failed to send message');
