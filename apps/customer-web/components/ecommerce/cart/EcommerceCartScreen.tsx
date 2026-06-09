@@ -39,7 +39,6 @@ import {
   computeCartMrpTotal,
 } from '@/lib/ecommerce/cart-product-helpers';
 import type { CheckoutAddress } from '@/components/customer/ecommerce/useEcommerceCheckout';
-import { goBackOrReplace } from '@/lib/go-back-or-replace';
 import { ApiError } from '@/lib/error-handling';
 import { ECOMMERCE_PAGE_SHELL } from '@/lib/ecommerce/ecommerce-page-shell';
 
@@ -260,7 +259,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
               variant="ghost"
               size="icon"
               className="rounded-full"
-              onClick={() => goBackOrReplace(router, '/shop')}
+              onClick={() => router.replace('/shop')}
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -294,7 +293,7 @@ export function EcommerceCartScreen({ phone: phoneProp }: EcommerceCartScreenPro
             variant="ghost"
             size="icon"
             className="rounded-full shrink-0"
-            onClick={() => goBackOrReplace(router, '/shop')}
+            onClick={() => router.replace('/shop')}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>

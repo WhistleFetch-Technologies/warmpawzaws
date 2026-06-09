@@ -226,6 +226,14 @@ class CreateCustomerOrderHandler extends BaseHandler {
 // GET /customer/orders - List all orders for customer
 // ============================================================================
 
+const SQL_PRODUCT_IMAGE_SELECT = `CASE
+  WHEN p.images IS NOT NULL
+   AND jsonb_typeof(p.images) = 'array'
+   AND jsonb_array_length(p.images) > 0
+  THEN p.images->>0
+  ELSE NULL
+END AS product_image`;
+
 class GetCustomerOrdersHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
@@ -389,7 +397,7 @@ class GetOrderDetailsHandler extends BaseHandler {
           s.description as service_description,
           p.name as product_name,
           p.description as product_description,
-          p.image_url as product_image
+          ${SQL_PRODUCT_IMAGE_SELECT}
         FROM order_items oi
         LEFT JOIN services s ON oi.service_id = s.id
         LEFT JOIN products p ON oi.product_id = p.id

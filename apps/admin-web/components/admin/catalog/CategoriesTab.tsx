@@ -2,9 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import * as LucideIcons from 'lucide-react';
-import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
-import { CatalogActiveSwitch } from './CatalogActiveSwitch';
 
 interface SymptomItem {
   id: string;
@@ -99,7 +97,6 @@ interface Category {
   iconColor?: string;
   specializationCount: number;
   symptomCount: number;
-  isActive?: boolean;
   customerVisibilityType?: string;
   customerVisibilityState?: string;
   customerVisibilityCity?: string;
@@ -728,91 +725,6 @@ function SpecializationModal({
 }
 
 // ============================================================================
-// ADMIN CATEGORY LOAD + RECOVERY (inactive rows omitted by older list APIs)
-// ============================================================================
-
-/** Slugs to probe when list APIs omit disabled categories (GET /admin/catalog/categories/:slug still works). */
-const CATALOG_CATEGORY_SLUG_CANDIDATES = [
-  'veterinary', 'vet', 'grooming', 'shop', 'training', 'walking', 'walker', 'boarding',
-  'behavioral', 'behaviorist', 'behaviour', 'emergency', 'wellness', 'nutritionist', 'nutrition',
-  'adoption', 'mating', 'specialty', 'speciality', 'cafes', 'cafe', 'photography', 'insurance',
-  'breeder', 'ambulance', 'relocation', 'resort', 'holiday', 'sunset', 'pharmacy',
-  'lab-diagnostics', 'diagnostic', 'diagnostics', 'lab',
-  'physio-therapy', 'physiotherapy', 'physio',
-  'pet-sitter', 'pet_sitter', 'sitting', 'sitter',
-];
-
-function mapApiCategory(cat: any, spec?: { specializationCount?: number; symptomCount?: number }): Category {
-  return {
-    id: cat.id || cat.categoryId || '',
-    categoryId: cat.categoryId || cat.category_id || '',
-    name: cat.name || '',
-    description: cat.description || '',
-    icon: cat.icon || '',
-    iconColor: cat.iconColor || cat.icon_color || '',
-    specializationCount: spec?.specializationCount ?? (parseInt(cat.specializationCount) || 0),
-    symptomCount: spec?.symptomCount ?? (parseInt(cat.symptomCount) || 0),
-    customerVisibilityType: cat.customerVisibilityType || 'GLOBAL',
-    customerVisibilityState: cat.customerVisibilityState || '',
-    customerVisibilityCity: cat.customerVisibilityCity || '',
-    customerDashboardCardActive: cat.customerDashboardCardActive !== false,
-    isActive: (cat.isActive ?? cat.is_active) !== false,
-  };
-}
-
-async function recoverMissingCategories(loaded: Category[]): Promise<Category[]> {
-  const byCategoryId = new Map(loaded.map(c => [c.categoryId.toLowerCase(), c]));
-  const byId = new Set(loaded.map(c => c.id));
-  const recovered: Category[] = [];
-
-  await Promise.all(
-    CATALOG_CATEGORY_SLUG_CANDIDATES.map(async (slug) => {
-      const key = slug.toLowerCase();
-      if (byCategoryId.has(key)) return;
-      try {
-        const res = await apiClient.get<any>(`/admin/catalog/categories/${encodeURIComponent(slug)}`);
-        const row = res?.category;
-        if (!row?.id || byId.has(String(row.id))) return;
-        const cat = mapApiCategory({
-          ...row,
-          categoryId: row.category_id || row.categoryId || slug,
-          isActive: row.is_active ?? row.isActive,
-        });
-        recovered.push(cat);
-        byCategoryId.set((cat.categoryId || key).toLowerCase(), cat);
-        byId.add(cat.id);
-      } catch {
-        /* slug not in catalog */
-      }
-    })
-  );
-
-  if (recovered.length === 0) return loaded;
-  return [...loaded, ...recovered];
-}
-
-function mergeCategoryLists(catalogRows: Category[], specRows: Category[]): Category[] {
-  const specBySlug = new Map(specRows.map(c => [c.categoryId.toLowerCase(), c]));
-  const byId = new Map<string, Category>();
-
-  for (const cat of catalogRows) {
-    const spec = specBySlug.get(cat.categoryId.toLowerCase());
-    byId.set(cat.id, {
-      ...cat,
-      specializationCount: spec?.specializationCount ?? cat.specializationCount,
-      symptomCount: spec?.symptomCount ?? cat.symptomCount,
-    });
-  }
-
-  for (const spec of specRows) {
-    if ([...byId.values()].some(c => c.categoryId.toLowerCase() === spec.categoryId.toLowerCase())) continue;
-    byId.set(spec.id, spec);
-  }
-
-  return Array.from(byId.values());
-}
-
-// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -822,13 +734,10 @@ export function CategoriesTab() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'with' | 'without'>('all');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [specsByCategory, setSpecsByCategory] = useState<Record<string, Specialization[]>>({});
   const [loadingSpecs, setLoadingSpecs] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
-  const [togglingCategoryId, setTogglingCategoryId] = useState<string | null>(null);
-  const [togglingSpecId, setTogglingSpecId] = useState<string | null>(null);
   
   // Modals
   const [catModal, setCatModal] = useState<{ open: boolean; category?: Category | null }>({ open: false });
@@ -840,27 +749,30 @@ export function CategoriesTab() {
     try {
       setLoading(true);
       setError(null);
-
-      const [catalogData, specData] = await Promise.all([
-        apiClient.get<any>('/admin/catalog/categories?includeInactive=true'),
-        apiClient.get<any>('/admin/categories/with-specializations?includeInactive=true'),
-      ]);
-
-      const catalogRows: Category[] = Array.isArray(catalogData?.categories)
-        ? catalogData.categories.map((cat: any) => mapApiCategory(cat))
-        : [];
-      const specRows: Category[] =
-        specData?.success && Array.isArray(specData.categories)
-          ? specData.categories.map((cat: any) => mapApiCategory(cat))
-          : [];
-
-      let merged = mergeCategoryLists(catalogRows, specRows);
-      merged = await recoverMissingCategories(merged);
-
-      console.log('[CategoriesTab] Loaded categories:', merged.length, 'inactive:', merged.filter(c => c.isActive === false).length);
-      setCategories(merged);
-      if (merged.length === 0) {
-        setError(catalogData?.error || specData?.error || 'Failed to load categories');
+      
+      const data = await apiClient.get<any>('/admin/categories/with-specializations');
+      console.log('[CategoriesTab] API response:', data);
+      
+      if (data.success && data.categories) {
+        const mapped: Category[] = data.categories.map((cat: any) => ({
+          id: cat.id || cat.categoryId || '',
+          categoryId: cat.categoryId || cat.category_id || '',
+          name: cat.name || '',
+          description: cat.description || '',
+          icon: cat.icon || '',
+          iconColor: cat.iconColor || cat.icon_color || '',
+          specializationCount: parseInt(cat.specializationCount) || 0,
+          symptomCount: parseInt(cat.symptomCount) || 0,
+          customerVisibilityType: cat.customerVisibilityType || 'GLOBAL',
+          customerVisibilityState: cat.customerVisibilityState || '',
+          customerVisibilityCity: cat.customerVisibilityCity || '',
+          customerDashboardCardActive: cat.customerDashboardCardActive !== false,
+        }));
+        console.log('[CategoriesTab] Mapped categories:', mapped.length);
+        setCategories(mapped);
+      } else {
+        console.warn('[CategoriesTab] API returned no data or error:', data);
+        setError(data.error || 'Failed to load categories');
       }
     } catch (err: any) {
       console.error('[CategoriesTab] Error:', err);
@@ -904,7 +816,7 @@ export function CategoriesTab() {
           iconName: spec.iconName,
           iconColor: spec.iconColor,
           symptomCount: spec.symptomCount || 0,
-          isActive: spec.isActive !== false,
+          isActive: spec.isActive,
           applicableRoles: spec.applicableRoles || [],
           showInProblemGrid: spec.showInProblemGrid,
           showInVendorProfile: spec.showInVendorProfile,
@@ -970,58 +882,6 @@ export function CategoriesTab() {
     }
   };
 
-  const handleToggleCategory = async (cat: Category, enable: boolean) => {
-    if (togglingCategoryId) return;
-
-    setTogglingCategoryId(cat.id);
-    const nextCat = { ...cat, isActive: enable };
-    setCategories(prev => prev.map(c => (c.id === cat.id ? nextCat : c)));
-    if (!enable && filterStatus === 'active') setFilterStatus('all');
-    try {
-      await apiClient.put(`/admin/catalog/categories/${cat.id}`, {
-        status: enable ? 'active' : 'inactive',
-      });
-      toast.success(
-        enable
-          ? `"${cat.name}" is now visible to customers`
-          : `"${cat.name}" is hidden from customers (still visible here in admin)`
-      );
-    } catch (err: any) {
-      setCategories(prev => prev.map(c => (c.id === cat.id ? cat : c)));
-      toast.error(err.message || `Failed to ${enable ? 'enable' : 'disable'} category`);
-    } finally {
-      setTogglingCategoryId(null);
-    }
-  };
-
-  const handleToggleSpec = async (spec: Specialization, categoryId: string, enable: boolean) => {
-    if (togglingSpecId) return;
-
-    setTogglingSpecId(spec.specializationId);
-    setSpecsByCategory(prev => ({
-      ...prev,
-      [categoryId]: (prev[categoryId] || []).map(s =>
-        s.specializationId === spec.specializationId ? { ...s, isActive: enable } : s
-      ),
-    }));
-    try {
-      await apiClient.put(`/admin/specializations/${spec.specializationId}`, {
-        isActive: enable,
-      });
-      toast.success(
-        enable
-          ? `"${spec.displayName || spec.name}" is now visible to customers`
-          : `"${spec.displayName || spec.name}" is hidden from customers (still visible here in admin)`
-      );
-      await loadSpecs(categoryId);
-      loadCategories();
-    } catch (err: any) {
-      toast.error(err.message || `Failed to ${enable ? 'enable' : 'disable'} specialization`);
-    } finally {
-      setTogglingSpecId(null);
-    }
-  };
-
   // Delete category
   const handleDeleteCategory = async (cat: Category) => {
     if (!confirm(`Delete "${cat.name}"?`)) return;
@@ -1060,11 +920,6 @@ export function CategoriesTab() {
     }
   };
 
-  const inactiveCount = categories.filter(c => c.isActive === false).length;
-  const hasDiagnosticCategory = categories.some(
-    c => /diagnostic/i.test(c.name || '') || /diagnostic/i.test(c.categoryId || '')
-  );
-
   // Filter categories
   const filtered = categories.filter(cat => {
     if (searchQuery) {
@@ -1075,8 +930,6 @@ export function CategoriesTab() {
     }
     if (filterType === 'with' && cat.specializationCount === 0) return false;
     if (filterType === 'without' && cat.specializationCount > 0) return false;
-    if (filterStatus === 'active' && cat.isActive === false) return false;
-    if (filterStatus === 'inactive' && cat.isActive !== false) return false;
     return true;
   });
 
@@ -1120,15 +973,6 @@ export function CategoriesTab() {
           
           {/* Filter */}
           <select
-            value={filterStatus}
-            onChange={e => setFilterStatus(e.target.value as 'all' | 'active' | 'inactive')}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          >
-            <option value="all">All Status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-          <select
             value={filterType}
             onChange={e => setFilterType(e.target.value as any)}
             className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -1158,31 +1002,11 @@ export function CategoriesTab() {
         </button>
       </div>
 
-      {inactiveCount > 0 && filterStatus === 'active' && (
-        <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-sm flex items-center justify-between gap-3 flex-wrap">
-          <span>
-            <strong>{inactiveCount}</strong> disabled categor{inactiveCount === 1 ? 'y is' : 'ies are'} hidden.
-            Switch Status to <strong>Inactive</strong> or <strong>All Status</strong> to find and re-enable them.
-          </span>
-          <button
-            type="button"
-            onClick={() => setFilterStatus('inactive')}
-            className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 rounded-lg text-sm font-medium"
-          >
-            Show disabled
-          </button>
-        </div>
-      )}
-
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4">
+      <div className="grid grid-cols-4 gap-3 mb-4">
         <div className="bg-blue-50 rounded-lg p-3 text-center">
           <p className="text-2xl font-bold text-blue-600">{categories.length}</p>
           <p className="text-xs text-blue-600">Categories</p>
-        </div>
-        <div className="bg-gray-50 rounded-lg p-3 text-center">
-          <p className="text-2xl font-bold text-gray-600">{inactiveCount}</p>
-          <p className="text-xs text-gray-600">Disabled</p>
         </div>
         <div className="bg-orange-50 rounded-lg p-3 text-center">
           <p className="text-2xl font-bold text-orange-600">{categories.filter(c => c.specializationCount > 0).length}</p>
@@ -1203,18 +1027,6 @@ export function CategoriesTab() {
         <div className="py-12 text-center text-gray-500 bg-gray-50 rounded-xl border-2 border-dashed">
           <LucideIcons.Folder className="w-12 h-12 mx-auto mb-3 text-gray-300" />
           <p className="font-medium">No categories found</p>
-          {inactiveCount > 0 && filterStatus === 'active' && (
-            <p className="text-sm text-amber-700 mt-2">
-              Try <button type="button" className="underline font-medium" onClick={() => setFilterStatus('inactive')}>Show disabled categories</button>
-              {' '}— a category like Diagnostics &amp; Lab may have been turned off, not deleted.
-            </p>
-          )}
-          {!hasDiagnosticCategory && searchQuery.toLowerCase().includes('diagnostic') && (
-            <p className="text-sm text-gray-600 mt-2 max-w-md mx-auto">
-              Diagnostics &amp; Lab is not in the database. Use <strong>Add Category</strong> to recreate it
-              (e.g. category id: <code className="bg-gray-100 px-1 rounded">diagnostic</code>).
-            </p>
-          )}
         </div>
       ) : (
         <div className="space-y-2">
@@ -1225,7 +1037,7 @@ export function CategoriesTab() {
             const hasSpecs = cat.specializationCount > 0;
             
             return (
-              <div key={cat.id || cat.categoryId} className={`bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md transition-all ${cat.isActive === false ? 'opacity-60' : ''}`}>
+              <div key={cat.id || cat.categoryId} className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md transition-all">
                 {/* Category row */}
                 <div className="p-4 flex items-center gap-4">
                   {/* Expand */}
@@ -1245,9 +1057,6 @@ export function CategoriesTab() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="font-semibold text-gray-900">{cat.name}</h4>
                       <span className="text-xs font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded">{cat.categoryId}</span>
-                      {cat.isActive === false && (
-                        <span className="text-xs font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">Inactive</span>
-                      )}
                     </div>
                     {cat.description && <p className="text-sm text-gray-500 truncate">{cat.description}</p>}
                     <div className="flex gap-3 mt-1 text-xs">
@@ -1264,11 +1073,6 @@ export function CategoriesTab() {
                   
                   {/* Actions */}
                   <div className="flex items-center gap-2 shrink-0">
-                    <CatalogActiveSwitch
-                      active={cat.isActive !== false}
-                      loading={togglingCategoryId === cat.id}
-                      onToggle={(enable) => handleToggleCategory(cat, enable)}
-                    />
                     {hasSpecs && (
                       <button
                         onClick={() => setSpecModal({ open: true, categoryId: cat.categoryId })}
@@ -1305,7 +1109,7 @@ export function CategoriesTab() {
                     ) : (
                       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
                         {specs.map(spec => (
-                          <div key={spec.id || spec.specializationId} className={`bg-white rounded-lg p-3 border hover:shadow-md transition group ${spec.isActive === false ? 'opacity-60' : ''}`}>
+                          <div key={spec.id || spec.specializationId} className="bg-white rounded-lg p-3 border hover:shadow-md transition group">
                             <div className="flex items-start justify-between">
                               <div className="flex items-center gap-2 min-w-0">
                                 <div className={`w-8 h-8 rounded-lg ${getIconBg(spec.iconColor)} flex items-center justify-center shrink-0`}>
@@ -1314,33 +1118,21 @@ export function CategoriesTab() {
                                 <div className="min-w-0">
                                   <p className="font-medium text-sm text-gray-900 truncate">{spec.displayName || spec.name}</p>
                                   <p className="text-xs text-gray-400 font-mono truncate">{spec.specializationId}</p>
-                                  {spec.isActive === false && (
-                                    <span className="text-xs text-gray-500">Inactive</span>
-                                  )}
                                 </div>
                               </div>
-                              <div className="flex flex-col items-end gap-1 ml-1">
-                                <CatalogActiveSwitch
-                                  active={spec.isActive !== false}
-                                  loading={togglingSpecId === spec.specializationId}
-                                  onToggle={(enable) => handleToggleSpec(spec, cat.categoryId, enable)}
-                                />
-                                <div className="opacity-0 group-hover:opacity-100 flex gap-1">
+                              <div className="opacity-0 group-hover:opacity-100 flex gap-1 ml-1">
                                 <button 
                                   onClick={() => setSpecModal({ open: true, categoryId: cat.categoryId, spec })}
                                   className="p-1 hover:bg-gray-100 rounded"
-                                  title="Edit specialization"
                                 >
                                   <LucideIcons.Edit className="w-3 h-3 text-gray-500" />
                                 </button>
                                 <button 
                                   onClick={() => handleDeleteSpec(spec.specializationId, cat.categoryId)}
                                   className="p-1 hover:bg-red-50 rounded"
-                                  title="Delete specialization"
                                 >
                                   <LucideIcons.Trash2 className="w-3 h-3 text-red-500" />
                                 </button>
-                                </div>
                               </div>
                             </div>
                             {spec.symptomCount > 0 && (

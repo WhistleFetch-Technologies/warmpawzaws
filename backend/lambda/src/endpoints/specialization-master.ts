@@ -375,14 +375,14 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
   /**
    * GET /admin/specializations
    * List all specializations with optional filtering
-   * Admin always returns active + inactive unless activeOnly=true
+   * By default, only returns active specializations unless includeInactive=true
    */
   app.get('/admin/specializations', async (c) => {
     try {
       const categoryId = c.req.query('categoryId');
       const roleIdsRaw = c.req.query('roleIds'); // comma-separated; filter to specializations whose applicable_roles overlap
       const includeSymptoms = c.req.query('includeSymptoms') === 'true';
-      const includeInactive = c.req.query('activeOnly') !== 'true';
+      const includeInactive = c.req.query('includeInactive') === 'true';
       
       const roleIds = roleIdsRaw && typeof roleIdsRaw === 'string' && roleIdsRaw.trim()
         ? roleIdsRaw.split(',').map((r: string) => r.trim()).filter(Boolean)
@@ -1452,12 +1452,6 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
    */
   app.get('/admin/categories/with-specializations', async (c) => {
     try {
-      // Admin: return active + inactive by default (disable only hides from customer, not admin UI)
-      const activeOnly =
-        c.req.query('activeOnly') === 'true' || c.req.query('includeInactive') === 'false';
-      const activeFilter = activeOnly
-        ? 'WHERE sc.is_active = true OR sc.is_active IS NULL'
-        : '';
       const result = await query(`
         SELECT 
           sc.id,
@@ -1477,7 +1471,7 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
         FROM service_categories sc
         LEFT JOIN specialization_master sm ON sm.category_id = sc.category_id AND sm.is_active = true
         LEFT JOIN specialization_symptoms ss ON ss.specialization_id = sm.specialization_id AND ss.is_active = true
-        ${activeFilter}
+        WHERE sc.is_active = true OR sc.is_active IS NULL
         GROUP BY sc.id
         ORDER BY sc.display_order NULLS LAST, sc.name
       `);

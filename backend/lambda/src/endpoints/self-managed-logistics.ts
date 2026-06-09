@@ -168,6 +168,7 @@ export function registerSelfManagedLogisticsEndpoints(app: Hono) {
         fulfillment_type: 'vendor',
         tracking_provider: 'aftership',
         status: 'shipped',
+        shipment_status: 'in_transit',
         shipped_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };

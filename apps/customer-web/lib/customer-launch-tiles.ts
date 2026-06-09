@@ -1,6 +1,5 @@
 import {
   mapCatalogCategoryIdToCustomerHomeScreen,
-  mapCatalogSlugToLaunchServiceId,
   mapLaunchServiceIdToAllServicesTileScreen,
   mapLaunchServiceIdToCustomerHomeScreen,
   normalizeServiceKey,
@@ -15,8 +14,6 @@ export type LaunchStatusBucket = 'launched' | 'beta' | 'coming_soon' | 'hidden';
 
 export interface LaunchCatalogEntry {
   serviceId: string;
-  /** Catalog `service_categories.category_id` row this launch service is tied to (from admin launch config). */
-  categoryId?: string;
   displayName?: string;
   effectiveStatus?: LaunchStatusBucket | string;
 }
@@ -103,32 +100,16 @@ export function findMatchingTileForLaunchId(
   });
 }
 
-/**
- * Launch tiles may only appear when the admin catalog still has an active category row backing them.
- * Uses launch config `categoryId` when present; otherwise any active pool tile mapped to the launch id.
- */
-export function hasActiveCatalogBackingForLaunch(
-  entry: Pick<LaunchCatalogEntry, 'serviceId' | 'categoryId'>,
-  tilePool: QuickServiceTile[]
-): boolean {
-  const poolCategoryIds = new Set(
-    tilePool.map((t) => normalizeServiceKey(t.categoryId || '')).filter(Boolean)
-  );
-  if (!poolCategoryIds.size) return false;
-
-  const pinnedCategoryId = normalizeServiceKey(entry.categoryId);
-  if (pinnedCategoryId) {
-    if (poolCategoryIds.has(pinnedCategoryId)) return true;
-    const pinnedLaunchId = normalizeServiceKey(mapCatalogSlugToLaunchServiceId(pinnedCategoryId));
-    return [...poolCategoryIds].some(
-      (poolCatId) => normalizeServiceKey(mapCatalogSlugToLaunchServiceId(poolCatId)) === pinnedLaunchId
-    );
-  }
-
-  const launchId = normalizeServiceKey(entry.serviceId);
-  return [...poolCategoryIds].some(
-    (catalogId) => normalizeServiceKey(mapCatalogSlugToLaunchServiceId(catalogId)) === launchId
-  );
+function synthesizeTileForLaunchEntry(entry: LaunchCatalogEntry): QuickServiceTile {
+  const serviceId = normalizeServiceKey(entry.serviceId);
+  const screen = mapLaunchServiceIdToAllServicesTileScreen(serviceId) || serviceId;
+  return {
+    icon: FallbackServiceIcon,
+    label: entry.displayName?.trim() || serviceId,
+    color: 'bg-gray-100 text-gray-600',
+    screen,
+    categoryId: serviceId,
+  };
 }
 
 function isLaunchedStatus(status: string | undefined): boolean {
@@ -143,7 +124,6 @@ function orderedLaunchEntries(options: BuildCustomerLaunchTilesOptions): Array<{
   if (options.catalog?.length) {
     return options.catalog.map((c) => ({
       serviceId: c.serviceId,
-      categoryId: c.categoryId,
       displayName: c.displayName,
       effectiveStatus: String(c.effectiveStatus || 'hidden'),
     }));
@@ -189,13 +169,16 @@ export function buildCustomerLaunchTiles(
 
     if (!isLaunchedStatus(status) && !isComingSoon) continue;
 
-    if (!hasActiveCatalogBackingForLaunch(entry, allTilePool)) continue;
-
     const preferScreen = mapLaunchServiceIdToAllServicesTileScreen(svcId);
-    const matchingTile = findMatchingTileForLaunchId(svcId, allTilePool, {
+    let matchingTile = findMatchingTileForLaunchId(svcId, allTilePool, {
       preferTileScreen: preferScreen,
     });
-    if (!matchingTile) continue;
+    if (!matchingTile) {
+      matchingTile = synthesizeTileForLaunchEntry({
+        serviceId: svcId,
+        displayName: entry.displayName,
+      });
+    }
 
     const dedupeKey = options.dedupeByLaunchServiceId
       ? svcId

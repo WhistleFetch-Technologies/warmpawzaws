@@ -1195,7 +1195,6 @@ export function CustomerHomeComplete({
           tilePool: usingApiCategories ? sourceQuickServices : [...sourceQuickServices, ...quickServices],
           catalog: launchCatalog.map((c: any) => ({
             serviceId: c.serviceId || '',
-            categoryId: c.categoryId || c.category_id || '',
             displayName: c.displayName,
             effectiveStatus: c.effectiveStatus,
           })),

@@ -6,6 +6,7 @@ import { apiClient } from '@/lib/api-client';
 import { canonicalProductId } from '@/lib/product-id';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { goBackOrHome } from '@/lib/go-back-or-replace';
+import { resolveShopProductIdFromLocation } from '@/lib/resolve-shop-product-id';
 import {
   mergeLineIntoWarmpawzCartStorage,
   setLineQuantityInWarmpawzCartStorage,
@@ -99,7 +100,7 @@ interface RecommendedProduct {
 export default function ProductDetailClient() {
   const params = useParams();
   const router = useRouter();
-  const productId = params.productId as string;
+  const productId = resolveShopProductIdFromLocation(params.productId as string);
 
   const [product, setProduct] = useState<Product | null>(null);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -129,10 +130,13 @@ export default function ProductDetailClient() {
   // ============================================================================
 
   useEffect(() => {
-    if (productId) {
-      loadProductData();
-      recordProductView();
+    if (!productId) {
+      setLoading(false);
+      setError('Product not found');
+      return;
     }
+    loadProductData();
+    recordProductView();
   }, [productId]);
 
   useEffect(() => {
