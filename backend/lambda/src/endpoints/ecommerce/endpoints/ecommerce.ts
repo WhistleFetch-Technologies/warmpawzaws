@@ -67,6 +67,41 @@ function normalizeAdminProductLifecycleStatus(raw: unknown): { status: string; i
   return { status: legacy || 'pending', is_active: s === 'active' };
 }
 
+function normalizeTaxBreakdownForDb(raw: unknown): Record<string, unknown>[] | null {
+  if (raw == null) return null;
+  let data: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(data)) {
+    const items: Record<string, unknown>[] = [];
+    for (const entry of data) {
+      if (entry == null) continue;
+      if (typeof entry === 'string') {
+        try {
+          const parsed = JSON.parse(entry);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            items.push(parsed as Record<string, unknown>);
+          }
+        } catch {
+          // skip invalid entry
+        }
+      } else if (typeof entry === 'object' && !Array.isArray(entry)) {
+        items.push(entry as Record<string, unknown>);
+      }
+    }
+    return items.length > 0 ? items : null;
+  }
+  if (typeof data === 'object' && !Array.isArray(data)) {
+    return [data as Record<string, unknown>];
+  }
+  return null;
+}
+
 export function registerEcommerceEndpoints(app: Hono) {
   /** Shared handler body for GET /products/:id and GET /ecommerce/products/:id */
   const handleGetPublicProductById = async (c: any, logLabel: string) => {
@@ -511,7 +546,6 @@ export function registerEcommerceEndpoints(app: Hono) {
         tax_amount: taxAmount,
         discount_amount: discountAmount,
         total_amount: totalAmount,
-        coupon_code: couponCode || null,
         shipping_address: normalizedAddress.line1 || '',
         shipping_city: normalizedAddress.city || '',
         shipping_state: normalizedAddress.state || '',
@@ -523,17 +557,9 @@ export function registerEcommerceEndpoints(app: Hono) {
         updated_at: new Date().toISOString(),
       };
 
-      if (taxBreakdown) {
-        order.tax_breakdown =
-          typeof taxBreakdown === 'string'
-            ? (() => {
-                try {
-                  return JSON.parse(taxBreakdown);
-                } catch {
-                  return taxBreakdown;
-                }
-              })()
-            : taxBreakdown;
+      const normalizedTaxBreakdown = normalizeTaxBreakdownForDb(taxBreakdown);
+      if (normalizedTaxBreakdown) {
+        order.tax_breakdown = normalizedTaxBreakdown;
       }
       if (cgstAmount != null) order.cgst_amount = cgstAmount;
       if (sgstAmount != null) order.sgst_amount = sgstAmount;
@@ -900,9 +926,11 @@ export function registerEcommerceEndpoints(app: Hono) {
         shipping_amount: shippingAmount,
         total_amount: totalAmount,
         payment_method: paymentMethod || 'online',
-        coupon_code: couponCode || null,
         shipping_address: shippingAddress || null,
-        tax_breakdown: taxBreakdown ? JSON.stringify(taxBreakdown) : null,
+        tax_breakdown: normalizeTaxBreakdownForDb(taxBreakdown),
+        ...(couponCode
+          ? { metadata: { couponCode: String(couponCode).trim() } }
+          : {}),
       });
 
       // Order purchase loyalty: handled by action_sources → loyalty-events-consumer (not inline here).

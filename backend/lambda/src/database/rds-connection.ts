@@ -509,6 +509,86 @@ export function normalizeProductsTableRowForPg<T extends Record<string, any>>(ro
   return out as T;
 }
 
+/** Known JSONB column names (shared by insert/update). */
+const JSONB_COLUMN_NAMES = new Set([
+  'application_payload',
+  'uploaded_documents',
+  'specifications',
+  'metadata',
+  'images',
+  'tags',
+  'operating_hours',
+  'config',
+  'settings',
+  'form_data',
+  'additional_info',
+  'pricing',
+  'services_config',
+  'notification_preferences',
+  'search_vector_data',
+  'photos',
+  'channels',
+  'data',
+  'cancellation_windows',
+  'vendor_cancellation_penalty',
+  'no_show_policy',
+  'policy_extensions',
+  'setting_value',
+  'attachments',
+  'documents',
+  'coverage',
+  'criteria',
+  'conditions',
+  'multiplier_conditions',
+  'metadata_resolvers',
+  'purchase_snapshot',
+  'medical_history',
+  'vaccination_records',
+  'dietary_restrictions',
+  'insurance_info',
+  'tax_breakdown',
+  'variant_info',
+  'specializations',
+]);
+
+function isJsonbColumn(key: string): boolean {
+  return (
+    JSONB_COLUMN_NAMES.has(key) ||
+    key.endsWith('_config') ||
+    key.endsWith('_metadata') ||
+    key.endsWith('_payload') ||
+    key.endsWith('_data') ||
+    key.endsWith('_settings') ||
+    key.endsWith('_details') ||
+    key.endsWith('_resolvers') ||
+    key.endsWith('_history') ||
+    key.endsWith('_records') ||
+    key.endsWith('_breakdown')
+  );
+}
+
+/** Normalize request/body values for JSONB bind parameters (object, array, or JSON string). */
+export function prepareJsonbParameter(value: unknown): unknown | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === 'object') {
+    return value;
+  }
+  return null;
+}
+
 /**
  * Execute an INSERT query
  * ✅ FIX: Properly handle JSONB columns by serializing objects to JSON strings
@@ -548,67 +628,16 @@ export async function insert(
       ? Object.keys(dataArray[0]).filter((k) => k !== 'attachments')
       : Object.keys(dataArray[0]);
   
-  // ✅ FIX: Known JSONB columns that need JSON.stringify and ::jsonb cast
-  const jsonbColumns = new Set([
-    'application_payload',
-    'uploaded_documents',
-    'specifications',
-    'metadata',
-    'images',
-    'tags',
-    'operating_hours',
-    'config',
-    'settings',
-    'form_data',
-    'additional_info',
-    'pricing',
-    'services_config',
-    'notification_preferences',
-    'search_vector_data',
-    'photos', // reviews.photos — customer review images (JSON array of URLs)
-    'channels', // notifications.channels is JSONB
-    'data',    // notifications.data is JSONB (booking_id, meeting_id, etc.)
-    'cancellation_windows',      // cancellation_policies
-    'vendor_cancellation_penalty',
-    'no_show_policy',
-    'policy_extensions', // vendor_refund_tiers — reschedule / no-show JSON
-    'setting_value',             // admin_settings
-    'attachments',               // support_tickets (URLs / metadata array)
-    'documents',                 // insurance_claims, insurance_policies JSONB arrays
-    'coverage',                  // insurance_plans.coverage (019 legacy JSONB)
-    'criteria',                  // loyalty_segments.criteria
-    'conditions',                // loyalty_action_rules.conditions
-    'multiplier_conditions',     // loyalty_action_rules.multiplier_conditions
-    'metadata_resolvers',        // action_sources.metadata_resolvers
-    'purchase_snapshot',         // meal_orders — selected purchase / subscription snapshot
-    'medical_history',           // pets.medical_history JSONB
-    'vaccination_records',       // pets.vaccination_records JSONB
-    'dietary_restrictions',      // pets.dietary_restrictions JSONB
-    'insurance_info',            // pets.insurance_info JSONB
-  ]);
-  
-  // Also check for columns ending with common JSONB suffixes
-  const isJsonbColumn = (key: string): boolean => {
-    return jsonbColumns.has(key) || 
-           key.endsWith('_config') || 
-           key.endsWith('_metadata') || 
-           key.endsWith('_payload') ||
-           key.endsWith('_data') ||
-           key.endsWith('_settings') ||
-           key.endsWith('_details') ||
-           key.endsWith('_resolvers') ||
-           key.endsWith('_history') ||
-           key.endsWith('_records');
-  };
-  
   // ✅ FIX: Build placeholders with ::jsonb cast for JSONB columns
   const placeholders = dataArray.map((row, idx) => {
     const start = idx * keys.length + 1;
     return `(${keys.map((key, i) => {
       const value = (row as any)[key];
-      // Add ::jsonb cast for JSONB columns that are objects/arrays
-      if (isJsonbColumn(key) && value !== null && value !== undefined && typeof value === 'object') {
-        return `$${start + i}::jsonb`;
+      if (isJsonbColumn(key) && value !== null && value !== undefined) {
+        const prepared = prepareJsonbParameter(value);
+        if (prepared !== null && typeof prepared === 'object') {
+          return `$${start + i}::jsonb`;
+        }
       }
       return `$${start + i}`;
     }).join(', ')})`;
@@ -617,9 +646,12 @@ export async function insert(
   // ✅ FIX: Serialize JSONB values to JSON strings
   const values = dataArray.flatMap(row => keys.map(key => {
     const value = (row as any)[key];
-    // Serialize objects for JSONB columns
-    if (isJsonbColumn(key) && value !== null && value !== undefined && typeof value === 'object') {
-      return JSON.stringify(value);
+    if (isJsonbColumn(key) && value !== null && value !== undefined) {
+      const prepared = prepareJsonbParameter(value);
+      if (prepared !== null && typeof prepared === 'object') {
+        return JSON.stringify(prepared);
+      }
+      return prepared;
     }
     return value;
   }));
@@ -658,74 +690,27 @@ export async function update(
   const params: any[] = [];
   let paramIndex = 1;
 
-  // ✅ FIX: Known JSONB columns that need JSON.stringify and ::jsonb cast
-  const jsonbColumns = new Set([
-    'application_payload',
-    'uploaded_documents',
-    'specifications',
-    'metadata',
-    'images',
-    'tags',
-    'operating_hours',
-    'config',
-    'settings',
-    'form_data',
-    'additional_info',
-    'pricing',
-    'services_config',
-    'notification_preferences',
-    'search_vector_data',
-    'photos', // reviews.photos
-    'channels', // notifications.channels is JSONB
-    'data',    // notifications.data is JSONB (booking_id, meeting_id, etc.)
-    'specializations', // vendors.specializations is JSONB array
-    'cancellation_windows',
-    'vendor_cancellation_penalty',
-    'no_show_policy',
-    'policy_extensions', // vendor_refund_tiers — reschedule / no-show JSON
-    'setting_value',   // admin_settings
-    'attachments',     // support_tickets
-    'documents',       // insurance_claims, insurance_policies JSONB arrays
-    'criteria',        // loyalty_segments.criteria
-    'conditions',      // loyalty_action_rules.conditions
-    'multiplier_conditions',
-    'metadata_resolvers', // action_sources.metadata_resolvers
-    'medical_history',     // pets.medical_history JSONB
-    'vaccination_records', // pets.vaccination_records JSONB
-    'dietary_restrictions', // pets.dietary_restrictions JSONB
-    'insurance_info',        // pets.insurance_info JSONB
-  ]);
-  
-  // Also check for columns ending with common JSONB suffixes
-  const isJsonbColumn = (key: string): boolean => {
-    return jsonbColumns.has(key) || 
-           key.endsWith('_config') || 
-           key.endsWith('_metadata') || 
-           key.endsWith('_payload') ||
-           key.endsWith('_data') ||
-           key.endsWith('_settings') ||
-           key.endsWith('_details') ||
-           key.endsWith('_resolvers') ||
-           key.endsWith('_history') ||
-           key.endsWith('_records');
-  };
-
   // Build SET clause
   for (const [key, value] of Object.entries(payload)) {
     if (value !== undefined) {
       // ✅ FIX: Handle JSONB columns first (including arrays stored as JSONB like uploaded_documents)
-      if (isJsonbColumn(key) && value !== null && typeof value === 'object') {
-        try {
-          // Serialize to JSON string and cast to JSONB
-          setClause.push(`${key} = $${paramIndex}::jsonb`);
-          params.push(JSON.stringify(value));
-          paramIndex++;
-          continue;
-        } catch (error) {
-          // If JSON.stringify fails (circular reference, etc.), log and skip
-          console.error(`❌ [DB] Failed to serialize JSONB column ${key}:`, error);
-          throw new Error(`Invalid JSON value for column ${key}: ${error instanceof Error ? error.message : String(error)}`);
+      if (isJsonbColumn(key) && value !== null) {
+        const prepared = prepareJsonbParameter(value);
+        if (prepared !== null && typeof prepared === 'object') {
+          try {
+            setClause.push(`${key} = $${paramIndex}::jsonb`);
+            params.push(JSON.stringify(prepared));
+            paramIndex++;
+            continue;
+          } catch (error) {
+            console.error(`❌ [DB] Failed to serialize JSONB column ${key}:`, error);
+            throw new Error(`Invalid JSON value for column ${key}: ${error instanceof Error ? error.message : String(error)}`);
+          }
         }
+        setClause.push(`${key} = $${paramIndex}`);
+        params.push(null);
+        paramIndex++;
+        continue;
       }
       
       // ✅ Arrays (TEXT[], etc.): pass as-is; node-pg serializes to PG array

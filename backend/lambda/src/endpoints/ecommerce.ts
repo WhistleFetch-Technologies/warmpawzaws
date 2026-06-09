@@ -668,9 +668,11 @@ export function registerEcommerceEndpoints(app: Hono) {
         shipping_amount: shippingAmount,
         total_amount: totalAmount,
         payment_method: paymentMethod || 'online',
-        coupon_code: couponCode || null,
         shipping_address: shippingAddress || null,
         tax_breakdown: taxBreakdown ? JSON.stringify(taxBreakdown) : null,
+        ...(couponCode
+          ? { metadata: { couponCode: String(couponCode).trim() } }
+          : {}),
       });
 
       // Order purchase loyalty: handled by action_sources → loyalty-events-consumer (not inline here).
