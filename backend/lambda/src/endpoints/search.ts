@@ -951,6 +951,33 @@ export function registerSearchEndpoints(app: Hono) {
     const result = await searchHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
   });
+
+  app.get('/search/autocomplete', async (c) => {
+    try {
+      const term = (c.req.query('q') || '').trim();
+      if (term.length < 2) {
+        return c.json({ success: true, suggestions: [] });
+      }
+
+      const { rows } = await query(
+        `SELECT keyword, hub_slug
+         FROM search_taxonomy_keywords
+         WHERE keyword_normalized ILIKE $1 AND is_active = true
+         LIMIT 8`,
+        [term.toLowerCase() + '%']
+      );
+
+      const suggestions = (rows as { keyword: string; hub_slug: string }[]).map((row) => ({
+        type: row.hub_slug,
+        text: row.keyword,
+      }));
+
+      return c.json({ success: true, suggestions });
+    } catch (error: any) {
+      console.error('[search/autocomplete] Error:', error);
+      return c.json({ success: true, suggestions: [] });
+    }
+  });
 }
 
 function createApiGatewayEvent(req: any): any {
