@@ -36,7 +36,7 @@ function esc(s) {
 }
 
 const csvPath = path.join(__dirname, '..', 'db', 'seed', 'search-taxonomy.csv');
-const outPath = path.join(__dirname, '..', 'db', 'migrations', '1030_seed_search_taxonomy_keywords.sql');
+const outPath = path.join(__dirname, '..', 'db', 'migrations', '1031_seed_search_taxonomy_keywords.sql');
 
 const csvContent = fs.readFileSync(csvPath, 'utf8');
 const lines = csvContent.split(/\r?\n/).filter((l) => l.trim());

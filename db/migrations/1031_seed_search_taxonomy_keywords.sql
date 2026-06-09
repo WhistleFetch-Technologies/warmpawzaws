@@ -1,9 +1,9 @@
 -- ============================================================================
--- MIGRATION 1030: SEED SEARCH TAXONOMY KEYWORDS
+-- MIGRATION 1031: SEED SEARCH TAXONOMY KEYWORDS
 -- ============================================================================
 -- Auto-generated from db/seed/search-taxonomy.csv via scripts/generate-taxonomy-migration.js
 -- Idempotent: safe to re-run (ON CONFLICT DO UPDATE on hub_slug + keyword_normalized).
--- Run: ENVIRONMENT=dev node scripts/run-migration-rds-node.js 1030_seed_search_taxonomy_keywords.sql
+-- Run: ENVIRONMENT=dev node scripts/run-migration-rds-data-api.js 1031_seed_search_taxonomy_keywords.sql
 -- ============================================================================
 
 INSERT INTO search_taxonomy_keywords
