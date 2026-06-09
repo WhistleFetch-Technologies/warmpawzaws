@@ -249,7 +249,7 @@ async function syncVendors() {
   const vendors = await query(`
     SELECT 
       v.*,
-      r.service_styles,
+      COALESCE(r.config->'serviceStyles', r.config->'service_styles') AS service_styles,
       r.name AS role_name
     FROM vendors v
     LEFT JOIN roles r ON v.role_id = r.id
