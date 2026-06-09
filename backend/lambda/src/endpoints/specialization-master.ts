@@ -108,9 +108,9 @@ function getCategoryDisplayName(categoryId: string): string {
   return categoryNames[categoryId] || categoryId;
 }
 
-async function resolveSpecCategorySlugsForVendor(categoryIdInput: string): Promise<string[]> {
+async function resolveVendorCatalogCategorySlug(categoryIdInput: string): Promise<string | null> {
   const raw = (categoryIdInput || '').trim();
-  if (!raw) return [];
+  if (!raw) return null;
 
   const looksLikeUuid =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw);
@@ -129,7 +129,7 @@ async function resolveSpecCategorySlugsForVendor(categoryIdInput: string): Promi
     }
   }
 
-  return expandSpecCategorySlugsForDbQuery(slug);
+  return slug;
 }
 
 /**
@@ -1254,10 +1254,17 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
         return c.json({ success: false, error: 'categoryId is required', specializations: [] }, 400);
       }
 
-      const categorySlugs = await resolveSpecCategorySlugsForVendor(categoryId);
-      if (!categorySlugs.length) {
+      const catalogSlug = await resolveVendorCatalogCategorySlug(categoryId);
+      if (!catalogSlug) {
         return c.json({ success: true, specializations: [], categorySlug: null });
       }
+
+      const vendorPickSlugs = expandSpecCategorySlugs(catalogSlug).map((s) =>
+        normalizeCatalogCategoryKey(s)
+      );
+      const dbQuerySlugs = expandSpecCategorySlugsForDbQuery(catalogSlug).map((s) =>
+        normalizeCatalogCategoryKey(s)
+      );
 
       let roleNames: string[] = [];
       if (roleId) {
@@ -1278,8 +1285,7 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
         roleNames = expandRoleIdsForOverlap(getRoleNamesForCatalog(actualRoleId));
       }
 
-      const normalizedSlugs = categorySlugs.map((s) => normalizeCatalogCategoryKey(s));
-      const roleFilter = roleNamesForSpecCategoryQuery(normalizedSlugs, roleNames);
+      const roleFilter = roleNamesForSpecCategoryQuery(vendorPickSlugs, roleNames);
       const smResult = await query(
         `SELECT sm.*
          FROM specialization_master sm
@@ -1293,16 +1299,16 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
              OR sm.applicable_roles && $2::text[]
            )
          ORDER BY sm.display_order, sm.name`,
-        [normalizedSlugs, roleFilter]
+        [dbQuerySlugs, roleFilter]
       );
       const rows = filterSpecializationMasterRowsForVendorCategory(
         smResult.rows || [],
-        normalizedSlugs
+        vendorPickSlugs
       );
       return c.json({
         success: true,
-        categorySlug: categorySlugs[0] ?? null,
-        categorySlugs,
+        categorySlug: vendorPickSlugs[0] ?? null,
+        categorySlugs: vendorPickSlugs,
         specializations: rows.map((row: any) => ({
           id: row.specialization_id,
           name: row.name,
