@@ -17,6 +17,8 @@ import { query, select, insert, update } from '../database/rds-connection';
 import {
   CATEGORY_TO_SPEC,
   expandSpecCategorySlugs,
+  expandSpecCategorySlugsForDbQuery,
+  filterSpecializationMasterRowsForVendorCategory,
   normalizeCatalogCategoryKey,
   roleNamesForSpecCategoryQuery,
 } from '../utils/vendor-spec-category-slugs';
@@ -127,7 +129,7 @@ async function resolveSpecCategorySlugsForVendor(categoryIdInput: string): Promi
     }
   }
 
-  return expandSpecCategorySlugs(slug);
+  return expandSpecCategorySlugsForDbQuery(slug);
 }
 
 /**
@@ -1293,7 +1295,10 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
          ORDER BY sm.display_order, sm.name`,
         [normalizedSlugs, roleFilter]
       );
-      const rows = smResult.rows || [];
+      const rows = filterSpecializationMasterRowsForVendorCategory(
+        smResult.rows || [],
+        normalizedSlugs
+      );
       return c.json({
         success: true,
         categorySlug: categorySlugs[0] ?? null,
