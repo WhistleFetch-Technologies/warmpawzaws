@@ -221,11 +221,7 @@ export function VendorBookingCard({
             type="button"
             onClick={() => {
               const bid = resolveVendorBookingId(booking);
-              const params = new URLSearchParams();
-              if (bid) params.set('bookingId', bid);
-              if (vendorId) params.set('vendorId', vendorId);
-              const query = params.toString();
-              router.push(`/video${query ? `?${query}` : ''}`);
+              router.push(`/video/${bid}`);
             }}
             className="flex-1 min-w-[100px] py-2 px-3 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
           >
