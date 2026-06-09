@@ -14,6 +14,12 @@
 
 import { Hono } from 'hono';
 import { query, select, insert, update } from '../database/rds-connection';
+import {
+  CATEGORY_TO_SPEC,
+  expandSpecCategorySlugs,
+  normalizeCatalogCategoryKey,
+  roleNamesForSpecCategoryQuery,
+} from '../utils/vendor-spec-category-slugs';
 
 // ============================================================================
 // TYPES
@@ -98,60 +104,6 @@ function getCategoryDisplayName(categoryId: string): string {
     'emergency': 'Emergency',
   };
   return categoryNames[categoryId] || categoryId;
-}
-
-/** Map service_catalog / service_categories slug to specialization_master.category_id */
-const CATEGORY_TO_SPEC: Record<string, string> = {
-  veterinary: 'veterinary',
-  grooming: 'grooming',
-  training: 'training',
-  walking: 'walking',
-  diagnostic: 'veterinary',
-  diagnostics: 'veterinary',
-  pharmacy: 'veterinary',
-  emergency: 'veterinary',
-  wellness: 'wellness',
-  specialty: 'veterinary',
-  boarding: 'boarding',
-  pet_boarding: 'boarding',
-  pet_boarder: 'boarding',
-  pet_daycare: 'boarding',
-  /** Pet Sitting catalogue rows often use pet-sitter while specs live under boarding */
-  pet_sitter: 'boarding',
-  pet_sitting: 'boarding',
-  sitter: 'boarding',
-  sitting: 'boarding',
-  nutrition: 'wellness',
-  behavioral: 'behavioral',
-  behaviour: 'behavioral',
-};
-
-function normalizeCatalogCategoryKey(raw: string): string {
-  return String(raw || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '_')
-    .replace(/-/g, '_');
-}
-
-/** Expand catalogue category slug(s) to specialization_master.category_id values. */
-function expandSpecCategorySlugs(rawSlug: string): string[] {
-  const key = normalizeCatalogCategoryKey(rawSlug);
-  const mapped =
-    CATEGORY_TO_SPEC[key] ||
-    CATEGORY_TO_SPEC[String(rawSlug || '').trim().toLowerCase()] ||
-    key;
-  const slugs = new Set<string>([key, mapped, String(rawSlug || '').trim().toLowerCase()]);
-  if (
-    ['pet_sitter', 'pet_sitting', 'sitter', 'sitting'].includes(key) ||
-    key.includes('pet_sit')
-  ) {
-    slugs.add('boarding');
-  }
-  if (['pet_boarder', 'pet_daycare', 'pet_boarding', 'boarding'].includes(key)) {
-    slugs.add('boarding');
-  }
-  return [...slugs].filter(Boolean);
 }
 
 async function resolveSpecCategorySlugsForVendor(categoryIdInput: string): Promise<string[]> {
@@ -1258,12 +1210,16 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
       pet_behaviorist: ['behaviorist', 'pet_behaviorist', 'behaviorist_solo', 'behaviorist_center'],
       behaviorist_solo: ['behaviorist_solo', 'pet_behaviorist', 'behaviorist'],
       behaviorist_center: ['behaviorist_center', 'pet_behaviorist', 'behaviorist'],
-      pet_sitter: ['sitter', 'pet_sitter'],
-      sitter: ['sitter', 'pet_sitter'],
+      pet_sitter: ['sitter', 'pet_sitter', 'boarding', 'pet_boarder', 'pet_daycare', 'pet_boarding'],
+      sitter: ['sitter', 'pet_sitter', 'boarding', 'pet_boarder', 'pet_daycare', 'pet_boarding'],
       pet_taxi: ['transport', 'pet_transport', 'pet_taxi', 'relocation'],
       relocation: ['pet_transport', 'relocation', 'pet_relocation'],
-      pet_boarding: ['boarding', 'pet_boarder', 'pet_hotel', 'pet_boarding', 'pet_daycare'],
-      boarding: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter'],
+      pet_boarding: ['boarding', 'pet_boarder', 'pet_hotel', 'pet_boarding', 'pet_daycare', 'pet_sitter', 'boarding_solo', 'boarding_center'],
+      boarding: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding', 'boarding_solo', 'boarding_center'],
+      boarding_solo: ['boarding', 'boarding_solo', 'boarding_center', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding'],
+      boarding_center: ['boarding', 'boarding_solo', 'boarding_center', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding'],
+      pet_boarder: ['boarding', 'pet_boarder', 'pet_daycare', 'pet_sitter', 'pet_boarding', 'boarding_solo', 'boarding_center'],
+      pet_daycare: ['boarding', 'pet_daycare', 'pet_sitter', 'pet_boarding', 'pet_boarder', 'boarding_solo', 'boarding_center'],
       pet_resort: ['resort', 'pet_resort'],
       resort: ['resort', 'pet_resort'],
       pet_cafe: ['cafe', 'pet_cafe'],
@@ -1317,10 +1273,11 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
         } else {
           actualRoleId = actualRoleId.toLowerCase().replace(/\s+/g, '_');
         }
-        roleNames = getRoleNamesForCatalog(actualRoleId);
+        roleNames = expandRoleIdsForOverlap(getRoleNamesForCatalog(actualRoleId));
       }
 
       const normalizedSlugs = categorySlugs.map((s) => normalizeCatalogCategoryKey(s));
+      const roleFilter = roleNamesForSpecCategoryQuery(normalizedSlugs, roleNames);
       const smResult = await query(
         `SELECT sm.*
          FROM specialization_master sm
@@ -1334,7 +1291,7 @@ export function registerSpecializationMasterEndpoints(app: Hono) {
              OR sm.applicable_roles && $2::text[]
            )
          ORDER BY sm.display_order, sm.name`,
-        [normalizedSlugs, roleNames]
+        [normalizedSlugs, roleFilter]
       );
       const rows = smResult.rows || [];
       return c.json({

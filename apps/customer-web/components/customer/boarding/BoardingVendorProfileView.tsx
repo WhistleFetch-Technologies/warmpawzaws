@@ -71,7 +71,6 @@ interface VendorInfo {
   photos: string[];
   amenities: string[];
   customAmenities: string[];
-  specializations: string[];
   isVerified: boolean;
 }
 
@@ -165,10 +164,6 @@ export function BoardingVendorProfileView({
       setVendorRaw(merged);
 
       const { amenities, customAmenities } = resolveCustomerVendorAmenities(merged);
-      const specs = merged.specializations;
-      const specializations: string[] = Array.isArray(specs)
-        ? specs.map((s) => String(s).trim()).filter(Boolean)
-        : [];
 
       let services: any[] = [];
       const servicesData = servicesResponse as any;
@@ -221,7 +216,6 @@ export function BoardingVendorProfileView({
         photos: (Array.isArray(merged.photos) ? merged.photos : merged.gallery) as string[] | undefined ?? [],
         amenities,
         customAmenities,
-        specializations,
         isVerified: !!(merged.isVerified ?? merged.is_verified),
       });
     } catch (e) {
@@ -452,22 +446,6 @@ export function BoardingVendorProfileView({
                 <span className="text-gray-700">{vendor.timing}</span>
               </div>
             </div>
-
-            {vendor.specializations.length > 0 ? (
-              <div className="mt-4 border-t border-gray-100 pt-4">
-                <h3 className="mb-2 text-xs font-semibold uppercase text-gray-500">Specializations</h3>
-                <div className="flex flex-wrap gap-2">
-                  {vendor.specializations.map((label) => (
-                    <span
-                      key={label}
-                      className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700"
-                    >
-                      {label}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
 
             {vendor.amenities.length > 0 || vendor.customAmenities.length > 0 ? (
               <div className="mt-4 border-t border-gray-100 pt-4">
