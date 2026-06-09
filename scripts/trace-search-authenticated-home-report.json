@@ -1,0 +1,47 @@
+{
+  "baseUrl": "http://localhost:3001",
+  "phone": "9999000002",
+  "customerId": "00000000-0000-4000-8000-000000000002",
+  "scenarios": [
+    {
+      "name": "authenticated-home-cold",
+      "url": "http://localhost:3001/",
+      "onAuth": false,
+      "inputs": [
+        {
+          "value": "",
+          "placeholder": "Search services, products, vets, groomers..."
+        }
+      ],
+      "storage": {
+        "warmpawz_cust_push_device_id": "9bf40127-6448-427f-87f5-ac213e44d6db",
+        "warmpawz_cart": "[]",
+        "warmpawz_customer_id": "00000000-0000-4000-8000-000000000002"
+      },
+      "traceLogs": [
+        "[search-trace] EnhancedSearchBar.mount {query: , placeholder: Search services, products, vets, groomers..., recentSearchesCount: 0, recentSearchesPreview: Array(0), suggestionsCount: 0}",
+        "[search-trace] EnhancedSearchBar.query-changed {query: , placeholder: Search services, products, vets, groomers...}",
+        "[search-trace] EnhancedSearchBar.mount {query: , placeholder: Search services, products, vets, groomers..., recentSearchesCount: 0, recentSearchesPreview: Array(0), suggestionsCount: 0}",
+        "[search-trace] EnhancedSearchBar.query-changed {query: , placeholder: Search services, products, vets, groomers...}",
+        "[search-trace] EnhancedSearchBar.loadSearchSuggestions {suggestions: Array(7)}",
+        "[search-trace] EnhancedSearchBar.loadSearchSuggestions {suggestions: Array(7)}"
+      ],
+      "targetHits": []
+    },
+    {
+      "name": "empty-submit-then-nav",
+      "url": "http://localhost:3001/",
+      "inputValues": [
+        {
+          "value": "",
+          "placeholder": "Search services, products, vets, groomers..."
+        }
+      ],
+      "traceLogs": [
+        "[search-trace-upstream] EnhancedSearchBar.handleSubmit {query: , placeholder: Search services, products, vets, groomers..., trimmed: , willSubmit: false}"
+      ],
+      "targetHits": []
+    }
+  ],
+  "repoNote": "Comma taxonomy string is not built in customer-web source; upstream trace shows what EnhancedSearchBar passes to onSearch."
+}

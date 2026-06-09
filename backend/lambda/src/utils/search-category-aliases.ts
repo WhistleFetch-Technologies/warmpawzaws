@@ -46,6 +46,7 @@ export function getSearchCategoryIlikePatterns(slug: string | undefined): string
     pharmacy:     ['%pharma%', '%medicine%', '%chemist%', '%dispensar%', '%drug%'],
     nutritionist: ['%nutri%', '%diet%', '%meal plan%'],
     nutrition:    ['%nutri%', '%diet%', '%meal plan%'],
+    shop:         ['%shop%', '%store%', '%mart%', '%pet food%', '%seller%', '%retail%'],
   };
   if (!slug) return [];
   const key = slug.trim().toLowerCase();

@@ -987,7 +987,20 @@ app.onError((err, c) => {
     let qParam = '';
     try { qParam = (c.req as any).query('q') || ''; } catch (_) { qParam = ''; }
     return c.json(
-      { query: qParam, vendors: [], services: [], total: 0, searchMethod: 'sql-fallback' },
+      {
+        query: qParam,
+        categories: [],
+        taxonomyResolvedHub: null,
+        taxonomySource: 'none',
+        effectiveCategory: null,
+        categorySource: 'none',
+        hubDrivenRetrieval: false,
+        searchText: '',
+        vendors: [],
+        services: [],
+        total: 0,
+        searchMethod: 'sql-fallback',
+      },
       200,
       corsHeaders
     );

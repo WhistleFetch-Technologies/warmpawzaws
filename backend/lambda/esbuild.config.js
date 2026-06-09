@@ -119,8 +119,6 @@ esbuild.build({
     '@aws-sdk/*',     // Provided by Lambda runtime
     'aws-lambda',     // Provided by Lambda runtime
     'pg-native',      // Native PostgreSQL module (we use pure JS pg instead)
-    '@opensearch-project/opensearch',
-    '@opensearch-project/opensearch/aws',
     'firebase-admin', // Loaded at runtime from dist/node_modules (see scripts/package-lambda.js)
     '@grpc/grpc-js',  // Has corrupt source map; not needed at Lambda runtime
     // ✅ FIX: These MUST be bundled for Lambda to work:

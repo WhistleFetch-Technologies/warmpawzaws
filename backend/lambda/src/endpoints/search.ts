@@ -50,6 +50,13 @@ import {
   sqlVendorOnlineForCustomerDiscovery,
   sqlVendorServiceDiscoverable,
 } from '../lib/discovery-vendor-query';
+import {
+  resolveSearchTaxonomy,
+  logSearchTaxonomyDebug,
+  buildResidualSearchText,
+  type CategorySource,
+  type SearchCategoryMatch,
+} from '../lib/search-taxonomy';
 
 // Import OpenSearch client with fallback handling
 let openSearchClient: any = null;
@@ -166,10 +173,82 @@ function filterServicesToKeptVendors<S extends { vendorId?: string | null }>(
 }
 
 // ============================================================================
+// PRODUCT SEARCH HELPERS
+// ============================================================================
+
+/** Hubs that should include ecommerce product results alongside vendor/service results. */
+const PRODUCT_SEARCH_HUBS = new Set(['shop', 'pet_shop', 'marketplace', 'pharmacy', 'pet_pharmacy']);
+
+function isProductSearchHub(category: string | undefined): boolean {
+  if (!category) return false;
+  return PRODUCT_SEARCH_HUBS.has(String(category).toLowerCase().replace(/-/g, '_'));
+}
+
+/**
+ * Query the products table for a given set of search tokens.
+ * Returns empty array if tokens are empty or if the products table does not exist.
+ */
+async function queryProductsForSearch(tokens: string[], productLimit: number): Promise<any[]> {
+  if (tokens.length === 0) return [];
+  let productQuery = `
+    SELECT p.id, p.name, p.description, p.price, p.image_url, p.thumbnail_url,
+           p.category, p.vendor_id, v.business_name AS vendor_name
+    FROM products p
+    LEFT JOIN vendors v ON p.vendor_id = v.id
+    WHERE p.is_active = true
+  `;
+  const productParams: any[] = [];
+  let productParamIndex = 1;
+  for (const token of tokens) {
+    productQuery += ` AND (p.name ILIKE $${productParamIndex} OR COALESCE(p.description, '') ILIKE $${productParamIndex})`;
+    productParams.push(`%${token}%`);
+    productParamIndex++;
+  }
+  productQuery += ` ORDER BY p.created_at DESC LIMIT $${productParamIndex}`;
+  productParams.push(productLimit);
+  try {
+    const { rows } = await query(productQuery, productParams);
+    return (rows as Record<string, unknown>[]).map((p) => ({
+      id: p.id,
+      productName: p.name,
+      description: p.description ?? null,
+      price: p.price ?? null,
+      imageUrl: (p.image_url ?? p.thumbnail_url) ?? null,
+      category: p.category ?? null,
+      vendorId: p.vendor_id ?? null,
+      vendorName: p.vendor_name ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================================
 // SEARCH HANDLERS
 // ============================================================================
 
 class UniversalSearchHandler extends BaseHandler {
+  /** Phase 2: taxonomy metadata returned on every /search response. */
+  private taxonomyResponseFields(opts: {
+    categories: SearchCategoryMatch[];
+    taxonomyResolvedHub: string | null;
+    taxonomySource: string;
+    effectiveCategory?: string;
+    categorySource: CategorySource;
+    hubDrivenRetrieval: boolean;
+    searchText: string;
+  }) {
+    return {
+      categories: opts.categories,
+      taxonomyResolvedHub: opts.taxonomyResolvedHub,
+      taxonomySource: opts.taxonomySource,
+      effectiveCategory: opts.effectiveCategory ?? null,
+      categorySource: opts.categorySource,
+      hubDrivenRetrieval: opts.hubDrivenRetrieval,
+      searchText: opts.searchText,
+    };
+  }
+
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const qs = context.event.queryStringParameters as Record<string, string | undefined> | undefined;
     const searchQuery = qs?.q || '';
@@ -177,22 +256,71 @@ class UniversalSearchHandler extends BaseHandler {
     const location = qs?.location;
     const limit = parseInt(qs?.limit || '20', 10);
     const userCoords = await resolveSearchUserCoords(qs);
-    const effectiveCategory = resolveEffectiveSearchCategory(category, searchQuery);
+
+    const explicitCategory = resolveEffectiveSearchCategory(category);
+    const taxonomy = searchQuery.trim()
+      ? await resolveSearchTaxonomy(searchQuery)
+      : {
+          categories: [],
+          topHubSlug: null,
+          topMatchedPhrase: null,
+          source: 'none' as const,
+        };
+    const taxonomyHub =
+      !explicitCategory && taxonomy.topHubSlug ? taxonomy.topHubSlug : undefined;
+    const effectiveCategory = explicitCategory ?? taxonomyHub;
+    const categorySource: CategorySource = explicitCategory
+      ? 'explicit'
+      : taxonomyHub
+        ? 'taxonomy'
+        : 'none';
+    const hubFromTaxonomy = categorySource === 'taxonomy';
+    const residual = buildResidualSearchText(searchQuery, {
+      categorySource,
+      topHubSlug: taxonomy.topHubSlug,
+      topMatchedPhrase: taxonomy.topMatchedPhrase,
+    });
     const hubContext = hubSlugToDiscoveryContext(effectiveCategory);
+    const categories = taxonomy.categories;
+    const taxonomyMeta = this.taxonomyResponseFields({
+      categories,
+      taxonomyResolvedHub: taxonomy.topHubSlug,
+      taxonomySource: taxonomy.source,
+      effectiveCategory,
+      categorySource,
+      hubDrivenRetrieval: hubFromTaxonomy,
+      searchText: residual.searchText,
+    });
 
     // Try OpenSearch first if available
     if (openSearchClient && process.env.ENABLE_OPENSEARCH === 'true') {
       try {
         console.log('🔍 Using OpenSearch for search query:', searchQuery);
-        return await this.searchWithOpenSearch(
+        const result = await this.searchWithOpenSearch(
           searchQuery,
           effectiveCategory,
           location,
           limit,
           userCoords,
           qs,
-          hubContext
+          hubContext,
+          taxonomyMeta,
+          residual.tokens
         );
+        logSearchTaxonomyDebug({
+          query: searchQuery,
+          categories,
+          topHubSlug: taxonomy.topHubSlug,
+          explicitCategory,
+          effectiveCategory,
+          categorySource,
+          searchMethod: 'opensearch',
+          taxonomySource: taxonomy.source,
+          hubDrivenRetrieval: hubFromTaxonomy,
+          searchText: residual.searchText,
+          searchTokens: residual.tokens,
+        });
+        return result;
       } catch (error) {
         console.warn('⚠️  OpenSearch failed, falling back to SQL:', error);
         // Fall through to SQL search
@@ -202,7 +330,31 @@ class UniversalSearchHandler extends BaseHandler {
     }
 
     // ✅ SQL Fallback: Search vendors and services using PostgreSQL
-    return await this.searchWithSQL(searchQuery, effectiveCategory, location, limit, userCoords, qs, hubContext);
+    const result = await this.searchWithSQL(
+      searchQuery,
+      effectiveCategory,
+      location,
+      limit,
+      userCoords,
+      qs,
+      hubContext,
+      taxonomyMeta,
+      residual.tokens
+    );
+    logSearchTaxonomyDebug({
+      query: searchQuery,
+      categories,
+      topHubSlug: taxonomy.topHubSlug,
+      explicitCategory,
+      effectiveCategory,
+      categorySource,
+      searchMethod: 'sql-fallback',
+      taxonomySource: taxonomy.source,
+      hubDrivenRetrieval: hubFromTaxonomy,
+      searchText: residual.searchText,
+      searchTokens: residual.tokens,
+    });
+    return result;
   }
 
   /**
@@ -215,7 +367,9 @@ class UniversalSearchHandler extends BaseHandler {
     limit: number,
     userCoords: { lat: number; lng: number } | null,
     qs: Record<string, string | undefined> | undefined,
-    hubContext: ReturnType<typeof hubSlugToDiscoveryContext>
+    hubContext: ReturnType<typeof hubSlugToDiscoveryContext>,
+    taxonomyMeta: Record<string, unknown>,
+    keywordTokens: string[]
   ): Promise<HandlerResponse> {
     const searchBody: any = {
       query: {
@@ -227,15 +381,17 @@ class UniversalSearchHandler extends BaseHandler {
       size: limit,
     };
 
-    // Text + category: require keyword match AND hub category (same as SQL AND semantics).
-    if (searchQuery) {
+    // Residual tokens after category constraint (taxonomy hub + intent/pet stripping).
+    if (keywordTokens.length > 0) {
       searchBody.query.bool.must.push({
         multi_match: {
-          query: searchQuery,
+          query: keywordTokens.join(' '),
           fields: ['business_name^3', 'service_name^2', 'description', 'specialization'],
           fuzziness: 'AUTO' as const,
         },
       });
+    } else if (searchBody.query.bool.must.length === 0) {
+      searchBody.query.bool.must.push({ match_all: {} });
     }
 
     // Add category filter (UI slug → multiple DB role/category strings)
@@ -249,22 +405,40 @@ class UniversalSearchHandler extends BaseHandler {
       searchBody.query.bool.filter.push({ term: { city: location.toLowerCase() } });
     }
 
-    // Add status filters
+    // Add status filters — mirrors sqlVendorDiscoverableStatus: approved, active, activated, pending+solo
     searchBody.query.bool.filter.push({ term: { is_active: true } });
-    searchBody.query.bool.filter.push({ term: { status: 'approved' } });
+    searchBody.query.bool.filter.push({
+      terms: { status: ['approved', 'active', 'activated'] },
+    });
+
+    const searchIndexes = isProductSearchHub(category)
+      ? 'warmpawz-vendors,warmpawz-services,warmpawz-products'
+      : 'warmpawz-vendors,warmpawz-services';
 
     const result = await openSearchClient.search({
-      index: 'warmpawz-vendors,warmpawz-services',
+      index: searchIndexes,
       body: searchBody,
     });
 
     const hits = result.body.hits.hits;
     const vendors: any[] = [];
     const services: any[] = [];
+    const products: any[] = [];
 
     hits.forEach((hit: { _index: string; _source: Record<string, unknown> }) => {
       const source = hit._source;
-      if (hit._index.includes('vendors')) {
+      if (hit._index.includes('products')) {
+        products.push({
+          id: source.id,
+          productName: source.name,
+          description: source.description ?? null,
+          price: source.price ?? null,
+          imageUrl: (source.image_url ?? source.thumbnail_url) ?? null,
+          category: source.category ?? null,
+          vendorId: source.vendor_id ?? null,
+          vendorName: source.vendor_name ?? null,
+        });
+      } else if (hit._index.includes('vendors')) {
         const loc = source.location;
         const latRaw =
           loc != null && typeof loc === 'object'
@@ -374,11 +548,31 @@ class UniversalSearchHandler extends BaseHandler {
       finalServices = filterServicesToKeptVendors(parity.services, keptIds);
     }
 
+    const finalProducts = products;
+
+    // Hub-browse fallback: taxonomy resolved a hub but no results matched the text tokens.
+    // Re-run as pure hub browse (drop text tokens) so users never see "No Results Found"
+    // when a valid service category exists.
+    const osCategorySource = (taxonomyMeta as any).categorySource as CategorySource;
+    if (
+      finalVendors.length === 0 &&
+      finalServices.length === 0 &&
+      finalProducts.length === 0 &&
+      osCategorySource === 'taxonomy' &&
+      keywordTokens.length > 0
+    ) {
+      return this.searchWithOpenSearch(
+        searchQuery, category, location, limit, userCoords, qs, hubContext, taxonomyMeta, []
+      );
+    }
+
     return this.success({
       query: searchQuery,
+      ...taxonomyMeta,
       vendors: finalVendors,
       services: finalServices,
-      total: finalVendors.length + finalServices.length,
+      products: finalProducts,
+      total: finalVendors.length + finalServices.length + finalProducts.length,
       searchMethod: 'opensearch',
       discoveryParity: parity.discoveryApplied,
     });
@@ -395,7 +589,9 @@ class UniversalSearchHandler extends BaseHandler {
     limit: number,
     userCoords: { lat: number; lng: number } | null,
     qs: Record<string, string | undefined> | undefined,
-    hubContext: ReturnType<typeof hubSlugToDiscoveryContext>
+    hubContext: ReturnType<typeof hubSlugToDiscoveryContext>,
+    taxonomyMeta: Record<string, unknown>,
+    keywordTokens: string[]
   ): Promise<HandlerResponse> {
     const isBrowseAll = !searchQuery.trim() && !category;
 
@@ -423,10 +619,11 @@ class UniversalSearchHandler extends BaseHandler {
     const params: any[] = [];
     let paramIndex = 1;
 
-    const keywordTokens = searchQuery.trim() ? searchTokens(searchQuery) : [];
-    const hubBrowseOnly = isHubBrowseCategoryOnly(category, searchQuery);
+    const hubBrowseOnly = isHubBrowseCategoryOnly(
+      category,
+      keywordTokens.length > 0 ? keywordTokens.join(' ') : ''
+    );
 
-    // Keyword: each token must match vendor fields OR any listable published service on that vendor.
     for (const token of keywordTokens) {
       vendorsQuery += ` AND (
         v.business_name ILIKE $${paramIndex} OR
@@ -707,11 +904,34 @@ class UniversalSearchHandler extends BaseHandler {
       finalServices = filterServicesToKeptVendors(parity.services, keptIds);
     }
 
+    // Query ecommerce products for shop/pharmacy hub searches.
+    const finalProducts = isProductSearchHub(category)
+      ? await queryProductsForSearch(keywordTokens, Math.min(limit, 20))
+      : [];
+
+    // Hub-browse fallback: taxonomy resolved a hub but no results matched the text tokens.
+    // Re-run as pure hub browse (drop text tokens) so users never see "No Results Found"
+    // when a valid service category exists.
+    const sqlCategorySource = (taxonomyMeta as any).categorySource as CategorySource;
+    if (
+      finalVendors.length === 0 &&
+      finalServices.length === 0 &&
+      finalProducts.length === 0 &&
+      sqlCategorySource === 'taxonomy' &&
+      keywordTokens.length > 0
+    ) {
+      return this.searchWithSQL(
+        searchQuery, category, location, limit, userCoords, qs, hubContext, taxonomyMeta, []
+      );
+    }
+
     return this.success({
       query: searchQuery,
+      ...taxonomyMeta,
       vendors: finalVendors,
       services: finalServices,
-      total: finalVendors.length + finalServices.length,
+      products: finalProducts,
+      total: finalVendors.length + finalServices.length + finalProducts.length,
       searchMethod: 'sql-fallback',
       discoveryParity: parity.discoveryApplied,
     });

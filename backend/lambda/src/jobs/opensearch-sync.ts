@@ -165,19 +165,8 @@ async function fetchVendorServiceForSearchIndex(vendorServiceId: string): Promis
      FROM vendor_services vs
      JOIN vendors v ON vs.vendor_id = v.id
      WHERE vs.id = $1::uuid
-       AND vs.publish_status = 'published'
-       AND vs.is_enabled = true
        AND v.is_active = true
-       AND v.status = 'approved'
-       AND v.latitude IS NOT NULL
-       AND v.longitude IS NOT NULL
-       AND EXISTS (
-         SELECT 1 FROM vendor_availability_v2 va
-         WHERE va.vendor_id = v.id
-            OR va.vendor_id IN (
-              SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone
-            )
-       )
+       AND v.status IN ('approved', 'activated', 'active')
      LIMIT 1`,
     [vendorServiceId]
   );
@@ -236,19 +225,8 @@ async function syncServices() {
            (SELECT rn.name FROM roles rn WHERE rn.id = v.role_id LIMIT 1) AS vendor_role_name
     FROM vendor_services vs
     JOIN vendors v ON vs.vendor_id = v.id
-    WHERE vs.publish_status = 'published'
-      AND vs.is_enabled = true
-      AND v.is_active = true
-      AND v.status = 'approved'
-      AND v.latitude IS NOT NULL
-      AND v.longitude IS NOT NULL
-      AND EXISTS (
-        SELECT 1 FROM vendor_availability_v2 va
-        WHERE va.vendor_id = v.id
-           OR va.vendor_id IN (
-             SELECT id FROM vendor_identity WHERE vendor_id = v.id OR phone = v.phone
-           )
-      )
+    WHERE v.is_active = true
+      AND v.status IN ('approved', 'activated', 'active')
   `);
 
   const serviceRows = (services.rows || []) as Record<string, unknown>[];
@@ -271,11 +249,12 @@ async function syncVendors() {
   const vendors = await query(`
     SELECT 
       v.*,
-      r.service_styles,
+      COALESCE(r.config->'serviceStyles', r.config->'service_styles') AS service_styles,
       r.name AS role_name
     FROM vendors v
     LEFT JOIN roles r ON v.role_id = r.id
-    WHERE v.status = 'active'
+    WHERE v.is_active = true
+      AND v.status IN ('approved', 'activated', 'active')
   `);
 
   const vendorRows = (Array.isArray(vendors) ? vendors : (vendors as { rows?: unknown[] }).rows || []) as Record<
@@ -495,7 +474,8 @@ function transformForIndex(entity: string, data: any): Record<string, any> {
           ? { lat: data.latitude, lon: data.longitude }
           : null,
         service_radius_km: data.service_radius_km || 10,
-        is_active: data.status === 'active',
+        is_active: true,
+        status: data.status ?? 'approved',
         specializations: parseJsonArray(data.specializations),
         created_at: data.created_at,
       };

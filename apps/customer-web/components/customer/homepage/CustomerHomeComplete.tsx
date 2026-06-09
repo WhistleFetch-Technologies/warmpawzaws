@@ -50,6 +50,7 @@ import { isVendorBannerCta } from '@/lib/banner-cta-parse';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import { mapCatalogSlugToLaunchServiceId } from '@warmpawz/service-launch-mappings';
 import { buildCustomerLaunchTiles } from '@/lib/customer-launch-tiles';
+import { traceHomeSearchUpstream } from '@/lib/search-trace';
 import { resolveEffectiveMealDeliveryState, isTerminalMealDeliveryState } from '@warmpawz/shared-types';
 import { toast } from 'sonner';
 import { hasRatings, normalizeRatingCount } from '@/lib/rating-display';
@@ -611,11 +612,26 @@ export function CustomerHomeComplete({
 
   const handleSearchSubmit = useCallback(
     (searchQuery: string) => {
-      if (searchQuery?.trim()) {
-        router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+      const trimmed = searchQuery?.trim() ?? '';
+      const routerPushPath = trimmed
+        ? `/search?q=${encodeURIComponent(trimmed)}`
+        : null;
+      traceHomeSearchUpstream('CustomerHomeComplete.handleSearchSubmit', {
+        searchQuery,
+        trimmed,
+        routerPushPath,
+        newHomeUi,
+        customerId: customerId || null,
+      });
+      if (trimmed && routerPushPath) {
+        traceHomeSearchUpstream('CustomerHomeComplete.router.push', {
+          path: routerPushPath,
+          decodedQ: trimmed,
+        });
+        router.push(routerPushPath);
       }
     },
-    [router]
+    [router, newHomeUi, customerId]
   );
 
   const handleSearchResultSelect = useCallback(

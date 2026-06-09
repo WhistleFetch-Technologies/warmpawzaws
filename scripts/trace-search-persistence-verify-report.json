@@ -1,0 +1,144 @@
+{
+  "target": "Vet near me, Dog doctor, Cat doctor, Pet clinic, Animal hospital",
+  "scenarios": [
+    {
+      "name": "clean-storage",
+      "url": "http://localhost:3001/",
+      "localStorage": {
+        "warmpawz_cust_push_device_id": "3bba16bb-7624-4c72-a173-8cfcbddcd20c",
+        "warmpawz_cart": "[]",
+        "warmpawz_customer_id": "00000000-0000-4000-8000-000000000002"
+      },
+      "firstStorageWithTarget": null,
+      "persistenceLogTargetHits": [],
+      "persistenceLabels": [
+        "pageLoad.localStorage",
+        "loadRecentSearches.start",
+        "search-history.api.skipped",
+        "localStorage.warmpawz_recent_searches.read",
+        "localStorage.warmpawz_recent_searches.empty",
+        "recentSearches.stateAfterHydration"
+      ],
+      "searchHistoryApiCalls": [],
+      "relevantLogs": [
+        "[search-persistence] pageLoad.localStorage {customerId: null, keys: Array(3), snapshot: Object, targetInSnapshot: Array(0)}",
+        "[search-persistence] search-history.api.skipped {reason: no customerId prop on EnhancedSearchBar}",
+        "[search-persistence] localStorage.warmpawz_recent_searches.read {raw: null, targetInRaw: false}",
+        "[search-persistence] localStorage.warmpawz_recent_searches.empty {}",
+        "[search-persistence] pageLoad.localStorage {customerId: null, keys: Array(3), snapshot: Object, targetInSnapshot: Array(0)}",
+        "[search-persistence] search-history.api.skipped {reason: no customerId prop on EnhancedSearchBar}",
+        "[search-persistence] localStorage.warmpawz_recent_searches.read {raw: null, targetInRaw: false}",
+        "[search-persistence] localStorage.warmpawz_recent_searches.empty {}"
+      ]
+    },
+    {
+      "name": "polluted-recent-searches",
+      "url": "http://localhost:3001/",
+      "localStorage": {
+        "warmpawz_recent_searches": "[\"Vet near me, Dog doctor, Cat doctor, Pet clinic, Animal hospital\"]",
+        "warmpawz_cust_push_device_id": "d590d024-2198-402a-8c04-8b784c3a3a99",
+        "warmpawz_cart": "[]",
+        "warmpawz_customer_id": "00000000-0000-4000-8000-000000000002"
+      },
+      "firstStorageWithTarget": {
+        "layer": "localStorage",
+        "key": "warmpawz_recent_searches",
+        "sample": "[\"Vet near me, Dog doctor, Cat doctor, Pet clinic, Animal hospital\"]"
+      },
+      "persistenceLogTargetHits": [
+        "[search-persistence] *** TARGET FOUND in pageLoad.localStorage *** {customerId: null, keys: Array(4), snapshot: Object, targetInSnapshot: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in localStorage.warmpawz_recent_searches.read *** {raw: [\"Vet near me, Dog doctor, Cat doctor, Pet clinic, Animal hospital\"], targetInRaw: true}",
+        "[search-persistence] *** TARGET FOUND in localStorage.warmpawz_recent_searches.hydrated *** {source: localStorage warmpawz_recent_searches, loaded: Array(1), targetInLoaded: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in pageLoad.localStorage *** {customerId: null, keys: Array(4), snapshot: Object, targetInSnapshot: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in localStorage.warmpawz_recent_searches.read *** {raw: [\"Vet near me, Dog doctor, Cat doctor, Pet clinic, Animal hospital\"], targetInRaw: true}",
+        "[search-persistence] *** TARGET FOUND in localStorage.warmpawz_recent_searches.hydrated *** {source: localStorage warmpawz_recent_searches, loaded: Array(1), targetInLoaded: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in recentSearches.stateAfterHydration *** {customerId: null, recentSearches: Array(1), recentSearchesCount: 1, targetInState: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in recentSearches.renderedDropdownItems *** {customerId: null, renderedRecentItems: Array(1), targetInRendered: Array(1)}"
+      ],
+      "persistenceLabels": [
+        "pageLoad.localStorage",
+        "***",
+        "loadRecentSearches.start",
+        "search-history.api.skipped",
+        "localStorage.warmpawz_recent_searches.read",
+        "localStorage.warmpawz_recent_searches.hydrated",
+        "recentSearches.stateAfterHydration",
+        "recentSearches.renderedDropdownItems"
+      ],
+      "searchHistoryApiCalls": [],
+      "relevantLogs": [
+        "[search-persistence] pageLoad.localStorage {customerId: null, keys: Array(4), snapshot: Object, targetInSnapshot: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in pageLoad.localStorage *** {customerId: null, keys: Array(4), snapshot: Object, targetInSnapshot: Array(1)}",
+        "[search-persistence] search-history.api.skipped {reason: no customerId prop on EnhancedSearchBar}",
+        "[search-persistence] localStorage.warmpawz_recent_searches.read {raw: [\"Vet near me, Dog doctor, Cat doctor, Pet clinic, Animal hospital\"], targetInRaw: true}",
+        "[search-persistence] *** TARGET FOUND in localStorage.warmpawz_recent_searches.read *** {raw: [\"Vet near me, Dog doctor, Cat doctor, Pet clinic, Animal hospital\"], targetInRaw: true}",
+        "[search-persistence] localStorage.warmpawz_recent_searches.hydrated {source: localStorage warmpawz_recent_searches, loaded: Array(1), targetInLoaded: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in localStorage.warmpawz_recent_searches.hydrated *** {source: localStorage warmpawz_recent_searches, loaded: Array(1), targetInLoaded: Array(1)}",
+        "[search-persistence] pageLoad.localStorage {customerId: null, keys: Array(4), snapshot: Object, targetInSnapshot: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in pageLoad.localStorage *** {customerId: null, keys: Array(4), snapshot: Object, targetInSnapshot: Array(1)}",
+        "[search-persistence] search-history.api.skipped {reason: no customerId prop on EnhancedSearchBar}",
+        "[search-persistence] localStorage.warmpawz_recent_searches.read {raw: [\"Vet near me, Dog doctor, Cat doctor, Pet clinic, Animal hospital\"], targetInRaw: true}",
+        "[search-persistence] *** TARGET FOUND in localStorage.warmpawz_recent_searches.read *** {raw: [\"Vet near me, Dog doctor, Cat doctor, Pet clinic, Animal hospital\"], targetInRaw: true}",
+        "[search-persistence] localStorage.warmpawz_recent_searches.hydrated {source: localStorage warmpawz_recent_searches, loaded: Array(1), targetInLoaded: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in localStorage.warmpawz_recent_searches.hydrated *** {source: localStorage warmpawz_recent_searches, loaded: Array(1), targetInLoaded: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in recentSearches.stateAfterHydration *** {customerId: null, recentSearches: Array(1), recentSearchesCount: 1, targetInState: Array(1)}",
+        "[search-persistence] recentSearches.renderedDropdownItems {customerId: null, renderedRecentItems: Array(1), targetInRendered: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in recentSearches.renderedDropdownItems *** {customerId: null, renderedRecentItems: Array(1), targetInRendered: Array(1)}"
+      ]
+    },
+    {
+      "name": "polluted-search-context-only",
+      "url": "http://localhost:3001/",
+      "localStorage": {
+        "warmpawz_cust_push_device_id": "e8547d9b-e911-40cf-bb4a-5fe4173e761c",
+        "warmpawz_cart": "[]",
+        "warmpawz_customer_id": "00000000-0000-4000-8000-000000000002",
+        "warmpawz_search_context": "{\"query\":\"Vet near me, Dog doctor, Cat doctor, Pet clinic, Animal hospital\",\"results\":[],\"timestamp\":1780580986157}"
+      },
+      "firstStorageWithTarget": {
+        "layer": "localStorage",
+        "key": "warmpawz_search_context",
+        "sample": "{\"query\":\"Vet near me, Dog doctor, Cat doctor, Pet clinic, Animal hospital\",\"results\":[],\"timestamp\":1780580986157}"
+      },
+      "persistenceLogTargetHits": [
+        "[search-persistence] *** TARGET FOUND in pageLoad.localStorage *** {customerId: null, keys: Array(4), snapshot: Object, targetInSnapshot: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in localStorage.warmpawz_search_context.read *** {raw: {\"query\":\"Vet near me, Dog doctor, Cat doctor, Pet…hospital\",\"results\":[],\"timestamp\":1780580986157}, targetInRaw: true}",
+        "[search-persistence] *** TARGET FOUND in pageLoad.localStorage *** {customerId: null, keys: Array(4), snapshot: Object, targetInSnapshot: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in localStorage.warmpawz_search_context.read *** {raw: {\"query\":\"Vet near me, Dog doctor, Cat doctor, Pet…hospital\",\"results\":[],\"timestamp\":1780580986157}, targetInRaw: true}"
+      ],
+      "persistenceLabels": [
+        "pageLoad.localStorage",
+        "***",
+        "loadRecentSearches.start",
+        "search-history.api.skipped",
+        "localStorage.warmpawz_recent_searches.read",
+        "localStorage.warmpawz_recent_searches.empty",
+        "localStorage.warmpawz_search_context.read",
+        "recentSearches.stateAfterHydration"
+      ],
+      "searchHistoryApiCalls": [],
+      "relevantLogs": [
+        "[search-persistence] pageLoad.localStorage {customerId: null, keys: Array(4), snapshot: Object, targetInSnapshot: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in pageLoad.localStorage *** {customerId: null, keys: Array(4), snapshot: Object, targetInSnapshot: Array(1)}",
+        "[search-persistence] search-history.api.skipped {reason: no customerId prop on EnhancedSearchBar}",
+        "[search-persistence] localStorage.warmpawz_recent_searches.read {raw: null, targetInRaw: false}",
+        "[search-persistence] localStorage.warmpawz_recent_searches.empty {}",
+        "[search-persistence] localStorage.warmpawz_search_context.read {raw: {\"query\":\"Vet near me, Dog doctor, Cat doctor, Pet…hospital\",\"results\":[],\"timestamp\":1780580986157}, targetInRaw: true}",
+        "[search-persistence] *** TARGET FOUND in localStorage.warmpawz_search_context.read *** {raw: {\"query\":\"Vet near me, Dog doctor, Cat doctor, Pet…hospital\",\"results\":[],\"timestamp\":1780580986157}, targetInRaw: true}",
+        "[search-persistence] pageLoad.localStorage {customerId: null, keys: Array(4), snapshot: Object, targetInSnapshot: Array(1)}",
+        "[search-persistence] *** TARGET FOUND in pageLoad.localStorage *** {customerId: null, keys: Array(4), snapshot: Object, targetInSnapshot: Array(1)}",
+        "[search-persistence] search-history.api.skipped {reason: no customerId prop on EnhancedSearchBar}",
+        "[search-persistence] localStorage.warmpawz_recent_searches.read {raw: null, targetInRaw: false}",
+        "[search-persistence] localStorage.warmpawz_recent_searches.empty {}",
+        "[search-persistence] localStorage.warmpawz_search_context.read {raw: {\"query\":\"Vet near me, Dog doctor, Cat doctor, Pet…hospital\",\"results\":[],\"timestamp\":1780580986157}, targetInRaw: true}",
+        "[search-persistence] *** TARGET FOUND in localStorage.warmpawz_search_context.read *** {raw: {\"query\":\"Vet near me, Dog doctor, Cat doctor, Pet…hospital\",\"results\":[],\"timestamp\":1780580986157}, targetInRaw: true}"
+      ]
+    }
+  ],
+  "directApiProbe": {
+    "url": "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com/customer/00000000-0000-4000-8000-000000000002/search-history",
+    "status": 404,
+    "containsTarget": false,
+    "bodyPreview": "{\"error\":\"Customer not found\"}"
+  }
+}

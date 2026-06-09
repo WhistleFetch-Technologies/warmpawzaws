@@ -15,6 +15,13 @@ import {
   dedupeSearchVendorAndServiceRows,
   inferHubSlugFromSearchQuery,
 } from '@/lib/search-hub-category-filter';
+import {
+  traceSearch,
+  traceHomeSearchUpstream,
+  traceSearchPersistence,
+  logSearchLocalStorageOnLoad,
+  searchPersistenceContainsTarget,
+} from '@/lib/search-trace';
 
 interface SearchResult {
   id: string;
@@ -67,6 +74,22 @@ export function EnhancedSearchBar({
   const performSearchRef = useRef<(q: string) => void>(() => {});
 
   useEffect(() => {
+    logSearchLocalStorageOnLoad(customerId);
+    traceSearch('EnhancedSearchBar.mount', {
+      query,
+      placeholder,
+      recentSearchesCount: recentSearches.length,
+      recentSearchesPreview: recentSearches.slice(0, 5),
+      suggestionsCount: suggestions.length,
+      suggestionsPreview: suggestions.slice(0, 5).map((s) => s.text),
+    });
+  }, []);
+
+  useEffect(() => {
+    traceSearch('EnhancedSearchBar.query-changed', { query, placeholder });
+  }, [query, placeholder]);
+
+  useEffect(() => {
     userLocationRef.current = userLocation;
   }, [userLocation]);
 
@@ -101,40 +124,84 @@ export function EnhancedSearchBar({
   }, []);
 
   const loadRecentSearches = async () => {
+    traceSearchPersistence('loadRecentSearches.start', { customerId: customerId || null });
+
     // Try to load from backend first
     if (customerId) {
       try {
-        // AWS Serverless compatible - use apiClient
-        const data = await apiClient.get<{ data?: { history?: any[] }, history?: any[] }>(`/customer/${customerId}/search-history`);
+        const url = `/customer/${customerId}/search-history`;
+        const data = await apiClient.get<{ data?: { history?: any[] }, history?: any[] }>(url);
         const history = data.data?.history || data.history || [];
-        // Safely extract query string from history
-        setRecentSearches(
-          history
-            .map((h: any) => String(h.query || h.text || h || ''))
-            .filter(q => q) // Remove empty strings
-            .slice(0, 15)
-        );
+        traceSearchPersistence('search-history.api.rawResponse', {
+          customerId,
+          url,
+          historyCount: history.length,
+          historyRaw: history,
+          targetInRawHistory: history.filter((h: unknown) =>
+            searchPersistenceContainsTarget(h)
+          ),
+        });
+        const loaded = history
+          .map((h: any) => String(h.query || h.text || h || ''))
+          .filter(q => q)
+          .slice(0, 15);
+        traceSearchPersistence('search-history.api.hydrated', {
+          source: 'GET /customer/:id/search-history',
+          customerId,
+          loaded,
+          targetInLoaded: loaded.filter((q) => searchPersistenceContainsTarget(q)),
+        });
+        traceSearch('EnhancedSearchBar.loadRecentSearches.api', { loaded });
+        setRecentSearches(loaded);
         return;
       } catch (error) {
         console.error('Error loading search history:', error);
+        traceSearchPersistence('search-history.api.error', {
+          customerId,
+          error: String(error),
+        });
       }
+    } else {
+      traceSearchPersistence('search-history.api.skipped', {
+        reason: 'no customerId prop on EnhancedSearchBar',
+      });
     }
 
-    // Fallback to localStorage
     const saved = localStorage.getItem('warmpawz_recent_searches');
+    traceSearchPersistence('localStorage.warmpawz_recent_searches.read', {
+      raw: saved,
+      targetInRaw: searchPersistenceContainsTarget(saved),
+    });
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Ensure all items are strings
-        setRecentSearches(
-          (Array.isArray(parsed) ? parsed : [])
-            .map(item => String(item || ''))
-            .filter(q => q)
-            .slice(0, 15)
-        );
+        const loaded = (Array.isArray(parsed) ? parsed : [])
+          .map(item => String(item || ''))
+          .filter(q => q)
+          .slice(0, 15);
+        traceSearchPersistence('localStorage.warmpawz_recent_searches.hydrated', {
+          source: 'localStorage warmpawz_recent_searches',
+          loaded,
+          targetInLoaded: loaded.filter((q) => searchPersistenceContainsTarget(q)),
+        });
+        traceSearch('EnhancedSearchBar.loadRecentSearches.localStorage', {
+          raw: saved?.slice(0, 500),
+          loaded,
+        });
+        setRecentSearches(loaded);
       } catch (err) {
         console.error('Error loading recent searches from localStorage:', err);
       }
+    } else {
+      traceSearchPersistence('localStorage.warmpawz_recent_searches.empty', {});
+    }
+
+    const ctxRaw = localStorage.getItem('warmpawz_search_context');
+    if (ctxRaw) {
+      traceSearchPersistence('localStorage.warmpawz_search_context.read', {
+        raw: ctxRaw,
+        targetInRaw: searchPersistenceContainsTarget(ctxRaw),
+      });
     }
   };
 
@@ -172,6 +239,9 @@ export function EnhancedSearchBar({
         }
         return { text: String(s || ''), type: 'trending' as const };
       }).filter(s => s.text)); // Remove empty suggestions
+      traceSearch('EnhancedSearchBar.loadSearchSuggestions', {
+        suggestions: suggestionsData.map((s) => s.text),
+      });
     } catch (error) {
       console.error('Error loading suggestions:', error);
     }
@@ -179,6 +249,7 @@ export function EnhancedSearchBar({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
+    traceSearch('EnhancedSearchBar.handleInputChange', { value, placeholder });
     setQuery(value);
     
     // Only open dropdown if we have content to show
@@ -199,6 +270,7 @@ export function EnhancedSearchBar({
   };
 
   const performSearch = async (searchQuery: string) => {
+    traceSearch('EnhancedSearchBar.performSearch', { searchQuery, placeholder });
     const reqId = ++searchRequestSeqRef.current;
     setLoading(true);
     try {
@@ -416,9 +488,22 @@ export function EnhancedSearchBar({
   };
 
   const handleSearch = (searchQuery: string) => {
+    traceHomeSearchUpstream('EnhancedSearchBar.handleSearch', {
+      searchQuery,
+      queryState: query,
+      placeholder,
+      recentSearchesPreview: recentSearches.slice(0, 5),
+      suggestionsPreview: suggestions.slice(0, 5).map((s) => s.text),
+      hasOnSearch: typeof onSearch === 'function',
+    });
     saveSearch(searchQuery);
     setIsOpen(false);
     if (onSearch) {
+      traceHomeSearchUpstream('EnhancedSearchBar.onSearch.invoke', {
+        payload: searchQuery,
+        placeholder,
+        queryState: query,
+      });
       onSearch(searchQuery);
     }
   };
@@ -434,6 +519,12 @@ export function EnhancedSearchBar({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    traceHomeSearchUpstream('EnhancedSearchBar.handleSubmit', {
+      query,
+      placeholder,
+      trimmed: query.trim(),
+      willSubmit: !!query.trim(),
+    });
     if (query.trim()) {
       handleSearch(query.trim());
     }
@@ -441,6 +532,30 @@ export function EnhancedSearchBar({
 
   const showRecentSearches = !query && recentSearches.length > 0;
   const showSuggestions = !query && suggestions.length > 0;
+
+  useEffect(() => {
+    traceSearchPersistence('recentSearches.stateAfterHydration', {
+      customerId: customerId || null,
+      recentSearches,
+      recentSearchesCount: recentSearches.length,
+      targetInState: recentSearches.filter((q) => searchPersistenceContainsTarget(q)),
+    });
+  }, [recentSearches, customerId]);
+
+  useEffect(() => {
+    if (!showRecentSearches) return;
+    const renderedRecentItems = recentSearches.map((term, idx) => ({
+      index: idx,
+      term: String(term || ''),
+    }));
+    traceSearchPersistence('recentSearches.renderedDropdownItems', {
+      customerId: customerId || null,
+      renderedRecentItems,
+      targetInRendered: renderedRecentItems.filter((r) =>
+        searchPersistenceContainsTarget(r.term)
+      ),
+    });
+  }, [showRecentSearches, recentSearches, customerId]);
   const hasContent = showRecentSearches || showSuggestions || results.length > 0 || loading;
   
   // Auto-close dropdown if there's no content to show (prevents empty white space)
@@ -532,6 +647,11 @@ export function EnhancedSearchBar({
                   key={idx}
                   onClick={() => {
                     const searchTerm = String(term || '');
+                    traceHomeSearchUpstream('EnhancedSearchBar.recentSearch.click', {
+                      searchTerm,
+                      placeholder,
+                      queryBefore: query,
+                    });
                     setQuery(searchTerm);
                     handleSearch(searchTerm);
                   }}
@@ -554,6 +674,11 @@ export function EnhancedSearchBar({
                 <button
                   key={idx}
                   onClick={() => {
+                    traceHomeSearchUpstream('EnhancedSearchBar.suggestion.click', {
+                      suggestionText: suggestion.text,
+                      placeholder,
+                      queryBefore: query,
+                    });
                     setQuery(suggestion.text);
                     handleSearch(suggestion.text);
                   }}

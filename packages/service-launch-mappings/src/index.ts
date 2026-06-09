@@ -84,6 +84,7 @@ const BASE_SEARCH_CATEGORY_ALIASES: Record<string, string[]> = {
   ],
   nutritionist: ['nutrition', 'nutritionist', 'pet_nutritionist', 'nutritionist_center', 'nutritionist_solo'],
   nutrition: ['nutrition', 'nutritionist', 'pet_nutritionist', 'nutritionist_center', 'nutritionist_solo'],
+  shop: ['shop', 'pet_shop', 'pet_store', 'marketplace', 'ecommerce', 'seller', 'store', 'retail'],
 };
 
 export function getSearchCategoryAliases(category: string | null | undefined): string[] {
