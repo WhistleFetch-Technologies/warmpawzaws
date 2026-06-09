@@ -295,22 +295,51 @@ export function PackageTrackingDashboard({
     }
   };
 
-  // Open chat with vendor (uses latest booking with that vendor so chat is booking-scoped).
+  // Open chat on the package's canonical parent booking (one thread per purchase).
   const handleMessageVendor = async (pkg: CustomerPackage, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const res = await apiClient.get<{ booking: { bookingId: string; vendorName?: string; vendorPhoto?: string } | null }>(
-        `/customer/${encodeURIComponent(phone)}/latest-booking-by-vendor?vendorId=${encodeURIComponent(pkg.vendorId)}`
-      );
-      const booking = res?.booking;
-      if (!booking?.bookingId) {
+      let bookingId = '';
+      try {
+        const ses = (await apiClient.get(
+          `/packages/${encodeURIComponent(pkg.id)}/sessions`
+        )) as {
+          package?: {
+            package_booking_id?: string;
+            packageBookingId?: string;
+            booking_id?: string;
+            bookingId?: string;
+          };
+        };
+        bookingId = String(
+          ses?.package?.package_booking_id ??
+            ses?.package?.packageBookingId ??
+            ses?.package?.booking_id ??
+            ses?.package?.bookingId ??
+            ''
+        ).trim();
+      } catch (err) {
+        console.warn('[PackageTracking] failed to resolve parent bookingId via /packages/:id/sessions', err);
+      }
+
+      if (!bookingId) {
+        const res = await apiClient.get<{ booking: { bookingId: string; vendorName?: string; vendorPhoto?: string } | null }>(
+          `/customer/${encodeURIComponent(phone)}/latest-booking-by-vendor?vendorId=${encodeURIComponent(pkg.vendorId)}`
+        );
+        bookingId = String(res?.booking?.bookingId || '').trim();
+      }
+
+      if (!bookingId) {
         toast.info('Book a session with this vendor first to unlock chat.');
         return;
       }
+
+      const vendorName = pkg.vendorName;
+      const vendorPhoto = pkg.vendorPhoto;
       if (onOpenChat) {
-        onOpenChat(booking.bookingId, booking.vendorName, booking.vendorPhoto);
+        onOpenChat(bookingId, vendorName, vendorPhoto);
       } else {
-        onNavigate('open-chat', { bookingId: booking.bookingId, vendorName: booking.vendorName, vendorPhoto: booking.vendorPhoto });
+        onNavigate('open-chat', { bookingId, vendorName, vendorPhoto });
       }
     } catch (err) {
       console.error('Error opening chat:', err);

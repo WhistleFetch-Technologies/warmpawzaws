@@ -23,6 +23,7 @@ import { PublishCommand } from '@aws-sdk/client-sns';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
+import { resolveChatBookingId } from '../utils/chat-booking-resolve';
 
 export function registerChatEndpoints(app: Hono) {
   /**
@@ -430,34 +431,64 @@ export function registerChatEndpoints(app: Hono) {
   app.get("/chat/:bookingId/messages", async (c) => {
     try {
       const { bookingId } = c.req.param();
+      const chatBookingId = await resolveChatBookingId(bookingId);
 
-      console.log(`💬 [CHAT] Fetching messages for booking: ${bookingId}`);
+      console.log(`💬 [CHAT] Fetching messages for booking: ${bookingId} (thread: ${chatBookingId})`);
 
       // Validate UUID
-      if (!isValidUUID(bookingId)) {
-        return c.json({ success: true, messages: [], total: 0 });
+      if (!isValidUUID(chatBookingId)) {
+        return c.json({ success: true, messages: [], total: 0, chatBookingId });
       }
 
       // Get messages
       const messages = await query(
         `SELECT id, booking_id as "bookingId", sender_phone as "senderId", 
-                sender_type as "senderType", message as content, 
-                created_at as timestamp, is_read as "isRead"
+                sender_type as "senderType", sender_type as "sender_type",
+                message as content, message,
+                created_at as timestamp, created_at,
+                is_read as "isRead"
          FROM chat_messages
          WHERE booking_id = $1
          ORDER BY created_at ASC`,
-        [bookingId]
+        [chatBookingId]
       ).catch(() => ({ rows: [] }));
 
       return c.json({
         success: true,
         messages: messages.rows || [],
         total: messages.rows?.length || 0,
+        chatBookingId,
       });
     } catch (error: any) {
       console.error('Error fetching messages:', error);
       return c.json({ success: true, messages: [], total: 0 });
     }
+  });
+
+  /** Alias: GET /chat/booking/:bookingId/messages (same as /chat/:bookingId/messages) */
+  app.get("/chat/booking/:bookingId/messages", async (c) => {
+    const { bookingId } = c.req.param();
+    const chatBookingId = await resolveChatBookingId(bookingId);
+    if (!isValidUUID(chatBookingId)) {
+      return c.json({ success: true, messages: [], total: 0, chatBookingId });
+    }
+    const messages = await query(
+      `SELECT id, booking_id as "bookingId", sender_phone as "senderId",
+              sender_type as "senderType", sender_type as "sender_type",
+              message as content, message,
+              created_at as timestamp, created_at,
+              is_read as "isRead"
+       FROM chat_messages
+       WHERE booking_id = $1
+       ORDER BY created_at ASC`,
+      [chatBookingId]
+    ).catch(() => ({ rows: [] }));
+    return c.json({
+      success: true,
+      messages: messages.rows || [],
+      total: messages.rows?.length || 0,
+      chatBookingId,
+    });
   });
 
   /**
@@ -467,50 +498,135 @@ export function registerChatEndpoints(app: Hono) {
   app.post("/chat/:bookingId/send", async (c) => {
     try {
       const { bookingId } = c.req.param();
-      const { message, senderType, senderId } = await c.req.json();
+      const { message, senderType, senderId, senderPhone, senderName } = await c.req.json();
+      const chatBookingId = await resolveChatBookingId(bookingId);
 
-      console.log(`💬 [CHAT] Sending message to booking: ${bookingId}`);
+      console.log(`💬 [CHAT] Sending message to booking: ${bookingId} (thread: ${chatBookingId})`);
 
       if (!message) {
         return c.json({ error: 'message is required' }, 400);
       }
 
       // Validate UUID
-      if (!isValidUUID(bookingId)) {
+      if (!isValidUUID(chatBookingId)) {
         return c.json({ error: 'Invalid booking ID' }, 400);
       }
 
       // Verify booking exists
-      const bookings = await select('bookings', { id: bookingId });
+      const bookings = await select('bookings', { id: chatBookingId });
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
       }
 
+      const booking = bookings[0];
+      const effectiveSenderType = (senderType || 'customer').toLowerCase();
+      const phone = senderPhone || senderId || 'unknown';
+
       // Create message
       const newMessage = await insert('chat_messages', {
-        booking_id: bookingId,
-        sender_phone: senderId || 'unknown',
-        sender_type: senderType || 'vendor',
+        booking_id: chatBookingId,
+        sender_phone: phone,
+        sender_name: senderName || null,
+        sender_type: effectiveSenderType,
         message: message,
         message_type: 'text',
         is_read: false,
       }).catch((err) => {
         console.error('Error inserting message:', err);
-        // Return mock message if table doesn't exist
         return [{
           id: `msg_${Date.now()}`,
-          booking_id: bookingId,
-          sender_phone: senderId,
-          sender_type: senderType,
+          booking_id: chatBookingId,
+          sender_phone: phone,
+          sender_type: effectiveSenderType,
           message: message,
           created_at: new Date().toISOString(),
         }];
       });
 
+      if (effectiveSenderType === 'customer' && booking.vendor_id) {
+        try {
+          await insert('notifications', {
+            recipient_id: booking.vendor_id,
+            recipient_type: 'vendor',
+            notification_type: 'chat_message',
+            title: 'New chat message',
+            message: `${senderName || phone}: ${(message || '').substring(0, 80)}${(message || '').length > 80 ? '…' : ''}`,
+            channels: { email: false, sms: false, inApp: true, push: false },
+            is_read: false,
+          });
+        } catch (notifErr) {
+          console.warn('Failed to create vendor notification for chat message:', notifErr);
+        }
+      }
+
       return c.json({
         success: true,
         message: newMessage[0],
+        chatBookingId,
       });
+    } catch (error: any) {
+      console.error('Error sending message:', error);
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /** Alias: POST /chat/booking/:bookingId/send (delegates to /chat/:bookingId/send) */
+  app.post("/chat/booking/:bookingId/send", async (c) => {
+    try {
+      const { bookingId } = c.req.param();
+      const { message, senderType, senderId, senderPhone, senderName } = await c.req.json();
+      const chatBookingId = await resolveChatBookingId(bookingId);
+
+      if (!message) {
+        return c.json({ error: 'message is required' }, 400);
+      }
+      if (!isValidUUID(chatBookingId)) {
+        return c.json({ error: 'Invalid booking ID' }, 400);
+      }
+
+      const bookings = await select('bookings', { id: chatBookingId });
+      if (bookings.length === 0) {
+        return c.json({ error: 'Booking not found' }, 404);
+      }
+
+      const booking = bookings[0];
+      const effectiveSenderType = (senderType || 'customer').toLowerCase();
+      const phone = senderPhone || senderId || 'unknown';
+
+      const newMessage = await insert('chat_messages', {
+        booking_id: chatBookingId,
+        sender_phone: phone,
+        sender_name: senderName || null,
+        sender_type: effectiveSenderType,
+        message: message,
+        message_type: 'text',
+        is_read: false,
+      }).catch(() => [{
+        id: `msg_${Date.now()}`,
+        booking_id: chatBookingId,
+        sender_phone: phone,
+        sender_type: effectiveSenderType,
+        message: message,
+        created_at: new Date().toISOString(),
+      }]);
+
+      if (effectiveSenderType === 'customer' && booking.vendor_id) {
+        try {
+          await insert('notifications', {
+            recipient_id: booking.vendor_id,
+            recipient_type: 'vendor',
+            notification_type: 'chat_message',
+            title: 'New chat message',
+            message: `${senderName || phone}: ${(message || '').substring(0, 80)}${(message || '').length > 80 ? '…' : ''}`,
+            channels: { email: false, sms: false, inApp: true, push: false },
+            is_read: false,
+          });
+        } catch (notifErr) {
+          console.warn('Failed to create vendor notification for chat message:', notifErr);
+        }
+      }
+
+      return c.json({ success: true, message: newMessage[0], chatBookingId });
     } catch (error: any) {
       console.error('Error sending message:', error);
       return c.json({ error: error.message }, 500);
@@ -535,8 +651,9 @@ export function registerChatEndpoints(app: Hono) {
         });
       }
 
-      // Get booking
-      const bookings = await select('bookings', { id: bookingId });
+      // Get booking (resolve package session → parent thread)
+      const chatBookingId = await resolveChatBookingId(bookingId);
+      const bookings = await select('bookings', { id: chatBookingId });
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
       }
@@ -568,7 +685,7 @@ export function registerChatEndpoints(app: Hono) {
         `SELECT * FROM chat_messages
          WHERE booking_id = $1
          ORDER BY created_at ASC`,
-        [bookingId]
+        [chatBookingId]
       ).catch(() => ({ rows: [] })); // Graceful fallback if table doesn't exist
 
       // ✅ CRITICAL FIX: Generate presigned URLs for file/image messages
@@ -608,6 +725,7 @@ export function registerChatEndpoints(app: Hono) {
       return c.json({
         success: true,
         messages: enrichedMessages,
+        chatBookingId,
         chatAvailable: isChatAvailable, // ✅ CRITICAL FIX: Include chat availability
         booking: {
           id: booking.id,
@@ -636,6 +754,7 @@ export function registerChatEndpoints(app: Hono) {
   app.post("/chat/booking/:bookingId/message", async (c) => {
     try {
       const { bookingId } = c.req.param();
+      const chatBookingId = await resolveChatBookingId(bookingId);
       const { senderPhone, senderName, senderType, message, messageType, fileId, fileName } = await c.req.json();
 
       if (!senderPhone || !message) {
@@ -643,7 +762,7 @@ export function registerChatEndpoints(app: Hono) {
       }
 
       // Verify booking exists
-      const bookings = await select('bookings', { id: bookingId });
+      const bookings = await select('bookings', { id: chatBookingId });
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
       }
@@ -652,7 +771,7 @@ export function registerChatEndpoints(app: Hono) {
 
       // Create message (assuming chat_messages table exists)
       const newMessage = await insert('chat_messages', {
-        booking_id: bookingId,
+        booking_id: chatBookingId,
         sender_phone: senderPhone,
         sender_name: senderName || null,
         sender_type: senderType || 'customer',
@@ -709,6 +828,7 @@ export function registerChatEndpoints(app: Hono) {
       return c.json({
         success: true,
         message: newMessage[0],
+        chatBookingId,
       });
     } catch (error: any) {
       console.error('Error sending message:', error);
@@ -753,13 +873,14 @@ export function registerChatEndpoints(app: Hono) {
   app.post("/chat/mark-read/:bookingId", async (c) => {
     try {
       const { bookingId } = c.req.param();
+      const chatBookingId = await resolveChatBookingId(bookingId);
       const body = await c.req.json().catch(() => ({})) as { vendorId?: string };
-      if (!isValidUUID(bookingId)) {
+      if (!isValidUUID(chatBookingId)) {
         return c.json({ success: true, message: 'No messages to mark' });
       }
       await query(
         `UPDATE chat_messages SET is_read = true, read_at = COALESCE(read_at, NOW()) WHERE booking_id = $1 AND is_read = false`,
-        [bookingId]
+        [chatBookingId]
       ).catch(() => ({ rowCount: 0 }));
       return c.json({ success: true, message: 'Messages marked as read' });
     } catch (error: any) {
@@ -781,8 +902,10 @@ export function registerChatEndpoints(app: Hono) {
         return c.json({ error: 'bookingId, senderPhone, and message are required' }, 400);
       }
 
+      const chatBookingId = await resolveChatBookingId(bookingId);
+
       // Verify booking exists
-      const bookings = await select('bookings', { id: bookingId });
+      const bookings = await select('bookings', { id: chatBookingId });
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
       }
@@ -791,7 +914,7 @@ export function registerChatEndpoints(app: Hono) {
 
       // Create message
       const newMessage = await insert('chat_messages', {
-        booking_id: bookingId,
+        booking_id: chatBookingId,
         sender_phone: senderPhone,
         sender_name: senderName || null,
         sender_type: senderType || 'customer',
@@ -842,8 +965,10 @@ export function registerChatEndpoints(app: Hono) {
         return c.json({ error: 'bookingId, senderPhone, and message are required' }, 400);
       }
 
+      const chatBookingId = await resolveChatBookingId(bookingId);
+
       // Verify booking exists
-      const bookings = await select('bookings', { id: bookingId });
+      const bookings = await select('bookings', { id: chatBookingId });
       if (bookings.length === 0) {
         return c.json({ error: 'Booking not found' }, 404);
       }
@@ -852,7 +977,7 @@ export function registerChatEndpoints(app: Hono) {
 
       // Create message
       const newMessage = await insert('chat_messages', {
-        booking_id: bookingId,
+        booking_id: chatBookingId,
         sender_phone: senderPhone,
         sender_name: senderName || null,
         sender_type: senderType || 'customer',
@@ -1002,6 +1127,8 @@ export function registerChatEndpoints(app: Hono) {
         return c.json({ error: 'file, bookingId, and senderPhone are required' }, 400);
       }
 
+      const chatBookingId = await resolveChatBookingId(bookingId);
+
       // Upload to S3 (using storage endpoint logic)
       const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
       const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
@@ -1013,7 +1140,7 @@ export function registerChatEndpoints(app: Hono) {
       
       const timestamp = Date.now();
       const fileExt = file.name.split('.').pop();
-      const fileKey = `chat/${bookingId}/${timestamp}_${file.name}`;
+      const fileKey = `chat/${chatBookingId}/${timestamp}_${file.name}`;
 
       const arrayBuffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
@@ -1043,7 +1170,7 @@ export function registerChatEndpoints(app: Hono) {
       let newMessage: any[];
       try {
         newMessage = await insert('chat_messages', {
-          booking_id: bookingId,
+          booking_id: chatBookingId,
           sender_phone: senderPhone,
           sender_name: senderName || null,
           sender_type: senderType || 'customer',
@@ -1060,7 +1187,7 @@ export function registerChatEndpoints(app: Hono) {
         try {
           // Retry without file_type and file_size (columns may not exist)
           newMessage = await insert('chat_messages', {
-            booking_id: bookingId,
+            booking_id: chatBookingId,
             sender_phone: senderPhone,
             sender_name: senderName || null,
             sender_type: senderType || 'customer',
@@ -1075,7 +1202,7 @@ export function registerChatEndpoints(app: Hono) {
           try {
             // Minimal insert - just the essential fields
             newMessage = await insert('chat_messages', {
-              booking_id: bookingId,
+              booking_id: chatBookingId,
               sender_phone: senderPhone,
               sender_type: senderType || 'customer',
               message: messageText,
@@ -1087,7 +1214,7 @@ export function registerChatEndpoints(app: Hono) {
             console.error('[CHAT] All insert attempts failed:', insertErr3?.message);
             newMessage = [{
               id: `msg_${Date.now()}`,
-              booking_id: bookingId,
+              booking_id: chatBookingId,
               file_id: fileKey,
               file_name: file.name,
             }];
