@@ -2,8 +2,6 @@
  * Trigger auto-shipment creation after payment success (e-commerce, pharmacy, meal).
  * Fire-and-forget from Razorpay verify/webhook handlers.
  */
-import { shipmentPincodeFieldsForInsert } from './shipment-pincodes';
-
 export async function triggerAutoShipment(orderId: string, orderType: string): Promise<void> {
   console.log(`[AUTO-SHIPMENT] Triggering for order ${orderId}, type: ${orderType}`);
 
@@ -82,8 +80,8 @@ export async function triggerAutoShipment(orderId: string, orderType: string): P
     );
     const autoShipmentEnabled =
       settingsResult.rows.length > 0
-        ? (settingsResult.rows[0].setting_value as { enabled?: boolean })?.enabled === true
-        : false;
+        ? (settingsResult.rows[0].setting_value as { enabled?: boolean })?.enabled !== false
+        : true;
 
     if (!autoShipmentEnabled) {
       console.log(`[AUTO-SHIPMENT] Auto-shipment disabled, skipping for ${orderId}`);
@@ -122,14 +120,11 @@ export async function triggerAutoShipment(orderId: string, orderType: string): P
       return;
     }
 
-    const vendors = vendorId ? await select('vendors', { id: vendorId }) : [];
-
     await insert('shipments', {
       order_id: orderId,
       logistics_partner: partner.partner_type,
       logistics_partner_id: partner.id,
       status: 'pending_creation',
-      ...shipmentPincodeFieldsForInsert(order, vendors[0]),
     });
 
     await update('orders', { id: orderId }, {

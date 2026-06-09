@@ -976,20 +976,6 @@ class VerifyPaymentHandler extends BaseHandler {
           [razorpay_payment_id, payment.id]
         );
 
-        let resolvedPaymentMethod: string | null = null;
-        try {
-          const { fetchRazorpayPaymentMethod } = await import('../../../utils/payments/razorpay-client');
-          resolvedPaymentMethod = await fetchRazorpayPaymentMethod(razorpay_payment_id);
-          if (resolvedPaymentMethod) {
-            await client.query(
-              `UPDATE payments SET payment_method = $1, updated_at = NOW() WHERE id = $2`,
-              [resolvedPaymentMethod, payment.id]
-            );
-          }
-        } catch (methodErr: any) {
-          console.warn('[PAYMENT-VERIFY] Could not resolve Razorpay payment method:', methodErr?.message || methodErr);
-        }
-
         // ✅ FIX: Handle pharmacy orders FIRST (before early return)
         if (pharmacyOrderId) {
           console.log('[PAYMENT-VERIFY] ✅ Processing pharmacy order payment:', {
@@ -1049,7 +1035,6 @@ class VerifyPaymentHandler extends BaseHandler {
             pharmacyOrderId: pharmacyOrderId,
             customerId: payment.customer_id,
             totalAmount: Number(payment.amount ?? 0),
-            paymentMethod: resolvedPaymentMethod || payment.payment_method || null,
           };
         }
 
@@ -1094,7 +1079,6 @@ class VerifyPaymentHandler extends BaseHandler {
             ecommerceOrderId: String(ecommerceOrderId),
             customerId: payment.customer_id,
             totalAmount: Number(payment.amount ?? 0),
-            paymentMethod: resolvedPaymentMethod || payment.payment_method || null,
           };
         }
 
@@ -1108,7 +1092,6 @@ class VerifyPaymentHandler extends BaseHandler {
             bookingId: null,
             customerId: payment.customer_id ?? null,
             totalAmount: Number(payment.amount ?? 0),
-            paymentMethod: resolvedPaymentMethod || payment.payment_method || null,
           };
         }
 
@@ -1271,7 +1254,6 @@ class VerifyPaymentHandler extends BaseHandler {
           bookingId: bookingId,
           customerId: customerIdOut,
           totalAmount: totalAmountOut,
-          paymentMethod: resolvedPaymentMethod || payment.payment_method || null,
           loyaltyBookingKind,
           loyaltyBookVetConsultationForPayment,
         };
@@ -1447,19 +1429,15 @@ class RazorpayWebhookHandler extends BaseHandler {
 
         paymentRecord = result.rows[0];
 
-        const { normalizeRazorpayPaymentMethod } = await import('../../../utils/payments/razorpay-client');
-        const webhookPaymentMethod = normalizeRazorpayPaymentMethod(paymentEntity?.method);
-
         // Update payment: mark completed, fill razorpay_payment_id if missing
         await client.query(
           `UPDATE payments SET 
             payment_status = 'completed',
             razorpay_payment_id = COALESCE(razorpay_payment_id, $1),
-            payment_method = COALESCE($3, payment_method),
             completed_at = COALESCE(completed_at, NOW()),
             updated_at = NOW()
           WHERE id = $2`,
-          [razorpayPaymentId, paymentRecord.id, webhookPaymentMethod]
+          [razorpayPaymentId, paymentRecord.id]
         );
 
         // Update booking if linked
@@ -1645,15 +1623,12 @@ class RazorpayWebhookHandler extends BaseHandler {
           }
         }
       });
-    } else if (
-      event === 'refund.created' ||
-      event === 'refund.processed' ||
-      event === 'refund.failed'
-    ) {
+    } else if (event === 'refund.created' || event === 'refund.processed') {
       const refund = payload_data.refund.entity;
       
+      // ✅ SQL: Get payment details to calculate refund status
       const { rows: paymentRows } = await query(
-        `SELECT id, booking_id, amount::text, payment_status, customer_id
+        `SELECT id, booking_id, amount, payment_status 
          FROM payments 
          WHERE razorpay_payment_id = $1`,
         [refund.payment_id]
@@ -1665,133 +1640,90 @@ class RazorpayWebhookHandler extends BaseHandler {
       }
 
       const payment = paymentRows[0];
-      const refundAmount = refund.amount / 100;
+      const refundAmount = refund.amount / 100; // Convert from paise
       const paymentAmount = parseFloat(payment.amount || '0');
 
+      // Calculate total refunded including this refund
       const { rows: refundedRows } = await query(
-        `SELECT COALESCE(SUM(refund_amount), 0) AS total_refunded 
+        `SELECT COALESCE(SUM(amount), 0) AS total_refunded 
          FROM refunds 
-         WHERE payment_id = $1::uuid
-           AND refund_status IN ('processed', 'processing', 'approved', 'completed')
-           AND (razorpay_refund_id IS NULL OR razorpay_refund_id <> $2)`,
-        [payment.id, refund.id]
+         WHERE payment_id = $1 
+           AND refund_status IN ('processed', 'processing', 'approved', 'completed')`,
+        [payment.id]
       );
 
       const totalRefunded = parseFloat(refundedRows[0]?.total_refunded || '0') + refundAmount;
-      const isFullRefund = totalRefunded >= paymentAmount - 0.01;
+      const isFullRefund = totalRefunded >= paymentAmount;
       
       const newPaymentStatus = isFullRefund 
         ? PaymentTransactionStatus.REFUNDED 
         : PaymentTransactionStatus.PARTIALLY_REFUNDED;
 
-      const webhookRefundStatus =
-        refund.status === 'processed' ? 'completed' : 'processing';
-
+      // ✅ SQL: Process refund in transaction
       await withTransaction(async (client) => {
-        const { rows: existingByRzId } = await client.query(
+        // Create or update refund record
+        const { rows: existingRefund } = await client.query(
           `SELECT id FROM refunds WHERE razorpay_refund_id = $1`,
           [refund.id]
         );
 
-        if (existingByRzId.length > 0) {
+        if (existingRefund.length === 0) {
+          // Create new refund record
+          await client.query(
+            `INSERT INTO refunds (
+              payment_id, booking_id, amount, reason, refund_type,
+              refund_status, razorpay_refund_id, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
+            [
+              payment.id,
+              payment.booking_id || null,
+              refundAmount,
+              refund.notes?.reason || null,
+              isFullRefund ? 'full' : 'partial',
+              refund.status === 'processed' ? 'processed' : 'processing',
+              refund.id,
+            ]
+          );
+        } else {
+          // Update existing refund record
           await client.query(
             `UPDATE refunds 
              SET refund_status = $1, 
-                 refund_amount = $2,
-                 processed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE processed_at END
+                 amount = $2,
+                 updated_at = NOW()
              WHERE razorpay_refund_id = $3`,
-            [webhookRefundStatus, refundAmount, refund.id]
+            [
+              refund.status === 'processed' ? 'processed' : 'processing',
+              refundAmount,
+              refund.id,
+            ]
           );
-        } else {
-          const { rows: pendingRow } = await client.query(
-            `SELECT id FROM refunds
-             WHERE payment_id = $1::uuid
-               AND razorpay_refund_id IS NULL
-               AND refund_status IN ('pending', 'processing', 'approved')
-             ORDER BY requested_at DESC NULLS LAST
-             LIMIT 1`,
-            [payment.id]
-          );
-
-          if (pendingRow.length > 0) {
-            await client.query(
-              `UPDATE refunds SET
-                 razorpay_refund_id = $1,
-                 refund_status = $2,
-                 refund_amount = $3,
-                 processed_at = CASE WHEN $2 = 'completed' THEN NOW() ELSE processed_at END
-               WHERE id = $4::uuid`,
-              [refund.id, webhookRefundStatus, refundAmount, pendingRow[0].id]
-            );
-          } else {
-            await client.query(
-              `INSERT INTO refunds (
-                payment_id, booking_id, customer_id, refund_amount, refund_reason,
-                refund_status, refund_method, razorpay_refund_id, requested_at, processed_at
-              ) VALUES ($1, $2, $3, $4, $5, $6, 'original', $7, NOW(), NOW())`,
-              [
-                payment.id,
-                payment.booking_id || null,
-                payment.customer_id || null,
-                refundAmount,
-                refund.notes?.reason || 'Razorpay webhook refund',
-                webhookRefundStatus,
-                refund.id,
-              ]
-            );
-          }
         }
 
+        // ✅ Update payments table payment_status
         await client.query(
-          `UPDATE payments SET payment_status = $1, updated_at = NOW() WHERE id = $2::uuid`,
+          `UPDATE payments 
+           SET payment_status = $1, updated_at = NOW()
+           WHERE id = $2`,
           [newPaymentStatus, payment.id]
         );
 
+        // ✅ Update booking payment status if booking exists
         if (payment.booking_id) {
           const bookingPaymentStatus = isFullRefund 
             ? BookingPaymentStatus.REFUNDED 
             : BookingPaymentStatus.PARTIAL;
           
           await client.query(
-            `UPDATE bookings SET payment_status = $1, updated_at = NOW() WHERE id = $2::uuid`,
+            `UPDATE bookings 
+             SET payment_status = $1, updated_at = NOW()
+             WHERE id = $2`,
             [bookingPaymentStatus, payment.booking_id]
           );
         }
       });
 
       console.log(`[RAZORPAY-WEBHOOK] ✅ Refund ${event} processed: ${refund.id}, Payment status: ${newPaymentStatus}`);
-
-      try {
-        const { reconcileMealRefundCaseFromRefundRow } = await import(
-          '../../../utils/meal-refund-case-execution'
-        );
-        const webhookStatus =
-          event === 'refund.failed'
-            ? ('failed' as const)
-            : refund.status === 'processed'
-              ? ('completed' as const)
-              : ('processing' as const);
-        const pendingUpd = await query(
-          `SELECT id::text FROM refunds
-           WHERE razorpay_refund_id = $1 OR (payment_id = $2::uuid AND razorpay_refund_id IS NULL)
-           ORDER BY requested_at DESC NULLS LAST LIMIT 1`,
-          [refund.id, payment.id],
-        );
-        const refundRowId = pendingUpd.rows?.[0]?.id
-          ? String(pendingUpd.rows[0].id)
-          : undefined;
-        await reconcileMealRefundCaseFromRefundRow({
-          refundRowId,
-          razorpayRefundId: refund.id,
-          webhookStatus,
-          failureReason:
-            event === 'refund.failed'
-              ? String(refund.error_description || refund.error_reason || 'Razorpay refund failed')
-              : undefined,
-        });
-      } catch (mealReconcileErr) {
-        console.error('[RAZORPAY-WEBHOOK] meal_refund_case reconcile failed:', mealReconcileErr);
-      }
     }
 
     return this.success({ message: 'Webhook processed' });

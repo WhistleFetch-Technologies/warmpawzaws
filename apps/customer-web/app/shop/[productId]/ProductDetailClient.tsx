@@ -257,8 +257,7 @@ export default function ProductDetailClient() {
           resolvedProductId: resolvedId,
           rowKeys: p && typeof p === 'object' ? Object.keys(p) : [],
         });
-        const compareAt = resolveProductCompareAtPrice(p as Record<string, unknown>);
-        const sellingPrice = resolveProductSellingPrice(p as Record<string, unknown>, compareAt);
+        const compareOrOriginal = p.original_price ?? p.compare_at_price;
         const rc = Number(p.review_count ?? 0) || 0;
         const rawRating = p.rating != null ? Number(p.rating) : NaN;
         const rating =
@@ -273,8 +272,11 @@ export default function ProductDetailClient() {
                 ? displaySpecValue(p.description)
                 : '',
           stock: p.stock_quantity || p.stock || 0,
-          price: sellingPrice,
-          original_price: listPriceForDiscountDisplay(sellingPrice, compareAt),
+          price: parseFloat(p.price) || 0,
+          original_price:
+            compareOrOriginal != null && String(compareOrOriginal) !== ''
+              ? parseFloat(String(compareOrOriginal))
+              : undefined,
           rating,
           review_count: rc,
           images: ensureImageUrls(p.images),
@@ -342,6 +344,7 @@ export default function ProductDetailClient() {
   // ============================================================================
   // ACTIONS
   // ============================================================================
+
 
   const matchedSku = useMemo(() => {
     if (productSkus.length === 0) return null;
@@ -462,15 +465,14 @@ export default function ProductDetailClient() {
 
     setAddingToCart(true);
     try {
-      if (isInCart) persistCartQuantity(quantity);
-      else mergeLineIntoLocalCart();
+      mergeLineIntoLocalCart();
     } finally {
       setAddingToCart(false);
     }
   };
 
   const buyNow = () => {
-    if (!persistCartQuantity(quantity)) return;
+    if (!mergeLineIntoLocalCart()) return;
     router.push('/cart?buynow=1');
   };
 
@@ -538,7 +540,7 @@ export default function ProductDetailClient() {
           <h2 className="text-xl font-bold text-slate-900 mb-2">Shop coming soon</h2>
           <p className="text-slate-500 mb-6">We&apos;re preparing the Warmpawz marketplace for customers.</p>
           <button
-            onClick={() => nav.backOr('/')}
+            onClick={() => goBackOrHome(router)}
             className="px-6 py-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl font-semibold hover:shadow-lg"
           >
             Go Back
@@ -584,7 +586,7 @@ export default function ProductDetailClient() {
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <button
-              onClick={() => nav.backOr('/')}
+              onClick={() => goBackOrHome(router)}
               className="p-2 hover:bg-slate-100 rounded-xl"
             >
               <ArrowLeft className="w-5 h-5 text-slate-600" />
@@ -633,7 +635,7 @@ export default function ProductDetailClient() {
             <div className="aspect-square bg-white rounded-2xl border border-slate-100 overflow-hidden flex items-center justify-center relative">
               <button
                 type="button"
-                onClick={() => nav.backOr('/')}
+                onClick={() => goBackOrHome(router)}
                 className="absolute top-3 left-3 z-20 flex h-11 w-11 min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-slate-200/90 bg-white/95 text-slate-900 shadow-md backdrop-blur-sm touch-manipulation active:scale-[0.98] transition-transform hover:bg-white lg:hidden"
                 aria-label="Go back"
               >
@@ -788,14 +790,14 @@ export default function ProductDetailClient() {
               <div className="flex items-center gap-4">
                 <div className="flex items-center border border-slate-200 rounded-xl overflow-hidden">
                   <button
-                    onClick={() => changeQuantity(-1)}
+                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
                     className="p-3 hover:bg-slate-100 transition-colors"
                   >
                     <Minus className="w-5 h-5 text-slate-600" />
                   </button>
                   <span className="w-14 text-center font-semibold text-slate-900">{quantity}</span>
                   <button
-                    onClick={() => changeQuantity(1)}
+                    onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
                     className="p-3 hover:bg-slate-100 transition-colors"
                     disabled={quantity >= displayStock}
                   >
@@ -1029,12 +1031,14 @@ export default function ProductDetailClient() {
 // ============================================================================
 
 function RecommendedProductCard({ product }: { product: RecommendedProduct }) {
-  const nav = useCustomerNavigation();
-  const discount = getProductDiscountPercent(product.price, product.original_price);
+  const router = useRouter();
+  const discount = product.original_price && product.original_price > product.price
+    ? Math.round(((product.original_price - product.price) / product.original_price) * 100)
+    : 0;
 
   return (
     <button
-      onClick={() => nav.goToProduct(product.id)}
+      onClick={() => router.push(`/shop/${product.id}`)}
       className="bg-white rounded-xl border border-slate-100 p-4 text-left hover:shadow-lg transition-all"
     >
       <div className="aspect-square bg-slate-50 rounded-lg flex items-center justify-center text-4xl mb-3 relative">

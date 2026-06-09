@@ -13,7 +13,10 @@ param(
     [string]$AlternateDomain = "dev.customer.warmpawz.com",
     [string]$ApiGatewayEndpoint = "https://z0b3obweb6.execute-api.ap-south-1.amazonaws.com",
     [switch]$DeployOnly,
-    [switch]$SkipInvalidation
+    [switch]$SkipInvalidation,
+    # Shop/cart/wishlist/orders ON by default for dev; pass -CustomerEcommerceDisabled to turn off.
+    [switch]$CustomerEcommerceEnabled,
+    [switch]$CustomerEcommerceDisabled
 )
 
 $ErrorActionPreference = "Stop"
@@ -89,9 +92,11 @@ if (!(Test-Path $customerWebDir)) {
 }
 
 Set-Location $customerWebDir
+$customerEcommerceJs = if ($CustomerEcommerceDisabled) { 'false' } else { 'true' }
 
 Write-Host "Step 3: Building customer-web..." -ForegroundColor Yellow
 Write-Host "  Directory: $customerWebDir" -ForegroundColor Gray
+Write-Host "  Customer ecommerce: $customerEcommerceJs" -ForegroundColor Gray
 
 # Build the app (skip if DeployOnly is set and dist exists)
 if ($DeployOnly -and (Test-Path "dist")) {
@@ -108,10 +113,10 @@ if ($DeployOnly -and (Test-Path "dist")) {
     $env:NODE_ENV = "production"
     $env:NEXT_PUBLIC_ENVIRONMENT = "development"
     $env:NEXT_PUBLIC_API_BASE_URL = $ApiGatewayEndpoint
-    $env:NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED = "true"
+    $env:NEXT_PUBLIC_CUSTOMER_ECOMMERCE_ENABLED = $customerEcommerceJs
     # Run via cmd so Next.js warnings on stderr do not trigger Stop on NativeCommandError
     $buildProc = Start-Process -FilePath "cmd.exe" `
-        -ArgumentList "/c", "set NEXT_PUBLIC_ENVIRONMENT=development&& set NEXT_PUBLIC_API_BASE_URL=$ApiGatewayEndpoint&& set NEXT_PUBLIC_CUSTOMER_MEAL_PLANS_ENABLED=true&& npm run build" `
+        -ArgumentList "/c", "npm run build" `
         -WorkingDirectory $customerWebDir `
         -Wait -PassThru -NoNewWindow
     if ($buildProc.ExitCode -ne 0) {
@@ -135,20 +140,17 @@ $runtimeConfigPath = Join-Path $distPath "runtime-config.js"
 
 $runtimeConfigContent = (@'
 // Runtime Configuration for Warmpawz customer-web
-// Merges into layout inline config (do not replace — stale partial files broke meal plans on dev).
+// Injected at deployment time with dev API Gateway endpoint
 (function() {
-  window.__WARMPAWZ_RUNTIME_CONFIG__ = Object.assign(
-    window.__WARMPAWZ_RUNTIME_CONFIG__ || {},
-    {
-      apiBaseUrl: "__API_GATEWAY_ENDPOINT__",
-      uatMode: true,
-      environment: "development",
-      customerMealPlansEnabled: true
-    }
-  );
+  window.__WARMPAWZ_RUNTIME_CONFIG__ = {
+    apiBaseUrl: "__API_GATEWAY_ENDPOINT__",
+    uatMode: true,
+    environment: 'development',
+    customerEcommerceEnabled: __CUSTOMER_ECOMMERCE_ENABLED__
+  };
   console.log('Runtime config loaded:', window.__WARMPAWZ_RUNTIME_CONFIG__);
 })();
-'@).Replace('__API_GATEWAY_ENDPOINT__', $ApiGatewayEndpoint)
+'@).Replace('__API_GATEWAY_ENDPOINT__', $ApiGatewayEndpoint).Replace('__CUSTOMER_ECOMMERCE_ENABLED__', $customerEcommerceJs)
 
 Set-Content -Path $runtimeConfigPath -Value $runtimeConfigContent -Encoding UTF8
 Write-Host "  ✅ runtime-config.js created" -ForegroundColor Green
@@ -156,7 +158,7 @@ Write-Host "  ✅ runtime-config.js created" -ForegroundColor Green
 # Inject inline config into HTML files
 Write-Host "  Injecting inline config into HTML files..." -ForegroundColor Gray
 $htmlFiles = Get-ChildItem -Path $distPath -Filter "*.html" -Recurse
-$inlineConfig = "window.__WARMPAWZ_RUNTIME_CONFIG__ = Object.assign(window.__WARMPAWZ_RUNTIME_CONFIG__ || {}, { apiBaseUrl: '$ApiGatewayEndpoint', uatMode: true, environment: 'development', customerMealPlansEnabled: true });"
+$inlineConfig = "window.__WARMPAWZ_RUNTIME_CONFIG__ = { apiBaseUrl: '$ApiGatewayEndpoint', uatMode: true, environment: 'development', customerEcommerceEnabled: $customerEcommerceJs };"
 $htmlCount = 0
 
 foreach ($htmlFile in $htmlFiles) {
