@@ -359,6 +359,15 @@ export function registerEcommerceEndpoints(app: Hono) {
         }
       }
 
+      const bodyCustomerId = String(orderData.customerId || orderData.customer_id || '').trim();
+      if (!customerId && bodyCustomerId) {
+        customerId = bodyCustomerId;
+      }
+
+      if (!customerId) {
+        return c.json({ error: 'Could not resolve customer for this order' }, 400);
+      }
+
       // Calculate totals
       let subtotal = 0;
       const orderItems = [];
@@ -394,6 +403,10 @@ export function registerEcommerceEndpoints(app: Hono) {
         } catch (e) {
           console.error('Error fetching product:', e);
         }
+      }
+
+      if (orderItems.length === 0) {
+        return c.json({ error: 'No valid products found for this order' }, 400);
       }
 
       // Create order
@@ -504,39 +517,38 @@ export function registerEcommerceEndpoints(app: Hono) {
         shipping_state: normalizedAddress.state || '',
         shipping_pincode: normalizedAddress.pincode || '',
         shipping_phone: customerPhone,
-        metadata: JSON.stringify(orderMetadata),
+        metadata: orderMetadata,
+        order_type: 'ecommerce',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
 
       if (taxBreakdown) {
         order.tax_breakdown =
-          typeof taxBreakdown === 'string' ? taxBreakdown : JSON.stringify(taxBreakdown);
+          typeof taxBreakdown === 'string'
+            ? (() => {
+                try {
+                  return JSON.parse(taxBreakdown);
+                } catch {
+                  return taxBreakdown;
+                }
+              })()
+            : taxBreakdown;
       }
       if (cgstAmount != null) order.cgst_amount = cgstAmount;
       if (sgstAmount != null) order.sgst_amount = sgstAmount;
       if (igstAmount != null) order.igst_amount = igstAmount;
 
-      try {
-        await insert('orders', order);
-        for (const item of orderItems) {
-          await insert('order_items', {
-            order_id: orderId,
-            product_id: item.product_id,
-            name: item.product_name || 'Product',
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            total_price: item.total,
-          });
-        }
-      } catch (e: any) {
-        // Handle table not existing or other errors
-        if (e.message?.includes('relation "orders" does not exist') || e.code === '42P01') {
-          // Create simple order record
-          console.log('Orders table not found, returning mock order');
-        } else {
-          throw e;
-        }
+      await insert('orders', order);
+      for (const item of orderItems) {
+        await insert('order_items', {
+          order_id: orderId,
+          product_id: item.product_id,
+          name: item.product_name || 'Product',
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          total_price: item.total,
+        });
       }
 
       return c.json({

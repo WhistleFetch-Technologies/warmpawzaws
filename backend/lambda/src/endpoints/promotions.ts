@@ -372,13 +372,31 @@ export function registerPromotionEndpoints(app: Hono) {
       let paramIndex = 2;
 
       if (serviceType !== 'all') {
-        promotionsQuery += ` AND ($${paramIndex} = ANY(applicable_services) OR applicable_services IS NULL)`;
+        // applicable_services is JSONB, not a PG array — ANY() fails with "requires array on right side"
+        promotionsQuery += ` AND (
+          applicable_services IS NULL
+          OR EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(
+              CASE WHEN jsonb_typeof(applicable_services) = 'array' THEN applicable_services ELSE '[]'::jsonb END
+            ) AS svc(val)
+            WHERE svc.val = $${paramIndex}
+               OR ($${paramIndex} IN ('product', 'shop') AND svc.val IN ('product', 'shop', 'ecom', 'ecommerce'))
+          )
+        )`;
         params.push(serviceType);
         paramIndex++;
       }
 
       if (vendorRoleId) {
-        promotionsQuery += ` AND ($${paramIndex} = ANY(applicable_roles) OR applicable_roles IS NULL)`;
+        promotionsQuery += ` AND (
+          applicable_roles IS NULL
+          OR EXISTS (
+            SELECT 1 FROM jsonb_array_elements_text(
+              CASE WHEN jsonb_typeof(applicable_roles) = 'array' THEN applicable_roles ELSE '[]'::jsonb END
+            ) AS role(val)
+            WHERE role.val = $${paramIndex}
+          )
+        )`;
         params.push(vendorRoleId);
         paramIndex++;
       }

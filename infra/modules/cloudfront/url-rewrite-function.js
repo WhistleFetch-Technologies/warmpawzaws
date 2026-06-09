@@ -50,6 +50,8 @@ function handler(event) {
     { pattern: /^\/boarding\/[^/]+$/, rewrite: '/boarding/placeholder.html' },
     { pattern: /^\/walker\/[^/]+$/, rewrite: '/walker/placeholder.html' },
     { pattern: /^\/nutritionist\/[^/]+$/, rewrite: '/nutritionist/placeholder.html' },
+    // Shop product detail — static export only builds /shop/placeholder; real ids hydrate client-side.
+    { pattern: /^\/shop\/[^/]+$/, rewrite: '/shop/placeholder.html' },
   ];
 
   for (var i = 0; i < dynamicRoutes.length; i++) {

@@ -97,6 +97,7 @@ export async function markOrderShippedByVendor(input: MarkShippedInput): Promise
     fulfillment_type: 'vendor',
     tracking_provider: 'aftership',
     status: 'shipped',
+    shipment_status: 'in_transit',
     shipped_at: now,
     updated_at: now,
   };

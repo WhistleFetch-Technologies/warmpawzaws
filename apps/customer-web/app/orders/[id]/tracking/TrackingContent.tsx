@@ -8,6 +8,7 @@ import { Key, Eye, EyeOff, Copy, Check, Phone, User, AlertCircle, Package } from
 import { toast } from 'sonner';
 import { isCustomerEcommerceEnabled } from '@/lib/customer-ecommerce-flag';
 import { goBackOrReplace } from '@/lib/go-back-or-replace';
+import { resolveOrderIdFromLocation } from '@/lib/resolve-order-id';
 
 // ============================================================================
 // TYPES
@@ -51,7 +52,7 @@ interface TrackingInfo {
 export default function TrackingContent() {
   const params = useParams();
   const router = useRouter();
-  const orderId = params.id as string;
+  const orderId = resolveOrderIdFromLocation(params.id as string);
 
   // Marketplace is hidden until launch — also block deep-linked shop-order tracking URLs.
   if (!isCustomerEcommerceEnabled()) {

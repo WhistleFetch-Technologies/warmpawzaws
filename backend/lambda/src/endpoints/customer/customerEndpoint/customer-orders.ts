@@ -343,6 +343,15 @@ class CreateCustomerOrderHandler extends BaseHandler {
 // GET /customer/orders - List all orders for customer
 // ============================================================================
 
+/** Dev/prod products.images JSONB — image_url column does not exist on RDS. */
+const SQL_PRODUCT_IMAGE_SELECT = `CASE
+  WHEN p.images IS NOT NULL
+   AND jsonb_typeof(p.images) = 'array'
+   AND jsonb_array_length(p.images) > 0
+  THEN p.images->>0
+  ELSE NULL
+END AS product_image`;
+
 class GetCustomerOrdersHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     try {
@@ -371,7 +380,6 @@ class GetCustomerOrdersHandler extends BaseHandler {
           o.shipping_amount,
           o.tax_amount,
           o.payment_method,
-          o.coupon_code,
           o.delivered_at,
           o.total_amount AS final_amount,
           o.order_status AS status,
@@ -430,7 +438,7 @@ class GetCustomerOrdersHandler extends BaseHandler {
           oi.*,
           s.name as service_name,
           p.name as product_name,
-          p.image_url AS product_image
+          ${SQL_PRODUCT_IMAGE_SELECT}
         FROM order_items oi
         LEFT JOIN services s ON oi.service_id = s.id
         LEFT JOIN products p ON oi.product_id = p.id
@@ -485,6 +493,7 @@ class GetCustomerOrdersHandler extends BaseHandler {
           items: itemsByOrder[order.id] || [],
           tracking,
           tracking_number: tracking?.trackingNumber || order.tracking_number || null,
+          tracking_url: tracking?.trackingUrl || order.shipment_tracking_url || null,
         };
       });
 
@@ -568,7 +577,7 @@ class GetOrderDetailsHandler extends BaseHandler {
           s.description as service_description,
           p.name as product_name,
           p.description as product_description,
-          p.image_url as product_image
+          ${SQL_PRODUCT_IMAGE_SELECT}
         FROM order_items oi
         LEFT JOIN services s ON oi.service_id = s.id
         LEFT JOIN products p ON oi.product_id = p.id

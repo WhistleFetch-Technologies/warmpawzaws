@@ -266,7 +266,7 @@ export function CheckoutProvider({ phone, children }: CheckoutProviderProps) {
       syncStepToUrl('payment');
       return;
     }
-    router.push('/cart');
+    router.replace('/cart');
   }, [step, syncStepToUrl, router]);
 
   const selectAddress = useCallback((addr: DeliveryAddress) => {
