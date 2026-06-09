@@ -13,8 +13,12 @@
  */
 
 import { Hono } from 'hono';
-import { select, query } from '../../../database/rds-connection';
+import { select, query, insert } from '../../../database/rds-connection';
 import { triggerAutoShipment } from '../../../utils/logistics/trigger-auto-shipment';
+import {
+  bodyContainsTrackingFields,
+  getShipmentTrackingLockedError,
+} from '../../../utils/logistics/shipment-tracking';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
@@ -27,6 +31,27 @@ function resolveOrderCancellationReason(body: Record<string, unknown>): string |
   if (raw == null) return null;
   const trimmed = String(raw).trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function resolveStatusUpdateNotes(body: Record<string, unknown>): string | null {
+  const raw = body.notes;
+  if (raw == null) return null;
+  const trimmed = String(raw).trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+async function insertVendorOrderStatusHistory(
+  orderId: string,
+  status: string,
+  notes?: string | null
+): Promise<void> {
+  await insert('order_status_history', {
+    order_id: orderId,
+    status,
+    notes: notes || null,
+    changed_by_type: 'vendor',
+    created_at: new Date().toISOString(),
+  });
 }
 
 // ============================================================================
@@ -445,6 +470,13 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       }
 
       const currentStatus = existingOrder.rows[0].order_status;
+
+      if (bodyContainsTrackingFields(body)) {
+        const lockedError = getShipmentTrackingLockedError(currentStatus);
+        if (lockedError) {
+          return c.json({ error: lockedError }, 409);
+        }
+      }
       
       // Validate transitions
       const allowedTransitions: Record<string, string[]> = {
@@ -463,27 +495,24 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         }, 400);
       }
 
+      if (status === 'shipped') {
+        return c.json(
+          {
+            error:
+              'Use POST /vendor/:vendorId/orders/:orderId/mark-shipped to mark orders as shipped with tracking details.',
+          },
+          409
+        );
+      }
+
+      const statusNotes = resolveStatusUpdateNotes(body);
+
       // Build update query
       const updates: string[] = ['order_status = $1', 'updated_at = NOW()'];
       const params: any[] = [status, orderId, vendorId];
       let paramIndex = 4;
 
-      // Add tracking number for shipped status
-      if (status === 'shipped') {
-        if (!tracking_number) {
-          return c.json({ error: 'Tracking number is required when marking as shipped' }, 400);
-        }
-        updates.push(`tracking_number = $${paramIndex}`);
-        params.splice(paramIndex - 1, 0, tracking_number);
-        paramIndex++;
-        updates.push('shipped_at = NOW()');
-        
-        if (delivery_partner) {
-          updates.push(`delivery_partner = $${paramIndex}`);
-          params.splice(paramIndex - 1, 0, delivery_partner);
-          paramIndex++;
-        }
-      }
+      // Add tracking number for shipped status — blocked above; legacy branch removed
 
       // Add delivered timestamp
       if (status === 'delivered') {
@@ -502,6 +531,8 @@ export function registerVendorOrdersEndpoints(app: Hono) {
 
       const updateQuery = `UPDATE orders SET ${updates.join(', ')} WHERE id = $2 AND vendor_id = $3`;
       await query(updateQuery, params);
+
+      await insertVendorOrderStatusHistory(orderId, status, statusNotes);
 
       if (status === 'confirmed' && currentStatus === 'pending') {
         triggerAutoShipment(orderId, 'ecommerce').catch((e) =>
@@ -555,6 +586,13 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       }
 
       const currentStatus = existingOrder.rows[0].order_status;
+
+      if (bodyContainsTrackingFields(body)) {
+        const lockedError = getShipmentTrackingLockedError(currentStatus);
+        if (lockedError) {
+          return c.json({ error: lockedError }, 409);
+        }
+      }
       
       // Validate transitions
       const allowedTransitions: Record<string, string[]> = {
@@ -573,20 +611,25 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         }, 400);
       }
 
+      if (status === 'shipped') {
+        return c.json(
+          {
+            error:
+              'Use POST /vendor/:vendorId/orders/:orderId/mark-shipped to mark orders as shipped with tracking details.',
+          },
+          409
+        );
+      }
+
+      const statusNotes = resolveStatusUpdateNotes(body);
+
       // Build update
       const updateFields: Record<string, any> = {
         order_status: status,
         updated_at: new Date().toISOString()
       };
 
-      // Add tracking number for shipped status
-      if (status === 'shipped' && tracking_number) {
-        updateFields.tracking_number = tracking_number;
-        updateFields.shipped_at = new Date().toISOString();
-        if (delivery_partner) {
-          updateFields.delivery_partner = delivery_partner;
-        }
-      }
+      // Legacy PUT shipped path blocked — use mark-shipped endpoint
 
       // Add delivered timestamp
       if (status === 'delivered') {
@@ -609,6 +652,8 @@ export function registerVendorOrdersEndpoints(app: Hono) {
         `UPDATE orders SET ${setClauses.join(', ')} WHERE id = $${values.length - 1} AND vendor_id = $${values.length}`,
         values
       );
+
+      await insertVendorOrderStatusHistory(orderId, status, statusNotes);
 
       if (status === 'confirmed' && currentStatus === 'pending') {
         triggerAutoShipment(orderId, 'ecommerce').catch((e) =>

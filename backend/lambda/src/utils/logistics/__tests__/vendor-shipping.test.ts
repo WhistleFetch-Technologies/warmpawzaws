@@ -12,17 +12,46 @@ import {
   resolvePickupPincode,
   shipmentPincodeFieldsForInsert,
 } from '../shipment-pincodes';
+import { buildStructuredTracking } from '../shipment-tracking';
 
 describe('carrier-patterns', () => {
   it('normalizes vendor UI labels to carrier keys', () => {
     expect(normalizeCarrierKey('Delhivery')).toBe('delhivery');
     expect(normalizeCarrierKey('BlueDart')).toBe('bluedart');
     expect(normalizeCarrierKey('Other')).toBe('custom');
+    expect(normalizeCarrierKey('XpressBees')).toBe('xpressbees');
+    expect(normalizeCarrierKey('Amazon Shipping')).toBe('amazon_shipping');
+    expect(normalizeCarrierKey('Professional Couriers')).toBe('professional');
   });
 
-  it('builds Delhivery tracking URL from AWB', () => {
+  it('builds Delhivery tracking URL from portal base + AWB suffix', () => {
     const url = buildTrackingUrl('delhivery', 'AWB123');
-    expect(url).toBe('https://www.delhivery.com/track/package/AWB123');
+    expect(url).toBe('https://www.delhivery.com/tracking/AWB123');
+  });
+
+  it('builds Blue Dart tracking URL from portal base + query suffix', () => {
+    const url = buildTrackingUrl('bluedart', 'AWB123');
+    expect(url).toBe('https://www.bluedart.com/tracking?tracknumbers=AWB123');
+  });
+
+  it('builds XpressBees tracking URL from portal base + path suffix', () => {
+    const url = buildTrackingUrl('xpressbees', 'XB999');
+    expect(url).toBe('https://www.xpressbees.com/shipment/tracking/XB999');
+  });
+
+  it('builds Amazon Shipping tracking URL from portal base + query suffix', () => {
+    const url = buildTrackingUrl('amazon_shipping', 'AMZ123');
+    expect(url).toBe('https://track.amazon.in?trackingId=AMZ123');
+  });
+
+  it('returns null for custom carrier without explicit URL', () => {
+    expect(buildTrackingUrl('custom', 'AWB123')).toBeNull();
+  });
+
+  it('uses explicit vendor URL when provided', () => {
+    expect(
+      buildTrackingUrl('delhivery', 'AWB123', 'https://example.com/track/AWB123')
+    ).toBe('https://example.com/track/AWB123');
   });
 
   it('maps carrier keys to AfterShip slugs', () => {
@@ -68,5 +97,34 @@ describe('shipment-pincodes', () => {
       })
     ).toBe('700001');
     expect(resolvePickupPincode({}, { pincode: '560078' })).toBe('560078');
+  });
+});
+
+describe('buildStructuredTracking', () => {
+  it('returns AWB, carrier, and tracking URL without ETA fields', () => {
+    const tracking = buildStructuredTracking(
+      { order_status: 'shipped', tracking_number: 'FALLBACK123' },
+      {
+        awb_code: 'AWB999',
+        logistics_partner: 'delhivery',
+        courier_name: 'Delhivery',
+        tracking_url: 'https://www.delhivery.com/tracking/AWB999',
+        shipped_at: '2026-06-01T10:00:00.000Z',
+      }
+    );
+
+    expect(tracking).toMatchObject({
+      carrierId: 'delhivery',
+      carrierName: 'Delhivery',
+      trackingNumber: 'AWB999',
+      trackingUrl: 'https://www.delhivery.com/tracking/AWB999',
+      shippedAt: '2026-06-01T10:00:00.000Z',
+      locked: true,
+    });
+    expect(tracking).not.toHaveProperty('estimatedDelivery');
+  });
+
+  it('returns null when no tracking number is available', () => {
+    expect(buildStructuredTracking({ order_status: 'processing' }, null)).toBeNull();
   });
 });

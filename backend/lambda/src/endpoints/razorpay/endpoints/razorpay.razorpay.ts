@@ -1061,11 +1061,12 @@ class VerifyPaymentHandler extends BaseHandler {
           const updateResult = await client.query(
             `UPDATE orders SET
               payment_status = 'paid',
+              payment_method = COALESCE($3, payment_method),
               payment_id = COALESCE(payment_id, $2),
               updated_at = NOW()
             WHERE id = $1::uuid
             RETURNING id, payment_status, order_status`,
-            [ecommerceOrderId, payment.id]
+            [ecommerceOrderId, payment.id, resolvedPaymentMethod]
           );
 
           if (updateResult.rows.length === 0) {

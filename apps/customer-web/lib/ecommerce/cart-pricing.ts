@@ -89,11 +89,17 @@ export const VENDOR_DELIVERY_CONFIG: Record<
   default: { name: 'Warmpawz Store', deliveryTime: '2-3 days', freeDeliveryMin: 999 },
 };
 
-const STANDARD_DELIVERY_FEE = 60;
-const EXPRESS_DELIVERY_FEE = 150;
-const SCHEDULED_DELIVERY_FEE = 80;
+export const ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL = 1000;
+export const ECOMMERCE_DEFAULT_DELIVERY_FEE = 150;
+
 const GIFT_WRAP_PER_ITEM = 25;
 const PROTECTION_RATE = 0.02;
+
+/** Order-level delivery: free when subtotal (after discounts) >= ₹1000, else ₹150. */
+export function computeEcommerceDeliveryFee(subtotalAfterDiscount: number): number {
+  const subtotal = Number(subtotalAfterDiscount) || 0;
+  return subtotal >= ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL ? 0 : ECOMMERCE_DEFAULT_DELIVERY_FEE;
+}
 
 export function groupCartLinesByVendor(
   cart: PricingCartLine[]
@@ -114,15 +120,15 @@ export function getVendorSubtotal(vendorItems: PricingCartLine[]): number {
 }
 
 export function calculateVendorDeliveryFee(
-  vendorId: string,
-  vendorTotal: number,
-  options: CartPricingOptions
+  _vendorId: string,
+  _vendorTotal: number,
+  _options: CartPricingOptions,
+  orderSubtotalAfterDiscount: number
 ): number {
-  void vendorId;
-  void vendorTotal;
-  const speed = options.deliverySpeed ?? 'standard';
-  if (speed === 'scheduled') return SCHEDULED_DELIVERY_FEE;
-  return STANDARD_DELIVERY_FEE;
+  void _vendorId;
+  void _vendorTotal;
+  void _options;
+  return computeEcommerceDeliveryFee(orderSubtotalAfterDiscount);
 }
 
 export function computeSellerPromotionDiscount(
@@ -167,21 +173,28 @@ export function computeCartPricing(
     couponDiscount + sellerPromotionDiscount
   );
   const subtotalAfterDiscount = Math.max(0, lineSubtotal - discount);
+  const deliveryFees = computeEcommerceDeliveryFee(subtotalAfterDiscount);
+  const freeDeliveryGap =
+    subtotalAfterDiscount >= ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL
+      ? 0
+      : ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL - subtotalAfterDiscount;
 
   const byVendor: VendorPricingRow[] = Object.keys(itemsByVendor).map((vendorId) => {
     const vendorItems = itemsByVendor[vendorId];
     const subtotal = getVendorSubtotal(vendorItems);
-    const deliveryFee = calculateVendorDeliveryFee(vendorId, subtotal, options);
     return {
       vendorId,
       subtotal,
-      deliveryFee,
-      freeDeliveryMin: 0,
+      deliveryFee: 0,
+      freeDeliveryMin: ECOMMERCE_FREE_DELIVERY_MIN_SUBTOTAL,
       freeDeliveryGap: 0,
     };
   });
 
-  const deliveryFees = byVendor.reduce((sum, row) => sum + row.deliveryFee, 0);
+  if (byVendor.length > 0) {
+    byVendor[0].deliveryFee = deliveryFees;
+    byVendor[0].freeDeliveryGap = freeDeliveryGap;
+  }
   const giftWrapFee = options.giftWrap ? itemCount * GIFT_WRAP_PER_ITEM : 0;
   const protectionFee = options.productProtection ? lineSubtotal * PROTECTION_RATE : 0;
 
@@ -200,8 +213,6 @@ export function computeCartPricing(
   const total =
     subtotalAfterDiscount + deliveryFees + giftWrapFee + protectionFee + taxAmount;
 
-  const freeDeliveryGap = 0;
-
   return {
     lineSubtotal,
     discount,
@@ -214,7 +225,7 @@ export function computeCartPricing(
     taxAmount,
     taxResult,
     total,
-    freeDeliveryGap: 0,
+    freeDeliveryGap,
     byVendor,
     itemCount,
   };
