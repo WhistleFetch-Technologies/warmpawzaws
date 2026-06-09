@@ -275,7 +275,8 @@ async function syncVendors() {
       r.name AS role_name
     FROM vendors v
     LEFT JOIN roles r ON v.role_id = r.id
-    WHERE v.status = 'active'
+    WHERE v.is_active = true
+      AND v.status IN ('approved', 'activated', 'active')
   `);
 
   const vendorRows = (Array.isArray(vendors) ? vendors : (vendors as { rows?: unknown[] }).rows || []) as Record<

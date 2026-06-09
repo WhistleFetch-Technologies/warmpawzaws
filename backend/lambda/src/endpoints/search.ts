@@ -173,6 +173,57 @@ function filterServicesToKeptVendors<S extends { vendorId?: string | null }>(
 }
 
 // ============================================================================
+// PRODUCT SEARCH HELPERS
+// ============================================================================
+
+/** Hubs that should include ecommerce product results alongside vendor/service results. */
+const PRODUCT_SEARCH_HUBS = new Set(['shop', 'pet_shop', 'marketplace', 'pharmacy', 'pet_pharmacy']);
+
+function isProductSearchHub(category: string | undefined): boolean {
+  if (!category) return false;
+  return PRODUCT_SEARCH_HUBS.has(String(category).toLowerCase().replace(/-/g, '_'));
+}
+
+/**
+ * Query the products table for a given set of search tokens.
+ * Returns empty array if tokens are empty or if the products table does not exist.
+ */
+async function queryProductsForSearch(tokens: string[], productLimit: number): Promise<any[]> {
+  if (tokens.length === 0) return [];
+  let productQuery = `
+    SELECT p.id, p.name, p.description, p.price, p.image_url, p.thumbnail_url,
+           p.category, p.vendor_id, v.business_name AS vendor_name
+    FROM products p
+    LEFT JOIN vendors v ON p.vendor_id = v.id
+    WHERE p.is_active = true
+  `;
+  const productParams: any[] = [];
+  let productParamIndex = 1;
+  for (const token of tokens) {
+    productQuery += ` AND (p.name ILIKE $${productParamIndex} OR COALESCE(p.description, '') ILIKE $${productParamIndex})`;
+    productParams.push(`%${token}%`);
+    productParamIndex++;
+  }
+  productQuery += ` ORDER BY p.created_at DESC LIMIT $${productParamIndex}`;
+  productParams.push(productLimit);
+  try {
+    const { rows } = await query(productQuery, productParams);
+    return (rows as Record<string, unknown>[]).map((p) => ({
+      id: p.id,
+      productName: p.name,
+      description: p.description ?? null,
+      price: p.price ?? null,
+      imageUrl: (p.image_url ?? p.thumbnail_url) ?? null,
+      category: p.category ?? null,
+      vendorId: p.vendor_id ?? null,
+      vendorName: p.vendor_name ?? null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// ============================================================================
 // SEARCH HANDLERS
 // ============================================================================
 
@@ -354,22 +405,40 @@ class UniversalSearchHandler extends BaseHandler {
       searchBody.query.bool.filter.push({ term: { city: location.toLowerCase() } });
     }
 
-    // Add status filters
+    // Add status filters — mirrors sqlVendorDiscoverableStatus: approved, active, activated, pending+solo
     searchBody.query.bool.filter.push({ term: { is_active: true } });
-    searchBody.query.bool.filter.push({ term: { status: 'approved' } });
+    searchBody.query.bool.filter.push({
+      terms: { status: ['approved', 'active', 'activated'] },
+    });
+
+    const searchIndexes = isProductSearchHub(category)
+      ? 'warmpawz-vendors,warmpawz-services,warmpawz-products'
+      : 'warmpawz-vendors,warmpawz-services';
 
     const result = await openSearchClient.search({
-      index: 'warmpawz-vendors,warmpawz-services',
+      index: searchIndexes,
       body: searchBody,
     });
 
     const hits = result.body.hits.hits;
     const vendors: any[] = [];
     const services: any[] = [];
+    const products: any[] = [];
 
     hits.forEach((hit: { _index: string; _source: Record<string, unknown> }) => {
       const source = hit._source;
-      if (hit._index.includes('vendors')) {
+      if (hit._index.includes('products')) {
+        products.push({
+          id: source.id,
+          productName: source.name,
+          description: source.description ?? null,
+          price: source.price ?? null,
+          imageUrl: (source.image_url ?? source.thumbnail_url) ?? null,
+          category: source.category ?? null,
+          vendorId: source.vendor_id ?? null,
+          vendorName: source.vendor_name ?? null,
+        });
+      } else if (hit._index.includes('vendors')) {
         const loc = source.location;
         const latRaw =
           loc != null && typeof loc === 'object'
@@ -479,12 +548,31 @@ class UniversalSearchHandler extends BaseHandler {
       finalServices = filterServicesToKeptVendors(parity.services, keptIds);
     }
 
+    const finalProducts = products;
+
+    // Hub-browse fallback: taxonomy resolved a hub but no results matched the text tokens.
+    // Re-run as pure hub browse (drop text tokens) so users never see "No Results Found"
+    // when a valid service category exists.
+    const osCategorySource = (taxonomyMeta as any).categorySource as CategorySource;
+    if (
+      finalVendors.length === 0 &&
+      finalServices.length === 0 &&
+      finalProducts.length === 0 &&
+      osCategorySource === 'taxonomy' &&
+      keywordTokens.length > 0
+    ) {
+      return this.searchWithOpenSearch(
+        searchQuery, category, location, limit, userCoords, qs, hubContext, taxonomyMeta, []
+      );
+    }
+
     return this.success({
       query: searchQuery,
       ...taxonomyMeta,
       vendors: finalVendors,
       services: finalServices,
-      total: finalVendors.length + finalServices.length,
+      products: finalProducts,
+      total: finalVendors.length + finalServices.length + finalProducts.length,
       searchMethod: 'opensearch',
       discoveryParity: parity.discoveryApplied,
     });
@@ -816,12 +904,34 @@ class UniversalSearchHandler extends BaseHandler {
       finalServices = filterServicesToKeptVendors(parity.services, keptIds);
     }
 
+    // Query ecommerce products for shop/pharmacy hub searches.
+    const finalProducts = isProductSearchHub(category)
+      ? await queryProductsForSearch(keywordTokens, Math.min(limit, 20))
+      : [];
+
+    // Hub-browse fallback: taxonomy resolved a hub but no results matched the text tokens.
+    // Re-run as pure hub browse (drop text tokens) so users never see "No Results Found"
+    // when a valid service category exists.
+    const sqlCategorySource = (taxonomyMeta as any).categorySource as CategorySource;
+    if (
+      finalVendors.length === 0 &&
+      finalServices.length === 0 &&
+      finalProducts.length === 0 &&
+      sqlCategorySource === 'taxonomy' &&
+      keywordTokens.length > 0
+    ) {
+      return this.searchWithSQL(
+        searchQuery, category, location, limit, userCoords, qs, hubContext, taxonomyMeta, []
+      );
+    }
+
     return this.success({
       query: searchQuery,
       ...taxonomyMeta,
       vendors: finalVendors,
       services: finalServices,
-      total: finalVendors.length + finalServices.length,
+      products: finalProducts,
+      total: finalVendors.length + finalServices.length + finalProducts.length,
       searchMethod: 'sql-fallback',
       discoveryParity: parity.discoveryApplied,
     });

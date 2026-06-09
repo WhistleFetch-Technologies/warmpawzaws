@@ -211,6 +211,10 @@ export function hubSlugToDiscoveryContext(categorySlug: string | undefined): Hub
         roleId: 'pet_sitter',
         sittingDiscoveryRelaxed: true,
       };
+    case 'shop':
+    case 'pet_shop':
+    case 'marketplace':
+      return { discoverCategory: 'shop', serviceStyle: 'at_center', roleId: 'pet_shop' };
     default:
       return null;
   }

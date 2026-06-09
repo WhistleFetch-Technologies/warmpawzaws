@@ -32,7 +32,7 @@ import { traceSearch } from '@/lib/search-trace';
 
 interface SearchResult {
   id: string;
-  type: 'vendor' | 'service';
+  type: 'vendor' | 'service' | 'product';
   /** For services: listing title (shown under business name). Hub filter uses this for service rows. */
   name: string;
   category: string;
@@ -52,6 +52,8 @@ interface SearchResult {
   longitude?: number | null;
   /** From GET /search `distanceKm` and/or client when geo + coords exist. */
   distanceKm?: number | null;
+  /** Product rows: seller/vendor name. */
+  sellerName?: string;
 }
 
 function mapSearchApiToResults(response: any): SearchResult[] {
@@ -150,7 +152,28 @@ function mapSearchApiToResults(response: any): SearchResult[] {
     };
   }).filter((s: SearchResult) => s.id);
 
-  return [...vendors, ...services];
+  const productsRaw = response.products ?? response.data?.products ?? [];
+  const products = (productsRaw || [])
+    .map((p: any) => {
+      const id = String(p.id ?? '').trim();
+      if (!id) return null;
+      return {
+        id,
+        type: 'product' as const,
+        name: (p.productName ?? p.name ?? '').trim() || 'Product',
+        category: p.category ?? '',
+        rating: 0,
+        reviewCount: 0,
+        city: '',
+        price: p.price ? parseFloat(String(p.price)) || undefined : undefined,
+        imageUrl: p.imageUrl ?? p.image_url ?? p.thumbnail_url ?? undefined,
+        sellerName: p.vendorName ?? p.vendor_name ?? undefined,
+        distanceKm: null,
+      };
+    })
+    .filter(Boolean) as SearchResult[];
+
+  return [...vendors, ...services, ...products];
 }
 
 export default function SearchPage() {
@@ -645,7 +668,7 @@ function SearchContent() {
                     badgeLabel={result.category || undefined}
                   />
                 </button>
-              ) : (
+              ) : result.type === 'service' ? (
                 <button
                   key={`service-${result.id}`}
                   type="button"
@@ -676,6 +699,44 @@ function SearchContent() {
                     price={result.price}
                     badgeLabel={result.category || undefined}
                   />
+                </button>
+              ) : (
+                /* Product card */
+                <button
+                  key={`product-${result.id}`}
+                  type="button"
+                  className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2 rounded-2xl"
+                  onClick={() => router.push(`/shop/${result.id}`)}
+                >
+                  <div className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-gray-100">
+                    {result.imageUrl ? (
+                      <img
+                        src={result.imageUrl}
+                        alt={result.name}
+                        className="h-16 w-16 shrink-0 rounded-xl object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-2xl">
+                        🛍️
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-gray-900">{result.name}</p>
+                      {result.sellerName && (
+                        <p className="truncate text-xs text-gray-500">{result.sellerName}</p>
+                      )}
+                      {result.category && (
+                        <span className="mt-1 inline-block rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600">
+                          {result.category}
+                        </span>
+                      )}
+                    </div>
+                    {result.price != null && (
+                      <p className="shrink-0 text-sm font-bold text-[#FF8C42]">
+                        ₹{result.price.toLocaleString('en-IN')}
+                      </p>
+                    )}
+                  </div>
                 </button>
               )
             )}
