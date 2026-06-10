@@ -1,6 +1,7 @@
 import { describe, expect, test } from '@jest/globals';
 import {
   assertYearMonth,
+  istDayEndExclusiveYmd,
   istMonthEndExclusiveYmd,
   istMonthStartYmd,
   listIstMonthDays,
@@ -41,5 +42,11 @@ describe('vendor-accrual-ist', () => {
     expect(jun2026).toHaveLength(30);
     expect(jun2026[0]).toBe('2026-06-01');
     expect(jun2026[jun2026.length - 1]).toBe('2026-06-30');
+  });
+
+  test('istDayEndExclusiveYmd is next calendar day', () => {
+    expect(istDayEndExclusiveYmd('2026-06-01')).toBe('2026-06-02');
+    expect(istDayEndExclusiveYmd('2026-12-31')).toBe('2027-01-01');
+    expect(istDayEndExclusiveYmd('bad')).toBeNull();
   });
 });

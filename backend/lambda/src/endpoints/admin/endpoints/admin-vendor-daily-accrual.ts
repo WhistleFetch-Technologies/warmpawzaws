@@ -13,11 +13,19 @@ import {
 } from '../../../utils/delivery-settlement-finance';
 import {
   assertReportDate,
+  istDayEndExclusiveYmd,
   istMonthEndExclusiveYmd,
   istMonthStartYmd,
   listIstMonthDays,
   parseYearMonthQuery,
 } from '../../../utils/vendor-accrual-ist';
+import {
+  VENDOR_ACCRUAL_FEE_CSV_HEADERS,
+  feeBreakdownCsvCells,
+  fetchVendorAccrualFeeBreakdownForIstRange,
+  mergeFeeBreakdownIntoAccrualRows,
+  sumAccrualFeeBreakdowns,
+} from '../../../utils/vendor-accrual-fee-breakdown';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -294,6 +302,43 @@ async function computeDailyAccrualSnapshot(reportDate: string): Promise<number> 
 
 type AccrualMoneyTotals = { gross: number; commission: number; net: number };
 
+type AccrualExportTotals = AccrualMoneyTotals & {
+  platformFee: number;
+  convenienceFee: number;
+  deliveryFee: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  gstTotal: number;
+};
+
+function accrualExportTotals(rows: Record<string, unknown>[]): AccrualExportTotals {
+  const money = accrualTotals(rows);
+  const fees = sumAccrualFeeBreakdowns(rows);
+  return {
+    ...money,
+    platformFee: fees.platformFee,
+    convenienceFee: fees.convenienceFee,
+    deliveryFee: fees.deliveryFee,
+    cgstAmount: fees.cgstAmount,
+    sgstAmount: fees.sgstAmount,
+    igstAmount: fees.igstAmount,
+    gstTotal: fees.gstTotal,
+  };
+}
+
+async function enrichAccrualRowsWithFees(
+  rows: Record<string, unknown>[],
+  periodStartYmd: string,
+  periodEndExclusiveYmd: string,
+): Promise<Record<string, unknown>[]> {
+  const feeByVendor = await fetchVendorAccrualFeeBreakdownForIstRange(
+    periodStartYmd,
+    periodEndExclusiveYmd,
+  );
+  return mergeFeeBreakdownIntoAccrualRows(rows, feeByVendor);
+}
+
 function accrualTotals(rows: Record<string, unknown>[]): AccrualMoneyTotals {
   return rows.reduce<AccrualMoneyTotals>(
     (acc, row) => {
@@ -440,6 +485,8 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         return c.text(pack.error, pack.status);
       }
 
+      const rows = await enrichAccrualRowsWithFees(pack.rows, pack.monthStart, pack.monthEndExclusive);
+
       const ymLabel = `${ym.year}-${String(ym.month).padStart(2, '0')}`;
       const headers = [
         'year',
@@ -453,6 +500,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         'gross_amount',
         'commission_amount',
         'net_amount',
+        ...VENDOR_ACCRUAL_FEE_CSV_HEADERS,
         'currency',
         'earnings_line_count',
         'delivery_settlement_line_count',
@@ -470,7 +518,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         'computed_at',
       ];
       const lines = [headers.join(',')];
-      for (const r of pack.rows as any[]) {
+      for (const r of rows as any[]) {
         lines.push(
           [
             csvEscape(ym.year),
@@ -484,6 +532,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
             csvEscape(r.gross_amount),
             csvEscape(r.commission_amount),
             csvEscape(r.net_amount),
+            ...feeBreakdownCsvCells(r).map(csvEscape),
             csvEscape(r.currency),
             csvEscape(r.earnings_line_count),
             csvEscape(r.delivery_settlement_line_count),
@@ -531,8 +580,8 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         return c.json({ success: false, error: pack.error }, pack.status);
       }
 
-      const rows = pack.rows;
-      const totals = accrualTotals(rows);
+      const rows = await enrichAccrualRowsWithFees(pack.rows, pack.monthStart, pack.monthEndExclusive);
+      const totals = accrualExportTotals(rows);
 
       return c.json({
         success: true,
@@ -545,6 +594,13 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
           grossAmount: totals.gross,
           commissionAmount: totals.commission,
           netAmount: totals.net,
+          platformFee: totals.platformFee,
+          convenienceFee: totals.convenienceFee,
+          deliveryFee: totals.deliveryFee,
+          cgstAmount: totals.cgstAmount,
+          sgstAmount: totals.sgstAmount,
+          igstAmount: totals.igstAmount,
+          gstTotal: totals.gstTotal,
           vendorCount: rows.length,
         },
         rows,
@@ -571,6 +627,12 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         return c.text(pack.error, pack.status);
       }
 
+      const periodEnd = istDayEndExclusiveYmd(reportDate);
+      if (!periodEnd) {
+        return c.text('Invalid reportDate', 400);
+      }
+      const rows = await enrichAccrualRowsWithFees(pack.rows, reportDate, periodEnd);
+
       const headers = [
         'report_date',
         'vendor_id',
@@ -580,6 +642,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         'gross_amount',
         'commission_amount',
         'net_amount',
+        ...VENDOR_ACCRUAL_FEE_CSV_HEADERS,
         'currency',
         'earnings_line_count',
         'delivery_settlement_line_count',
@@ -596,7 +659,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         'computed_at',
       ];
       const lines = [headers.join(',')];
-      for (const r of pack.rows as any[]) {
+      for (const r of rows as any[]) {
         lines.push(
           [
             csvEscape(r.report_date),
@@ -607,6 +670,7 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
             csvEscape(r.gross_amount),
             csvEscape(r.commission_amount),
             csvEscape(r.net_amount),
+            ...feeBreakdownCsvCells(r).map(csvEscape),
             csvEscape(r.currency),
             csvEscape(r.earnings_line_count),
             csvEscape(r.delivery_settlement_line_count),
@@ -653,8 +717,12 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
         return c.json({ success: false, error: pack.error }, pack.status);
       }
 
-      const rows = pack.rows;
-      const totals = accrualTotals(rows);
+      const periodEnd = istDayEndExclusiveYmd(reportDate);
+      if (!periodEnd) {
+        return c.json({ success: false, error: 'Invalid reportDate' }, 400);
+      }
+      const rows = await enrichAccrualRowsWithFees(pack.rows, reportDate, periodEnd);
+      const totals = accrualExportTotals(rows);
 
       return c.json({
         success: true,
@@ -664,6 +732,13 @@ export function registerAdminVendorDailyAccrualEndpoints(app: Hono) {
           grossAmount: totals.gross,
           commissionAmount: totals.commission,
           netAmount: totals.net,
+          platformFee: totals.platformFee,
+          convenienceFee: totals.convenienceFee,
+          deliveryFee: totals.deliveryFee,
+          cgstAmount: totals.cgstAmount,
+          sgstAmount: totals.sgstAmount,
+          igstAmount: totals.igstAmount,
+          gstTotal: totals.gstTotal,
           vendorCount: rows.length,
         },
         rows,
