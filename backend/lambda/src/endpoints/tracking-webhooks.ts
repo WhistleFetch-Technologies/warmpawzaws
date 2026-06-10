@@ -8,6 +8,7 @@ import {
   appendShipmentTrackingEvent,
   syncOrderStatusFromShipment,
 } from '../utils/logistics/shipment-order-sync';
+import { notifyShopShipmentUpdate } from '../utils/shop-order-notifications';
 
 export function registerTrackingWebhookEndpoints(app: Hono) {
   /**
@@ -82,6 +83,13 @@ export function registerTrackingWebhookEndpoints(app: Hono) {
         );
 
         await syncOrderStatusFromShipment(shipment.order_id, newStatus);
+
+        void notifyShopShipmentUpdate(shipment.order_id, newStatus, previousStatus, {
+          awb: trackingNumber,
+          trackingUrl: parsed.trackingUrl,
+        }).catch((err) =>
+          console.warn('[AFTERSHIP WEBHOOK] Shop shipment notification failed:', err)
+        );
       }
 
       return c.json({

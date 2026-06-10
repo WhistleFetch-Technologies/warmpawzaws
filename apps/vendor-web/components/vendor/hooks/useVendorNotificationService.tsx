@@ -5,6 +5,9 @@ import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { shouldSuppressPollToastForPush } from '@/lib/notification-display-policy';
 
+const INBOX_POLL_INTERVAL_MS = 30000;
+const INBOX_POLL_BACKOFF_MAX_MS = 60000;
+
 interface VendorNotificationServiceProps {
   vendorId: string;
   enabled: boolean;
@@ -16,7 +19,7 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
   const isInitialLoadRef = useRef(true);
   const audioContextRef = useRef<AudioContext | null>(null);
   const retryCountRef = useRef(0);
-  const pollIntervalRef = useRef(5000); // Start with 5 seconds
+  const pollIntervalRef = useRef(INBOX_POLL_INTERVAL_MS);
 
   useEffect(() => {
     if (!enabled || !vendorId) return;
@@ -40,7 +43,7 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
         
         // ✅ FIX: Reset retry count and poll interval on success
         retryCountRef.current = 0;
-        pollIntervalRef.current = 5000;
+        pollIntervalRef.current = INBOX_POLL_INTERVAL_MS;
         const notifications = data?.notifications || [];
           
           console.log(`🔔 [VENDOR-NOTIFICATION-SERVICE] Polling - Found ${notifications.length} notifications`);
@@ -96,12 +99,18 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
         if (is503) {
           retryCountRef.current += 1;
           // Exponential backoff: 5s, 10s, 20s, 30s (max)
-          pollIntervalRef.current = Math.min(5000 * Math.pow(2, retryCountRef.current - 1), 30000);
+          pollIntervalRef.current = Math.min(
+            INBOX_POLL_INTERVAL_MS * Math.pow(2, retryCountRef.current - 1),
+            INBOX_POLL_BACKOFF_MAX_MS
+          );
           console.log(`⚠️ [VENDOR-NOTIFICATION-SERVICE] 503 error (retry ${retryCountRef.current}), backing off to ${pollIntervalRef.current}ms`);
         } else {
           // For other errors, use shorter backoff
           retryCountRef.current = Math.min(retryCountRef.current + 1, 3);
-          pollIntervalRef.current = Math.min(5000 * retryCountRef.current, 15000);
+          pollIntervalRef.current = Math.min(
+            INBOX_POLL_INTERVAL_MS * retryCountRef.current,
+            INBOX_POLL_BACKOFF_MAX_MS
+          );
         }
         
         // Silently log error without showing it prominently (this is normal for polling)
@@ -196,13 +205,22 @@ export function useVendorNotificationService({ vendorId, enabled, onNewNotificat
       }, pollIntervalRef.current);
     };
     
-    // Start polling
+    // Start polling (30s baseline; backs off on errors)
     scheduleNextPoll();
+
+    const onVisibilityResume = () => {
+      if (document.visibilityState === 'visible') {
+        pollIntervalRef.current = INBOX_POLL_INTERVAL_MS;
+        checkForNewNotifications().finally(() => scheduleNextPoll());
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityResume);
 
     return () => {
       if (intervalId) {
         clearTimeout(intervalId);
       }
+      document.removeEventListener('visibilitychange', onVisibilityResume);
     };
   }, [vendorId, enabled, onNewNotification]);
 }

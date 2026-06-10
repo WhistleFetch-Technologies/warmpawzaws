@@ -18,6 +18,7 @@ import {
   type MarkShippedBodyInput,
   type StructuredTracking,
 } from './shipment-tracking';
+import { notifyShopOrderStatusChange } from '../shop-order-notifications';
 
 export interface MarkShippedInput extends MarkShippedBodyInput {
   vendorId: string;
@@ -157,6 +158,14 @@ export async function markOrderShippedByVendor(input: MarkShippedInput): Promise
     shippedAt: now,
     locked: true,
   });
+
+  void notifyShopOrderStatusChange({
+    orderId,
+    previousStatus: currentStatus,
+    newStatus: 'shipped',
+    trackingNumber,
+    notifyVendor: false,
+  }).catch((err) => console.warn('[MARK-SHIPPED] Shop order notification failed:', err));
 
   return {
     success: true,

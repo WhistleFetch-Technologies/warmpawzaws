@@ -19,6 +19,7 @@ import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-ha
 import { query, select, insert, update } from '../database/rds-connection';
 import { websocketService } from '../lib/services/websocket-service';
 import { sendPharmacyBroadcast } from '../aws/aws-sns-notification-service';
+import { dispatchNotification } from '../utils/notification-dispatch';
 
 // ============================================================================
 // TYPES
@@ -217,27 +218,7 @@ class CreatePharmacyOrderHandler extends BaseHandler {
         notified_at: new Date(),
       });
 
-      // Create in-app notification
-      await insert('notifications', {
-        user_id: pharmacy.user_id || pharmacy.id,
-        user_type: 'vendor',
-        type: 'pharmacy_order',
-        title: '🔔 New Medicine Order!',
-        message: `New prescription order ${pharmacy.distance_km.toFixed(1)}km away. Tap to view and accept.`,
-        data: JSON.stringify({
-          order_id: orderId,
-          type: 'pharmacy_order',
-          distance: pharmacy.distance_km,
-          priority: 'high',
-        }),
-        is_read: false,
-        requires_action: true,
-        action_url: `/orders/${orderId}`,
-        expires_at: new Date(Date.now() + MAX_BROADCAST_DURATION),
-        created_at: new Date(),
-      });
-
-      // Send push notification
+      // Push + inbox via unified dispatcher (sendPharmacyBroadcast)
       await sendPharmacyBroadcast(
         [pharmacy.id],
         orderId,
@@ -459,23 +440,12 @@ class ExpandBroadcastRadiusHandler extends BaseHandler {
         notified_at: new Date(),
       });
 
-      await insert('notifications', {
-        user_id: pharmacy.user_id || pharmacy.id,
-        user_type: 'vendor',
-        type: 'pharmacy_order',
-        title: '🔔 Medicine Order Available!',
-        message: `Prescription order ${pharmacy.distance_km.toFixed(1)}km away. Tap to view.`,
-        data: JSON.stringify({
-          order_id: orderId,
-          type: 'pharmacy_order',
-          distance: pharmacy.distance_km,
-          priority: 'high',
-        }),
-        is_read: false,
-        requires_action: true,
-        action_url: `/orders/${orderId}`,
-        created_at: new Date(),
-      });
+      await sendPharmacyBroadcast(
+        [pharmacy.id],
+        orderId,
+        'Customer',
+        pharmacies.length
+      );
     }
 
     return pharmacies.length;
@@ -551,20 +521,21 @@ class PharmacyAcceptOrderHandler extends BaseHandler {
 
       const pharmacy = pharmacies.length > 0 ? pharmacies[0] : null;
 
-      // Notify customer
-      await insert('notifications', {
-        user_id: order.customer_id,
-        user_type: 'customer',
-        type: 'order_accepted',
-        title: '✅ Order Accepted!',
+      // Notify customer via unified dispatcher
+      await dispatchNotification({
+        recipientId: String(order.customer_id),
+        recipientType: 'customer',
+        notificationType: 'pharmacy_order_accepted',
+        title: 'Order accepted',
         message: `${pharmacy?.business_name || 'A pharmacy'} has accepted your order. They will prepare the invoice shortly.`,
-        data: JSON.stringify({
-          order_id: orderId,
-          pharmacy_id: acceptingPharmacyId,
-          pharmacy_name: pharmacy?.business_name,
-        }),
-        is_read: false,
-        created_at: new Date(),
+        channels: { inApp: true, push: true },
+        priority: 'high',
+        data: {
+          orderId,
+          pharmacyId: acceptingPharmacyId,
+          pharmacyName: pharmacy?.business_name,
+          dedupeKey: `pharmacy-order-${orderId}-accepted-customer`,
+        },
       });
 
       return this.success({
@@ -656,21 +627,20 @@ class PharmacySubmitInvoiceHandler extends BaseHandler {
       });
 
       // Notify customer to approve invoice
-      await insert('notifications', {
-        user_id: order.customer_id,
-        user_type: 'customer',
-        type: 'invoice_ready',
-        title: '📋 Invoice Ready',
+      await dispatchNotification({
+        recipientId: String(order.customer_id),
+        recipientType: 'customer',
+        notificationType: 'pharmacy_invoice_ready',
+        title: 'Invoice ready',
         message: `Your medicine order invoice of ₹${totalAmount.toFixed(2)} is ready. Tap to review and pay.`,
-        data: JSON.stringify({
-          order_id: orderId,
-          invoice_id: invoice.id,
-          total_amount: totalAmount,
-        }),
-        is_read: false,
-        requires_action: true,
-        action_url: `/orders/${orderId}/invoice`,
-        created_at: new Date(),
+        channels: { inApp: true, push: true },
+        priority: 'high',
+        data: {
+          orderId,
+          invoiceId: invoice.id,
+          totalAmount,
+          dedupeKey: `pharmacy-order-${orderId}-invoice-customer`,
+        },
       });
 
       return this.success({

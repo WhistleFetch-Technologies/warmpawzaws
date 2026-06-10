@@ -17,6 +17,8 @@ import { Hono } from 'hono';
 import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
+import { dispatchNotification } from '../utils/notification-dispatch';
+import { notifyShopOrderStatusChange } from '../utils/shop-order-notifications';
 
 // ============================================================================
 // GET DELIVERY STATUS HANDLER
@@ -275,18 +277,27 @@ class VerifyDeliveryOtpHandler extends BaseHandler {
           message: 'Order delivered successfully',
           created_at: new Date(),
         }).catch(() => {});
-      }
 
-      await insert('notifications', {
-        user_id: orderData.customer_id,
-        user_type: 'customer',
-        type: 'order_delivered',
-        title: '📦 Order Delivered!',
-        message: 'Your order has been delivered successfully. Thank you for ordering!',
-        data: JSON.stringify({ order_id: orderId }),
-        is_read: false,
-        created_at: new Date(),
-      }).catch(() => {});
+        void notifyShopOrderStatusChange({
+          orderId,
+          previousStatus: String(orderData.order_status || orderData.status || 'shipped'),
+          newStatus: 'delivered',
+          notifyVendor: false,
+        }).catch(() => {});
+      } else {
+        await dispatchNotification({
+          recipientId: String(orderData.customer_id),
+          recipientType: 'customer',
+          notificationType: 'pharmacy_order_delivered',
+          title: 'Order delivered',
+          message: 'Your medicine order has been delivered successfully. Thank you!',
+          channels: { inApp: true, push: true },
+          data: {
+            orderId,
+            dedupeKey: `pharmacy-order-${orderId}-delivered-customer`,
+          },
+        }).catch(() => {});
+      }
 
       return this.success({
         success: true,
@@ -425,15 +436,18 @@ class UpdateDeliveryStatusHandler extends BaseHandler {
       };
 
       if (statusMessages[status]) {
-        await insert('notifications', {
-          user_id: order[0].customer_id,
-          user_type: 'customer',
-          type: 'delivery_update',
-          title: '📦 Delivery Update',
+        await dispatchNotification({
+          recipientId: String(order[0].customer_id),
+          recipientType: 'customer',
+          notificationType: 'pharmacy_delivery_update',
+          title: 'Delivery update',
           message: statusMessages[status],
-          data: JSON.stringify({ order_id: orderId, status }),
-          is_read: false,
-          created_at: new Date(),
+          channels: { inApp: true, push: true },
+          data: {
+            orderId,
+            status,
+            dedupeKey: `pharmacy-order-${orderId}-delivery-${status}`,
+          },
         }).catch(() => {});
       }
 

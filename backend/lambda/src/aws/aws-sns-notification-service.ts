@@ -240,18 +240,31 @@ class PushNotificationServiceImpl {
     customerName: string,
     itemCount: number
   ): Promise<{ success: number; failed: number }> {
-    const recipients = pharmacyIds.map(id => ({
-      userId: id,
-      userType: 'vendor' as const,
-    }));
+    let success = 0;
+    let failed = 0;
 
-    return await this.sendToUsers(recipients, {
-      title: '💊 New Pharmacy Order!',
-      body: `New order from ${customerName}. ${itemCount} items. Accept within 2 minutes.`,
-      sound: 'urgent',
-      priority: 'high',
-      data: { orderId, customerName, itemCount },
-    });
+    for (const pharmacyId of pharmacyIds) {
+      const ok = await this.sendToUser(
+        { userId: pharmacyId, userType: 'vendor' },
+        {
+          title: 'New pharmacy order',
+          body: `New order from ${customerName}. ${itemCount} items. Accept within 2 minutes.`,
+          sound: 'urgent',
+          priority: 'high',
+          data: {
+            orderId,
+            customerName,
+            itemCount,
+            eventType: 'pharmacy_order',
+            dedupeKey: `pharmacy-broadcast-${orderId}-${pharmacyId}`,
+          },
+        }
+      );
+      if (ok) success += 1;
+      else failed += 1;
+    }
+
+    return { success, failed };
   }
 
   /**

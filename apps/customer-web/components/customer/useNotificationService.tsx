@@ -5,6 +5,8 @@ import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { shouldSuppressPollToastForPush } from '@/lib/notification-display-policy';
 
+const INBOX_POLL_INTERVAL_MS = 30000;
+
 interface NotificationServiceProps {
   phone: string;
   enabled: boolean;
@@ -195,14 +197,21 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
       console.log('🍊 [NOTIFICATION-SERVICE] Toast displayed with orange style');
     };
 
-    // Initial check
+    // Initial check + poll every 30s (tray push is primary real-time channel on native)
     checkForNewNotifications();
 
-    // Poll every 5 seconds for new notifications
-    const interval = setInterval(checkForNewNotifications, 5000);
+    const interval = setInterval(checkForNewNotifications, INBOX_POLL_INTERVAL_MS);
+
+    const onVisibilityResume = () => {
+      if (document.visibilityState === 'visible') {
+        checkForNewNotifications();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityResume);
 
     return () => {
       clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityResume);
     };
   }, [phone, enabled, onNewNotification]);
 }

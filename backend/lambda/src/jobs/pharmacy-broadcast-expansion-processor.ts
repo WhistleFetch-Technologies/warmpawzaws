@@ -21,6 +21,7 @@ import { ScheduledEvent, Context, APIGatewayProxyResult } from 'aws-lambda';
 import { query, update, insert, select } from '../database/rds-connection';
 import { websocketService } from '../lib/services/websocket-service';
 import { sendPharmacyBroadcast } from '../aws/aws-sns-notification-service';
+import { dispatchNotification } from '../utils/notification-dispatch';
 
 // ============================================================================
 // CONFIGURATION
@@ -354,27 +355,7 @@ async function broadcastToNewPharmacies(
         notified_at: new Date(),
       });
 
-      // Create in-app notification
-      await insert('notifications', {
-        user_id: pharmacy.user_id || pharmacy.id,
-        user_type: 'vendor',
-        type: 'pharmacy_order',
-        title: '🔔 Medicine Order Available!',
-        message: `Prescription order ${pharmacy.distance_km.toFixed(1)}km away. Tap to view.`,
-        data: JSON.stringify({
-          order_id: orderId,
-          type: 'pharmacy_order',
-          distance: pharmacy.distance_km,
-          radius: newRadius,
-          priority: 'high',
-        }),
-        is_read: false,
-        requires_action: true,
-        action_url: `/orders/${orderId}`,
-        created_at: new Date(),
-      });
-
-      // Send push notification
+      // Push + inbox via unified dispatcher
       try {
         await sendPharmacyBroadcast(
           [pharmacy.id],
@@ -449,19 +430,18 @@ async function expireOrder(orderId: string, reason: string): Promise<void> {
   if (orders.length > 0) {
     const order = orders[0];
     
-    // Create notification for customer
-    await insert('notifications', {
-      user_id: order.customer_id,
-      user_type: 'customer',
-      type: 'order_expired',
-      title: '⏰ Order Expired',
+    await dispatchNotification({
+      recipientId: String(order.customer_id),
+      recipientType: 'customer',
+      notificationType: 'pharmacy_order_expired',
+      title: 'Order expired',
       message: 'Unfortunately, no pharmacy was available to accept your order. Please try again.',
-      data: JSON.stringify({
-        order_id: orderId,
+      channels: { inApp: true, push: true },
+      data: {
+        orderId,
         reason,
-      }),
-      is_read: false,
-      created_at: new Date(),
+        dedupeKey: `pharmacy-order-${orderId}-expired-customer`,
+      },
     });
 
     // Send WebSocket notification

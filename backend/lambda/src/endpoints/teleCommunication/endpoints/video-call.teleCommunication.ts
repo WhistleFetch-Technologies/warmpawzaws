@@ -28,6 +28,7 @@ import { getMediaRegion, isWithinVideoCallWindow, vidcorId } from '../constants/
 import { BookingStatus, BookingPaymentStatus, isTeleServices, UserType } from 'src/endpoints/constants';
 import { createMettingID, createSingleToken, createTokens, vidlog, withChimeRetry } from '../../../aws/aws-Chime-service';
 import { pushNotificationService } from '../../../aws/aws-sns-notification-service';
+import { dispatchNotification } from '../../../utils/notification-dispatch';
 import { getRazorpayConfig } from 'src/utils/payments/razorpay-client';
 import {
   completeTeleConsultation,
@@ -1498,30 +1499,42 @@ export function registerVideoCallEndpoints(app: Hono) {
 
       // ✅ FIX: Use correct column names (notification_type, not type), plain objects for JSONB, no non-existent columns
       try {
-        await insert('notifications', {
-          recipient_id: booking.vendor_id,
-          recipient_type: 'vendor',
-          notification_type: 'tele_call_incoming',
-          title: '📞 Instant Video Call',
+        await dispatchNotification({
+          recipientId: String(booking.vendor_id),
+          recipientType: 'vendor',
+          notificationType: 'tele_call_incoming',
+          title: 'Instant video call',
           message: `${customerName} has completed payment and is waiting to connect. Join the call now.`,
-          data: { booking_id: bookingId, bookingId, call_type: 'incoming', action: 'answer_call', instant: true, meeting_id: meetingId },
-          channels: { email: false, sms: false, inApp: true, push: true },
-          is_read: false,
+          channels: { inApp: true, push: true },
+          priority: 'high',
+          data: {
+            bookingId,
+            call_type: 'incoming',
+            action: 'answer_call',
+            instant: true,
+            meetingId,
+            dedupeKey: `tele-incoming-${bookingId}-vendor`,
+          },
         });
       } catch (e) {
         console.error('[confirm-payment] Vendor notification failed:', e);
       }
 
       try {
-        await insert('notifications', {
-          recipient_id: booking.customer_id,
-          recipient_type: 'customer',
-          notification_type: 'tele_call_connecting',
+        await dispatchNotification({
+          recipientId: String(booking.customer_id),
+          recipientType: 'customer',
+          notificationType: 'tele_call_connecting',
           title: 'Connecting to vet',
           message: `${vendorName} will join shortly. Please wait.`,
-          data: { booking_id: bookingId, bookingId, action: 'join_call', instant: true, meeting_id: meetingId },
-          channels: { email: false, sms: false, inApp: true, push: true },
-          is_read: false,
+          channels: { inApp: true, push: true },
+          data: {
+            bookingId,
+            action: 'join_call',
+            instant: true,
+            meetingId,
+            dedupeKey: `tele-connecting-${bookingId}-customer`,
+          },
         });
       } catch (e) {
         console.error('[confirm-payment] Customer notification failed:', e);
