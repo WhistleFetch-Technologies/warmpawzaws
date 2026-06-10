@@ -52,15 +52,20 @@ export function OrderTrackingCard({ tracking, className = '' }: OrderTrackingCar
       </div>
 
       {tracking.trackingUrl && (
-        <a
-          href={tracking.trackingUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-900 underline-offset-2 hover:underline"
-        >
-          Track shipment
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
+        <div className="mt-3">
+          <a
+            href={tracking.trackingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-blue-700 hover:text-blue-900 underline-offset-2 hover:underline"
+          >
+            Track shipment
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+          <p className="mt-1.5 text-xs text-blue-600/90">
+            Copy the tracking number above and paste it on the courier site.
+          </p>
+        </div>
       )}
     </div>
   );
