@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useCustomerShellAnalytics } from '@/hooks/useCustomerShellAnalytics';
 import { setClientShellScreenForErrors } from '@/lib/client-error-reporting';
@@ -26,6 +27,10 @@ import {
   readCachedCustomerProfile,
 } from '@/lib/customer-home-bootstrap';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
+import {
+  registerMealShellTrack,
+  unregisterMealShellTrack,
+} from '@/lib/meal-shell-track-bridge';
 import { sanitizeCustomerAllowedServiceStyles } from '@/lib/sanitize-customer-allowed-service-styles';
 import { isEmergencyProblemTileLocked } from '@/lib/problem-grid-emergency-lock';
 import { readProfileCompleted, readOnboardingCompleted } from '@/lib/customer-flow-guards';
@@ -413,9 +418,10 @@ export function CustomerHomeWrapper({
 
   const [selectedPetId, setSelectedPetId] = useState<string | null>(null);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
-  const [mealOrderTrackingBackScreen, setMealOrderTrackingBackScreen] = useState<
-    'nutrition-meal-plans' | 'meal-plan-orders'
-  >('nutrition-meal-plans');
+  const [mealTrackNav, setMealTrackNav] = useState<{
+    orderId: string;
+    backScreen: ScreenType;
+  } | null>(null);
   const [selectedProblem, setSelectedProblem] = useState<{
     id: string;
     title: string;
@@ -583,6 +589,30 @@ export function CustomerHomeWrapper({
     window.addEventListener('orderMedicineFromPrescription', handleOrderMedicineFromPrescription as EventListener);
     return () => window.removeEventListener('orderMedicineFromPrescription', handleOrderMedicineFromPrescription as EventListener);
   }, []);
+
+  const currentScreenRef = useRef(currentScreen);
+  currentScreenRef.current = currentScreen;
+
+  const openMealOrderTracking = useCallback((orderId: string, backScreen?: ScreenType) => {
+    const id = orderId.trim();
+    if (!id) return;
+    if (!isCustomerMealPlansEnabled()) {
+      toast.info('Meal order tracking is coming soon.');
+      return;
+    }
+    const back = backScreen ?? currentScreenRef.current;
+    flushSync(() => {
+      setMealTrackNav({ orderId: id, backScreen: back });
+      setCurrentScreen('meal-order-tracking');
+    });
+  }, []);
+
+  useEffect(() => {
+    registerMealShellTrack((orderId, backScreen) => {
+      openMealOrderTracking(orderId, backScreen as ScreenType | undefined);
+    });
+    return () => unregisterMealShellTrack();
+  }, [openMealOrderTracking]);
 
   // Header profile/pets: cache only on home (CustomerHomeComplete bootstrap owns the network refresh).
   useEffect(() => {
@@ -1552,6 +1582,7 @@ export function CustomerHomeWrapper({
       setSpaBoardingVendorsSlug(null);
       setBoardingVendorsReturnScreen(null);
       setLabDiagnosticsReturnScreen(null);
+      setMealTrackNav(null);
       setCurrentScreen('home');
       setSelectedPetId(null);
       setSelectedBookingId(null);
@@ -1588,6 +1619,7 @@ export function CustomerHomeWrapper({
     setSpaBoardingVendorsSlug(null);
     setBoardingVendorsReturnScreen(null);
     setLabDiagnosticsReturnScreen(null);
+    setMealTrackNav(null);
     setCurrentScreen('home');
     setSelectedPetId(null);
     setSelectedBookingId(null);
@@ -1872,6 +1904,20 @@ export function CustomerHomeWrapper({
 
   // RENDER LOGIC
 
+  if (currentScreen === 'meal-order-tracking' && mealTrackNav?.orderId) {
+    return (
+      <OrderTrackingScreen
+        orderId={mealTrackNav.orderId}
+        orderType="meal"
+        onBack={() => {
+          const back = mealTrackNav.backScreen ?? 'home';
+          setMealTrackNav(null);
+          setCurrentScreen(back);
+        }}
+      />
+    );
+  }
+
   if (currentScreen === 'home') {
     return (
       <CustomerScreenWrapper customerPhone={phone} 
@@ -1892,8 +1938,7 @@ export function CustomerHomeWrapper({
                   toast.info('Meal order tracking is coming soon.');
                   return;
                 }
-                setSelectedBookingId(orderId);
-                setCurrentScreen('meal-order-tracking');
+                openMealOrderTracking(orderId, 'home');
               } else if (orderId) {
                 setSelectedOrder({ id: orderId });
                 setCurrentScreen('order_tracking');
@@ -3550,19 +3595,8 @@ export function CustomerHomeWrapper({
         onBack={() => setCurrentScreen('nutrition-meal-plans')}
         onSuccess={(orderId) => {
           toast.success('Order placed successfully');
-          setSelectedBookingId(orderId);
-          setMealOrderTrackingBackScreen('nutrition-meal-plans');
-          setCurrentScreen('meal-order-tracking');
+          openMealOrderTracking(orderId, 'nutrition-meal-plans');
         }}
-      />
-    );
-  }
-  if (currentScreen === 'meal-order-tracking' && selectedBookingId) {
-    return (
-      <OrderTrackingScreen
-        orderId={selectedBookingId}
-        orderType="meal"
-        onBack={() => setCurrentScreen(mealOrderTrackingBackScreen)}
       />
     );
   }
@@ -3571,11 +3605,7 @@ export function CustomerHomeWrapper({
       <MealPlanOrdersPanel
         fixedCustomerPhone={phone}
         onBack={() => setCurrentScreen('my-bookings')}
-        onTrackOrder={(orderId) => {
-          setSelectedBookingId(orderId);
-          setMealOrderTrackingBackScreen('meal-plan-orders');
-          setCurrentScreen('meal-order-tracking');
-        }}
+        onTrackOrder={(orderId) => openMealOrderTracking(orderId, 'meal-plan-orders')}
       />
     );
   }

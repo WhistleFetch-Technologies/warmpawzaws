@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Check, Package, Truck, X } from 'lucide-react';
@@ -13,6 +13,7 @@ import {
   mealFooterStepIndex,
   mealFooterSubline,
 } from '@/lib/meal-order-footer-toast';
+import { invokeMealShellTrack } from '@/lib/meal-shell-track-bridge';
 
 function readPhoneFromStorage(): string | null {
   if (typeof window === 'undefined') return null;
@@ -111,6 +112,12 @@ export function MealOrderFooterToast({ customerPhone: customerPhoneProp }: MealO
   const headline = mealFooterHeadline(order.status);
   const subline = mealFooterSubline(order);
 
+  const handleTrackOrder = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (invokeMealShellTrack(order.orderId)) return;
+    router.push(`/track/${order.orderId}?from=meal-footer`);
+  };
   return createPortal(
     <div
       className="fixed inset-x-0 z-[96] mx-auto max-w-customer bottom-[var(--customer-tabbed-nav-offset)] px-3 pb-2 pointer-events-none"
@@ -148,7 +155,7 @@ export function MealOrderFooterToast({ customerPhone: customerPhoneProp }: MealO
             {order.status !== 'delivered' ? (
               <button
                 type="button"
-                onClick={() => router.push(`/track/${order.orderId}`)}
+                onClick={handleTrackOrder}
                 className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[#FF8C42] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#FF7A29]"
               >
                 Track order
