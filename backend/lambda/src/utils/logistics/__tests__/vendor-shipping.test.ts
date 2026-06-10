@@ -161,7 +161,7 @@ describe('shipment-pincodes', () => {
 });
 
 describe('buildStructuredTracking', () => {
-  it('returns stored tracking_url as-is for existing shipments', () => {
+  it('overrides stale stored deep link with registry portal for known couriers', () => {
     const tracking = buildStructuredTracking(
       { order_status: 'shipped', tracking_number: 'FALLBACK123' },
       {
@@ -177,11 +177,29 @@ describe('buildStructuredTracking', () => {
       carrierId: 'delhivery',
       carrierName: 'Delhivery',
       trackingNumber: 'AWB999',
-      trackingUrl: 'https://www.delhivery.com/tracking/AWB999',
+      trackingUrl: 'https://www.delhivery.com/tracking',
       shippedAt: '2026-06-01T10:00:00.000Z',
       locked: true,
     });
     expect(tracking).not.toHaveProperty('estimatedDelivery');
+  });
+
+  it('overrides legacy DTDC stored URL with current portal', () => {
+    const tracking = buildStructuredTracking(
+      { order_status: 'shipped' },
+      {
+        awb_code: 'C14535860',
+        logistics_partner: 'dtdc',
+        courier_name: 'DTDC',
+        tracking_url:
+          'https://www.dtdc.in/tracking/shipment-tracking.asp?cnNo=C14535860',
+        shipped_at: '2026-06-10T05:41:14.857Z',
+      }
+    );
+
+    expect(tracking?.trackingUrl).toBe('https://www.dtdc.com/track-your-shipment/');
+    expect(tracking?.trackingUrl).not.toContain('shipment-tracking.asp');
+    expect(tracking?.trackingUrl).not.toContain('C14535860');
   });
 
   it('falls back to portal-only URL when shipment has no stored tracking_url', () => {
