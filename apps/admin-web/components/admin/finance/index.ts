@@ -12,4 +12,5 @@ export * from './settlementRules/DynamicSettlementRulesManager';
 export * from './TaxCalculatorPreview';
 export * from './VendorDailyAccrualReport';
 export * from './VendorMonthlyAccrualReport';
+export * from './VendorBookingEarningsReport';
 

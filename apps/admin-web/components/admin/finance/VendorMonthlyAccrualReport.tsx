@@ -70,9 +70,6 @@ export function VendorMonthlyAccrualReport() {
     platformFee: number;
     convenienceFee: number;
     deliveryFee: number;
-    cgstAmount: number;
-    sgstAmount: number;
-    igstAmount: number;
     gstTotal: number;
     vendorCount: number;
   } | null>(null);
@@ -108,9 +105,6 @@ export function VendorMonthlyAccrualReport() {
               platformFee: Number(t.platformFee) || 0,
               convenienceFee: Number(t.convenienceFee) || 0,
               deliveryFee: Number(t.deliveryFee) || 0,
-              cgstAmount: Number(t.cgstAmount) || 0,
-              sgstAmount: Number(t.sgstAmount) || 0,
-              igstAmount: Number(t.igstAmount) || 0,
               gstTotal: Number(t.gstTotal) || 0,
               vendorCount: Number(t.vendorCount) || 0,
             }
@@ -262,7 +256,7 @@ export function VendorMonthlyAccrualReport() {
               <div className="text-xl font-semibold">{moneyCell(totals.net)}</div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">Platform fee</div>
               <div className="text-sm font-semibold">{moneyCell(totals.platformFee)}</div>
@@ -276,19 +270,7 @@ export function VendorMonthlyAccrualReport() {
               <div className="text-sm font-semibold">{moneyCell(totals.deliveryFee)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">CGST</div>
-              <div className="text-sm font-semibold">{moneyCell(totals.cgstAmount)}</div>
-            </div>
-            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">SGST</div>
-              <div className="text-sm font-semibold">{moneyCell(totals.sgstAmount)}</div>
-            </div>
-            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">IGST</div>
-              <div className="text-sm font-semibold">{moneyCell(totals.igstAmount)}</div>
-            </div>
-            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">GST total</div>
+              <div className="text-xs text-gray-500">GST</div>
               <div className="text-sm font-semibold">{moneyCell(totals.gstTotal)}</div>
             </div>
           </div>
@@ -307,9 +289,6 @@ export function VendorMonthlyAccrualReport() {
               <th className="px-3 py-2 text-right font-medium text-gray-700">Platform</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Convenience</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Delivery</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-700">CGST</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-700">SGST</th>
-              <th className="px-3 py-2 text-right font-medium text-gray-700">IGST</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">GST</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Lines</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Delivery</th>
@@ -324,7 +303,7 @@ export function VendorMonthlyAccrualReport() {
           <tbody className="divide-y divide-gray-100">
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={20} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={17} className="px-3 py-8 text-center text-gray-500">
                   No rows. Pick a month, run <strong>Compute</strong> (requires migration 732 + 753), then{' '}
                   <strong>Load</strong>.
                 </td>
@@ -344,9 +323,6 @@ export function VendorMonthlyAccrualReport() {
                 <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.platform_fee)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.convenience_fee)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.delivery_fee)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.cgst_amount)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.sgst_amount)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.igst_amount)}</td>
                 <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.gst_total)}</td>
                 <td className="px-3 py-2 text-center">{r.earnings_line_count}</td>
                 <td className="px-3 py-2 text-center">{r.delivery_settlement_line_count ?? 0}</td>
