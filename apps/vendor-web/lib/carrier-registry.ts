@@ -51,15 +51,17 @@ export function validateShipmentForm(input: {
     errors.trackingNumber = 'Tracking number must be at most 100 characters';
   }
 
-  const url = input.trackingUrl.trim();
-  if (url) {
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        errors.trackingUrl = 'Tracking URL must start with http:// or https://';
+  if (input.carrierId === CUSTOM_CARRIER_ID) {
+    const url = input.trackingUrl.trim();
+    if (url) {
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          errors.trackingUrl = 'Tracking URL must start with http:// or https://';
+        }
+      } catch {
+        errors.trackingUrl = 'Tracking URL must be a valid URL';
       }
-    } catch {
-      errors.trackingUrl = 'Tracking URL must be a valid URL';
     }
   }
 
@@ -79,11 +81,16 @@ export function buildMarkShippedPayload(input: {
       ? input.carrierName.trim()
       : option?.name || input.carrierName.trim();
 
+  const trackingUrl =
+    input.carrierId === CUSTOM_CARRIER_ID
+      ? input.trackingUrl.trim() || undefined
+      : undefined;
+
   return {
     carrierId: input.carrierId,
     carrierName: resolvedName,
     trackingNumber: input.trackingNumber.trim(),
-    trackingUrl: input.trackingUrl.trim() || undefined,
+    trackingUrl,
     notes: input.notes,
   };
 }

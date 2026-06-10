@@ -7,6 +7,7 @@ import {
   buildTrackingUrl,
   CARRIERS,
   getCarrierDisplayName,
+  isRegistryKnownCarrier,
   normalizeCarrierKey,
   supportsAutoTrackingUrl,
 } from './carrier-patterns';
@@ -82,6 +83,10 @@ export function validateMarkShippedInput(input: ParsedMarkShippedInput): string 
     if (name.length > 120) return 'Carrier name must be at most 120 characters';
   }
 
+  if (isRegistryKnownCarrier(input.carrierId) && input.trackingUrl?.trim()) {
+    return 'Tracking URL cannot be set for a known courier partner';
+  }
+
   if (input.trackingUrl?.trim() && !isValidTrackingUrl(input.trackingUrl)) {
     return 'Tracking URL must be a valid http or https URL';
   }
@@ -103,6 +108,8 @@ export function parseMarkShippedBody(body: MarkShippedBodyInput): ParsedMarkShip
   const carrierName =
     carrierId === 'custom' && customName ? customName : registryName;
 
+  const rawTrackingUrl = body.trackingUrl || body.tracking_url;
+
   return {
     carrierId,
     carrierName,
@@ -112,7 +119,7 @@ export function parseMarkShippedBody(body: MarkShippedBodyInput): ParsedMarkShip
       body.trackingIdentifier ||
       ''
     ).trim(),
-    trackingUrl: body.trackingUrl || body.tracking_url,
+    trackingUrl: isRegistryKnownCarrier(carrierId) ? undefined : rawTrackingUrl,
     notes: body.notes,
   };
 }

@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { apiClient, ordersApi } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { goBackOrHome, rememberShopBackFromCurrentUrl, rememberShopBackToSpaScreen, WARMPAWZ_EXPAND_SHOP_ORDER_ID_KEY } from '@/lib/go-back-or-replace';
@@ -586,15 +585,7 @@ export function CustomerShopOrdersScreen({ onBack, onCloseToHome, spaShopReturnS
                     {shouldShowOrderTracking(order.status, order.tracking_number) && (() => {
                       const trackingInfo = resolveOrderTracking(order);
                       return trackingInfo ? (
-                        <div className="space-y-2">
-                          <OrderTrackingCard tracking={trackingInfo} />
-                          <Link
-                            href={`/orders/${order.id}/tracking`}
-                            className="inline-flex text-xs font-semibold text-blue-700 hover:text-blue-900 underline-offset-2 hover:underline"
-                          >
-                            View full tracking
-                          </Link>
-                        </div>
+                        <OrderTrackingCard tracking={trackingInfo} />
                       ) : null;
                     })()}
 
