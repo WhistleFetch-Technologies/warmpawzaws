@@ -27,6 +27,7 @@ import { instantTeleRequestSchema } from 'src/zodContracts/teleCommunication.con
 import type { z } from 'zod';
 import { BookingStatus, BookingPaymentStatus, PaymentTransactionStatus, InstantTeleEventType, UserType } from 'src/endpoints/constants';
 import { processInstantTeleRejectionRefund } from 'src/utils/payments/refund-service';
+import { dispatchNotification } from '../../../utils/notification-dispatch';
 import { VET_ROLE_NAMES } from 'src/endpoints/customer/constants';
 import { regeneratePresignedUrl } from 'src/endpoints/constants/helper';
 
@@ -367,29 +368,30 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       // Send notification to vendor (incoming call)
       //Pass data/channels as plain objects — the insert() function handles JSON.stringify + ::jsonb cast
       try {
-        const notifResult = await insert('notifications', {
-          recipient_id: vendorId,
-          recipient_type: 'vendor',
-          notification_type: 'tele_instant_incoming',
-          title: 'Incoming Instant Call',
+        await dispatchNotification({
+          recipientId: String(vendorId),
+          recipientType: 'vendor',
+          notificationType: 'tele_instant_incoming',
+          title: 'Incoming instant call',
           message: `${customerName} wants an instant consultation for ${petName}. Accept or decline.`,
+          channels: { inApp: true, push: true },
+          priority: 'high',
           data: {
-            booking_id: booking.id,
-            customer_id: customerId,
-            customer_name: customerName,
-            pet_name: petName,
-            service_name: resolvedServiceName,
+            bookingId: booking.id,
+            customerId,
+            customerName,
+            petName,
+            serviceName: resolvedServiceName,
             amount: resolvedPrice,
             call_type: 'incoming_instant',
             action: 'accept_reject',
             instant: true,
+            dedupeKey: `tele-instant-incoming-${booking.id}-vendor`,
           },
-          channels: { email: false, sms: false, inApp: true, push: true },
-          is_read: false,
         });
-        console.log('[instant-v3] ✅ Vendor notification inserted for booking:', booking.id, 'notif ID:', notifResult?.[0]?.id);
+        console.log('[instant-v3] Vendor notification dispatched for booking:', booking.id);
       } catch (e: any) {
-        console.error('[instant-v3] ❌ Vendor notification insert FAILED:', e?.message || e);
+        console.error('[instant-v3] Vendor notification dispatch FAILED:', e?.message || e);
       }
 
       return c.json({
@@ -489,25 +491,26 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
       const vendorName = vendorResult[0]?.business_name || vendorResult[0]?.owner_name || 'Provider';
 
       try {
-        await insert('notifications', {
-          recipient_id: booking.customer_id,
-          recipient_type: 'customer',
-          notification_type: 'tele_instant_accepted',
-          title: 'Vet Accepted!',
+        await dispatchNotification({
+          recipientId: String(booking.customer_id),
+          recipientType: 'customer',
+          notificationType: 'tele_instant_accepted',
+          title: 'Vet accepted',
           message: `${vendorName} accepted your consultation. Please complete payment to start the call.`,
+          channels: { inApp: true, push: true },
+          priority: 'high',
           data: {
-            booking_id: bookingId,
-            vendor_id: vendorId,
-            vendor_name: vendorName,
-            total_amount: booking.total_amount,
+            bookingId,
+            vendorId,
+            vendorName,
+            totalAmount: booking.total_amount,
             action: 'complete_payment',
-            session_id: sessionId,
+            sessionId,
+            dedupeKey: `tele-instant-accepted-${bookingId}-customer`,
           },
-          channels: { email: false, sms: false, inApp: true, push: true },
-          is_read: false,
         });
       } catch (e: any) {
-        console.error('[instant-v3] ❌ Customer accept notification failed:', e?.message || e);
+        console.error('[instant-v3] Customer accept notification failed:', e?.message || e);
       }
 
       return c.json({
@@ -573,22 +576,22 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
         const vendorResult = await select('vendors', { id: booking.vendor_id });
         const vendorName = vendorResult[0]?.business_name || vendorResult[0]?.owner_name || 'Provider';
 
-        await insert('notifications', {
-          recipient_id: booking.customer_id,
-          recipient_type: 'customer',
-          notification_type: 'tele_instant_rejected',
-          title: 'Consultation Declined',
+        await dispatchNotification({
+          recipientId: String(booking.customer_id),
+          recipientType: 'customer',
+          notificationType: 'tele_instant_rejected',
+          title: 'Consultation declined',
           message: `${vendorName} is currently unavailable. Please try another vet.`,
+          channels: { inApp: true, push: true },
           data: {
-            booking_id: bookingId,
-            vendor_id: booking.vendor_id,
+            bookingId,
+            vendorId: booking.vendor_id,
             action: 'try_another',
+            dedupeKey: `tele-instant-rejected-${bookingId}-customer`,
           },
-          channels: { email: false, sms: false, inApp: true, push: true },
-          is_read: false,
         });
       } catch (e: any) {
-        console.error('[instant-v3] ❌ Customer rejection notification failed:', e?.message || e);
+        console.error('[instant-v3] Customer rejection notification failed:', e?.message || e);
       }
 
       return c.json({
@@ -694,24 +697,24 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
 
         // Notify customer about cancellation and refund
         try {
-          await insert('notifications', {
-            recipient_id: booking.customer_id,
-            recipient_type: 'customer',
-            notification_type: 'tele_instant_cancelled',
-            title: 'Consultation Cancelled',
+          await dispatchNotification({
+            recipientId: String(booking.customer_id),
+            recipientType: 'customer',
+            notificationType: 'tele_instant_cancelled',
+            title: 'Consultation cancelled',
             message: `${vendorName} has cancelled the consultation. Your payment will be refunded.`,
+            channels: { inApp: true, push: true },
             data: {
-              booking_id: bookingId,
-              vendor_id: vendorId,
-              vendor_name: vendorName,
+              bookingId,
+              vendorId,
+              vendorName,
               action: 'try_another',
-              refund_initiated: true,
+              refundInitiated: true,
+              dedupeKey: `tele-instant-cancelled-refund-${bookingId}-customer`,
             },
-            channels: { email: false, sms: false, inApp: true, push: true },
-            is_read: false,
           });
         } catch (e: any) {
-          console.error('[instant-v3] ❌ Customer cancellation notification failed:', e?.message || e);
+          console.error('[instant-v3] Customer cancellation notification failed:', e?.message || e);
         }
       } else {
         // Payment is pending - simpler cancellation
@@ -739,23 +742,23 @@ export function registerInstantTeleV3Endpoints(app: Hono) {
 
         // Notify customer
         try {
-          await insert('notifications', {
-            recipient_id: booking.customer_id,
-            recipient_type: 'customer',
-            notification_type: 'tele_instant_cancelled',
-            title: 'Consultation Cancelled',
+          await dispatchNotification({
+            recipientId: String(booking.customer_id),
+            recipientType: 'customer',
+            notificationType: 'tele_instant_cancelled',
+            title: 'Consultation cancelled',
             message: `${vendorName} has cancelled the consultation. Please try another vet.`,
+            channels: { inApp: true, push: true },
             data: {
-              booking_id: bookingId,
-              vendor_id: vendorId,
-              vendor_name: vendorName,
+              bookingId,
+              vendorId,
+              vendorName,
               action: 'try_another',
+              dedupeKey: `tele-instant-cancelled-${bookingId}-customer`,
             },
-            channels: { email: false, sms: false, inApp: true, push: true },
-            is_read: false,
           });
         } catch (e: any) {
-          console.error('[instant-v3] ❌ Customer cancellation notification failed:', e?.message || e);
+          console.error('[instant-v3] Customer cancellation notification failed:', e?.message || e);
         }
       }
 
