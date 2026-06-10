@@ -4,20 +4,13 @@
 
 import { insert, query, update } from '../database/rds-connection';
 import {
-  ensureDeliveryLogEntries,
-  finalizeInAppDelivery,
-  markChannelDeliveryFailed,
-  resolveChannelsFromRequest,
-} from './notification-delivery';
-import { sendPushToMultipleDevices } from './firebase-client';
-import {
   buildAudienceFiltersPayload,
   resolveCampaignRecipientIds,
   type AudienceFilters,
 } from './notification-campaign-audience';
+import { dispatchCampaignNotification } from './notification-dispatch';
 
 const MAX_RECIPIENTS_PER_SEND = 5000;
-const PUSH_BATCH_SIZE = 500;
 
 export interface CampaignRow {
   id: string;
@@ -82,82 +75,16 @@ async function deliverToRecipient(
   pushEnabled: boolean
 ): Promise<{ inboxOk: boolean; pushSuccess: number; pushFailure: number; error?: string }> {
   const wantsPush = pushEnabled && campaign.channel === 'PUSH';
-  const channelConfig = { inApp: true, push: wantsPush };
-
-  try {
-    const notification = await insert('notifications', {
-      recipient_type: recipientType,
-      recipient_id: recipientId,
-      notification_type: 'campaign',
-      title: campaign.title,
-      message: campaign.message,
-      channels: channelConfig,
-      is_read: false,
-      delivery_status: 'created',
-    });
-
-    const notificationId = notification[0]?.id as string | undefined;
-    if (!notificationId) {
-      return { inboxOk: false, pushSuccess: 0, pushFailure: 0, error: 'Inbox insert failed' };
-    }
-
-    const deliveryChannels = await resolveChannelsFromRequest(channelConfig);
-    await ensureDeliveryLogEntries(notificationId, deliveryChannels, {
-      title: campaign.title,
-      body: campaign.message,
-      type: 'campaign',
-      campaign_id: campaign.id,
-      deep_link: campaign.deep_link,
-    });
-    await finalizeInAppDelivery(notificationId);
-
-    let pushSuccess = 0;
-    let pushFailure = 0;
-
-    if (wantsPush) {
-      // Tray push: every active registered device for this user (android/ios/web FCM).
-      const tokensResult = await query(
-        `SELECT DISTINCT fcm_token FROM device_tokens
-         WHERE user_id = $1 AND user_type = $2 AND is_active = true AND fcm_token IS NOT NULL`,
-        [recipientId, recipientType]
-      );
-      const fcmTokens = [...new Set(
-        (tokensResult.rows || [])
-          .map((r: { fcm_token: string }) => r.fcm_token)
-          .filter(Boolean)
-      )];
-
-      if (fcmTokens.length === 0) {
-        await markChannelDeliveryFailed(notificationId, 'push', 'No active device tokens');
-        pushFailure = 1;
-      } else {
-        for (let i = 0; i < fcmTokens.length; i += PUSH_BATCH_SIZE) {
-          const batch = fcmTokens.slice(i, i + PUSH_BATCH_SIZE);
-          const pushResult = await sendPushToMultipleDevices(batch, {
-            title: campaign.title,
-            body: campaign.message,
-            imageUrl: campaign.image_url || undefined,
-            data: {
-              type: 'campaign',
-              campaign_id: campaign.id,
-              notification_id: notificationId,
-              deep_link: campaign.deep_link || '',
-            },
-          });
-          pushSuccess += pushResult.successCount;
-          pushFailure += pushResult.failureCount;
-        }
-        if (pushFailure > 0 && pushSuccess === 0) {
-          await markChannelDeliveryFailed(notificationId, 'push', 'All push attempts failed');
-        }
-      }
-    }
-
-    return { inboxOk: true, pushSuccess, pushFailure };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Delivery failed';
-    return { inboxOk: false, pushSuccess: 0, pushFailure: 0, error: msg };
-  }
+  return dispatchCampaignNotification({
+    recipientId,
+    recipientType,
+    campaignId: campaign.id,
+    title: campaign.title,
+    message: campaign.message,
+    deepLink: campaign.deep_link,
+    imageUrl: campaign.image_url,
+    pushEnabled: wantsPush,
+  });
 }
 
 export async function executeCampaignDelivery(

@@ -168,9 +168,73 @@ export interface PushNotificationResult {
   success: boolean;
   messageId?: string;
   error?: string;
+  errorCode?: string;
+  token?: string;
 }
 
-/** Android channel created by Capacitor apps in push-bootstrap.ts — must stay in sync. */
+/**
+ * Classify FCM errors for retry vs token deactivation.
+ */
+export function classifyFcmError(
+  errorCode?: string,
+  errorMessage?: string
+): 'permanent' | 'transient' | 'unknown' {
+  const code = String(errorCode || '').toLowerCase();
+  const msg = String(errorMessage || '').toLowerCase();
+
+  const permanentCodes = [
+    'messaging/registration-token-not-registered',
+    'messaging/invalid-registration-token',
+    'messaging/invalid-argument',
+  ];
+  if (permanentCodes.includes(code)) return 'permanent';
+  if (
+    msg.includes('not registered') ||
+    msg.includes('invalid registration') ||
+    msg.includes('requested entity was not found')
+  ) {
+    return 'permanent';
+  }
+
+  const transientCodes = [
+    'messaging/server-unavailable',
+    'messaging/internal-error',
+    'messaging/unknown-error',
+    'messaging/quota-exceeded',
+  ];
+  if (transientCodes.some((c) => code === c)) return 'transient';
+  if (msg.includes('unavailable') || msg.includes('timeout') || msg.includes('503')) {
+    return 'transient';
+  }
+
+  return 'unknown';
+}
+
+/**
+ * Deactivate invalid FCM tokens in device_tokens.
+ */
+export async function deactivateDeviceTokens(fcmTokens: string[]): Promise<number> {
+  if (fcmTokens.length === 0) return 0;
+  try {
+    const { query } = await import('../database/rds-connection');
+    const result = await query(
+      `UPDATE device_tokens
+       SET is_active = false, updated_at = NOW()
+       WHERE fcm_token = ANY($1::text[])
+         AND is_active = true`,
+      [fcmTokens]
+    );
+    const count = result.rowCount ?? 0;
+    if (count > 0) {
+      console.log(`[Firebase] Deactivated ${count} invalid device token(s)`);
+    }
+    return count;
+  } catch (error) {
+    console.error('[Firebase] Failed to deactivate tokens:', error);
+    return 0;
+  }
+}
+
 export const WARMPAWZ_FCM_ANDROID_CHANNEL_ID = 'warmpawz_push_alerts';
 
 function buildAndroidPushConfig() {
@@ -251,12 +315,16 @@ export async function sendPushToDevice(
       return {
         success: false,
         error: 'Invalid or expired FCM token',
+        errorCode: error.code,
+        token: fcmToken,
       };
     }
 
     return {
       success: false,
       error: error.message,
+      errorCode: error.code,
+      token: fcmToken,
     };
   }
 }
@@ -279,10 +347,12 @@ export async function sendPushToMultipleDevices(
 
     const response = await messaging.sendEachForMulticast(message);
 
-    const results: PushNotificationResult[] = response.responses.map((r: any) => ({
+    const results: PushNotificationResult[] = response.responses.map((r: any, index: number) => ({
       success: r.success,
       messageId: r.messageId,
       error: r.error?.message,
+      errorCode: r.error?.code,
+      token: fcmTokens[index],
     }));
 
     console.log(`[Firebase] Multicast: ${response.successCount} success, ${response.failureCount} failed`);
