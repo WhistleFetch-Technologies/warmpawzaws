@@ -72,17 +72,23 @@ function mapMealPlanOrdersRow(row: Record<string, unknown>): MealFooterActiveOrd
   const lower = rawStatus.toLowerCase();
   if (['delivered', 'cancelled', 'refunded'].includes(lower)) return null;
 
-  const paymentCtx = {
-    status: rawStatus,
-    paymentStatus: (row.payment_status ?? row.paymentStatus) as string | undefined,
-    paymentHoldExpiresAt: (row.payment_hold_expires_at ?? row.paymentHoldExpiresAt) as string | null | undefined,
-    createdAt: row.created_at as string | undefined,
-  };
-  if (isMealPaymentHoldExpired(paymentCtx)) return null;
-  if (isMealOrderAwaitingPayment(paymentCtx)) return null;
-
   const normalized = normalizeMealFooterStatus(rawStatus);
   if (!normalized) return null;
+
+  // Payment hold only applies before kitchen/delivery — not once vendor is preparing.
+  const pastPaymentGate = ['preparing', 'ready_for_pickup', 'picked_up', 'on_the_way', 'delivered'].includes(
+    normalized,
+  );
+  if (!pastPaymentGate) {
+    const paymentCtx = {
+      status: rawStatus,
+      paymentStatus: (row.payment_status ?? row.paymentStatus) as string | undefined,
+      paymentHoldExpiresAt: (row.payment_hold_expires_at ?? row.paymentHoldExpiresAt) as string | null | undefined,
+      createdAt: (row.created_at ?? row.createdAt) as string | undefined,
+    };
+    if (isMealPaymentHoldExpired(paymentCtx)) return null;
+    if (isMealOrderAwaitingPayment(paymentCtx)) return null;
+  }
 
   return {
     orderId,
@@ -99,6 +105,42 @@ function mapMealPlanOrdersRow(row: Record<string, unknown>): MealFooterActiveOrd
     riderMessage: null,
     etaMinutes: null,
   };
+}
+
+async function resolveCustomerIdForFooter(phone: string): Promise<string | null> {
+  const cached = getResolvedCustomerId();
+  if (cached) return cached;
+  try {
+    const res = (await apiClient.get(`/customer/by-phone?phone=${encodeURIComponent(phone)}`)) as {
+      customer?: { id?: string };
+      id?: string;
+    };
+    const id = res?.customer?.id || res?.id;
+    return id ? String(id) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchMealPlanOrderRows(phone: string): Promise<Record<string, unknown>[]> {
+  const customerId = await resolveCustomerIdForFooter(phone);
+  const q = new URLSearchParams();
+  if (customerId) q.set('customerId', customerId);
+  q.set('phone', phone);
+
+  let rows = extractOrdersArray(await apiClient.get(`/customer/meal-plan-orders?${q.toString()}`));
+
+  if (rows.length === 0 && customerId) {
+    try {
+      rows = extractOrdersArray(
+        await apiClient.get(`/meal/orders/customer/${encodeURIComponent(customerId)}`),
+      );
+    } catch {
+      /* primary route may be enough */
+    }
+  }
+
+  return rows;
 }
 
 function pickBestOrder(orders: MealFooterActiveOrder[]): MealFooterActiveOrder | null {
@@ -133,12 +175,7 @@ async function fetchMealFooterCandidates(phone: string): Promise<MealFooterActiv
 
   // Primary: same API as /orders/meal-plans (user sees PREPARING here).
   try {
-    const q = new URLSearchParams();
-    q.set('phone', phone);
-    const customerId = getResolvedCustomerId();
-    if (customerId) q.set('customerId', customerId);
-    const mealPlanRes = await apiClient.get(`/customer/meal-plan-orders?${q.toString()}`);
-    for (const row of extractOrdersArray(mealPlanRes)) {
+    for (const row of await fetchMealPlanOrderRows(phone)) {
       const mapped = mapMealPlanOrdersRow(row);
       if (mapped) candidates.push(mapped);
     }
