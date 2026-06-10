@@ -1,5 +1,5 @@
 /**
- * Per-booking vendor earnings ledger for admin (IST calendar day).
+ * Per-booking vendor earnings ledger for admin (IST day or month).
  * Combines vendor_earnings ledger rows with customer-paid checkout breakdown.
  */
 import { query } from '../database/rds-connection';
@@ -13,6 +13,11 @@ import {
   type PaymentAccrualSnapshot,
   type VendorAccrualFeeBreakdown,
 } from './vendor-accrual-fee-breakdown';
+import {
+  istDayEndExclusiveYmd,
+  istMonthEndExclusiveYmd,
+  istMonthStartYmd,
+} from './vendor-accrual-ist';
 
 const PAYMENT_OK = `LOWER(TRIM(COALESCE(payment_status, ''))) IN ('completed', 'success', 'paid', 'partially_refunded')`;
 const PAYMENT_PREFERRED = `LOWER(TRIM(COALESCE(payment_status, ''))) IN ('completed', 'paid')`;
@@ -251,22 +256,23 @@ function totalsFromSummaries(vendors: VendorBookingEarningsDaySummary[]): Vendor
   return totals;
 }
 
-async function fetchRawEarningsRowsForIstDay(
-  reportDateYmd: string,
+async function fetchRawEarningsRowsForIstRange(
+  periodStartYmd: string,
+  periodEndExclusiveYmd: string,
   vendorId?: string,
 ): Promise<RawEarningsRow[]> {
-  const params: string[] = [reportDateYmd];
+  const params: string[] = [periodStartYmd, periodEndExclusiveYmd];
   let vendorFilter = '';
   if (vendorId) {
     params.push(vendorId);
-    vendorFilter = 'AND ve.vendor_id = $2::uuid';
+    vendorFilter = 'AND ve.vendor_id = $3::uuid';
   }
 
   const res = await query(
     `WITH bounds AS (
        SELECT
          (to_timestamp($1::text || ' 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AT TIME ZONE 'Asia/Kolkata') AS start_ts,
-         (to_timestamp((($1::date + INTERVAL '1 day')::date::text) || ' 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AT TIME ZONE 'Asia/Kolkata') AS end_ts
+         (to_timestamp($2::text || ' 00:00:00', 'YYYY-MM-DD HH24:MI:SS') AT TIME ZONE 'Asia/Kolkata') AS end_ts
      )
      SELECT ve.vendor_id::text AS vendor_id,
             ve.booking_id::text AS booking_id,
@@ -374,16 +380,27 @@ export async function buildVendorBookingEarningsLine(
   };
 }
 
-export async function fetchVendorBookingEarningsForIstDay(
-  reportDateYmd: string,
-  vendorId?: string,
-): Promise<{
-  reportDate: string;
+export type VendorBookingEarningsReportPayload = {
+  periodType: 'day' | 'month';
+  reportDate?: string;
+  year?: number;
+  month?: number;
+  periodStart: string;
+  periodEndExclusive: string;
+  periodTotals: VendorBookingEarningsDayTotals;
+  /** @deprecated use periodTotals */
   dayTotals: VendorBookingEarningsDayTotals;
   vendors: VendorBookingEarningsDaySummary[];
   bookings: VendorBookingEarningsLine[];
-}> {
-  const rawRows = await fetchRawEarningsRowsForIstDay(reportDateYmd, vendorId);
+};
+
+export async function fetchVendorBookingEarningsForIstRange(
+  periodStartYmd: string,
+  periodEndExclusiveYmd: string,
+  vendorId: string | undefined,
+  meta: { periodType: 'day' | 'month'; reportDate?: string; year?: number; month?: number },
+): Promise<VendorBookingEarningsReportPayload> {
+  const rawRows = await fetchRawEarningsRowsForIstRange(periodStartYmd, periodEndExclusiveYmd, vendorId);
   const lineByBooking = new Map<string, VendorBookingEarningsLine>();
   const linesInOrder: VendorBookingEarningsLine[] = [];
 
@@ -415,9 +432,9 @@ export async function fetchVendorBookingEarningsForIstDay(
 
   const vendors: VendorBookingEarningsDaySummary[] = [];
   for (const [id, vendorLines] of byVendor.entries()) {
-    const meta = vendorMeta.get(id);
+    const vmeta = vendorMeta.get(id);
     vendors.push(
-      summaryFromLines(id, meta?.businessName ?? null, meta?.ownerName ?? null, vendorLines),
+      summaryFromLines(id, vmeta?.businessName ?? null, vmeta?.ownerName ?? null, vendorLines),
     );
   }
 
@@ -428,13 +445,48 @@ export async function fetchVendorBookingEarningsForIstDay(
   );
 
   const bookings = vendorId ? linesInOrder.filter((l) => l.vendorId === vendorId) : [];
+  const periodTotals = totalsFromSummaries(vendors);
 
   return {
-    reportDate: reportDateYmd,
-    dayTotals: totalsFromSummaries(vendors),
+    periodType: meta.periodType,
+    reportDate: meta.reportDate,
+    year: meta.year,
+    month: meta.month,
+    periodStart: periodStartYmd,
+    periodEndExclusive: periodEndExclusiveYmd,
+    periodTotals,
+    dayTotals: periodTotals,
     vendors,
     bookings,
   };
+}
+
+export async function fetchVendorBookingEarningsForIstDay(
+  reportDateYmd: string,
+  vendorId?: string,
+): Promise<VendorBookingEarningsReportPayload> {
+  const periodEndExclusive = istDayEndExclusiveYmd(reportDateYmd);
+  if (!periodEndExclusive) {
+    throw new Error('Invalid reportDate');
+  }
+  return fetchVendorBookingEarningsForIstRange(reportDateYmd, periodEndExclusive, vendorId, {
+    periodType: 'day',
+    reportDate: reportDateYmd,
+  });
+}
+
+export async function fetchVendorBookingEarningsForIstMonth(
+  year: number,
+  month: number,
+  vendorId?: string,
+): Promise<VendorBookingEarningsReportPayload> {
+  const periodStart = istMonthStartYmd(year, month);
+  const periodEndExclusive = istMonthEndExclusiveYmd(year, month);
+  return fetchVendorBookingEarningsForIstRange(periodStart, periodEndExclusive, vendorId, {
+    periodType: 'month',
+    year,
+    month,
+  });
 }
 
 /** Used in tests to detect whether payment row alone explains checkout fees. */

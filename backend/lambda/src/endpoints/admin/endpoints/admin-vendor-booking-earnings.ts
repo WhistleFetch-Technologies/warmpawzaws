@@ -1,12 +1,14 @@
 /**
- * Admin: per-booking vendor earnings ledger (IST day) with customer-paid waterfall.
+ * Admin: per-booking vendor earnings ledger (IST day or month) with customer-paid waterfall.
  */
 
 import { Hono } from 'hono';
-import { assertReportDate } from '../../../utils/vendor-accrual-ist';
+import { assertReportDate, parseYearMonthQuery } from '../../../utils/vendor-accrual-ist';
 import {
   fetchVendorBookingEarningsForIstDay,
+  fetchVendorBookingEarningsForIstMonth,
   type VendorBookingEarningsLine,
+  type VendorBookingEarningsReportPayload,
 } from '../../../utils/vendor-booking-earnings-report';
 
 function csvEscape(v: unknown): string {
@@ -81,26 +83,60 @@ const VENDOR_SUMMARY_CSV_HEADERS = [
   'vendor_net',
 ] as const;
 
+function periodLabel(payload: VendorBookingEarningsReportPayload): string {
+  if (payload.periodType === 'month' && payload.year != null && payload.month != null) {
+    return `${payload.year}-${String(payload.month).padStart(2, '0')}`;
+  }
+  return payload.reportDate || payload.periodStart;
+}
+
+async function loadVendorBookingEarnings(
+  reportDateRaw: string,
+  yearRaw: string,
+  monthRaw: string,
+  vendorId?: string,
+): Promise<VendorBookingEarningsReportPayload | { error: string; status: number }> {
+  const ym = parseYearMonthQuery(yearRaw, monthRaw);
+  if (ym) {
+    return fetchVendorBookingEarningsForIstMonth(ym.year, ym.month, vendorId);
+  }
+
+  const reportDate = assertReportDate(reportDateRaw.trim());
+  if (!reportDate) {
+    return {
+      error: 'reportDate (YYYY-MM-DD) or year+month query params required',
+      status: 400,
+    };
+  }
+
+  return fetchVendorBookingEarningsForIstDay(reportDate, vendorId);
+}
+
 export function registerAdminVendorBookingEarningsEndpoints(app: Hono) {
   /**
    * GET /admin/finance/vendor-booking-earnings?reportDate=YYYY-MM-DD&vendorId=optional
-   * Without vendorId: vendor day summaries. With vendorId: includes bookings[] for that vendor.
+   * GET /admin/finance/vendor-booking-earnings?year=2026&month=6&vendorId=optional
+   * Without vendorId: vendor summaries. With vendorId: includes bookings[] for that vendor.
    */
   app.get('/admin/finance/vendor-booking-earnings', async (c) => {
     try {
-      const reportDate = assertReportDate(String(c.req.query('reportDate') || '').trim());
-      if (!reportDate) {
-        return c.json({ success: false, error: 'reportDate query param required (YYYY-MM-DD)' }, 400);
-      }
-
       const vendorIdRaw = String(c.req.query('vendorId') || '').trim();
       const vendorId = vendorIdRaw || undefined;
 
-      const payload = await fetchVendorBookingEarningsForIstDay(reportDate, vendorId);
+      const payloadOrError = await loadVendorBookingEarnings(
+        String(c.req.query('reportDate') || ''),
+        String(c.req.query('year') || ''),
+        String(c.req.query('month') || ''),
+        vendorId,
+      );
+
+      if ('error' in payloadOrError) {
+        return c.json({ success: false, error: payloadOrError.error }, payloadOrError.status);
+      }
 
       return c.json({
         success: true,
-        ...payload,
+        ...payloadOrError,
       });
     } catch (error: any) {
       console.error('[admin-vendor-booking-earnings] list:', error);
@@ -110,19 +146,27 @@ export function registerAdminVendorBookingEarningsEndpoints(app: Hono) {
 
   /**
    * GET /admin/finance/vendor-booking-earnings/export.csv?reportDate=YYYY-MM-DD&vendorId=optional
-   * vendorId set → booking-level CSV; otherwise vendor summary CSV for the day.
+   * GET /admin/finance/vendor-booking-earnings/export.csv?year=2026&month=6&vendorId=optional
+   * vendorId set → booking-level CSV; otherwise vendor summary CSV for the period.
    */
   app.get('/admin/finance/vendor-booking-earnings/export.csv', async (c) => {
     try {
-      const reportDate = assertReportDate(String(c.req.query('reportDate') || '').trim());
-      if (!reportDate) {
-        return c.text('reportDate query param required (YYYY-MM-DD)', 400);
-      }
-
       const vendorIdRaw = String(c.req.query('vendorId') || '').trim();
       const vendorId = vendorIdRaw || undefined;
 
-      const payload = await fetchVendorBookingEarningsForIstDay(reportDate, vendorId);
+      const payloadOrError = await loadVendorBookingEarnings(
+        String(c.req.query('reportDate') || ''),
+        String(c.req.query('year') || ''),
+        String(c.req.query('month') || ''),
+        vendorId,
+      );
+
+      if ('error' in payloadOrError) {
+        return c.text(payloadOrError.error, payloadOrError.status);
+      }
+
+      const payload = payloadOrError;
+      const label = periodLabel(payload);
 
       if (vendorId) {
         const lines = [BOOKING_CSV_HEADERS.join(',')];
@@ -134,7 +178,7 @@ export function registerAdminVendorBookingEarningsEndpoints(app: Hono) {
         return new Response(lines.join('\n'), {
           headers: {
             'Content-Type': 'text/csv; charset=utf-8',
-            'Content-Disposition': `attachment; filename="vendor-booking-earnings-${reportDate}-${slug}.csv"`,
+            'Content-Disposition': `attachment; filename="vendor-booking-earnings-${label}-${slug}.csv"`,
           },
         });
       }
@@ -166,7 +210,7 @@ export function registerAdminVendorBookingEarningsEndpoints(app: Hono) {
       return new Response(lines.join('\n'), {
         headers: {
           'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': `attachment; filename="vendor-booking-earnings-summary-${reportDate}.csv"`,
+          'Content-Disposition': `attachment; filename="vendor-booking-earnings-summary-${label}.csv"`,
         },
       });
     } catch (error: any) {

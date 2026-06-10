@@ -5,6 +5,8 @@ import { apiClient, getApiBaseUrl, isUatMode } from '@/lib/api-client';
 import { Button } from '@warmpawz/ui';
 import { ChevronDown, ChevronRight, Download, Loader2, RefreshCw } from 'lucide-react';
 
+type PeriodType = 'day' | 'month';
+
 function yesterdayYmd(): string {
   const d = new Date();
   d.setDate(d.getDate() - 1);
@@ -12,6 +14,22 @@ function yesterdayYmd(): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+function currentYearMonthValue(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+function parseYearMonth(value: string): { year: number; month: number } | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(value);
+  if (!m) return null;
+  const year = parseInt(m[1], 10);
+  const month = parseInt(m[2], 10);
+  if (month < 1 || month > 12) return null;
+  return { year, month };
 }
 
 type VendorSummary = {
@@ -54,7 +72,7 @@ type BookingLine = {
   realizedAt?: string | null;
 };
 
-type DayTotals = {
+type PeriodTotals = {
   vendorCount: number;
   bookingCount: number;
   customerPaidTotal: number;
@@ -79,52 +97,75 @@ function shortId(id: string) {
 }
 
 export function VendorBookingEarningsReport() {
+  const [periodType, setPeriodType] = useState<PeriodType>('day');
   const [reportDate, setReportDate] = useState(yesterdayYmd());
+  const [yearMonth, setYearMonth] = useState(currentYearMonthValue());
   const [loading, setLoading] = useState(false);
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [vendors, setVendors] = useState<VendorSummary[]>([]);
-  const [dayTotals, setDayTotals] = useState<DayTotals | null>(null);
+  const [periodTotals, setPeriodTotals] = useState<PeriodTotals | null>(null);
   const [selectedVendorId, setSelectedVendorId] = useState<string | null>(null);
   const [bookings, setBookings] = useState<BookingLine[]>([]);
   const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const parsedMonth = parseYearMonth(yearMonth);
+  const periodWord = periodType === 'day' ? 'day' : 'month';
+
+  const buildListQuery = useCallback(
+    (vendorId?: string) => {
+      const vendorPart = vendorId ? `&vendorId=${encodeURIComponent(vendorId)}` : '';
+      if (periodType === 'month') {
+        if (!parsedMonth) return null;
+        return `/admin/finance/vendor-booking-earnings?year=${parsedMonth.year}&month=${parsedMonth.month}${vendorPart}`;
+      }
+      return `/admin/finance/vendor-booking-earnings?reportDate=${encodeURIComponent(reportDate)}${vendorPart}`;
+    },
+    [periodType, parsedMonth, reportDate],
+  );
+
   const loadVendorSummaries = useCallback(async () => {
+    if (periodType === 'month' && !parsedMonth) {
+      setError('Pick a valid month (YYYY-MM)');
+      return;
+    }
+    const query = buildListQuery();
+    if (!query) return;
+
     setError(null);
     setLoading(true);
     setSelectedVendorId(null);
     setBookings([]);
     setExpandedBookingId(null);
     try {
-      const res = await apiClient.get<any>(
-        `/admin/finance/vendor-booking-earnings?reportDate=${encodeURIComponent(reportDate)}`,
-      );
+      const res = await apiClient.get<any>(query);
       if (!res?.success) {
         setError(res?.error || 'Failed to load report');
         setVendors([]);
-        setDayTotals(null);
+        setPeriodTotals(null);
         return;
       }
       setVendors(res.vendors || []);
-      setDayTotals(res.dayTotals || null);
+      setPeriodTotals(res.periodTotals || res.dayTotals || null);
     } catch (e: any) {
       setError(e?.message || 'Failed to load');
       setVendors([]);
-      setDayTotals(null);
+      setPeriodTotals(null);
     } finally {
       setLoading(false);
     }
-  }, [reportDate]);
+  }, [periodType, parsedMonth, buildListQuery]);
 
   const loadVendorBookings = useCallback(
     async (vendorId: string) => {
+      const query = buildListQuery(vendorId);
+      if (!query) return;
+
       setError(null);
       setLoadingBookings(true);
       setExpandedBookingId(null);
       try {
-        const res = await apiClient.get<any>(
-          `/admin/finance/vendor-booking-earnings?reportDate=${encodeURIComponent(reportDate)}&vendorId=${encodeURIComponent(vendorId)}`,
-        );
+        const res = await apiClient.get<any>(query);
         if (!res?.success) {
           setError(res?.error || 'Failed to load bookings');
           setBookings([]);
@@ -138,7 +179,7 @@ export function VendorBookingEarningsReport() {
         setLoadingBookings(false);
       }
     },
-    [reportDate],
+    [buildListQuery],
   );
 
   const selectVendor = (vendorId: string) => {
@@ -155,10 +196,27 @@ export function VendorBookingEarningsReport() {
     const base = getApiBaseUrl();
     const uat = isUatMode() ? '&uat=1' : '';
     const vendorPart = vendorId ? `&vendorId=${encodeURIComponent(vendorId)}` : '';
+    let periodPart = '';
+    if (periodType === 'month' && parsedMonth) {
+      periodPart = `year=${parsedMonth.year}&month=${parsedMonth.month}`;
+    } else {
+      periodPart = `reportDate=${encodeURIComponent(reportDate)}`;
+    }
     window.open(
-      `${base}/admin/finance/vendor-booking-earnings/export.csv?reportDate=${encodeURIComponent(reportDate)}${vendorPart}${uat}`,
+      `${base}/admin/finance/vendor-booking-earnings/export.csv?${periodPart}${vendorPart}${uat}`,
       '_blank',
     );
+  };
+
+  const switchPeriodType = (next: PeriodType) => {
+    if (next === periodType) return;
+    setPeriodType(next);
+    setSelectedVendorId(null);
+    setBookings([]);
+    setExpandedBookingId(null);
+    setVendors([]);
+    setPeriodTotals(null);
+    setError(null);
   };
 
   const selectedVendor = vendors.find((v) => v.vendorId === selectedVendorId);
@@ -166,20 +224,56 @@ export function VendorBookingEarningsReport() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-600">
-        Per-booking customer-paid waterfall and vendor ledger for the IST day. Discount and coupon columns are
-        included for future promos (may be ₹0 today).
+        Per-booking customer-paid waterfall and vendor ledger for the selected IST {periodWord}. Discount and coupon
+        columns are included for future promos (may be ₹0 today).
       </p>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-gray-600">View</span>
+        <div className="inline-flex rounded-md border border-gray-300 bg-white p-0.5">
+          <button
+            type="button"
+            onClick={() => switchPeriodType('day')}
+            className={`rounded px-3 py-1.5 text-sm font-medium ${
+              periodType === 'day' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Daily
+          </button>
+          <button
+            type="button"
+            onClick={() => switchPeriodType('month')}
+            className={`rounded px-3 py-1.5 text-sm font-medium ${
+              periodType === 'month' ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            Monthly
+          </button>
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-gray-600">Report date (IST)</span>
-          <input
-            type="date"
-            value={reportDate}
-            onChange={(e) => setReportDate(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2"
-          />
-        </label>
+        {periodType === 'day' ? (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-gray-600">Report date (IST)</span>
+            <input
+              type="date"
+              value={reportDate}
+              onChange={(e) => setReportDate(e.target.value)}
+              className="rounded-md border border-gray-300 px-3 py-2"
+            />
+          </label>
+        ) : (
+          <label className="flex flex-col gap-1 text-sm">
+            <span className="text-gray-600">Report month (IST)</span>
+            <input
+              type="month"
+              value={yearMonth}
+              onChange={(e) => setYearMonth(e.target.value)}
+              className="rounded-md border border-gray-300 px-3 py-2"
+            />
+          </label>
+        )}
         <Button onClick={() => void loadVendorSummaries()} disabled={loading}>
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
           Load
@@ -198,46 +292,46 @@ export function VendorBookingEarningsReport() {
 
       {error && <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
-      {dayTotals && (
+      {periodTotals && (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div className="rounded-lg border border-gray-200 bg-white p-4">
               <div className="text-xs text-gray-500">Vendors</div>
-              <div className="text-xl font-semibold">{dayTotals.vendorCount}</div>
+              <div className="text-xl font-semibold">{periodTotals.vendorCount}</div>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4">
               <div className="text-xs text-gray-500">Bookings</div>
-              <div className="text-xl font-semibold">{dayTotals.bookingCount}</div>
+              <div className="text-xl font-semibold">{periodTotals.bookingCount}</div>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4">
-              <div className="text-xs text-gray-500">Customer paid (day)</div>
-              <div className="text-xl font-semibold">{moneyCell(dayTotals.customerPaidTotal)}</div>
+              <div className="text-xs text-gray-500">Customer paid ({periodWord})</div>
+              <div className="text-xl font-semibold">{moneyCell(periodTotals.customerPaidTotal)}</div>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4">
-              <div className="text-xs text-gray-500">Vendor net (day)</div>
-              <div className="text-xl font-semibold">{moneyCell(dayTotals.vendorNet)}</div>
+              <div className="text-xs text-gray-500">Vendor net ({periodWord})</div>
+              <div className="text-xl font-semibold">{moneyCell(periodTotals.vendorNet)}</div>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">Service base</div>
-              <div className="text-sm font-semibold">{moneyCell(dayTotals.serviceBaseTotal)}</div>
+              <div className="text-sm font-semibold">{moneyCell(periodTotals.serviceBaseTotal)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">Discount</div>
-              <div className="text-sm font-semibold">{moneyCell(dayTotals.discountTotal)}</div>
+              <div className="text-sm font-semibold">{moneyCell(periodTotals.discountTotal)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">GST</div>
-              <div className="text-sm font-semibold">{moneyCell(dayTotals.gstTotal)}</div>
+              <div className="text-sm font-semibold">{moneyCell(periodTotals.gstTotal)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">Platform fees</div>
-              <div className="text-sm font-semibold">{moneyCell(dayTotals.platformFeeTotal)}</div>
+              <div className="text-sm font-semibold">{moneyCell(periodTotals.platformFeeTotal)}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
               <div className="text-xs text-gray-500">Commission</div>
-              <div className="text-sm font-semibold">{moneyCell(dayTotals.commissionTotal)}</div>
+              <div className="text-sm font-semibold">{moneyCell(periodTotals.commissionTotal)}</div>
             </div>
           </div>
         </>
@@ -265,7 +359,7 @@ export function VendorBookingEarningsReport() {
             {vendors.length === 0 && !loading && (
               <tr>
                 <td colSpan={12} className="px-3 py-8 text-center text-gray-500">
-                  Pick a date and click <strong>Load</strong> to see vendor day totals. Click a row for per-booking
+                  Pick a {periodWord} and click <strong>Load</strong> to see vendor totals. Click a row for per-booking
                   detail.
                 </td>
               </tr>
@@ -329,7 +423,7 @@ export function VendorBookingEarningsReport() {
                 {bookings.length === 0 && !loadingBookings && (
                   <tr>
                     <td colSpan={14} className="px-3 py-6 text-center text-gray-500">
-                      No bookings for this vendor on the selected date.
+                      No bookings for this vendor in the selected {periodWord}.
                     </td>
                   </tr>
                 )}
