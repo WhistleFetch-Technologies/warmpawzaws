@@ -7,6 +7,7 @@ import {
   buildTrackingUrl,
   CARRIERS,
   getCarrierDisplayName,
+  isRegistryKnownCarrier,
   normalizeCarrierKey,
   supportsAutoTrackingUrl,
 } from './carrier-patterns';
@@ -82,6 +83,10 @@ export function validateMarkShippedInput(input: ParsedMarkShippedInput): string 
     if (name.length > 120) return 'Carrier name must be at most 120 characters';
   }
 
+  if (isRegistryKnownCarrier(input.carrierId) && input.trackingUrl?.trim()) {
+    return 'Tracking URL cannot be set for a known courier partner';
+  }
+
   if (input.trackingUrl?.trim() && !isValidTrackingUrl(input.trackingUrl)) {
     return 'Tracking URL must be a valid http or https URL';
   }
@@ -103,6 +108,8 @@ export function parseMarkShippedBody(body: MarkShippedBodyInput): ParsedMarkShip
   const carrierName =
     carrierId === 'custom' && customName ? customName : registryName;
 
+  const rawTrackingUrl = body.trackingUrl || body.tracking_url;
+
   return {
     carrierId,
     carrierName,
@@ -112,7 +119,7 @@ export function parseMarkShippedBody(body: MarkShippedBodyInput): ParsedMarkShip
       body.trackingIdentifier ||
       ''
     ).trim(),
-    trackingUrl: body.trackingUrl || body.tracking_url,
+    trackingUrl: isRegistryKnownCarrier(carrierId) ? undefined : rawTrackingUrl,
     notes: body.notes,
   };
 }
@@ -188,10 +195,34 @@ export function buildStructuredTracking(
     order.delivery_partner ||
     getCarrierDisplayName(carrierId);
 
-  const trackingUrl =
-    shipment?.tracking_url ||
-    buildTrackingUrl(carrierId, trackingNumber) ||
-    null;
+  const storedTrackingUrl = shipment?.tracking_url?.trim() || null;
+  const portalTrackingUrl = buildTrackingUrl(carrierId, trackingNumber);
+  // Known registry couriers always use current portal URL (fixes stale DB deep links).
+  const trackingUrl = isRegistryKnownCarrier(carrierId)
+    ? portalTrackingUrl
+    : storedTrackingUrl || portalTrackingUrl || null;
+
+  // #region agent log
+  fetch('http://127.0.0.1:7507/ingest/bc4efe81-37d4-4685-8941-a5e34dbd571c', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ae8867' },
+    body: JSON.stringify({
+      sessionId: 'ae8867',
+      runId: 'fix-verify',
+      hypothesisId: 'A',
+      location: 'shipment-tracking.ts:buildStructuredTracking',
+      message: 'tracking url resolved',
+      data: {
+        carrierId,
+        storedTrackingUrl,
+        portalTrackingUrl,
+        resolvedTrackingUrl: trackingUrl,
+        usedRegistryPortal: isRegistryKnownCarrier(carrierId),
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
   const orderStatus = order.order_status || '';
   const locked =

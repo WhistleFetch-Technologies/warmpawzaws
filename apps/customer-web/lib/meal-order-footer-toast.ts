@@ -8,8 +8,9 @@ export const MEAL_FOOTER_STEPS = [
   { id: 'delivered', label: 'Delivered' },
 ] as const;
 
-/** Footer toast starts when vendor moves to preparing (not confirmed/pending). */
+/** Footer toast from vendor preparing through delivery (not pending-only). */
 export const MEAL_FOOTER_VISIBLE_STATES: MealDeliveryEffective[] = [
+  'confirmed',
   'preparing',
   'ready_for_pickup',
   'picked_up',
@@ -29,31 +30,48 @@ export type MealFooterActiveOrder = {
 };
 
 export function mealFooterStepIndex(status: MealDeliveryEffective): number {
+  if (status === 'confirmed') return -1;
   const idx = MEAL_FOOTER_STEPS.findIndex((s) => s.id === status);
   return idx >= 0 ? idx : 0;
 }
 
+export function normalizeMealFooterStatus(raw: string): MealDeliveryEffective | null {
+  const normalized = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/-/g, '_');
+  if (normalized === 'accepted') return 'confirmed';
+  if (normalized === 'out_for_delivery') return 'on_the_way';
+  if ((MEAL_FOOTER_VISIBLE_STATES as string[]).includes(normalized)) {
+    return normalized as MealDeliveryEffective;
+  }
+  return null;
+}
+
 export function isMealFooterVisibleState(status: string): status is MealDeliveryEffective {
-  return (MEAL_FOOTER_VISIBLE_STATES as string[]).includes(status);
+  return normalizeMealFooterStatus(status) != null;
 }
 
-export function mealFooterDismissKey(orderId: string, status: string): string {
-  return `warmpawz_meal_footer_dismiss:${orderId}:${status}`;
+/** Dismiss is per order — stays hidden only after customer taps X for that order. */
+export function mealFooterDismissKey(orderId: string): string {
+  return `warmpawz_meal_footer_dismiss_order:${orderId}`;
 }
 
-export function readMealFooterDismissed(orderId: string, status: string): boolean {
+export function readMealFooterDismissed(orderId: string): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    return sessionStorage.getItem(mealFooterDismissKey(orderId, status)) === '1';
+    if (sessionStorage.getItem(mealFooterDismissKey(orderId)) === '1') return true;
+    // Legacy per-status keys (pre-fix): treat as not dismissed so active orders reappear.
+    return false;
   } catch {
     return false;
   }
 }
 
-export function writeMealFooterDismissed(orderId: string, status: string): void {
+export function writeMealFooterDismissed(orderId: string): void {
   if (typeof window === 'undefined') return;
   try {
-    sessionStorage.setItem(mealFooterDismissKey(orderId, status), '1');
+    sessionStorage.setItem(mealFooterDismissKey(orderId), '1');
   } catch {
     /* ignore */
   }
@@ -69,6 +87,8 @@ export function formatMealFooterOrderId(orderNumber?: string, orderId?: string):
 
 export function mealFooterHeadline(status: MealDeliveryEffective): string {
   switch (status) {
+    case 'confirmed':
+      return 'Order confirmed';
     case 'preparing':
       return 'Being prepared';
     case 'ready_for_pickup':
@@ -87,6 +107,8 @@ export function mealFooterHeadline(status: MealDeliveryEffective): string {
 export function mealFooterSubline(order: MealFooterActiveOrder): string {
   const oid = formatMealFooterOrderId(order.orderNumber, order.orderId);
   switch (order.status) {
+    case 'confirmed':
+      return `Your meal order ${oid} is confirmed — kitchen will start soon`;
     case 'preparing':
       return `Your meal order ${oid} is being prepared`;
     case 'ready_for_pickup':

@@ -1769,7 +1769,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
             dt.id AS delivery_tracking_id,
             dt.delivery_person_name AS rider_name,
             dt.delivery_person_phone AS rider_phone,
-            COALESCE(dt.external_task_id, dt.metadata->>'pidge_order_id') AS pidge_order_id
+            dt.external_task_id AS pidge_order_id
           FROM delivery_tracking dt
           WHERE dt.meal_order_id = mo.id
           ORDER BY dt.updated_at DESC NULLS LAST, dt.created_at DESC
@@ -1822,20 +1822,17 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
   app.get('/customer/:phone/orders/meals/active', async (c) => {
     try {
       const phone = c.req.param('phone');
-      const normalizedPhone = phone.replace(/\D/g, '');
 
-      let customers: any[];
+      let customer: any | null = null;
       try {
-        customers = await select('customers', { phone: normalizedPhone });
+        customer = await findCustomerByPhone(phone);
       } catch (error: any) {
         console.error('[meals/active] Error fetching customer:', error);
         return c.json({ success: true, orders: [] }, 200);
       }
-      if (customers.length === 0) {
+      if (!customer) {
         return c.json({ success: true, orders: [] });
       }
-
-      const customer = customers[0];
 
       let ordersResult: any;
       try {
@@ -1866,20 +1863,17 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
   app.get('/customer/:phone/orders/meals/rider-active', async (c) => {
     try {
       const phone = c.req.param('phone');
-      const normalizedPhone = phone.replace(/\D/g, '');
 
-      let customers: any[];
+      let customer: any | null = null;
       try {
-        customers = await select('customers', { phone: normalizedPhone });
+        customer = await findCustomerByPhone(phone);
       } catch (error: any) {
         console.error('[meals/rider-active] Error fetching customer:', error);
         return c.json({ success: true, order: null }, 200);
       }
-      if (customers.length === 0) {
+      if (!customer) {
         return c.json({ success: true, order: null });
       }
-
-      const customer = customers[0];
       let ordersResult: any;
       try {
         ordersResult = await query(MEAL_ACTIVE_ORDERS_SQL, [customer.id]);

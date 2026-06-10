@@ -108,6 +108,7 @@ import { registerAdminAdvancedEndpoints } from '../endpoints/admin/endpoints/adm
 import { registerAdminNotificationDeliveryEndpoints } from '../endpoints/admin/endpoints/admin-notification-delivery';
 import { registerNotificationCampaignEndpoints } from '../endpoints/admin/endpoints/notification-campaigns';
 import { registerAdminVendorDailyAccrualEndpoints } from '../endpoints/admin/endpoints/admin-vendor-daily-accrual';
+import { registerAdminVendorBookingEarningsEndpoints } from '../endpoints/admin/endpoints/admin-vendor-booking-earnings';
 import { registerDiscoveryRulesAdminEndpoints } from '../endpoints/discovery-rules-admin';
 import { registerVendorSetupEndpoints } from '../endpoints/vendor/endpoints/vendor-setup';
 import { registerConfigPoliciesEndpoints } from '../endpoints/config-policies';
@@ -695,6 +696,7 @@ registerHealthEndpoints(app);
 registerDonationEndpoints(app);
 registerReportEndpoints(app);
 registerAdminVendorDailyAccrualEndpoints(app);
+registerAdminVendorBookingEarningsEndpoints(app);
 // registerAddressEndpoints already registered above before parameterized routes
 registerAdminIntegrationEndpoints(app);
 registerLogisticsEndpoints(app);
