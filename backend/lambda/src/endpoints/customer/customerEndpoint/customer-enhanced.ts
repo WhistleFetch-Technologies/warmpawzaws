@@ -1769,7 +1769,7 @@ export function registerCustomerEndpointsEnhanced(app: Hono) {
             dt.id AS delivery_tracking_id,
             dt.delivery_person_name AS rider_name,
             dt.delivery_person_phone AS rider_phone,
-            COALESCE(dt.external_task_id, dt.metadata->>'pidge_order_id') AS pidge_order_id
+            dt.external_task_id AS pidge_order_id
           FROM delivery_tracking dt
           WHERE dt.meal_order_id = mo.id
           ORDER BY dt.updated_at DESC NULLS LAST, dt.created_at DESC
