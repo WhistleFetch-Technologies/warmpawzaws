@@ -1,4 +1,4 @@
-import { resolveCustomerVendorAmenities } from '../vendor-display-media';
+import { resolveCustomerVendorAmenities, shouldShowVendorAmenities } from '../vendor-display-media';
 
 describe('resolveCustomerVendorAmenities', () => {
   it('reads amenities and customAmenities from facility-shaped payload', () => {
@@ -23,5 +23,19 @@ describe('resolveCustomerVendorAmenities', () => {
       amenities: [],
       customAmenities: [],
     });
+  });
+});
+
+describe('shouldShowVendorAmenities', () => {
+  it('returns false for tele', () => {
+    expect(shouldShowVendorAmenities('tele')).toBe(false);
+    expect(shouldShowVendorAmenities('TELE')).toBe(false);
+  });
+
+  it('returns true for in-person styles and when unset', () => {
+    expect(shouldShowVendorAmenities('at_center')).toBe(true);
+    expect(shouldShowVendorAmenities('at_home')).toBe(true);
+    expect(shouldShowVendorAmenities(undefined)).toBe(true);
+    expect(shouldShowVendorAmenities(null)).toBe(true);
   });
 });

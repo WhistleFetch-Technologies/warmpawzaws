@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { apiClient } from '@/lib/api-client';
-import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
+import { resolveVendorProfileHeroGallery, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebGroomingTrainingEmbedVendorId } from '@/lib/customer-vendor-profile-navigation';
 import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHeader';
@@ -779,7 +779,7 @@ export function GroomingServicesByStyle({
             </div>
 
             {/* Amenities - Grooming-Specific */}
-            {amenities.length > 0 && (
+            {shouldShowVendorAmenities(serviceStyle) && amenities.length > 0 && (
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Salon Features</h3>
                 <div className="flex flex-wrap gap-2">
@@ -867,7 +867,7 @@ export function GroomingServicesByStyle({
                 )}
 
                 {/* Full Amenities List */}
-                {amenities.length > 0 && (
+                {shouldShowVendorAmenities(serviceStyle) && amenities.length > 0 && (
                   <div>
                     <h3 className="text-lg font-bold text-gray-900 mb-3">All Features</h3>
                     <div className="grid grid-cols-2 gap-2">
@@ -1321,7 +1321,7 @@ export function GroomingServicesByStyle({
                           </div>
                         )}
                         {/* ✅ NEW: Amenities display */}
-                        {provider.amenities && provider.amenities.length > 0 && (
+                        {shouldShowVendorAmenities(serviceStyle) && provider.amenities && provider.amenities.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-2">
                             {provider.amenities.slice(0, 3).map((amenity, idx) => (
                               <span key={idx} className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">

@@ -65,6 +65,7 @@ import {
 } from '../home/hooks/useHomePageData';
 import { HOME_CONTENT_SHELL_CLASS } from '../home/shared/HomeContentShell';
 import { buildHomeTopCarouselBanners } from '../home/utils/banner-utils';
+import { buildBannerBackgroundStyle } from '@/lib/customer-banner-surface';
 import { ShopCategoryGrid } from '@/components/shop/ShopCategoryGrid';
 import { mapApiCategoriesToShop } from '@/lib/shop-category-display';
 import { STATIC_SHOP_DISPLAY_CATEGORIES } from '@/lib/shop-category-static-images';
@@ -2321,7 +2322,10 @@ export function CustomerHomeComplete({
                       ? 'z-[1] opacity-100'
                       : 'z-0 opacity-0 pointer-events-none'
                   }`}
-                  style={{ background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)` }}
+                  style={buildBannerBackgroundStyle({
+                    gradientFrom: banner.gradientFrom,
+                    gradientTo: banner.gradientTo,
+                  })}
                   aria-hidden={currentBanner !== index}
                 >
                   {heroComingSoon && (
@@ -2691,13 +2695,11 @@ export function CustomerHomeComplete({
                           ? 'z-[1] opacity-100'
                           : 'z-0 opacity-0 pointer-events-none'
                       }`}
-                      style={{
-                        backgroundImage: (banner as { imageUrl?: string }).imageUrl
-                          ? `linear-gradient(135deg, rgba(17,24,39,0.75) 0%, rgba(17,24,39,0.45) 100%), url(${(banner as { imageUrl?: string }).imageUrl})`
-                          : `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
-                        backgroundSize: 'cover',
-                        backgroundPosition: 'center',
-                      }}
+                      style={buildBannerBackgroundStyle({
+                        imageUrl: (banner as { imageUrl?: string }).imageUrl,
+                        gradientFrom: banner.gradientFrom,
+                        gradientTo: banner.gradientTo,
+                      })}
                       aria-hidden={currentMiddleBanner !== index}
                     >
                       <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 pointer-events-none" />
@@ -3082,13 +3084,11 @@ export function CustomerHomeComplete({
                 <div
                   key={String(banner.id ?? index)}
                   className="rounded-3xl p-6 text-white relative overflow-hidden"
-                  style={{
-                    backgroundImage: banner.imageUrl
-                      ? `linear-gradient(135deg, rgba(17,24,39,0.75) 0%, rgba(17,24,39,0.45) 100%), url(${banner.imageUrl})`
-                      : `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
-                  }}
+                  style={buildBannerBackgroundStyle({
+                    imageUrl: banner.imageUrl,
+                    gradientFrom: banner.gradientFrom,
+                    gradientTo: banner.gradientTo,
+                  })}
                 >
                   <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16" />
                   <div className="relative z-10 flex items-start justify-between gap-4">

@@ -11,6 +11,7 @@ import {
   resolveShopBannerProductPath,
   type ShopBannerTargetMetadata,
 } from '@/lib/shop-banner-target';
+import { buildBannerBackgroundStyle } from '@/lib/customer-banner-surface';
 import type { LucideIcon } from 'lucide-react';
 
 type Placement = 'category' | 'checkout' | 'shop';
@@ -203,14 +204,12 @@ export function CustomerPlacementBanners({
                 ? 'pointer-events-auto z-10 opacity-100'
                 : 'pointer-events-none z-0 opacity-0'
             }`}
-            style={{
-              backgroundImage: banner.imageUrl
-                ? `linear-gradient(90deg, rgba(0, 0, 0, 0.58) 0%, rgba(0, 0, 0, 0.35) 45%, rgba(0, 0, 0, 0.15) 100%), url("${banner.imageUrl}")`
-                : `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              backgroundRepeat: 'no-repeat',
-            }}
+            style={buildBannerBackgroundStyle({
+              imageUrl: banner.imageUrl,
+              gradientFrom: banner.gradientFrom,
+              gradientTo: banner.gradientTo,
+              angle: banner.imageUrl ? '90deg' : '135deg',
+            })}
           >
             <div className="flex h-full items-start justify-between gap-3 p-4">
               <div className="min-w-0 flex-1">

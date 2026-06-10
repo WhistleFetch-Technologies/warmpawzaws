@@ -5,6 +5,10 @@ import Image from 'next/image';
 import { apiClient } from '@/lib/api-client';
 import { isBannerInformationalNonClickable } from '@/lib/banner-cta-target';
 import { PresignableImage } from '@/components/shared/PresignableImage';
+import {
+  buildBannerBackgroundStyle,
+  buildBannerGradientOverlayBackground,
+} from '@/lib/customer-banner-surface';
 import type { FeaturedLowerBanner } from './FeaturedOfferSection';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
@@ -55,15 +59,24 @@ function HomeLowerBannersSectionComponent({
             style={
               hasImage
                 ? undefined
-                : {
-                    background: `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
-                  }
+                : buildBannerBackgroundStyle({
+                    gradientFrom: banner.gradientFrom,
+                    gradientTo: banner.gradientTo,
+                  })
             }
           >
             {hasImage ? (
               <>
                 <LowerBannerBackground src={banner.imageUrl} alt={banner.title} />
-                <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/45 to-black/20" />
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background: buildBannerGradientOverlayBackground({
+                      gradientFrom: banner.gradientFrom,
+                      gradientTo: banner.gradientTo,
+                    }),
+                  }}
+                />
               </>
             ) : null}
             <div className="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-white/10" />
