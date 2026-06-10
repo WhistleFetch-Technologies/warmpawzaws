@@ -45,6 +45,11 @@ import {
   clearWishlistOpenedFromShopMark,
 } from '@/lib/go-back-or-replace';
 import { useShellNavigationStack } from '@/lib/navigation/shell-stack';
+import {
+  resolveAccountHubRootBack,
+  resolveWalletHubChildBack,
+  WALLET_HUB_CHILDREN,
+} from '@/lib/navigation/account-shell-back';
 import { createShellNavigationService } from '@/lib/navigation/shell-navigation-service';
 import {
   completeEmbeddedCheckoutSuccess,
@@ -544,6 +549,10 @@ export function CustomerHomeWrapper({
   const bookingsFromAccountMenuRef = useRef(false);
   /** Account hub screens (orders, wallet, appointments) opened from profile menu. */
   const accountHubFromMenuRef = useRef(false);
+  /** Rewards/referrals/help opened from wallet tile (belt-and-suspenders if stack parent is wrong). */
+  const walletPushedFromWalletRef = useRef(false);
+  /** Hardware back delegate for nested profile overlay views. */
+  const overlayBackRef = useRef<(() => boolean) | null>(null);
   const groomingBookingInternalBackRef = useRef<(() => void) | null>(null);
   const trainingBookingInternalBackRef = useRef<(() => void) | null>(null);
   const vetBookingInternalBackRef = useRef<(() => void) | null>(null);
@@ -556,6 +565,7 @@ export function CustomerHomeWrapper({
   const handleMyBookingsBackRef = useRef<() => void>(() => {});
   const handleCustomerProfileBackRef = useRef<() => void>(() => {});
   const handleAccountHubBackRef = useRef<() => void>(() => {});
+  const handleShellAccountBackRef = useRef<() => void>(() => {});
   const currentScreenForBackRef = useRef(currentScreen);
   currentScreenForBackRef.current = currentScreen;
   /** After opening grooming/training style hub from problem-grid discovery, full back returns here instead of the service hub. */
@@ -663,6 +673,15 @@ export function CustomerHomeWrapper({
     (screen: ScreenType, key?: string) => {
       const target = screen === 'bookings' ? 'my-bookings' : screen;
       shellNav.navigateToScreen(target, key);
+    },
+    [shellNav],
+  );
+
+  /** Push onto shell stack (preserves wallet parent for rewards/referrals/help). */
+  const pushShellScreen = useCallback(
+    (screen: ScreenType, key?: string) => {
+      const target = screen === 'bookings' ? 'my-bookings' : screen;
+      shellNav.forward(target, { key, policyOverride: 'push' });
     },
     [shellNav],
   );
@@ -1674,32 +1693,50 @@ export function CustomerHomeWrapper({
     setUserSidebarOpen(false);
     if (path === 'home') goToHome();
     else if (path === 'shop') goToShopFromParent();
-    else if (path === 'account/orders') {
+    else if (path === 'cart') {
+      openAccountHubFromMenu('cart');
+    } else if (path === 'account/orders') {
       if (!isCustomerEcommerceEnabled()) {
         toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
         return;
       }
-      openAccountHubScreen('order_history');
-    }
-    else if (path === 'account/addresses') {
-      accountHubFromMenuRef.current = true;
-      navigateToScreen('address_book');
-    }
-    else if (path === 'account/wallet' || path === 'wallet') openAccountHubScreen('wallet');
-    else if (path === 'my-packages') {
+      openAccountHubFromMenu('order_history');
+    } else if (path === 'account/addresses') {
+      openAccountHubFromMenu('address_book');
+    } else if (path === 'account/wallet' || path === 'wallet') {
+      openAccountHubFromMenu('wallet');
+    } else if (path === 'my-packages') {
       rememberMyPackagesBackFromAccountMenu();
       router.push('/my-packages');
-    }
-    else if (path === 'rewards-loyalty') {
-      openAccountHubScreen('rewards-loyalty');
+    } else if (path === 'rewards-loyalty') {
+      if (currentScreen === 'wallet') {
+        pushWalletHubChild('rewards-loyalty');
+      } else {
+        openAccountHubFromMenu('rewards-loyalty');
+      }
     } else if (path === 'referral-system') {
-      openAccountHubScreen('referral-system');
-    } else if (path === 'appointments') openAccountHubScreen('appointments');
-    else if (path === 'support_help' || path === 'help') {
-      openAccountHubScreen('support_help');
+      if (currentScreen === 'wallet') {
+        pushWalletHubChild('referral-system');
+      } else {
+        openAccountHubFromMenu('referral-system');
+      }
+    } else if (path === 'appointments') {
+      openAccountHubFromMenu('appointments');
+    } else if (path === 'support_help' || path === 'help') {
+      if (currentScreen === 'wallet') {
+        pushWalletHubChild('support_help');
+      } else {
+        openAccountHubFromMenu('support_help');
+      }
     } else if (path === 'promotions' || path === 'offers') {
       rememberPromotionsBackSpaScreen(currentScreen);
       router.push('/promotions');
+    } else if (path === 'orders') {
+      if (!isCustomerEcommerceEnabled()) {
+        toast.info(CUSTOMER_ECOMMERCE_UNAVAILABLE_MESSAGE);
+        return;
+      }
+      openAccountHubFromMenu('order_history');
     }
   };
 
@@ -1749,22 +1786,67 @@ export function CustomerHomeWrapper({
     setUserSidebarOpen(true);
   };
 
-  const openAccountHubScreen = (screen: ScreenType) => {
+  const openAccountHubFromMenu = (screen: ScreenType) => {
     accountHubFromMenuRef.current = true;
     setUserSidebarOpen(false);
     navigateToScreen(screen);
   };
 
+  const pushWalletHubChild = (screen: ScreenType) => {
+    walletPushedFromWalletRef.current = true;
+    setUserSidebarOpen(false);
+    pushShellScreen(screen);
+  };
+
   const handleAccountHubBack = () => {
-    if (accountHubFromMenuRef.current) {
-      accountHubFromMenuRef.current = false;
-      backToAccountMenu();
-      return;
-    }
-    handleBack();
+    resolveAccountHubRootBack({
+      accountHubFromMenu: accountHubFromMenuRef.current,
+      pop: handleBack,
+      backToAccountMenu,
+      clearMenuRef: () => {
+        accountHubFromMenuRef.current = false;
+      },
+    });
   };
 
   const backFromWalletHubChild = () => {
+    resolveWalletHubChildBack({
+      navigationHistory,
+      pushedFromWallet: walletPushedFromWalletRef.current,
+      accountHubFromMenu: accountHubFromMenuRef.current,
+      pop: () => {
+        walletPushedFromWalletRef.current = false;
+        handleBack();
+      },
+      backToAccountMenu,
+    });
+  };
+
+  const handleShellAccountBack = () => {
+    const screen = currentScreenForBackRef.current;
+    if (screen === 'customer-profile' && profileFromAccountMenuRef.current) {
+      handleCustomerProfileBackRef.current();
+      return;
+    }
+    if (screen === 'my-bookings' && bookingsFromAccountMenuRef.current) {
+      handleMyBookingsBackRef.current();
+      return;
+    }
+    if (WALLET_HUB_CHILDREN.has(screen)) {
+      backFromWalletHubChild();
+      return;
+    }
+    if (
+      accountHubFromMenuRef.current &&
+      (screen === 'wallet' ||
+        screen === 'order_history' ||
+        screen === 'appointments' ||
+        screen === 'address_book' ||
+        screen === 'cart')
+    ) {
+      handleAccountHubBack();
+      return;
+    }
     handleBack();
   };
 
@@ -1867,6 +1949,9 @@ export function CustomerHomeWrapper({
         return true;
       }
       if (userSidebarOpen) {
+        if (overlayBackRef.current?.()) {
+          return true;
+        }
         setUserSidebarOpen(false);
         return true;
       }
@@ -1875,17 +1960,8 @@ export function CustomerHomeWrapper({
         return true;
       }
       if (pathname !== '/') return false;
-      const screen = currentScreenForBackRef.current;
-      if (screen === 'my-bookings' && bookingsFromAccountMenuRef.current) {
-        handleMyBookingsBackRef.current();
-        return true;
-      }
-      if (screen === 'customer-profile' && profileFromAccountMenuRef.current) {
-        handleCustomerProfileBackRef.current();
-        return true;
-      }
       if (canPop) {
-        handleBackRef.current();
+        handleShellAccountBackRef.current();
         return true;
       }
       return false;
@@ -1939,6 +2015,7 @@ export function CustomerHomeWrapper({
   handleMyBookingsBackRef.current = handleMyBookingsBack;
   handleCustomerProfileBackRef.current = handleCustomerProfileBack;
   handleAccountHubBackRef.current = handleAccountHubBack;
+  handleShellAccountBackRef.current = handleShellAccountBack;
 
   const navigateToPets = () => {
     navigateToScreen('pets');
@@ -2003,7 +2080,10 @@ export function CustomerHomeWrapper({
       <UserAccountSidebar
         phone={phone}
         onClose={() => setUserSidebarOpen(false)}
-        onNavigateHome={handleBack}
+        onNavigateHome={goToHome}
+        onRegisterOverlayBack={(handler) => {
+          overlayBackRef.current = handler;
+        }}
         onViewBooking={handleViewBooking}
         onViewMyPackages={() => {
           rememberMyPackagesBackFromAccountMenu();
@@ -2277,7 +2357,7 @@ export function CustomerHomeWrapper({
       <CustomerProfileView
         phone={phone}
         onBack={handleCustomerProfileBack}
-        onCloseToHome={handleBack}
+        onCloseToHome={goToHome}
       />
     );
   }
@@ -3982,7 +4062,7 @@ export function CustomerHomeWrapper({
       >
         <OrderHistoryPage
           onBack={handleAccountHubBack}
-          onCloseToHome={handleBack}
+          onCloseToHome={goToHome}
           onNavigate={handleAccountNavigate}
           spaShopReturnScreen="order_history"
         />
@@ -3998,12 +4078,12 @@ export function CustomerHomeWrapper({
       >
         <AddressBookPage
           phone={phone}
-          onCloseToHome={handleBack}
-          onBack={handleBack}
+          onCloseToHome={goToHome}
+          onBack={handleAccountHubBack}
           onSelect={(address) => {
             toast.success('Address selected');
             setSelectedAddressFromBook(address);
-            handleBack();
+            handleAccountHubBack();
           }}
         />
       </CustomerScreenWrapper>
@@ -4031,7 +4111,7 @@ export function CustomerHomeWrapper({
     );
   if (currentScreen === 'wallet') return (
     <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
-      <WalletPage onBack={handleAccountHubBack} onCloseToHome={handleBack} onNavigate={handleAccountNavigate} />
+      <WalletPage onBack={handleAccountHubBack} onCloseToHome={goToHome} onNavigate={handleAccountNavigate} />
     </CustomerScreenWrapper>
   );
   // if (currentScreen === 'order_history') return <OrderHistoryView phone={phone} onBack={handleBack} onOrderClick={(order) => { setSelectedOrder(order); setCurrentScreen('order_detail'); }} />;
@@ -4121,7 +4201,7 @@ export function CustomerHomeWrapper({
         <AppointmentsList
           phone={phone}
           onBack={handleAccountHubBack}
-          onCloseToHome={handleBack}
+          onCloseToHome={goToHome}
           onSelectAppointment={(appointmentId) => {
             setSelectedAppointmentId(appointmentId);
             navigateToScreen('appointment-details');
@@ -4590,7 +4670,7 @@ export function CustomerHomeWrapper({
       <RewardsLoyaltyPage
         customerPhone={phone}
         onBack={backFromWalletHubChild}
-        onCloseToHome={handleBack}
+        onCloseToHome={goToHome}
       />
     );
 
@@ -4601,7 +4681,7 @@ export function CustomerHomeWrapper({
         customerPhone={phone}
         customerId={phone}
         onBack={backFromWalletHubChild}
-        onCloseToHome={handleBack}
+        onCloseToHome={goToHome}
       />
     );
 

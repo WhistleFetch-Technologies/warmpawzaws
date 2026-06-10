@@ -474,6 +474,8 @@ interface UserAccountSidebarProps {
   /** Canonical `/profile` page — avoids duplicate inline profile editor in this sheet. */
   onViewProfile?: () => void;
   onNavigate?: (path: string) => void;
+  /** Parent registers nested overlay back for hardware back (returns true when consumed). */
+  onRegisterOverlayBack?: (handler: (() => boolean) | null) => void;
 }
 
 export function UserAccountSidebar({
@@ -486,6 +488,7 @@ export function UserAccountSidebar({
   onViewMyPackages,
   onViewProfile,
   onNavigate,
+  onRegisterOverlayBack,
 }: UserAccountSidebarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeView, setActiveView] = useState<
@@ -1084,6 +1087,18 @@ export function UserAccountSidebar({
   };
 
   const showProfileMenuBack = activeView !== 'menu' || showAddressForm || showPaymentForm;
+
+  useEffect(() => {
+    if (!onRegisterOverlayBack) return;
+    onRegisterOverlayBack(() => {
+      if (activeView === 'menu' && !showAddressForm && !showPaymentForm) {
+        return false;
+      }
+      handleSidebarBack();
+      return true;
+    });
+    return () => onRegisterOverlayBack(null);
+  }, [activeView, showAddressForm, showPaymentForm, onRegisterOverlayBack]);
 
   const getServiceIcon = (type: string) => {
     switch (type) {

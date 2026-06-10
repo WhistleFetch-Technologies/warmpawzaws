@@ -14,7 +14,9 @@ type Screen =
   | 'purchase-package'
   | 'vet-tele-consultation'
   | 'payment'
-  | 'customer-profile';
+  | 'customer-profile'
+  | 'wallet'
+  | 'rewards-loyalty';
 
 function makeDeps(initial: ShellEntry<Screen>[] = [{ screen: 'home' }]) {
   let history = [...initial];
@@ -87,6 +89,10 @@ describe('shell-route-policies', () => {
   it('purchase-package uses replace', () => {
     expect(getShellForwardPolicy('purchase-package').forward).toBe('replace');
   });
+
+  it('rewards-loyalty uses push not replace', () => {
+    expect(getShellForwardPolicy('rewards-loyalty').forward).toBe('push');
+  });
 });
 
 describe('forwardShellHistory', () => {
@@ -112,6 +118,12 @@ describe('forwardShellHistory', () => {
       policyOverride: 'push',
     });
     expect(next).toHaveLength(4);
+  });
+
+  it('push from wallet preserves wallet when opening rewards', () => {
+    const start: ShellEntry<Screen>[] = [{ screen: 'home' }, { screen: 'wallet' }];
+    const next = forwardShellHistory(start, 'rewards-loyalty', { policyOverride: 'push' });
+    expect(next.map((e) => e.screen)).toEqual(['home', 'wallet', 'rewards-loyalty']);
   });
 });
 
