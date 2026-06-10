@@ -55,3 +55,16 @@ export function assertReportDate(s: string): string | null {
   if (!s || !DATE_RE.test(s)) return null;
   return s;
 }
+
+/** Next calendar day (exclusive upper bound for a single IST report_date). */
+export function istDayEndExclusiveYmd(reportDate: string): string | null {
+  const d = assertReportDate(reportDate);
+  if (!d) return null;
+  const [y, m, day] = d.split('-').map((x) => parseInt(x, 10));
+  const cursor = new Date(Date.UTC(y, m - 1, day));
+  cursor.setUTCDate(cursor.getUTCDate() + 1);
+  const ny = cursor.getUTCFullYear();
+  const nm = String(cursor.getUTCMonth() + 1).padStart(2, '0');
+  const nd = String(cursor.getUTCDate()).padStart(2, '0');
+  return `${ny}-${nm}-${nd}`;
+}

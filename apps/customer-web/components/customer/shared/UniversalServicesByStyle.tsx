@@ -17,7 +17,7 @@ import { ServiceDashboardHeader } from './ServiceDashboardHeader';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
-import { resolveVendorProfileHeroGallery, resolveCustomerVendorAmenities } from '@/lib/vendor-display-media';
+import { resolveVendorProfileHeroGallery, resolveCustomerVendorAmenities, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { AmenitiesSection } from './AmenitiesSection';
 import { VendorHeroPhotoCarousel } from './VendorHeroPhotoCarousel';
 import {
@@ -864,7 +864,9 @@ export function UniversalServicesByStyle({
       ...(vendor && typeof vendor === 'object' ? vendor : {}),
       ...(profileProvider.amenities ? { amenities: profileProvider.amenities } : {}),
     });
-    const hasAmenities = amenities.length > 0 || customAmenities.length > 0;
+    const hasAmenities =
+      shouldShowVendorAmenities(serviceStyle) &&
+      (amenities.length > 0 || customAmenities.length > 0);
     const address = vendor?.address || facility?.address || profileProvider.address || '';
     const phoneNumber = vendor?.phone || facility?.phone || profileProvider.phone || '';
     const description = vendor?.description || facility?.description || `${providerName} provides professional ${config.category} services.`;

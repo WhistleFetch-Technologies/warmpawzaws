@@ -18,7 +18,7 @@ import { INDICATIVE_PRICING_NOTE } from '@/lib/pricing-disclaimer';
 import { formatLocalDateYYYYMMDD } from '@/lib/local-calendar-date';
 import { ServiceDescriptionInline } from './ServiceDescriptionInline';
 import { VendorRatingDisplay } from './VendorRatingDisplay';
-import { resolveCustomerVendorAmenities } from '@/lib/vendor-display-media';
+import { resolveCustomerVendorAmenities, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { shareVendorProfile, universalCategoryToSharePersona } from '@/lib/vendor-profile-share';
 
 // ============================================================================
@@ -212,7 +212,9 @@ export function UniversalProviderProfile({
   const [profileAmenities, setProfileAmenities] = useState<string[]>(provider.amenities || []);
   const [profileCustomAmenities, setProfileCustomAmenities] = useState<string[]>([]);
 
-  const showFacilitiesAmenitiesOnAbout = !(category === 'vet' && serviceStyle === 'at_home');
+  const showFacilitiesAmenitiesOnAbout =
+    shouldShowVendorAmenities(serviceStyle) &&
+    !(category === 'vet' && serviceStyle === 'at_home');
 
   // When returning from address book with a selected address, pre-select it
   useEffect(() => {
@@ -241,7 +243,7 @@ export function UniversalProviderProfile({
 
   useEffect(() => {
     const vid = String(provider.vendorId || provider.providerId || '').trim();
-    if (!vid) return;
+    if (!vid || !shouldShowVendorAmenities(serviceStyle)) return;
     if (provider.amenities && provider.amenities.length > 0) {
       setProfileAmenities(provider.amenities);
     }
@@ -270,7 +272,7 @@ export function UniversalProviderProfile({
     return () => {
       cancelled = true;
     };
-  }, [provider.vendorId, provider.providerId, provider.amenities]);
+  }, [provider.vendorId, provider.providerId, provider.amenities, serviceStyle]);
 
   const refreshAddresses = async () => {
     if (serviceStyle !== 'at_home') return;

@@ -7,6 +7,7 @@ import { PresignableImage } from '@/components/shared/PresignableImage';
 import { DEFAULT_HOME_HERO_IMAGE_URL } from '../constants/category-card-images';
 import { resolveBannerObjectPosition } from '../constants/banner-image-position';
 import { useBannerCarousel } from '../hooks/useBannerCarousel';
+import { buildBannerGradientOverlayBackground } from '@/lib/customer-banner-surface';
 import type { HomeCarouselBanner } from '../types';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
@@ -118,7 +119,15 @@ function BannerCarouselComponent({
                     alt={banner.title}
                     objectPosition={resolveBannerObjectPosition(banner)}
                   />
-                  <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/45 to-black/20" />
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background: buildBannerGradientOverlayBackground({
+                        gradientFrom: banner.gradientFrom,
+                        gradientTo: banner.gradientTo,
+                      }),
+                    }}
+                  />
                 </>
               ) : null}
 

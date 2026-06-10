@@ -10,6 +10,10 @@ import {
   DEFAULT_FEATURED_OFFER,
   DEFAULT_FEATURED_OFFER_IMAGE_URL,
 } from '../constants/featured-offer-fallback';
+import {
+  buildBannerBackgroundStyle,
+  buildBannerGradientOverlayBackground,
+} from '@/lib/customer-banner-surface';
 import type { FeaturedLowerBanner } from './FeaturedOfferSection';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
@@ -224,16 +228,63 @@ function OffersForYouSectionComponent({
   if (!offer) return null;
 
   const cmsBanner = lowerBanners[0];
-  const isCmsBannerWithImage = Boolean(cmsBanner?.imageUrl);
+  const isCmsBanner = Boolean(cmsBanner);
+  const isCmsBannerWithImage = Boolean(cmsBanner?.imageUrl?.trim());
 
-  if (isCmsBannerWithImage) {
+  if (isCmsBannerWithImage && cmsBanner) {
     return (
       <div className={`mb-6 px-4 ${className}`}>
         <div className="relative min-h-[11rem] overflow-hidden rounded-3xl">
           <CmsBannerImage src={offer.imageUrl} alt={offer.title} />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/45 to-black/20" />
+          <div
+            className="absolute inset-0"
+            style={{
+              background: buildBannerGradientOverlayBackground({
+                gradientFrom: cmsBanner.gradientFrom,
+                gradientTo: cmsBanner.gradientTo,
+              }),
+            }}
+          />
           <div className="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-white/10" />
           <div className="relative z-10 flex min-h-[11rem] flex-col justify-center p-6 text-white">
+            <span className="mb-2 inline-block w-fit rounded-full bg-white/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide">
+              {offer.pillLabel}
+            </span>
+            <h2 className="mb-1 line-clamp-2 text-lg font-bold">{offer.title}</h2>
+            {offer.subtitle ? (
+              <p className="mb-4 line-clamp-2 text-sm text-white/90">{offer.subtitle}</p>
+            ) : null}
+            {offer.comingSoon ? (
+              <span className="inline-block w-fit cursor-not-allowed rounded-full bg-white/85 px-5 py-2.5 text-sm font-medium text-[#FF8C42]/70">
+                {offer.ctaText}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={offer.onCtaClick}
+                className="w-fit rounded-full bg-white px-5 py-2.5 text-sm font-medium text-indigo-600"
+              >
+                {offer.ctaText}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isCmsBanner && cmsBanner) {
+    return (
+      <div className={`mb-6 px-4 ${className}`}>
+        <div
+          className="relative min-h-[11rem] overflow-hidden rounded-3xl text-white"
+          style={buildBannerBackgroundStyle({
+            gradientFrom: cmsBanner.gradientFrom,
+            gradientTo: cmsBanner.gradientTo,
+          })}
+        >
+          <div className="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-white/10" />
+          <div className="relative z-10 flex min-h-[11rem] flex-col justify-center p-6">
             <span className="mb-2 inline-block w-fit rounded-full bg-white/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide">
               {offer.pillLabel}
             </span>

@@ -203,6 +203,61 @@ export function buildBannerMetadata(opts: {
   return meta;
 }
 
+export function parseBannerMetadataRecord(raw: unknown): Record<string, unknown> {
+  if (raw == null) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function normalizeBannerHexColor(value: unknown, fallback: string): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return fallback;
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)) return raw;
+  if (/^([0-9a-f]{3}|[0-9a-f]{6})$/i.test(raw)) return `#${raw}`;
+  return fallback;
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const normalized = normalizeBannerHexColor(hex, '#000000');
+  let h = normalized.slice(1);
+  if (h.length === 3) {
+    h = h
+      .split('')
+      .map((c) => c + c)
+      .join('');
+  }
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/** Admin + customer-aligned banner preview background (gradient or tint over image). */
+export function buildBannerPreviewBackground(opts: {
+  imageUrl?: string | null;
+  gradientFrom: string;
+  gradientTo: string;
+}): string {
+  const from = normalizeBannerHexColor(opts.gradientFrom, '#FF8C42');
+  const to = normalizeBannerHexColor(opts.gradientTo, '#FF6B35');
+  const image = String(opts.imageUrl ?? '').trim();
+  if (!image) {
+    return `linear-gradient(135deg, ${from} 0%, ${to} 100%)`;
+  }
+  const safeUrl = image.replace(/"/g, '\\"');
+  return `linear-gradient(135deg, ${hexToRgba(from, 0.85)} 0%, ${hexToRgba(to, 0.75)} 100%), url("${safeUrl}") center/cover`;
+}
+
 export function buildShopBannerTarget(opts: {
   targetMode: ShopBannerTargetLevel;
   productId?: string;

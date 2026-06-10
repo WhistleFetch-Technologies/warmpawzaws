@@ -1,4 +1,5 @@
 import {
+  buildBannerPreviewBackground,
   buildShopBannerCtaLink,
   buildShopBannerTarget,
   mergeShopBannerIntoMetadata,
@@ -72,5 +73,17 @@ describe('shop banner metadata helpers', () => {
     expect(validateShopBannerSaveTarget({ targetMode: 'informational', productId: '' }).ok).toBe(true);
     expect(validateShopBannerSaveTarget({ targetMode: 'product', productId: '' }).ok).toBe(false);
     expect(validateShopBannerSaveTarget({ targetMode: 'product', productId: 'abc' }).ok).toBe(true);
+  });
+});
+
+describe('buildBannerPreviewBackground', () => {
+  it('tints image with CMS gradient colors', () => {
+    const css = buildBannerPreviewBackground({
+      imageUrl: 'https://example.com/b.jpg',
+      gradientFrom: '#1e40af',
+      gradientTo: '#7c3aed',
+    });
+    expect(css).toContain('rgba(30, 64, 175, 0.85)');
+    expect(css).toContain('url("https://example.com/b.jpg")');
   });
 });
