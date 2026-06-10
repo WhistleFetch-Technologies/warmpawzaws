@@ -341,6 +341,11 @@ export function resolveCustomerVendorAmenities(source: Record<string, unknown> |
   return { amenities, customAmenities };
 }
 
+/** Tele consultation has no physical facility — hide amenities in customer profile UI. */
+export function shouldShowVendorAmenities(serviceStyle?: string | null): boolean {
+  return String(serviceStyle || '').toLowerCase() !== 'tele';
+}
+
 export function ratingFromFacilityRoot(root: Record<string, unknown> | null | undefined): {
   average?: number;
   count?: number;

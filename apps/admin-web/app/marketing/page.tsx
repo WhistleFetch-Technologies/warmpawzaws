@@ -59,6 +59,8 @@ import {
 	BANNER_SELECT_EMPTY,
 	buildBannerCtaLink,
 	buildBannerMetadata,
+	buildBannerPreviewBackground,
+	parseBannerMetadataRecord,
 	buildShopBannerTarget,
 	buildShopBannerCtaLink,
 	mergeShopBannerIntoMetadata,
@@ -1086,8 +1088,7 @@ export default function MarketingPromotionsTab() {
 		"w-full h-10 bg-white min-w-0 [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate";
 
 	const openEditBannerModal = (banner: any) => {
-		const meta =
-			banner.metadata && typeof banner.metadata === "object" ? banner.metadata : {};
+		const meta = parseBannerMetadataRecord(banner.metadata);
 		const storedTarget = parseBannerTargetFromAdminRow(banner as Record<string, unknown>);
 
 		const ctaLink = String(banner.cta_link || banner.linkUrl || "").trim();
@@ -2126,9 +2127,11 @@ export default function MarketingPromotionsTab() {
 												<div 
 													className="h-32 flex items-center justify-center relative"
 													style={{
-														background: banner.image_url || banner.imageUrl 
-															? `url(${banner.image_url || banner.imageUrl}) center/cover` 
-															: `linear-gradient(135deg, ${banner.metadata?.gradient_from || '#FF8C42'} 0%, ${banner.metadata?.gradient_to || '#FF6B35'} 100%)`
+														background: buildBannerPreviewBackground({
+															imageUrl: banner.image_url || banner.imageUrl,
+															gradientFrom: parseBannerMetadataRecord(banner.metadata).gradient_from as string,
+															gradientTo: parseBannerMetadataRecord(banner.metadata).gradient_to as string,
+														}),
 													}}
 												>
 													{!banner.image_url && !banner.imageUrl && (
@@ -3129,9 +3132,11 @@ export default function MarketingPromotionsTab() {
 							<div 
 								className="h-24 rounded-xl overflow-hidden flex items-center justify-between px-4"
 								style={{
-									background: bannerForm.image_url 
-										? `url(${bannerForm.image_url}) center/cover` 
-										: `linear-gradient(135deg, ${bannerForm.gradient_from} 0%, ${bannerForm.gradient_to} 100%)`
+									background: buildBannerPreviewBackground({
+										imageUrl: bannerForm.image_url,
+										gradientFrom: bannerForm.gradient_from,
+										gradientTo: bannerForm.gradient_to,
+									}),
 								}}
 							>
 								<div>

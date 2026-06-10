@@ -14,7 +14,7 @@ import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHe
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
-import { resolveVendorProfileHeroGallery } from '@/lib/vendor-display-media';
+import { resolveVendorProfileHeroGallery, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
 import {
@@ -612,7 +612,7 @@ export function VetServicesByStyle({
             </div>
 
             {/* Amenities/Features */}
-            {amenities.length > 0 && (
+            {shouldShowVendorAmenities(serviceStyle) && amenities.length > 0 && (
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase mb-2">Features</h3>
                 <div className="flex flex-wrap gap-2">
@@ -700,7 +700,7 @@ export function VetServicesByStyle({
                 )}
 
                 {/* Full Amenities List */}
-                {amenities.length > 0 && (
+                {shouldShowVendorAmenities(serviceStyle) && amenities.length > 0 && (
                   <div>
                     <h3 className="text-lg font-bold text-gray-900 mb-3">All Features</h3>
                     <div className="grid grid-cols-2 gap-2">

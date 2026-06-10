@@ -5,6 +5,7 @@ import type { ComponentType } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { isBannerInformationalNonClickable } from '@/lib/banner-cta-target';
 import { PromotionBanner } from '../../shared/PromotionBanner';
+import { buildBannerBackgroundStyle } from '@/lib/customer-banner-surface';
 import type { HomeNavigateFn } from '../hooks/useHomeNavigation';
 
 export interface FeaturedLowerBanner {
@@ -49,13 +50,11 @@ function FeaturedOfferSectionComponent({
               <div
                 key={String(banner.id ?? index)}
                 className="relative overflow-hidden rounded-3xl p-6 text-white"
-                style={{
-                  backgroundImage: banner.imageUrl
-                    ? `linear-gradient(135deg, rgba(17,24,39,0.75) 0%, rgba(17,24,39,0.45) 100%), url(${banner.imageUrl})`
-                    : `linear-gradient(135deg, ${banner.gradientFrom} 0%, ${banner.gradientTo} 100%)`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                }}
+                style={buildBannerBackgroundStyle({
+                  imageUrl: banner.imageUrl,
+                  gradientFrom: banner.gradientFrom,
+                  gradientTo: banner.gradientTo,
+                })}
               >
                 <div className="absolute -right-16 -top-16 h-32 w-32 rounded-full bg-white/10" />
                 <div className="relative z-10 flex items-start justify-between gap-4">
