@@ -5,31 +5,46 @@ import { apiClient } from '@/lib/api-client';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
 import { resolveEffectiveMealDeliveryState } from '@warmpawz/shared-types';
 import {
-  isMealFooterVisibleState,
+  normalizeMealFooterStatus,
   readMealFooterDismissed,
   writeMealFooterDismissed,
   type MealFooterActiveOrder,
 } from '@/lib/meal-order-footer-toast';
 
-const POLL_MS = 10_000;
-const DELIVERED_FLASH_MS = 10_000;
+const POLL_MS = 5_000;
+
+function extractActiveMealOrders(res: unknown): Record<string, unknown>[] {
+  const r = res as { orders?: unknown[]; data?: { orders?: unknown[] } };
+  if (Array.isArray(r?.orders)) return r.orders as Record<string, unknown>[];
+  if (Array.isArray(r?.data?.orders)) return r.data.orders as Record<string, unknown>[];
+  return [];
+}
 
 function mapActiveRow(row: Record<string, unknown>): MealFooterActiveOrder | null {
   const orderId = String(row.orderId ?? row.id ?? '');
   if (!orderId) return null;
-  const status = String(row.status ?? row.trackingStatus ?? '');
-  if (!isMealFooterVisibleState(status)) return null;
+
+  const logisticsStatus =
+    row.logisticsStatus != null
+      ? String(row.logisticsStatus)
+      : row.logistics_status != null
+        ? String(row.logistics_status)
+        : null;
+
+  const rawStatus = String(row.status ?? row.trackingStatus ?? row.meal_order_status ?? '');
+  let normalized = normalizeMealFooterStatus(rawStatus);
+  if (!normalized && rawStatus) {
+    const effective = resolveEffectiveMealDeliveryState(rawStatus, logisticsStatus);
+    normalized = normalizeMealFooterStatus(effective);
+  }
+  if (!normalized) return null;
+
   return {
     orderId,
     orderNumber: row.orderNumber != null ? String(row.orderNumber) : undefined,
     vendorName: row.vendorName != null ? String(row.vendorName) : undefined,
-    status,
-    logisticsStatus:
-      row.logisticsStatus != null
-        ? String(row.logisticsStatus)
-        : row.logistics_status != null
-          ? String(row.logistics_status)
-          : null,
+    status: normalized,
+    logisticsStatus,
     riderName: row.riderName != null ? String(row.riderName) : null,
     riderMessage: row.riderMessage != null ? String(row.riderMessage) : null,
     etaMinutes: null,
@@ -43,6 +58,7 @@ function pickBestOrder(orders: MealFooterActiveOrder[]): MealFooterActiveOrder |
     picked_up: 40,
     ready_for_pickup: 30,
     preparing: 20,
+    confirmed: 15,
     delivered: 10,
   };
   return [...orders].sort((a, b) => (priority[b.status] ?? 0) - (priority[a.status] ?? 0))[0];
@@ -65,97 +81,40 @@ async function enrichWithEta(order: MealFooterActiveOrder): Promise<MealFooterAc
 export function useMealOrderFooterToast(customerPhone: string | null | undefined) {
   const [order, setOrder] = useState<MealFooterActiveOrder | null>(null);
   const [dismissed, setDismissed] = useState(false);
-  const lastTrackedIdRef = useRef<string | null>(null);
-  const deliveredTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearDeliveredTimer = useCallback(() => {
-    if (deliveredTimerRef.current) {
-      clearTimeout(deliveredTimerRef.current);
-      deliveredTimerRef.current = null;
-    }
-  }, []);
-
-  const showDeliveredFlash = useCallback(
-    (base: MealFooterActiveOrder) => {
-      clearDeliveredTimer();
-      const delivered: MealFooterActiveOrder = { ...base, status: 'delivered' };
-      setOrder(delivered);
-      setDismissed(false);
-      deliveredTimerRef.current = setTimeout(() => {
-        setOrder(null);
-        deliveredTimerRef.current = null;
-      }, DELIVERED_FLASH_MS);
-    },
-    [clearDeliveredTimer],
-  );
 
   const load = useCallback(async () => {
     if (!isCustomerMealPlansEnabled()) {
       setOrder(null);
+      setDismissed(false);
       return;
     }
     const phone = (customerPhone || '').replace(/\D/g, '').slice(-10);
     if (phone.length < 10) {
       setOrder(null);
+      setDismissed(false);
       return;
     }
 
     try {
-      const res = (await apiClient.get(`/customer/${phone}/orders/meals/active`)) as {
-        orders?: Record<string, unknown>[];
-      };
-      const mapped = (res.orders || [])
+      const res = await apiClient.get(`/customer/${phone}/orders/meals/active`);
+      const mapped = extractActiveMealOrders(res)
         .map(mapActiveRow)
         .filter((o): o is MealFooterActiveOrder => Boolean(o));
       const best = pickBestOrder(mapped);
 
       if (best) {
-        lastTrackedIdRef.current = best.orderId;
-        clearDeliveredTimer();
-        if (readMealFooterDismissed(best.orderId, best.status)) {
-          setOrder(best);
-          setDismissed(true);
-        } else {
-          const enriched = await enrichWithEta(best);
-          setOrder(enriched);
-          setDismissed(false);
-        }
+        const enriched = await enrichWithEta(best);
+        setOrder(enriched);
+        setDismissed(readMealFooterDismissed(enriched.orderId));
         return;
       }
 
-      const prevId = lastTrackedIdRef.current;
-      if (prevId && !deliveredTimerRef.current) {
-        try {
-          const tr = (await apiClient.get(`/customer/tracking/${prevId}`)) as {
-            order?: { status?: string };
-            tracking?: { status?: string };
-          };
-          const moStatus = tr.order?.status;
-          const dtStatus = tr.tracking?.status;
-          const eff = resolveEffectiveMealDeliveryState(moStatus, dtStatus);
-          if (eff === 'delivered') {
-            showDeliveredFlash({
-              orderId: prevId,
-              status: 'delivered',
-              orderNumber: undefined,
-            });
-            lastTrackedIdRef.current = null;
-            return;
-          }
-        } catch {
-          /* ignore */
-        }
-        lastTrackedIdRef.current = null;
-      }
-
-      if (!deliveredTimerRef.current) {
-        setOrder(null);
-        setDismissed(false);
-      }
+      setOrder(null);
+      setDismissed(false);
     } catch {
-      /* non-fatal */
+      /* non-fatal — keep last known order visible until explicit dismiss */
     }
-  }, [customerPhone, clearDeliveredTimer, showDeliveredFlash]);
+  }, [customerPhone]);
 
   useEffect(() => {
     void load();
@@ -167,14 +126,13 @@ export function useMealOrderFooterToast(customerPhone: string | null | undefined
     return () => {
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVisible);
-      clearDeliveredTimer();
     };
-  }, [load, clearDeliveredTimer]);
+  }, [load]);
 
   const dismiss = useCallback(() => {
     if (!order) return;
     setDismissed(true);
-    writeMealFooterDismissed(order.orderId, order.status);
+    writeMealFooterDismissed(order.orderId);
   }, [order]);
 
   const visible = Boolean(order) && !dismissed;

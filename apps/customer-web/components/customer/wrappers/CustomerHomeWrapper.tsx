@@ -1824,7 +1824,7 @@ export function CustomerHomeWrapper({
   ): ReactNode => {
     if (options.bareContent) {
       return (
-        <CustomerScreenWrapper
+        <CustomerScreenWrapper customerPhone={phone}
           currentScreen={screen}
           onNavigate={handleBottomNav}
           onProfileClick={handleProfileClick}
@@ -1837,7 +1837,7 @@ export function CustomerHomeWrapper({
 
     const contentClass = screen === 'payment' ? 'bg-[#FAF6F0]' : 'bg-gray-50';
     return (
-      <CustomerScreenWrapper 
+      <CustomerScreenWrapper customerPhone={phone} 
         currentScreen={screen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -1874,7 +1874,7 @@ export function CustomerHomeWrapper({
 
   if (currentScreen === 'home') {
     return (
-      <CustomerScreenWrapper 
+      <CustomerScreenWrapper customerPhone={phone} 
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -3130,7 +3130,7 @@ export function CustomerHomeWrapper({
   }
   if (currentScreen === 'pet-sitter-vendors') {
     return (
-      <CustomerScreenWrapper
+      <CustomerScreenWrapper customerPhone={phone}
         currentScreen="pet-sitter-vendors"
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -3334,7 +3334,7 @@ export function CustomerHomeWrapper({
   // ✅ Nutritionist Tele - Video consultation flow (scheduled or instant)
   if (currentScreen === 'nutritionist-tele') {
     return (
-      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
+      <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
         <NutritionistTeleRouter
           phone={phone}
           onBack={() => { setCurrentScreen(previousScreen || 'nutritionist'); setPreviousScreen(null); }}
@@ -3395,7 +3395,7 @@ export function CustomerHomeWrapper({
   }
   if (currentScreen === 'nutritionist') {
     return (
-      <CustomerScreenWrapper 
+      <CustomerScreenWrapper customerPhone={phone} 
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -3463,7 +3463,7 @@ export function CustomerHomeWrapper({
   }
   if (currentScreen === 'diet-consultation-services') {
     return (
-      <CustomerScreenWrapper 
+      <CustomerScreenWrapper customerPhone={phone} 
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -3498,7 +3498,7 @@ export function CustomerHomeWrapper({
   }
   if (currentScreen === 'nutrition-meal-plans') {
     return (
-      <CustomerScreenWrapper 
+      <CustomerScreenWrapper customerPhone={phone} 
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -3732,7 +3732,7 @@ export function CustomerHomeWrapper({
   }
   if (currentScreen === 'order_history')
     return (
-      <CustomerScreenWrapper
+      <CustomerScreenWrapper customerPhone={phone}
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -3748,7 +3748,7 @@ export function CustomerHomeWrapper({
     );
   if (currentScreen === 'address_book')
     return (
-      <CustomerScreenWrapper
+      <CustomerScreenWrapper customerPhone={phone}
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -3779,7 +3779,7 @@ export function CustomerHomeWrapper({
   // Add Address: must show address book, not fall through to default fallback
   if (currentScreen === 'add-address')
     return (
-      <CustomerScreenWrapper
+      <CustomerScreenWrapper customerPhone={phone}
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -3808,7 +3808,7 @@ export function CustomerHomeWrapper({
       </CustomerScreenWrapper>
     );
   if (currentScreen === 'wallet') return (
-    <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
+    <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
       <WalletPage onBack={backToAccountMenu} onCloseToHome={handleBack} onNavigate={handleAccountNavigate} />
     </CustomerScreenWrapper>
   );
@@ -3822,7 +3822,7 @@ export function CustomerHomeWrapper({
   // Other Screens
   if (currentScreen === 'my-bookings') {
     return (
-      <CustomerScreenWrapper 
+      <CustomerScreenWrapper customerPhone={phone} 
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -3864,7 +3864,7 @@ export function CustomerHomeWrapper({
   }
   if (currentScreen === 'appointments') {
     return (
-      <CustomerScreenWrapper
+      <CustomerScreenWrapper customerPhone={phone}
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -3884,7 +3884,7 @@ export function CustomerHomeWrapper({
   }
   if (currentScreen === 'appointment-details' && selectedAppointmentId) {
     return (
-      <CustomerScreenWrapper
+      <CustomerScreenWrapper customerPhone={phone}
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -3908,7 +3908,7 @@ export function CustomerHomeWrapper({
   }
   if (currentScreen === 'appointment-reschedule' && selectedAppointmentId) {
     return (
-      <CustomerScreenWrapper
+      <CustomerScreenWrapper customerPhone={phone}
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -3997,7 +3997,7 @@ export function CustomerHomeWrapper({
   };
   if (currentScreen === 'grooming_center') {
     return (
-      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
+      <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
         <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           <GroomingServicesByStyle
             phone={phone}
@@ -4028,7 +4028,7 @@ export function CustomerHomeWrapper({
   }
   if (currentScreen === 'grooming_home') {
     return (
-      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
+      <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
         <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           <GroomingServicesByStyle
             phone={phone}
@@ -4111,7 +4111,7 @@ export function CustomerHomeWrapper({
   };
   if (currentScreen === 'training_center') {
     return (
-      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
+      <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
         <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           <UniversalServicesByStyle
             phone={phone}
@@ -4149,7 +4149,7 @@ export function CustomerHomeWrapper({
   }
   if (currentScreen === 'training_home') {
     return (
-      <CustomerScreenWrapper currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
+      <CustomerScreenWrapper customerPhone={phone} currentScreen={currentScreen} onNavigate={handleBottomNav} onProfileClick={handleProfileClick} accountSidebar={accountSidebarOverlay}>
         <div className="min-h-screen min-h-[100dvh] w-full bg-gray-50">
           <UniversalServicesByStyle
             phone={phone}
@@ -4237,7 +4237,7 @@ export function CustomerHomeWrapper({
   if (currentScreen === 'boarding-booking' || currentScreen === 'pet-sitter-booking') {
     const sittingBooking = currentScreen === 'pet-sitter-booking';
     return (
-      <CustomerScreenWrapper
+      <CustomerScreenWrapper customerPhone={phone}
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}
@@ -4362,7 +4362,7 @@ export function CustomerHomeWrapper({
   // Legacy: deep links that still set `package-tracking` → My Bookings (package progress uses `/packages/:id`).
   if (currentScreen === 'package-tracking') {
     return (
-      <CustomerScreenWrapper
+      <CustomerScreenWrapper customerPhone={phone}
         currentScreen={currentScreen}
         onNavigate={handleBottomNav}
         onProfileClick={handleProfileClick}

@@ -10,6 +10,8 @@ interface CustomerScreenWrapperProps {
   currentScreen: string;
   onNavigate: (screen: string) => void;
   onProfileClick?: () => void;
+  /** Logged-in customer phone — used for meal order footer polling. */
+  customerPhone?: string;
   /** Profile drawer from bottom nav; rendered here so every tabbed screen shows it immediately */
   accountSidebar?: ReactNode;
 }
@@ -19,6 +21,7 @@ export function CustomerScreenWrapper({
   currentScreen, 
   onNavigate, 
   onProfileClick,
+  customerPhone,
   accountSidebar,
 }: CustomerScreenWrapperProps) {
   const profileMenuOpen = Boolean(accountSidebar);
@@ -29,7 +32,7 @@ export function CustomerScreenWrapper({
       <div className="min-h-screen min-h-[100dvh] w-full max-w-customer mx-auto pb-[var(--customer-tabbed-nav-offset)]">
         {children}
       </div>
-      <MealOrderFooterToast />
+      <MealOrderFooterToast customerPhone={customerPhone} />
       <BottomNavigation 
         currentScreen={currentScreen}
         onNavigate={onNavigate}
