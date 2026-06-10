@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useState, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import { ArrowRight, Check, Package, Truck, X } from 'lucide-react';
 import { useProfileMenuOpen } from '@/lib/profile-menu-open-context';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
@@ -12,6 +13,20 @@ import {
   mealFooterStepIndex,
   mealFooterSubline,
 } from '@/lib/meal-order-footer-toast';
+import { invokeMealShellTrack } from '@/lib/meal-shell-track-bridge';
+
+function readPhoneFromStorage(): string | null {
+  if (typeof window === 'undefined') return null;
+  const keys = ['customerPhone', 'customer_phone', 'phone'] as const;
+  for (const key of keys) {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const last10 = raw.replace(/\D/g, '').slice(-10);
+      if (last10.length >= 10) return last10;
+    }
+  }
+  return null;
+}
 
 function StepIcon({ done, active }: { done: boolean; active: boolean }) {
   if (done) {
@@ -42,27 +57,18 @@ function StatusIcon({ status }: { status: string }) {
   return <Package className={cls} aria-hidden />;
 }
 
-export function MealOrderFooterToast() {
+interface MealOrderFooterToastProps {
+  /** Prefer session phone from shell; falls back to localStorage. */
+  customerPhone?: string;
+}
+
+export function MealOrderFooterToast({ customerPhone: customerPhoneProp }: MealOrderFooterToastProps) {
   const router = useRouter();
-  const pathname = usePathname();
   const profileMenuOpen = useProfileMenuOpen();
-  const [phone, setPhone] = useState<string | null>(null);
+  const [storedPhone, setStoredPhone] = useState<string | null>(() => readPhoneFromStorage());
 
   useEffect(() => {
-    const read = () => {
-      const keys = ['customerPhone', 'customer_phone', 'phone'] as const;
-      for (const key of keys) {
-        const raw = localStorage.getItem(key);
-        if (raw) {
-          const last10 = raw.replace(/\D/g, '').slice(-10);
-          if (last10.length >= 10) {
-            setPhone(last10);
-            return;
-          }
-        }
-      }
-      setPhone(null);
-    };
+    const read = () => setStoredPhone(readPhoneFromStorage());
     read();
     window.addEventListener('storage', read);
     window.addEventListener('focus', read);
@@ -76,8 +82,18 @@ export function MealOrderFooterToast() {
     };
   }, []);
 
+  const phone =
+    (customerPhoneProp || '').replace(/\D/g, '').slice(-10).length >= 10
+      ? customerPhoneProp!.replace(/\D/g, '').slice(-10)
+      : storedPhone;
+
   const { order, visible, dismiss } = useMealOrderFooterToast(phone);
   const [entered, setEntered] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!visible) {
@@ -88,12 +104,7 @@ export function MealOrderFooterToast() {
     return () => cancelAnimationFrame(t);
   }, [visible, order?.orderId, order?.status]);
 
-  if (!isCustomerMealPlansEnabled() || profileMenuOpen || !visible || !order) {
-    return null;
-  }
-
-  const trackMatch = pathname?.match(/^\/track\/([^/]+)/);
-  if (trackMatch && trackMatch[1] === order.orderId) {
+  if (!mounted || !isCustomerMealPlansEnabled() || profileMenuOpen || !visible || !order) {
     return null;
   }
 
@@ -101,7 +112,13 @@ export function MealOrderFooterToast() {
   const headline = mealFooterHeadline(order.status);
   const subline = mealFooterSubline(order);
 
-  return (
+  const handleTrackOrder = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (invokeMealShellTrack(order.orderId)) return;
+    router.push(`/track/${order.orderId}?from=meal-footer`);
+  };
+  return createPortal(
     <div
       className="fixed inset-x-0 z-[96] mx-auto max-w-customer bottom-[var(--customer-tabbed-nav-offset)] px-3 pb-2 pointer-events-none"
       role="status"
@@ -138,7 +155,7 @@ export function MealOrderFooterToast() {
             {order.status !== 'delivered' ? (
               <button
                 type="button"
-                onClick={() => router.push(`/track/${order.orderId}`)}
+                onClick={handleTrackOrder}
                 className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[#FF8C42] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#FF7A29]"
               >
                 Track order
@@ -149,9 +166,9 @@ export function MealOrderFooterToast() {
             <div className="mt-4">
               <div className="flex items-start">
                 {MEAL_FOOTER_STEPS.map((step, index) => {
-                  const done = index < stepIdx;
-                  const active = index === stepIdx;
-                  const segmentDone = index < stepIdx;
+                  const done = stepIdx >= 0 && index < stepIdx;
+                  const active = stepIdx >= 0 && index === stepIdx;
+                  const segmentDone = stepIdx >= 0 && index < stepIdx;
                   return (
                     <div key={step.id} className="flex flex-1 items-start">
                       <div className="flex min-w-0 flex-1 flex-col items-center gap-1">
@@ -180,6 +197,7 @@ export function MealOrderFooterToast() {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
