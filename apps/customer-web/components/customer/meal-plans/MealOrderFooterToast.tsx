@@ -49,10 +49,31 @@ export function MealOrderFooterToast() {
   const [phone, setPhone] = useState<string | null>(null);
 
   useEffect(() => {
-    const read = () => setPhone(localStorage.getItem('customerPhone'));
+    const read = () => {
+      const keys = ['customerPhone', 'customer_phone', 'phone'] as const;
+      for (const key of keys) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const last10 = raw.replace(/\D/g, '').slice(-10);
+          if (last10.length >= 10) {
+            setPhone(last10);
+            return;
+          }
+        }
+      }
+      setPhone(null);
+    };
     read();
     window.addEventListener('storage', read);
-    return () => window.removeEventListener('storage', read);
+    window.addEventListener('focus', read);
+    document.addEventListener('visibilitychange', read);
+    const id = setInterval(read, 3000);
+    return () => {
+      window.removeEventListener('storage', read);
+      window.removeEventListener('focus', read);
+      document.removeEventListener('visibilitychange', read);
+      clearInterval(id);
+    };
   }, []);
 
   const { order, visible, dismiss } = useMealOrderFooterToast(phone);

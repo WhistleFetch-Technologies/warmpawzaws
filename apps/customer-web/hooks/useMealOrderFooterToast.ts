@@ -11,7 +11,7 @@ import {
   type MealFooterActiveOrder,
 } from '@/lib/meal-order-footer-toast';
 
-const POLL_MS = 15_000;
+const POLL_MS = 10_000;
 const DELIVERED_FLASH_MS = 10_000;
 
 function mapActiveRow(row: Record<string, unknown>): MealFooterActiveOrder | null {
@@ -94,8 +94,8 @@ export function useMealOrderFooterToast(customerPhone: string | null | undefined
       setOrder(null);
       return;
     }
-    const phone = (customerPhone || '').replace(/\D/g, '');
-    if (!phone) {
+    const phone = (customerPhone || '').replace(/\D/g, '').slice(-10);
+    if (phone.length < 10) {
       setOrder(null);
       return;
     }
@@ -160,8 +160,13 @@ export function useMealOrderFooterToast(customerPhone: string | null | undefined
   useEffect(() => {
     void load();
     const id = setInterval(() => void load(), POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
       clearDeliveredTimer();
     };
   }, [load, clearDeliveredTimer]);

@@ -22,6 +22,13 @@ type Row = {
   gross_amount: string | number;
   commission_amount: string | number;
   net_amount: string | number;
+  platform_fee?: string | number;
+  convenience_fee?: string | number;
+  delivery_fee?: string | number;
+  cgst_amount?: string | number;
+  sgst_amount?: string | number;
+  igst_amount?: string | number;
+  gst_total?: string | number;
   currency?: string;
   earnings_line_count: number;
   missing_earnings_booking_count: number;
@@ -39,14 +46,25 @@ type Row = {
   computed_at?: string;
 };
 
+function moneyCell(v: string | number | undefined | null) {
+  return `₹${Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+}
+
 export function VendorDailyAccrualReport() {
   const [reportDate, setReportDate] = useState(yesterdayYmd());
   const [loading, setLoading] = useState(false);
   const [computing, setComputing] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
-  const [totals, setTotals] = useState<{ gross: number; commission: number; net: number; vendorCount: number } | null>(
-    null
-  );
+  const [totals, setTotals] = useState<{
+    gross: number;
+    commission: number;
+    net: number;
+    platformFee: number;
+    convenienceFee: number;
+    deliveryFee: number;
+    gstTotal: number;
+    vendorCount: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -70,6 +88,10 @@ export function VendorDailyAccrualReport() {
               gross: Number(t.grossAmount) || 0,
               commission: Number(t.commissionAmount) || 0,
               net: Number(t.netAmount) || 0,
+              platformFee: Number(t.platformFee) || 0,
+              convenienceFee: Number(t.convenienceFee) || 0,
+              deliveryFee: Number(t.deliveryFee) || 0,
+              gstTotal: Number(t.gstTotal) || 0,
               vendorCount: Number(t.vendorCount) || 0,
             }
           : null
@@ -161,7 +183,9 @@ export function VendorDailyAccrualReport() {
           <strong>Missing earnings</strong> = completed bookings that day with no{' '}
           <code className="rounded bg-blue-100 px-1">vendor_earnings</code> row.{' '}
           <strong>Missing delivery settlement</strong> = delivered meal orders that day with no{' '}
-          <code className="rounded bg-blue-100 px-1">delivery_settlements</code> row.
+          <code className="rounded bg-blue-100 px-1">delivery_settlements</code> row. CSV export also
+          includes customer checkout <strong>platform fee</strong>, <strong>convenience fee</strong>,{' '}
+          <strong>delivery fee</strong>, and <strong>GST (CGST / SGST / IGST)</strong> for investor reporting.
         </p>
       </div>
 
@@ -194,26 +218,44 @@ export function VendorDailyAccrualReport() {
       )}
 
       {totals && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <div className="text-xs text-gray-500">Vendors in snapshot</div>
-            <div className="text-xl font-semibold">{totals.vendorCount}</div>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <div className="text-xs text-gray-500">Gross</div>
-            <div className="text-xl font-semibold">₹{totals.gross.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <div className="text-xs text-gray-500">Commission</div>
-            <div className="text-xl font-semibold">
-              ₹{totals.commission.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+        <>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="text-xs text-gray-500">Vendors in snapshot</div>
+              <div className="text-xl font-semibold">{totals.vendorCount}</div>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="text-xs text-gray-500">Gross</div>
+              <div className="text-xl font-semibold">{moneyCell(totals.gross)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="text-xs text-gray-500">Commission</div>
+              <div className="text-xl font-semibold">{moneyCell(totals.commission)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="text-xs text-gray-500">Net to vendors</div>
+              <div className="text-xl font-semibold">{moneyCell(totals.net)}</div>
             </div>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white p-4">
-            <div className="text-xs text-gray-500">Net to vendors</div>
-            <div className="text-xl font-semibold">₹{totals.net.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Platform fee</div>
+              <div className="text-sm font-semibold">{moneyCell(totals.platformFee)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Convenience fee</div>
+              <div className="text-sm font-semibold">{moneyCell(totals.convenienceFee)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Delivery fee</div>
+              <div className="text-sm font-semibold">{moneyCell(totals.deliveryFee)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">GST</div>
+              <div className="text-sm font-semibold">{moneyCell(totals.gstTotal)}</div>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
@@ -225,6 +267,10 @@ export function VendorDailyAccrualReport() {
               <th className="px-3 py-2 text-right font-medium text-gray-700">Gross</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Commission</th>
               <th className="px-3 py-2 text-right font-medium text-gray-700">Net</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">Platform</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">Convenience</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">Delivery</th>
+              <th className="px-3 py-2 text-right font-medium text-gray-700">GST</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Lines</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Delivery</th>
               <th className="px-3 py-2 text-center font-medium text-gray-700">Missing VE</th>
@@ -237,7 +283,7 @@ export function VendorDailyAccrualReport() {
           <tbody className="divide-y divide-gray-100">
             {rows.length === 0 && !loading && (
               <tr>
-                <td colSpan={12} className="px-3 py-8 text-center text-gray-500">
+                <td colSpan={16} className="px-3 py-8 text-center text-gray-500">
                   No rows. Pick a date, run <strong>Compute</strong> (requires migration 732 + 753), then <strong>Load</strong>.
                 </td>
               </tr>
@@ -252,9 +298,11 @@ export function VendorDailyAccrualReport() {
                 <td className="px-3 py-2 text-right tabular-nums">
                   ₹{Number(r.commission_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  ₹{Number(r.net_amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.net_amount)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.platform_fee)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.convenience_fee)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.delivery_fee)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{moneyCell(r.gst_total)}</td>
                 <td className="px-3 py-2 text-center">{r.earnings_line_count}</td>
                 <td className="px-3 py-2 text-center">{r.delivery_settlement_line_count ?? 0}</td>
                 <td className="px-3 py-2 text-center">{r.missing_earnings_booking_count}</td>
