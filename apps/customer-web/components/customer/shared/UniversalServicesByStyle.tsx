@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, type MouseEvent } from 'react';
+import React, { useState, useEffect, useMemo, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp, GraduationCap, Scissors } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,7 @@ import {
   getWebWalkerDiscoveryChevronNavTarget,
 } from '@/lib/customer-vendor-profile-navigation';
 import { toast } from 'sonner';
+import { filterServicesByQuery } from '@/lib/filter-services-by-query';
 import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import {
   buildWalkerServiceDataForVendorPackagePurchase,
@@ -733,7 +734,10 @@ export function UniversalServicesByStyle({
   };
 
   // Filter and sort services for profile view
-  const filteredServices = profileProvider?.services || [];
+  const filteredServices = useMemo(
+    () => filterServicesByQuery(profileProvider?.services || [], searchQuery),
+    [profileProvider?.services, searchQuery]
+  );
   const sortedServices = [...filteredServices].sort((a, b) => {
     if (sortBy === 'popular') return 0;
     if (sortBy === 'price') return a.price - b.price;

@@ -23,6 +23,7 @@ import { pickCustomerVendorAccountId } from '@warmpawz/shared-types';
 import { shareVendorProfile } from '@/lib/vendor-profile-share';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
+import { filterServicesByQuery } from '@/lib/filter-services-by-query';
 
 interface GroomingServicesByStyleProps {
   phone: string;
@@ -512,7 +513,10 @@ export function GroomingServicesByStyle({
   }, [providers, providerSortBy, providerFilter]);
 
   // Filter and sort services for profile view
-  const filteredServices = profileProvider?.services || [];
+  const filteredServices = useMemo(
+    () => filterServicesByQuery(profileProvider?.services || [], searchQuery),
+    [profileProvider?.services, searchQuery]
+  );
   const sortedServices = [...filteredServices].sort((a, b) => {
     if (sortBy === 'popular') return 0; // No popularity data yet
     if (sortBy === 'price') return a.price - b.price;
