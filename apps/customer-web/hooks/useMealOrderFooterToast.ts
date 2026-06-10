@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
+import { isMealOrderAwaitingPayment, isMealPaymentHoldExpired } from '@/lib/payment-hold-ui';
 import { resolveEffectiveMealDeliveryState } from '@warmpawz/shared-types';
 import {
   normalizeMealFooterStatus,
@@ -13,14 +15,14 @@ import {
 
 const POLL_MS = 5_000;
 
-function extractActiveMealOrders(res: unknown): Record<string, unknown>[] {
+function extractOrdersArray(res: unknown): Record<string, unknown>[] {
   const r = res as { orders?: unknown[]; data?: { orders?: unknown[] } };
   if (Array.isArray(r?.orders)) return r.orders as Record<string, unknown>[];
   if (Array.isArray(r?.data?.orders)) return r.data.orders as Record<string, unknown>[];
   return [];
 }
 
-function mapActiveRow(row: Record<string, unknown>): MealFooterActiveOrder | null {
+function mapMealsActiveRow(row: Record<string, unknown>): MealFooterActiveOrder | null {
   const orderId = String(row.orderId ?? row.id ?? '');
   if (!orderId) return null;
 
@@ -41,12 +43,60 @@ function mapActiveRow(row: Record<string, unknown>): MealFooterActiveOrder | nul
 
   return {
     orderId,
-    orderNumber: row.orderNumber != null ? String(row.orderNumber) : undefined,
-    vendorName: row.vendorName != null ? String(row.vendorName) : undefined,
+    orderNumber:
+      row.orderNumber != null
+        ? String(row.orderNumber)
+        : row.order_number != null
+          ? String(row.order_number)
+          : undefined,
+    vendorName:
+      row.vendorName != null
+        ? String(row.vendorName)
+        : row.vendor_name != null
+          ? String(row.vendor_name)
+          : undefined,
     status: normalized,
     logisticsStatus,
     riderName: row.riderName != null ? String(row.riderName) : null,
     riderMessage: row.riderMessage != null ? String(row.riderMessage) : null,
+    etaMinutes: null,
+  };
+}
+
+/** Same source as Meal Plan Orders page — proven to return preparing rows. */
+function mapMealPlanOrdersRow(row: Record<string, unknown>): MealFooterActiveOrder | null {
+  const orderId = String(row.id ?? row.orderId ?? '');
+  if (!orderId) return null;
+
+  const rawStatus = String(row.status ?? '').trim();
+  const lower = rawStatus.toLowerCase();
+  if (['delivered', 'cancelled', 'refunded'].includes(lower)) return null;
+
+  const paymentCtx = {
+    status: rawStatus,
+    paymentStatus: (row.payment_status ?? row.paymentStatus) as string | undefined,
+    paymentHoldExpiresAt: (row.payment_hold_expires_at ?? row.paymentHoldExpiresAt) as string | null | undefined,
+    createdAt: row.created_at as string | undefined,
+  };
+  if (isMealPaymentHoldExpired(paymentCtx)) return null;
+  if (isMealOrderAwaitingPayment(paymentCtx)) return null;
+
+  const normalized = normalizeMealFooterStatus(rawStatus);
+  if (!normalized) return null;
+
+  return {
+    orderId,
+    orderNumber: row.order_number != null ? String(row.order_number) : undefined,
+    vendorName:
+      row.vendor_name != null
+        ? String(row.vendor_name)
+        : row.vendorName != null
+          ? String(row.vendorName)
+          : undefined,
+    status: normalized,
+    logisticsStatus: null,
+    riderName: null,
+    riderMessage: null,
     etaMinutes: null,
   };
 }
@@ -78,6 +128,49 @@ async function enrichWithEta(order: MealFooterActiveOrder): Promise<MealFooterAc
   }
 }
 
+async function fetchMealFooterCandidates(phone: string): Promise<MealFooterActiveOrder[]> {
+  const candidates: MealFooterActiveOrder[] = [];
+
+  // Primary: same API as /orders/meal-plans (user sees PREPARING here).
+  try {
+    const q = new URLSearchParams();
+    q.set('phone', phone);
+    const customerId = getResolvedCustomerId();
+    if (customerId) q.set('customerId', customerId);
+    const mealPlanRes = await apiClient.get(`/customer/meal-plan-orders?${q.toString()}`);
+    for (const row of extractOrdersArray(mealPlanRes)) {
+      const mapped = mapMealPlanOrdersRow(row);
+      if (mapped) candidates.push(mapped);
+    }
+  } catch {
+    /* try fallback */
+  }
+
+  // Secondary: logistics-enriched active list (when SQL succeeds).
+  try {
+    const activeRes = await apiClient.get(`/customer/${phone}/orders/meals/active`);
+    for (const row of extractOrdersArray(activeRes)) {
+      const mapped = mapMealsActiveRow(row);
+      if (mapped) candidates.push(mapped);
+    }
+  } catch {
+    /* meal-plan-orders may be enough */
+  }
+
+  const byId = new Map<string, MealFooterActiveOrder>();
+  for (const c of candidates) {
+    const prev = byId.get(c.orderId);
+    if (!prev) {
+      byId.set(c.orderId, c);
+      continue;
+    }
+    const best = pickBestOrder([prev, c]);
+    if (best) byId.set(c.orderId, best);
+  }
+
+  return [...byId.values()];
+}
+
 export function useMealOrderFooterToast(customerPhone: string | null | undefined) {
   const [order, setOrder] = useState<MealFooterActiveOrder | null>(null);
   const [dismissed, setDismissed] = useState(false);
@@ -96,10 +189,7 @@ export function useMealOrderFooterToast(customerPhone: string | null | undefined
     }
 
     try {
-      const res = await apiClient.get(`/customer/${phone}/orders/meals/active`);
-      const mapped = extractActiveMealOrders(res)
-        .map(mapActiveRow)
-        .filter((o): o is MealFooterActiveOrder => Boolean(o));
+      const mapped = await fetchMealFooterCandidates(phone);
       const best = pickBestOrder(mapped);
 
       if (best) {
@@ -112,7 +202,7 @@ export function useMealOrderFooterToast(customerPhone: string | null | undefined
       setOrder(null);
       setDismissed(false);
     } catch {
-      /* non-fatal — keep last known order visible until explicit dismiss */
+      /* keep last order on transient errors */
     }
   }, [customerPhone]);
 

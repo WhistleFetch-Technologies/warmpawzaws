@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Check, Package, Truck, X } from 'lucide-react';
 import { useProfileMenuOpen } from '@/lib/profile-menu-open-context';
@@ -87,6 +88,11 @@ export function MealOrderFooterToast({ customerPhone: customerPhoneProp }: MealO
 
   const { order, visible, dismiss } = useMealOrderFooterToast(phone);
   const [entered, setEntered] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!visible) {
@@ -97,7 +103,7 @@ export function MealOrderFooterToast({ customerPhone: customerPhoneProp }: MealO
     return () => cancelAnimationFrame(t);
   }, [visible, order?.orderId, order?.status]);
 
-  if (!isCustomerMealPlansEnabled() || profileMenuOpen || !visible || !order) {
+  if (!mounted || !isCustomerMealPlansEnabled() || profileMenuOpen || !visible || !order) {
     return null;
   }
 
@@ -105,7 +111,7 @@ export function MealOrderFooterToast({ customerPhone: customerPhoneProp }: MealO
   const headline = mealFooterHeadline(order.status);
   const subline = mealFooterSubline(order);
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-x-0 z-[96] mx-auto max-w-customer bottom-[var(--customer-tabbed-nav-offset)] px-3 pb-2 pointer-events-none"
       role="status"
@@ -184,6 +190,7 @@ export function MealOrderFooterToast({ customerPhone: customerPhoneProp }: MealO
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
