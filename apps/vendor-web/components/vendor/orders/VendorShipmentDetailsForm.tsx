@@ -29,7 +29,6 @@ export function VendorShipmentDetailsForm({
   showErrors = false,
 }: VendorShipmentDetailsFormProps) {
   const errors = showErrors ? validateShipmentForm(values) : {};
-  const selectedCarrier = VENDOR_CARRIER_OPTIONS.find((c) => c.id === values.carrierId);
 
   const setField = <K extends keyof VendorShipmentFormValues>(key: K, value: VendorShipmentFormValues[K]) => {
     onChange({ ...values, [key]: value });
@@ -50,6 +49,7 @@ export function VendorShipmentDetailsForm({
               ...values,
               carrierId,
               carrierName: carrierId === CUSTOM_CARRIER_ID ? values.carrierName : option?.name || '',
+              trackingUrl: carrierId === CUSTOM_CARRIER_ID ? values.trackingUrl : '',
             });
           }}
           disabled={disabled}
@@ -103,26 +103,30 @@ export function VendorShipmentDetailsForm({
         )}
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">
-          Tracking URL <span className="text-slate-400 font-normal">(optional)</span>
-        </label>
-        <input
-          type="url"
-          value={values.trackingUrl}
-          onChange={(e) => setField('trackingUrl', e.target.value)}
-          placeholder={
-            selectedCarrier?.supportsAutoTrackingUrl
-              ? 'Auto-filled from carrier portal + AWB if left blank'
-              : 'Paste carrier tracking page URL'
-          }
-          disabled={disabled}
-          className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 disabled:opacity-60"
-        />
-        {errors.trackingUrl && (
-          <p className="mt-1 text-sm text-red-600">{errors.trackingUrl}</p>
-        )}
-      </div>
+      {values.carrierId && values.carrierId !== CUSTOM_CARRIER_ID && (
+        <p className="text-sm text-slate-500">
+          Customers will open the courier tracking page; they can copy the AWB from the order.
+        </p>
+      )}
+
+      {values.carrierId === CUSTOM_CARRIER_ID && (
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Tracking URL <span className="text-slate-400 font-normal">(optional)</span>
+          </label>
+          <input
+            type="url"
+            value={values.trackingUrl}
+            onChange={(e) => setField('trackingUrl', e.target.value)}
+            placeholder="Paste carrier tracking page URL"
+            disabled={disabled}
+            className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 disabled:opacity-60"
+          />
+          {errors.trackingUrl && (
+            <p className="mt-1 text-sm text-red-600">{errors.trackingUrl}</p>
+          )}
+        </div>
+      )}
 
       {showErrors && Object.keys(errors).length > 0 && (
         <div className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
