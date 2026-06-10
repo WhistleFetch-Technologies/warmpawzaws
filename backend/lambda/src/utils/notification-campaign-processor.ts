@@ -8,6 +8,7 @@ import {
   resolveCampaignRecipientIds,
   type AudienceFilters,
 } from './notification-campaign-audience';
+import { loadCampaignTargeting } from './notification-campaign-targeting';
 import { dispatchCampaignNotification } from './notification-dispatch';
 
 const MAX_RECIPIENTS_PER_SEND = 5000;

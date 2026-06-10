@@ -18,6 +18,8 @@ import { randomUUID } from 'crypto';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../handler/base-handler';
 import { query, select, insert, update } from '../database/rds-connection';
 import { getDiscoveryRules } from '../lib/rule-engine';
+import { sendEventNotification } from '../aws/aws-sns-notification-service';
+import { dispatchNotification } from '../utils/notification-dispatch';
 
 // ============================================================================
 // TYPES
@@ -38,6 +40,52 @@ interface UpcomingAppointment {
   bookingTime: string;
   scheduledAt: Date;
   minutesUntil: number;
+}
+
+async function deliverAppointmentReminder(apt: Record<string, any>, reminderMinutes: number): Promise<void> {
+  const isTeleFiveMin = apt.service_style === 'tele' && reminderMinutes <= 5;
+  const eventType = isTeleFiveMin ? 'video_call_reminder_5min' : 'booking_reminder';
+  const providerName = apt.staff_name || apt.vendor_name || 'Provider';
+  const dedupeSuffix = `${reminderMinutes}min`;
+
+  if (apt.customer_id) {
+    await sendEventNotification({
+      eventType,
+      recipientId: String(apt.customer_id),
+      recipientType: 'customer',
+      relatedId: apt.id,
+      data: {
+        vendorName: providerName,
+        serviceName: apt.service_name,
+        timeLeft: `${reminderMinutes} minutes`,
+        bookingId: apt.id,
+        meetingId: apt.meeting_id,
+        dedupeKey: `booking-${apt.id}-reminder-${dedupeSuffix}-customer`,
+      },
+    });
+  }
+
+  if (apt.vendor_id) {
+    const title = isTeleFiveMin ? 'Upcoming Video Consultation' : 'Upcoming Appointment';
+    const message = isTeleFiveMin
+      ? `Consultation with ${apt.customer_name} starts in ${reminderMinutes} minutes.`
+      : `Appointment with ${apt.customer_name} starts in ${reminderMinutes} minutes.`;
+    await dispatchNotification({
+      recipientId: String(apt.vendor_id),
+      recipientType: 'vendor',
+      notificationType: eventType,
+      title,
+      message,
+      channels: { inApp: true, push: true },
+      priority: 'high',
+      data: {
+        bookingId: apt.id,
+        customerName: apt.customer_name,
+        meetingId: apt.meeting_id,
+        dedupeKey: `booking-${apt.id}-reminder-${dedupeSuffix}-vendor`,
+      },
+    });
+  }
 }
 
 // ============================================================================
@@ -166,8 +214,11 @@ class SendPreAppointmentNotificationsHandler extends BaseHandler {
         WHERE b.status IN ('confirmed', 'scheduled')
           AND b.service_type = ANY($1::text[])
           AND EXTRACT(EPOCH FROM ((b.booking_date + b.booking_time::time) - NOW())) / 60 BETWEEN $2 AND $3
-          AND b.reminder_sent IS NULL`,
-        [serviceStyles, windowStart, windowEnd]
+          AND (
+            ($4::int <= 5 AND COALESCE(b.reminder_5min_sent, false) = false)
+            OR ($4::int > 5 AND COALESCE(b.reminder_sent, false) = false)
+          )`,
+        [serviceStyles, windowStart, windowEnd, reminderMinutes]
       );
 
       if (appointments.length === 0) {
@@ -192,64 +243,19 @@ class SendPreAppointmentNotificationsHandler extends BaseHandler {
           continue;
         }
 
-        // Create notification for customer
-        await insert('notifications', {
-          user_id: apt.customer_id,
-          user_type: 'customer',
-          type: 'appointment_reminder',
-          title: '📹 Video Call Starting Soon!',
-          message: `Your ${apt.service_name} with ${apt.staff_name || apt.vendor_name} starts in ${reminderMinutes} minutes. Get ready!`,
-          data: JSON.stringify({
-            booking_id: apt.id,
-            type: 'tele_reminder',
-            meeting_id: apt.meeting_id,
-            action: 'open_chat',
-            priority: 'high',
-          }),
-          is_read: false,
-          requires_action: true,
-          action_url: `/bookings/${apt.id}`,
-          created_at: new Date(),
-        });
+        await deliverAppointmentReminder(apt, reminderMinutes);
 
-        // Create notification for staff/vendor
-        const staffOrVendorId = apt.staff_user_id || apt.vendor_id;
-        if (staffOrVendorId) {
-          await insert('notifications', {
-            user_id: staffOrVendorId,
-            user_type: 'vendor',
-            type: 'appointment_reminder',
-            title: '📹 Upcoming Video Consultation',
-            message: `Consultation with ${apt.customer_name} starts in ${reminderMinutes} minutes.`,
-            data: JSON.stringify({
-              booking_id: apt.id,
-              type: 'tele_reminder',
-              meeting_id: apt.meeting_id,
-              action: 'open_appointment',
-              priority: 'high',
-            }),
-            is_read: false,
-            requires_action: true,
-            action_url: `/appointments/${apt.id}`,
-            created_at: new Date(),
-          });
-        }
-
-        // Mark reminder as sent and activate chat for tele consultations
-        // GAP FIX: Auto-activate chat 5 min before tele consultation
-        const updateData: any = {
-          reminder_sent: new Date(),
-          reminder_type: `${reminderMinutes}_min`,
+        const updateData: Record<string, unknown> = {
+          reminder_sent: true,
+          reminder_sent_at: new Date().toISOString(),
         };
-        
-        // For tele consultations with 5-min reminder, activate chat
+
         if (apt.service_style === 'tele' && reminderMinutes <= 5) {
           updateData.chat_activated_at = new Date();
           updateData.chat_auto_activated = true;
           updateData.reminder_5min_sent = true;
-          updateData.reminder_5min_sent_at = new Date();
-          
-          // Create a welcome message in the chat to notify both parties
+          updateData.reminder_5min_sent_at = new Date().toISOString();
+
           await insert('chat_messages', {
             booking_id: apt.id,
             sender_type: 'system',
@@ -257,17 +263,11 @@ class SendPreAppointmentNotificationsHandler extends BaseHandler {
             is_read: false,
             created_at: new Date(),
           }).catch(() => {
-            // Chat messages table might not exist or have different schema
             console.log('Could not create system chat message');
           });
         }
-        
-        await update('bookings', { id: apt.id }, updateData);
 
-        // TODO: Send push notification via FCM
-        // if (apt.customer_fcm_token) {
-        //   await sendPushNotification(apt.customer_fcm_token, {...});
-        // }
+        await update('bookings', { id: apt.id }, updateData);
 
         notificationsSent.push({
           bookingId: apt.id,
@@ -388,26 +388,13 @@ class ManualTriggerReminderHandler extends BaseHandler {
       }
 
       const apt = bookings[0];
-
-      // Create notification for customer
-      await insert('notifications', {
-        user_id: apt.customer_id,
-        user_type: 'customer',
-        type: 'appointment_reminder',
-        title: '📹 Video Call Starting Soon!',
-        message: `Your ${apt.service_name} with ${apt.staff_name || apt.vendor_name} starts in 5 minutes. Get ready!`,
-        data: JSON.stringify({
-          booking_id: apt.id,
-          type: 'tele_reminder',
-          meeting_id: apt.meeting_id,
-          action: 'open_chat',
-          priority: 'high',
-        }),
-        is_read: false,
-        requires_action: true,
-        action_url: `/bookings/${apt.id}`,
-        created_at: new Date(),
-      });
+      await deliverAppointmentReminder(apt, 5);
+      await update('bookings', { id: apt.id }, {
+        reminder_5min_sent: true,
+        reminder_5min_sent_at: new Date().toISOString(),
+        reminder_sent: true,
+        reminder_sent_at: new Date().toISOString(),
+      }).catch(() => undefined);
 
       return this.success({
         success: true,
