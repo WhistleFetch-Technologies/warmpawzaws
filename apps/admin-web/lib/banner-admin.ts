@@ -3,14 +3,76 @@
  * UI uses `position` with legacy `main` shown as `home_top`.
  */
 
-/** Customer-web static hero asset (also used when admin saves home_top without an image). */
-export const DEFAULT_HOME_HERO_BANNER_IMAGE_PATH = '/images/home/hero-pet.webp';
+/** Customer-web static hero asset — preview / explicit opt-in only; never auto-persisted. */
+export const DEFAULT_HOME_HERO_BANNER_IMAGE_PATH = '/images/home/dog-peep.png';
+
+const BROKEN_BANNER_IMAGE_PATHS = new Set(['/images/home/hero-pet.webp']);
+
+export const RESERVED_BANNER_CTA_SLUGS = new Set(['placeholder', 'placeholder.html']);
+
+const RESERVED_BANNER_CTA_PATH_RE =
+  /^(?:vet|grooming|training|boarding|walker|nutritionist)\/placeholder(?:\.html)?$/i;
 
 export function isHomeHeroBannerPosition(position: string | undefined): boolean {
   const p = String(position ?? '').toLowerCase();
   return p === 'home_top' || p === 'main';
 }
 
+/** Raw DB value for edit/save — no display defaults. */
+export function getStoredBannerImageUrl(row: {
+  image_url?: unknown;
+  imageUrl?: unknown;
+}): string {
+  const raw = row.image_url ?? row.imageUrl;
+  if (raw == null) return '';
+  return String(raw).trim();
+}
+
+/** Admin list/preview only — returns stored URL when valid, else empty (gradient preview). */
+export function getBannerDisplayImageUrl(row: {
+  image_url?: unknown;
+  imageUrl?: unknown;
+}): string {
+  const stored = getStoredBannerImageUrl(row);
+  if (stored && !isBrokenBannerImageUrl(stored)) return stored;
+  return '';
+}
+
+export function isBrokenBannerImageUrl(imageUrl: unknown): boolean {
+  const trimmed = String(imageUrl ?? '').trim();
+  if (!trimmed) return false;
+  return BROKEN_BANNER_IMAGE_PATHS.has(trimmed);
+}
+
+export function isReservedBannerCtaSlug(slug: unknown): boolean {
+  const s = String(slug ?? '').trim().toLowerCase();
+  return RESERVED_BANNER_CTA_SLUGS.has(s);
+}
+
+export function validateBannerCtaLink(
+  ctaLink: unknown
+): { ok: true } | { ok: false; message: string } {
+  const raw = String(ctaLink ?? '').trim();
+  if (!raw) return { ok: true };
+  if (raw.toLowerCase().includes('/placeholder')) {
+    return {
+      ok: false,
+      message:
+        'CTA link cannot use "/placeholder" — that is a static-export route shell, not a vendor link. Select a vendor destination instead.',
+    };
+  }
+  const pathOnly = raw.split('?')[0].split('#')[0].replace(/^\/+/, '');
+  if (RESERVED_BANNER_CTA_PATH_RE.test(pathOnly)) {
+    return {
+      ok: false,
+      message:
+        'CTA link cannot point to a placeholder route. Configure an in-app vendor or category destination.',
+    };
+  }
+  return { ok: true };
+}
+
+/** Explicit opt-in default for admin "use default image" — not used on automatic save. */
 export function resolveHomeHeroBannerImageUrl(imageUrl?: string | null): string {
   const trimmed = String(imageUrl ?? '').trim();
   if (trimmed) return trimmed;
@@ -28,13 +90,7 @@ export function normalizeAdminBannerRow<T extends Record<string, unknown>>(row: 
   const position = adminBannerPositionFromRow({ type: t, position: row.position as string | undefined });
   const target_state = normalizeLocationValue(row.target_state ?? row.targetState);
   const target_city = normalizeLocationValue(row.target_city ?? row.targetCity);
-  const rawImage = row.image_url ?? row.imageUrl;
-  const image_url =
-    rawImage != null && String(rawImage).trim()
-      ? String(rawImage).trim()
-      : isHomeHeroBannerPosition(position)
-        ? DEFAULT_HOME_HERO_BANNER_IMAGE_PATH
-        : undefined;
+  const image_url = getStoredBannerImageUrl(row);
   const imageUrl = image_url;
   return { ...row, type: t, position, target_state, target_city, image_url, imageUrl };
 }
@@ -519,7 +575,12 @@ export function validateBannerSaveTarget(opts: {
   articleSlug?: string;
   shopTargetMode?: ShopBannerTargetLevel;
   shopProductId?: string;
+  ctaLink?: string;
+  vendorName?: string;
 }): { ok: true } | { ok: false; message: string } {
+  const ctaValidation = validateBannerCtaLink(opts.ctaLink);
+  if (!ctaValidation.ok) return ctaValidation;
+
   if (opts.position === 'checkout') {
     return { ok: true };
   }
@@ -552,6 +613,13 @@ export function validateBannerSaveTarget(opts: {
   }
   if (opts.targetMode === 'vendor' && !opts.vendorId.trim()) {
     return { ok: false, message: 'Select a vendor for this banner.' };
+  }
+  if (opts.targetMode === 'vendor' && opts.vendorId.trim() && !String(opts.vendorName ?? '').trim()) {
+    return {
+      ok: false,
+      message:
+        'Vendor name could not be resolved for the CTA link. Re-select the vendor or refresh destination options.',
+    };
   }
   return { ok: true };
 }

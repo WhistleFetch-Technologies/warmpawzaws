@@ -31,6 +31,11 @@ describe('parseBannerCtaLink', () => {
   it('returns null for external URLs', () => {
     expect(parseBannerCtaLink('https://example.com/vet/clinic')).toBeNull();
   });
+
+  it('returns null for reserved placeholder vendor slug', () => {
+    expect(parseBannerCtaLink('/vet/placeholder')).toBeNull();
+    expect(parseBannerCtaLink('/vet/placeholder.html')).toBeNull();
+  });
 });
 
 describe('parseBannerTargetFromMetadata', () => {
