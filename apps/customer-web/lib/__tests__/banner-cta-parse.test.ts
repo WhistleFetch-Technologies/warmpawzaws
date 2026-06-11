@@ -14,6 +14,11 @@ describe('banner-cta-parse', () => {
     expect(isVendorBannerCta('/grooming')).toBe(false);
   });
 
+  it('rejects reserved placeholder vendor slug', () => {
+    expect(isVendorBannerCta('/vet/placeholder')).toBe(false);
+    expect(parseBannerCtaLink('/vet/placeholder')).toBeNull();
+  });
+
   it('builds CTA paths from route segments', () => {
     expect(buildBannerCtaPathFromSegments('vet', ['Bindushree M'])).toBe('/vet/Bindushree M');
     expect(buildBannerCtaPathFromSegments('vet', null)).toBe('/vet');

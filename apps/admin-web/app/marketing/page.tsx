@@ -69,6 +69,9 @@ import {
 	formatShopProductOptionLabel,
 	normalizeBannerServiceStyle,
 	validateBannerSaveTarget,
+	validateBannerCtaLink,
+	getStoredBannerImageUrl,
+	getBannerDisplayImageUrl,
 	buildArticleBannerCtaLink,
 	formatArticleOptionLabel,
 	isPublishedArticleRow,
@@ -816,29 +819,6 @@ export default function MarketingPromotionsTab() {
 		const isCheckout = isCheckoutBannerPosition(bannerForm.position);
 		const isShop = isShopBannerPosition(bannerForm.position);
 
-		const validation = validateBannerSaveTarget({
-			position: bannerForm.position,
-			categoryId: bannerCtaPersona,
-			targetMode: bannerCtaTargetMode,
-			serviceStyle: bannerCtaServiceStyle,
-			vendorId: bannerCtaVendorId,
-			articleSlug: bannerCtaArticleSlug,
-			shopTargetMode: bannerShopTargetMode,
-			shopProductId: bannerShopProductId,
-		});
-		if (!validation.ok) {
-			let message = validation.message;
-			if (
-				bannerCtaTargetMode === "vendor" &&
-				!bannerCtaVendorId.trim() &&
-				bannerDestinationVendors.length === 0
-			) {
-				message += " No vendors loaded for this category. Try another category or refresh.";
-			}
-			toast.error(message);
-			return;
-		}
-
 		const selectedCategory = bannerDestinationCategories.find(
 			(c) => c.categoryId === bannerCtaPersona
 		);
@@ -899,15 +879,14 @@ export default function MarketingPromotionsTab() {
 							},
 		});
 
-		let ctaLink = isCheckout || bannerCtaTargetMode === "informational"
-			? ""
-			: isShop
-				? ""
-				: bannerCtaTargetMode === "article"
-					? buildArticleBannerCtaLink(bannerCtaArticleSlug)
-					: bannerCtaTargetMode === "vendor" && vendorName
-						? buildBannerCtaLink(customerScreen, vendorName)
-						: String(editingBanner?.linkUrl || editingBanner?.cta_link || "").trim();
+		let ctaLink = "";
+		if (!isCheckout && !isShop && bannerCtaTargetMode !== "informational") {
+			if (bannerCtaTargetMode === "article") {
+				ctaLink = buildArticleBannerCtaLink(bannerCtaArticleSlug);
+			} else if (bannerCtaTargetMode === "vendor") {
+				ctaLink = vendorName ? buildBannerCtaLink(customerScreen, vendorName) : "";
+			}
+		}
 
 		if (isShop) {
 			const shopTarget = buildShopBannerTarget({
@@ -920,12 +899,45 @@ export default function MarketingPromotionsTab() {
 			ctaLink = buildShopBannerCtaLink(shopTarget);
 		}
 
+		const validation = validateBannerSaveTarget({
+			position: bannerForm.position,
+			categoryId: bannerCtaPersona,
+			targetMode: bannerCtaTargetMode,
+			serviceStyle: bannerCtaServiceStyle,
+			vendorId: bannerCtaVendorId,
+			articleSlug: bannerCtaArticleSlug,
+			shopTargetMode: bannerShopTargetMode,
+			shopProductId: bannerShopProductId,
+			ctaLink,
+			vendorName,
+		});
+		if (!validation.ok) {
+			let message = validation.message;
+			if (
+				bannerCtaTargetMode === "vendor" &&
+				!bannerCtaVendorId.trim() &&
+				bannerDestinationVendors.length === 0
+			) {
+				message += " No vendors loaded for this category. Try another category or refresh.";
+			}
+			toast.error(message);
+			return;
+		}
+
+		const ctaCheck = validateBannerCtaLink(ctaLink);
+		if (!ctaCheck.ok) {
+			toast.error(ctaCheck.message);
+			return;
+		}
+
+		const imageUrl = bannerForm.image_url.trim() || null;
+
 		try {
 			if (editingBanner) {
 				await apiClient.put(`/admin/banners/${editingBanner.id}`, {
 					title: bannerForm.title,
 					description: bannerForm.subtitle,
-					imageUrl: bannerForm.image_url,
+					imageUrl,
 					linkUrl: ctaLink,
 					position: bannerForm.position,
 					priority: bannerForm.display_order,
@@ -941,7 +953,7 @@ export default function MarketingPromotionsTab() {
 				await apiClient.post("/admin/banners", {
 					title: bannerForm.title,
 					description: bannerForm.subtitle,
-					imageUrl: bannerForm.image_url,
+					imageUrl,
 					linkUrl: ctaLink,
 					position: bannerForm.position,
 					priority: bannerForm.display_order,
@@ -1212,7 +1224,7 @@ export default function MarketingPromotionsTab() {
 		setBannerForm({
 			title: banner.title || "",
 			subtitle: banner.subtitle || banner.description || "",
-			image_url: banner.image_url || banner.imageUrl || "",
+			image_url: getStoredBannerImageUrl(banner),
 			cta_text: banner.cta_text || banner.ctaText || "Book Now",
 			cta_link: banner.cta_link || banner.ctaLink || banner.linkUrl || "",
 			position,
@@ -2164,13 +2176,13 @@ export default function MarketingPromotionsTab() {
 													className="h-32 flex items-center justify-center relative"
 													style={{
 														background: buildBannerPreviewBackground({
-															imageUrl: banner.image_url || banner.imageUrl,
+															imageUrl: getBannerDisplayImageUrl(banner),
 															gradientFrom: parseBannerMetadataRecord(banner.metadata).gradient_from as string,
 															gradientTo: parseBannerMetadataRecord(banner.metadata).gradient_to as string,
 														}),
 													}}
 												>
-													{!banner.image_url && !banner.imageUrl && (
+													{!getStoredBannerImageUrl(banner) && (
 														<ImageIcon className="w-12 h-12 text-white/50" />
 													)}
 													<Badge 
@@ -2744,7 +2756,9 @@ export default function MarketingPromotionsTab() {
 								onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBannerForm({ ...bannerForm, image_url: e.target.value })}
 								placeholder="https://example.com/banner.jpg"
 							/>
-							<p className="text-xs text-gray-500 mt-1">Leave empty to use gradient colors</p>
+							<p className="text-xs text-gray-500 mt-1">
+								Leave empty for gradient-only. Image is saved exactly as entered — no automatic default.
+							</p>
 						</div>
 
 						<div className="grid grid-cols-2 gap-4">
