@@ -1,17 +1,12 @@
 'use client';
 
 import { useEffect } from 'react';
-
-function isChunkLoadError(message: string): boolean {
-  const msg = (message || '').toLowerCase();
-  return (
-    msg.includes('loading chunk') ||
-    msg.includes('chunkloaderror') ||
-    msg.includes('loading css chunk') ||
-    msg.includes('failed to fetch dynamically imported module') ||
-    msg.includes('before initialization')
-  );
-}
+import {
+  clearChunkReloadCounter,
+  getChunkReloadAttemptCount,
+  isChunkLoadMessage,
+  tryRecoverFromChunkError,
+} from '@/lib/vendor-chunk-recovery';
 
 export default function Error({
   error,
@@ -20,20 +15,21 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  const chunkError = isChunkLoadError(error.message);
+  const chunkError = isChunkLoadMessage(error.message, error);
 
   useEffect(() => {
     if (!chunkError) return;
-    try {
-      const key = 'vendor_chunk_reload';
-      if (!sessionStorage.getItem(key)) {
-        sessionStorage.setItem(key, '1');
-        window.location.reload();
-      }
-    } catch {
-      window.location.reload();
-    }
+    tryRecoverFromChunkError();
   }, [chunkError]);
+
+  const handleAction = () => {
+    if (chunkError) {
+      clearChunkReloadCounter();
+      tryRecoverFromChunkError(true);
+      return;
+    }
+    reset();
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
@@ -42,15 +38,17 @@ export default function Error({
           {chunkError ? 'Update available' : '500'}
         </h1>
         <h2 className="text-xl text-gray-700 mb-4">
-          {chunkError ? 'Refreshing the app…' : 'Something went wrong!'}
+          {chunkError ? 'App needs a quick refresh' : 'Something went wrong!'}
         </h2>
         <p className="text-gray-600 mb-6">
           {chunkError
-            ? 'A new version was deployed. Reloading should fix this.'
+            ? getChunkReloadAttemptCount() >= 3
+              ? 'Tap below to reload with the latest version.'
+              : 'Reloading automatically…'
             : error.message}
         </p>
         <button
-          onClick={() => (chunkError ? window.location.reload() : reset())}
+          onClick={handleAction}
           className="px-4 py-2 bg-orange-500 text-white rounded hover:bg-orange-600"
         >
           {chunkError ? 'Reload now' : 'Try again'}
@@ -59,4 +57,3 @@ export default function Error({
     </div>
   );
 }
-

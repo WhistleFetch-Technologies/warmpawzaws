@@ -72,33 +72,47 @@ export default function RootLayout({
         )}
         {/* Runtime config injected at deploy-time (static hosting safe). */}
         <script src="/runtime-config.js" />
-        {/* Recover from stale JS chunks after deploy (common on Android WebView / long-lived sessions). */}
+        {/* Recover from stale JS chunks after deploy (Android WebView / long-lived sessions). */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
               (function() {
-                var hasReloaded = sessionStorage.getItem('vendor_chunk_reload');
+                var KEY = 'vendor_chunk_reload';
+                var MAX = 3;
                 function isChunkMsg(msg) {
-                  return msg.indexOf('ChunkLoadError') !== -1
-                    || msg.indexOf('Loading chunk') !== -1
-                    || msg.indexOf('Loading CSS chunk') !== -1
-                    || msg.indexOf('Failed to fetch dynamically imported module') !== -1
-                    || msg.indexOf('before initialization') !== -1;
+                  var m = String(msg || '').toLowerCase();
+                  return m.indexOf('chunkloaderror') !== -1
+                    || m.indexOf('loading chunk') !== -1
+                    || m.indexOf('loading css chunk') !== -1
+                    || m.indexOf('dynamically imported module') !== -1
+                    || m.indexOf('before initialization') !== -1
+                    || m.indexOf('unexpected token') !== -1;
                 }
-                function reloadOnce() {
-                  if (hasReloaded) return;
-                  sessionStorage.setItem('vendor_chunk_reload', 'true');
-                  window.location.reload();
+                function reloadWithBust() {
+                  try {
+                    var count = parseInt(sessionStorage.getItem(KEY) || '0', 10) || 0;
+                    if (count >= MAX) return;
+                    sessionStorage.setItem(KEY, String(count + 1));
+                    var url = new URL(window.location.href);
+                    url.searchParams.set('_cv', String(Date.now()));
+                    window.location.replace(url.pathname + url.search + url.hash);
+                  } catch (e) {
+                    window.location.reload();
+                  }
                 }
+                window.addEventListener('load', function() {
+                  setTimeout(function() {
+                    try { sessionStorage.removeItem(KEY); } catch (e) {}
+                  }, 4000);
+                });
                 window.addEventListener('error', function(e) {
-                  var msg = e.message || '';
-                  if (isChunkMsg(msg)) reloadOnce();
+                  if (isChunkMsg(e.message || '')) reloadWithBust();
                 });
                 window.addEventListener('unhandledrejection', function(e) {
                   var msg = (e.reason && e.reason.message) || String(e.reason || '');
                   if (isChunkMsg(msg)) {
                     e.preventDefault();
-                    reloadOnce();
+                    reloadWithBust();
                   }
                 });
               })();

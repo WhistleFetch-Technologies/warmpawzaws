@@ -4,6 +4,11 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { CAPABILITY_ROUTES } from '@/lib/capability-routes';
+import {
+  isChunkHeavyVendorRoute,
+  shouldUseHardDocumentNavigation,
+  vendorNavigate,
+} from '@/lib/vendor-route-nav';
 
 interface Capability {
   id: string;
@@ -54,6 +59,13 @@ export function VendorDynamicNavigation({ enabledCapabilities, vendorType }: Ven
     return pathname?.startsWith(route);
   };
 
+  const handleNavClick = (route: string) => (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (shouldUseHardDocumentNavigation() && isChunkHeavyVendorRoute(route)) {
+      event.preventDefault();
+      vendorNavigate(route);
+    }
+  };
+
   return (
     <nav className="bg-white rounded-2xl shadow-sm p-4 sticky top-20 space-y-6">
       {/* Core Navigation */}
@@ -86,6 +98,7 @@ export function VendorDynamicNavigation({ enabledCapabilities, vendorType }: Ven
                 <Link
                   key={cap.id}
                   href={cap.route}
+                  onClick={handleNavClick(cap.route)}
                   className={`flex items-center gap-3 px-3 py-2 rounded-xl text-left transition ${
                     isActive(cap.route) ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-orange-50'
                   }`}
@@ -129,6 +142,7 @@ export function VendorDynamicNavigation({ enabledCapabilities, vendorType }: Ven
                 <Link
                   key={cap.id}
                   href={cap.route}
+                  onClick={handleNavClick(cap.route)}
                   className={`flex items-center gap-3 px-3 py-2 rounded-xl text-left transition ${
                     isActive(cap.route) ? 'bg-orange-500 text-white' : 'text-gray-700 hover:bg-orange-50'
                   }`}

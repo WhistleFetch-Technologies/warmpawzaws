@@ -2,6 +2,7 @@
 
 import React, { Component, type ErrorInfo, type ReactNode } from 'react';
 import { reportClientError } from '@/lib/client-error-reporting';
+import { tryRecoverFromChunkError } from '@/lib/vendor-chunk-recovery';
 
 type Props = { children: ReactNode };
 
@@ -35,7 +36,7 @@ export class ClientErrorBoundary extends Component<Props, State> {
           <button
             type="button"
             className="rounded-lg bg-teal-600 px-4 py-2 text-white hover:bg-teal-700"
-            onClick={() => window.location.reload()}
+            onClick={() => tryRecoverFromChunkError(true)}
           >
             Reload page
           </button>

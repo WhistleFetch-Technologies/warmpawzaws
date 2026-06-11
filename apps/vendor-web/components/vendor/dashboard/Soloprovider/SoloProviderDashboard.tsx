@@ -17,6 +17,7 @@ import { apiClient } from '@/lib/api-client';
 import { clearVendorSession } from '@/lib/session-utils';
 import { getVendorAllowedServiceStyles, hasVendorRole } from '@/lib/vendor-utils';
 import CapabilityHelper from '@/lib/capability-helper';
+import { vendorNavigate } from '@/lib/vendor-route-nav';
 
 const logoImage = '/warmpawz-logo.svg';
 import {
@@ -629,7 +630,7 @@ export function SoloProviderDashboard({
 
           <button
             type="button"
-            onClick={() => router.push('/settings')}
+            onClick={() => vendorNavigate('/settings', router)}
             className={`flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center gap-0.5 px-2 ${activeBottomTab === 'settings' ? 'text-[#FF8C42]' : 'text-gray-400'
               }`}
           >
@@ -801,7 +802,7 @@ export function SoloProviderDashboard({
             {/* ✅ FIX: Route to /services (not /services/manage) to show VendorServiceManagementComplete UI */}
             {!isPharmacy && (capabilities.booking || CapabilityHelper.hasCapability(capabilities, 'services') || hasVendorRole(vendorData, ['pet_cafe', 'cafe', 'pet_insurance', 'insurance', 'pet_holidays', 'holidays', 'pet_resort', 'resort', 'pet_ambulance', 'ambulance'])) && (
               <button
-                onClick={() => router.push('/services')}
+                onClick={() => vendorNavigate('/services', router)}
                 className="flex-1 min-w-[140px] bg-white border-2 border-indigo-500 text-indigo-600 rounded-xl p-4 flex flex-col items-center justify-center hover:bg-indigo-500 hover:text-white transition-colors group text-center"
               >
                 <Package className="w-6 h-6 mb-2" />
@@ -890,7 +891,7 @@ export function SoloProviderDashboard({
 
               {capabilities.distance_pricing && (
                 <button
-                  onClick={() => router.push('/settings')}
+                  onClick={() => vendorNavigate('/settings', router)}
                   className="bg-fuchsia-50 border border-fuchsia-200 rounded-lg p-3 flex flex-col items-center justify-center hover:bg-fuchsia-100 transition-colors"
                 >
                   <MapPin className="w-6 h-6 text-fuchsia-600 mb-1" />
