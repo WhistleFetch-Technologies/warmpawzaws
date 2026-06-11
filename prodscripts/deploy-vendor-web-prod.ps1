@@ -175,6 +175,18 @@ aws s3 cp "$runtimeConfigS3Path" "s3://$S3_BUCKET/runtime-config.js" `
     --metadata-directive REPLACE `
     --region $REGION
 
+# Route HTML shells must revalidate after deploy (services.html, settings.html, etc.)
+Write-Host "Setting must-revalidate on all HTML files..." -ForegroundColor Blue
+$htmlFiles = Get-ChildItem -Path $distPath -Filter "*.html" -Recurse
+foreach ($htmlFile in $htmlFiles) {
+    $relativePath = $htmlFile.FullName.Replace($distPath, "").Replace("\", "/").TrimStart("/")
+    aws s3 cp $htmlFile.FullName "s3://$S3_BUCKET/$relativePath" `
+        --cache-control "public, max-age=0, must-revalidate" `
+        --content-type "text/html" `
+        --region $REGION 2>$null | Out-Null
+}
+Write-Host "HTML cache headers set (must-revalidate on all route shells)" -ForegroundColor Green
+
 # Set proper cache headers for _next/static files (immutable)
 if (Test-Path (Join-Path (Join-Path $APP_DIR "dist") "_next\static")) {
     Write-Host "Setting cache headers for _next/static files..." -ForegroundColor Blue
