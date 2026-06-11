@@ -80,6 +80,7 @@ import {
 	type BannerDestinationCategory,
 	type BannerDestinationServiceStyle,
 	type BannerDestinationVendor,
+	type BannerArticleDestination,
 	type ShopBannerTargetLevel,
 } from "@/lib/banner-admin";
 import { ShopBannerDestinationFields } from "@/components/admin/marketing/ShopBannerDestinationFields";
@@ -133,6 +134,7 @@ export default function MarketingPromotionsTab() {
 	const [bannerDestinationCategories, setBannerDestinationCategories] = useState<BannerDestinationCategory[]>([]);
 	const [bannerDestinationServiceStyles, setBannerDestinationServiceStyles] = useState<BannerDestinationServiceStyle[]>([]);
 	const [bannerDestinationVendors, setBannerDestinationVendors] = useState<BannerDestinationVendor[]>([]);
+	const [bannerArticleOptions, setBannerArticleOptions] = useState<BannerArticleDestination[]>([]);
 	const [bannerDestinationLoading, setBannerDestinationLoading] = useState(false);
 	const [bannerShopTargetMode, setBannerShopTargetMode] = useState<ShopBannerTargetLevel>("informational");
 	const [bannerShopProductId, setBannerShopProductId] = useState("");
@@ -221,6 +223,7 @@ export default function MarketingPromotionsTab() {
 		} else if (activeTab === "banners") {
 			loadBanners();
 			loadVendors();
+			void loadBannerDestinationOptions();
 		} else if (activeTab === "articles") {
 			loadArticles();
 		} else if (activeTab === "announcements") {
@@ -253,7 +256,19 @@ export default function MarketingPromotionsTab() {
 				: "";
 			const data = await apiClient.get<any>(`/admin/banners/destination-options${query}`);
 			const categories = Array.isArray(data?.categories) ? data.categories : [];
+			const articleOptions = Array.isArray(data?.articles) ? data.articles : [];
 			setBannerDestinationCategories(categories);
+			setBannerArticleOptions(
+				articleOptions
+					.map((page: Record<string, unknown>) => ({
+						pageId: String(page.pageId ?? page.id ?? "").trim(),
+						title: String(page.title ?? "").trim(),
+						slug: String(page.slug ?? "").trim(),
+						category: String(page.category ?? "").trim(),
+						isPublished: page.isPublished !== false && page.is_published !== false,
+					}))
+					.filter((page: BannerArticleDestination) => Boolean(page.slug))
+			);
 			if (categoryId) {
 				setBannerDestinationServiceStyles(
 					Array.isArray(data?.serviceStyles) ? data.serviceStyles : []
@@ -266,6 +281,7 @@ export default function MarketingPromotionsTab() {
 		} catch (error) {
 			console.error("Error loading banner destination options:", error);
 			setBannerDestinationCategories([]);
+			setBannerArticleOptions([]);
 			setBannerDestinationServiceStyles([]);
 			setBannerDestinationVendors([]);
 		} finally {
@@ -847,14 +863,13 @@ export default function MarketingPromotionsTab() {
 		if (bannerCtaTargetMode === "service_type") targetLevel = "service_type";
 		if (bannerCtaTargetMode === "vendor") targetLevel = "vendor";
 
-		const selectedArticle = articles.find(
-			(a: Record<string, unknown>) =>
-				String(a.slug ?? "").trim() === bannerCtaArticleSlug.trim()
-		) as Record<string, unknown> | undefined;
+		const selectedArticle = bannerArticleOptions.find(
+			(a) => String(a.slug ?? "").trim() === bannerCtaArticleSlug.trim()
+		);
 		const articleTitle = selectedArticle ? String(selectedArticle.title ?? "").trim() : "";
 		const articlePageId =
 			bannerCtaArticlePageId ||
-			String(selectedArticle?.pageId ?? selectedArticle?.id ?? "").trim();
+			String(selectedArticle?.pageId ?? "").trim();
 
 		let metadata = buildBannerMetadata({
 			gradientFrom: bannerForm.gradient_from,
@@ -1058,13 +1073,33 @@ export default function MarketingPromotionsTab() {
 		setBannerCtaVendorId(value);
 	};
 
-	const publishedBannerArticles = useMemo(
-		() =>
-			articles.filter((p) =>
-				isPublishedArticleRow(p as Record<string, unknown>)
-			) as Record<string, unknown>[],
-		[articles]
-	);
+	const publishedBannerArticles = useMemo(() => {
+		const list = bannerArticleOptions.filter((p) =>
+			isPublishedArticleRow(p as Record<string, unknown>)
+		) as Record<string, unknown>[];
+		const selectedSlug = bannerCtaArticleSlug.trim();
+		if (
+			selectedSlug &&
+			!list.some((p) => String(p.slug ?? "").trim() === selectedSlug)
+		) {
+			const storedTarget = editingBanner
+				? parseBannerTargetFromAdminRow(editingBanner as Record<string, unknown>)
+				: null;
+			list.unshift({
+				pageId: bannerCtaArticlePageId || storedTarget?.articlePageId || "",
+				title: storedTarget?.articleTitle || selectedSlug,
+				slug: selectedSlug,
+				category: "",
+				isPublished: true,
+			});
+		}
+		return list;
+	}, [
+		bannerArticleOptions,
+		bannerCtaArticleSlug,
+		bannerCtaArticlePageId,
+		editingBanner,
+	]);
 
 	const bannerVendorOptions = useMemo(() => {
 		const list = [...bannerDestinationVendors];
@@ -1087,7 +1122,8 @@ export default function MarketingPromotionsTab() {
 	const bannerSelectTriggerClass =
 		"w-full h-10 bg-white min-w-0 [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate";
 
-	const openEditBannerModal = (banner: any) => {
+	const openEditBannerModal = async (banner: any) => {
+		await loadBannerDestinationOptions();
 		const meta = parseBannerMetadataRecord(banner.metadata);
 		const storedTarget = parseBannerTargetFromAdminRow(banner as Record<string, unknown>);
 

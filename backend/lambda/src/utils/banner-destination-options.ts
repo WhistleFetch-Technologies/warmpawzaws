@@ -4,6 +4,10 @@
 
 import { query } from '../database/rds-connection';
 import {
+  listPublishedCustomerArticles,
+  type PublishedCustomerArticlePicker,
+} from './content-page-articles';
+import {
   getSearchCategoryAliases,
   labelForBannerServiceStyle,
   mapCatalogCategoryIdToCustomerHomeScreen,
@@ -143,16 +147,22 @@ async function listVendorsForCategory(categoryId: string): Promise<BannerDestina
     }));
 }
 
+export type BannerArticleDestination = PublishedCustomerArticlePicker;
+
 export async function getBannerDestinationOptions(categoryId?: string | null): Promise<{
   categories: BannerDestinationCategory[];
   serviceStyles: BannerDestinationServiceStyle[];
   vendors: BannerDestinationVendor[];
+  articles: BannerArticleDestination[];
 }> {
-  const categories = await listBannerDestinationCategories();
+  const [categories, articles] = await Promise.all([
+    listBannerDestinationCategories(),
+    listPublishedCustomerArticles(),
+  ]);
   const trimmedCategoryId = String(categoryId ?? '').trim();
 
   if (!trimmedCategoryId) {
-    return { categories, serviceStyles: [], vendors: [] };
+    return { categories, serviceStyles: [], vendors: [], articles };
   }
 
   const [serviceStyles, vendors] = await Promise.all([
@@ -160,5 +170,5 @@ export async function getBannerDestinationOptions(categoryId?: string | null): P
     listVendorsForCategory(trimmedCategoryId),
   ]);
 
-  return { categories, serviceStyles, vendors };
+  return { categories, serviceStyles, vendors, articles };
 }
