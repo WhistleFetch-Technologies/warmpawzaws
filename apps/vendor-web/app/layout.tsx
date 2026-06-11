@@ -72,6 +72,39 @@ export default function RootLayout({
         )}
         {/* Runtime config injected at deploy-time (static hosting safe). */}
         <script src="/runtime-config.js" />
+        {/* Recover from stale JS chunks after deploy (common on Android WebView / long-lived sessions). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                var hasReloaded = sessionStorage.getItem('vendor_chunk_reload');
+                function isChunkMsg(msg) {
+                  return msg.indexOf('ChunkLoadError') !== -1
+                    || msg.indexOf('Loading chunk') !== -1
+                    || msg.indexOf('Loading CSS chunk') !== -1
+                    || msg.indexOf('Failed to fetch dynamically imported module') !== -1
+                    || msg.indexOf('before initialization') !== -1;
+                }
+                function reloadOnce() {
+                  if (hasReloaded) return;
+                  sessionStorage.setItem('vendor_chunk_reload', 'true');
+                  window.location.reload();
+                }
+                window.addEventListener('error', function(e) {
+                  var msg = e.message || '';
+                  if (isChunkMsg(msg)) reloadOnce();
+                });
+                window.addEventListener('unhandledrejection', function(e) {
+                  var msg = (e.reason && e.reason.message) || String(e.reason || '');
+                  if (isChunkMsg(msg)) {
+                    e.preventDefault();
+                    reloadOnce();
+                  }
+                });
+              })();
+            `,
+          }}
+        />
         <Providers>{children}</Providers>
       </body>
     </html>

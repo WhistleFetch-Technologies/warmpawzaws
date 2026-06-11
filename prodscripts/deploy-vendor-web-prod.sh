@@ -151,6 +151,15 @@ aws s3 cp "apps/${APP_NAME}/dist/runtime-config.js" "s3://${S3_BUCKET}/runtime-c
   --cache-control "no-cache, no-store, must-revalidate" \
   --metadata-directive REPLACE
 
+# Route HTML shells (services.html, settings.html, etc.) must revalidate after deploy
+echo -e "${BLUE}📄 Setting must-revalidate on all HTML files...${NC}"
+find "apps/${APP_NAME}/dist" -name '*.html' -type f | while read -r html; do
+  rel="${html#apps/${APP_NAME}/dist/}"
+  aws s3 cp "$html" "s3://${S3_BUCKET}/${rel}" \
+    --cache-control "public, max-age=0, must-revalidate" --content-type "text/html" 2>/dev/null || true
+done
+echo -e "${GREEN}✅ HTML cache headers set (must-revalidate on all route shells)${NC}"
+
 # Set proper cache headers for _next/static files (immutable)
 if [ -d "apps/${APP_NAME}/dist/_next/static" ]; then
   echo -e "${BLUE}📤 Setting cache headers for _next/static files...${NC}"

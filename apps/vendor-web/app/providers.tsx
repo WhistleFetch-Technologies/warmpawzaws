@@ -7,6 +7,7 @@ import { ScrollToTop } from '@/components/ScrollToTop';
 import { ClientErrorBoundary } from '@/components/ClientErrorBoundary';
 import { GlobalClientErrorReporting } from '@/components/GlobalClientErrorReporting';
 import { PushSessionRegistrar } from '@/components/PushSessionRegistrar';
+import { ChunkLoadErrorHandler } from '@/components/ChunkLoadErrorHandler';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -24,6 +25,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <ClientErrorBoundary>
+        <ChunkLoadErrorHandler />
         <GlobalClientErrorReporting />
         <PushSessionRegistrar />
         <ScrollToTop />
