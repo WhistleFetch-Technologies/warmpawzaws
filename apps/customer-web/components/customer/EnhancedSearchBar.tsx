@@ -60,6 +60,7 @@ export function EnhancedSearchBar({
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<SearchSuggestion[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -70,6 +71,8 @@ export function EnhancedSearchBar({
   const wrapperRef = useRef<HTMLDivElement>(null);
   /** Monotonic id: only the latest in-flight `/search` may update `results` / `loading`. */
   const searchRequestSeqRef = useRef(0);
+  /** Monotonic id: only the latest in-flight `/search/autocomplete` may update suggestions. */
+  const autocompleteRequestSeqRef = useRef(0);
   /** Always invoke latest `performSearch` from debounce (stable closure). */
   const performSearchRef = useRef<(q: string) => void>(() => {});
 
@@ -253,7 +256,11 @@ export function EnhancedSearchBar({
     setQuery(value);
     
     // Only open dropdown if we have content to show
-    const hasContent = value.trim().length > 0 || recentSearches.length > 0 || suggestions.length > 0;
+    const hasContent =
+      value.trim().length > 0 ||
+      recentSearches.length > 0 ||
+      suggestions.length > 0 ||
+      autocompleteSuggestions.length > 0;
     setIsOpen(hasContent);
 
     if (debounceRef.current) {
@@ -261,9 +268,34 @@ export function EnhancedSearchBar({
     }
 
     debounceRef.current = setTimeout(() => {
-      if (value.trim().length >= 2) {
-        performSearchRef.current(value.trim());
+      const trimmed = value.trim();
+      if (trimmed.length >= 2) {
+        const acReqId = ++autocompleteRequestSeqRef.current;
+        apiClient
+          .get<{ suggestions?: { text?: string }[]; data?: { suggestions?: { text?: string }[] } }>(
+            `/search/autocomplete?q=${encodeURIComponent(trimmed)}`
+          )
+          .then((result) => {
+            if (acReqId !== autocompleteRequestSeqRef.current) return;
+            const items = result.data?.suggestions || result.suggestions || [];
+            setAutocompleteSuggestions(
+              items
+                .map((s) => ({
+                  text: String(s.text || ''),
+                  type: 'autocomplete' as const,
+                }))
+                .filter((s) => s.text)
+            );
+          })
+          .catch(() => {
+            if (acReqId === autocompleteRequestSeqRef.current) {
+              setAutocompleteSuggestions([]);
+            }
+          });
+        performSearchRef.current(trimmed);
       } else {
+        autocompleteRequestSeqRef.current += 1;
+        setAutocompleteSuggestions([]);
         setResults([]);
       }
     }, 300);
@@ -532,6 +564,7 @@ export function EnhancedSearchBar({
 
   const showRecentSearches = !query && recentSearches.length > 0;
   const showSuggestions = !query && suggestions.length > 0;
+  const showAutocomplete = query.trim().length >= 2 && autocompleteSuggestions.length > 0;
 
   useEffect(() => {
     traceSearchPersistence('recentSearches.stateAfterHydration', {
@@ -556,7 +589,8 @@ export function EnhancedSearchBar({
       ),
     });
   }, [showRecentSearches, recentSearches, customerId]);
-  const hasContent = showRecentSearches || showSuggestions || results.length > 0 || loading;
+  const hasContent =
+    showRecentSearches || showSuggestions || showAutocomplete || results.length > 0 || loading;
   
   // Auto-close dropdown if there's no content to show (prevents empty white space)
   useEffect(() => {
@@ -596,6 +630,7 @@ export function EnhancedSearchBar({
               onClick={() => {
                 setQuery('');
                 setResults([]);
+                setAutocompleteSuggestions([]);
                 setIsOpen(false);
               }}
               className={`absolute top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors ${
@@ -617,7 +652,7 @@ export function EnhancedSearchBar({
       </form>
 
       {/* Dropdown - Only show when there's content to display */}
-      {isOpen && (showRecentSearches || showSuggestions || results.length > 0 || loading) && (
+      {isOpen && (showRecentSearches || showSuggestions || showAutocomplete || results.length > 0 || loading) && (
         <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden max-h-[70vh] overflow-y-auto z-50">
           {/* Loading */}
           {loading && (
@@ -659,6 +694,35 @@ export function EnhancedSearchBar({
                 >
                   <Clock className="w-4 h-4 text-gray-400 group-hover:text-orange-500" />
                   <span className="text-gray-700 group-hover:text-gray-900">{String(term || '')}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Taxonomy autocomplete */}
+          {!loading && showAutocomplete && (
+            <div className="p-2 border-b border-gray-100">
+              <h3 className="text-xs uppercase tracking-wide text-gray-500 px-3 py-2">
+                Suggestions
+              </h3>
+              {autocompleteSuggestions.map((suggestion, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    traceHomeSearchUpstream('EnhancedSearchBar.autocomplete.click', {
+                      suggestionText: suggestion.text,
+                      placeholder,
+                      queryBefore: query,
+                    });
+                    setQuery(suggestion.text);
+                    handleSearch(suggestion.text);
+                  }}
+                  className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 rounded-lg text-left transition-colors group"
+                >
+                  <Search className="w-4 h-4 text-gray-400 group-hover:text-orange-500" />
+                  <span className="text-gray-700 group-hover:text-gray-900 capitalize">
+                    {String(suggestion.text || '')}
+                  </span>
                 </button>
               ))}
             </div>
@@ -778,7 +842,7 @@ export function EnhancedSearchBar({
           )}
 
           {/* No Results */}
-          {!loading && query && results.length === 0 && !showRecentSearches && !showSuggestions && (
+          {!loading && query && results.length === 0 && !showRecentSearches && !showSuggestions && !showAutocomplete && (
             <div className="p-8 text-center">
               <p className="text-gray-500 text-sm">No results found for "{query}"</p>
               <p className="text-gray-400 text-xs mt-1">Try a different search term</p>

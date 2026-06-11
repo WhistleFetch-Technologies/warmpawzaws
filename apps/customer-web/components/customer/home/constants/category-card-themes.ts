@@ -21,6 +21,7 @@ export const HOME_SERVICE_CARD_THEMES: Record<string, CategoryCardTheme> = {
   walker: { iconColor: '#22C55E', tintColor: '#ECFDF5', tintColorHover: '#D1FAE5' },
   walking: { iconColor: '#22C55E', tintColor: '#ECFDF5', tintColorHover: '#D1FAE5' },
   training: { iconColor: '#3B82F6', tintColor: '#EFF6FF', tintColorHover: '#DBEAFE' },
+  behavioral: { iconColor: '#3B82F6', tintColor: '#EFF6FF', tintColorHover: '#DBEAFE' },
   nutritionist: { iconColor: '#FF7843', tintColor: '#FFF7ED', tintColorHover: '#FFEDD5' },
   nutrition: { iconColor: '#FF7843', tintColor: '#FFF7ED', tintColorHover: '#FFEDD5' },
   wellness: { iconColor: '#FF7843', tintColor: '#FFF7ED', tintColorHover: '#FFEDD5' },
@@ -87,4 +88,6 @@ export const HOME_SERVICE_DISPLAY_LABELS: Record<string, string> = {
   walking: 'Walking',
   veterinary: 'Vet Care',
   vet: 'Vet Care',
+  training: 'Training & Behaviorist',
+  behavioral: 'Training & Behaviorist',
 };

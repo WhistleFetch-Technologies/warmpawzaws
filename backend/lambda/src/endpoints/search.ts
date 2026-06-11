@@ -381,12 +381,17 @@ class UniversalSearchHandler extends BaseHandler {
       size: limit,
     };
 
+    const productHub = isProductSearchHub(category);
+
     // Residual tokens after category constraint (taxonomy hub + intent/pet stripping).
     if (keywordTokens.length > 0) {
+      const searchFields = productHub
+        ? ['business_name^3', 'service_name^2', 'name^2', 'description', 'specialization']
+        : ['business_name^3', 'service_name^2', 'description', 'specialization'];
       searchBody.query.bool.must.push({
         multi_match: {
           query: keywordTokens.join(' '),
-          fields: ['business_name^3', 'service_name^2', 'description', 'specialization'],
+          fields: searchFields,
           fuzziness: 'AUTO' as const,
         },
       });
@@ -394,10 +399,22 @@ class UniversalSearchHandler extends BaseHandler {
       searchBody.query.bool.must.push({ match_all: {} });
     }
 
-    // Add category filter (UI slug → multiple DB role/category strings)
+    // Category filter applies to vendors/services; product rows use product.category, not hub aliases.
     const categoryTerms = expandSearchCategoryForOpenSearch(category);
     if (categoryTerms?.length) {
-      searchBody.query.bool.filter.push({ terms: { category: categoryTerms } });
+      if (productHub) {
+        searchBody.query.bool.filter.push({
+          bool: {
+            should: [
+              { term: { _index: 'warmpawz-products' } },
+              { terms: { category: categoryTerms } },
+            ],
+            minimum_should_match: 1,
+          },
+        });
+      } else {
+        searchBody.query.bool.filter.push({ terms: { category: categoryTerms } });
+      }
     }
 
     // Add location filter
@@ -405,13 +422,32 @@ class UniversalSearchHandler extends BaseHandler {
       searchBody.query.bool.filter.push({ term: { city: location.toLowerCase() } });
     }
 
-    // Add status filters — mirrors sqlVendorDiscoverableStatus: approved, active, activated, pending+solo
-    searchBody.query.bool.filter.push({ term: { is_active: true } });
-    searchBody.query.bool.filter.push({
-      terms: { status: ['approved', 'active', 'activated'] },
-    });
+    // Status filters apply to vendors/services only; warmpawz-products has no vendor status field.
+    if (productHub) {
+      searchBody.query.bool.filter.push({
+        bool: {
+          should: [
+            { term: { _index: 'warmpawz-products' } },
+            {
+              bool: {
+                must: [
+                  { term: { is_active: true } },
+                  { terms: { status: ['approved', 'active', 'activated'] } },
+                ],
+              },
+            },
+          ],
+          minimum_should_match: 1,
+        },
+      });
+    } else {
+      searchBody.query.bool.filter.push({ term: { is_active: true } });
+      searchBody.query.bool.filter.push({
+        terms: { status: ['approved', 'active', 'activated'] },
+      });
+    }
 
-    const searchIndexes = isProductSearchHub(category)
+    const searchIndexes = productHub
       ? 'warmpawz-vendors,warmpawz-services,warmpawz-products'
       : 'warmpawz-vendors,warmpawz-services';
 
@@ -950,6 +986,33 @@ export function registerSearchEndpoints(app: Hono) {
     const context = createLambdaContext();
     const result = await searchHandler.execute(event, context);
     return c.json(JSON.parse(result.body), result.statusCode);
+  });
+
+  app.get('/search/autocomplete', async (c) => {
+    try {
+      const term = (c.req.query('q') || '').trim();
+      if (term.length < 2) {
+        return c.json({ success: true, suggestions: [] });
+      }
+
+      const { rows } = await query(
+        `SELECT keyword, hub_slug
+         FROM search_taxonomy_keywords
+         WHERE keyword_normalized ILIKE $1 AND is_active = true
+         LIMIT 8`,
+        [term.toLowerCase() + '%']
+      );
+
+      const suggestions = (rows as { keyword: string; hub_slug: string }[]).map((row) => ({
+        type: row.hub_slug,
+        text: row.keyword,
+      }));
+
+      return c.json({ success: true, suggestions });
+    } catch (error: any) {
+      console.error('[search/autocomplete] Error:', error);
+      return c.json({ success: true, suggestions: [] });
+    }
   });
 }
 

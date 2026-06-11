@@ -306,7 +306,7 @@ async function syncProducts() {
     SELECT p.*
     FROM products p
     JOIN vendors v ON p.vendor_id = v.id
-    WHERE p.is_active = true AND v.status = 'active'
+    WHERE p.is_active = true AND v.status IN ('approved', 'activated', 'active')
   `);
 
   const productRows = Array.isArray(products) ? products : (products as any).rows || [];
@@ -510,7 +510,8 @@ function transformForIndex(entity: string, data: any): Record<string, any> {
         stock_quantity: data.stock ?? data.stock_quantity ?? 0,
         rating: data.rating || 0,
         tags: parseJsonArray(data.tags),
-        is_active: data.is_active,
+        is_active: true,
+        status: data.status ?? 'active',
       };
 
     case 'problem':
