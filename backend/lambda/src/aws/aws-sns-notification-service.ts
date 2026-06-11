@@ -11,8 +11,9 @@
  */
 
 import { SNSClient, PublishCommand, CreatePlatformEndpointCommand } from '@aws-sdk/client-sns';
-import { query, insert, update, select } from '../database/rds-connection';
+import { query, insert } from '../database/rds-connection';
 import { NOTIFICATION_TEMPLATES, NotificationEvent, NotificationRecipient, PushNotificationPayload } from './constatns/interface';
+import { dispatchNotification } from '../utils/notification-dispatch';
 
 
 
@@ -43,23 +44,32 @@ class PushNotificationServiceImpl {
         return false;
       }
 
-      // Build notification payload
       const payload = this.buildPayloadFromTemplate(template, event.data || {});
+      const bookingId = event.data?.bookingId || event.data?.booking_id || event.relatedId;
+      const orderId = event.data?.orderId || event.data?.order_id;
 
-      // Add event-specific data
-      payload.data = {
-        ...payload.data,
-        eventType: event.eventType,
-        relatedId: event.relatedId,
-        timestamp: new Date().toISOString(),
-      };
+      const result = await dispatchNotification({
+        recipientId: event.recipientId,
+        recipientType: event.recipientType,
+        notificationType: event.eventType,
+        title: payload.title,
+        message: payload.body,
+        channels: { inApp: true, push: true, sms: false },
+        priority: payload.priority === 'high' ? 'high' : 'normal',
+        imageUrl: payload.imageUrl,
+        data: {
+          ...(event.data || {}),
+          eventType: event.eventType,
+          relatedId: event.relatedId,
+          bookingId,
+          orderId,
+          dedupeKey:
+            event.data?.dedupeKey ||
+            `${event.eventType}-${event.recipientId}-${event.relatedId || bookingId || orderId || 'none'}`,
+        },
+      });
 
-      // Send notification
-      return await this.sendToUser({
-        userId: event.recipientId,
-        userType: event.recipientType,
-      }, payload);
-
+      return result.inboxOk || result.skippedDuplicate;
     } catch (error) {
       console.error(`Error sending event notification:`, error);
       return false;
@@ -74,28 +84,42 @@ class PushNotificationServiceImpl {
     payload: PushNotificationPayload
   ): Promise<boolean> {
     try {
-      // Store notification in database first (in-app)
-      await this.storeNotification(recipient, payload);
+      const eventType = String(payload.data?.eventType || payload.data?.type || 'general');
+      const bookingId = payload.data?.bookingId || payload.data?.booking_id;
+      const orderId = payload.data?.orderId || payload.data?.order_id;
 
-      // Get user's registered devices
-      const devices = await this.getUserDevices(recipient.userId, recipient.userType);
+      const result = await dispatchNotification({
+        recipientId: recipient.userId,
+        recipientType: recipient.userType,
+        notificationType: eventType,
+        title: payload.title,
+        message: payload.body,
+        channels: { inApp: true, push: true, sms: false },
+        priority: payload.priority === 'high' ? 'high' : 'normal',
+        imageUrl: payload.imageUrl,
+        data: {
+          ...(payload.data || {}),
+          bookingId,
+          orderId,
+          dedupeKey:
+            payload.data?.dedupeKey ||
+            `${eventType}-${recipient.userId}-${bookingId || orderId || payload.collapseKey || Date.now()}`,
+        },
+      });
 
-      if (devices.length === 0) {
-        console.log(`No registered devices for ${recipient.userType} ${recipient.userId}`);
-        // Fallback to SMS if phone number available
-        if (recipient.phone) {
+      if (
+        result.pushSent === 0 &&
+        result.pushFailed === 0 &&
+        !result.pushSkippedReason &&
+        recipient.phone
+      ) {
+        const devices = await this.getUserDevices(recipient.userId, recipient.userType);
+        if (devices.length === 0) {
           await this.sendSMS(recipient.phone, payload.title, payload.body);
         }
-        return true; // Notification stored in DB
       }
 
-      // Send to all devices
-      const results = await Promise.all(
-        devices.map(device => this.sendToDevice(device, payload))
-      );
-
-      return results.some(r => r === true);
-
+      return result.inboxOk || result.skippedDuplicate;
     } catch (error) {
       console.error(`Error sending notification to user:`, error);
       return false;
@@ -216,18 +240,31 @@ class PushNotificationServiceImpl {
     customerName: string,
     itemCount: number
   ): Promise<{ success: number; failed: number }> {
-    const recipients = pharmacyIds.map(id => ({
-      userId: id,
-      userType: 'vendor' as const,
-    }));
+    let success = 0;
+    let failed = 0;
 
-    return await this.sendToUsers(recipients, {
-      title: '💊 New Pharmacy Order!',
-      body: `New order from ${customerName}. ${itemCount} items. Accept within 2 minutes.`,
-      sound: 'urgent',
-      priority: 'high',
-      data: { orderId, customerName, itemCount },
-    });
+    for (const pharmacyId of pharmacyIds) {
+      const ok = await this.sendToUser(
+        { userId: pharmacyId, userType: 'vendor' },
+        {
+          title: 'New pharmacy order',
+          body: `New order from ${customerName}. ${itemCount} items. Accept within 2 minutes.`,
+          sound: 'urgent',
+          priority: 'high',
+          data: {
+            orderId,
+            customerName,
+            itemCount,
+            eventType: 'pharmacy_order',
+            dedupeKey: `pharmacy-broadcast-${orderId}-${pharmacyId}`,
+          },
+        }
+      );
+      if (ok) success += 1;
+      else failed += 1;
+    }
+
+    return { success, failed };
   }
 
   /**

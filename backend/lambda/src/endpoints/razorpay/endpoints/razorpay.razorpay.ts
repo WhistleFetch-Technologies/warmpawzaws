@@ -28,6 +28,7 @@ import { isValidUUID } from '../../../types/entities';
 import { DEFAULT_COMMISSION_RATE } from '../../../lib/constants/commission';
 import { logBookingStatusChange } from '../../../utils/audit-log';
 import { notifyBookingCreated } from '../../../utils/booking-notifications';
+import { notifyShopOrderPaid } from '../../../utils/shop-order-notifications';
 import { PaymentTransactionStatus, BookingPaymentStatus } from '../../constants';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import { triggerAutoShipment } from '../../../utils/logistics/trigger-auto-shipment';
@@ -945,6 +946,7 @@ class VerifyPaymentHandler extends BaseHandler {
       let bookingToNotify: string | null = null;
       let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
       let ecommerceOrderForShipment: string | null = null;
+      let ecommerceOrderToNotify: string | null = null;
 
       const result = await withTransaction(async (client) => {
         // ✅ SQL: Look up payment record with FOR UPDATE lock
@@ -1079,6 +1081,9 @@ class VerifyPaymentHandler extends BaseHandler {
               throw new Error(`Order ${ecommerceOrderId} not found`);
             }
           }
+
+          ecommerceOrderForShipment = String(ecommerceOrderId);
+          ecommerceOrderToNotify = String(ecommerceOrderId);
 
           return {
             success: true,
@@ -1299,6 +1304,12 @@ class VerifyPaymentHandler extends BaseHandler {
         );
       }
 
+      if (ecommerceOrderToNotify) {
+        void notifyShopOrderPaid(ecommerceOrderToNotify).catch((e) =>
+          console.error('[PAYMENT-VERIFY] Shop order notification failed:', e)
+        );
+      }
+
       return this.success(result);
     } catch (error: any) {
       console.error('[PAYMENT-VERIFY] Verification error:', error);
@@ -1409,6 +1420,7 @@ class RazorpayWebhookHandler extends BaseHandler {
       let bookingToNotify: string | null = null;
       let bookingStatusChange: { bookingId: string; from: string | null; to: string | null } | null = null;
       let ecommerceOrderForShipment: string | null = null;
+      let ecommerceOrderToNotify: string | null = null;
 
       // ✅ FIX: Use transaction with fallback lookup (razorpay_payment_id → razorpay_order_id)
       // Previously only looked up by razorpay_payment_id, which is NULL until verify-payment runs.
@@ -1494,14 +1506,19 @@ class RazorpayWebhookHandler extends BaseHandler {
         }
 
         if (paymentRecord.order_id && !paymentRecord.booking_id && !paymentRecord.pharmacy_order_id) {
-          await client.query(
+          const orderUpdate = await client.query(
             `UPDATE orders SET
               payment_status = 'paid',
               payment_id = COALESCE(payment_id, $2),
               updated_at = NOW()
-            WHERE id = $1::uuid AND payment_status != 'paid'`,
+            WHERE id = $1::uuid AND payment_status != 'paid'
+            RETURNING id`,
             [paymentRecord.order_id, paymentRecord.id]
           );
+          if (orderUpdate.rows.length > 0) {
+            ecommerceOrderForShipment = String(paymentRecord.order_id);
+            ecommerceOrderToNotify = String(paymentRecord.order_id);
+          }
         }
       });
 
@@ -1553,6 +1570,12 @@ class RazorpayWebhookHandler extends BaseHandler {
       if (ecommerceOrderForShipment) {
         triggerAutoShipment(ecommerceOrderForShipment, 'ecommerce').catch((e) =>
           console.error('[RAZORPAY-WEBHOOK] Auto-shipment trigger failed:', e)
+        );
+      }
+
+      if (ecommerceOrderToNotify) {
+        void notifyShopOrderPaid(ecommerceOrderToNotify).catch((e) =>
+          console.error('[RAZORPAY-WEBHOOK] Shop order notification failed:', e)
         );
       }
     } else if (event === 'payment.failed') {

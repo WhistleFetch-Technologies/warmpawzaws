@@ -1654,50 +1654,12 @@ async function sendShipmentNotification(
 ) {
   if (status === previousStatus) return;
 
-  // Get order and customer
-  const orders = await select('orders', { id: orderId });
-  if (orders.length === 0) return;
-
-  const order = orders[0];
-  let customer: any = null;
-  
-  if (order.customer_id) {
-    const customers = await select('customers', { id: order.customer_id });
-    if (customers.length > 0) customer = customers[0];
-  }
-
-  if (!customer?.phone) return;
-
-  // Notification messages
-  const messages: Record<string, string> = {
-    'picked_up': `Your order #${order.order_number} has been picked up and is on its way!`,
-    'in_transit': `Your order #${order.order_number} is in transit${details.location ? ` - Currently at ${details.location}` : ''}.`,
-    'out_for_delivery': `Your order #${order.order_number} is out for delivery! It will arrive soon.`,
-    'delivered': `Your order #${order.order_number} has been delivered. Thank you for shopping with WarmPawz!`,
-    'rto_initiated': `Your order #${order.order_number} is being returned to the seller.`,
-  };
-
-  const message = messages[status];
-  if (!message) return;
-
-  // Create notification
-  await insert('notifications', {
-    customer_id: order.customer_id,
-    type: 'shipment_update',
-    title: status === 'delivered' ? '📦 Order Delivered!' : '🚚 Shipment Update',
-    message,
-    data: {
-      orderId,
-      orderNumber: order.order_number,
-      status,
-      awb: details.awb,
-      trackingUrl: `https://warmpawz.com/track/${orderId}`,
-    },
-    is_read: false,
+  const { notifyShopShipmentUpdate } = await import('../utils/shop-order-notifications');
+  await notifyShopShipmentUpdate(orderId, status, previousStatus, {
+    awb: details.awb,
+    location: details.location,
+    trackingUrl: details.awb ? `https://warmpawz.com/track/${orderId}` : undefined,
   }).catch((e) => {
-    console.error('Error creating notification:', e);
+    console.error('Error creating shop shipment notification:', e);
   });
-
-  // TODO: Send SMS/WhatsApp notification
-  // await sendSMSNotification(customer.phone, message);
 }

@@ -59,8 +59,7 @@ import {
 import { sqlPackagePurchaseHasBookableSlot } from '../../../utils/package-session-eligibility';
 import { debitCustomerWalletForBookingInTransaction } from '../../../utils/wallet-operations';
 import { reconcileBookingPayments } from '../../../utils/payments/payment-reconciliation';
-import { sendVendorAppointmentScheduledSms } from '../../../lib/vendor-appointment-sms';
-import { sendEventNotification } from '../../../aws/aws-sns-notification-service';
+import { notifyBookingCreated, notifyBookingCancelled, notifyBookingRescheduled } from '../../../utils/booking-notifications';
 import { resolveLoyaltyBookingKind } from '../../../lib/loyalty-booking-kind';
 import {
   CreateBookingRequestSchema,
@@ -1805,41 +1804,9 @@ class CreateBookingHandlerEnhanced extends BaseHandlerEnhanced {
       // Rule 4: Notify vendor after payment (pending_payment → notifyBookingCreated on verify/webhook).
       if (booking.status !== 'pending_payment') {
         try {
-          const customers = await select('customers', { id: booking.customer_id });
-          const customerName = (customers[0] as any)?.name || (customers[0] as any)?.full_name || 'Customer';
-          const serviceName = service?.service_name || service?.name || 'Service';
-          const serviceTypeLabel = booking.service_type === 'at_home' ? 'Home visit' : booking.service_type === 'tele' ? 'Tele consultation' : 'At center';
-          // ✅ FIX: Use notification_type instead of type (schema column name)
-          await insert('notifications', {
-            recipient_id: booking.vendor_id,
-            recipient_type: 'vendor',
-            notification_type: 'new_booking', // ✅ FIX: Changed from 'type' to 'notification_type'
-            title: 'New appointment',
-            message: `${customerName} booked ${serviceName} • ${serviceTypeLabel} • ${booking.booking_date} ${booking.booking_time}`,
-            channels: { email: false, sms: false, inApp: true, push: false }, // ✅ FIX: Added required channels field
-            data: JSON.stringify({
-              bookingId: booking.id,
-              customerId: booking.customer_id,
-              customerName,
-              serviceName,
-              serviceType: booking.service_type,
-              bookingDate: booking.booking_date,
-              bookingTime: booking.booking_time,
-              address: booking.address,
-            }),
-            is_read: false,
-            created_at: new Date(),
-          });
-          void sendVendorAppointmentScheduledSms({
-            vendorId: booking.vendor_id,
-            bookingId: booking.id,
-            bookingDate: booking.booking_date,
-            bookingTime: booking.booking_time,
-          }).catch((smsErr) => {
-            console.warn('[BOOKING-CREATE] vendor appointment SMS failed:', smsErr?.message || smsErr);
-          });
+          await notifyBookingCreated(booking.id, requestId);
         } catch (notifErr) {
-          console.warn('Failed to create vendor notification for new booking:', notifErr);
+          console.warn('Failed to create booking notifications:', notifErr);
         }
       }
 
@@ -3463,8 +3430,8 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
         }
       }
 
-      // ✅ Send in-app notification to vendor about cancellation
-      if (currentBooking.vendor_id && !suppressVendorFacingCancelSignals) {
+      // ✅ Send in-app + tray notifications about cancellation
+      if (currentBooking.vendor_id && currentBooking.customer_id && !suppressVendorFacingCancelSignals) {
         try {
           // Resolve customer name for the notification
           let customerName = 'Customer';
@@ -3484,25 +3451,17 @@ class CancelBookingHandlerEnhanced extends BaseHandlerEnhanced {
             : currentBooking.service_type === 'at_center' ? 'At center'
             : 'Appointment';
 
-          await insert('notifications', {
-            recipient_id: currentBooking.vendor_id,
-            recipient_type: 'vendor',
-            notification_type: 'booking_cancelled',
-            title: 'Booking Cancelled',
-            message: `${customerName} cancelled their ${serviceTypeLabel} booking${bookingDateDisplay ? ` on ${bookingDateDisplay}` : ''}${bookingTimeDisplay ? ` at ${bookingTimeDisplay}` : ''}. Reason: ${reason}`,
-            data: JSON.stringify({
-              bookingId,
-              customerId: currentBooking.customer_id,
-              customerName,
-              serviceType: currentBooking.service_type,
-              bookingDate: currentBooking.booking_date,
-              bookingTime: currentBooking.booking_time,
-              cancellationReason: reason,
-              refundInfo,
-            }),
-            channels: { email: false, sms: false, inApp: true, push: true },
-            is_read: false,
-            created_at: new Date(),
+          await notifyBookingCancelled({
+            bookingId,
+            vendorId: String(currentBooking.vendor_id),
+            customerId: String(currentBooking.customer_id),
+            customerName,
+            serviceName: 'Appointment',
+            serviceTypeLabel,
+            bookingDateDisplay,
+            bookingTimeDisplay,
+            reason,
+            refundInfo,
           });
           console.log(`[CANCEL] ✅ Vendor notification sent for booking ${bookingId} to vendor ${currentBooking.vendor_id}`);
         } catch (notifErr) {
@@ -3723,20 +3682,15 @@ class RescheduleBookingHandlerEnhanced extends BaseHandlerEnhanced {
         };
 
         // Send notification to vendor
-        await sendEventNotification({
-          eventType: 'booking_rescheduled',
-          recipientId: currentBooking.vendor_id,
-          recipientType: 'vendor',
-          relatedId: bookingId,
-          data: {
-            oldDate: formatDate(oldDate),
-            oldTime: oldTime,
-            newDate: formatDate(newDate),
-            newTime: newTime,
-            reason: reason || 'Customer reschedule request',
-            bookingId,
-            customerId: currentBooking.customer_id,
-          },
+        await notifyBookingRescheduled({
+          bookingId,
+          vendorId: String(currentBooking.vendor_id),
+          customerId: String(currentBooking.customer_id),
+          oldDate: formatDate(oldDate),
+          oldTime,
+          newDate: formatDate(newDate),
+          newTime,
+          reason: reason || 'Customer reschedule request',
         });
 
         console.log(`[RESCHEDULE] Notification sent to vendor ${currentBooking.vendor_id} about booking reschedule`);

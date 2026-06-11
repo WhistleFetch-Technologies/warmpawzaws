@@ -27,6 +27,7 @@ import {
   normalizeCustomerNotificationSettings,
   persistCustomerNotificationSettings,
 } from '../../../utils/customer-notification-settings';
+import { processDueScheduledNotifications } from '../../../utils/scheduled-notification-drain';
 import {
   ensureDeliveryLogEntries,
   finalizeInAppDelivery,
@@ -545,6 +546,21 @@ export function registerNotificationEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error deleting notification:', error);
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * POST /notifications/process-scheduled
+   * EventBridge cron: drain scheduled_notifications rows due for delivery.
+   */
+  app.post('/notifications/process-scheduled', async (c) => {
+    try {
+      const result = await processDueScheduledNotifications();
+      console.log(JSON.stringify({ metric: 'scheduled_notifications_cron', ...result }));
+      return c.json({ success: true, ...result });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Scheduled notification cron failed';
+      return c.json({ success: false, error: msg }, 500);
     }
   });
 }

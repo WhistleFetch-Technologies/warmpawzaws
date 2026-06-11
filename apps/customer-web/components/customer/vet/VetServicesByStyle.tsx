@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, type MouseEvent } from 'react';
+import React, { useState, useEffect, useMemo, type MouseEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Star, MapPin, Clock, Video, Home, Building2, ChevronRight, Filter, Loader2, Shield, User, Heart, Share2, Navigation, Phone, Award, Stethoscope, Check, Search, X, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { VendorProfileDashboardHeader } from '../shared/VendorProfileDashboardHe
 import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
 import { ServiceDescriptionInline } from '../shared/ServiceDescriptionInline';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
+import { filterServicesByQuery } from '@/lib/filter-services-by-query';
 import { resolveVendorProfileHeroGallery, shouldShowVendorAmenities } from '@/lib/vendor-display-media';
 import { VendorHeroPhotoCarousel } from '../shared/VendorHeroPhotoCarousel';
 import { getWebVetDiscoveryChevronNavTarget } from '@/lib/customer-vendor-profile-navigation';
@@ -306,7 +307,10 @@ export function VetServicesByStyle({
   };
 
   // Filter and sort services for profile view
-  const filteredServices = profileProvider?.services || [];
+  const filteredServices = useMemo(
+    () => filterServicesByQuery(profileProvider?.services || [], searchQuery),
+    [profileProvider?.services, searchQuery]
+  );
   const sortedServices = [...filteredServices].sort((a, b) => {
     if (sortBy === 'popular') return 0;
     if (sortBy === 'price') return a.price - b.price;

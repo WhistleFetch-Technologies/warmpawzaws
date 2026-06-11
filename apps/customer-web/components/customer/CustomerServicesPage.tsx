@@ -16,6 +16,7 @@ import { formatDistanceDisplay } from '@/lib/distance-display';
 import { useDiscoveryCount } from '@/hooks/useDiscoveryCount';
 import { formatDiscoveryCountStat } from '@/lib/format-floored-ten-plus';
 import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
+import { filterServicesByQuery } from '@/lib/filter-services-by-query';
 interface Service {
   id: string;
   serviceName: string;
@@ -76,7 +77,11 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
   const [roleId, setRoleId] = useState(initialFilters?.roleId || '');
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredServices, setFilteredServices] = useState<Service[]>([]);
+
+  const filteredServices = useMemo(
+    () => filterServicesByQuery(services, searchQuery),
+    [services, searchQuery]
+  );
 
   const isGrooming = category === 'grooming' || roleId === 'pet_groomer';
   const isTraining = category === 'training' || roleId === 'trainer';
@@ -305,14 +310,7 @@ export function CustomerServicesPage({ onBack, onNavigate, phone: phoneProp, ini
     const { getCurrentPositionSafe } = require('@/lib/geolocation-utils');
     getCurrentPositionSafe((coords: { lat: number; lng: number }) => setLocation(coords));
   };
-  
-  useEffect(() => {
-    const filtered = services.filter(service =>
-      service.serviceName.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setFilteredServices(filtered);
-  }, [searchQuery, services]);
-  
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* ✅ FIX: Restore Frame UI with ServiceDashboardHeader */}

@@ -8,6 +8,7 @@ import {
   appendShipmentTrackingEvent,
   syncOrderStatusFromShipment,
 } from '../utils/logistics/shipment-order-sync';
+import { notifyShopShipmentUpdate } from '../utils/shop-order-notifications';
 import { getAftershipSlug } from '../utils/logistics/carrier-patterns';
 
 const BATCH_SIZE = 100;
@@ -85,6 +86,11 @@ export async function syncVendorManagedShipments(): Promise<VendorShipmentSyncRe
         );
 
         await syncOrderStatusFromShipment(shipment.order_id, newStatus);
+        void notifyShopShipmentUpdate(shipment.order_id, newStatus, previousStatus, {
+          awb: shipment.awb_code,
+        }).catch((err) =>
+          console.warn('[VENDOR-SHIPMENT-SYNC] Shop notification failed:', err)
+        );
         results.updated++;
       } else {
         await update('shipments', { id: shipment.id }, pollUpdate);

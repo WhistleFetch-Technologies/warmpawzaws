@@ -11,6 +11,7 @@ import {
   getDeliveryStats,
   resolveChannelsFromRequest,
 } from '../../../utils/notification-delivery';
+import { purgeOldNotificationDeliveryLogs } from '../../../utils/scheduled-notification-drain';
 
 export function registerAdminNotificationDeliveryEndpoints(app: Hono) {
   /**
@@ -178,6 +179,28 @@ export function registerAdminNotificationDeliveryEndpoints(app: Hono) {
       const msg = error instanceof Error ? error.message : 'Internal server error';
       console.error('[admin-notification-delivery] test send error:', error);
       return c.json({ error: msg }, 500);
+    }
+  });
+
+  /**
+   * POST /admin/notifications/delivery-log/retention
+   * EventBridge daily cron: purge delivery log rows older than retention window.
+   */
+  app.post('/admin/notifications/delivery-log/retention', async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const retentionDays = Math.max(
+        30,
+        Math.min(parseInt(String((body as { retentionDays?: number }).retentionDays || 90), 10) || 90, 365)
+      );
+      const deleted = await purgeOldNotificationDeliveryLogs(retentionDays);
+      console.log(
+        JSON.stringify({ metric: 'notification_delivery_log_retention', deleted, retentionDays })
+      );
+      return c.json({ success: true, deleted, retentionDays });
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Retention purge failed';
+      return c.json({ success: false, error: msg }, 500);
     }
   });
 }

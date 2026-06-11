@@ -24,6 +24,7 @@ import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/enti
 import { isValidUUID } from '../types/entities';
 import { getDiscoveryRules } from '../lib/rule-engine';
 import { resolveChatBookingId } from '../utils/chat-booking-resolve';
+import { notifyVendorChatMessage } from '../utils/chat-notifications';
 
 export function registerChatEndpoints(app: Hono) {
   /**
@@ -545,14 +546,12 @@ export function registerChatEndpoints(app: Hono) {
 
       if (effectiveSenderType === 'customer' && booking.vendor_id) {
         try {
-          await insert('notifications', {
-            recipient_id: booking.vendor_id,
-            recipient_type: 'vendor',
-            notification_type: 'chat_message',
-            title: 'New chat message',
-            message: `${senderName || phone}: ${(message || '').substring(0, 80)}${(message || '').length > 80 ? '…' : ''}`,
-            channels: { email: false, sms: false, inApp: true, push: false },
-            is_read: false,
+          await notifyVendorChatMessage({
+            vendorId: String(booking.vendor_id),
+            bookingId: chatBookingId,
+            senderLabel: senderName || phone,
+            messagePreview: message || '',
+            messageId: newMessage[0]?.id,
           });
         } catch (notifErr) {
           console.warn('Failed to create vendor notification for chat message:', notifErr);
@@ -612,14 +611,12 @@ export function registerChatEndpoints(app: Hono) {
 
       if (effectiveSenderType === 'customer' && booking.vendor_id) {
         try {
-          await insert('notifications', {
-            recipient_id: booking.vendor_id,
-            recipient_type: 'vendor',
-            notification_type: 'chat_message',
-            title: 'New chat message',
-            message: `${senderName || phone}: ${(message || '').substring(0, 80)}${(message || '').length > 80 ? '…' : ''}`,
-            channels: { email: false, sms: false, inApp: true, push: false },
-            is_read: false,
+          await notifyVendorChatMessage({
+            vendorId: String(booking.vendor_id),
+            bookingId: chatBookingId,
+            senderLabel: senderName || phone,
+            messagePreview: message || '',
+            messageId: newMessage[0]?.id,
           });
         } catch (notifErr) {
           console.warn('Failed to create vendor notification for chat message:', notifErr);
@@ -795,14 +792,12 @@ export function registerChatEndpoints(app: Hono) {
       const effectiveSenderType = (senderType || 'customer').toLowerCase();
       if (effectiveSenderType === 'customer' && booking.vendor_id) {
         try {
-          await insert('notifications', {
-            recipient_id: booking.vendor_id,
-            recipient_type: 'vendor',
-            notification_type: 'chat_message',
-            title: 'New chat message',
-            message: `${senderName || senderPhone}: ${(message || '').substring(0, 80)}${(message || '').length > 80 ? '…' : ''}`,
-            channels: { email: false, sms: false, inApp: true, push: false },
-            is_read: false,
+          await notifyVendorChatMessage({
+            vendorId: String(booking.vendor_id),
+            bookingId: bookingId,
+            senderLabel: senderName || senderPhone,
+            messagePreview: message || '',
+            messageId: newMessage[0]?.id,
           });
         } catch (notifErr) {
           console.warn('Failed to create vendor notification for chat message:', notifErr);

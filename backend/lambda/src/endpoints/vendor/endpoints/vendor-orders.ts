@@ -19,6 +19,10 @@ import {
   bodyContainsTrackingFields,
   getShipmentTrackingLockedError,
 } from '../../../utils/logistics/shipment-tracking';
+import {
+  notifyShopOrderStatusChange,
+  type ShopOrderLifecycleStatus,
+} from '../../../utils/shop-order-notifications';
 import { BaseHandler, HandlerContext, HandlerResponse } from '../../../handler/base-handler';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../../../utils/entity-extractor';
 import { isValidUUID } from '../../../types/entities';
@@ -38,6 +42,29 @@ function resolveStatusUpdateNotes(body: Record<string, unknown>): string | null 
   if (raw == null) return null;
   const trimmed = String(raw).trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function emitShopOrderStatusNotification(
+  orderId: string,
+  previousStatus: string,
+  status: string,
+  extras?: { cancellationReason?: string }
+): void {
+  const lifecycleStatuses: ShopOrderLifecycleStatus[] = [
+    'confirmed',
+    'processing',
+    'delivered',
+    'cancelled',
+    'returned',
+  ];
+  if (!lifecycleStatuses.includes(status as ShopOrderLifecycleStatus)) return;
+
+  void notifyShopOrderStatusChange({
+    orderId,
+    previousStatus,
+    newStatus: status as ShopOrderLifecycleStatus,
+    cancellationReason: extras?.cancellationReason,
+  }).catch((err) => console.warn('[VENDOR-ORDERS] Shop order notification failed:', err));
 }
 
 async function insertVendorOrderStatusHistory(
@@ -533,6 +560,9 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       await query(updateQuery, params);
 
       await insertVendorOrderStatusHistory(orderId, status, statusNotes);
+      emitShopOrderStatusNotification(orderId, currentStatus, status, {
+        cancellationReason: cancellationReason || undefined,
+      });
 
       if (status === 'confirmed' && currentStatus === 'pending') {
         triggerAutoShipment(orderId, 'ecommerce').catch((e) =>
@@ -654,6 +684,9 @@ export function registerVendorOrdersEndpoints(app: Hono) {
       );
 
       await insertVendorOrderStatusHistory(orderId, status, statusNotes);
+      emitShopOrderStatusNotification(orderId, currentStatus, status, {
+        cancellationReason: cancellationReason || undefined,
+      });
 
       if (status === 'confirmed' && currentStatus === 'pending') {
         triggerAutoShipment(orderId, 'ecommerce').catch((e) =>

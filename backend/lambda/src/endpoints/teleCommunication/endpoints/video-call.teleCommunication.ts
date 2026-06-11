@@ -28,6 +28,7 @@ import { getMediaRegion, isWithinVideoCallWindow, vidcorId } from '../constants/
 import { BookingStatus, BookingPaymentStatus, isTeleServices, UserType } from 'src/endpoints/constants';
 import { createMettingID, createSingleToken, createTokens, vidlog, withChimeRetry } from '../../../aws/aws-Chime-service';
 import { pushNotificationService } from '../../../aws/aws-sns-notification-service';
+import { dispatchNotification } from '../../../utils/notification-dispatch';
 import { getRazorpayConfig } from 'src/utils/payments/razorpay-client';
 import {
   completeTeleConsultation,
@@ -654,38 +655,23 @@ class JoinMeetingHandler extends BaseHandler {
 
         // Notify vendor when customer joins first (Practo-style "patient waiting")
         if (userType === UserType.CUSTOMER && vendorId) {
-          const payload = { booking_id: bookingId, meeting_id: newMeetingId, call_type: 'customer_waiting' };
-          const notificationRow: Record<string, any> = {
-            recipient_id: vendorId,
-            recipient_type: 'vendor',
-            notification_type: 'tele_customer_waiting',
-            title: 'Customer Waiting',
-            message: 'A customer has joined the video consultation and is waiting for you',
-            channels: { email: false, sms: false, inApp: true, push: true },
-            is_read: false,
-            created_at: new Date(),
-          };
-          notificationRow.data = payload;
           try {
-            await insert('notifications', notificationRow);
-            vidlog('join', 'tele_customer_waiting-sent', { bookingId, vendorId }, cid);
-          } catch (insertErr: any) {
-            vidlog('join', 'tele_customer_waiting-fail', { bookingId, err: insertErr?.message }, cid);
-            if (insertErr?.message?.includes('data') || insertErr?.message?.includes('column')) {
-              delete notificationRow.data;
-              await insert('notifications', notificationRow).catch(() => { });
-            }
-          }
-          try {
-
             await pushNotificationService.sendEventNotification({
               eventType: 'tele_customer_waiting',
               recipientId: vendorId,
               recipientType: 'vendor',
               relatedId: bookingId,
-              data: { bookingId, meetingId: newMeetingId, callType: 'customer_waiting' },
+              data: {
+                bookingId,
+                meetingId: newMeetingId,
+                callType: 'customer_waiting',
+                dedupeKey: `tele-waiting-${bookingId}`,
+              },
             });
-          } catch (_) { }
+            vidlog('join', 'tele_customer_waiting-sent', { bookingId, vendorId }, cid);
+          } catch (pushErr: any) {
+            vidlog('join', 'tele_customer_waiting-fail', { bookingId, err: pushErr?.message }, cid);
+          }
         }
 
         vidlog('join', 'create-on-join-success', { bookingId, meetingId: newMeetingId }, cid);
@@ -1120,29 +1106,7 @@ export function registerVideoCallEndpoints(app: Hono) {
       }
       const sessions = await select('video_call_sessions', { booking_id: bookingId });
       const meetingId = sessions.length > 0 ? (sessions[0] as any).meeting_id : undefined;
-      console.log('[VIDEO CALL] notify-ready: inserting notification', { bookingId, participantType, recipient_id: targetId, recipient_type: targetType, meetingId });
-      const notificationPayload = { booking_id: bookingId, meeting_id: meetingId, call_type: 'incoming' };
-      const notificationRow: Record<string, any> = {
-        recipient_id: targetId,
-        recipient_type: targetType,
-        notification_type: 'tele_call_incoming',
-        title: 'Incoming Video Call',
-        message: `Your ${participantType === 'customer' ? 'customer' : 'doctor'} is ready to start the video consultation`,
-        channels: { email: false, sms: false, inApp: true, push: true },
-        is_read: false,
-        created_at: new Date(),
-      };
-      notificationRow.data = notificationPayload;
-      try {
-        await insert('notifications', notificationRow);
-      } catch (insertErr: any) {
-        if (insertErr?.message?.includes('data') || insertErr?.message?.includes('column')) {
-          delete notificationRow.data;
-          await insert('notifications', notificationRow);
-        } else {
-          throw insertErr;
-        }
-      }
+      console.log('[VIDEO CALL] notify-ready: sending notification', { bookingId, participantType, recipient_id: targetId, recipient_type: targetType, meetingId });
       try {
         const { pushNotificationService } = await import('../../../aws/aws-sns-notification-service');
         await pushNotificationService.sendEventNotification({
@@ -1150,10 +1114,16 @@ export function registerVideoCallEndpoints(app: Hono) {
           recipientId: targetId,
           recipientType: targetType,
           relatedId: bookingId,
-          data: { bookingId, meetingId, callType: 'incoming' },
+          data: {
+            bookingId,
+            meetingId,
+            callType: 'incoming',
+            dedupeKey: `tele-incoming-${bookingId}-${participantType}`,
+          },
         });
       } catch (pushErr) {
         console.warn('[VIDEO CALL] Push notification failed:', (pushErr as Error)?.message);
+        return c.json({ error: (pushErr as Error)?.message || 'Failed to send notification' }, 500);
       }
       return c.json({ success: true, message: `Notification sent to ${targetType}` }, 200);
     } catch (err: any) {
@@ -1529,30 +1499,42 @@ export function registerVideoCallEndpoints(app: Hono) {
 
       // ✅ FIX: Use correct column names (notification_type, not type), plain objects for JSONB, no non-existent columns
       try {
-        await insert('notifications', {
-          recipient_id: booking.vendor_id,
-          recipient_type: 'vendor',
-          notification_type: 'tele_call_incoming',
-          title: '📞 Instant Video Call',
+        await dispatchNotification({
+          recipientId: String(booking.vendor_id),
+          recipientType: 'vendor',
+          notificationType: 'tele_call_incoming',
+          title: 'Instant video call',
           message: `${customerName} has completed payment and is waiting to connect. Join the call now.`,
-          data: { booking_id: bookingId, bookingId, call_type: 'incoming', action: 'answer_call', instant: true, meeting_id: meetingId },
-          channels: { email: false, sms: false, inApp: true, push: true },
-          is_read: false,
+          channels: { inApp: true, push: true },
+          priority: 'high',
+          data: {
+            bookingId,
+            call_type: 'incoming',
+            action: 'answer_call',
+            instant: true,
+            meetingId,
+            dedupeKey: `tele-incoming-${bookingId}-vendor`,
+          },
         });
       } catch (e) {
         console.error('[confirm-payment] Vendor notification failed:', e);
       }
 
       try {
-        await insert('notifications', {
-          recipient_id: booking.customer_id,
-          recipient_type: 'customer',
-          notification_type: 'tele_call_connecting',
+        await dispatchNotification({
+          recipientId: String(booking.customer_id),
+          recipientType: 'customer',
+          notificationType: 'tele_call_connecting',
           title: 'Connecting to vet',
           message: `${vendorName} will join shortly. Please wait.`,
-          data: { booking_id: bookingId, bookingId, action: 'join_call', instant: true, meeting_id: meetingId },
-          channels: { email: false, sms: false, inApp: true, push: true },
-          is_read: false,
+          channels: { inApp: true, push: true },
+          data: {
+            bookingId,
+            action: 'join_call',
+            instant: true,
+            meetingId,
+            dedupeKey: `tele-connecting-${bookingId}-customer`,
+          },
         });
       } catch (e) {
         console.error('[confirm-payment] Customer notification failed:', e);
