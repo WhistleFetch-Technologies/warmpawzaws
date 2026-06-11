@@ -332,6 +332,10 @@ class ScheduledReminderJobHandler extends BaseHandler {
       }, { requestId: context.event.requestContext?.requestId || randomUUID() } as any);
       results.push({ type: '1_hour_center', result: JSON.parse(oneHourResult.body) });
 
+      const { processServiceStartOtpNotifications } = await import('../utils/service-start-otp-job');
+      const startOtpResult = await processServiceStartOtpNotifications();
+      results.push({ type: 'service_start_otp', result: startOtpResult });
+
       return this.success({
         success: true,
         message: 'Scheduled reminder job completed',

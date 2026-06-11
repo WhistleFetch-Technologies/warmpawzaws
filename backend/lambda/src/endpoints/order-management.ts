@@ -17,8 +17,7 @@
 import { Hono } from 'hono';
 import { select, update, query } from '../database/rds-connection';
 import { buildStructuredTracking } from '../utils/logistics/shipment-tracking';
-import { getSnsClient } from '../utils/sns-client';
-import { PublishCommand } from '@aws-sdk/client-sns';
+import { notifyShopOrderStatusChange, type ShopOrderLifecycleStatus } from '../utils/shop-order-notifications';
 import { normalizeDbRow, normalizeDbRows, extractEntityIds } from '../utils/entity-extractor';
 import { isValidUUID } from '../types/entities';
 
@@ -114,21 +113,14 @@ export function registerOrderManagementEndpoints(app: Hono) {
         console.error('Failed to trigger webhooks:', error);
       }
 
-      // Get customer and vendor for notifications
-      const customer = await select('customers', { id: order.customer_id });
-      const vendor = order.vendor_id ? await select('vendors', { id: order.vendor_id }) : [];
-
-      // Send notifications
-      const snsClient = getSnsClient();
-      if (customer.length > 0 && customer[0].phone) {
-        await snsClient.send(new PublishCommand({
-          PhoneNumber: customer[0].phone,
-          Message: `Your order ${order.order_number} status updated to: ${status}`,
-          MessageAttributes: {
-            'AWS.SNS.SMS.SMSType': { DataType: 'String', StringValue: 'Transactional' },
-          },
-        })).catch(err => console.error('SNS notification failed:', err));
-      }
+      // Unified shop notifications (inbox + FCM)
+      void notifyShopOrderStatusChange({
+        orderId,
+        previousStatus: order.order_status,
+        newStatus: status as ShopOrderLifecycleStatus,
+        trackingNumber: trackingNumber || undefined,
+        cancellationReason: status === 'cancelled' ? notes : undefined,
+      }).catch((err) => console.warn('[ORDER-MGMT] Shop notification failed:', err));
 
       return c.json({
         success: true,
@@ -279,6 +271,13 @@ export function registerOrderManagementEndpoints(app: Hono) {
         console.error('Error processing refund for cancelled order:', error);
         // Don't fail the cancellation if refund processing fails
       }
+
+      void notifyShopOrderStatusChange({
+        orderId,
+        previousStatus: order.order_status,
+        newStatus: 'cancelled',
+        cancellationReason: reason || undefined,
+      }).catch((err) => console.warn('[ORDER-MGMT] Cancel notification failed:', err));
 
       return c.json({
         success: true,
