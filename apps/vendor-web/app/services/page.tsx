@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { VendorServiceManagementComplete } from '@/components/vendor/VendorServiceManagementComplete';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 
 interface Service {
   id: string;
@@ -191,7 +192,7 @@ function ServiceManagementContent() {
         <VendorHeader
           title="Service Management"
           subtitle="Configure your services and pricing"
-          onBack={() => router.back()}
+          onBack={() => vendorNavigateBackFromShell('/')}
           actions={[
             <button
               key="add"
@@ -446,7 +447,7 @@ export default function ServiceManagementPage() {
       <VendorServiceManagementComplete
         vendorId={vendorId}
         vendorData={vendorData}
-        onBack={() => router.push('/')}
+        onBack={() => vendorNavigateBackFromShell('/')}
       />
     );
   }

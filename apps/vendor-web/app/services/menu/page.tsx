@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 import { Plus, Edit2, Trash2, Utensils } from 'lucide-react';
 
 interface MenuItem {
@@ -163,7 +164,7 @@ export default function CafeMenuPage() {
         <VendorHeader
           title="🍽️ Menu Management"
           subtitle="Manage your cafe menu items"
-          onBack={() => router.back()}
+          onBack={() => vendorNavigateBackFromShell('/services')}
           actions={[
             <button
               key="add-item"

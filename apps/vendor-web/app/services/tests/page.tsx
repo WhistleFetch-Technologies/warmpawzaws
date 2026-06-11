@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 
 interface DiagnosticTest {
   id: string;
@@ -173,11 +174,7 @@ export default function TestCatalogPage() {
   };
 
   const navigateBackFromList = () => {
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      router.back();
-    } else {
-      router.push('/');
-    }
+    vendorNavigateBackFromShell('/services');
   };
 
   if (loading) {

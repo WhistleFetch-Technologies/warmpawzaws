@@ -52,3 +52,38 @@ export function vendorNavigate(href: string, router?: RouterLike): void {
 
   window.location.assign(href);
 }
+
+function isOnStaticExportRouteShell(): boolean {
+  if (typeof window === 'undefined') return false;
+  const path = window.location.pathname || '';
+  return path.endsWith('.html') || isChunkHeavyVendorRoute(path);
+}
+
+/**
+ * Leaving services.html / settings.html via router.push('/') or router.back()
+ * reuses the wrong webpack manifest and causes "Loading chunk failed" (500).
+ */
+export function vendorNavigateBackFromShell(fallbackHref = '/'): void {
+  if (typeof window === 'undefined') return;
+
+  if (isOnStaticExportRouteShell() || shouldUseHardDocumentNavigation()) {
+    const url = new URL(fallbackHref, window.location.origin);
+    url.pathname = toStaticExportHtmlPath(url.pathname);
+    url.searchParams.set('_v', String(Date.now()));
+    window.location.assign(url.pathname + url.search + url.hash);
+    return;
+  }
+
+  // Desktop: still hard-nav when leaving a chunk-heavy shell to avoid manifest mismatch
+  if (isChunkHeavyVendorRoute(window.location.pathname)) {
+    vendorNavigate(fallbackHref);
+    return;
+  }
+
+  if (window.history.length > 1) {
+    window.history.back();
+    return;
+  }
+
+  vendorNavigate(fallbackHref);
+}

@@ -6,6 +6,7 @@ import { VendorSettingsScreen } from '@/components/vendor/VendorSettingsScreen';
 import { VendorRouteShell } from '@/components/vendor/layout/VendorRouteShell';
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 
 function SettingsContent() {
   const router = useRouter();
@@ -42,12 +43,12 @@ function SettingsContent() {
     <VendorRouteShell
       title="Settings"
       subtitle="Account, payments & profile"
-      onBack={() => router.back()}
+      onBack={() => vendorNavigateBackFromShell('/')}
     >
       <VendorSettingsScreen
         embedded
         vendorId={vendorId}
-        onBack={() => router.back()}
+        onBack={() => vendorNavigateBackFromShell('/')}
         initialTab={initialTab}
       />
     </VendorRouteShell>

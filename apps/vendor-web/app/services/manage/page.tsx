@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
-import { vendorNavigate } from '@/lib/vendor-route-nav';
+import { vendorNavigate, vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 import { 
   Search, 
   Filter, 
@@ -398,7 +398,7 @@ export default function SoloProviderServiceManagePage() {
         <VendorHeader
           title="Manage Services"
           subtitle="Enable and publish services for customers"
-          onBack={() => router.back()}
+          onBack={() => vendorNavigateBackFromShell('/services')}
           actions={
             hasChanges
               ? [

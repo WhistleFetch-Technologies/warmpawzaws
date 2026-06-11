@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { VendorHeader } from '@/components/vendor/VendorHeader';
+import { vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 
 interface Service {
   id: string;
@@ -196,7 +197,7 @@ export default function PricingPage() {
         <VendorHeader
           title="Service Pricing"
           subtitle="Manage pricing for all your services"
-          onBack={() => router.back()}
+          onBack={() => vendorNavigateBackFromShell('/services')}
           actions={
             hasChanges
               ? [
