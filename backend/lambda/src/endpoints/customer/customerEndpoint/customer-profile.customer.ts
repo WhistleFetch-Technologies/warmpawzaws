@@ -1445,18 +1445,19 @@ export function registerCustomerProfileEndpoints(app: Hono) {
    */
   app.get("/customer/search-suggestions", async (c) => {
     try {
-      const customerId = c.req.query('customerId');
+      const { rows } = await query(
+        `SELECT keyword, hub_slug
+         FROM search_taxonomy_keywords
+         WHERE is_active = true
+         ORDER BY weight DESC
+         LIMIT 20`,
+        []
+      );
 
-      // Get popular services/products as suggestions
-      const suggestions = [
-        { type: 'service', text: 'Vet Consultation', icon: '🏥' },
-        { type: 'service', text: 'Home Grooming', icon: '✂️' },
-        { type: 'service', text: 'Dog Walker', icon: '🐕' },
-        { type: 'service', text: 'Pet Training', icon: '🎓' },
-        { type: 'product', text: 'Dog Food', icon: '🍖' },
-        { type: 'product', text: 'Pet Toys', icon: '🧸' },
-        { type: 'product', text: 'Grooming Kit', icon: '🛁' },
-      ];
+      const suggestions = (rows as { keyword: string; hub_slug: string }[]).map((row) => ({
+        type: row.hub_slug,
+        text: row.keyword,
+      }));
 
       return c.json({
         success: true,

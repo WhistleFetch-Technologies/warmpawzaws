@@ -95,6 +95,15 @@ export type BannerDestinationVendor = {
   roleName?: string | null;
 };
 
+/** Published article option from GET /admin/banners/destination-options. */
+export type BannerArticleDestination = {
+  pageId: string;
+  title: string;
+  slug: string;
+  category: string;
+  isPublished: boolean;
+};
+
 export type BannerTargetMetadata = {
   targetLevel: BannerTargetLevel;
   categoryId?: string;

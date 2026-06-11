@@ -23,6 +23,7 @@ import {
   enrichBannersWithNavTargets,
   resolveBannerCtaNavigation,
 } from '../../../utils/banner-cta-resolver';
+import { listPublishedCustomerArticlesForCustomer } from '../../../utils/content-page-articles';
 
 export function registerCustomerContentEndpoints(app: Hono) {
   /**
@@ -223,50 +224,13 @@ export function registerCustomerContentEndpoints(app: Hono) {
       const limit = parseInt(c.req.query('limit') || '5', 10);
       const featured = c.req.query('featured') === 'true';
 
-      // Include all categories: both admin categories (legal, help, marketing, other) 
-      // and customer-facing categories (tips, article, nutrition, health, grooming, insurance, behavior)
-      let articlesQuery = `
-        SELECT 
-          id,
-          title,
-          slug,
-          content,
-          category,
-          is_published,
-          metadata,
-          created_at,
-          updated_at
-        FROM content_pages
-        WHERE is_published = true
-        AND category IN ('marketing', 'tips', 'article', 'nutrition', 'health', 'grooming', 'insurance', 'behavior', 'legal', 'help', 'other', 'general')
-      `;
-
-      const params: any[] = [];
-      let paramIndex = 1;
-
-      if (category) {
-        articlesQuery += ` AND category = $${paramIndex}`;
-        params.push(category);
-        paramIndex++;
-      }
-
-      // Use string checks — casting metadata->>'featured' to boolean breaks the whole query
-      // when values are empty or non-boolean strings (PostgreSQL invalid input for type boolean).
-      const featuredSql = `(metadata->>'featured') IN ('true', 't', '1', 'yes')`;
-
-      if (featured) {
-        articlesQuery += ` AND ${featuredSql}`;
-      }
-
-      articlesQuery += ` ORDER BY 
-        CASE WHEN ${featuredSql} THEN 0 ELSE 1 END,
-        updated_at DESC
-        LIMIT $${paramIndex}`;
-      params.push(limit);
-
-      let articlesResult: { rows?: any[] };
+      let articles: Awaited<ReturnType<typeof listPublishedCustomerArticlesForCustomer>>;
       try {
-        articlesResult = await query(articlesQuery, params);
+        articles = await listPublishedCustomerArticlesForCustomer({
+          category: category || undefined,
+          limit,
+          featured,
+        });
       } catch (err: any) {
         const duration = Date.now() - startTime;
         console.error('[articles] Query failed', {
@@ -280,7 +244,6 @@ export function registerCustomerContentEndpoints(app: Hono) {
         if (poolExhausted) {
           console.error('[articles] Connection pool exhausted');
         }
-        // Degrade gracefully: empty list + 200 so the app shows "No articles" instead of HTTP 503.
         return c.json({
           success: true,
           articles: [],
@@ -288,23 +251,6 @@ export function registerCustomerContentEndpoints(app: Hono) {
           degraded: true,
         });
       }
-
-      // Map articles to frontend format
-      const articles = (articlesResult.rows || []).map((a: any) => {
-        const text = a.content != null ? String(a.content) : '';
-        const excerpt = text.length > 150 ? `${text.slice(0, 150)}...` : text;
-        return {
-          id: a.id,
-          title: a.title,
-          slug: a.slug,
-          category: a.category,
-          readTime: a.metadata?.read_time || '5 min',
-          featured: a.metadata?.featured || false,
-          excerpt,
-          createdAt: a.created_at,
-          updatedAt: a.updated_at,
-        };
-      });
 
       return c.json({
         success: true,

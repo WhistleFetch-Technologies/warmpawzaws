@@ -804,6 +804,7 @@ export function registerAdminGovernanceEnhancedEndpoints(app: Hono) {
           categories: [],
           serviceStyles: [],
           vendors: [],
+          articles: [],
         },
         500
       );
