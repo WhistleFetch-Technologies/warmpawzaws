@@ -40,11 +40,26 @@ function isEcommerceOrderType(orderType: unknown): boolean {
   return t === 'ecommerce' || t === 'shop' || t === 'shop_order';
 }
 
+async function orderHasCompletedPayment(orderId: string): Promise<boolean> {
+  try {
+    const r = await query(
+      `SELECT 1 FROM payments
+        WHERE order_id = $1::uuid
+          AND payment_status = 'completed'
+        LIMIT 1`,
+      [orderId],
+    );
+    return (r.rows?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function loadShopOrderContext(orderId: string): Promise<ShopOrderContext | null> {
   try {
     const r = await query(
       `SELECT o.id, o.order_number, o.customer_id, o.vendor_id, o.order_type,
-              c.full_name AS customer_name, c.name AS customer_name_alt,
+              COALESCE(c.full_name, 'Customer') AS customer_name,
               v.business_name AS vendor_name
        FROM orders o
        LEFT JOIN customers c ON c.id = o.customer_id
@@ -62,7 +77,7 @@ async function loadShopOrderContext(orderId: string): Promise<ShopOrderContext |
       orderNumber: String(row.order_number || row.id).slice(0, 32),
       customerId: String(row.customer_id),
       vendorId: String(row.vendor_id),
-      customerName: String(row.customer_name || row.customer_name_alt || 'Customer'),
+      customerName: String(row.customer_name || 'Customer'),
       vendorName: String(row.vendor_name || 'Seller'),
     };
   } catch (e) {
@@ -212,8 +227,9 @@ export async function notifyShopOrderStatusChange(params: {
   if (!ctx) return;
 
   const customerEvent = mapStatusToCustomerEvent(newStatus);
-  const skipCustomerConfirmAfterPending = newStatus === 'confirmed' && previousStatus === 'pending';
-  if (!skipCustomerConfirmAfterPending) {
+  const paidAlreadyNotified =
+    newStatus === 'confirmed' && previousStatus === 'pending' && (await orderHasCompletedPayment(orderId));
+  if (!paidAlreadyNotified) {
     await notifyShopRecipient({
       ctx,
       recipientId: ctx.customerId,

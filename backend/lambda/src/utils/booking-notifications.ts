@@ -239,3 +239,35 @@ export async function notifyBookingRescheduled(params: {
     },
   });
 }
+
+/** Customer push/in-app at scheduled service start with OTP to share with vendor. */
+export async function notifyBookingStartOtp(params: {
+  bookingId: string;
+  customerId: string;
+  vendorName: string;
+  serviceName: string;
+  otp: string;
+}): Promise<{ sent: boolean }> {
+  if (!params.customerId || !params.otp?.trim()) {
+    return { sent: false };
+  }
+
+  await dispatchNotification({
+    recipientId: params.customerId,
+    recipientType: 'customer',
+    notificationType: 'booking_start_otp',
+    title: 'Service start OTP',
+    message: `Share this OTP with ${params.vendorName} to start your ${params.serviceName} service: ${params.otp}`,
+    channels: { inApp: true, push: true },
+    priority: 'high',
+    data: {
+      bookingId: params.bookingId,
+      otp: params.otp,
+      vendorName: params.vendorName,
+      serviceName: params.serviceName,
+      dedupeKey: `booking-${params.bookingId}-start-otp-customer`,
+    },
+  });
+
+  return { sent: true };
+}

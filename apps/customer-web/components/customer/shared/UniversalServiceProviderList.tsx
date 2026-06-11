@@ -129,19 +129,19 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end justify-center">
+    <div className="fixed inset-0 bg-black/50 z-[60] flex items-end justify-center">
       <div
-        className="bg-white w-full max-w-lg rounded-t-3xl max-h-[calc(80vh-3.5rem)] mb-14 overflow-y-auto"
+        className="bg-white w-full max-w-lg rounded-t-3xl flex flex-col max-h-[calc(100dvh-var(--customer-tabbed-nav-offset)-0.75rem)] mb-[var(--customer-tabbed-nav-offset)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 bg-white p-4 border-b flex items-center justify-between">
+        <div className="shrink-0 bg-white p-4 border-b flex items-center justify-between">
           <h2 className="text-lg font-bold">Filters</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-4 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-6">
           {/* Rating Filter */}
           <div>
             <h3 className="font-medium mb-3">Minimum Rating</h3>
@@ -254,7 +254,7 @@ function FilterModal({ isOpen, onClose, filters, onApply, specializations }: Fil
           </div>
         </div>
 
-        <div className="sticky bottom-3 bg-white p-4 border-t flex gap-3">
+        <div className="shrink-0 bg-white p-4 border-t flex gap-3">
           <Button
             variant="outline"
             className="flex-1"

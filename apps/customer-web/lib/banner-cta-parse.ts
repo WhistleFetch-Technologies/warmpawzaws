@@ -52,6 +52,8 @@ export function parseBannerCtaLink(ctaLink: unknown): { persona: string; vendorN
   const persona = norm(segments[0]);
   const vendorName = segments.slice(1).join('/').trim();
   if (!persona || !vendorName || !SUPPORTED_PERSONAS.has(persona)) return null;
+  const vendorSlug = vendorName.toLowerCase();
+  if (vendorSlug === 'placeholder' || vendorSlug === 'placeholder.html') return null;
 
   return { persona, vendorName };
 }

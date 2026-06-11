@@ -33,6 +33,8 @@ export const HIDDEN_CATEGORIES: string[] = [
   'physiotherapy',
   'physio',
   'physical_therapy',
+  'lab-diagnostics',
+  'lab_diagnostics',
 ];
 
 export interface QuickServiceTile {
