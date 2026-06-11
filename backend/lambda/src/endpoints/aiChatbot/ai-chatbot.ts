@@ -123,7 +123,7 @@ async function findOpenEscalationTicketForConversation(
 ): Promise<string | null> {
   const r = await query(
     `SELECT id::text AS id FROM support_tickets
-     WHERE status IN ('open', 'in_progress')
+     WHERE status IN ('open', 'ai_acknowledged', 'awaiting_assignment', 'assigned', 'in_progress')
        AND COALESCE(metadata->>'ai_conversation_id','') = $1
      ORDER BY created_at DESC
      LIMIT 1`,
@@ -230,6 +230,19 @@ async function ensureEscalationTicket(
   const ticketId = ticket[0]?.id ? String(ticket[0].id) : '';
   if (ticketId) {
     await linkAiConversationRowsToTicket(args.conversationId, ticketId, args.escalationReason);
+    const { recordSupportTicketActivity, SUPPORT_TICKET_EVENT_TYPES } = await import(
+      '../supportCrm/support-ticket-activity'
+    );
+    const { scheduleSupportTicketAiAck } = await import('../supportCrm/support-ticket-ai-ack');
+    void recordSupportTicketActivity({
+      ticketId,
+      eventType: SUPPORT_TICKET_EVENT_TYPES.TICKET_CREATED,
+      eventActorType: 'customer',
+      eventActorId: args.customerId || null,
+      eventTitle: 'Ticket created (AI escalation)',
+      eventMetadata: { source: 'ai_chatbot', conversationId: args.conversationId },
+    });
+    scheduleSupportTicketAiAck(ticketId);
   }
   return { ticketId, created: true };
 }

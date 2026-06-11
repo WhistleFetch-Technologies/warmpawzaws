@@ -69,12 +69,14 @@ export function SupportTicketMessages({
           />
         ) : null}
         {responses.map((r, idx) => {
-          const isCustomer = String(r.responder_type || '').toLowerCase() === 'customer';
+          const responder = String(r.responder_type || '').toLowerCase();
+          const isCustomer = responder === 'customer';
+          const isSystemAi = responder === 'system_ai';
           return (
             <SupportTicketMessageBubble
               key={String(r.id || r.created_at || idx)}
               side={isCustomer ? 'customer' : 'support'}
-              label={isCustomer ? 'You' : 'Support'}
+              label={isCustomer ? 'You' : isSystemAi ? 'Warmpawz Support' : 'Support'}
               body={String(r.message || '')}
               createdAt={r.created_at != null ? String(r.created_at) : null}
             />

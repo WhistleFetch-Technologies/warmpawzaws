@@ -1,34 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
-	Search,
 	MessageSquare,
 	CheckCircle,
-	XCircle,
 	Clock,
-	Filter,
 	RefreshCw,
-	Send,
 	User,
 	AlertTriangle,
 	Ticket,
 	IndianRupee,
-	Users as UsersIcon,
 	BarChart3,
 	UserPlus,
-	Zap,
-	FileCheck,
 	Headphones,
 	TrendingUp,
-	Timer,
 	Settings,
-	ArrowUpRight,
-	Phone,
-	Mail,
-	Tag,
 	Link2,
-	Calendar,
 } from "lucide-react";
 
 import {
@@ -53,114 +40,26 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 import { CompletePlanModal } from "@/components/admin/support/CompletePlanModal";
+import { SupportCrmQueuePanel } from "@/components/admin/support/crm/SupportCrmQueuePanel";
+import { SupportCrmConversationPanel } from "@/components/admin/support/crm/SupportCrmConversationPanel";
+import { SupportCrmContextPanel } from "@/components/admin/support/crm/SupportCrmContextPanel";
+import type {
+	Agent,
+	AgentMetrics,
+	CRMStats,
+	DetailTab,
+	QueueView,
+	Ticket,
+	TicketActivity,
+} from "@/components/admin/support/crm/types";
+import {
+	isBookingTicket,
+	matchesQueueView,
+	matchesSearch,
+	ticketHasAssignee,
+} from "@/components/admin/support/crm/crm-utils";
+import { getAdminId } from "@/lib/cognito-auth";
 import { useRouter } from "next/navigation";
-
-// Brand colors
-const BRAND_ORANGE = "#FF8C42";
-const BRAND_ORANGE_LIGHT = "#FFF3E8";
-const BRAND_ORANGE_DARK = "#E07830";
-
-// Types
-interface BookingSummary {
-	serviceName?: string;
-	status?: string;
-	amount?: number;
-	scheduledDate?: string;
-}
-
-interface BookingContextPanel {
-	id: string;
-	status: string;
-	serviceName?: string;
-	serviceStyle?: string;
-	scheduledDate?: string;
-	scheduledTime?: string;
-	amount?: number;
-	vendorId?: string;
-	vendorName?: string;
-	paymentStatus?: string;
-}
-
-interface PaymentContextPanel {
-	paymentId?: string;
-	totalPaid: number;
-	walletPaid: number;
-	gatewayPaid: number;
-	refundedSoFar: number;
-	refundableBalance: number;
-	paymentMethod?: string;
-	razorpayPaymentId?: string;
-	paymentStatus?: string;
-	hasGatewayPayment: boolean;
-}
-
-interface Ticket {
-	id: string;
-	customerId: string;
-	customerName?: string;
-	subject: string;
-	description: string;
-	status: "open" | "in_progress" | "resolved" | "closed" | "escalated";
-	priority: "low" | "medium" | "high" | "urgent";
-	source: string;
-	createdAt: string;
-	messages?: TicketMessage[];
-	assignedTo?: string;
-	assignedAgent?: string;
-	category?: string;
-	metadata?: Record<string, unknown>;
-	aiConversation?: Array<Record<string, unknown>>;
-	ticketType?: "general" | "booking";
-	bookingId?: string;
-	vendorId?: string;
-	isRefundable?: boolean;
-	refundBlockReason?: string;
-	bookingSummary?: BookingSummary;
-	refundableBalance?: number;
-	bookingContext?: BookingContextPanel | null;
-	paymentContext?: PaymentContextPanel | null;
-	refundRequested?: boolean;
-	refundStatus?: string;
-}
-
-interface TicketMessage {
-	id: string;
-	sender: string;
-	content: string;
-	timestamp: string;
-	role: "agent" | "customer" | "system";
-}
-
-interface Agent {
-	id: string;
-	name: string;
-	email?: string;
-	specialties?: string[];
-	workload?: number;
-}
-
-interface AgentMetrics {
-	agentId: string;
-	agentName: string;
-	totalTickets: number;
-	resolved: number;
-	resolutionRate: number;
-	satisfaction: number;
-	avgResponseTime: number;
-	avgResolutionTime: number;
-}
-
-// Stats interface
-interface CRMStats {
-	totalTickets: number;
-	openTickets: number;
-	inProgressTickets: number;
-	resolvedTickets: number;
-	escalatedTickets: number;
-	avgResponseTime: string;
-	todayTickets: number;
-	pendingRefunds: number;
-}
 
 export default function SupportCRM() {
 	const router = useRouter();
@@ -168,8 +67,12 @@ export default function SupportCRM() {
 	const [loading, setLoading] = useState(true);
 	const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
 	const [replyText, setReplyText] = useState("");
-	const [filterStatus, setFilterStatus] = useState("all");
-	const [filterTicketType, setFilterTicketType] = useState<"all" | "general" | "booking">("all");
+	const [queueView, setQueueView] = useState<QueueView>("all");
+	const [searchQuery, setSearchQuery] = useState("");
+	const [currentAdminId, setCurrentAdminId] = useState<string | null>(null);
+	const [detailTab, setDetailTab] = useState<DetailTab>("conversation");
+	const [activityEntries, setActivityEntries] = useState<TicketActivity[]>([]);
+	const [activityLoading, setActivityLoading] = useState(false);
 	const [showRefundModal, setShowRefundModal] = useState(false);
 	const [showPartialRefundModal, setShowPartialRefundModal] = useState(false);
 	const [showAttachBookingModal, setShowAttachBookingModal] = useState(false);
@@ -197,21 +100,17 @@ export default function SupportCRM() {
 	});
 
 	useEffect(() => {
+		setCurrentAdminId(getAdminId());
 		loadTickets();
 		loadAgents();
 		loadAgentMetrics();
-		
-		// Auto-refresh tickets every 30 seconds for near real-time updates
+
 		const refreshInterval = setInterval(() => {
 			loadTickets();
 		}, 30000);
-		
+
 		return () => clearInterval(refreshInterval);
 	}, []);
-
-	useEffect(() => {
-		loadTickets();
-	}, [filterTicketType]);
 
 	// Calculate average response time from ticket data
 	const calculateAvgResponseTime = (ticketList: Ticket[]): string => {
@@ -250,10 +149,8 @@ export default function SupportCRM() {
 	const loadTickets = async () => {
 		setLoading(true);
 		try {
-			const ticketTypeQuery =
-				filterTicketType !== "all" ? `?ticketType=${filterTicketType}` : "";
 			const [ticketsRes, statsRes] = await Promise.all([
-				apiClient.get<any>(`/crm/tickets${ticketTypeQuery}`),
+				apiClient.get<any>("/crm/tickets"),
 				apiClient.get<any>("/crm/stats").catch(() => null),
 			]);
 
@@ -268,8 +165,10 @@ export default function SupportCRM() {
 				const rawList = ticketsRes.tickets || [];
 				const ticketList: Ticket[] = rawList.map((t: any) => ({
 					...t,
-					assignedTo: t.assignedTo || t.assigned_to || undefined,
+					assignedTo: t.assignedTo || t.assigned_to || t.assigned_agent_id || undefined,
 					assignedAgent: t.assignedAgent || t.assigned_agent_name || undefined,
+					lastUpdatedAt: t.lastUpdatedAt || t.last_updated_at || t.createdAt || t.created_at,
+					customerEmail: t.customerEmail || t.customer_email,
 				}));
 				setTickets(ticketList);
 				
@@ -325,13 +224,22 @@ export default function SupportCRM() {
 			const res = await apiClient.get<any>(`/support/tickets/${ticketId}`);
 			if (res.success && res.ticket) {
 				// Transform responses into messages format expected by UI
-				const messages: TicketMessage[] = (res.responses || []).map((r: any) => ({
-					id: r.id || String(Date.now()),
-					sender: r.responder_type === 'agent' ? (r.responder_name || 'Support Agent') : 'Customer',
-					content: r.message,
-					timestamp: r.created_at,
-					role: r.responder_type || 'customer',
-				}));
+				const messages: TicketMessage[] = (res.responses || []).map((r: any) => {
+					const rt = String(r.responder_type || 'customer');
+					const isAgent = rt === 'agent';
+					const isSystemAi = rt === 'system_ai';
+					return {
+						id: r.id || String(Date.now()),
+						sender: isSystemAi
+							? (r.responder_name || 'Warmpawz Support')
+							: isAgent
+								? (r.responder_name || 'Support Agent')
+								: 'Customer',
+						content: r.message,
+						timestamp: r.created_at,
+						role: isSystemAi ? 'system' : (rt === 'agent' ? 'agent' : 'customer'),
+					};
+				});
 
 				// Update selected ticket with full details including messages
 				const raw = res.ticket;
@@ -349,6 +257,8 @@ export default function SupportCRM() {
 					id: raw.id,
 					customerId: raw.customer_id || '',
 					customerName: raw.customer_name || res.customerName,
+					customerEmail: raw.customer_email || res.customerEmail,
+					lastUpdatedAt: raw.last_updated_at || raw.lastUpdatedAt || raw.created_at,
 					subject: raw.subject || '',
 					description: raw.message || raw.description || '',
 					status: raw.status || 'open',
@@ -381,11 +291,42 @@ export default function SupportCRM() {
 	};
 
 	// Handle ticket selection - load full details
+	const loadTicketActivity = async (ticketId: string) => {
+		setActivityLoading(true);
+		try {
+			const res = await apiClient.get<any>(`/crm/tickets/${ticketId}/activity`);
+			if (res.success) {
+				setActivityEntries(
+					(res.activities || []).map((a: any) => ({
+						id: a.id,
+						eventType: a.eventType,
+						eventTitle: a.eventTitle,
+						eventActorType: a.eventActorType,
+						createdAt: a.createdAt,
+						eventMetadata: a.eventMetadata || {},
+					}))
+				);
+			}
+		} catch (error) {
+			console.error("Failed to load ticket activity:", error);
+			setActivityEntries([]);
+		} finally {
+			setActivityLoading(false);
+		}
+	};
+
 	const handleSelectTicket = (ticket: Ticket) => {
 		setSelectedTicket(ticket);
 		setSuggestedReplies([]);
+		setDetailTab("conversation");
 		loadTicketDetails(ticket.id);
 	};
+
+	useEffect(() => {
+		if (selectedTicket?.id) {
+			loadTicketActivity(selectedTicket.id);
+		}
+	}, [selectedTicket?.id]);
 
 	const handleSuggestReplies = async () => {
 		if (!selectedTicket) return;
@@ -494,6 +435,9 @@ export default function SupportCRM() {
 
 			if (res.success) {
 				toast.success("Reply sent successfully");
+				if (detailTab === "activity") {
+					void loadTicketActivity(selectedTicket.id);
+				}
 				setReplyText("");
 				// Optimistically update UI
 				const newMsg: TicketMessage = {
@@ -567,6 +511,9 @@ export default function SupportCRM() {
 			await loadTickets();
 			if (selectedTicket) {
 				await loadTicketDetails(selectedTicket.id);
+				if (detailTab === "activity") {
+					await loadTicketActivity(selectedTicket.id);
+				}
 			}
 
 			if (action === "refund" || action === "partial_refund") {
@@ -684,58 +631,20 @@ export default function SupportCRM() {
 		}
 	};
 
-	const getStatusColor = (status: string) => {
-		switch (status) {
-			case "open":
-				return "bg-red-100 text-red-700";
-			case "in_progress":
-				return "bg-yellow-100 text-yellow-700";
-			case "resolved":
-				return "bg-green-100 text-green-700";
-			default:
-				return "bg-gray-100 text-gray-700";
-		}
-	};
+	const getFilterCount = useCallback(
+		(view: QueueView) =>
+			tickets.filter((t) => matchesQueueView(t, view, currentAdminId)).length,
+		[tickets, currentAdminId]
+	);
 
-	const filteredTickets = tickets.filter((t) => {
-		const statusOk = filterStatus === "all" || t.status === filterStatus;
-		const typeOk =
-			filterTicketType === "all" ||
-			(filterTicketType === "booking" && t.ticketType === "booking") ||
-			(filterTicketType === "general" && (t.ticketType === "general" || !t.ticketType));
-		return statusOk && typeOk;
-	});
-
-	const isBookingTicket = (t: Ticket | null | undefined) => t?.ticketType === "booking" || Boolean(t?.bookingId);
-	const canProcessRefund = (t: Ticket | null | undefined) => Boolean(t?.isRefundable);
-
-	const ticketHasAssignee = (t: Ticket | null | undefined) =>
-		Boolean(t && (t.assignedTo || t.assignedAgent));
-
-	const assigneeDisplayLabel = (t: Ticket): string => {
-		if (t.assignedAgent) return t.assignedAgent;
-		if (t.assignedTo && agents.length) {
-			const a = agents.find((x) => x.id === t.assignedTo);
-			if (a?.name) return a.name;
-		}
-		if (t.assignedTo) return "Assigned";
-		return "";
-	};
-
-	const getPriorityColor = (priority: string) => {
-		switch (priority) {
-			case "urgent":
-				return "bg-red-100 text-red-700 border-red-200";
-			case "high":
-				return "bg-orange-100 text-orange-700 border-orange-200";
-			case "medium":
-				return "bg-yellow-100 text-yellow-700 border-yellow-200";
-			case "low":
-				return "bg-green-100 text-green-700 border-green-200";
-			default:
-				return "bg-gray-100 text-gray-700 border-gray-200";
-		}
-	};
+	const filteredTickets = useMemo(
+		() =>
+			tickets.filter(
+				(t) =>
+					matchesQueueView(t, queueView, currentAdminId) && matchesSearch(t, searchQuery)
+			),
+		[tickets, queueView, currentAdminId, searchQuery]
+	);
 
 	// Loading state with brand spinner
 	if (loading && tickets.length === 0) {
@@ -754,698 +663,111 @@ export default function SupportCRM() {
 	return (
 		<AdminLayout>
 			<div className="flex flex-col h-[calc(100vh-64px)] bg-gradient-to-br from-gray-50 to-white">
-				{/* Enhanced Header with Stats */}
-				<div className="bg-white border-b border-gray-200 shadow-sm">
-					<div className="px-6 py-4">
-						{/* Title Row */}
-						<div className="flex items-center justify-between mb-4">
-							<div className="flex items-center gap-3">
-								<div className="p-2.5 rounded-xl bg-gradient-to-br from-[#FF8C42] to-[#E07830] shadow-lg">
-									<Headphones className="w-6 h-6 text-white" />
-								</div>
-								<div>
-									<h1 className="text-2xl font-bold text-gray-900">Support CRM</h1>
-									<p className="text-sm text-gray-500">Manage customer support tickets and agent workflows</p>
-								</div>
+				<div className="shrink-0 bg-white border-b border-gray-200 px-4 py-2.5">
+					<div className="flex items-center justify-between gap-4">
+						<div className="flex items-center gap-2.5 min-w-0">
+							<div className="p-2 rounded-lg bg-gradient-to-br from-[#FF8C42] to-[#E07830]">
+								<Headphones className="w-5 h-5 text-white" />
 							</div>
-							<div className="flex items-center gap-2">
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={() => setShowAgentMetrics(true)}
-									className="border-[#FF8C42]/30 text-[#FF8C42] hover:bg-[#FFF3E8]"
-								>
-									<BarChart3 className="w-4 h-4 mr-2" />
-									Agent Metrics
-								</Button>
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={() => router.push('/support/settings')}
-									className="border-gray-200"
-								>
-									<Settings className="w-4 h-4 mr-2" />
-									Settings
-								</Button>
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={loadTickets}
-									className="border-gray-200"
-								>
-									<RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
-									Refresh
-								</Button>
+							<div className="min-w-0">
+								<h1 className="text-lg font-bold text-gray-900 leading-tight">Support CRM</h1>
+								<div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-500">
+									<span>Total {stats.totalTickets}</span>
+									<span className="text-red-600">Open {stats.openTickets}</span>
+									<span className="text-yellow-700">Active {stats.inProgressTickets}</span>
+									<span className="text-green-700">Resolved {stats.resolvedTickets}</span>
+									<span className="text-orange-600">Escalated {stats.escalatedTickets}</span>
+									<span>Today {stats.todayTickets}</span>
+									<span>Avg {stats.avgResponseTime}</span>
+								</div>
 							</div>
 						</div>
-
-						{/* Stats Cards */}
-						<div className="grid grid-cols-6 gap-4">
-							<Card className="p-3 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-								<div className="flex items-center justify-between">
-									<div>
-										<p className="text-xs text-gray-500 font-medium">Total Tickets</p>
-										<p className="text-2xl font-bold text-gray-900">{stats.totalTickets}</p>
-									</div>
-									<div className="p-2 rounded-lg bg-blue-50">
-										<Ticket className="w-5 h-5 text-blue-600" />
-									</div>
-								</div>
-							</Card>
-							<Card className="p-3 border border-red-100 shadow-sm hover:shadow-md transition-shadow bg-red-50/30">
-								<div className="flex items-center justify-between">
-									<div>
-										<p className="text-xs text-gray-500 font-medium">Open</p>
-										<p className="text-2xl font-bold text-red-600">{stats.openTickets}</p>
-									</div>
-									<div className="p-2 rounded-lg bg-red-100">
-										<AlertTriangle className="w-5 h-5 text-red-600" />
-									</div>
-								</div>
-							</Card>
-							<Card className="p-3 border border-yellow-100 shadow-sm hover:shadow-md transition-shadow bg-yellow-50/30">
-								<div className="flex items-center justify-between">
-									<div>
-										<p className="text-xs text-gray-500 font-medium">In Progress</p>
-										<p className="text-2xl font-bold text-yellow-600">{stats.inProgressTickets}</p>
-									</div>
-									<div className="p-2 rounded-lg bg-yellow-100">
-										<Clock className="w-5 h-5 text-yellow-600" />
-									</div>
-								</div>
-							</Card>
-							<Card className="p-3 border border-green-100 shadow-sm hover:shadow-md transition-shadow bg-green-50/30">
-								<div className="flex items-center justify-between">
-									<div>
-										<p className="text-xs text-gray-500 font-medium">Resolved</p>
-										<p className="text-2xl font-bold text-green-600">{stats.resolvedTickets}</p>
-									</div>
-									<div className="p-2 rounded-lg bg-green-100">
-										<CheckCircle className="w-5 h-5 text-green-600" />
-									</div>
-								</div>
-							</Card>
-							<Card className="p-3 border border-orange-100 shadow-sm hover:shadow-md transition-shadow bg-orange-50/30">
-								<div className="flex items-center justify-between">
-									<div>
-										<p className="text-xs text-gray-500 font-medium">Escalated</p>
-										<p className="text-2xl font-bold text-orange-600">{stats.escalatedTickets}</p>
-									</div>
-									<div className="p-2 rounded-lg bg-orange-100">
-										<ArrowUpRight className="w-5 h-5 text-orange-600" />
-									</div>
-								</div>
-							</Card>
-							<Card className="p-3 border border-purple-100 shadow-sm hover:shadow-md transition-shadow bg-purple-50/30">
-								<div className="flex items-center justify-between">
-									<div>
-										<p className="text-xs text-gray-500 font-medium">Today</p>
-										<p className="text-2xl font-bold text-purple-600">{stats.todayTickets}</p>
-									</div>
-									<div className="p-2 rounded-lg bg-purple-100">
-										<TrendingUp className="w-5 h-5 text-purple-600" />
-									</div>
-								</div>
-							</Card>
+						<div className="flex items-center gap-1.5 shrink-0">
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => setShowAgentMetrics(true)}
+								className="h-8 text-xs border-[#FF8C42]/30 text-[#FF8C42]"
+							>
+								<BarChart3 className="w-3.5 h-3.5 mr-1" />
+								Metrics
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => router.push("/support/settings")}
+								className="h-8 text-xs"
+							>
+								<Settings className="w-3.5 h-3.5 mr-1" />
+								Settings
+							</Button>
+							<Button variant="outline" size="sm" onClick={loadTickets} className="h-8 text-xs">
+								<RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? "animate-spin" : ""}`} />
+								Refresh
+							</Button>
 						</div>
 					</div>
 				</div>
 
-				{/* Main Content Area */}
-				<div className="flex-1 flex overflow-hidden">
-					{/* Ticket List Sidebar */}
-					<div className="w-[380px] border-r border-gray-200 bg-white flex flex-col">
-						{/* Filter Header */}
-						<div className="p-4 border-b border-gray-100 bg-gray-50/50 space-y-3">
-							<div className="flex gap-2 overflow-x-auto pb-1">
-								{[
-									{ value: "all", label: "All types" },
-									{ value: "booking", label: "Booking" },
-									{ value: "general", label: "General" },
-								].map((filter) => (
-									<button
-										key={filter.value}
-										onClick={() => setFilterTicketType(filter.value as "all" | "general" | "booking")}
-										className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
-											filterTicketType === filter.value
-												? "bg-blue-600 text-white shadow-md"
-												: "bg-white text-gray-600 border border-gray-200 hover:border-blue-300"
-										}`}
-									>
-										{filter.label}
-									</button>
-								))}
-							</div>
-							<div className="flex gap-2 overflow-x-auto pb-1">
-								{[
-									{ value: "all", label: "All", count: stats.totalTickets },
-									{ value: "open", label: "Open", count: stats.openTickets },
-									{ value: "in_progress", label: "In Progress", count: stats.inProgressTickets },
-									{ value: "escalated", label: "Escalated", count: stats.escalatedTickets },
-									{ value: "resolved", label: "Resolved", count: stats.resolvedTickets },
-								].map((filter) => (
-									<button
-										key={filter.value}
-										onClick={() => setFilterStatus(filter.value)}
-										className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap flex items-center gap-1.5 transition-all ${
-											filterStatus === filter.value
-												? "bg-[#FF8C42] text-white shadow-md"
-												: "bg-white text-gray-600 border border-gray-200 hover:border-[#FF8C42]/50 hover:bg-[#FFF3E8]"
-										}`}
-									>
-										{filter.label}
-										<span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-											filterStatus === filter.value
-												? "bg-white/20 text-white"
-												: "bg-gray-100 text-gray-500"
-										}`}>
-											{filter.count}
-										</span>
-									</button>
-								))}
+				<div className="flex-1 flex min-h-0 overflow-hidden">
+					<SupportCrmQueuePanel
+						tickets={filteredTickets}
+						selectedTicketId={selectedTicket?.id}
+						queueView={queueView}
+						searchQuery={searchQuery}
+						stats={stats}
+						agents={agents}
+						onQueueViewChange={setQueueView}
+						onSearchChange={setSearchQuery}
+						onSelectTicket={handleSelectTicket}
+						getFilterCount={getFilterCount}
+					/>
+
+					{selectedTicket ? (
+						<>
+							<SupportCrmConversationPanel
+								ticket={selectedTicket}
+								detailTab={detailTab}
+								onDetailTabChange={setDetailTab}
+								activityEntries={activityEntries}
+								activityLoading={activityLoading}
+								replyText={replyText}
+								onReplyTextChange={setReplyText}
+								onReply={handleReply}
+								suggestedReplies={suggestedReplies}
+								suggestLoading={suggestLoading}
+								onSuggestReplies={handleSuggestReplies}
+							/>
+							<SupportCrmContextPanel
+								ticket={selectedTicket}
+								agents={agents}
+								activityEntries={activityEntries}
+								activityLoading={activityLoading}
+								onCloseTicket={handleCloseTicket}
+								onReopen={() => handleAction("reopen", undefined, "Ticket reopened by admin")}
+								onEscalate={() => handleAction("escalate", undefined, "Escalated by admin")}
+								onAutoRoute={handleAutoRoute}
+								onShowAssignModal={() => setShowAssignModal(true)}
+								onShowAttachBookingModal={() => setShowAttachBookingModal(true)}
+								onShowRefundModal={() => setShowRefundModal(true)}
+								onShowPartialRefundModal={() => setShowPartialRefundModal(true)}
+								onShowCompletePlanModal={() => setShowCompletePlanModal(true)}
+								onViewFullActivity={() => setDetailTab("activity")}
+							/>
+						</>
+					) : (
+						<div className="flex-1 flex items-center justify-center min-w-0 bg-gray-50/50">
+							<div className="text-center px-6">
+								<div className="w-16 h-16 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
+									<MessageSquare className="w-8 h-8 text-gray-300" />
+								</div>
+								<p className="text-gray-500 font-medium">Select a ticket</p>
+								<p className="text-gray-400 text-sm mt-1">
+									Queue on the left · conversation center · context on the right
+								</p>
 							</div>
 						</div>
-
-						{/* Ticket List */}
-						<div className="flex-1 overflow-y-auto">
-							{filteredTickets.length === 0 ? (
-								<div className="p-8 text-center">
-									<div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-										<Ticket className="w-8 h-8 text-gray-300" />
-									</div>
-									<p className="text-gray-500 font-medium">No tickets found</p>
-									<p className="text-sm text-gray-400 mt-1">All clear! No tickets match this filter.</p>
-								</div>
-							) : (
-								filteredTickets.map((ticket) => (
-									<div
-										key={ticket.id}
-										onClick={() => handleSelectTicket(ticket)}
-										className={`p-4 border-b border-gray-100 cursor-pointer transition-all hover:bg-[#FFF3E8]/50 ${
-											selectedTicket?.id === ticket.id
-												? "bg-[#FFF3E8] border-l-4 border-l-[#FF8C42]"
-												: "hover:border-l-4 hover:border-l-[#FF8C42]/30"
-										}`}
-									>
-										<div className="flex justify-between items-start mb-2">
-											<div className="flex items-center gap-2">
-												<span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${getStatusColor(ticket.status)}`}>
-													{ticket.status.replace("_", " ")}
-												</span>
-												<span className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${getPriorityColor(ticket.priority)}`}>
-													{ticket.priority}
-												</span>
-												<span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-													isBookingTicket(ticket)
-														? "bg-blue-100 text-blue-700"
-														: "bg-gray-100 text-gray-600"
-												}`}>
-													{isBookingTicket(ticket) ? "Booking" : "General"}
-												</span>
-												{ticket.isRefundable && (
-													<span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-700">
-														Refundable
-													</span>
-												)}
-											</div>
-											<span className="text-xs text-gray-400">
-												{new Date(ticket.createdAt).toLocaleDateString()}
-											</span>
-										</div>
-										<h3 className="font-semibold text-gray-900 truncate mb-1">
-											{ticket.subject}
-										</h3>
-										<p className="text-sm text-gray-500 line-clamp-2">
-											{ticket.description}
-										</p>
-										{ticket.bookingSummary?.serviceName && (
-											<p className="text-xs text-blue-600 mt-1 truncate">
-												{ticket.bookingSummary.serviceName}
-												{ticket.bookingId ? ` · ${ticket.bookingId.slice(0, 8)}…` : ""}
-											</p>
-										)}
-										<div className="mt-3 flex items-center justify-between">
-											<div className="flex items-center gap-2">
-												{ticket.category && (
-													<span className="flex items-center gap-1 text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
-														<Tag className="w-3 h-3" />
-														{ticket.category}
-													</span>
-												)}
-											</div>
-											{ticketHasAssignee(ticket) ? (
-												<Badge variant="outline" className="text-xs border-[#FF8C42]/30 text-[#FF8C42] bg-[#FFF3E8]">
-													<User className="w-3 h-3 mr-1" />
-													{assigneeDisplayLabel(ticket)}
-												</Badge>
-											) : (
-												<Badge variant="outline" className="text-xs border-red-200 text-red-600 bg-red-50">
-													Unassigned
-												</Badge>
-											)}
-										</div>
-									</div>
-								))
-							)}
-						</div>
-					</div>
-
-					{/* Ticket Detail View */}
-					<div className="flex-1 flex flex-col bg-gray-50/50">
-						{selectedTicket ? (
-							<>
-								{/* Ticket Header */}
-								<div className="bg-white border-b border-gray-200 p-5 shadow-sm">
-									<div className="flex justify-between items-start">
-										<div className="flex-1">
-											<div className="flex items-center gap-3 mb-3">
-												<span className="text-sm font-mono text-gray-400">#{selectedTicket.id.slice(0, 8)}</span>
-												<Badge className={`${getStatusColor(selectedTicket.status)} px-3 py-1`}>
-													{selectedTicket.status.replace("_", " ")}
-												</Badge>
-												<Badge className={`${getPriorityColor(selectedTicket.priority)} px-3 py-1 border`}>
-													{selectedTicket.priority.toUpperCase()}
-												</Badge>
-												<Badge variant="outline" className="uppercase text-xs">
-													{selectedTicket.source}
-												</Badge>
-												{selectedTicket.category && (
-													<Badge variant="outline" className="text-xs bg-gray-50">
-														<Tag className="w-3 h-3 mr-1" />
-														{selectedTicket.category}
-													</Badge>
-												)}
-												<Badge
-													variant="outline"
-													className={`text-xs uppercase ${
-														isBookingTicket(selectedTicket)
-															? "bg-blue-50 text-blue-700 border-blue-200"
-															: "bg-gray-50 text-gray-600"
-													}`}
-												>
-													{isBookingTicket(selectedTicket) ? "Booking ticket" : "General ticket"}
-												</Badge>
-												{canProcessRefund(selectedTicket) && (
-													<Badge className="text-xs bg-green-100 text-green-700 border-green-200">
-														Refundable
-													</Badge>
-												)}
-											</div>
-											<h2 className="text-xl font-bold text-gray-900 mb-2">
-												{selectedTicket.subject}
-											</h2>
-											<div className="flex items-center gap-4 text-sm text-gray-500 flex-wrap">
-												<div className="flex items-center gap-1.5 bg-gray-100 px-2 py-1 rounded">
-													<User className="w-4 h-4 text-gray-400" /> 
-													<span>{selectedTicket.customerName || selectedTicket.customerId.slice(0, 8) || "N/A"}</span>
-												</div>
-												{selectedTicket.bookingId && (
-													<div className="flex items-center gap-1.5 bg-blue-50 px-2 py-1 rounded border border-blue-100">
-														<Calendar className="w-4 h-4 text-blue-500" />
-														<span className="font-mono text-xs">{selectedTicket.bookingId.slice(0, 8)}…</span>
-													</div>
-												)}
-												<div className="flex items-center gap-1.5 bg-gray-100 px-2 py-1 rounded">
-													<Clock className="w-4 h-4 text-gray-400" />
-													<span>{new Date(selectedTicket.createdAt).toLocaleString()}</span>
-												</div>
-												{ticketHasAssignee(selectedTicket) && (
-													<div className="flex items-center gap-1.5 bg-[#FFF3E8] px-2 py-1 rounded border border-[#FF8C42]/30">
-														<Headphones className="w-4 h-4 text-[#FF8C42]" />
-														<span className="text-[#FF8C42] font-medium">
-															{assigneeDisplayLabel(selectedTicket)}
-														</span>
-													</div>
-												)}
-											</div>
-										</div>
-									</div>
-									
-									{/* Action Buttons Row */}
-									<div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-100">
-										{selectedTicket.status !== "resolved" && selectedTicket.status !== "closed" && (
-											<Button
-												size="sm"
-												className="bg-green-600 hover:bg-green-700 text-white"
-												onClick={handleCloseTicket}
-											>
-												<CheckCircle className="w-4 h-4 mr-1.5" />
-												Mark Resolved
-											</Button>
-										)}
-										{(selectedTicket.status === "resolved" || selectedTicket.status === "closed") && (
-											<Button
-												size="sm"
-												variant="outline"
-												className="border-blue-200 text-blue-600 hover:bg-blue-50"
-												onClick={() => handleAction("reopen", undefined, "Ticket reopened by admin")}
-											>
-												<RefreshCw className="w-4 h-4 mr-1.5" />
-												Reopen
-											</Button>
-										)}
-										{!ticketHasAssignee(selectedTicket) ? (
-											<>
-												<Button
-													size="sm"
-													variant="outline"
-													className="border-[#FF8C42]/30 text-[#FF8C42] hover:bg-[#FFF3E8]"
-													onClick={() => setShowAssignModal(true)}
-												>
-													<UserPlus className="w-4 h-4 mr-1.5" />
-													Assign Agent
-												</Button>
-												<Button
-													size="sm"
-													variant="outline"
-													className="border-purple-200 text-purple-600 hover:bg-purple-50"
-													onClick={handleAutoRoute}
-												>
-													<Zap className="w-4 h-4 mr-1.5" />
-													Auto Route
-												</Button>
-											</>
-										) : (
-											<Button
-												size="sm"
-												variant="outline"
-												className="border-[#FF8C42]/30 text-[#FF8C42] hover:bg-[#FFF3E8]"
-												onClick={() => setShowAssignModal(true)}
-											>
-												<UserPlus className="w-4 h-4 mr-1.5" />
-												Reassign
-											</Button>
-										)}
-										{selectedTicket.status !== "escalated" && (
-											<Button
-												size="sm"
-												variant="outline"
-												className="border-red-200 text-red-600 hover:bg-red-50"
-												onClick={() => handleAction("escalate", undefined, "Escalated by admin")}
-											>
-												<ArrowUpRight className="w-4 h-4 mr-1.5" />
-												Escalate
-											</Button>
-										)}
-										<div className="flex-1"></div>
-										{!isBookingTicket(selectedTicket) && (
-											<Button
-												size="sm"
-												variant="outline"
-												className="border-blue-200 text-blue-600 hover:bg-blue-50"
-												onClick={() => setShowAttachBookingModal(true)}
-											>
-												<Link2 className="w-4 h-4 mr-1.5" />
-												Attach booking
-											</Button>
-										)}
-										{canProcessRefund(selectedTicket) ? (
-											<>
-												<Button
-													size="sm"
-													variant="outline"
-													className="border-[#FF8C42]/30 text-[#FF8C42] hover:bg-[#FFF3E8]"
-													onClick={() => setShowPartialRefundModal(true)}
-												>
-													<IndianRupee className="w-4 h-4 mr-1.5" />
-													Partial Refund
-												</Button>
-												<Button
-													size="sm"
-													variant="destructive"
-													onClick={() => setShowRefundModal(true)}
-												>
-													<IndianRupee className="w-4 h-4 mr-1.5" />
-													Full Refund
-												</Button>
-											</>
-										) : (
-											<Button
-												size="sm"
-												variant="outline"
-												disabled
-												className="border-gray-200 text-gray-400"
-												title={selectedTicket.refundBlockReason || "Refunds require a booking-linked ticket with payment"}
-											>
-												<IndianRupee className="w-4 h-4 mr-1.5" />
-												Refund unavailable
-											</Button>
-										)}
-										<Button
-											size="sm"
-											variant="outline"
-											className="border-purple-200 text-purple-600 hover:bg-purple-50"
-											onClick={() => setShowCompletePlanModal(true)}
-										>
-											<FileCheck className="w-4 h-4 mr-1.5" />
-											Care Plan
-										</Button>
-									</div>
-
-									{isBookingTicket(selectedTicket) && (
-										<div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-											<Card className="p-4 border-blue-100 bg-blue-50/40">
-												<h4 className="text-sm font-bold text-gray-800 mb-3">Booking</h4>
-												{selectedTicket.bookingContext ? (
-													<div className="space-y-2 text-sm">
-														<p><span className="text-gray-500">Service:</span> {selectedTicket.bookingContext.serviceName || "—"}</p>
-														<p><span className="text-gray-500">Status:</span> {selectedTicket.bookingContext.status}</p>
-														<p><span className="text-gray-500">Vendor:</span> {selectedTicket.bookingContext.vendorName || "—"}</p>
-														<p><span className="text-gray-500">Date:</span> {selectedTicket.bookingContext.scheduledDate || "—"} {selectedTicket.bookingContext.scheduledTime || ""}</p>
-														<p><span className="text-gray-500">Amount:</span> {selectedTicket.bookingContext.amount != null ? `₹${selectedTicket.bookingContext.amount}` : "—"}</p>
-														<p className="font-mono text-xs text-gray-500 break-all">ID: {selectedTicket.bookingId}</p>
-													</div>
-												) : (
-													<p className="text-sm text-gray-600 font-mono break-all">{selectedTicket.bookingId}</p>
-												)}
-											</Card>
-											<Card className="p-4 border-green-100 bg-green-50/40">
-												<h4 className="text-sm font-bold text-gray-800 mb-3">Payment & refund</h4>
-												{selectedTicket.paymentContext ? (
-													<div className="space-y-2 text-sm">
-														<p><span className="text-gray-500">Paid:</span> ₹{selectedTicket.paymentContext.totalPaid.toFixed(2)}</p>
-														<p><span className="text-gray-500">Wallet:</span> ₹{selectedTicket.paymentContext.walletPaid.toFixed(2)} · <span className="text-gray-500">Gateway:</span> ₹{selectedTicket.paymentContext.gatewayPaid.toFixed(2)}</p>
-														<p><span className="text-gray-500">Refunded:</span> ₹{selectedTicket.paymentContext.refundedSoFar.toFixed(2)}</p>
-														<p className="font-semibold text-green-800"><span className="text-gray-500 font-normal">Refundable now:</span> ₹{selectedTicket.paymentContext.refundableBalance.toFixed(2)}</p>
-														{selectedTicket.paymentContext.razorpayPaymentId && (
-															<p className="font-mono text-xs text-gray-500 break-all">Razorpay: {selectedTicket.paymentContext.razorpayPaymentId}</p>
-														)}
-													</div>
-												) : (
-													<p className="text-sm text-amber-800">{selectedTicket.refundBlockReason || "No payment data for this booking."}</p>
-												)}
-											</Card>
-										</div>
-									)}
-
-									{!isBookingTicket(selectedTicket) && (
-										<div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-											General inquiry ticket — refunds are disabled until a booking is attached.
-										</div>
-									)}
-								</div>
-
-								{/* Conversation Area */}
-								<div className="flex-1 overflow-y-auto p-5 space-y-4">
-									{/* Original Issue Card */}
-									<div className="bg-gradient-to-br from-[#FFF3E8] to-white border border-[#FF8C42]/20 rounded-xl p-5 shadow-sm">
-										<div className="flex items-center gap-2 mb-3">
-											<div className="p-1.5 rounded-lg bg-[#FF8C42]/10">
-												<MessageSquare className="w-4 h-4 text-[#FF8C42]" />
-											</div>
-											<h4 className="text-sm font-bold text-gray-800">Original Request</h4>
-											<span className="text-xs text-gray-400 ml-auto">
-												{new Date(selectedTicket.createdAt).toLocaleString()}
-											</span>
-										</div>
-										<p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-											{selectedTicket.description}
-										</p>
-									</div>
-
-									{selectedTicket.metadata?.refund_result != null && (
-										<div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-											<h4 className="text-sm font-bold text-gray-800 mb-2">Refund status</h4>
-											{(() => {
-												const rr = selectedTicket.metadata?.refund_result as Record<string, unknown> | null;
-												if (!rr) return null;
-												return (
-													<div className="space-y-1 text-sm text-gray-700">
-														<p><span className="text-gray-500">Status:</span> {String(rr.status ?? "—")}</p>
-														{rr.amount != null && <p><span className="text-gray-500">Amount:</span> ₹{Number(rr.amount).toFixed(2)}</p>}
-														{rr.refundId != null && <p className="font-mono text-xs break-all"><span className="text-gray-500 font-sans">Refund ID:</span> {String(rr.refundId)}</p>}
-														{rr.razorpayRefundId != null && <p className="font-mono text-xs break-all"><span className="text-gray-500 font-sans">Razorpay:</span> {String(rr.razorpayRefundId)}</p>}
-														{rr.walletCredited != null && Number(rr.walletCredited) > 0 && (
-															<p><span className="text-gray-500">Wallet credited:</span> ₹{Number(rr.walletCredited).toFixed(2)}</p>
-														)}
-														{rr.message != null && <p className="text-gray-600">{String(rr.message)}</p>}
-													</div>
-												);
-											})()}
-										</div>
-									)}
-
-									{selectedTicket.metadata &&
-										Object.keys(selectedTicket.metadata).filter((k) => k !== "refund_result" && k !== "attachments").length > 0 && (
-											<details className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-												<summary className="text-sm font-bold text-gray-800 cursor-pointer">Additional metadata</summary>
-												<pre className="text-xs text-gray-600 whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto mt-2">
-													{JSON.stringify(
-														Object.fromEntries(
-															Object.entries(selectedTicket.metadata).filter(
-																([k]) => k !== "refund_result" && k !== "attachments"
-															)
-														),
-														null,
-														2
-													)}
-												</pre>
-											</details>
-										)}
-
-									{selectedTicket.aiConversation && selectedTicket.aiConversation.length > 0 && (
-										<div className="bg-white border border-indigo-100 rounded-xl p-4 shadow-sm">
-											<h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
-												<Headphones className="w-4 h-4 text-indigo-500" />
-												AI assistant transcript (pre-handoff)
-											</h4>
-											<div className="space-y-3 max-h-64 overflow-y-auto">
-												{selectedTicket.aiConversation.map((row, idx) => (
-													<div
-														key={String(row.id ?? row.created_at ?? idx)}
-														className="text-sm border-l-2 border-indigo-200 pl-3"
-													>
-														<p className="text-xs font-semibold text-gray-500 mb-0.5">Customer</p>
-														<p className="text-gray-800 whitespace-pre-wrap mb-2">
-															{String(row.user_message ?? "")}
-														</p>
-														<p className="text-xs font-semibold text-gray-500 mb-0.5">Assistant</p>
-														<p className="text-gray-700 whitespace-pre-wrap">
-															{String(row.bot_response ?? "")}
-														</p>
-														{row.intent != null ? (
-															<p className="text-xs text-gray-400 mt-1">
-																intent: {String(row.intent)} · confidence:{" "}
-																{row.confidence != null ? String(row.confidence) : "—"}
-															</p>
-														) : null}
-													</div>
-												))}
-											</div>
-										</div>
-									)}
-
-									{/* Message Thread */}
-									{selectedTicket.messages?.map((msg) => (
-										<div
-											key={msg.id}
-											className={`flex ${msg.role === "agent" ? "justify-end" : "justify-start"}`}
-										>
-											<div
-												className={`max-w-[75%] rounded-2xl p-4 shadow-sm ${
-													msg.role === "agent"
-														? "bg-gradient-to-br from-[#FF8C42] to-[#E07830] text-white rounded-tr-sm"
-														: "bg-white border border-gray-200 text-gray-800 rounded-tl-sm"
-												}`}
-											>
-												<div className={`flex justify-between items-center mb-2 text-xs ${
-													msg.role === "agent" ? "text-white/80" : "text-gray-400"
-												}`}>
-													<span className="font-semibold">{msg.sender}</span>
-													<span>{new Date(msg.timestamp).toLocaleTimeString()}</span>
-												</div>
-												<p className="leading-relaxed">{msg.content}</p>
-											</div>
-										</div>
-									))}
-
-									{/* Empty state for no messages */}
-									{(!selectedTicket.messages || selectedTicket.messages.length === 0) && (
-										<div className="text-center py-8">
-											<div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 flex items-center justify-center">
-												<MessageSquare className="w-6 h-6 text-gray-300" />
-											</div>
-											<p className="text-gray-400 text-sm">No responses yet</p>
-										</div>
-									)}
-								</div>
-
-								{/* Reply Area */}
-								{selectedTicket.status !== "resolved" && selectedTicket.status !== "closed" && (
-									<div className="bg-white border-t border-gray-200 p-4 shadow-lg">
-										<div className="flex flex-wrap items-center gap-2 mb-3">
-											<Button
-												type="button"
-												size="sm"
-												variant="outline"
-												className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-												disabled={suggestLoading}
-												onClick={() => void handleSuggestReplies()}
-											>
-												{suggestLoading ? (
-													<>
-														<RefreshCw className="w-4 h-4 mr-1.5 animate-spin" />
-														Suggesting…
-													</>
-												) : (
-													<>
-														<Zap className="w-4 h-4 mr-1.5" />
-														Suggest replies (AI)
-													</>
-												)}
-											</Button>
-										</div>
-										{suggestedReplies.length > 0 && (
-											<div className="flex flex-col gap-2 mb-3">
-												<span className="text-xs font-semibold text-gray-500">
-													Tap to copy into reply box (edit before sending)
-												</span>
-												<div className="flex flex-col gap-2">
-													{suggestedReplies.map((s, i) => (
-														<button
-															key={i}
-															type="button"
-															className="text-left text-sm p-3 rounded-lg border border-gray-200 bg-gray-50 hover:bg-indigo-50 hover:border-indigo-200 text-gray-800"
-															onClick={() => setReplyText(s)}
-														>
-															{s}
-														</button>
-													))}
-												</div>
-											</div>
-										)}
-										<div className="flex gap-3">
-											<Input
-												value={replyText}
-												onChange={(e: React.ChangeEvent<HTMLInputElement>) => setReplyText(e.target.value)}
-												placeholder="Type your reply to the customer..."
-												className="flex-1 border-gray-200 focus:border-[#FF8C42] focus:ring-[#FF8C42]/20"
-												onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && !e.shiftKey && handleReply()}
-											/>
-											<Button
-												onClick={handleReply}
-												disabled={!replyText.trim()}
-												className="bg-[#FF8C42] hover:bg-[#E07830] text-white px-6"
-											>
-												<Send className="w-4 h-4 mr-2" />
-												Send Reply
-											</Button>
-										</div>
-									</div>
-								)}
-							</>
-						) : (
-							<div className="flex-1 flex items-center justify-center">
-								<div className="text-center">
-									<div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-										<MessageSquare className="w-10 h-10 text-gray-300" />
-									</div>
-									<p className="text-gray-500 font-medium text-lg">Select a ticket to view details</p>
-									<p className="text-gray-400 text-sm mt-1">Choose from the list on the left</p>
-								</div>
-							</div>
-						)}
-					</div>
+					)}
 				</div>
 			</div>
 

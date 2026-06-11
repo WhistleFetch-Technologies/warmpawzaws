@@ -20,6 +20,7 @@ import {
   Mail,
   Phone,
   CheckCircle,
+  FileText,
 } from "lucide-react";
 import {
   Button,
@@ -42,6 +43,7 @@ import {
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
+import { SavedRepliesSettingsTab } from "@/components/admin/support/SavedRepliesSettingsTab";
 import { useRouter } from "next/navigation";
 
 // Types
@@ -111,7 +113,10 @@ const BRAND_ORANGE = "#FF8C42";
 
 export default function SupportSettingsPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"agents" | "sla" | "categories" | "escalation">("agents");
+  const [activeTab, setActiveTab] = useState<
+    "agents" | "sla" | "categories" | "escalation" | "saved_replies"
+  >("agents");
+  const [savedRepliesCount, setSavedRepliesCount] = useState(0);
   const [loading, setLoading] = useState(true);
   
   // Data states
@@ -146,6 +151,7 @@ export default function SupportSettingsPage() {
         loadCategories(),
         loadEscalationRules(),
         loadStaffList(),
+        loadSavedRepliesCount(),
       ]);
     } finally {
       setLoading(false);
@@ -194,6 +200,15 @@ export default function SupportSettingsPage() {
       if (res.success) setStaffList(res.staff || []);
     } catch (error) {
       console.error("Failed to load staff list:", error);
+    }
+  };
+
+  const loadSavedRepliesCount = async () => {
+    try {
+      const res = await apiClient.get<any>("/support/settings/reply-templates");
+      if (res.success) setSavedRepliesCount((res.templates || []).length);
+    } catch (error) {
+      console.error("Failed to load saved replies count:", error);
     }
   };
 
@@ -362,7 +377,9 @@ export default function SupportSettingsPage() {
                   </div>
                   <div>
                     <h1 className="text-2xl font-bold text-gray-900">Support Settings</h1>
-                    <p className="text-sm text-gray-500">Configure agents, SLA, categories, and escalation rules</p>
+                    <p className="text-sm text-gray-500">
+                      Configure agents, SLA, categories, escalation rules, and saved replies
+                    </p>
                   </div>
                 </div>
               </div>
@@ -384,6 +401,7 @@ export default function SupportSettingsPage() {
                 { id: "sla", label: "SLA Configuration", icon: Timer, count: slaConfigs.length },
                 { id: "categories", label: "Categories", icon: Tag, count: categories.length },
                 { id: "escalation", label: "Escalation Rules", icon: ArrowUpRight, count: escalationRules.length },
+                { id: "saved_replies", label: "Saved Replies", icon: FileText, count: savedRepliesCount },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -661,6 +679,8 @@ export default function SupportSettingsPage() {
               </div>
             </div>
           )}
+
+          {activeTab === "saved_replies" && <SavedRepliesSettingsTab />}
 
           {/* Escalation Rules Tab */}
           {activeTab === "escalation" && (
