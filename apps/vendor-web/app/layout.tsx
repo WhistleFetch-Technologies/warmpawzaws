@@ -16,6 +16,9 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'Warmpawz Vendor Dashboard',
   description: 'Manage your pet care business',
+  other: {
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
@@ -78,7 +81,7 @@ export default function RootLayout({
             __html: `
               (function() {
                 var KEY = 'vendor_chunk_reload';
-                var MAX = 3;
+                var MAX = 5;
                 function isChunkMsg(msg) {
                   var m = String(msg || '').toLowerCase();
                   return m.indexOf('chunkloaderror') !== -1

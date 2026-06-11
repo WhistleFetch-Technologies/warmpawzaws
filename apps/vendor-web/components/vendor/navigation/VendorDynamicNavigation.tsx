@@ -4,11 +4,7 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { CAPABILITY_ROUTES } from '@/lib/capability-routes';
-import {
-  isChunkHeavyVendorRoute,
-  shouldUseHardDocumentNavigation,
-  vendorNavigate,
-} from '@/lib/vendor-route-nav';
+import { isChunkHeavyVendorRoute, vendorNavigate } from '@/lib/vendor-route-nav';
 
 interface Capability {
   id: string;
@@ -60,7 +56,7 @@ export function VendorDynamicNavigation({ enabledCapabilities, vendorType }: Ven
   };
 
   const handleNavClick = (route: string) => (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (shouldUseHardDocumentNavigation() && isChunkHeavyVendorRoute(route)) {
+    if (isChunkHeavyVendorRoute(route)) {
       event.preventDefault();
       vendorNavigate(route);
     }

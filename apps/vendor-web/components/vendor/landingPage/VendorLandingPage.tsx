@@ -7,6 +7,7 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { vendorNavigate } from '@/lib/vendor-route-nav';
 import { toast } from 'sonner';
 import { useVendorCapabilities } from '../hooks/useVendorCapabilities';
 import { getVendorRoleId, getVendorProgressRoleType, hasVendorRole, isDiagnosticsCenter } from '@/lib/vendor-utils';
@@ -1044,7 +1045,7 @@ export function VendorLandingPage({
           <VendorServiceManagementComplete
             vendorId={vendorId}
             vendorData={vendorData}
-            onBack={() => router.push('/dashboard')}
+            onBack={() => vendorNavigate('/dashboard', router)}
           />
         );
       }
@@ -1620,7 +1621,7 @@ export function VendorLandingPage({
               vendorId={vendorId}
               vendorData={vendorData}
               onNavigateToConsultation={() => setShowConsultation(true)}
-              onNavigateToServiceManagement={() => setShowServiceManagement(true)}
+              onNavigateToServiceManagement={() => vendorNavigate('/services', router)}
               onNavigateToBookingManagement={() => setShowBookingManagement(true)}
               onNavigateToTeleConsultation={() => setShowTeleConsultation(true)}
               onNavigateToScheduleManagement={() => setShowAdvancedAvailability(true)}

@@ -42,7 +42,7 @@ export default function Error({
         </h2>
         <p className="text-gray-600 mb-6">
           {chunkError
-            ? getChunkReloadAttemptCount() >= 3
+            ? getChunkReloadAttemptCount() >= 5
               ? 'Tap below to reload with the latest version.'
               : 'Reloading automatically…'
             : error.message}
