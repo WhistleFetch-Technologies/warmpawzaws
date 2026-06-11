@@ -21,6 +21,10 @@ import {
 } from '../utils/logistics/shipment-tracking';
 import { shipmentPincodeFieldsForInsert } from '../utils/logistics/shipment-pincodes';
 import { syncVendorManagedShipments } from '../jobs/vendor-shipment-tracking-processor';
+import {
+  notifyShopOrderStatusChange,
+  type ShopOrderLifecycleStatus,
+} from '../utils/shop-order-notifications';
 
 export function registerSelfManagedLogisticsEndpoints(app: Hono) {
 
@@ -285,6 +289,27 @@ export function registerSelfManagedLogisticsEndpoints(app: Hono) {
       }
 
       await update('orders', { id: orderId }, orderUpdate);
+
+      const lifecycleFromDelivery = (deliveryStatus: string): ShopOrderLifecycleStatus | null => {
+        if (deliveryStatus === 'delivered') return 'delivered';
+        if (deliveryStatus === 'out_for_delivery') return 'out_for_delivery';
+        if (['shipped', 'in_transit'].includes(deliveryStatus)) return 'shipped';
+        if (['processing', 'packed'].includes(deliveryStatus)) return 'processing';
+        return null;
+      };
+      const notifyStatus =
+        (orderUpdate.order_status as ShopOrderLifecycleStatus | undefined) ||
+        lifecycleFromDelivery(status);
+      if (notifyStatus && notifyStatus !== order.order_status) {
+        void notifyShopOrderStatusChange({
+          orderId,
+          previousStatus: String(order.order_status),
+          newStatus: notifyStatus,
+          notifyVendor: false,
+        }).catch((err) =>
+          console.warn('[SELF-MANAGED-LOGISTICS] Shop notification failed:', err),
+        );
+      }
 
       try {
         await insert('order_status_history', {
