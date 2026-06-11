@@ -59,7 +59,7 @@ async function loadShopOrderContext(orderId: string): Promise<ShopOrderContext |
   try {
     const r = await query(
       `SELECT o.id, o.order_number, o.customer_id, o.vendor_id, o.order_type,
-              c.full_name AS customer_name, c.name AS customer_name_alt,
+              COALESCE(c.full_name, 'Customer') AS customer_name,
               v.business_name AS vendor_name
        FROM orders o
        LEFT JOIN customers c ON c.id = o.customer_id
@@ -77,7 +77,7 @@ async function loadShopOrderContext(orderId: string): Promise<ShopOrderContext |
       orderNumber: String(row.order_number || row.id).slice(0, 32),
       customerId: String(row.customer_id),
       vendorId: String(row.vendor_id),
-      customerName: String(row.customer_name || row.customer_name_alt || 'Customer'),
+      customerName: String(row.customer_name || 'Customer'),
       vendorName: String(row.vendor_name || 'Seller'),
     };
   } catch (e) {
