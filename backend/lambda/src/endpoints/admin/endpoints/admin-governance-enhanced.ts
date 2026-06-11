@@ -423,6 +423,30 @@ function positionAliasForAdminBannerRow(type: string | null | undefined): string
   return t;
 }
 
+const RESERVED_BANNER_CTA_SLUGS = new Set(['placeholder', 'placeholder.html']);
+const RESERVED_BANNER_CTA_PATH_RE =
+  /^(?:vet|grooming|training|boarding|walker|nutritionist)\/placeholder(?:\.html)?$/i;
+
+function validateBannerAdminPayload(body: Record<string, unknown>): string | null {
+  const ctaLink = String(body.cta_link ?? body.linkUrl ?? '').trim();
+  if (!ctaLink) return null;
+  if (ctaLink.toLowerCase().includes('/placeholder')) {
+    return 'CTA link cannot use /placeholder — configure a vendor or category destination in banner metadata';
+  }
+  const pathOnly = ctaLink.split('?')[0].split('#')[0].replace(/^\/+/, '');
+  if (RESERVED_BANNER_CTA_PATH_RE.test(pathOnly)) {
+    return 'CTA link cannot point to a placeholder route';
+  }
+  const segments = pathOnly.split('/').filter(Boolean);
+  if (segments.length >= 2) {
+    const vendorSlug = decodeURIComponent(segments.slice(1).join('/')).trim().toLowerCase();
+    if (RESERVED_BANNER_CTA_SLUGS.has(vendorSlug)) {
+      return 'CTA vendor slug cannot be "placeholder"';
+    }
+  }
+  return null;
+}
+
 class GetBannersHandler extends BaseHandler {
   async handle(context: HandlerContext): Promise<HandlerResponse> {
     const queryParams = context.event.queryStringParameters || {};
@@ -508,12 +532,19 @@ class CreateBannerHandler extends BaseHandler {
     const bannerType = resolveBannerTypeFromBody(type, position);
     this.validateRequired(body, ['title']);
 
+    const payloadError = validateBannerAdminPayload(body as Record<string, unknown>);
+    if (payloadError) {
+      return this.error(payloadError, 400);
+    }
+
+    const normalizedImageUrl = pickBannerNullableField(imageUrl ?? image_url);
+
     try {
       const banner = await insert('banners', {
         type: bannerType,
         title,
         subtitle: subtitle || description,
-        image_url: imageUrl || image_url,
+        image_url: normalizedImageUrl ?? null,
         cta_text: ctaText || cta_text || 'Learn More',
         cta_link: cta_link || linkUrl,
         display_order: display_order ?? priority,
@@ -575,13 +606,22 @@ class UpdateBannerHandler extends BaseHandler {
       target_city,
     } = body;
 
+    const payloadError = validateBannerAdminPayload(body as Record<string, unknown>);
+    if (payloadError) {
+      return this.error(payloadError, 400);
+    }
+
     try {
       const updateData: any = { updated_at: new Date().toISOString() };
       if (title !== undefined) updateData.title = title;
       if (subtitle !== undefined) updateData.subtitle = subtitle;
       if (description !== undefined) updateData.subtitle = description;
-      if (imageUrl !== undefined) updateData.image_url = imageUrl;
-      if (image_url !== undefined) updateData.image_url = image_url;
+      if (imageUrl !== undefined) {
+        updateData.image_url = pickBannerNullableField(imageUrl);
+      }
+      if (image_url !== undefined) {
+        updateData.image_url = pickBannerNullableField(image_url);
+      }
       if (cta_text !== undefined) updateData.cta_text = cta_text;
       if (ctaText !== undefined) updateData.cta_text = ctaText;
       if (cta_link !== undefined) updateData.cta_link = cta_link;

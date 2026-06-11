@@ -253,6 +253,8 @@ export function parseBannerCtaLink(ctaLink: unknown): ParsedBannerCta | null {
   const persona = norm(segments[0]);
   const vendorName = segments.slice(1).join('/').trim();
   if (!persona || !vendorName) return null;
+  const vendorSlug = vendorName.toLowerCase();
+  if (vendorSlug === 'placeholder' || vendorSlug === 'placeholder.html') return null;
 
   const screen = PERSONA_CONFIG[persona]?.landingScreen ?? mapCatalogCategoryIdToCustomerHomeScreen(persona);
   if (!screen) return null;
