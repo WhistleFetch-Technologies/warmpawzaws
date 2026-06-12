@@ -2,6 +2,8 @@
 
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { navigateBannerCta } from '@/lib/banner-cta-navigation';
+import { isVendorBannerCta } from '@/lib/banner-cta-parse';
 import { customerPathToScreen } from '@/lib/promotion-navigation';
 
 export type HomeNavigateData = Record<string, unknown> | undefined;
@@ -33,6 +35,10 @@ export function useHomeNavigation(onNavigate?: HomeNavigateFn): HomeNavigateFn {
         const screenFromPath = customerPathToScreen(d);
         if (screenFromPath) {
           onNavigate?.(screenFromPath, data);
+          return;
+        }
+        if (isVendorBannerCta(d)) {
+          void navigateBannerCta({ ctaLink: d, returnScreen: 'home' }, onNavigate, router);
           return;
         }
         router.push(d);

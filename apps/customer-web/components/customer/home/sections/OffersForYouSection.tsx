@@ -2,7 +2,9 @@
 
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
+import { clickHomeBannerCta } from '@/lib/banner-cta-navigation';
 import { PresignableImage } from '@/components/shared/PresignableImage';
 import { resolvePromotionDestination } from '@/lib/promotion-navigation';
 import { parsePromotionApplicableServices } from '@/lib/promotion-banner-filter';
@@ -94,6 +96,7 @@ function OffersForYouSectionComponent({
   onNavigate,
   className = '',
 }: OffersForYouSectionProps) {
+  const router = useRouter();
   const [spotlight, setSpotlight] = useState<SpotlightPromotion | null>(null);
   const [spotlightLoaded, setSpotlightLoaded] = useState(false);
 
@@ -186,12 +189,10 @@ function OffersForYouSectionComponent({
         comingSoon: banner.comingSoon,
         onCtaClick: () => {
           if (banner.comingSoon) return;
-          if (banner.id) {
-            apiClient
-              .post(`/banners/${banner.id}/click`, { source: 'home_lower_featured' })
-              .catch(() => {});
-          }
-          if (banner.ctaLink) onNavigate(String(banner.ctaLink));
+          void clickHomeBannerCta(banner, onNavigate, router, {
+            trackingSource: 'home_lower_featured',
+            returnScreen: 'home',
+          });
         },
       };
     }
@@ -223,7 +224,7 @@ function OffersForYouSectionComponent({
       imageUrl: DEFAULT_FEATURED_OFFER.imageUrl,
       onCtaClick: () => onNavigate(DEFAULT_FEATURED_OFFER.ctaLink),
     };
-  }, [lowerBanners, spotlight, spotlightLoaded, navigateSpotlight, onNavigate]);
+  }, [lowerBanners, spotlight, spotlightLoaded, navigateSpotlight, onNavigate, router]);
 
   if (!offer) return null;
 
