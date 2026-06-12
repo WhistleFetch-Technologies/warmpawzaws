@@ -62,6 +62,7 @@ import { registerVendorServicesEndpoints } from '../endpoints/vendor/endpoints/v
 import { registerVendorPricingEndpoints } from '../endpoints/vendor/endpoints/vendor-pricing';
 import { registerVendorProductsEndpoints } from '../endpoints/vendor/endpoints/vendor-products';
 import { registerVendorOrdersEndpoints } from '../endpoints/vendor/endpoints/vendor-orders';
+import { registerVendorCommissionAnalyticsEndpoints } from '../endpoints/vendor/endpoints/vendor-commission-analytics';
 import { registerServiceCatalogEndpoints } from '../endpoints/service-catalog';
 import { registerSettlementEndpoints } from '../endpoints/settlement&payouts/endpoints/settlements';
 import { registerRegionEndpoints } from '../endpoints/regions';
@@ -677,6 +678,7 @@ registerAdminCustomServicesEndpoints(app);
 registerVendorPricingEndpoints(app);
 registerVendorProductsEndpoints(app);
 registerVendorOrdersEndpoints(app);
+registerVendorCommissionAnalyticsEndpoints(app);
 // registerServiceCatalogEndpoints(app); // REMOVED: Already registered at line 215 (before parameterized routes)
 registerSettlementEndpoints(app);
 registerRegionEndpoints(app);

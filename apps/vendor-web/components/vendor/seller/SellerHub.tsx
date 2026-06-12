@@ -218,6 +218,7 @@ interface SellerHubMainPanelsProps {
   vendorData: any;
   settingsRef?: RefObject<SellerSettingsHandle | null>;
   inventoryRef?: RefObject<InventoryManagementHandle | null>;
+  onSettingsSavingChange?: (saving: boolean) => void;
 }
 
 export function SellerHubMainPanels({
@@ -226,6 +227,7 @@ export function SellerHubMainPanels({
   vendorData,
   settingsRef,
   inventoryRef,
+  onSettingsSavingChange,
 }: SellerHubMainPanelsProps) {
   const sellerId = vendorData?.id || vendorData?.vendorId;
   const sellerName =
@@ -254,7 +256,12 @@ export function SellerHubMainPanels({
       {activeTab === 'promotions' && <PromotionsManagement sellerId={sellerId} />}
       {activeTab === 'analytics' && <SellerAnalytics sellerId={sellerId} />}
       {activeTab === 'settings' && (
-        <SellerSettings ref={settingsRef} sellerId={sellerId} sellerData={vendorData} />
+        <SellerSettings
+          ref={settingsRef}
+          sellerId={sellerId}
+          sellerData={vendorData}
+          onSavingChange={onSettingsSavingChange}
+        />
       )}
     </>
   );

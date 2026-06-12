@@ -2,8 +2,10 @@
 
 import React, { memo } from 'react';
 import Image from 'next/image';
-import { apiClient } from '@/lib/api-client';
+import { useRouter } from 'next/navigation';
 import { PresignableImage } from '@/components/shared/PresignableImage';
+import { clickHomeBannerCta } from '@/lib/banner-cta-navigation';
+import { isBannerInformationalNonClickable } from '@/lib/banner-cta-target';
 import { DEFAULT_HOME_HERO_IMAGE_URL } from '../constants/category-card-images';
 import { resolveBannerObjectPosition } from '../constants/banner-image-position';
 import { useBannerCarousel } from '../hooks/useBannerCarousel';
@@ -79,6 +81,7 @@ function BannerCarouselComponent({
   className = '',
   heightClassName = 'h-[8.8rem]',
 }: BannerCarouselProps) {
+  const router = useRouter();
   const { currentIndex, setCurrentIndex, touchHandlers } = useBannerCarousel(banners.length);
 
   if (banners.length === 0) return null;
@@ -161,12 +164,11 @@ function BannerCarouselComponent({
                       type="button"
                       className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-[#FF8C42]"
                       onClick={() => {
-                        if (banner.id) {
-                          apiClient
-                            .post(`/banners/${banner.id}/click`, { source: trackingSource })
-                            .catch(() => {});
-                        }
-                        if (banner.ctaLink) onNavigate(String(banner.ctaLink));
+                        if (isBannerInformationalNonClickable(banner)) return;
+                        void clickHomeBannerCta(banner, onNavigate, router, {
+                          trackingSource,
+                          returnScreen: 'home',
+                        });
                       }}
                     >
                       {banner.ctaText || 'Claim Now'}

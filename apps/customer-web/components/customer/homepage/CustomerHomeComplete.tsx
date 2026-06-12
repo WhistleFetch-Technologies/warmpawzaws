@@ -603,6 +603,24 @@ export function CustomerHomeComplete({
           onNavigate?.(screenFromPath, data);
           return;
         }
+        if (isVendorBannerCta(d)) {
+          void navigateBannerCta(
+            {
+              ctaLink: d,
+              title: data && typeof data === 'object' ? (data as { title?: unknown }).title : undefined,
+              subtitle: data && typeof data === 'object' ? (data as { subtitle?: unknown }).subtitle : undefined,
+              metadata: data && typeof data === 'object' ? (data as { metadata?: unknown }).metadata : undefined,
+              navTarget:
+                data && typeof data === 'object'
+                  ? ((data as { navTarget?: unknown }).navTarget as Parameters<typeof navigateBannerCta>[0]['navTarget'])
+                  : undefined,
+              returnScreen: 'home',
+            },
+            onNavigate,
+            router
+          );
+          return;
+        }
         router.push(d);
         return;
       }
@@ -2363,7 +2381,7 @@ export function CustomerHomeComplete({
                               }).catch(() => { }); // Silent fail for tracking
                             }
                             // Navigate (screen id, path, or external URL)
-                            banner.ctaLink && void handleBannerClick(banner);
+                            void handleBannerClick(banner);
                           }}
                         >
                           {banner.ctaText || 'Claim Now'}
@@ -2748,7 +2766,7 @@ export function CustomerHomeComplete({
                                     .post(`/banners/${banner.id}/click`, { source: 'home_middle_featured' })
                                     .catch(() => {});
                                 }
-                                banner.ctaLink && void handleBannerClick(banner);
+                                void handleBannerClick(banner);
                               }}
                             >
                               {banner.ctaText || 'Learn More'}
@@ -3110,7 +3128,7 @@ export function CustomerHomeComplete({
                                 .post(`/banners/${banner.id}/click`, { source: 'home_lower_featured' })
                                 .catch(() => {});
                             }
-                            banner.ctaLink && void handleBannerClick(banner);
+                            void handleBannerClick(banner);
                           }}
                           className="bg-white text-indigo-600 px-5 py-2.5 rounded-full text-sm font-medium"
                         >

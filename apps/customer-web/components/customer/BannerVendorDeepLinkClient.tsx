@@ -8,6 +8,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import {
   buildBannerCtaPathFromSegments,
   isBannerDeepLinkPersona,
+  resolveBannerDeepLinkVendorSlug,
   type BannerDeepLinkPersona,
 } from '@/lib/banner-cta-parse';
 import {
@@ -62,7 +63,8 @@ function BannerVendorDeepLinkInner({ persona, vendorSlug }: BannerVendorDeepLink
   const hasRedirected = useRef(false);
   const resolveStarted = useRef(false);
 
-  const ctaLink = buildBannerCtaPathFromSegments(persona, vendorSlug) ?? `/${persona}`;
+  const effectiveVendorSlug = resolveBannerDeepLinkVendorSlug(persona, vendorSlug);
+  const ctaLink = buildBannerCtaPathFromSegments(persona, effectiveVendorSlug) ?? `/${persona}`;
 
   useEffect(() => {
     const { initializeSession } = require('@/lib/session-utils');
@@ -161,7 +163,7 @@ function BannerVendorDeepLinkInner({ persona, vendorSlug }: BannerVendorDeepLink
     resolveStarted.current = true;
 
     (async () => {
-      const vendorSlugParts = vendorSlug ?? [];
+      const vendorSlugParts = effectiveVendorSlug;
       const hasVendorName = vendorSlugParts.some((s) => String(s).trim().length > 0);
 
       if (!hasVendorName) {
@@ -210,7 +212,7 @@ function BannerVendorDeepLinkInner({ persona, vendorSlug }: BannerVendorDeepLink
       });
       window.setTimeout(() => router.replace('/'), 2200);
     })();
-  }, [gateReady, ctaLink, persona, vendorSlug, searchParams, router]);
+  }, [gateReady, ctaLink, persona, effectiveVendorSlug, searchParams, router]);
 
   if (isLoading) {
     return <LoadingShell />;

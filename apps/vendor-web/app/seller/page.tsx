@@ -37,6 +37,7 @@ export default function SellerPage() {
   const [notificationModalOpen, setNotificationModalOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const settingsRef = useRef<SellerSettingsHandle | null>(null);
   const inventoryRef = useRef<InventoryManagementHandle | null>(null);
 
@@ -141,10 +142,11 @@ export default function SellerPage() {
           key="save-settings"
           type="button"
           size="sm"
-          className="h-9 shrink-0 bg-orange-500 text-sm text-white hover:bg-orange-600"
+          className="h-9 shrink-0 bg-orange-500 text-sm text-white hover:bg-orange-600 disabled:opacity-60"
+          disabled={settingsSaving}
           onClick={() => void settingsRef.current?.save()}
         >
-          Save
+          {settingsSaving ? 'Saving...' : 'Save'}
         </Button>
       );
     }
@@ -189,7 +191,7 @@ export default function SellerPage() {
       </button>
     );
     return actions;
-  }, [activeTab, notificationUnreadCount, vendorId]);
+  }, [activeTab, notificationUnreadCount, vendorId, settingsSaving]);
 
   if (loading) {
     return (
@@ -260,6 +262,7 @@ export default function SellerPage() {
               vendorData={vendorData}
               settingsRef={settingsRef}
               inventoryRef={inventoryRef}
+              onSettingsSavingChange={setSettingsSaving}
             />
           </div>
         </main>

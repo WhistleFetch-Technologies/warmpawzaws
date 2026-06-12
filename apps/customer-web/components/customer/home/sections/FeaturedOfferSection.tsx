@@ -2,7 +2,8 @@
 
 import React, { memo } from 'react';
 import type { ComponentType } from 'react';
-import { apiClient } from '@/lib/api-client';
+import { useRouter } from 'next/navigation';
+import { clickHomeBannerCta } from '@/lib/banner-cta-navigation';
 import { isBannerInformationalNonClickable } from '@/lib/banner-cta-target';
 import { PromotionBanner } from '../../shared/PromotionBanner';
 import { buildBannerBackgroundStyle } from '@/lib/customer-banner-surface';
@@ -20,6 +21,8 @@ export interface FeaturedLowerBanner {
   ctaLink: string;
   comingSoon?: boolean;
   isInformational?: boolean;
+  metadata?: unknown;
+  navTarget?: { kind: string; screen?: string; path?: string; data?: Record<string, unknown> } | null;
 }
 
 export interface FeaturedOfferSectionProps {
@@ -33,6 +36,7 @@ function FeaturedOfferSectionComponent({
   onNavigate,
   className = '',
 }: FeaturedOfferSectionProps) {
+  const router = useRouter();
   const hasLower = lowerBanners.length > 0;
 
   return (
@@ -71,12 +75,10 @@ function FeaturedOfferSectionComponent({
                       <button
                         type="button"
                         onClick={() => {
-                          if (banner.id) {
-                            apiClient
-                              .post(`/banners/${banner.id}/click`, { source: 'home_lower_featured' })
-                              .catch(() => {});
-                          }
-                          banner.ctaLink && onNavigate(String(banner.ctaLink));
+                          void clickHomeBannerCta(banner, onNavigate, router, {
+                            trackingSource: 'home_lower_featured',
+                            returnScreen: 'home',
+                          });
                         }}
                         className="rounded-full bg-white px-5 py-2.5 text-sm font-medium text-indigo-600"
                       >

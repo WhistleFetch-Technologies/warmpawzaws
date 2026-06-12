@@ -1,4 +1,9 @@
-import { parseBannerCtaLink, isVendorBannerCta, buildBannerCtaPathFromSegments } from '../banner-cta-parse';
+import {
+  parseBannerCtaLink,
+  isVendorBannerCta,
+  buildBannerCtaPathFromSegments,
+  resolveBannerDeepLinkVendorSlug,
+} from '../banner-cta-parse';
 
 describe('banner-cta-parse', () => {
   it('detects vendor deep links', () => {
@@ -22,5 +27,15 @@ describe('banner-cta-parse', () => {
   it('builds CTA paths from route segments', () => {
     expect(buildBannerCtaPathFromSegments('vet', ['Bindushree M'])).toBe('/vet/Bindushree M');
     expect(buildBannerCtaPathFromSegments('vet', null)).toBe('/vet');
+  });
+
+  it('reads vendor name from browser URL when static export params are placeholder', () => {
+    const original = window.location;
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...original, pathname: '/vet/Healing%20Tails%20Pet%20Hospital', search: '' },
+    });
+    expect(resolveBannerDeepLinkVendorSlug('vet', ['placeholder'])).toEqual(['Healing Tails Pet Hospital']);
+    Object.defineProperty(window, 'location', { configurable: true, value: original });
   });
 });
