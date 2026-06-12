@@ -8,6 +8,7 @@ import { SupportTicketMessages } from './SupportTicketMessages';
 import { SupportTicketReplyComposer } from './SupportTicketReplyComposer';
 import { SupportTicketSummaryHeader } from './SupportTicketSummaryHeader';
 import type { SupportTicketDetailBundle } from './types';
+import type { SupportAttachment } from '@/lib/support-attachment-upload';
 
 export interface SupportTicketDetailViewProps {
   loadingInitial: boolean;
@@ -15,7 +16,9 @@ export interface SupportTicketDetailViewProps {
   replyText: string;
   onReplyTextChange: (value: string) => void;
   sendingReply: boolean;
-  onSendReply: () => void;
+  onSendReply: (attachments?: SupportAttachment[]) => void;
+  replyAttachments?: SupportAttachment[];
+  onReplyAttachmentsChange?: (attachments: SupportAttachment[]) => void;
   onBack: () => void;
   /** Passed to message list: user taps Refresh to reload `GET /support/tickets/:id`. */
   onMessagesRefresh?: () => void | Promise<void>;
@@ -33,6 +36,8 @@ export function SupportTicketDetailView({
   onReplyTextChange,
   sendingReply,
   onSendReply,
+  replyAttachments = [],
+  onReplyAttachmentsChange,
   onBack,
   onMessagesRefresh,
   embeddedInModal = false,
@@ -91,6 +96,8 @@ export function SupportTicketDetailView({
             onChange={onReplyTextChange}
             sending={sendingReply}
             onSend={onSendReply}
+            attachments={replyAttachments}
+            onAttachmentsChange={onReplyAttachmentsChange}
             compact={embeddedInModal}
           />
         </>

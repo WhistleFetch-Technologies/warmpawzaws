@@ -5260,8 +5260,12 @@ export function registerAdminComprehensiveEndpoints(app: Hono) {
         ticketStats = await query(`
           SELECT 
             COUNT(*) as total_tickets,
-            COUNT(*) FILTER (WHERE status = 'open') as open_tickets,
-            COUNT(*) FILTER (WHERE status = 'in_progress') as in_progress_tickets,
+            COUNT(*) FILTER (WHERE status IN (
+              'open', 'ai_acknowledged', 'awaiting_assignment'
+            )) as open_tickets,
+            COUNT(*) FILTER (WHERE status IN (
+              'in_progress', 'assigned', 'waiting_for_customer'
+            )) as in_progress_tickets,
             COUNT(*) FILTER (WHERE status IN ('resolved', 'closed')) as resolved_tickets,
             COUNT(*) FILTER (WHERE status = 'escalated') as escalated_tickets,
             COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE) as today_tickets,

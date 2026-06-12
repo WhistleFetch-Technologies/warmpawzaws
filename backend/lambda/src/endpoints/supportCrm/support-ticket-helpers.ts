@@ -232,6 +232,73 @@ export async function enrichSupportTicket(row: Record<string, unknown>): Promise
   }
 }
 
+export type CustomerProfile = {
+  customerName: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+};
+
+export async function resolveCustomerProfile(ticket: {
+  customer_id?: string | null;
+  customer_name?: string | null;
+  customer_email?: string | null;
+  customer_phone?: string | null;
+  booking_id?: string | null;
+}): Promise<CustomerProfile> {
+  let name = ticket.customer_name?.trim() || null;
+  let email = ticket.customer_email?.trim() || null;
+  let phone = ticket.customer_phone?.trim() || null;
+
+  const applyRow = (row: Record<string, unknown> | undefined) => {
+    if (!row) return;
+    if (!name && row.full_name) name = String(row.full_name).trim();
+    if (!email && row.email) email = String(row.email).trim();
+    if (!phone && row.phone) phone = String(row.phone).trim();
+  };
+
+  if (ticket.customer_id && (!name || !email || !phone)) {
+    try {
+      const res = await query(
+        `SELECT full_name, email, phone FROM customers WHERE id = $1::uuid LIMIT 1`,
+        [ticket.customer_id]
+      );
+      applyRow(res.rows?.[0] as Record<string, unknown> | undefined);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!name && phone) {
+    try {
+      const res = await query(
+        `SELECT full_name, email, phone FROM customers WHERE phone = $1 LIMIT 1`,
+        [phone]
+      );
+      applyRow(res.rows?.[0] as Record<string, unknown> | undefined);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!name && ticket.booking_id) {
+    try {
+      const res = await query(
+        `SELECT c.full_name, c.email, c.phone
+         FROM bookings b
+         JOIN customers c ON b.customer_id = c.id
+         WHERE b.id = $1::uuid
+         LIMIT 1`,
+        [ticket.booking_id]
+      );
+      applyRow(res.rows?.[0] as Record<string, unknown> | undefined);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return { customerName: name, customerEmail: email, customerPhone: phone };
+}
+
 export function mapTicketForCrmList(t: Record<string, unknown>, enrichment?: SupportTicketEnrichment) {
   const meta = (t.metadata as Record<string, unknown> | undefined) ?? {};
   const refundMeta = meta.refund_result as Record<string, unknown> | undefined;

@@ -89,6 +89,18 @@ export function ticketLastUpdated(ticket: Ticket): string {
 	return ticket.lastUpdatedAt || ticket.createdAt;
 }
 
+export function isOpenTicketStatus(status: string): boolean {
+	return status === "open" || status === "ai_acknowledged" || status === "awaiting_assignment";
+}
+
+export function isInProgressTicketStatus(status: string): boolean {
+	return (
+		status === "in_progress" ||
+		status === "assigned" ||
+		status === "waiting_for_customer"
+	);
+}
+
 export function hasAiUrgency(ticket: Ticket): boolean {
 	return (
 		ticket.priority === "urgent" ||
@@ -124,6 +136,24 @@ export function matchesQueueView(
 		default:
 			return true;
 	}
+}
+
+export function resolveCustomerDisplayName(ticket: Ticket): string {
+	if (ticket.customerName?.trim()) return ticket.customerName.trim();
+	const meta = ticket.metadata;
+	if (meta && typeof meta === "object") {
+		const bc = meta.booking_context as Record<string, unknown> | undefined;
+		const bcName = bc?.customerName ?? bc?.customer_name;
+		if (typeof bcName === "string" && bcName.trim()) return bcName.trim();
+	}
+	const aiMsg = ticket.messages?.find((m) => m.role === "system")?.content;
+	if (aiMsg) {
+		const m = aiMsg.match(/Dear\s+([^,\n]+),/i);
+		if (m?.[1]?.trim()) return m[1].trim();
+	}
+	if (ticket.customerEmail?.trim()) return ticket.customerEmail.trim();
+	if (ticket.customerId) return `Customer ${ticket.customerId.slice(0, 8)}…`;
+	return "Unknown customer";
 }
 
 export function matchesSearch(ticket: Ticket, query: string): boolean {

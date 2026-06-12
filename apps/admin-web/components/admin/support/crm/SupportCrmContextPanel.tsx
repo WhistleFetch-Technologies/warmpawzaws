@@ -24,6 +24,7 @@ import {
 	canProcessRefund,
 	getStatusColor,
 	isBookingTicket,
+	resolveCustomerDisplayName,
 	ticketHasAssignee,
 } from "./crm-utils";
 
@@ -76,7 +77,7 @@ export function SupportCrmContextPanel({
 			<div className="flex-1 overflow-y-auto min-h-0 p-3 space-y-3">
 				<Section title="Customer" icon={<User className="w-3.5 h-3.5" />}>
 					<p className="text-sm font-medium text-gray-900">
-						{ticket.customerName || "Unknown customer"}
+						{resolveCustomerDisplayName(ticket)}
 					</p>
 					{ticket.customerEmail && (
 						<p className="text-xs text-gray-500 break-all">{ticket.customerEmail}</p>

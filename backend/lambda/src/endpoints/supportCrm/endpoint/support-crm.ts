@@ -27,6 +27,7 @@ import {
   buildBookingSnapshot,
   buildPaymentSnapshot,
   enrichSupportTicket,
+  resolveCustomerProfile,
   mapTicketForCrmList,
 } from '../support-ticket-helpers';
 import {
@@ -132,10 +133,21 @@ export function registerSupportCrmEndpoints(app: Hono) {
       }
 
       // Create support ticket
+      let customerProfile: Awaited<ReturnType<typeof resolveCustomerProfile>> | null = null;
+      if (resolvedCustomerId || customerPhone) {
+        customerProfile = await resolveCustomerProfile({
+          customer_id: resolvedCustomerId,
+          customer_phone: customerPhone || null,
+          booking_id: resolvedBookingId,
+        });
+      }
+
       const ticket = await insert('support_tickets', {
         ticket_number: generateSupportTicketNumber(),
         customer_id: resolvedCustomerId || null,
-        customer_phone: customerPhone || null,
+        customer_name: customerProfile?.customerName || null,
+        customer_email: customerProfile?.customerEmail || null,
+        customer_phone: customerProfile?.customerPhone || customerPhone || null,
         vendor_id: resolvedVendorId || null,
         subject,
         message,
@@ -267,12 +279,26 @@ export function registerSupportCrmEndpoints(app: Hono) {
     try {
       const { ticketId } = c.req.param();
 
-      const tickets = await select('support_tickets', { id: ticketId });
-      if (tickets.length === 0) {
+      const ticketRows = await query(
+        `SELECT t.*,
+                COALESCE(NULLIF(TRIM(c.full_name), ''), NULLIF(TRIM(t.customer_name), '')) AS customer_name,
+                COALESCE(NULLIF(TRIM(c.email), ''), NULLIF(TRIM(t.customer_email), '')) AS customer_email,
+                COALESCE(NULLIF(TRIM(c.phone), ''), NULLIF(TRIM(t.customer_phone), '')) AS customer_phone
+         FROM support_tickets t
+         LEFT JOIN customers c ON t.customer_id = c.id
+         WHERE t.id = $1::uuid
+         LIMIT 1`,
+        [ticketId]
+      );
+      if (!ticketRows.rows?.length) {
         return c.json({ error: 'Support ticket not found' }, 404);
       }
 
-      const ticket: any = { ...tickets[0] };
+      const ticket: any = { ...ticketRows.rows[0] };
+      const customerProfile = await resolveCustomerProfile(ticket);
+      if (customerProfile.customerName) ticket.customer_name = customerProfile.customerName;
+      if (customerProfile.customerEmail) ticket.customer_email = customerProfile.customerEmail;
+      if (customerProfile.customerPhone) ticket.customer_phone = customerProfile.customerPhone;
       const assigneeId = ticket.assigned_to;
       if (assigneeId) {
         try {
@@ -339,6 +365,9 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
       return c.json({
         success: true,
+        customerName: ticket.customer_name || null,
+        customerEmail: ticket.customer_email || null,
+        customerPhone: ticket.customer_phone || null,
         ticket: {
           ...ticket,
           ticket_type: enrichment.ticketType,
@@ -365,7 +394,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
   app.post("/support/tickets/:ticketId/respond", async (c) => {
     try {
       const { ticketId } = c.req.param();
-      const { message, responderId, responderType, isInternal = false } = await c.req.json();
+      const { message, responderId, responderType, isInternal = false, attachments } = await c.req.json();
 
       if (!message) {
         return c.json({ error: 'message is required' }, 400);
@@ -388,6 +417,33 @@ export function registerSupportCrmEndpoints(app: Hono) {
         is_internal: isInternal,
         created_at: new Date().toISOString(),
       });
+
+      const attachmentList = Array.isArray(attachments) ? attachments : [];
+      if (attachmentList.length > 0) {
+        const meta =
+          ticket.metadata != null && typeof ticket.metadata === 'object' && !Array.isArray(ticket.metadata)
+            ? { ...(ticket.metadata as Record<string, unknown>) }
+            : {};
+        const existing = Array.isArray(meta.attachments) ? [...meta.attachments] : [];
+        const responseAttachments =
+          meta.response_attachments != null && typeof meta.response_attachments === 'object' && !Array.isArray(meta.response_attachments)
+            ? { ...(meta.response_attachments as Record<string, unknown>) }
+            : {};
+        const responseId = String(response[0]?.id || '');
+        responseAttachments[responseId] = attachmentList;
+        await update(
+          'support_tickets',
+          { id: ticketId },
+          {
+            metadata: {
+              ...meta,
+              attachments: [...existing, ...attachmentList],
+              response_attachments: responseAttachments,
+            },
+            last_updated_at: new Date().toISOString(),
+          }
+        );
+      }
 
       // Update ticket status
       if (ticket.status === 'open' && responderType === 'agent') {
@@ -584,9 +640,9 @@ export function registerSupportCrmEndpoints(app: Hono) {
       let queryStr = `
         SELECT 
           t.*,
-          c.full_name as customer_name,
-          c.phone as customer_phone,
-          c.email as customer_email,
+          COALESCE(NULLIF(TRIM(c.full_name), ''), NULLIF(TRIM(t.customer_name), '')) as customer_name,
+          COALESCE(NULLIF(TRIM(c.email), ''), NULLIF(TRIM(t.customer_email), '')) as customer_email,
+          COALESCE(NULLIF(TRIM(c.phone), ''), NULLIF(TRIM(t.customer_phone), '')) as customer_phone,
           COALESCE(s.name, adm.name, adm.email) as assigned_agent_name,
           t.assigned_to as assigned_agent_id
         FROM support_tickets t

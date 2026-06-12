@@ -16,6 +16,7 @@ import {
   type SupportTicketDetailBundle,
   type SupportTicketResponseRow,
 } from '@/components/customer/support';
+import type { SupportAttachment } from '@/lib/support-attachment-upload';
 
 type ConvRow = {
   booking_id?: string;
@@ -274,6 +275,7 @@ export function CustomerBookingMessagesInbox({
   const [supportTicketDetail, setSupportTicketDetail] = useState<SupportTicketDetailBundle | null>(null);
   const [loadingSupportDetail, setLoadingSupportDetail] = useState(false);
   const [supportReplyText, setSupportReplyText] = useState('');
+  const [supportReplyAttachments, setSupportReplyAttachments] = useState<SupportAttachment[]>([]);
   const [sendingSupportReply, setSendingSupportReply] = useState(false);
 
   const isModal = variant === 'modal';
@@ -417,18 +419,20 @@ export function CustomerBookingMessagesInbox({
     void refreshInbox();
   }, [refreshInbox]);
 
-  const handleSupportSendReply = async () => {
-    if (!active || active.mode !== 'support' || !supportReplyText.trim()) return;
+  const handleSupportSendReply = async (attachments?: SupportAttachment[]) => {
+    if (!active || active.mode !== 'support' || (!supportReplyText.trim() && !attachments?.length)) return;
     const ticketId = active.ticketId;
     setSendingSupportReply(true);
     try {
       await supportCrmApi.respondToTicket(ticketId, {
-        message: supportReplyText.trim(),
+        message: supportReplyText.trim() || '(attachment)',
         responderId: getResolvedCustomerId() || undefined,
         responderType: 'customer',
+        attachments,
       });
       toast.success('Message sent');
       setSupportReplyText('');
+      setSupportReplyAttachments([]);
       await loadSupportDetail(ticketId);
       await refreshInbox();
     } catch (e: unknown) {
@@ -575,12 +579,15 @@ export function CustomerBookingMessagesInbox({
               replyText={supportReplyText}
               onReplyTextChange={setSupportReplyText}
               sendingReply={sendingSupportReply}
-              onSendReply={() => void handleSupportSendReply()}
+              onSendReply={(attachments) => void handleSupportSendReply(attachments)}
+              replyAttachments={supportReplyAttachments}
+              onReplyAttachmentsChange={setSupportReplyAttachments}
               onMessagesRefresh={() => void loadSupportDetail(active.ticketId)}
               onBack={() => {
                 setActive(null);
                 setSupportTicketDetail(null);
                 setSupportReplyText('');
+                setSupportReplyAttachments([]);
                 void refreshInbox();
               }}
             />

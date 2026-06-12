@@ -31,9 +31,11 @@ const AIChatbotWidget = dynamic(
 import {
   SupportTicketDetailView,
   SupportTicketStatusBadge,
+  SupportAttachmentPicker,
   type SupportTicketDetailBundle,
   type SupportTicketResponseRow,
 } from '@/components/customer/support';
+import type { SupportAttachment } from '@/lib/support-attachment-upload';
 
 interface Ticket {
   id: string;
@@ -87,6 +89,8 @@ export function SupportHelpCenter({
   const [ticketDetail, setTicketDetail] = useState<SupportTicketDetailBundle | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [replyText, setReplyText] = useState('');
+  const [replyAttachments, setReplyAttachments] = useState<SupportAttachment[]>([]);
+  const [contactAttachments, setContactAttachments] = useState<SupportAttachment[]>([]);
   const [sendingReply, setSendingReply] = useState(false);
 
   // Deep-link from home "Live chat" (sessionStorage or prop)
@@ -194,17 +198,19 @@ export function SupportHelpCenter({
     }
   }, [selectedTicketId, loadTicketDetail]);
 
-  const handleSendReply = async () => {
-    if (!selectedTicketId || !replyText.trim()) return;
+  const handleSendReply = async (attachments?: SupportAttachment[]) => {
+    if (!selectedTicketId || (!replyText.trim() && !attachments?.length)) return;
     setSendingReply(true);
     try {
       await supportCrmApi.respondToTicket(selectedTicketId, {
-        message: replyText.trim(),
+        message: replyText.trim() || '(attachment)',
         responderId: getResolvedCustomerId() || undefined,
         responderType: 'customer',
+        attachments,
       });
       toast.success('Message sent');
       setReplyText('');
+      setReplyAttachments([]);
       await loadTicketDetail(selectedTicketId);
       await loadTickets();
     } catch (error: unknown) {
@@ -284,6 +290,7 @@ export function SupportHelpCenter({
         bookingId: bookingContext?.bookingId,
         source: 'customer',
         priority: isBookingTicket ? 'high' : 'medium',
+        attachments: contactAttachments.length ? contactAttachments : undefined,
         metadata: isBookingTicket
           ? { ticket_type: 'booking', booking_context: bookingContext }
           : { ticket_type: 'general' },
@@ -301,6 +308,7 @@ export function SupportHelpCenter({
           message: '',
           category: isBookingTicket ? 'billing' : 'general',
         });
+        setContactAttachments([]);
         setShowContactForm(false);
         setActiveTab('tickets');
         void loadTickets();
@@ -397,6 +405,12 @@ export function SupportHelpCenter({
             className="resize-none"
           />
         </div>
+
+        <SupportAttachmentPicker
+          attachments={contactAttachments}
+          onChange={setContactAttachments}
+          disabled={submitting}
+        />
 
         <div className="flex gap-3">
           <Button
@@ -587,12 +601,15 @@ export function SupportHelpCenter({
                 replyText={replyText}
                 onReplyTextChange={setReplyText}
                 sendingReply={sendingReply}
-                onSendReply={() => void handleSendReply()}
+                onSendReply={(attachments) => void handleSendReply(attachments)}
+                replyAttachments={replyAttachments}
+                onReplyAttachmentsChange={setReplyAttachments}
                 onMessagesRefresh={refreshOpenTicket}
                 onBack={() => {
                   setSelectedTicketId(null);
                   setTicketDetail(null);
                   setReplyText('');
+                  setReplyAttachments([]);
                 }}
               />
             ) : showContactForm ? (

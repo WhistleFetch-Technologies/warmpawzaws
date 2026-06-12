@@ -43,6 +43,11 @@ import { CompletePlanModal } from "@/components/admin/support/CompletePlanModal"
 import { SupportCrmQueuePanel } from "@/components/admin/support/crm/SupportCrmQueuePanel";
 import { SupportCrmConversationPanel } from "@/components/admin/support/crm/SupportCrmConversationPanel";
 import { SupportCrmContextPanel } from "@/components/admin/support/crm/SupportCrmContextPanel";
+import { SupportCrmStatsBar } from "@/components/admin/support/crm/SupportCrmStatsBar";
+import {
+	isInProgressTicketStatus,
+	isOpenTicketStatus,
+} from "@/components/admin/support/crm/crm-utils";
 import type {
 	Agent,
 	AgentMetrics,
@@ -168,6 +173,7 @@ export default function SupportCRM() {
 					assignedTo: t.assignedTo || t.assigned_to || t.assigned_agent_id || undefined,
 					assignedAgent: t.assignedAgent || t.assigned_agent_name || undefined,
 					lastUpdatedAt: t.lastUpdatedAt || t.last_updated_at || t.createdAt || t.created_at,
+					customerName: t.customerName || t.customer_name,
 					customerEmail: t.customerEmail || t.customer_email,
 				}));
 				setTickets(ticketList);
@@ -189,10 +195,26 @@ export default function SupportCRM() {
 				
 				setStats({
 					totalTickets: parseStat("total_tickets", "totalTickets", ticketList.length),
-					openTickets: parseStat("open_tickets", "openTickets", ticketList.filter((t) => t.status === "open").length),
-					inProgressTickets: parseStat("in_progress_tickets", "inProgressTickets", ticketList.filter((t) => t.status === "in_progress").length),
-					resolvedTickets: parseStat("resolved_tickets", "resolvedTickets", ticketList.filter((t) => t.status === "resolved" || t.status === "closed").length),
-					escalatedTickets: parseStat("escalated_tickets", "escalatedTickets", ticketList.filter((t) => t.status === "escalated").length),
+					openTickets: parseStat(
+						"open_tickets",
+						"openTickets",
+						ticketList.filter((t) => isOpenTicketStatus(t.status)).length
+					),
+					inProgressTickets: parseStat(
+						"in_progress_tickets",
+						"inProgressTickets",
+						ticketList.filter((t) => isInProgressTicketStatus(t.status)).length
+					),
+					resolvedTickets: parseStat(
+						"resolved_tickets",
+						"resolvedTickets",
+						ticketList.filter((t) => t.status === "resolved" || t.status === "closed").length
+					),
+					escalatedTickets: parseStat(
+						"escalated_tickets",
+						"escalatedTickets",
+						ticketList.filter((t) => t.status === "escalated").length
+					),
 					avgResponseTime,
 					todayTickets: parseStat("today_tickets", "todayTickets", todayTicketsFromList),
 					pendingRefunds: parseStat("pending_refunds", "pendingRefunds", ticketList.filter((t) => t.refundRequested && !t.refundStatus).length),
@@ -671,15 +693,9 @@ export default function SupportCRM() {
 							</div>
 							<div className="min-w-0">
 								<h1 className="text-lg font-bold text-gray-900 leading-tight">Support CRM</h1>
-								<div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-gray-500">
-									<span>Total {stats.totalTickets}</span>
-									<span className="text-red-600">Open {stats.openTickets}</span>
-									<span className="text-yellow-700">Active {stats.inProgressTickets}</span>
-									<span className="text-green-700">Resolved {stats.resolvedTickets}</span>
-									<span className="text-orange-600">Escalated {stats.escalatedTickets}</span>
-									<span>Today {stats.todayTickets}</span>
-									<span>Avg {stats.avgResponseTime}</span>
-								</div>
+								<p className="text-xs text-gray-500 truncate">
+									Manage customer support tickets and agent workflows
+								</p>
 							</div>
 						</div>
 						<div className="flex items-center gap-1.5 shrink-0">
@@ -708,6 +724,8 @@ export default function SupportCRM() {
 						</div>
 					</div>
 				</div>
+
+				<SupportCrmStatsBar stats={stats} />
 
 				<div className="flex-1 flex min-h-0 overflow-hidden">
 					<SupportCrmQueuePanel
