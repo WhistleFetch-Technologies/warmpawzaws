@@ -1,13 +1,13 @@
 'use client';
 
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { VendorBookingManagement } from '@/components/vendor/VendorBookingManagement';
 import { VendorRouteShell } from '@/components/vendor/layout/VendorRouteShell';
 import { isTokenExpired, clearVendorSession } from '@/lib/session-utils';
+import { vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 
 function BookingsPageContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const walkSessionsFocus = searchParams.get('walkSessions') === '1';
   const openBookingId = searchParams.get('bookingId')?.trim() || undefined;
@@ -42,10 +42,10 @@ function BookingsPageContent() {
 
   const handleBack = () => {
     if (walkSessionsFocus) {
-      router.push('/');
+      vendorNavigateBackFromShell('/');
       return;
     }
-    router.back();
+    vendorNavigateBackFromShell('/');
   };
 
   // Show loading while checking auth

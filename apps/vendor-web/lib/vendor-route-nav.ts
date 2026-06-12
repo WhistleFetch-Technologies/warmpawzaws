@@ -9,7 +9,15 @@ export function isChunkHeavyVendorRoute(href: string): boolean {
     path === '/settings' ||
     path.startsWith('/settings/') ||
     path === '/services' ||
-    path.startsWith('/services/')
+    path.startsWith('/services/') ||
+    path === '/earnings' ||
+    path.startsWith('/earnings/') ||
+    path === '/bookings' ||
+    path.startsWith('/bookings/') ||
+    path === '/settlements' ||
+    path.startsWith('/settlements/') ||
+    path === '/finance' ||
+    path.startsWith('/finance/')
   );
 }
 
@@ -31,13 +39,13 @@ export function toStaticExportHtmlPath(pathname: string): string {
 }
 
 /**
- * Use a full document load (with cache-bust) for service/settings routes so the
- * HTML shell and webpack chunk manifest always match the latest deploy.
+ * Use a full document load (with cache-bust) on chunk-heavy routes and on
+ * Android/Capacitor so the HTML shell and webpack chunk manifest always match.
  */
 export function vendorNavigate(href: string, router?: RouterLike): void {
   if (typeof window === 'undefined') return;
 
-  if (isChunkHeavyVendorRoute(href)) {
+  if (isChunkHeavyVendorRoute(href) || shouldUseHardDocumentNavigation()) {
     const url = new URL(href, window.location.origin);
     url.pathname = toStaticExportHtmlPath(url.pathname);
     url.searchParams.set('_v', String(Date.now()));
@@ -60,8 +68,8 @@ function isOnStaticExportRouteShell(): boolean {
 }
 
 /**
- * Leaving services.html / settings.html via router.push('/') or router.back()
- * reuses the wrong webpack manifest and causes "Loading chunk failed" (500).
+ * Leaving static-export shells via router.push('/') or router.back() reuses the
+ * wrong webpack manifest and causes "Loading chunk failed" (500).
  */
 export function vendorNavigateBackFromShell(fallbackHref = '/'): void {
   if (typeof window === 'undefined') return;

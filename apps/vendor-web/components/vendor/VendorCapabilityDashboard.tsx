@@ -839,7 +839,7 @@ function EarningsSection({ vendorId }: { vendorId: string }) {
 
       {/* View Full Dashboard Button */}
       <button 
-        onClick={() => router.push('/earnings')}
+        onClick={() => vendorNavigate('/earnings', router)}
         className="w-full py-3 bg-orange-500 text-white rounded-xl font-semibold hover:bg-orange-600 transition"
       >
         View Full Earnings Dashboard

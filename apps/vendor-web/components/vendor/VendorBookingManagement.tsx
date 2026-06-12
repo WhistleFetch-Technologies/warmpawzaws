@@ -1781,7 +1781,7 @@ export function VendorBookingManagement({
                           type="button"
                           variant="secondary"
                           className="h-9 px-3 bg-white text-orange-700 hover:bg-orange-50 font-semibold"
-                          onClick={() => router.push('/earnings')}
+                          onClick={() => vendorNavigate('/earnings?tab=tier', router)}
                         >
                           Upgrade tier
                         </Button>
@@ -1790,7 +1790,7 @@ export function VendorBookingManagement({
                           type="button"
                           variant="secondary"
                           className="h-9 px-3 bg-white/95 text-orange-800 hover:bg-white font-medium"
-                          onClick={() => router.push('/earnings')}
+                          onClick={() => vendorNavigate('/earnings?tab=tier', router)}
                         >
                           Tiers & earnings
                         </Button>

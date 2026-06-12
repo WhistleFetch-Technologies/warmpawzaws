@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { resolveLedgerVendorId } from '@/lib/vendor-ledger-id';
-import { vendorNavigate } from '@/lib/vendor-route-nav';
+import { vendorNavigate, vendorNavigateBackFromShell } from '@/lib/vendor-route-nav';
 import {
   fetchVendorEarningsSummary,
   resolveSessionVendorIdForEarnings,
@@ -136,10 +136,17 @@ interface VendorPayoutHistoryRow {
 
 export function VendorEarningsSettlementDashboard({ vendorId, onBack: onBackProp }: VendorEarningsSettlementDashboardProps) {
   const router = useRouter();
-  const handleBack = onBackProp ?? (() => router.push('/'));
+  const handleBack = onBackProp ?? (() => vendorNavigateBackFromShell('/'));
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'earnings' | 'settlements' | 'tier'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'earnings' | 'settlements' | 'tier'>(() => {
+    if (typeof window === 'undefined') return 'overview';
+    const tab = new URLSearchParams(window.location.search).get('tab')?.toLowerCase();
+    if (tab === 'tier' || tab === 'earnings' || tab === 'settlements' || tab === 'overview') {
+      return tab;
+    }
+    return 'overview';
+  });
   const [period, setPeriod] = useState<'week' | 'month' | 'year' | 'all'>('month');
   
   // Data states
