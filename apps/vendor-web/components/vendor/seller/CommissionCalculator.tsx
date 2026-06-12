@@ -1,9 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { 
-  IndianRupee, TrendingUp, Percent, Calculator, 
-  ArrowRight, PiggyBank, Wallet, Clock
+import { useState, useEffect, useCallback } from 'react';
+import {
+  IndianRupee,
+  TrendingUp,
+  Percent,
+  Calculator,
+  PiggyBank,
+  Wallet,
+  RefreshCcw,
+  AlertCircle,
 } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
@@ -11,53 +17,95 @@ interface CommissionCalculatorProps {
   sellerId: string;
 }
 
+interface CommissionTier {
+  name: string;
+  level: number;
+  commissionRate: number;
+  minMonthlyRevenue: number;
+  maxMonthlyRevenue: number | null;
+  isCurrent: boolean;
+}
+
+interface CommissionAnalytics {
+  commissionRate: number;
+  commissionRateSource?: string;
+  gstRate: number;
+  totalRevenue: number;
+  totalCommission: number;
+  netEarnings: number;
+  pendingPayout: number;
+  monthlyRevenue?: number;
+  currentTier?: { name: string; level: number; commissionRate: number } | null;
+  tiers: CommissionTier[];
+}
+
+const TIER_MEDALS = ['🥉', '🥈', '🥇', '🏆'];
+
+function safeNum(v: unknown, fallback = 0): number {
+  const n = typeof v === 'string' ? parseFloat(v) : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function formatRevenueRange(min: number, max: number | null): string {
+  const fmt = (n: number) =>
+    n >= 100000 ? `₹${(n / 100000).toFixed(n % 100000 === 0 ? 0 : 1)}L` : `₹${n.toLocaleString('en-IN')}`;
+  if (max == null) return `${fmt(min)}+ monthly sales`;
+  if (min <= 0) return `₹0 - ${fmt(max)} monthly sales`;
+  return `${fmt(min)} - ${fmt(max)} monthly sales`;
+}
+
 export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
-  const [analytics, setAnalytics] = useState<any>(null);
+  const [analytics, setAnalytics] = useState<CommissionAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [simulatedSale, setSimulatedSale] = useState('1000');
 
-  useEffect(() => {
-    loadCommissionData();
-  }, [sellerId]);
-
-  const loadCommissionData = async () => {
+  const loadCommissionData = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiClient.get<any>(`/vendor/${sellerId}/commission-analytics`);
-      setAnalytics(data);
-    } catch (error) {
-      console.error('Error loading commission data:', error);
-      // Use mock data
+      setError(null);
+      const data = await apiClient.get<CommissionAnalytics>(
+        `/vendor/${sellerId}/commission-analytics`
+      );
+      if (!data || typeof data.commissionRate !== 'number') {
+        throw new Error('Invalid commission analytics response');
+      }
       setAnalytics({
-        commissionRate: 15,
-        totalRevenue: 0,
-        totalCommission: 0,
-        netEarnings: 0,
-        pendingPayout: 0,
-        lastPayout: null,
-        payoutHistory: []
+        ...data,
+        tiers: Array.isArray(data.tiers) ? data.tiers : [],
       });
+    } catch (err) {
+      console.error('Error loading commission data:', err);
+      setAnalytics(null);
+      setError('Could not load commission data. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [sellerId]);
 
-  const commissionRate = analytics?.commissionRate || 15;
-  const gstRate = 18;
-  
+  useEffect(() => {
+    loadCommissionData();
+  }, [loadCommissionData]);
+
+  const commissionRate = safeNum(analytics?.commissionRate, 0);
+  const gstRate = safeNum(analytics?.gstRate, 0);
+
   const calculateBreakdown = (saleAmount: number) => {
+    if (gstRate <= 0) {
+      const commission = saleAmount * (commissionRate / 100);
+      return {
+        saleAmount,
+        gstAmount: 0,
+        baseAmount: saleAmount,
+        commission,
+        netEarnings: saleAmount - commission,
+      };
+    }
     const gstAmount = saleAmount * (gstRate / (100 + gstRate));
     const baseAmount = saleAmount - gstAmount;
     const commission = baseAmount * (commissionRate / 100);
     const netEarnings = baseAmount - commission;
-    
-    return {
-      saleAmount,
-      gstAmount,
-      baseAmount,
-      commission,
-      netEarnings
-    };
+    return { saleAmount, gstAmount, baseAmount, commission, netEarnings };
   };
 
   const breakdown = calculateBreakdown(parseFloat(simulatedSale) || 0);
@@ -73,15 +121,32 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
     );
   }
 
+  if (error || !analytics) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[400px] p-8">
+        <div className="text-center max-w-md">
+          <AlertCircle className="w-12 h-12 text-orange-500 mx-auto mb-4" />
+          <p className="text-slate-700 font-medium">{error || 'Commission data unavailable'}</p>
+          <button
+            type="button"
+            onClick={loadCommissionData}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+          >
+            <RefreshCcw className="w-4 h-4" />
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Commission & Earnings</h1>
         <p className="text-slate-500 mt-1">Track your commissions and calculate net earnings</p>
       </div>
 
-      {/* Commission Rate Card */}
       <div className="bg-gradient-to-r from-orange-500 via-amber-500 to-orange-400 rounded-2xl p-8 text-white shadow-xl shadow-orange-500/20">
         <div className="flex items-center justify-between">
           <div>
@@ -99,17 +164,20 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
           <div className="text-right space-y-4">
             <div>
               <p className="text-orange-100 text-sm">Total Revenue</p>
-              <p className="text-3xl font-bold">₹{(analytics?.totalRevenue || 0).toLocaleString()}</p>
+              <p className="text-3xl font-bold">
+                ₹{safeNum(analytics.totalRevenue).toLocaleString('en-IN')}
+              </p>
             </div>
             <div>
               <p className="text-orange-100 text-sm">Net Earnings</p>
-              <p className="text-3xl font-bold text-emerald-300">₹{(analytics?.netEarnings || 0).toLocaleString()}</p>
+              <p className="text-3xl font-bold text-emerald-300">
+                ₹{safeNum(analytics.netEarnings).toLocaleString('en-IN')}
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
           <div className="flex items-center gap-3">
@@ -118,7 +186,9 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
             </div>
             <div>
               <p className="text-sm text-slate-500">Total Revenue</p>
-              <p className="text-2xl font-bold text-slate-900">₹{(analytics?.totalRevenue || 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-slate-900">
+                ₹{safeNum(analytics.totalRevenue).toLocaleString('en-IN')}
+              </p>
             </div>
           </div>
         </div>
@@ -129,7 +199,9 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
             </div>
             <div>
               <p className="text-sm text-slate-500">Commission Paid</p>
-              <p className="text-2xl font-bold text-orange-600">₹{(analytics?.totalCommission || 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-orange-600">
+                ₹{safeNum(analytics.totalCommission).toLocaleString('en-IN')}
+              </p>
             </div>
           </div>
         </div>
@@ -140,7 +212,9 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
             </div>
             <div>
               <p className="text-sm text-slate-500">Net Earnings</p>
-              <p className="text-2xl font-bold text-blue-600">₹{(analytics?.netEarnings || 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-blue-600">
+                ₹{safeNum(analytics.netEarnings).toLocaleString('en-IN')}
+              </p>
             </div>
           </div>
         </div>
@@ -151,13 +225,14 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
             </div>
             <div>
               <p className="text-sm text-slate-500">Pending Payout</p>
-              <p className="text-2xl font-bold text-purple-600">₹{(analytics?.pendingPayout || 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-purple-600">
+                ₹{safeNum(analytics.pendingPayout).toLocaleString('en-IN')}
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Calculator */}
       <div className="bg-white rounded-2xl border border-slate-100 p-6 shadow-sm">
         <div className="flex items-center gap-3 mb-6">
           <div className="p-3 bg-gradient-to-br from-orange-100 to-amber-100 rounded-xl">
@@ -170,7 +245,6 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Input */}
           <div className="space-y-4">
             <label className="block text-sm font-medium text-slate-700">Sale Amount (₹)</label>
             <div className="relative">
@@ -183,68 +257,94 @@ export function CommissionCalculator({ sellerId }: CommissionCalculatorProps) {
                 className="w-full pl-12 pr-4 py-4 text-2xl font-bold border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
               />
             </div>
-            <p className="text-sm text-slate-500">Enter the sale amount including GST to see your earnings breakdown</p>
+            <p className="text-sm text-slate-500">
+              Enter the sale amount including GST to see your earnings breakdown
+            </p>
           </div>
 
-          {/* Breakdown */}
           <div className="bg-gradient-to-br from-slate-50 to-orange-50/30 rounded-xl p-6 space-y-4">
             <div className="flex items-center justify-between py-2">
               <span className="text-slate-600">Sale Amount</span>
-              <span className="font-bold text-slate-900">₹{breakdown.saleAmount.toLocaleString()}</span>
+              <span className="font-bold text-slate-900">
+                ₹{breakdown.saleAmount.toLocaleString('en-IN')}
+              </span>
             </div>
-            <div className="flex items-center justify-between py-2 border-b border-slate-200">
-              <span className="text-slate-600">GST ({gstRate}%)</span>
-              <span className="font-medium text-purple-600">- ₹{breakdown.gstAmount.toFixed(2)}</span>
-            </div>
+            {gstRate > 0 && (
+              <div className="flex items-center justify-between py-2 border-b border-slate-200">
+                <span className="text-slate-600">GST ({gstRate}%)</span>
+                <span className="font-medium text-purple-600">
+                  - ₹{breakdown.gstAmount.toFixed(2)}
+                </span>
+              </div>
+            )}
             <div className="flex items-center justify-between py-2">
               <span className="text-slate-600">Base Amount</span>
-              <span className="font-medium text-slate-900">₹{breakdown.baseAmount.toFixed(2)}</span>
+              <span className="font-medium text-slate-900">
+                ₹{breakdown.baseAmount.toFixed(2)}
+              </span>
             </div>
             <div className="flex items-center justify-between py-2 border-b border-slate-200">
               <span className="text-slate-600">Platform Commission ({commissionRate}%)</span>
-              <span className="font-medium text-orange-600">- ₹{breakdown.commission.toFixed(2)}</span>
+              <span className="font-medium text-orange-600">
+                - ₹{breakdown.commission.toFixed(2)}
+              </span>
             </div>
             <div className="flex items-center justify-between py-3 bg-emerald-100 rounded-xl px-4 -mx-2">
               <span className="font-semibold text-emerald-900">Your Net Earnings</span>
-              <span className="text-2xl font-bold text-emerald-600">₹{breakdown.netEarnings.toFixed(2)}</span>
+              <span className="text-2xl font-bold text-emerald-600">
+                ₹{breakdown.netEarnings.toFixed(2)}
+              </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Commission Tiers Info */}
-      <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-6 text-white">
-        <h3 className="text-lg font-semibold mb-4">Commission Tier Benefits</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white/10 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-2xl">🥉</span>
-              <span className="font-semibold">Starter</span>
-            </div>
-            <p className="text-3xl font-bold text-orange-400">15%</p>
-            <p className="text-slate-400 text-sm mt-2">₹0 - ₹50,000 monthly sales</p>
+      {analytics.tiers.length > 0 && (
+        <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-6 text-white">
+          <h3 className="text-lg font-semibold mb-4">Commission Tier Benefits</h3>
+          <div
+            className={`grid grid-cols-1 gap-4 ${
+              analytics.tiers.length >= 3
+                ? 'md:grid-cols-3'
+                : analytics.tiers.length === 2
+                  ? 'md:grid-cols-2'
+                  : ''
+            }`}
+          >
+            {analytics.tiers.map((tier, index) => (
+              <div
+                key={`${tier.name}-${tier.level}`}
+                className={`rounded-xl p-4 ${
+                  tier.isCurrent ? 'bg-orange-500/30 ring-2 ring-orange-400' : 'bg-white/10'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-2xl">{TIER_MEDALS[index] ?? '⭐'}</span>
+                  <span className="font-semibold">{tier.name}</span>
+                  {tier.isCurrent && (
+                    <span className="text-xs bg-orange-400 text-white px-2 py-0.5 rounded-full">
+                      Current
+                    </span>
+                  )}
+                </div>
+                <p
+                  className={`text-3xl font-bold ${
+                    tier.isCurrent ? 'text-orange-400' : 'text-slate-300'
+                  }`}
+                >
+                  {tier.commissionRate}%
+                </p>
+                <p className="text-slate-400 text-sm mt-2">
+                  {formatRevenueRange(tier.minMonthlyRevenue, tier.maxMonthlyRevenue)}
+                </p>
+              </div>
+            ))}
           </div>
-          <div className="bg-white/10 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-2xl">🥈</span>
-              <span className="font-semibold">Growth</span>
-            </div>
-            <p className="text-3xl font-bold text-slate-300">12%</p>
-            <p className="text-slate-400 text-sm mt-2">₹50,000 - ₹2,00,000 monthly</p>
-          </div>
-          <div className="bg-white/10 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-2xl">🥇</span>
-              <span className="font-semibold">Premium</span>
-            </div>
-            <p className="text-3xl font-bold text-amber-400">10%</p>
-            <p className="text-slate-400 text-sm mt-2">₹2,00,000+ monthly sales</p>
-          </div>
+          <p className="text-slate-400 text-sm mt-4">
+            Your commission rate automatically improves as your sales grow!
+          </p>
         </div>
-        <p className="text-slate-400 text-sm mt-4">
-          💡 Your commission rate automatically improves as your sales grow!
-        </p>
-      </div>
+      )}
     </div>
   );
 }

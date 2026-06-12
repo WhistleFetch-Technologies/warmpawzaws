@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { Apple } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { apiClient } from '@/lib/api-client';
 import {
@@ -11,6 +11,8 @@ import {
 import { fetchMergedNutritionProviders } from '@/lib/nutritionist-discovery';
 import { toast } from 'sonner';
 import { isCustomerMealPlansEnabled } from '@/lib/customer-meal-plans-flag';
+import { ServiceDashboardHeader } from '../shared/ServiceDashboardHeader';
+import { EMPTY_SERVICE_HEADER_STATS } from '@/lib/service-header-stats';
 
 interface ExpertNutritionistsListProps {
   phone: string;
@@ -65,10 +67,9 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
     }
 
     try {
-      // Navigate to create booking page
-      onNavigate?.('create-booking', {
+      onNavigate?.('nutritionist-booking', {
         vendorId: nutritionist.id || nutritionist.vendorId,
-        serviceId: 'pet_nutritionist'
+        category: 'pet_nutritionist',
       });
     } catch (err: any) {
       console.error('Navigation error:', err);
@@ -77,26 +78,24 @@ export function ExpertNutritionistsList({ phone, onBack, onNavigate }: ExpertNut
   };
 
   return (
-    <div className="min-h-screen bg-[#FF8C42] max-w-md mx-auto pb-24">
-      {/* Header - Orange Background */}
-      <div className="px-6 cw-header-safe-top pb-6">
-        <div className="flex items-center gap-4 mb-6">
-          <button 
-            onClick={onBack}
-            className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center hover:bg-white/30 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5 text-white" />
-          </button>
-          <h1 className="text-2xl font-bold text-white">Expert Nutritionists</h1>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gray-50 pb-24">
+      <ServiceDashboardHeader
+        fullWidth
+        serviceName="Expert Nutritionists"
+        serviceSubtitle="Browse through all available expert nutritionists"
+        serviceIcon={Apple}
+        iconColor="text-white"
+        stats={EMPTY_SERVICE_HEADER_STATS}
+        onBack={onBack}
+        showBackButton={true}
+        headerColor="bg-gradient-to-r from-[#FF8C42] via-[#FF7A35] to-[#FF6B35]"
+        sheetToneClass="bg-white"
+      />
 
-      {/* Main Content - White Card with Top Radius */}
-      <div className="bg-white rounded-t-[32px] px-6 pt-8 min-h-[calc(100vh-180px)]">
+      <div className="mx-auto w-full max-w-customer -mt-4 rounded-t-[1.75rem] bg-white px-4 pt-6 pb-6 sm:rounded-t-[2rem]">
         <div className="space-y-4">
           <div className="mb-4">
             <h2 className="text-lg font-bold text-slate-900 mb-2">All Top Rated Nutritionists</h2>
-            <p className="text-sm text-slate-600">Browse through all available expert nutritionists</p>
           </div>
 
           {/* Loading State */}
