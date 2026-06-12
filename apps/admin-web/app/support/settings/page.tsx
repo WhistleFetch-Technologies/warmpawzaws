@@ -22,6 +22,7 @@ import {
   CheckCircle,
   FileText,
   GitBranch,
+  Bell,
 } from "lucide-react";
 import {
   Button,
@@ -119,6 +120,36 @@ interface RoutingSettings {
   lastSweeperAssignedCount?: number;
 }
 
+interface NotificationSettings {
+  opsInboxEmail: string;
+  opsInboxCc: string[];
+  opsPhone: string;
+  escalationDefaultEmail: string;
+  escalationDefaultCc: string[];
+  notifyCustomerOnAssign: boolean;
+  notifyCustomerOnResolve: boolean;
+  notifyAgentOnAssign: boolean;
+  notifyAgentOnCustomerReply: boolean;
+  notifyOpsOnTicketCreated: boolean;
+  notifyOpsOnEscalation: boolean;
+  customerSmsOnAgentReplyUrgentOnly: boolean;
+}
+
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+  opsInboxEmail: "",
+  opsInboxCc: [],
+  opsPhone: "",
+  escalationDefaultEmail: "",
+  escalationDefaultCc: [],
+  notifyCustomerOnAssign: true,
+  notifyCustomerOnResolve: true,
+  notifyAgentOnAssign: true,
+  notifyAgentOnCustomerReply: true,
+  notifyOpsOnTicketCreated: true,
+  notifyOpsOnEscalation: true,
+  customerSmsOnAgentReplyUrgentOnly: false,
+};
+
 const AGENT_SPECIALTY_OPTIONS = [
   { value: "general", label: "General" },
   { value: "booking", label: "Booking" },
@@ -132,11 +163,15 @@ const BRAND_ORANGE = "#FF8C42";
 export default function SupportSettingsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
-    "agents" | "routing" | "sla" | "categories" | "escalation" | "saved_replies"
+    "agents" | "routing" | "notifications" | "sla" | "categories" | "escalation" | "saved_replies"
   >("agents");
   const [savedRepliesCount, setSavedRepliesCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [routingSettings, setRoutingSettings] = useState<RoutingSettings | null>(null);
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(
+    DEFAULT_NOTIFICATION_SETTINGS
+  );
+  const [savingNotifications, setSavingNotifications] = useState(false);
   const [savingRouting, setSavingRouting] = useState(false);
   const [runningSweeper, setRunningSweeper] = useState(false);
   
@@ -169,6 +204,7 @@ export default function SupportSettingsPage() {
       await Promise.all([
         loadAgents(),
         loadRoutingSettings(),
+        loadNotificationSettings(),
         loadSLAConfigs(),
         loadCategories(),
         loadEscalationRules(),
@@ -195,6 +231,52 @@ export default function SupportSettingsPage() {
       if (res.success && res.routing) setRoutingSettings(res.routing);
     } catch (error) {
       console.error("Failed to load routing settings:", error);
+    }
+  };
+
+  const loadNotificationSettings = async () => {
+    try {
+      const res = await apiClient.get<any>("/support/settings/notifications");
+      if (res.success && res.notifications) {
+        setNotificationSettings({
+          ...DEFAULT_NOTIFICATION_SETTINGS,
+          ...res.notifications,
+          opsInboxCc: res.notifications.opsInboxCc || [],
+          escalationDefaultCc: res.notifications.escalationDefaultCc || [],
+        });
+      }
+    } catch (error) {
+      console.error("Failed to load notification settings:", error);
+    }
+  };
+
+  const parseCcInput = (raw: string): string[] =>
+    raw
+      .split(/[,;]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+  const saveNotificationSettings = async (patch: Partial<NotificationSettings> = {}) => {
+    setSavingNotifications(true);
+    try {
+      const payload = { ...notificationSettings, ...patch };
+      const res = await apiClient.put<any>("/support/settings/notifications", payload);
+      if (res.success && res.notifications) {
+        setNotificationSettings({
+          ...DEFAULT_NOTIFICATION_SETTINGS,
+          ...res.notifications,
+          opsInboxCc: res.notifications.opsInboxCc || [],
+          escalationDefaultCc: res.notifications.escalationDefaultCc || [],
+        });
+        toast.success("Notification settings saved");
+      } else {
+        toast.error(res.error || "Failed to save notification settings");
+      }
+    } catch (error) {
+      console.error("Failed to save notification settings:", error);
+      toast.error("Failed to save notification settings");
+    } finally {
+      setSavingNotifications(false);
     }
   };
 
@@ -468,7 +550,7 @@ export default function SupportSettingsPage() {
                   <div>
                     <h1 className="text-2xl font-bold text-gray-900">Support Settings</h1>
                     <p className="text-sm text-gray-500">
-                      Configure agents, SLA, categories, escalation rules, and saved replies
+                      Configure agents, routing, notifications, SLA, categories, escalation rules, and saved replies
                     </p>
                   </div>
                 </div>
@@ -489,6 +571,7 @@ export default function SupportSettingsPage() {
               {[
                 { id: "agents", label: "Support Agents", icon: Users, count: agents.length },
                 { id: "routing", label: "Auto Routing", icon: GitBranch, count: null },
+                { id: "notifications", label: "Notifications", icon: Bell, count: null },
                 { id: "sla", label: "SLA Configuration", icon: Timer, count: slaConfigs.length },
                 { id: "categories", label: "Categories", icon: Tag, count: categories.length },
                 { id: "escalation", label: "Escalation Rules", icon: ArrowUpRight, count: escalationRules.length },
@@ -751,6 +834,176 @@ export default function SupportSettingsPage() {
                   {runningSweeper ? "Running sweeper…" : "Run assignment sweeper now"}
                 </Button>
               </Card>
+            </div>
+          )}
+
+          {/* Notifications Tab */}
+          {activeTab === "notifications" && (
+            <div className="space-y-6 max-w-3xl">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Notification Settings</h2>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Configure ops inbox, escalation email defaults, and audience toggles
+                </p>
+              </div>
+
+              <Card className="p-5 border border-gray-200 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Mail className="w-5 h-5 text-[#FF8C42]" />
+                  <h3 className="font-semibold text-gray-900">Ops inbox</h3>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Receives new ticket alerts and backlog notifications.
+                </p>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1.5 block">Primary email</label>
+                  <Input
+                    type="email"
+                    value={notificationSettings.opsInboxEmail}
+                    disabled={savingNotifications}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setNotificationSettings({ ...notificationSettings, opsInboxEmail: e.target.value })
+                    }
+                    placeholder="support@warmpawz.com"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1.5 block">CC (comma-separated)</label>
+                  <Input
+                    value={notificationSettings.opsInboxCc.join(", ")}
+                    disabled={savingNotifications}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setNotificationSettings({
+                        ...notificationSettings,
+                        opsInboxCc: parseCcInput(e.target.value),
+                      })
+                    }
+                    placeholder="ops-lead@warmpawz.com"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1.5 block">Ops phone (SMS alerts)</label>
+                  <Input
+                    value={notificationSettings.opsPhone}
+                    disabled={savingNotifications}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setNotificationSettings({ ...notificationSettings, opsPhone: e.target.value })
+                    }
+                    placeholder="+91..."
+                  />
+                </div>
+              </Card>
+
+              <Card className="p-5 border border-gray-200 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <ArrowUpRight className="w-5 h-5 text-red-600" />
+                  <h3 className="font-semibold text-gray-900">Escalation defaults</h3>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Used when an escalation rule has no Notify Email set.
+                </p>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1.5 block">Default escalation email</label>
+                  <Input
+                    type="email"
+                    value={notificationSettings.escalationDefaultEmail}
+                    disabled={savingNotifications}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setNotificationSettings({
+                        ...notificationSettings,
+                        escalationDefaultEmail: e.target.value,
+                      })
+                    }
+                    placeholder="escalations@warmpawz.com"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1.5 block">Escalation CC</label>
+                  <Input
+                    value={notificationSettings.escalationDefaultCc.join(", ")}
+                    disabled={savingNotifications}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                      setNotificationSettings({
+                        ...notificationSettings,
+                        escalationDefaultCc: parseCcInput(e.target.value),
+                      })
+                    }
+                    placeholder="manager@warmpawz.com"
+                  />
+                </div>
+              </Card>
+
+              <Card className="p-5 border border-gray-200 space-y-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Bell className="w-5 h-5 text-blue-600" />
+                  <h3 className="font-semibold text-gray-900">Channel toggles</h3>
+                </div>
+                {[
+                  {
+                    key: "notifyOpsOnTicketCreated" as const,
+                    title: "Ops email on new ticket",
+                    desc: "Send email to ops inbox when a ticket is created.",
+                  },
+                  {
+                    key: "notifyOpsOnEscalation" as const,
+                    title: "Ops email on escalation",
+                    desc: "Send escalation email (manual or rule-based).",
+                  },
+                  {
+                    key: "notifyAgentOnAssign" as const,
+                    title: "Agent alert on assign",
+                    desc: "In-app and email when a ticket is assigned to an agent.",
+                  },
+                  {
+                    key: "notifyAgentOnCustomerReply" as const,
+                    title: "Agent alert on customer reply",
+                    desc: "Notify assigned agent when customer sends a message.",
+                  },
+                  {
+                    key: "notifyCustomerOnAssign" as const,
+                    title: "Customer SMS on assign",
+                    desc: "SMS when an agent is assigned to their ticket.",
+                  },
+                  {
+                    key: "notifyCustomerOnResolve" as const,
+                    title: "Customer SMS on resolve/close",
+                    desc: "SMS when ticket is resolved or closed.",
+                  },
+                  {
+                    key: "customerSmsOnAgentReplyUrgentOnly" as const,
+                    title: "Agent reply SMS — urgent/high only",
+                    desc: "Limit customer SMS on agent replies to urgent and high priority tickets.",
+                  },
+                ].map((toggle) => (
+                  <label key={toggle.key} className="flex items-center justify-between gap-4 cursor-pointer py-1">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{toggle.title}</p>
+                      <p className="text-xs text-gray-500">{toggle.desc}</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={notificationSettings[toggle.key]}
+                      disabled={savingNotifications}
+                      onChange={(e) =>
+                        setNotificationSettings({
+                          ...notificationSettings,
+                          [toggle.key]: e.target.checked,
+                        })
+                      }
+                      className="h-5 w-5 rounded border-gray-300 text-[#FF8C42] focus:ring-[#FF8C42]"
+                    />
+                  </label>
+                ))}
+              </Card>
+
+              <Button
+                onClick={() => void saveNotificationSettings()}
+                disabled={savingNotifications}
+                className="bg-[#FF8C42] hover:bg-[#E07830] text-white"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {savingNotifications ? "Saving…" : "Save notification settings"}
+              </Button>
             </div>
           )}
 
@@ -1357,6 +1610,9 @@ export default function SupportSettingsPage() {
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditingRule({ ...editingRule, notifyEmail: e.target.value })}
                   placeholder="manager@example.com"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Leave blank to use the Escalation default from the Notifications tab.
+                </p>
               </div>
             </div>
             <DialogFooter>

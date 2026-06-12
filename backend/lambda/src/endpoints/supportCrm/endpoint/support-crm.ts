@@ -42,6 +42,15 @@ import {
 import { scheduleSupportTicketAiAck, retryPostAckAssignment } from '../support-ticket-ai-ack';
 import { enrichSupportTicketMetadataAttachments } from '../support-ticket-attachments';
 import { notifySupportTicketCustomerSms } from '../support-ticket-notify';
+import {
+  scheduleSupportTicketNotification,
+  shouldNotifyCustomerOnAgentReply,
+} from '../support-ticket-notification-dispatch';
+import {
+  getSupportNotificationSettings,
+  updateSupportNotificationSettings,
+} from '../support-ticket-notification-settings';
+import { processSupportTicketEscalationBatch } from '../support-ticket-escalation-processor';
 import { resolveSupportTicketOrderLink } from '../resolve-support-ticket-order-link';
 import { normalizeSupportTicketCategory, isExtendedSupportCategory } from '../normalize-support-ticket-category';
 import {
@@ -231,46 +240,6 @@ export function registerSupportCrmEndpoints(app: Hono) {
         ticket = await insert('support_tickets', retryPayload);
       }
 
-      // Notify support team (if configured)
-      try {
-        const { select } = require('../../../database/rds-connection');
-        const { publishToSNS } = require('../../../utils/aws-clients');
-        
-        // Get support team contact from platform settings
-        const settings = await select('platform_settings', {
-          setting_key: 'support:team:contact',
-        });
-        
-        if (settings.length > 0) {
-          const supportContact = settings[0].setting_value as any;
-          const supportPhone = supportContact?.phone;
-          const supportEmail = supportContact?.email;
-          
-          // Send notification to support team
-          if (supportPhone || supportEmail) {
-            await publishToSNS('platform-notifications', {
-              type: 'support_ticket',
-              ticket_id: ticket[0].id,
-              priority: priority || 'medium',
-              subject: subject,
-              message: message,
-              customer_id: customerId,
-              vendor_id: null,
-              phone: supportPhone,
-              email: supportEmail,
-            }, {
-              messageType: 'Transactional',
-              priority: priority || 'medium',
-            });
-            
-            console.log(`✅ Support ticket notification sent to support team`);
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to send support notification', e);
-        // Don't fail the request if notification fails
-      }
-
       const createdTicket = ticket[0];
       const createdId = String(createdTicket.id);
 
@@ -285,6 +254,12 @@ export function registerSupportCrmEndpoints(app: Hono) {
           source,
           ticketType,
         },
+      });
+
+      scheduleSupportTicketNotification({
+        event: 'ticket_created',
+        ticket: createdTicket as Record<string, unknown>,
+        messagePreview: message,
       });
 
       scheduleSupportTicketAiAck(createdId);
@@ -552,7 +527,9 @@ export function registerSupportCrmEndpoints(app: Hono) {
           eventActorId: responderId || null,
           eventTitle: 'Agent replied',
         });
-        await notifySupportTicketCustomerSms(ticket, message);
+        if (await shouldNotifyCustomerOnAgentReply(ticket as Record<string, unknown>)) {
+          await notifySupportTicketCustomerSms(ticket, message);
+        }
       } else if (responderType === 'customer') {
         await recordSupportTicketActivity({
           ticketId,
@@ -560,6 +537,11 @@ export function registerSupportCrmEndpoints(app: Hono) {
           eventActorType: 'customer',
           eventActorId: responderId || ticket.customer_id || null,
           eventTitle: 'Customer replied',
+        });
+        scheduleSupportTicketNotification({
+          event: 'customer_replied',
+          ticket: ticket as Record<string, unknown>,
+          messagePreview: message?.substring(0, 200),
         });
       }
 
@@ -596,6 +578,13 @@ export function registerSupportCrmEndpoints(app: Hono) {
           last_updated_at: new Date().toISOString(),
         }
       );
+
+      scheduleSupportTicketNotification({
+        event: 'assigned',
+        ticket: updated[0] as Record<string, unknown>,
+        assigneeId: agentId,
+        assigneeName: agentName,
+      });
 
       return c.json({
         success: true,
@@ -652,6 +641,10 @@ export function registerSupportCrmEndpoints(app: Hono) {
             eventActorType: 'admin',
             eventTitle: 'Ticket resolved',
           });
+          scheduleSupportTicketNotification({
+            event: 'resolved',
+            ticket: updated[0] as Record<string, unknown>,
+          });
         }
         if (status === 'closed') {
           await recordSupportTicketActivity({
@@ -659,6 +652,10 @@ export function registerSupportCrmEndpoints(app: Hono) {
             eventType: SUPPORT_TICKET_EVENT_TYPES.TICKET_CLOSED,
             eventActorType: 'admin',
             eventTitle: 'Ticket closed',
+          });
+          scheduleSupportTicketNotification({
+            event: 'closed',
+            ticket: updated[0] as Record<string, unknown>,
           });
         }
       }
@@ -1182,6 +1179,13 @@ export function registerSupportCrmEndpoints(app: Hono) {
         if (prevStatus !== newStatus) {
           await logTicketStatusActivity(ticketId, prevStatus, String(newStatus), 'admin');
         }
+        scheduleSupportTicketNotification({
+          event: isReassign ? 'reassigned' : 'assigned',
+          ticket: updated[0] as Record<string, unknown>,
+          assigneeId: String(updateData.assigned_to),
+          assigneeName: assigneeName || undefined,
+          previousAssigneeId: prevAssignee ? String(prevAssignee) : null,
+        });
       } else if (action === 'escalate') {
         await recordSupportTicketActivity({
           ticketId,
@@ -1193,6 +1197,11 @@ export function registerSupportCrmEndpoints(app: Hono) {
         if (prevStatus !== newStatus) {
           await logTicketStatusActivity(ticketId, prevStatus, String(newStatus), 'admin');
         }
+        scheduleSupportTicketNotification({
+          event: 'escalated',
+          ticket: updated[0] as Record<string, unknown>,
+          reason: String(updateData.escalation_reason || 'Escalated by admin'),
+        });
       } else if (action === 'reopen') {
         await recordSupportTicketActivity({
           ticketId,
@@ -1213,6 +1222,10 @@ export function registerSupportCrmEndpoints(app: Hono) {
         if (prevStatus !== newStatus) {
           await logTicketStatusActivity(ticketId, prevStatus, String(newStatus), 'admin');
         }
+        scheduleSupportTicketNotification({
+          event: 'closed',
+          ticket: updated[0] as Record<string, unknown>,
+        });
       }
 
       return c.json({
@@ -1268,7 +1281,9 @@ export function registerSupportCrmEndpoints(app: Hono) {
           eventActorId: responderId || null,
           eventTitle: 'Agent replied',
         });
-        await notifySupportTicketCustomerSms(ticket, message);
+        if (await shouldNotifyCustomerOnAgentReply(ticket as Record<string, unknown>)) {
+          await notifySupportTicketCustomerSms(ticket, message);
+        }
       }
 
       return c.json({
@@ -1314,6 +1329,11 @@ export function registerSupportCrmEndpoints(app: Hono) {
       if (prevStatus !== 'closed') {
         await logTicketStatusActivity(ticketId, prevStatus, 'closed', 'admin');
       }
+
+      scheduleSupportTicketNotification({
+        event: 'closed',
+        ticket: updated[0] as Record<string, unknown>,
+      });
 
       return c.json({
         success: true,
@@ -1434,6 +1454,74 @@ export function registerSupportCrmEndpoints(app: Hono) {
     } catch (error: any) {
       console.error('Error in auto-assign batch:', error);
       return c.json({ error: error.message || 'Failed to auto-assign batch' }, 500);
+    }
+  });
+
+  /**
+   * POST /crm/tickets/escalation-batch
+   * Sweeper / cron: evaluate escalation rules and send escalation emails.
+   * Auth: INTERNAL_CRON_SECRET header when env is set.
+   */
+  app.post("/crm/tickets/escalation-batch", async (c) => {
+    const cronSecret = process.env.INTERNAL_CRON_SECRET?.trim();
+    const hdr = c.req.header('x-internal-cron-secret')?.trim();
+    const body = await c.req.json().catch(() => ({}));
+    const force = body?.force === true;
+
+    if (cronSecret && hdr !== cronSecret && !force) {
+      return c.json({ success: false, error: 'Unauthorized', code: 'INVALID_CRON_SECRET' }, 401);
+    }
+
+    try {
+      let limit = 50;
+      if (body?.limit != null) {
+        const n = parseInt(String(body.limit), 10);
+        if (Number.isFinite(n)) limit = Math.min(100, Math.max(1, n));
+      }
+
+      const batch = await processSupportTicketEscalationBatch({ limit });
+
+      return c.json({
+        success: true,
+        evaluated: batch.evaluated,
+        fired: batch.fired,
+        skipped: batch.skipped,
+        timedOut: batch.timedOut,
+        message: batch.timedOut
+          ? `Fired ${batch.fired} escalation(s) before time limit — run again for more`
+          : `Fired ${batch.fired} escalation(s)`,
+      });
+    } catch (error: any) {
+      console.error('Error in escalation batch:', error);
+      return c.json({ error: error.message || 'Failed to process escalation batch' }, 500);
+    }
+  });
+
+  /**
+   * GET /support/settings/notifications
+   * Global ops inbox, escalation defaults, and channel toggles.
+   */
+  app.get("/support/settings/notifications", async (c) => {
+    try {
+      const settings = await getSupportNotificationSettings();
+      return c.json({ success: true, notifications: settings });
+    } catch (error: any) {
+      console.error('Error fetching notification settings:', error);
+      return c.json({ error: error.message || 'Failed to fetch notification settings' }, 500);
+    }
+  });
+
+  /**
+   * PUT /support/settings/notifications
+   */
+  app.put("/support/settings/notifications", async (c) => {
+    try {
+      const body = await c.req.json();
+      const settings = await updateSupportNotificationSettings(body);
+      return c.json({ success: true, notifications: settings });
+    } catch (error: any) {
+      console.error('Error updating notification settings:', error);
+      return c.json({ error: error.message || 'Failed to update notification settings' }, 500);
     }
   });
 
@@ -1634,20 +1722,11 @@ export function registerSupportCrmEndpoints(app: Hono) {
       });
       scheduleSupportTicketAiAck(handoffId);
 
-      // Notify support team
-      try {
-        const { publishToSNS } = require('../../../utils/aws-clients');
-        await publishToSNS('platform-notifications', {
-          type: 'chat_handoff',
-          ticket_id: ticket[0].id,
-          booking_id: bookingId,
-          customer_name: customer[0]?.full_name || 'Customer',
-          vendor_name: vendor[0]?.business_name || 'Vendor',
-          priority: 'medium',
-        }).catch(() => {});
-      } catch (e) {
-        // Silent fail for notifications
-      }
+      scheduleSupportTicketNotification({
+        event: 'ticket_created',
+        ticket: ticket[0] as Record<string, unknown>,
+        messagePreview: reason || ticket[0].message,
+      });
 
       return c.json({
         success: true,

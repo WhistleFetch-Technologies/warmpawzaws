@@ -8,6 +8,7 @@ import {
   recordSupportTicketActivity,
   SUPPORT_TICKET_EVENT_TYPES,
 } from './support-ticket-activity';
+import { scheduleSupportTicketNotification } from './support-ticket-notification-dispatch';
 import { deriveRoutingPoolKey, type RoutingPoolKey } from './support-ticket-routing-pool';
 
 export type { RoutingPoolKey };
@@ -323,6 +324,20 @@ async function assignTicketInTransaction(
         workloadAfter: result.workloadAfter,
       },
     });
+    try {
+      const { select } = await import('../../database/rds-connection');
+      const rows = await select('support_tickets', { id: ticketId });
+      if (rows[0]) {
+        scheduleSupportTicketNotification({
+          event: 'assigned',
+          ticket: rows[0] as Record<string, unknown>,
+          assigneeId: result.assigneeId,
+          assigneeName: result.assigneeName,
+        });
+      }
+    } catch {
+      /* notification must not block assign */
+    }
   } else if (result.reason === 'no_eligible_agent') {
     void recordSupportTicketActivity({
       ticketId,
