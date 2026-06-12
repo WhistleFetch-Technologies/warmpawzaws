@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
 import { shouldSuppressPollToastForPush } from '@/lib/notification-display-policy';
+import { playNotificationAlertSound } from '@/lib/notification-sound';
 
 const INBOX_POLL_INTERVAL_MS = 30000;
 
@@ -16,17 +17,11 @@ interface NotificationServiceProps {
 export function useNotificationService({ phone, enabled, onNewNotification }: NotificationServiceProps) {
   const lastNotificationIdRef = useRef<string | null>(null);
   const isInitialLoadRef = useRef(true);
-  const audioContextRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
     if (!enabled || !phone) return;
 
     console.log(`🔔 [NOTIFICATION-SERVICE] Starting notification service for customer: ${phone}`);
-
-    // Create audio context once
-    if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
 
     const checkForNewNotifications = async () => {
       try {
@@ -74,7 +69,7 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
                   '🔔 [NOTIFICATION-SERVICE] Skipping in-app toast/sound — native push handles display'
                 );
               } else {
-                playNotificationSound();
+                playNotificationAlertSound();
                 showToastNotification(latestNotification);
               }
 
@@ -109,47 +104,6 @@ export function useNotificationService({ phone, enabled, onNewNotification }: No
         if (isInitialLoadRef.current) {
           isInitialLoadRef.current = false;
         }
-      }
-    };
-
-    const playNotificationSound = () => {
-      try {
-        const audioContext = audioContextRef.current;
-        if (!audioContext) return;
-
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-        
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-        
-        // First beep
-        oscillator.frequency.value = 800;
-        oscillator.type = 'sine';
-        gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
-        
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.15);
-
-        // Second beep
-        setTimeout(() => {
-          const oscillator2 = audioContext.createOscillator();
-          const gainNode2 = audioContext.createGain();
-          
-          oscillator2.connect(gainNode2);
-          gainNode2.connect(audioContext.destination);
-          
-          oscillator2.frequency.value = 1000;
-          oscillator2.type = 'sine';
-          gainNode2.gain.setValueAtTime(0.2, audioContext.currentTime);
-          gainNode2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
-          
-          oscillator2.start(audioContext.currentTime);
-          oscillator2.stop(audioContext.currentTime + 0.15);
-        }, 150);
-      } catch (error) {
-        console.error('Error playing notification sound:', error);
       }
     };
 

@@ -67,6 +67,7 @@ import {
 } from "@/components/admin/support/crm/crm-utils";
 import { getAdminId } from "@/lib/cognito-auth";
 import { useRouter } from "next/navigation";
+import { useSupportCrmAlertSound } from "@/hooks/useSupportCrmAlertSound";
 
 export default function SupportCRM() {
 	const router = useRouter();
@@ -118,6 +119,13 @@ export default function SupportCRM() {
 
 		return () => clearInterval(refreshInterval);
 	}, []);
+
+	useSupportCrmAlertSound({
+		tickets,
+		currentAdminId,
+		selectedTicket,
+		enabled: true,
+	});
 
 	// Calculate average response time from ticket data
 	const calculateAvgResponseTime = (ticketList: Ticket[]): string => {
@@ -334,6 +342,14 @@ export default function SupportCRM() {
 			// Still set the basic ticket info even if details fail
 		}
 	};
+
+	useEffect(() => {
+		if (!selectedTicket?.id) return;
+		const detailPoll = setInterval(() => {
+			void loadTicketDetails(selectedTicket.id);
+		}, 8000);
+		return () => clearInterval(detailPoll);
+	}, [selectedTicket?.id]);
 
 	// Handle ticket selection - load full details
 	const loadTicketActivity = async (ticketId: string) => {

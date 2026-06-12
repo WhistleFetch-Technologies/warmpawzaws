@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from 'next/dynamic';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   HelpCircle,
@@ -41,6 +41,8 @@ import {
 import { isOpenTicketStatus } from '@/components/customer/support/support-ticket-ui-utils';
 import { SUPPORT_FAQ_CATEGORIES } from '@/lib/support-faq-data';
 import type { SupportAttachment } from '@/lib/support-attachment-upload';
+import { playNotificationAlertSound } from '@/lib/notification-sound';
+import { useNotificationService } from '@/components/customer/useNotificationService';
 
 interface Ticket {
   id: string;
@@ -119,6 +121,20 @@ export function SupportHelpCenter({
   const [replyAttachments, setReplyAttachments] = useState<SupportAttachment[]>([]);
   const [contactAttachments, setContactAttachments] = useState<SupportAttachment[]>([]);
   const [sendingReply, setSendingReply] = useState(false);
+  const supportSoundRef = useRef<{ ticketId: string | null; ready: boolean; lastStaffId: string | null }>({
+    ticketId: null,
+    ready: false,
+    lastStaffId: null,
+  });
+
+  useEffect(() => {
+    supportSoundRef.current = { ticketId: selectedTicketId, ready: false, lastStaffId: null };
+  }, [selectedTicketId]);
+
+  useNotificationService({
+    phone: phone || '',
+    enabled: Boolean(phone),
+  });
 
   // Deep-link from home "Live chat" (sessionStorage or prop)
   useEffect(() => {
@@ -227,6 +243,26 @@ export function SupportHelpCenter({
       if (res?.success && res.ticket) {
         const raw = res.responses || [];
         const visible = raw.filter((r) => !r.is_internal);
+        const staffResponses = visible.filter(
+          (r) => r.responder_type === 'agent' || r.responder_type === 'system_ai'
+        );
+        const lastStaff = staffResponses[staffResponses.length - 1];
+        const lastStaffId = lastStaff?.id ? String(lastStaff.id) : null;
+        const snap = supportSoundRef.current;
+        if (snap.ticketId !== ticketId) {
+          snap.ticketId = ticketId;
+          snap.ready = false;
+          snap.lastStaffId = null;
+        }
+        if (!snap.ready) {
+          snap.ready = true;
+          snap.lastStaffId = lastStaffId;
+        } else if (options?.silent && lastStaffId && lastStaffId !== snap.lastStaffId) {
+          playNotificationAlertSound();
+          snap.lastStaffId = lastStaffId;
+        } else {
+          snap.lastStaffId = lastStaffId;
+        }
         setTicketDetail({ ticket: res.ticket, responses: visible });
       } else if (!options?.silent) {
         setTicketDetail(null);
