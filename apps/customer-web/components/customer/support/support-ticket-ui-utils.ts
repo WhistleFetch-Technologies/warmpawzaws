@@ -6,7 +6,7 @@ export type TicketFilterValue =
   | 'booking'
   | 'general';
 
-export type TicketCategoryKind = 'booking' | 'general' | 'billing';
+export type TicketCategoryKind = 'booking' | 'meal_order' | 'general' | 'billing';
 
 export function formatTicketStatusLabel(status: string): string {
   const s = (status || 'open').trim();
@@ -43,6 +43,8 @@ export function resolveTicketCategory(ticket: {
   metadata?: Record<string, unknown>;
 }): TicketCategoryKind {
   const meta = ticket.metadata;
+  const isMealOrder = meta?.ticket_type === 'meal_order';
+  if (isMealOrder) return 'meal_order';
   const isBooking =
     Boolean(ticket.booking_id) ||
     meta?.ticket_type === 'booking' ||
@@ -57,6 +59,8 @@ export function categoryBadgeClasses(kind: TicketCategoryKind): string {
   switch (kind) {
     case 'booking':
       return 'bg-blue-100 text-blue-700';
+    case 'meal_order':
+      return 'bg-emerald-100 text-emerald-700';
     case 'billing':
       return 'bg-purple-100 text-purple-700';
     default:
@@ -68,6 +72,8 @@ export function categoryLabel(kind: TicketCategoryKind): string {
   switch (kind) {
     case 'booking':
       return 'Booking';
+    case 'meal_order':
+      return 'Meal order';
     case 'billing':
       return 'Billing';
     default:

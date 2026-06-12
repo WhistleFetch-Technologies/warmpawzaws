@@ -16,6 +16,7 @@ import {
 	Paperclip,
 	Clock,
 	Sparkles,
+	UtensilsCrossed,
 } from "lucide-react";
 import { Badge, Button, Card } from "@warmpawz/ui";
 import type { Agent, Ticket, TicketActivity } from "./types";
@@ -24,6 +25,8 @@ import {
 	canProcessRefund,
 	getStatusColor,
 	isBookingTicket,
+	isMealOrderTicket,
+	isLinkedOrderTicket,
 	resolveCustomerDisplayName,
 	resolveVendorPhone,
 	ticketHasAssignee,
@@ -97,6 +100,37 @@ export function SupportCrmContextPanel({
 					)}
 				</Section>
 
+				{isMealOrderTicket(ticket) && (
+					<Section title="Meal order" icon={<UtensilsCrossed className="w-3.5 h-3.5" />}>
+						{ticket.mealOrderContext ? (
+							<div className="space-y-1 text-xs">
+								<Row label="Plan" value={ticket.mealOrderContext.planTitle} />
+								<Row label="Status" value={ticket.mealOrderContext.status} />
+								<Row label="Delivery" value={ticket.mealOrderContext.deliveryStatus} />
+								<Row label="Vendor" value={ticket.mealOrderContext.vendorName} />
+								<Row
+									label="Amount"
+									value={
+										ticket.mealOrderContext.totalAmount != null
+											? `₹${ticket.mealOrderContext.totalAmount}`
+											: undefined
+									}
+								/>
+								{ticket.mealOrderContext.orderNumber ? (
+									<p className="font-mono text-[10px] text-gray-500 break-all pt-1">
+										{ticket.mealOrderContext.orderNumber}
+									</p>
+								) : null}
+								<p className="font-mono text-[10px] text-gray-500 break-all">
+									{ticket.mealOrderId || ticket.mealOrderContext.id}
+								</p>
+							</div>
+						) : (
+							<p className="text-xs font-mono text-gray-600 break-all">{ticket.mealOrderId}</p>
+						)}
+					</Section>
+				)}
+
 				{isBookingTicket(ticket) && (
 					<Section title="Booking" icon={<Calendar className="w-3.5 h-3.5" />}>
 						{ticket.bookingContext ? (
@@ -126,10 +160,15 @@ export function SupportCrmContextPanel({
 					</Section>
 				)}
 
-				{(ticket.vendorId || ticket.bookingContext?.vendorName || resolveVendorPhone(ticket)) && (
+				{(ticket.vendorId ||
+					ticket.bookingContext?.vendorName ||
+					ticket.mealOrderContext?.vendorName ||
+					resolveVendorPhone(ticket)) && (
 					<Section title="Vendor" icon={<User className="w-3.5 h-3.5" />}>
 						<p className="text-sm text-gray-900">
-							{ticket.bookingContext?.vendorName || "Linked vendor"}
+							{ticket.bookingContext?.vendorName ||
+								ticket.mealOrderContext?.vendorName ||
+								"Linked vendor"}
 						</p>
 						<ContactPhone phone={resolveVendorPhone(ticket)} />
 						{ticket.vendorId && (
@@ -246,9 +285,9 @@ export function SupportCrmContextPanel({
 					</Button>
 				</Section>
 
-				{!isBookingTicket(ticket) && (
+				{!isLinkedOrderTicket(ticket) && (
 					<div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-						General inquiry — attach a booking to enable refunds.
+						General inquiry — link a booking or meal order to enable refunds.
 					</div>
 				)}
 			</div>
@@ -299,7 +338,7 @@ export function SupportCrmContextPanel({
 							className="text-red-600 border-red-200 hover:bg-red-50"
 						/>
 					)}
-					{!isBookingTicket(ticket) && (
+					{!isLinkedOrderTicket(ticket) && (
 						<ActionBtn
 							icon={<Link2 className="w-3 h-3" />}
 							label="Attach booking"

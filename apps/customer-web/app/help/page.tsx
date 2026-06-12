@@ -7,7 +7,9 @@ import { handleHelpPageBack } from '@/lib/go-back-or-replace';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   readSupportBookingContext,
+  readSupportMealOrderContext,
   type SupportBookingContext,
+  type SupportMealOrderContext,
 } from '@/lib/support-contact';
 
 const AIChatbotWidget = dynamic(
@@ -20,6 +22,7 @@ function HelpPageContent() {
   const searchParams = useSearchParams();
   const [phone, setPhone] = useState<string | undefined>(undefined);
   const [bookingContext, setBookingContext] = useState<SupportBookingContext | null>(null);
+  const [mealOrderContext, setMealOrderContext] = useState<SupportMealOrderContext | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('customerPhone');
@@ -27,14 +30,30 @@ function HelpPageContent() {
   }, []);
 
   useEffect(() => {
-    const fromStorage = readSupportBookingContext();
+    const fromMealStorage = readSupportMealOrderContext();
+    const fromBookingStorage = readSupportBookingContext();
     const bookingId = searchParams.get('bookingId')?.trim();
-    if (fromStorage) {
-      setBookingContext(fromStorage);
+    const orderId = searchParams.get('orderId')?.trim();
+    const orderType = searchParams.get('orderType')?.trim();
+
+    if (fromMealStorage) {
+      setMealOrderContext(fromMealStorage);
+      setBookingContext(null);
+      return;
+    }
+    if (fromBookingStorage) {
+      setBookingContext(fromBookingStorage);
+      setMealOrderContext(null);
+      return;
+    }
+    if (orderId && orderType === 'meal') {
+      setMealOrderContext({ orderId });
+      setBookingContext(null);
       return;
     }
     if (bookingId) {
       setBookingContext({ bookingId });
+      setMealOrderContext(null);
     }
   }, [searchParams]);
 
@@ -61,8 +80,9 @@ function HelpPageContent() {
         <SupportHelpCenter
           phone={phone}
           onBack={() => handleHelpPageBack(router)}
-          initialTab={bookingContext ? 'contact' : undefined}
+          initialTab={bookingContext || mealOrderContext ? 'contact' : undefined}
           bookingContext={bookingContext}
+          mealOrderContext={mealOrderContext}
         />
       </div>
     </div>

@@ -7,6 +7,7 @@ import {
   HelpCircle,
   Calendar,
   ArrowLeft,
+  UtensilsCrossed,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ServiceDashboardHeader } from '@/components/customer/shared/ServiceDashboardHeader';
@@ -16,7 +17,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { apiClient, supportCrmApi } from '@/lib/api-client';
 import { getResolvedCustomerId } from '@/lib/customer-id-storage';
 import { toast } from 'sonner';
-import { SUPPORT_INITIAL_TAB_KEY, clearSupportBookingContext, type SupportBookingContext } from '@/lib/support-contact';
+import { SUPPORT_INITIAL_TAB_KEY, clearSupportBookingContext, clearSupportMealOrderContext, resolveSupportContactContext, type SupportBookingContext, type SupportMealOrderContext } from '@/lib/support-contact';
+import {
+  DEFAULT_LINKED_SUPPORT_CATEGORY,
+  GENERAL_SUPPORT_TICKET_CATEGORIES,
+  LINKED_SUPPORT_TICKET_CATEGORIES,
+} from '@/lib/support-ticket-categories';
 
 const AIChatbotWidget = dynamic(
   () => import('@/components/customer/AIChatbotWidget').then((m) => ({ default: m.AIChatbotWidget })),
@@ -56,6 +62,8 @@ interface SupportHelpCenterProps {
   initialTab?: 'faq' | 'contact' | 'tickets';
   /** When set, contact form creates a booking-linked ticket for refunds. */
   bookingContext?: SupportBookingContext | null;
+  /** When set, contact form creates a meal-order-linked ticket from track order. */
+  mealOrderContext?: SupportMealOrderContext | null;
   /** In-app shell: route chatbot deep-links (services, support). Defaults to Next router for `/…` only. */
   onChatbotNavigate?: (dest: string, data?: unknown) => void;
 }
@@ -66,19 +74,40 @@ export function SupportHelpCenter({
   onCloseToHome,
   initialTab,
   bookingContext,
+  mealOrderContext,
   onChatbotNavigate,
 }: SupportHelpCenterProps) {
   const router = useRouter();
-  const isBookingTicket = Boolean(bookingContext?.bookingId);
+  const linked = resolveSupportContactContext(bookingContext, mealOrderContext);
+  const activeBooking = linked.booking;
+  const activeMeal = linked.meal;
+  const isBookingTicket = linked.kind === 'booking';
+  const isMealOrderTicket = linked.kind === 'meal';
+  const isLinkedTicket = linked.kind !== null;
+
+  const defaultMealSubject = activeMeal
+    ? activeMeal.planTitle
+      ? `Help with meal order: ${activeMeal.planTitle}`
+      : activeMeal.orderDisplayNumber
+        ? `Help with meal order ${activeMeal.orderDisplayNumber}`
+        : `Help with meal order #${activeMeal.orderId.slice(0, 8)}`
+    : '';
+
+  const defaultLinkedSubject = isBookingTicket
+    ? activeBooking?.serviceName
+      ? `Help with booking: ${activeBooking.serviceName}`
+      : activeBooking?.bookingId
+        ? `Help with booking #${activeBooking.bookingId.slice(0, 8)}`
+        : ''
+    : defaultMealSubject;
+
   const [showAIChat, setShowAIChat] = useState(false);
   const [activeTab, setActiveTab] = useState<'faq' | 'contact' | 'tickets'>('faq');
-  const [showContactForm, setShowContactForm] = useState(Boolean(bookingContext?.bookingId));
+  const [showContactForm, setShowContactForm] = useState(isLinkedTicket);
   const [contactForm, setContactForm] = useState({
-    subject: bookingContext?.serviceName
-      ? `Help with booking: ${bookingContext.serviceName}`
-      : '',
+    subject: defaultLinkedSubject,
     message: '',
-    category: bookingContext?.bookingId ? 'billing' : 'general',
+    category: isLinkedTicket ? DEFAULT_LINKED_SUPPORT_CATEGORY : 'general',
   });
   const [submitting, setSubmitting] = useState(false);
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -115,21 +144,48 @@ export function SupportHelpCenter({
   }, [initialTab]);
 
   useEffect(() => {
-    if (!bookingContext?.bookingId) return;
-    setActiveTab('contact');
-    setShowContactForm(true);
-    setSelectedTicketId(null);
-    setTicketDetail(null);
-    setContactForm((prev) => ({
-      ...prev,
-      subject:
-        prev.subject.trim() ||
-        (bookingContext.serviceName
-          ? `Help with booking: ${bookingContext.serviceName}`
-          : `Help with booking #${bookingContext.bookingId.slice(0, 8)}`),
-      category: 'billing',
-    }));
-  }, [bookingContext?.bookingId, bookingContext?.serviceName]);
+    if (linked.kind === 'booking' && activeBooking?.bookingId) {
+      setActiveTab('contact');
+      setShowContactForm(true);
+      setSelectedTicketId(null);
+      setTicketDetail(null);
+      setContactForm({
+        subject: activeBooking.serviceName
+          ? `Help with booking: ${activeBooking.serviceName}`
+          : `Help with booking #${activeBooking.bookingId.slice(0, 8)}`,
+        message: '',
+        category: 'billing',
+      });
+      return;
+    }
+    if (linked.kind === 'meal' && activeMeal?.orderId) {
+      setActiveTab('contact');
+      setShowContactForm(true);
+      setSelectedTicketId(null);
+      setTicketDetail(null);
+      setContactForm({
+        subject: activeMeal.planTitle
+          ? `Help with meal order: ${activeMeal.planTitle}`
+          : activeMeal.orderDisplayNumber
+            ? `Help with meal order ${activeMeal.orderDisplayNumber}`
+            : `Help with meal order #${activeMeal.orderId.slice(0, 8)}`,
+        message: '',
+        category: DEFAULT_LINKED_SUPPORT_CATEGORY,
+      });
+    }
+  }, [
+    linked.kind,
+    activeBooking?.bookingId,
+    activeBooking?.serviceName,
+    activeMeal?.orderId,
+    activeMeal?.planTitle,
+    activeMeal?.orderDisplayNumber,
+  ]);
+
+  const clearLinkedTicketContext = useCallback(() => {
+    clearSupportBookingContext();
+    clearSupportMealOrderContext();
+  }, []);
 
   const loadTickets = useCallback(async () => {
     if (!phone) return;
@@ -247,28 +303,33 @@ export function SupportHelpCenter({
         category: contactForm.category,
         customerId,
         customerPhone: phone,
-        bookingId: bookingContext?.bookingId,
+        bookingId: isBookingTicket ? activeBooking?.bookingId : undefined,
+        orderId: isMealOrderTicket ? activeMeal?.orderId : undefined,
         source: 'customer',
-        priority: isBookingTicket ? 'high' : 'medium',
+        priority: isLinkedTicket ? 'high' : 'medium',
         attachments: contactAttachments.length ? contactAttachments : undefined,
         metadata: isBookingTicket
-          ? { ticket_type: 'booking', booking_context: bookingContext }
-          : { ticket_type: 'general' },
+          ? { ticket_type: 'booking', booking_context: activeBooking }
+          : isMealOrderTicket
+            ? { ticket_type: 'meal_order', meal_order_context: activeMeal }
+            : { ticket_type: 'general' },
       });
 
       if (response.success || response.ticketId || response.ticket?.id) {
         toast.success(
           isBookingTicket
             ? 'Booking support ticket created. Our team can review payment and refunds for this booking.'
-            : 'Support ticket created successfully! We will get back to you soon.'
+            : isMealOrderTicket
+              ? 'Meal order support ticket created. Our team can review payment and delivery for this order.'
+              : 'Support ticket created successfully! We will get back to you soon.'
         );
-        clearSupportBookingContext();
+        clearLinkedTicketContext();
         const created = response.ticket as Ticket | undefined;
         const newTicketId = created?.id || response.ticketId;
         setContactForm({
           subject: '',
           message: '',
-          category: isBookingTicket ? 'billing' : 'general',
+          category: isLinkedTicket ? DEFAULT_LINKED_SUPPORT_CATEGORY : 'general',
         });
         setContactAttachments([]);
         setShowContactForm(false);
@@ -312,12 +373,12 @@ export function SupportHelpCenter({
   );
 
   const ticketCreateForm = (
-    <Card className="p-4 border border-gray-100 shadow-sm rounded-2xl">
+    <Card className="p-4 border border-gray-100 shadow-sm rounded-2xl pb-6">
       <button
         type="button"
         onClick={() => {
           setShowContactForm(false);
-          clearSupportBookingContext();
+          clearLinkedTicketContext();
           setContactForm({
             subject: '',
             message: '',
@@ -331,14 +392,20 @@ export function SupportHelpCenter({
         Back to contact options
       </button>
       <h3 className="font-semibold text-gray-900 mb-1">
-        {isBookingTicket ? 'Help with this booking' : 'Create support ticket'}
+        {isBookingTicket
+          ? 'Help with this booking'
+          : isMealOrderTicket
+            ? 'Help with this meal order'
+            : 'Create support ticket'}
       </h3>
       <p className="text-sm text-gray-500 mb-4">
         {isBookingTicket
           ? 'Tell us what went wrong — our team can review payment and refunds for this booking.'
-          : 'For refunds, cancellations, order issues, or account-related concerns.'}
+          : isMealOrderTicket
+            ? 'Tell us what went wrong — our team can review payment, delivery, and refunds for this meal order.'
+            : 'For refunds, cancellations, order issues, or account-related concerns.'}
       </p>
-      {isBookingTicket && bookingContext && (
+      {isBookingTicket && activeBooking ? (
         <div className="mb-4 rounded-xl border border-[#FF8C42]/30 bg-[#FFF3E8] p-4">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-lg bg-[#FF8C42]/15 flex items-center justify-center shrink-0">
@@ -347,36 +414,71 @@ export function SupportHelpCenter({
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900">Booking-linked ticket</p>
               <p className="text-sm text-gray-700 truncate">
-                {bookingContext.serviceName || 'Service booking'}
+                {activeBooking.serviceName || 'Service booking'}
               </p>
               <p className="text-xs text-gray-500 mt-1 font-mono">
-                ID: {bookingContext.bookingId.slice(0, 8)}…
+                ID: {activeBooking.bookingId.slice(0, 8)}…
               </p>
-              {bookingContext.vendorName && (
-                <p className="text-xs text-gray-600 mt-1">{bookingContext.vendorName}</p>
-              )}
+              {activeBooking.vendorName ? (
+                <p className="text-xs text-gray-600 mt-1">{activeBooking.vendorName}</p>
+              ) : null}
               <p className="text-xs text-[#FF8C42] mt-2">
                 Support can review payment and process refunds for this booking.
               </p>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
+      {isMealOrderTicket && activeMeal ? (
+        <div className="mb-4 rounded-xl border border-emerald-200/80 bg-emerald-50/80 p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+              <UtensilsCrossed className="w-5 h-5 text-emerald-700" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-gray-900">Meal order ticket</p>
+              <p className="text-sm text-gray-700 truncate">
+                {activeMeal.planTitle || 'Meal plan order'}
+              </p>
+              {activeMeal.orderDisplayNumber ? (
+                <p className="text-xs text-gray-500 mt-1 font-mono">
+                  {activeMeal.orderDisplayNumber}
+                </p>
+              ) : (
+                <p className="text-xs text-gray-500 mt-1 font-mono">
+                  ID: {activeMeal.orderId.slice(0, 8)}…
+                </p>
+              )}
+              {activeMeal.vendorName ? (
+                <p className="text-xs text-gray-600 mt-1">{activeMeal.vendorName}</p>
+              ) : null}
+              {activeMeal.amount != null ? (
+                <p className="text-xs text-gray-600 mt-1">
+                  Amount: ₹{activeMeal.amount.toLocaleString('en-IN')}
+                </p>
+              ) : null}
+              <p className="text-xs text-emerald-700 mt-2">
+                Support can review payment, delivery, and process refunds for this order.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
           <select
             value={contactForm.category}
             onChange={(e) => setContactForm({ ...contactForm, category: e.target.value })}
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42]"
-            disabled={isBookingTicket}
+            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF8C42] focus:border-[#FF8C42] bg-white"
           >
-            <option value="general">General Inquiry</option>
-            <option value="service">Booking / service issue</option>
-            <option value="other">Order / other issue</option>
-            <option value="billing">Payment or refund</option>
-            <option value="technical">Technical Support</option>
-            <option value="account">Account</option>
+            {(isLinkedTicket ? LINKED_SUPPORT_TICKET_CATEGORIES : GENERAL_SUPPORT_TICKET_CATEGORIES).map(
+              (option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ),
+            )}
           </select>
         </div>
 
@@ -412,11 +514,11 @@ export function SupportHelpCenter({
             variant="outline"
             onClick={() => {
               setShowContactForm(false);
-              clearSupportBookingContext();
+              clearLinkedTicketContext();
               setContactForm({
                 subject: '',
                 message: '',
-                category: isBookingTicket ? 'billing' : 'general',
+                category: 'general',
               });
               setContactAttachments([]);
             }}
@@ -451,7 +553,7 @@ export function SupportHelpCenter({
   const openTickets = tickets.filter((t) => isOpenTicketStatus(t.status)).length;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 w-full bg-gray-50 max-w-customer mx-auto">
+    <div className="flex flex-col h-full min-h-0 w-full bg-gray-50 max-w-customer mx-auto">
       {/* Single sticky chrome: header + tabs share one stack so tab offset never uses a magic pixel height. */}
       <div className="sticky top-0 z-50 isolate shrink-0 bg-gray-50">
         <ServiceDashboardHeader
@@ -498,7 +600,7 @@ export function SupportHelpCenter({
               onClick={() => {
                 setSelectedTicketId(null);
                 setTicketDetail(null);
-                if (!bookingContext?.bookingId) {
+                if (!linked.kind) {
                   setShowContactForm(false);
                 }
                 setActiveTab('contact');
@@ -530,7 +632,7 @@ export function SupportHelpCenter({
         className={
           activeTab === 'tickets' && selectedTicketId
             ? 'flex flex-1 min-h-0 flex-col overflow-hidden p-4 pb-0'
-            : 'flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-4 pb-32 space-y-4'
+            : 'flex-1 min-h-0 overflow-y-auto overscroll-y-contain touch-pan-y p-4 pb-36 space-y-4'
         }
       >
         {activeTab === 'faq' && (
@@ -551,7 +653,7 @@ export function SupportHelpCenter({
         )}
 
         {activeTab === 'contact' && (
-          showContactForm || isBookingTicket ? ticketCreateForm : contactHub
+          showContactForm || isLinkedTicket ? ticketCreateForm : contactHub
         )}
 
         {activeTab === 'tickets' && (

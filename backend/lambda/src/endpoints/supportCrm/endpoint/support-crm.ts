@@ -27,6 +27,8 @@ import {
   buildBookingSnapshot,
   buildPaymentSnapshot,
   enrichSupportTicket,
+  resolveMealOrderIdFromTicket,
+  buildMealOrderPaymentSnapshot,
   resolveCustomerProfile,
   resolveVendorProfile,
   mapTicketForCrmList,
@@ -39,6 +41,8 @@ import {
 } from '../support-ticket-activity';
 import { scheduleSupportTicketAiAck } from '../support-ticket-ai-ack';
 import { notifySupportTicketCustomerSms } from '../support-ticket-notify';
+import { resolveSupportTicketOrderLink } from '../resolve-support-ticket-order-link';
+import { normalizeSupportTicketCategory, isExtendedSupportCategory } from '../normalize-support-ticket-category';
 
 async function logTicketStatusActivity(
   ticketId: string,
@@ -105,10 +109,28 @@ export function registerSupportCrmEndpoints(app: Hono) {
       let resolvedBookingId: string | null = bookingId || null;
       let resolvedCustomerId: string | null = customerId || null;
       let resolvedVendorId: string | null = null;
-      let resolvedCategory = category || null;
-      let ticketType: 'general' | 'booking' = 'general';
+      let resolvedCategory = normalizeSupportTicketCategory(category);
+      let resolvedOrdersTableId: string | null = null;
+      let resolvedMealOrderId: string | null = null;
+      const metaTicketType =
+        typeof metaRest.ticket_type === 'string' ? metaRest.ticket_type : undefined;
+      let ticketType: 'general' | 'booking' | 'meal_order' = 'general';
       let bookingSnapshot = null;
       let paymentSnapshot = null;
+
+      if (orderId) {
+        const orderLink = await resolveSupportTicketOrderLink(String(orderId), metaTicketType);
+        if (orderLink.kind === 'error') {
+          return c.json({ error: orderLink.error }, 400);
+        }
+        if (orderLink.kind === 'orders') {
+          resolvedOrdersTableId = orderLink.orderId;
+          ticketType = metaTicketType === 'meal_order' ? 'meal_order' : 'general';
+        } else if (orderLink.kind === 'meal_orders') {
+          resolvedMealOrderId = orderLink.mealOrderId;
+          ticketType = 'meal_order';
+        }
+      }
 
       if (resolvedBookingId) {
         try {
@@ -128,6 +150,10 @@ export function registerSupportCrmEndpoints(app: Hono) {
         } catch (snapErr) {
           console.warn('[support/tickets] booking snapshot failed (ticket will still be created):', snapErr);
         }
+      } else if (ticketType === 'meal_order') {
+        if (!resolvedCategory || resolvedCategory === 'general') {
+          resolvedCategory = 'billing';
+        }
       } else {
         ticketType = 'general';
         if (!resolvedCategory) resolvedCategory = 'general';
@@ -143,7 +169,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
         });
       }
 
-      const ticket = await insert('support_tickets', {
+      const ticketPayload: Record<string, unknown> = {
         ticket_number: generateSupportTicketNumber(),
         customer_id: resolvedCustomerId || null,
         customer_name: customerProfile?.customerName || null,
@@ -156,17 +182,47 @@ export function registerSupportCrmEndpoints(app: Hono) {
         priority,
         category: resolvedCategory,
         booking_id: resolvedBookingId,
-        order_id: orderId || null,
+        order_id: resolvedOrdersTableId,
         status: 'open',
         metadata: {
           ...metaRest,
           attachments: attachmentList,
           ticket_type: ticketType,
+          issue_category: category || resolvedCategory,
+          ...(resolvedMealOrderId ? { linked_meal_order_id: resolvedMealOrderId } : {}),
           ...(bookingSnapshot ? { booking_snapshot: bookingSnapshot } : {}),
           ...(paymentSnapshot ? { payment_snapshot: paymentSnapshot } : {}),
         },
         created_at: new Date().toISOString(),
-      });
+      };
+
+      if (resolvedMealOrderId) {
+        ticketPayload.meal_order_id = resolvedMealOrderId;
+      }
+
+      let ticket: Awaited<ReturnType<typeof insert>>;
+      try {
+        ticket = await insert('support_tickets', ticketPayload);
+      } catch (insertErr: unknown) {
+        const msg = String((insertErr as Error)?.message || insertErr || '');
+        const retryPayload = { ...ticketPayload };
+        let shouldRetry = false;
+
+        if (resolvedMealOrderId && msg.includes('meal_order_id')) {
+          delete retryPayload.meal_order_id;
+          shouldRetry = true;
+        }
+        if (isExtendedSupportCategory(resolvedCategory) && msg.includes('support_tickets_category_check')) {
+          retryPayload.category =
+            { cancellation: 'service', delivery: 'service', wrong_items: 'other', quality: 'service' }[
+              resolvedCategory
+            ] || 'other';
+          shouldRetry = true;
+        }
+
+        if (!shouldRetry) throw insertErr;
+        ticket = await insert('support_tickets', retryPayload);
+      }
 
       // Notify support team (if configured)
       try {
@@ -365,7 +421,8 @@ export function registerSupportCrmEndpoints(app: Hono) {
       const enrichment = await enrichSupportTicket(ticket);
       const vendorProfile = await resolveVendorProfile(
         ticket.vendor_id ? String(ticket.vendor_id) : null,
-        enrichment.bookingContext
+        enrichment.bookingContext,
+        enrichment.mealOrderContext,
       );
 
       return c.json({
@@ -381,6 +438,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
         },
         ticketType: enrichment.ticketType,
         bookingContext: enrichment.bookingContext,
+        mealOrderContext: enrichment.mealOrderContext,
         paymentContext: enrichment.paymentContext,
         isRefundable: enrichment.isRefundable,
         refundBlockReason: enrichment.refundBlockReason,
@@ -859,11 +917,14 @@ export function registerSupportCrmEndpoints(app: Hono) {
           const ticket = tickets[0];
           let refundResult: Record<string, unknown> | null = null;
           let refundProcessed = false;
+          const mealOrderId = resolveMealOrderIdFromTicket(ticket);
+          const bookingId = ticket.booking_id ? String(ticket.booking_id) : null;
 
-          if (!ticket.booking_id) {
+          if (!bookingId && !mealOrderId) {
             refundResult = {
               status: 'failed',
-              message: 'This is a general ticket with no booking linked. Attach a booking before processing a refund.',
+              message:
+                'This ticket is not linked to a booking or meal order. Link an order before processing a refund.',
             };
           } else if (!ticket.customer_id) {
             refundResult = {
@@ -872,6 +933,52 @@ export function registerSupportCrmEndpoints(app: Hono) {
             };
           } else {
             try {
+              if (mealOrderId && !bookingId) {
+                const paymentSnapshot = await buildMealOrderPaymentSnapshot(mealOrderId);
+                const refundAmount =
+                  actionData.amount != null
+                    ? parseFloat(String(actionData.amount))
+                    : paymentSnapshot?.refundableBalance ?? 0;
+
+                if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+                  throw new Error('Invalid refund amount');
+                }
+
+                if (paymentSnapshot && refundAmount > paymentSnapshot.refundableBalance + 0.01) {
+                  throw new Error(
+                    `Refund amount exceeds refundable balance (₹${paymentSnapshot.refundableBalance.toFixed(2)})`,
+                  );
+                }
+
+                const { processMealOrderAdminOriginalRefund } = await import(
+                  '../../../utils/payments/meal-order-original-refund'
+                );
+                const processed = await processMealOrderAdminOriginalRefund(
+                  mealOrderId,
+                  refundAmount,
+                  actionData.reason || `Support ticket refund (${action})`,
+                  { initiatedBy: 'support' },
+                );
+
+                const ticketRefundStatus =
+                  processed.status === 'failed' ? 'failed' : 'processing';
+                updateData.refund_id = processed.refundId;
+                updateData.refund_amount = processed.totalAmount;
+                updateData.refund_status = ticketRefundStatus;
+
+                refundResult = {
+                  refundId: processed.refundId,
+                  amount: processed.totalAmount,
+                  status: processed.status,
+                  razorpayRefundId: processed.razorpayRefundId,
+                  walletCredited: processed.walletCredited,
+                  message: processed.message,
+                };
+                refundProcessed = processed.status !== 'failed';
+                console.log(
+                  `✅ [CRM] Meal order refund processed for ticket ${ticketId}: ₹${processed.totalAmount}`,
+                );
+              } else if (bookingId) {
               const payments = await query(
                 `SELECT id, amount::text, payment_status FROM payments
                  WHERE booking_id = $1::uuid
@@ -935,6 +1042,7 @@ export function registerSupportCrmEndpoints(app: Hono) {
                   message: 'No completed payment found for this booking',
                 };
               }
+              }
             } catch (refundError: any) {
               console.error('Error processing refund:', refundError);
               refundResult = {
@@ -946,7 +1054,12 @@ export function registerSupportCrmEndpoints(app: Hono) {
 
           updateData.metadata = {
             ...(ticket.metadata || {}),
-            ticket_type: 'booking',
+            ticket_type:
+              mealOrderId && !bookingId
+                ? 'meal_order'
+                : bookingId
+                  ? 'booking'
+                  : ((ticket.metadata as Record<string, unknown> | undefined)?.ticket_type ?? 'general'),
             refund_requested: true,
             refund_amount: actionData.amount ?? refundResult?.amount,
             refund_reason: actionData.reason,

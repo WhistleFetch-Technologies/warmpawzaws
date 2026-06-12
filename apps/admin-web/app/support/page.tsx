@@ -301,13 +301,23 @@ export default function SupportCRM() {
 					messages,
 					metadata: meta,
 					aiConversation: Array.isArray(res.aiConversation) ? res.aiConversation : undefined,
-					ticketType: (res.ticketType || raw.ticket_type || (raw.booking_id ? 'booking' : 'general')) as 'general' | 'booking',
+					ticketType: (res.ticketType ||
+						raw.ticket_type ||
+						(raw.meal_order_id || meta?.ticket_type === 'meal_order' ? 'meal_order' : null) ||
+						(raw.booking_id ? 'booking' : 'general')) as Ticket['ticketType'],
 					bookingId: raw.booking_id ? String(raw.booking_id) : undefined,
+					mealOrderId: raw.meal_order_id
+						? String(raw.meal_order_id)
+						: meta?.linked_meal_order_id
+							? String(meta.linked_meal_order_id)
+							: undefined,
 					vendorId: raw.vendor_id ? String(raw.vendor_id) : undefined,
 					isRefundable: Boolean(res.isRefundable),
 					refundBlockReason: res.refundBlockReason,
 					bookingContext: res.bookingContext ?? null,
+					mealOrderContext: res.mealOrderContext ?? null,
 					paymentContext: res.paymentContext ?? null,
+					mealOrderSummary: res.mealOrderSummary ?? undefined,
 					refundRequested: meta?.refund_requested === true,
 					refundStatus: (raw.refund_status as string | undefined) || (meta?.refund_result as Record<string, unknown> | undefined)?.status as string | undefined,
 				};

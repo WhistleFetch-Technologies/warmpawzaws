@@ -42,8 +42,16 @@ export function getPriorityColor(priority: string): string {
 	}
 }
 
+export function isMealOrderTicket(t: Ticket | null | undefined): boolean {
+	return t?.ticketType === "meal_order" || Boolean(t?.mealOrderId);
+}
+
 export function isBookingTicket(t: Ticket | null | undefined): boolean {
 	return t?.ticketType === "booking" || Boolean(t?.bookingId);
+}
+
+export function isLinkedOrderTicket(t: Ticket | null | undefined): boolean {
+	return isBookingTicket(t) || isMealOrderTicket(t);
 }
 
 export function canProcessRefund(t: Ticket | null | undefined): boolean {
@@ -124,7 +132,7 @@ export function matchesQueueView(
 		case "booking":
 			return isBookingTicket(ticket);
 		case "general":
-			return !isBookingTicket(ticket);
+			return !isLinkedOrderTicket(ticket);
 		case "escalated":
 			return ticket.status === "escalated";
 		case "refunds":
@@ -161,6 +169,8 @@ export function resolveVendorPhone(ticket: Ticket): string | null {
 	if (direct) return direct;
 	const fromBooking = ticket.bookingContext?.vendorPhone?.trim();
 	if (fromBooking) return fromBooking;
+	const fromMeal = ticket.mealOrderContext?.vendorPhone?.trim();
+	if (fromMeal) return fromMeal;
 	return null;
 }
 
@@ -173,6 +183,7 @@ export function matchesSearch(ticket: Ticket, query: string): boolean {
 		ticket.id.toLowerCase().includes(q) ||
 		(ticket.customerName?.toLowerCase().includes(q) ?? false) ||
 		(ticket.bookingId?.toLowerCase().includes(q) ?? false) ||
+		(ticket.mealOrderId?.toLowerCase().includes(q) ?? false) ||
 		(ticket.customerEmail?.toLowerCase().includes(q) ?? false)
 	);
 }

@@ -43,7 +43,13 @@ import {
   rememberShopBackToSpaScreen,
   clearWishlistOpenedFromShopMark,
 } from '@/lib/go-back-or-replace';
-import { SUPPORT_INITIAL_TAB_KEY } from '@/lib/support-contact';
+import {
+  SUPPORT_INITIAL_TAB_KEY,
+  readSupportBookingContext,
+  readSupportMealOrderContext,
+  resolveSupportContactContext,
+  storeSupportMealOrderContext,
+} from '@/lib/support-contact';
 import { buildTeleInstantAutoPayBookingUrl } from '@/lib/tele-direct-booking';
 import {
   isBannerNavigationPayload,
@@ -1913,6 +1919,11 @@ export function CustomerHomeWrapper({
           const back = mealTrackNav.backScreen ?? 'home';
           setMealTrackNav(null);
           setCurrentScreen(back);
+        }}
+        onNeedHelp={(ctx) => {
+          storeSupportMealOrderContext(ctx);
+          setMealTrackNav(null);
+          setCurrentScreen('support_help');
         }}
       />
     );
@@ -4321,14 +4332,24 @@ export function CustomerHomeWrapper({
     );
   
   // Support & Help Center
-  if (currentScreen === 'support_help')
-    return (
-      <SupportHelpCenter
-        phone={phone}
-        onBack={backFromWalletHubChild}
-        onChatbotNavigate={handleSupportHelpChatbotNavigate}
-      />
+  if (currentScreen === 'support_help') {
+    const supportCtx = resolveSupportContactContext(
+      readSupportBookingContext(),
+      readSupportMealOrderContext(),
     );
+    return (
+      <div className="h-[100dvh] w-full max-w-customer mx-auto flex flex-col overflow-hidden bg-gray-50">
+        <SupportHelpCenter
+          phone={phone}
+          onBack={backFromWalletHubChild}
+          onChatbotNavigate={handleSupportHelpChatbotNavigate}
+          initialTab={supportCtx.kind ? 'contact' : undefined}
+          bookingContext={supportCtx.booking}
+          mealOrderContext={supportCtx.meal}
+        />
+      </div>
+    );
+  }
 
   // ✅ NEW: Create Booking
   if (currentScreen === 'create-booking') return <CreateBookingPage phone={phone} serviceId={selectedService || vetServiceData?.serviceId} vendorId={selectedVendorId} onBack={() => { backFromBannerOr(() => { setCurrentScreen(previousScreen || 'walker'); setPreviousScreen(null); }, vetServiceData); }} onSuccess={(bookingId) => handleViewBooking(bookingId)} />;

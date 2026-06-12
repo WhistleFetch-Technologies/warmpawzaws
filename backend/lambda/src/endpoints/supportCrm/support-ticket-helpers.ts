@@ -5,7 +5,7 @@
 import { query, select } from '../../database/rds-connection';
 import { resolveBookingPaymentSources } from '../../utils/payments/booking-payment-sources';
 
-export type SupportTicketType = 'general' | 'booking';
+export type SupportTicketType = 'general' | 'booking' | 'meal_order';
 
 export type BookingSnapshot = {
   id: string;
@@ -19,6 +19,19 @@ export type BookingSnapshot = {
   vendorName?: string;
   vendorPhone?: string;
   paymentStatus?: string;
+};
+
+export type MealOrderSnapshot = {
+  id: string;
+  orderNumber?: string;
+  status: string;
+  planTitle?: string;
+  totalAmount?: number;
+  vendorId?: string;
+  vendorName?: string;
+  vendorPhone?: string;
+  paymentStatus?: string;
+  deliveryStatus?: string;
 };
 
 export type PaymentSnapshot = {
@@ -37,15 +50,37 @@ export type PaymentSnapshot = {
 export type SupportTicketEnrichment = {
   ticketType: SupportTicketType;
   bookingContext: BookingSnapshot | null;
+  mealOrderContext: MealOrderSnapshot | null;
   paymentContext: PaymentSnapshot | null;
   isRefundable: boolean;
   refundBlockReason?: string;
 };
 
-export function deriveTicketType(row: { booking_id?: string | null; metadata?: unknown }): SupportTicketType {
+export function resolveMealOrderIdFromTicket(row: {
+  meal_order_id?: string | null;
+  metadata?: unknown;
+}): string | null {
+  if (row.meal_order_id) return String(row.meal_order_id);
+  const meta = row.metadata as Record<string, unknown> | undefined;
+  if (meta?.linked_meal_order_id) return String(meta.linked_meal_order_id);
+  const ctx = meta?.meal_order_context;
+  if (ctx && typeof ctx === 'object' && (ctx as { orderId?: string }).orderId) {
+    return String((ctx as { orderId: string }).orderId);
+  }
+  return null;
+}
+
+export function deriveTicketType(row: {
+  booking_id?: string | null;
+  meal_order_id?: string | null;
+  metadata?: unknown;
+}): SupportTicketType {
   if (row.booking_id) return 'booking';
   const meta = row.metadata as Record<string, unknown> | undefined;
   if (meta?.ticket_type === 'booking') return 'booking';
+  if (meta?.ticket_type === 'meal_order' || resolveMealOrderIdFromTicket(row)) {
+    return 'meal_order';
+  }
   return 'general';
 }
 
@@ -178,29 +213,182 @@ export async function buildPaymentSnapshot(bookingId: string): Promise<PaymentSn
   }
 }
 
+export async function buildMealOrderSnapshot(mealOrderId: string): Promise<MealOrderSnapshot | null> {
+  try {
+    const res = await query(
+      `SELECT mo.id::text,
+              mo.order_number,
+              mo.status,
+              mo.payment_status,
+              mo.total_amount::text,
+              mo.vendor_id::text,
+              dt.status AS delivery_status,
+              COALESCE(
+                NULLIF(TRIM(mp.name), ''),
+                NULLIF(TRIM(mp.plan_name), ''),
+                NULLIF(TRIM(prod.name), '')
+              ) AS plan_title,
+              v.business_name AS vendor_name,
+              v.phone AS vendor_phone
+       FROM meal_orders mo
+       LEFT JOIN meal_plans mp ON mo.meal_plan_id = mp.id
+       LEFT JOIN products prod ON prod.id = mo.meal_plan_id
+         AND prod.category IN ('meal_plan', 'nutrition', 'food')
+       LEFT JOIN delivery_tracking dt ON dt.meal_order_id = mo.id
+       LEFT JOIN vendors v ON mo.vendor_id = v.id
+       WHERE mo.id = $1::uuid
+       ORDER BY dt.updated_at DESC NULLS LAST
+       LIMIT 1`,
+      [mealOrderId],
+    );
+    const row = (res as { rows?: Record<string, unknown>[] }).rows?.[0];
+    if (!row?.id) return null;
+
+    return {
+      id: String(row.id),
+      orderNumber: row.order_number ? String(row.order_number) : undefined,
+      status: String(row.status ?? ''),
+      planTitle: row.plan_title ? String(row.plan_title) : undefined,
+      totalAmount: parseFloat(String(row.total_amount ?? '0')) || 0,
+      vendorId: row.vendor_id ? String(row.vendor_id) : undefined,
+      vendorName: row.vendor_name ? String(row.vendor_name) : undefined,
+      vendorPhone: row.vendor_phone ? String(row.vendor_phone) : undefined,
+      paymentStatus: row.payment_status ? String(row.payment_status) : undefined,
+      deliveryStatus: row.delivery_status ? String(row.delivery_status) : undefined,
+    };
+  } catch (err) {
+    console.warn('[support-ticket-helpers] buildMealOrderSnapshot failed:', err);
+    return null;
+  }
+}
+
+export async function buildMealOrderPaymentSnapshot(mealOrderId: string): Promise<PaymentSnapshot | null> {
+  try {
+    const transactionId = `meal_order:${mealOrderId}`;
+    const payRes = await query(
+      `SELECT id::text, amount::text, payment_method, payment_status, razorpay_payment_id
+       FROM payments
+       WHERE transaction_id = $1
+         AND payment_status IN ('completed', 'paid', 'partially_refunded')
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [transactionId],
+    );
+    const payment = (payRes as { rows?: Record<string, unknown>[] }).rows?.[0];
+
+    const orderRes = await query(
+      `SELECT total_amount::text, razorpay_payment_id, purchase_snapshot, customer_id::text
+       FROM meal_orders WHERE id = $1::uuid LIMIT 1`,
+      [mealOrderId],
+    );
+    const order = (orderRes as { rows?: Record<string, unknown>[] }).rows?.[0];
+    const orderTotal = parseFloat(String(order?.total_amount ?? '0')) || 0;
+
+    if (!payment?.id && orderTotal <= 0.009) {
+      return null;
+    }
+
+    let refundedSoFar = 0;
+    if (payment?.id) {
+      const refRes = await query(
+        `SELECT COALESCE(SUM(refund_amount), 0)::text AS total
+         FROM refunds
+         WHERE payment_id = $1::uuid
+           AND refund_status IN ('completed', 'processing', 'approved', 'processed')`,
+        [String(payment.id)],
+      );
+      refundedSoFar =
+        parseFloat(String((refRes as { rows?: { total?: string }[] }).rows?.[0]?.total ?? '0')) || 0;
+    }
+
+    const paymentAmount = payment?.amount ? parseFloat(String(payment.amount)) : orderTotal;
+    const refundableBalance = round2(Math.max(0, paymentAmount - refundedSoFar));
+    const gatewayPaid = payment?.razorpay_payment_id ? paymentAmount : 0;
+
+    return {
+      paymentId: payment?.id ? String(payment.id) : undefined,
+      totalPaid: round2(paymentAmount),
+      walletPaid: round2(Math.max(0, paymentAmount - gatewayPaid)),
+      gatewayPaid: round2(gatewayPaid),
+      refundedSoFar: round2(refundedSoFar),
+      refundableBalance,
+      paymentMethod: payment?.payment_method ? String(payment.payment_method) : undefined,
+      razorpayPaymentId: payment?.razorpay_payment_id ? String(payment.razorpay_payment_id) : undefined,
+      paymentStatus: payment?.payment_status ? String(payment.payment_status) : undefined,
+      hasGatewayPayment: Boolean(payment?.razorpay_payment_id),
+    };
+  } catch (err) {
+    console.warn('[support-ticket-helpers] buildMealOrderPaymentSnapshot failed:', err);
+    return null;
+  }
+}
+
 export async function enrichSupportTicket(row: Record<string, unknown>): Promise<SupportTicketEnrichment> {
   try {
-    const ticketType = deriveTicketType(row as { booking_id?: string | null; metadata?: unknown });
+    const ticketType = deriveTicketType(
+      row as { booking_id?: string | null; meal_order_id?: string | null; metadata?: unknown },
+    );
     const bookingId = row.booking_id ? String(row.booking_id) : null;
+    const mealOrderId = resolveMealOrderIdFromTicket(
+      row as { meal_order_id?: string | null; metadata?: unknown },
+    );
+    const hasCustomer = !!row.customer_id;
+
+    if (ticketType === 'meal_order' && mealOrderId) {
+      const mealOrderContext = await buildMealOrderSnapshot(mealOrderId);
+      const paymentContext = await buildMealOrderPaymentSnapshot(mealOrderId);
+
+      if (!hasCustomer) {
+        return {
+          ticketType: 'meal_order',
+          bookingContext: null,
+          mealOrderContext,
+          paymentContext,
+          isRefundable: false,
+          refundBlockReason: 'Ticket is missing customer_id.',
+        };
+      }
+
+      if (!paymentContext || paymentContext.refundableBalance <= 0.009) {
+        return {
+          ticketType: 'meal_order',
+          bookingContext: null,
+          mealOrderContext,
+          paymentContext,
+          isRefundable: false,
+          refundBlockReason: 'No completed payment with refundable balance for this meal order.',
+        };
+      }
+
+      return {
+        ticketType: 'meal_order',
+        bookingContext: null,
+        mealOrderContext,
+        paymentContext,
+        isRefundable: true,
+      };
+    }
 
     if (ticketType !== 'booking' || !bookingId) {
       return {
         ticketType: 'general',
         bookingContext: null,
+        mealOrderContext: null,
         paymentContext: null,
         isRefundable: false,
-        refundBlockReason: 'General tickets are not linked to a booking. Attach a booking to process refunds.',
+        refundBlockReason:
+          'General tickets are not linked to a booking or meal order. Link an order to process refunds.',
       };
     }
 
     const bookingContext = await buildBookingSnapshot(bookingId);
     const paymentContext = await buildPaymentSnapshot(bookingId);
-    const hasCustomer = !!row.customer_id;
 
     if (!hasCustomer) {
       return {
         ticketType: 'booking',
         bookingContext,
+        mealOrderContext: null,
         paymentContext,
         isRefundable: false,
         refundBlockReason: 'Ticket is missing customer_id.',
@@ -211,6 +399,7 @@ export async function enrichSupportTicket(row: Record<string, unknown>): Promise
       return {
         ticketType: 'booking',
         bookingContext,
+        mealOrderContext: null,
         paymentContext,
         isRefundable: false,
         refundBlockReason: 'No completed payment with refundable balance for this booking.',
@@ -220,17 +409,21 @@ export async function enrichSupportTicket(row: Record<string, unknown>): Promise
     return {
       ticketType: 'booking',
       bookingContext,
+      mealOrderContext: null,
       paymentContext,
       isRefundable: true,
     };
   } catch (err) {
     console.warn('[support-ticket-helpers] enrichSupportTicket failed:', err);
     return {
-      ticketType: deriveTicketType(row as { booking_id?: string | null; metadata?: unknown }),
+      ticketType: deriveTicketType(
+        row as { booking_id?: string | null; meal_order_id?: string | null; metadata?: unknown },
+      ),
       bookingContext: null,
+      mealOrderContext: null,
       paymentContext: null,
       isRefundable: false,
-      refundBlockReason: 'Could not load booking payment context.',
+      refundBlockReason: 'Could not load order payment context.',
     };
   }
 }
@@ -309,10 +502,11 @@ export type VendorProfile = {
 
 export async function resolveVendorProfile(
   vendorId?: string | null,
-  bookingContext?: BookingSnapshot | null
+  bookingContext?: BookingSnapshot | null,
+  mealOrderContext?: MealOrderSnapshot | null,
 ): Promise<VendorProfile> {
-  let name = bookingContext?.vendorName?.trim() || null;
-  let phone = bookingContext?.vendorPhone?.trim() || null;
+  let name = bookingContext?.vendorName?.trim() || mealOrderContext?.vendorName?.trim() || null;
+  let phone = bookingContext?.vendorPhone?.trim() || mealOrderContext?.vendorPhone?.trim() || null;
 
   if (!vendorId) {
     return { vendorName: name, vendorPhone: phone };
@@ -338,7 +532,11 @@ export async function resolveVendorProfile(
 export function mapTicketForCrmList(t: Record<string, unknown>, enrichment?: SupportTicketEnrichment) {
   const meta = (t.metadata as Record<string, unknown> | undefined) ?? {};
   const refundMeta = meta.refund_result as Record<string, unknown> | undefined;
-  const ticketType = enrichment?.ticketType ?? deriveTicketType(t as { booking_id?: string | null; metadata?: unknown });
+  const ticketType =
+    enrichment?.ticketType ??
+    deriveTicketType(t as { booking_id?: string | null; meal_order_id?: string | null; metadata?: unknown });
+  const mealOrderId =
+    resolveMealOrderIdFromTicket(t as { meal_order_id?: string | null; metadata?: unknown }) || undefined;
 
   return {
     id: String(t.id || ''),
@@ -357,10 +555,12 @@ export function mapTicketForCrmList(t: Record<string, unknown>, enrichment?: Sup
     customerPhone: t.customer_phone || '',
     ticketType,
     bookingId: t.booking_id ? String(t.booking_id) : undefined,
+    mealOrderId,
     vendorId: t.vendor_id ? String(t.vendor_id) : undefined,
     vendorPhone:
       (t.vendor_phone as string | undefined) ||
       enrichment?.bookingContext?.vendorPhone ||
+      enrichment?.mealOrderContext?.vendorPhone ||
       '',
     isRefundable: enrichment?.isRefundable ?? false,
     refundBlockReason: enrichment?.refundBlockReason,
@@ -370,6 +570,14 @@ export function mapTicketForCrmList(t: Record<string, unknown>, enrichment?: Sup
           status: enrichment.bookingContext.status,
           amount: enrichment.bookingContext.amount,
           scheduledDate: enrichment.bookingContext.scheduledDate,
+        }
+      : undefined,
+    mealOrderSummary: enrichment?.mealOrderContext
+      ? {
+          planTitle: enrichment.mealOrderContext.planTitle,
+          orderNumber: enrichment.mealOrderContext.orderNumber,
+          status: enrichment.mealOrderContext.status,
+          amount: enrichment.mealOrderContext.totalAmount,
         }
       : undefined,
     refundableBalance: enrichment?.paymentContext?.refundableBalance,

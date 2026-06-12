@@ -3,6 +3,7 @@
 import { Calendar, ChevronRight, Tag } from 'lucide-react';
 import { SupportTicketStatusBadge } from './SupportTicketStatusBadge';
 import { SupportTicketCategoryBadge } from './SupportTicketCategoryBadge';
+import { supportTicketCategoryLabel } from '@/lib/support-ticket-categories';
 import {
   formatTicketDate,
   formatTicketDisplayId,
@@ -60,9 +61,9 @@ export function SupportTicketListCard({ ticket, onOpen }: SupportTicketListCardP
               {formatTicketDate(ticket.created_at)}
             </span>
             {ticket.category ? (
-              <span className="inline-flex items-center gap-1 capitalize">
+              <span className="inline-flex items-center gap-1">
                 <Tag className="w-3 h-3" />
-                {ticket.category}
+                {supportTicketCategoryLabel(ticket.category)}
               </span>
             ) : null}
           </div>

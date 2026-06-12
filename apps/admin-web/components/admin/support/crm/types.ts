@@ -32,6 +32,26 @@ export interface PaymentContextPanel {
 	hasGatewayPayment: boolean;
 }
 
+export interface MealOrderContextPanel {
+  id: string;
+  orderNumber?: string;
+  status: string;
+  planTitle?: string;
+  totalAmount?: number;
+  vendorId?: string;
+  vendorName?: string;
+  vendorPhone?: string;
+  paymentStatus?: string;
+  deliveryStatus?: string;
+}
+
+export interface MealOrderSummary {
+  planTitle?: string;
+  orderNumber?: string;
+  status?: string;
+  amount?: number;
+}
+
 export interface Ticket {
 	id: string;
 	customerId: string;
@@ -60,15 +80,18 @@ export interface Ticket {
 	category?: string;
 	metadata?: Record<string, unknown>;
 	aiConversation?: Array<Record<string, unknown>>;
-	ticketType?: "general" | "booking";
+	ticketType?: "general" | "booking" | "meal_order";
 	bookingId?: string;
+	mealOrderId?: string;
 	vendorId?: string;
 	vendorPhone?: string;
 	isRefundable?: boolean;
 	refundBlockReason?: string;
 	bookingSummary?: BookingSummary;
+	mealOrderSummary?: MealOrderSummary;
 	refundableBalance?: number;
 	bookingContext?: BookingContextPanel | null;
+	mealOrderContext?: MealOrderContextPanel | null;
 	paymentContext?: PaymentContextPanel | null;
 	refundRequested?: boolean;
 	refundStatus?: string;
